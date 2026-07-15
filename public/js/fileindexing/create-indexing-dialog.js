@@ -4460,6 +4460,12 @@
         const cofoFirstPartyLabel = document.getElementById('cofo-first-party-label');
         const cofoSecondPartyLabel = document.getElementById('cofo-second-party-label');
         const cofoFirstPartyInput = document.getElementById('cofo-first-party');
+        const cofoTypeWrapper = document.getElementById('cofo-type-wrapper');
+        const cofoTypeSelect = document.getElementById('cofo-type');
+
+        function isCertificateOfOccupancyType(selectedType) {
+            return /CERTIFICATE OF OCCUPANCY/i.test(String(selectedType || ''));
+        }
 
         if (cofoInstrumentType && cofoTransactionDetails) {
             cofoInstrumentType.addEventListener('change', function () {
@@ -4472,6 +4478,17 @@
                 }
 
                 const selectedType = this.value;
+
+                if (cofoTypeWrapper) {
+                    if (isCertificateOfOccupancyType(selectedType)) {
+                        cofoTypeWrapper.classList.remove('hidden');
+                    } else {
+                        cofoTypeWrapper.classList.add('hidden');
+                        if (cofoTypeSelect) {
+                            cofoTypeSelect.value = '';
+                        }
+                    }
+                }
 
                 if (selectedType) {
                     cofoTransactionDetails.classList.remove('hidden');
@@ -5138,6 +5155,7 @@
             'cofo-vol-no',
             'cofo-deeds-time',
             'cofo-deeds-date',
+            'cofo-type',
         ];
 
         cofoFields.forEach(fieldId => {
@@ -7385,6 +7403,8 @@
         const kangisPlaceholderSerial = document.getElementById('kangis-fileno-serial');
         const kangisPlaceholderPreview = document.getElementById('kangis-placeholder-preview');
         const kangisPlaceholderPreviewValue = document.getElementById('kangis-placeholder-preview-value');
+        const occupancyPermitSection = document.getElementById('occupancy-permit-section');
+        const rofoSection = document.getElementById('rofo-section');
 
         /** Assemble the prefix + serial into the hidden <input> value and update preview */
         function assembleKangisPlaceholder() {
@@ -7454,16 +7474,43 @@
         function updateState() {
             let isDciv = false;
             let isKangis = false;
+            let isSltr = false;
 
             // Check General Registry
             if (registrySelect && registrySelect.value) {
                 const regVal = registrySelect.value.toUpperCase();
                 if (regVal.includes('DCIV')) isDciv = true;
                 if (regVal.includes('KANGIS')) isKangis = true;
+                if (regVal.includes('SLTR')) isSltr = true;
             }
             // Check Physical Registry (User specific request)
             if (physicalRegistrySelect && physicalRegistrySelect.value === 'DCIV Registry') {
                 isDciv = true;
+            }
+
+            // Occupancy Permit / RoFO details are only relevant to Lands-type registries —
+            // KANGIS and SLTR files don't carry these instrument types, so hide both cards
+            // entirely (and reset any values already entered) when either is selected.
+            const hideOccupancyAndRofo = isKangis || isSltr;
+            [occupancyPermitSection, rofoSection].forEach((section) => {
+                if (!section) return;
+                section.classList.toggle('hidden', hideOccupancyAndRofo);
+            });
+            if (hideOccupancyAndRofo) {
+                const rofoToggle = document.getElementById('has-rofo-toggle');
+                const rofoContainer = document.getElementById('rofo-details-container');
+                if (rofoToggle && rofoToggle.checked) {
+                    rofoToggle.checked = false;
+                    rofoContainer?.classList.add('hidden');
+                    if (typeof clearRofoFields === 'function') clearRofoFields();
+                }
+                const occupancyToggle = document.getElementById('has-occupancy-permit-toggle');
+                const occupancyContainer = document.getElementById('occupancy-permit-details-container');
+                if (occupancyToggle && occupancyToggle.checked) {
+                    occupancyToggle.checked = false;
+                    occupancyContainer?.classList.add('hidden');
+                    if (typeof clearOccupancyPermitFields === 'function') clearOccupancyPermitFields();
+                }
             }
 
             // Handle File Title Label

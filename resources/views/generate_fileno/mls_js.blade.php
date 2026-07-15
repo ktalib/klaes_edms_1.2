@@ -398,7 +398,7 @@
         // If we have an existing file number (from OP capture, etc.),
         // it's the primary candidate for finding the record in the grouping/index table.
         // For subdivision and merger, we use the selected File Options (preview) instead of the temp app number.
-        if (existing !== '' && (fileOption === 'normal' || fileOption === 'temporary' || fileOption === 'extension')) {
+        if (existing !== '' && (fileOption === 'normal' || fileOption === 'regrant' || fileOption === 'temporary' || fileOption === 'extension')) {
             return existing;
         }
 
@@ -1346,7 +1346,7 @@
                             <div class="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
                                 <div class="flex items-center gap-2 mb-3">
                                     <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-emerald-600 text-white font-extrabold text-sm">2</span>
-                                    <span class="text-xs font-extrabold uppercase tracking-widest text-emerald-700">New Application</span>
+                                    <span class="text-xs font-extrabold uppercase tracking-widest text-emerald-700">Transfer of Title</span>
                                 </div>
                                 <div class="mb-3 flex items-start gap-1.5">
                                     <svg class="w-3 h-3 mt-0.5 text-emerald-500 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
@@ -1435,6 +1435,9 @@
             component.fileName = '';
             component.landUse = '';
             component.fileOption = '';
+            // Without this the top FILE TYPE select keeps displaying the previous choice
+            // while fileOption reads '' — the label and the submitted value then disagree.
+            component.fileTypeWorkflow = '';
             component.existingFileNo = '';
             component.middlePrefix = 'KN';
             component.year = new Date().getFullYear();
@@ -1589,7 +1592,7 @@
             previewText = `SLTR-${serialNo}`;
         } else if (fileOption === 'sit' && serialNo) {
             previewText = `SIT-${year}-${serialNo}`;
-        } else if (fileOption === 'normal' && serialNo && year && landUse) {
+        } else if ((fileOption === 'normal' || fileOption === 'regrant') && serialNo && year && landUse) {
             previewText = `${landUse}-${year}-${serialNo}`;
         }
 
@@ -1652,7 +1655,7 @@
         const batchModeToggled = document.querySelector('[x-model="batchMode"]')?.checked;
         const batchQty = parseInt(document.getElementById('batchQuantity')?.value || '1');
 
-        if (fileOption === 'normal' && hasCode && year && !isOverrideMode) {
+        if ((fileOption === 'normal' || fileOption === 'regrant') && hasCode && year && !isOverrideMode) {
             try {
                 if (typeof commissionModalReservation !== 'undefined') {
                     if (batchModeToggled && batchQty > 1) {
@@ -1711,7 +1714,7 @@
             previewText = `SLTR-${serialNo}`;
         } else if (fileOption === 'sit' && serialNo) {
             previewText = `SIT-${year}-${serialNo}`;
-        } else if (fileOption === 'normal' && serialNo && year) {
+        } else if ((fileOption === 'normal' || fileOption === 'regrant') && serialNo && year) {
             const code = prefix || landUse;
             if (code) {
                 if (batchModeToggled && batchQty > 1) {
@@ -1771,9 +1774,9 @@
         // Reset text field tracking attribute
         serialNoField.removeAttribute('data-text-field');
 
-        if (type === 'normal') {
+        if (type === 'normal' || type === 'regrant') {
             yearSection.classList.remove('hidden');
-            // For normal files, keep serial as number for auto-padding
+            // For normal/regrant files, keep serial as number for auto-padding
             serialNoField.type = 'number';
             serialNoField.setAttribute('min', '1');
             serialNoField.setAttribute('max', '9999');
@@ -2161,12 +2164,26 @@
 
         const formData = new FormData(document.getElementById('generateForm'));
 
+        // These two drive resolveSourceValue() on the backend (e.g. "OP Direct
+        // Allocation" / "OP Resettlement" vs plain "Direct Allocation"), but
+        // neither has a named form element in the DOM — without this they never
+        // reach the server and every "new" application silently falls back to
+        // the generic "Direct Allocation" source label, even when it was
+        // commissioned from a captured Occupancy Permit.
+        formData.set('allocated_by_filter', alpineData ? (alpineData.allocatedByFilter || '') : '');
+        formData.set('default_allocation_type', alpineData ? (alpineData.defaultAllocationType || '') : '');
+
         // Use prefix as land_use if available (for normal files)
         const prefix = alpineData ? alpineData.prefix : document.getElementById('prefix')?.value;
         const fileOption = alpineData ? alpineData.fileOption : document.getElementById('fileOption')?.value;
-        if (prefix && fileOption === 'normal') {
+        // Alpine owns fileOption; post it unconditionally so the value can't diverge from
+        // what the form shows (e.g. Re-grant silently arriving as "normal", which made the
+        // backend resolve Source as "Direct Allocation").
+        if (fileOption) {
+            formData.set('file_option', fileOption);
+        }
+        if (prefix && (fileOption === 'normal' || fileOption === 'regrant')) {
             formData.set('land_use', prefix);
-            formData.set('file_option', 'normal');
         }
 
         // SIT files: force land_use to 'SIT' and customer_type to 'Government'
@@ -3955,7 +3972,7 @@
         console.log('fileNumberGenerator() function is being defined/called');
         return {
             // Data properties
-            applicationType: 'change_of_purpose',
+            applicationType: 'new',
             allocatedByFilter: null,
             defaultAllocationType: '',
             _currentAllocationSourceType: 'default', // Track current allocation source type
@@ -3975,6 +3992,10 @@
             customerType: '',
             // Default to normal file
             fileOption: 'normal',
+            // Backs the top "FILE TYPE" select. Kept separate from fileOption because that
+            // select also expresses workflows (e.g. change_of_purpose) which map to an
+            // applicationType rather than a fileOption. Must be reset with fileOption.
+            fileTypeWorkflow: '',
             // Reason captured for SIT files
             sitReason: '',
             // Extension category: 'file' (existing AND EXTENSION flow) or 'plot' (keep original number)
@@ -4039,6 +4060,7 @@
             newPurpose: '', // Added missing property to fix ReferenceError
 
             // Batch Mode Properties
+            hideBatchMode: window.commissionModalHideBatchMode === true,
             batchMode: false,
             batchQuantity: 2,
             locationEntries: [],
@@ -4456,7 +4478,7 @@
 
             get isSerialReadonly() {
                 // Readonly for normal (auto-generated), temporary, extension, and SIT types
-                return (this.fileOption === 'normal' || this.fileOption === 'temporary' || this.fileOption === 'extension' || this.fileOption === 'sit') && !isOverrideMode;
+                return (this.fileOption === 'normal' || this.fileOption === 'regrant' || this.fileOption === 'temporary' || this.fileOption === 'extension' || this.fileOption === 'sit') && !isOverrideMode;
             },
 
             get isSerialDisabled() {
@@ -4465,7 +4487,7 @@
             },
 
             get serialFieldType() {
-                return this.fileOption === 'normal' && !isOverrideMode ? 'number' : 'text';
+                return (this.fileOption === 'normal' || this.fileOption === 'regrant') && !isOverrideMode ? 'number' : 'text';
             },
 
             get yearFieldClass() {
@@ -4840,7 +4862,7 @@
                                         }
                                     }
 
-                                    /* 
+                                    /*  
                                     // Auto-detect Conversion type - REMOVED: Transaction type should remain subdivision/merger
                                     if (detectedPrefix.startsWith('CON-')) {
                                         self.applicationType = 'conversion';
@@ -5233,6 +5255,36 @@
                 };
             },
 
+            /**
+             * Backs the top "FILE TYPE" select. This lives here as a method rather than as an
+             * inline @change expression on purpose: the previous inline version opened with
+             * `let val = ...`, and Alpine only tolerates a leading let/const by special-casing
+             * it into an async IIFE. Anything that defeats that detection makes the whole
+             * handler a SyntaxError that fails silently in the console — the select then shows
+             * the picked type while fileOption never changes, and the file gets committed with
+             * the wrong Source. A plain method call has no such failure mode.
+             */
+            applyFileTypeWorkflow(val) {
+                this.fileTypeWorkflow = val;
+
+                if (val === 'change_of_purpose') {
+                    this.applicationType = 'change_of_purpose';
+                    this.fileOption = 'normal';
+                    this.updateApplicationType();
+                    return;
+                }
+
+                // Preserve Conversion; only fall back to Direct Allocation otherwise.
+                if (this.applicationType !== 'conversion') {
+                    this.applicationType = 'new';
+                }
+
+                // Re-grant numbers like a normal file but keeps its own tag so the backend
+                // records Source as "Re-grant" instead of "Direct Allocation".
+                this.fileOption = val === '' ? 'normal' : val;
+                this.updateFileOption();
+            },
+
             updateFileOption() {
                 // Detect a fresh transition INTO the extension file type so we can
                 // prompt for the extension category (File vs Plot) exactly once.
@@ -5269,7 +5321,7 @@
                         // Reset category until the user explicitly picks one in the popup.
                         this.extensionType = '';
                     }
-                } else if (this.fileOption === 'normal') {
+                } else if (this.fileOption === 'normal' || this.fileOption === 'regrant') {
                     this.isInherited = false;
                     // Reset SIT-specific overrides if switching from SIT
                     if (this.landUse === 'SIT') {
@@ -5279,7 +5331,7 @@
                         this.purpose = '';
                         this.prefix = '';
                     }
-                    // Reset to auto-generated for normal files based on land use
+                    // Reset to auto-generated for normal/regrant files based on land use
                     if (this.landUse || this.prefix) {
                         this.serialNo = getNextSerialForLandUse(this.prefix || this.landUse);
                     }
@@ -5314,7 +5366,7 @@
 
             updatePreview() {
                 // Auto-update serial number when land use changes for normal, subdivision, merger, and temporary files
-                if (['normal', 'subdivision', 'merger', 'separation', 'temporary'].includes(this.fileOption) && (this.landUse || this.prefix) && !isOverrideMode) {
+                if (['normal', 'regrant', 'subdivision', 'merger', 'separation', 'temporary'].includes(this.fileOption) && (this.landUse || this.prefix) && !isOverrideMode) {
                     if (this.fileOption === 'temporary' && this.existingFileNo) {
                         // Keep extracted serial from existing file for temporary files
                     } else {
@@ -5359,7 +5411,7 @@
                     previewText = `SLTR-${this.serialNo}`;
                 } else if (this.fileOption === 'sit' && this.serialNo) {
                     previewText = `SIT-${this.year}-${this.serialNo}`;
-                } else if (['normal', 'subdivision', 'merger'].includes(this.fileOption) && this.serialNo && this.year) {
+                } else if (['normal', 'regrant', 'subdivision', 'merger'].includes(this.fileOption) && this.serialNo && this.year) {
                     const code = this.prefix || this.landUse;
                     if (code) {
                          previewText = `${code}-${this.year}-${this.serialNo}`;
@@ -5429,7 +5481,7 @@
 
             // Method to refresh serial number from external call
             refreshSerialNumber() {
-                if ((this.fileOption === 'normal' || this.fileOption === '') && !isOverrideMode) {
+                if ((this.fileOption === 'normal' || this.fileOption === 'regrant' || this.fileOption === '') && !isOverrideMode) {
                     const code = this.prefix || this.landUse;
                     if (code) {
                         this.serialNo = getNextSerialForLandUse(code);

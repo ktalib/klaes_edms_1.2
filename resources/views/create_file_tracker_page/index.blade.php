@@ -2264,6 +2264,112 @@
                             </div>
                         </div>
 
+                        <!-- Update Manual File Request Sheet Dialog -->
+                        <div id="update-request-sheet-dialog" class="dialog-overlay">
+                            <div class="dialog-content max-w-lg">
+                                <div class="flex items-start justify-between pb-3 border-b border-gray-200">
+                                    <div>
+                                        <h2 class="text-lg font-bold text-gray-900">Update File Request Sheet</h2>
+                                        <p class="text-xs text-gray-600 mt-0.5">Set how this file request was received.
+                                            Sheet details are shown for reference only.</p>
+                                    </div>
+                                    <button id="update-sheet-close" class="text-gray-400 hover:text-gray-600">
+                                        <i data-lucide="x" class="h-5 w-5"></i>
+                                    </button>
+                                </div>
+
+                                <div class="space-y-4 py-4">
+                                    {{-- Request type — the only editable field --}}
+                                    <div>
+                                        <p class="text-sm font-semibold text-gray-800 mb-2">File Request Type <span
+                                                class="text-red-500">*</span></p>
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <label for="update-sheet-type-manual"
+                                                class="update-sheet-type-card flex cursor-pointer items-center gap-2.5 rounded-lg border border-gray-300 px-3 py-2.5 transition hover:border-blue-400 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50 has-[:checked]:ring-1 has-[:checked]:ring-blue-600">
+                                                <input type="radio" id="update-sheet-type-manual"
+                                                    name="update-sheet-request-type" value="MANUAL"
+                                                    class="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500">
+                                                <span>
+                                                    <span class="block text-sm font-medium text-gray-900">In-transit</span>
+
+                                                </span>
+                                            </label>
+                                            <label for="update-sheet-type-submitted"
+                                                class="update-sheet-type-card flex cursor-pointer items-center gap-2.5 rounded-lg border border-gray-300 px-3 py-2.5 transition hover:border-blue-400 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50 has-[:checked]:ring-1 has-[:checked]:ring-blue-600">
+                                                <input type="radio" id="update-sheet-type-submitted"
+                                                    name="update-sheet-request-type" value="SUBMITTED"
+                                                    class="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500">
+                                                <span>
+                                                    <span class="block text-sm font-medium text-gray-900">Submitted
+                                                        Request</span>
+                                                
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    {{-- Read-only sheet details --}}
+                                    <div class="rounded-lg border border-gray-200 bg-gray-50 px-3.5 py-3">
+                                        <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                                            <div>
+                                                <p class="text-gray-500">File Number</p>
+                                                <p id="update-sheet-file-label" class="font-mono font-semibold text-blue-700">—</p>
+                                            </div>
+                                            <div>
+                                                <p class="text-gray-500">Date Requested</p>
+                                                <p id="update-sheet-detail-date-requested" class="font-medium text-gray-800">—</p>
+                                            </div>
+                                            <div class="col-span-2">
+                                                <p class="text-gray-500">File Title</p>
+                                                <p id="update-sheet-detail-title" class="font-medium text-gray-800">—</p>
+                                            </div>
+                                            <div>
+                                                <p class="text-gray-500">Registry (Origin)</p>
+                                                <p id="update-sheet-detail-origin" class="font-medium text-gray-800">—</p>
+                                            </div>
+                                            <div>
+                                                <p class="text-gray-500">Destination (Department)</p>
+                                                <p id="update-sheet-detail-department" class="font-medium text-gray-800">—</p>
+                                            </div>
+                                            <div>
+                                                <p class="text-gray-500">Receiving Office</p>
+                                                <p id="update-sheet-detail-receiving-office" class="font-medium text-gray-800">—</p>
+                                            </div>
+                                            <div>
+                                                <p class="text-gray-500">Receiving Officer</p>
+                                                <p id="update-sheet-detail-receiving-officer" class="font-medium text-gray-800">—</p>
+                                            </div>
+                                            <div class="col-span-2">
+                                                <p class="text-gray-500">Remark(s)</p>
+                                                <p id="update-sheet-detail-notes" class="text-gray-700">—</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div id="update-sheet-error"
+                                        class="hidden rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                                    </div>
+                                </div>
+
+                                <div class="flex flex-wrap justify-end gap-2 border-t border-gray-200 pt-3">
+                                    <button id="update-sheet-cancel"
+                                        class="px-3 py-1.5 text-sm font-medium text-gray-700 border border-gray-300 rounded-md shadow-sm bg-white hover:bg-gray-50">
+                                        Cancel
+                                    </button>
+                                    {{-- <button id="update-sheet-save-print"
+                                        class="inline-flex items-center px-3 py-1.5 text-sm font-semibold text-white bg-red-600 rounded-md shadow-sm hover:bg-red-700">
+                                        <i data-lucide="printer" class="mr-1.5 h-4 w-4"></i>
+                                        Save &amp; Print
+                                    </button> --}}
+                                    <button id="update-sheet-save"
+                                        class="inline-flex items-center px-4 py-1.5 text-sm font-semibold text-white bg-blue-600 rounded-md shadow-sm hover:bg-blue-700">
+                                        <i data-lucide="save" class="mr-1.5 h-4 w-4"></i>
+                                        Save
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Create Receiving Officer Dialog -->
                         <div id="new-officer-dialog" class="dialog-overlay">
                             <div class="dialog-content max-w-md">
@@ -2470,6 +2576,13 @@
                                 box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04) !important;
                                 max-width: none !important;
                                 width: 95% !important;
+                            }
+
+                            /* Update Request Sheet dialog is a single-choice form — half the
+                               default dialog width so it reads as a focused card, not a page. */
+                            #update-request-sheet-dialog .dialog-content {
+                                max-width: 640px !important;
+                                width: 92% !important;
                             }
 
                             /* Priority Badge Styling */

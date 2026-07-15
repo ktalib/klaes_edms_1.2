@@ -43,7 +43,8 @@
 <script>
 window.LEGAL_SEARCH_CONTEXT = {
     printTemplateUrl: "{{ route($moduleConfig['printTemplateRouteName'] ?? 'legal_search.print.official') }}",
-    printManagerDocType: "{{ $moduleConfig['printManagerDocType'] ?? '' }}"
+    printManagerDocType: "{{ $moduleConfig['printManagerDocType'] ?? '' }}",
+    dashboardStatsUrl: "{{ route('legal_search.dashboard_stats') }}"
 };
 </script>
 @include('legal_search.js')

@@ -288,6 +288,10 @@
         const REDIRECT_LAND_URL = "{{ route('create-file-tracker.quick-search.redirect-director-land') }}";
         const REDIRECT_DCIV_URL = "{{ route('create-file-tracker.quick-search.redirect-dciv-director') }}";
         const FEEDBACK_URL= "{{ route('create-file-tracker.quick-search.scb-feedback') }}";
+        // Movement Timeline — same File Tracker "track" endpoint the mobile File
+        // Search view uses, so the desktop Quick Search result shows the identical
+        // movement/approval history for a file.
+        const TRACK_URL   = "{{ url('/api/file-trackers/track') }}";
         // Module context (?url=kangis|sltr|cadastral|st|…) scopes the report, SCB
         // Feedback queue and File Search History to that registry's files only.
         const URL_CTX     = @json(request('url'));
@@ -634,6 +638,256 @@
             promptForRequestPurposeAndDeadline(d);
         }
 
+        // ── Movement Timeline (ported from mobile File Search's "View Movement
+        // timeline" panel) — fetches the same /api/file-trackers/track/{file} data
+        // and renders it with the desktop's Tailwind styling instead of mobile's
+        // inline CSS-variable theme.
+        async function toggleMovementTimeline(fileNumber, detailsEl, originRegistry, rackShelf) {
+            const container = document.getElementById('qs-movement-timeline');
+            if (!container || !detailsEl || !detailsEl.open) return;
+            if (container.dataset.loaded === '1') return;
+
+            container.innerHTML = `<div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-500">Loading movement history for <strong>${esc(fileNumber)}</strong>…</div>`;
+
+            const archiveHomeRow = `
+                <div class="relative pl-6 pb-3">
+                    <span class="absolute left-[6px] top-0 bottom-0 w-0.5 bg-gray-200"></span>
+                    <span class="absolute left-0 top-px h-[15px] w-[15px] rounded-full bg-emerald-500 border-2 border-gray-200 flex items-center justify-center">
+                        <i data-lucide="archive" class="h-2 w-2 text-white"></i>
+                    </span>
+                    <div class="flex items-start justify-between gap-2 flex-wrap">
+                        <div>
+                            <div class="text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-0.5">Archive / Registry</div>
+                            <div class="text-[13px] font-bold text-gray-900">${esc(originRegistry || 'Registry / Archive')}${rackShelf ? ` — Shelf/Rack ${esc(rackShelf)}` : ''}</div>
+                        </div>
+                        <span class="inline-flex items-center rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 text-[11px] font-bold whitespace-nowrap">In Archive</span>
+                    </div>
+                </div>`;
+
+            try {
+                const res  = await fetch(`${TRACK_URL}/${encodeURIComponent(fileNumber)}`, { headers: { 'Accept': 'application/json' } });
+                const json = await res.json();
+                if (!json || !json.success || !json.data) {
+                    container.innerHTML = `${archiveHomeRow}<div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-600">Could not load movement history.</div>`;
+                } else {
+                    const currentLogs = Array.isArray(json.data.movement_history) ? json.data.movement_history : [];
+                    const priorLogs   = Array.isArray(json.data.prior_movements) ? json.data.prior_movements : [];
+                    const allLogs     = [...priorLogs, ...currentLogs].sort(compareMovementEntries);
+                    if (!allLogs.length) {
+                        container.innerHTML = `${archiveHomeRow}<div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-500">No movement history available for this file.</div>`;
+                    } else {
+                        const approvalPurposes = ['recommendation', 'approval'];
+                        const movementLogs = allLogs.filter(e => !approvalPurposes.includes(String(e.purpose || '').toLowerCase()));
+                        const approvalLogs = allLogs.filter(e => approvalPurposes.includes(String(e.purpose || '').toLowerCase()));
+                        // Request Purpose / Timeline / Expected Return Date belong to the
+                        // current tracker (one per tracking cycle), applied to every row —
+                        // mirrors the desktop File Log Table / mobile behaviour.
+                        const trackerMeta = {
+                            requestPurposeName: json.data.request_purpose_name || '',
+                            timelineStatus: json.data.timeline_status || null,
+                            daysUntilDeadline: (json.data.days_until_deadline === null || json.data.days_until_deadline === undefined) ? null : Number(json.data.days_until_deadline),
+                            expectedReturnDate: json.data.deadline || null,
+                        };
+                        container.innerHTML = `
+                            ${priorLogs.length ? `<div class="mb-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-500">Tracking cycles for this file.</div>` : ''}
+                            <div>
+                                ${archiveHomeRow}
+                                ${movementLogs.length ? movementLogs.map(e => renderMovementRow(e, trackerMeta)).join('') : `<div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-500">No physical movement entries found. Approval steps may still be present below.</div>`}
+                            </div>
+                            ${approvalLogs.length ? `
+                            <div class="mt-4 mb-2 text-[10px] font-extrabold uppercase tracking-wider text-gray-500">Workflow Approvals</div>
+                            <div class="space-y-2">${approvalLogs.map(e => renderApprovalRow(e)).join('')}</div>` : ''}`;
+                        container.dataset.loaded = '1';
+                    }
+                }
+            } catch (e) {
+                container.innerHTML = `<div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-600">Error loading movement history: ${esc(e.message)}</div>`;
+            }
+            if (window.lucide) window.lucide.createIcons();
+        }
+
+        function compareMovementEntries(a, b) {
+            return movementEntryTimestamp(a) - movementEntryTimestamp(b);
+        }
+
+        function movementEntryTimestamp(entry) {
+            const parseDateTime = (date, time) => {
+                const d = (date || '').toString().trim();
+                if (!d) return null;
+                const t = (time || '').toString().trim() || '00:00';
+                const parsed = Date.parse(`${d} ${t}`);
+                return Number.isNaN(parsed) ? null : parsed;
+            };
+            const inTs = parseDateTime(entry.log_in_date || entry.logInDate, entry.log_in_time || entry.logInTime);
+            if (inTs !== null) return inTs;
+            const outTs = parseDateTime(entry.log_out_date || entry.logOutDate, entry.log_out_time || entry.logOutTime);
+            if (outTs !== null) return outTs;
+            const createdTs = Date.parse(entry.created_at || entry.createdAt || '');
+            return Number.isNaN(createdTs) ? Number.POSITIVE_INFINITY : createdTs;
+        }
+
+        function mtToAmPm(timeStr) {
+            if (!timeStr) return '';
+            const parts = timeStr.toString().trim().split(':');
+            if (parts.length < 2) return timeStr;
+            let h = parseInt(parts[0], 10);
+            const m = parts[1].padStart(2, '0');
+            if (isNaN(h)) return timeStr;
+            const period = h >= 12 ? 'PM' : 'AM';
+            h = h % 12 || 12;
+            return `${h}:${m} ${period}`;
+        }
+
+        function formatMovementDate(date, time) {
+            const d = (date || '').toString().trim();
+            if (!d) return '—';
+            if (!time) return esc(d);
+            return `${esc(d)} ${esc(mtToAmPm(time))}`;
+        }
+
+        function resolveMovementStatus(entry) {
+            const rawOverride = (entry.status_label || entry.statusLabel || entry.new_status || entry.newStatus || '').toString().trim();
+            const rawStatus = (entry.status || '').toString().trim().toLowerCase();
+            const normalize = (value) => value.toLowerCase().replace(/_/g, ' ');
+
+            if (rawOverride) {
+                switch (normalize(rawOverride)) {
+                    case 'log-in':
+                    case 'log in':
+                        return { label: 'Log-in', style: 'background:#d1fae5;color:#166534;border:1px solid #a7f3d0;' };
+                    case 'log-out':
+                    case 'log out':
+                        return { label: 'Log-out', style: 'background:#d1fae5;color:#166534;border:1px solid #a7f3d0;' };
+                    case 'pending acceptance':
+                    case 'in-transit':
+                    case 'in transit':
+                        return { label: 'In-Transit', style: 'background:#fef9c3;color:#78350f;border:1px solid #fde68a;' };
+                    case 'rejected':
+                        return { label: 'Rejected', style: 'background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;' };
+                    case 'cancelled':
+                    case 'canceled':
+                        return { label: 'Cancelled', style: 'background:#f3f4f6;color:#4b5563;border:1px solid #d1d5db;' };
+                    default:
+                        return { label: rawOverride, style: 'background:#e0e7ff;color:#3730a3;border:1px solid #c7d2fe;' };
+                }
+            }
+            switch (rawStatus) {
+                case 'pending_acceptance':
+                    return { label: 'In-Transit', style: 'background:#fef9c3;color:#78350f;border:1px solid #fde68a;' };
+                case 'active':
+                    return { label: 'Log-out', style: 'background:#d1fae5;color:#166534;border:1px solid #a7f3d0;' };
+                case 'completed':
+                    return { label: 'Log-in', style: 'background:#d1fae5;color:#166534;border:1px solid #a7f3d0;' };
+                case 'rejected':
+                    return { label: 'Rejected', style: 'background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;' };
+                default:
+                    return { label: String(entry.status || 'Completed').replace(/_/g, ' '), style: 'background:#e0e7ff;color:#3730a3;border:1px solid #c7d2fe;' };
+            }
+        }
+
+        // Green/Amber/Red timeline label + colour for a tracker — mirrors
+        // FileTracker::getTimelineStatusAttribute() / the mobile day-count badge.
+        function formatTimelineMeta(meta) {
+            const byStatus = {
+                green: { color: '#166534', bg: '#d1fae5', border: '#a7f3d0' },
+                amber: { color: '#78350f', bg: '#fef9c3', border: '#fde68a' },
+                red:   { color: '#b91c1c', bg: '#fee2e2', border: '#fecaca' },
+            };
+            if (!meta || !meta.timelineStatus || !byStatus[meta.timelineStatus]) return null;
+            const days = meta.daysUntilDeadline;
+            let label;
+            if (days === null || days === undefined) {
+                label = { green: 'On Track', amber: 'Due Soon', red: 'Overdue' }[meta.timelineStatus];
+            } else if (days > 0) {
+                label = `${days} day${days === 1 ? '' : 's'} left`;
+            } else if (days === 0) {
+                label = 'Due today';
+            } else {
+                const abs = Math.abs(days);
+                label = `${abs} day${abs === 1 ? '' : 's'} overdue`;
+            }
+            return { label, ...byStatus[meta.timelineStatus] };
+        }
+
+        function formatExpectedReturnDate(value) {
+            if (!value) return '—';
+            const d = new Date(value);
+            if (Number.isNaN(d.getTime())) return esc(String(value).slice(0, 10));
+            const dd = String(d.getDate()).padStart(2, '0');
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            return `${dd}/${mm}/${d.getFullYear()}`;
+        }
+
+        function renderMovementRow(entry, trackerMeta) {
+            const office = esc(entry.office_name || entry.office || entry.receiving_office_name || 'Unknown');
+            const officer = esc(entry.receiving_officer_name || entry.receivingOfficerName || entry.accepted_by_name || '-');
+            const status = resolveMovementStatus(entry);
+            const hasLogIn = status.label === 'Log-in' || status.label === 'Completed';
+            const inDate = hasLogIn
+                ? formatMovementDate(entry.log_in_date || entry.logInDate, entry.log_in_time || entry.logInTime)
+                : '-';
+            const outDateRaw = entry.log_out_date || entry.logOutDate;
+            const outTimeRaw = entry.log_out_time || entry.logOutTime;
+            const outDate = outDateRaw
+                ? formatMovementDate(outDateRaw, outTimeRaw)
+                : ['active', 'pending_acceptance', 'in-transit', 'in transit'].includes((entry.status || '').toString().trim().toLowerCase())
+                    ? 'In transit' : '-';
+            const notes = entry.notes ? `<div class="mt-2 text-xs text-gray-500">${esc(entry.notes)}</div>` : '';
+            const timelineMeta = formatTimelineMeta(trackerMeta);
+            const requestPurposeName = trackerMeta && trackerMeta.requestPurposeName ? esc(trackerMeta.requestPurposeName) : '—';
+            const expectedReturnDate = formatExpectedReturnDate(trackerMeta && trackerMeta.expectedReturnDate);
+            const delayReason = entry.delay_reason ? esc(entry.delay_reason) : '—';
+
+            return `
+                <div class="relative pl-6 pb-4">
+                    <span class="absolute left-[6px] top-0 bottom-0 w-0.5 bg-gray-200"></span>
+                    <span class="absolute left-0 top-px h-[15px] w-[15px] rounded-full bg-indigo-600 border-2 border-gray-200 flex items-center justify-center">
+                        <i data-lucide="truck" class="h-2 w-2 text-white"></i>
+                    </span>
+                    <div class="rounded-lg border border-gray-200 bg-white px-3 py-2.5">
+                        <div class="flex items-start justify-between gap-2 flex-wrap">
+                            <div>
+                                <div class="text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-0.5">Office</div>
+                                <div class="text-[13px] font-bold text-gray-900">${office}</div>
+                            </div>
+                            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold whitespace-nowrap" style="${status.style}">${esc(status.label)}</span>
+                        </div>
+                        <div class="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                            <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Receiving Officer</div><div class="text-gray-800 font-semibold">${officer}</div></div>
+                            <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Timeline</div><div>${timelineMeta ? `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold" style="background:${timelineMeta.bg};color:${timelineMeta.color};border:1px solid ${timelineMeta.border};">${esc(timelineMeta.label)}</span>` : '<span class="text-gray-400">—</span>'}</div></div>
+                            <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Log In</div><div class="text-gray-800 font-semibold">${inDate}</div></div>
+                            <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Log Out</div><div class="text-gray-800 font-semibold">${outDate}</div></div>
+                            <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Request Purpose</div><div class="text-gray-800 font-semibold">${requestPurposeName}</div></div>
+                            <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Expected Return</div><div class="text-gray-800 font-semibold">${expectedReturnDate}</div></div>
+                            <div class="col-span-2"><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Delay Reason</div><div class="text-gray-800 font-semibold">${delayReason}</div></div>
+                        </div>
+                        ${notes}
+                    </div>
+                </div>`;
+        }
+
+        function renderApprovalRow(entry) {
+            const office = esc(entry.office_name || entry.office || entry.receiving_office_name || 'Unknown');
+            const officer = esc(entry.receiving_officer_name || entry.accepted_by_name || '—');
+            const eventDate = formatMovementDate(entry.log_in_date || entry.logInDate, entry.log_in_time || entry.logInTime);
+            const purposeLabel = String(entry.purpose || '').toLowerCase() === 'recommendation' ? 'Recommendation' : 'Approval';
+            const notes = entry.notes ? `<div class="mt-2 text-xs text-gray-500">${esc(entry.notes)}</div>` : '';
+            return `
+                <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
+                    <div class="flex items-start justify-between gap-2 flex-wrap">
+                        <div>
+                            <div class="text-xs font-bold text-gray-800">${purposeLabel}</div>
+                            <div class="mt-1 text-xs text-gray-500">${eventDate}</div>
+                        </div>
+                        <div class="text-right text-xs">
+                            <div class="font-semibold text-gray-800">${office}</div>
+                            <div class="text-gray-500">${officer}</div>
+                        </div>
+                    </div>
+                    ${notes}
+                </div>`;
+        }
+
         function render(d) {
             const meta = STATUS_META[d.status] || { label:d.status, cls:'bg-gray-100 text-gray-800 border-gray-300', icon:'file' };
             const showsRegistry = (d.status === 'REFER_TO_ORIGINAL_REGISTRY' && d.registry);
@@ -657,7 +911,12 @@
                     return !t.includes('mortgage') && !t.includes('surrender');
                 });
                 if (!hist.length) {
-                    return row('Original Holder', d.original_holder) + row('Current Holder', d.current_holder);
+                    // Mirrors mobile File Search: when only one side is on record
+                    // (e.g. a single CofO grant with no later transfer), the same
+                    // holder is shown on both rows instead of one row disappearing.
+                    const origVal = d.original_holder || d.current_holder;
+                    const currVal = d.current_holder || d.original_holder;
+                    return row('Original Holder', origVal) + row('Current Holder', currVal);
                 }
                 // Shorten a transaction type to its instrument label (R of O, C of O,
                 // Assignment, Mortgage, …) for the compact ownership list.
@@ -668,8 +927,9 @@
                     if (s.includes('certificate of occupancy')) return 'C of O';
                     return String(t).replace(/^deed of\s+/i, '').trim();
                 };
-                const nodes = hist.map((h, i) => {
-                    const isFirst = i === 0, isLast = i === hist.length - 1;
+                // Render a single holder node: recipient name + role (Original/Current
+                // Holder) and the instrument in brackets. `isLast` controls the rail.
+                const buildNode = (h, isFirst, isLast) => {
                     const dot = isFirst ? 'bg-emerald-600' : (isLast ? 'bg-indigo-600' : 'bg-gray-300');
                     const dotIcon = (isFirst || isLast) ? 'text-white' : 'text-gray-500';
                     const line = !isLast ? `<span class="absolute left-[6px] top-[18px] -bottom-0.5 w-0.5 bg-gray-200"></span>` : '';
@@ -688,10 +948,34 @@
                                 <span class="text-[11px] font-semibold ${roleColor}">${roleLabel}${type ? ` <span class="text-gray-400 font-medium">(${esc(type)})</span>` : ''}</span>
                             </div>
                         </div>`;
-                }).join('');
+                };
+                // A single transaction (e.g. only a CofO grant with no later transfer)
+                // means the same person is both the original AND the current holder.
+                // Render that holder twice — as Original and as Current — mirroring the
+                // flat two-row fallback above, so a Current Holder always shows.
+                const nodes = hist.length === 1
+                    ? buildNode(hist[0], true, false) + buildNode(hist[0], false, true)
+                    : hist.map((h, i) => buildNode(h, i === 0, i === hist.length - 1)).join('');
                 return `
                     <div class="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 mb-2.5">Ownership</div>
                     <div class="pb-0.5">${nodes}</div>`;
+            })();
+
+            // Movement Timeline — mirrors the mobile File Search "View Movement
+            // timeline" panel (same /track endpoint), shown for files that are
+            // physically moving (In Transit) or resting In Archive.
+            const movementDetailsHtml = (() => {
+                if (!/^IN_TRANSIT|^IN_ARCHIVE/.test(d.status || '')) return '';
+                const jsStr = v => String(v || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                return `
+                    <details class="mb-3 rounded-lg border border-gray-200" ontoggle="toggleMovementTimeline('${jsStr(d.file_number)}', this, '${jsStr(d.registry)}', '${jsStr(d.rack_shelf)}')">
+                        <summary class="cursor-pointer select-none px-4 py-2 text-xs font-semibold text-gray-600 flex items-center gap-2">
+                            <i data-lucide="route" class="h-3.5 w-3.5"></i> Movement Timeline
+                        </summary>
+                        <div class="px-4 pb-3 pt-1">
+                            <div id="qs-movement-timeline"></div>
+                        </div>
+                    </details>`;
             })();
 
             result.innerHTML = `
@@ -707,9 +991,16 @@
                     </div>
                     <div class="px-6 py-3">
                         ${(d.status === 'MISSING_FILE' && d.is_indexed) ? `
-                        <div class="mb-3 rounded-lg bg-blue-50 border border-blue-200 px-4 py-3 flex items-center gap-2">
-                            <i data-lucide="info" class="h-4 w-4 text-blue-600 shrink-0"></i>
-                            <span class="text-sm font-semibold text-blue-800">This file was indexed and returned to the Original Registry.</span>
+                        <div class="mb-3 rounded-lg bg-blue-50 border border-blue-200 px-4 py-3">
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="info" class="h-4 w-4 text-blue-600 shrink-0"></i>
+                                <span class="text-sm font-semibold text-blue-800">This file was indexed and returned to the Original Registry before archiving.</span>
+                            </div>
+                            ${(d.registry || d.rack_shelf) ? `
+                            <div class="mt-1.5 pl-6 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-blue-700">
+                                ${d.registry ? `<span><span class="font-semibold">Registry:</span> ${esc(d.registry)}</span>` : ''}
+                                ${d.rack_shelf ? `<span><span class="font-semibold">Shelf/Rack:</span> ${esc(d.rack_shelf)}</span>` : ''}
+                            </div>` : ''}
                         </div>` : ''}
                         ${d.duplicate_flag ? `
                         <div class="mb-3 rounded-lg px-4 py-3 flex items-center gap-2" style="background:${d.duplicate_flag.color}14;border:1px solid ${d.duplicate_flag.color}55;">
@@ -784,8 +1075,9 @@
                                 </div>` : ''}
                             </div>
                         </details>
+                        ${movementDetailsHtml}
                         ${row('Registry', d.registry)}
-                        ${row('Rack / Shelf', d.rack_shelf || '—')}
+                        ${row('Shelf/Rack', d.rack_shelf || '—')}
                         ${(() => {
                             // In-transit files are physically held by a Receiving Officer in
                             // their department — show the holding Department as the current
@@ -1096,6 +1388,20 @@
             const deptOther   = result.querySelector('[data-fr-dept-other]');
             const officeOther = result.querySelector('[data-fr-office-other]');
 
+            // Requester Officer is searchable (select2) — the officer list can run long,
+            // so typing narrows it instead of scrolling a native <select>. Re-initialised
+            // (destroy + init) every time the option list is rebuilt below, since select2
+            // doesn't pick up options/disabled state changed via raw innerHTML/.disabled.
+            function refreshOfficerSelect2() {
+                const $officerSel = $(officerSel);
+                if ($officerSel.data('select2')) $officerSel.select2('destroy');
+                $officerSel.select2({
+                    width: '100%',
+                    placeholder: '— Select Officer —',
+                });
+            }
+            refreshOfficerSelect2();
+
             // Request Purpose → Expected Return Date: pre-fill the date from the
             // selected purpose's default turnaround (mirrors Create File Tracker),
             // staying editable once the user touches the date field directly.
@@ -1143,15 +1449,17 @@
                         return;
                     }
 
+                    // The purpose's turnaround is only a DEFAULT — once the deadline
+                    // has been set by hand (typed into Timeline (Days) or picked on
+                    // the calendar) it wins, otherwise the two fields would end up
+                    // disagreeing (e.g. "5 days" next to a date 50 days out).
                     const days = parseInt(purposeSel.selectedOptions[0]?.dataset.turnaroundDays || '', 10);
-                    if (!isNaN(days)) {
+                    if (!isNaN(days) && !userEditedDeadline) {
                         if (timelineDaysInput) timelineDaysInput.value = days;
-                        if (!userEditedDeadline) {
-                            const dt = new Date();
-                            dt.setDate(dt.getDate() + days);
-                            const y = dt.getFullYear(), m = String(dt.getMonth() + 1).padStart(2, '0'), day = String(dt.getDate()).padStart(2, '0');
-                            setDeadlineValue(`${y}-${m}-${day}`);
-                        }
+                        const dt = new Date();
+                        dt.setDate(dt.getDate() + days);
+                        const y = dt.getFullYear(), m = String(dt.getMonth() + 1).padStart(2, '0'), day = String(dt.getDate()).padStart(2, '0');
+                        setDeadlineValue(`${y}-${m}-${day}`);
                     }
                 });
                 deadlineInput.addEventListener('input', () => { userEditedDeadline = true; });
@@ -1197,6 +1505,7 @@
                 if (officeOther) { officeOther.classList.add('hidden'); officeOther.value = ''; }
                 officerSel.innerHTML = '<option value="">— Select Officer —</option>';
                 officerSel.disabled = true;
+                refreshOfficerSelect2();
                 hideAddCard();
             });
 
@@ -1214,11 +1523,23 @@
                     matches.map(o => `<option value="${esc(o.name)}">${esc(o.name)}</option>`).join('') +
                     `<option value="${OFFICER_ADD}" class="font-semibold">+ Add Receiving Officer…</option>`;
                 officerSel.disabled = false;
+                refreshOfficerSelect2();
             });
 
-            officerSel.addEventListener('change', () => {
-                if (officerSel.value === OFFICER_ADD) { showAddCard(); }
-                else hideAddCard();
+            // select2 doesn't dispatch a real native 'change' event when an option is
+            // picked (jQuery has no native .change() method to proxy through, unlike
+            // .click()/.focus()), so a plain addEventListener('change', …) here never
+            // fires. Bind via jQuery instead — mirrors receivingOfficerSelect.on('change', …)
+            // in create_file_tracker_page/partials/js.blade.php.
+            $(officerSel).on('change', () => {
+                if (officerSel.value === OFFICER_ADD) {
+                    // Reset back to the placeholder so the box doesn't stay stuck showing
+                    // "+ Add Receiving Officer…" (which would make re-picking it a no-op).
+                    $(officerSel).val('').trigger('change.select2');
+                    showAddCard();
+                } else {
+                    hideAddCard();
+                }
             });
 
             // Registry (Origin): reflect the selected registry's short code live and
@@ -1283,7 +1604,7 @@
             // Add Receiving Officer (reuses the Create File Tracker endpoint).
             const saveBtn = addCard?.querySelector('[data-ao-save]');
             const cancel  = addCard?.querySelector('[data-ao-cancel]');
-            if (cancel) cancel.addEventListener('click', () => { addCard.classList.add('hidden'); officeSel.value = ''; officerSel.value = ''; });
+            if (cancel) cancel.addEventListener('click', () => { addCard.classList.add('hidden'); officeSel.value = ''; $(officerSel).val('').trigger('change'); });
             if (saveBtn) saveBtn.addEventListener('click', async () => {
                 const first = addCard.querySelector('[data-ao-first]').value.trim();
                 const last  = addCard.querySelector('[data-ao-last]').value.trim();
@@ -1303,7 +1624,9 @@
                         const opt = document.createElement('option');
                         opt.value = name; opt.textContent = name;
                         officerSel.insertBefore(opt, officerSel.querySelector(`option[value="${OFFICER_ADD}"]`));
-                        officerSel.value = name; officerSel.disabled = false;
+                        officerSel.disabled = false;
+                        refreshOfficerSelect2();
+                        $(officerSel).val(name).trigger('change');
                         addCard.classList.add('hidden');
                         addCard.querySelectorAll('input').forEach(i => i.value = '');
                         msg.textContent = '';
@@ -1394,10 +1717,16 @@
 
             const flag = (el) => { if (el) { el.classList.add('ring-2','ring-red-400','border-red-400'); } };
             const unflag = (el) => { if (el) el.classList.remove('ring-2','ring-red-400','border-red-400'); };
+            // select2 hides the native <select> behind its own rendered box, so flagging
+            // officerSel directly (via classList) is invisible — style the rendered box instead.
+            const officerSelect2Box = () => $(officerSel).next('.select2-container').find('.select2-selection');
+            const flagOfficerSelect2 = () => officerSelect2Box().css({ boxShadow: '0 0 0 2px #f87171', borderColor: '#f87171' });
+            const unflagOfficerSelect2 = () => officerSelect2Box().css({ boxShadow: '', borderColor: '' });
             [deptSel, officeSel, officerSel, deptOther, officeOther, registrySel, purposeSel, purposeOther, deadlineInput].forEach(unflag);
+            unflagOfficerSelect2();
             if (deptIsOther && !requesterDept) { flag(deptOther); deptOther.focus(); return; }
             if (officeIsOther && !requesterOffice) { flag(officeOther); officeOther.focus(); return; }
-            if (officerSel && !receivingOfficer) { flag(officerSel); officerSel.focus(); return; }
+            if (officerSel && !receivingOfficer) { flag(officerSel); flagOfficerSelect2(); $(officerSel).select2('open'); return; }
             if (registrySel && !registry) { flag(registrySel); registrySel.focus(); return; }
             if (purposeSel && !rawPurposeValue) { flag(purposeSel); purposeSel.focus(); return; }
             if (purposeIsOther && !requestPurposeOther) { flag(purposeOther); purposeOther.focus(); return; }
@@ -2483,5 +2812,7 @@
         reloadPanels();
     })();
     </script>
+
+
 @endpush
 @endsection

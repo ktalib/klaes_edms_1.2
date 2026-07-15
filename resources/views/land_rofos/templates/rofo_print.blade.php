@@ -484,6 +484,20 @@
                     </div>
                 </div>
 
+                @php
+                    // LOCATION is shown separately from PLOT/PLAN No, so strip a leading
+                    // plot-number token (legacy records auto-generated it as a prefix) and
+                    // normalize inconsistent casing (e.g. "340B HOTORO Nasarawa Kano State").
+                    $printLocation = trim((string) ($recommendation->location ?? ''));
+                    $plotNo = trim((string) ($recommendation->plot_number ?? ''));
+                    if ($plotNo !== '' && $printLocation !== '') {
+                        $printLocation = preg_replace('/^' . preg_quote($plotNo, '/') . '\s*[-\/]?\s*/i', '', $printLocation);
+                    }
+                    $printLocation = trim(preg_replace('/\s+/', ' ', $printLocation));
+                    if ($printLocation !== '') {
+                        $printLocation = \Illuminate\Support\Str::title(strtolower($printLocation));
+                    }
+                @endphp
                 <!-- REF-GRID SECTION -->
                 <div class="ref-grid">
                     <div>
@@ -507,7 +521,7 @@
                                 PLOT/PLAN No:<span class="inline-data" style="min-width: 190px; margin-top: 10px">{{ $recommendation->plot_number }} / {{ $recommendation->layout_plan_no }}</span>
                             </div>
                             <div class="row">
-                                LOCATION:<span class="inline-data" style="min-width: 220px; margin-top: 10px">{{ $recommendation->location }}</span>
+                                LOCATION:<span class="inline-data" style="min-width: 220px; margin-top: 10px">{{ $printLocation }}</span>
                             </div>
                             <div class="row">
                                 DATE OF ISSUE:<span class="inline-data" style="min-width: 190px; margin-top: 10px">{{ $recommendation->rofo_generated_at ? $recommendation->rofo_generated_at->format('Y-m-d') : now()->format('Y-m-d') }}</span>

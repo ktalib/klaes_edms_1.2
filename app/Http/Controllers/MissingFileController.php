@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\MissingFile;
 use Illuminate\Http\Request;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 class MissingFileController extends Controller
 {
@@ -67,12 +69,40 @@ class MissingFileController extends Controller
     }
 
     /**
+     * Check whether a file number has already been captured as missing.
+     */
+    public function check(Request $request)
+    {
+        $fileNumber = trim((string) $request->get('file_number', ''));
+
+        if ($fileNumber === '') {
+            return response()->json(['success' => true, 'exists' => false]);
+        }
+
+        $existing = MissingFile::where('file_number', $fileNumber)->first();
+
+        return response()->json([
+            'success' => true,
+            'exists'  => (bool) $existing,
+            'message' => $existing ? $this->duplicateMessage($existing) : null,
+            'data'    => $existing,
+        ]);
+    }
+
+    /**
      * Store a newly reported missing file.
      */
     public function store(Request $request)
     {
+        $request->merge(['file_number' => trim((string) $request->input('file_number'))]);
+
         $validated = $request->validate([
-            'file_number'       => ['required', 'string', 'max:100'],
+            'file_number'       => [
+                'required',
+                'string',
+                'max:100',
+                Rule::unique('sqlsrv.missing_files', 'file_number'),
+            ],
             'file_title'        => ['nullable', 'string', 'max:255'],
             'property_location' => ['nullable', 'string', 'max:255'],
             'tracking_id'       => ['nullable', 'string', 'max:100'],
@@ -82,6 +112,8 @@ class MissingFileController extends Controller
             'shelf_number'     => ['nullable', 'string', 'max:10'],
             'full_label'       => ['nullable', 'string', 'max:30'],
             'remarks'          => ['nullable', 'string'],
+        ], [
+            'file_number.unique' => 'This file has already been recorded as missing.',
         ]);
 
         try {
@@ -116,6 +148,21 @@ class MissingFileController extends Controller
                 'message' => 'File recorded as missing.',
                 'data'    => $missing,
             ], 201);
+        } catch (QueryException $e) {
+            // UQ_missing_files_file_number: another user captured the same file first.
+            if (in_array((int) ($e->errorInfo[1] ?? 0), [2601, 2627], true)) {
+                $existing = MissingFile::where('file_number', $validated['file_number'])->first();
+
+                return response()->json([
+                    'success'   => false,
+                    'duplicate' => true,
+                    'message'   => $existing
+                        ? $this->duplicateMessage($existing)
+                        : 'This file has already been recorded as missing.',
+                ], 422);
+            }
+
+            throw $e;
         } catch (\Throwable $e) {
             Log::error('MissingFileController::store failed', [
                 'file_number' => $validated['file_number'] ?? null,
@@ -127,6 +174,21 @@ class MissingFileController extends Controller
                 'message' => 'Failed to record the missing file.',
             ], 500);
         }
+    }
+
+    /**
+     * Human-readable message for an already-captured file number.
+     */
+    private function duplicateMessage(MissingFile $existing): string
+    {
+        $when = optional($existing->created_at)->format('d M Y');
+        $who  = $existing->reported_by_name;
+
+        $message = '"' . $existing->file_number . '" has already been recorded as missing';
+        if ($who)  { $message .= ' by ' . $who; }
+        if ($when) { $message .= ' on ' . $when; }
+
+        return $message . ' (status: ' . ($existing->status ?: 'Missing') . ').';
     }
 
     /**

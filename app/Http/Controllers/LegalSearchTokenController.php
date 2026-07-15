@@ -90,9 +90,12 @@ class LegalSearchTokenController extends Controller
             return response()->json(['success' => false, 'message' => 'File number is required.']);
         }
 
-        // A token is valid while it still has at least one of its MAX_USES left.
+        // A token is valid while unused, or used but still within its 24-hour window.
         $token = LegalSearchToken::where('file_number', $fileNumber)
-            ->where('usage_count', '<', LegalSearchToken::MAX_USES)
+            ->where(function ($q) {
+                $q->whereNull('used_at')
+                  ->orWhere('used_at', '>=', now()->subHours(LegalSearchToken::VALIDITY_HOURS));
+            })
             ->orderBy('created_at', 'desc')
             ->first();
 
@@ -113,7 +116,7 @@ class LegalSearchTokenController extends Controller
             'client_address' => $token->client_address,
             'property_location' => $token->property_location,
             'usage_count' => $token->usage_count,
-            'remaining_uses' => $token->remaining_uses,
+            'expires_at' => optional($token->expires_at)->toIso8601String(),
         ]);
     }
 
@@ -202,23 +205,27 @@ class LegalSearchTokenController extends Controller
 
         $token = LegalSearchToken::where('file_number', $fileNumber)
             ->where('token', $tokenStr)
-            ->where('usage_count', '<', LegalSearchToken::MAX_USES)
+            ->where(function ($q) {
+                $q->whereNull('used_at')
+                  ->orWhere('used_at', '>=', now()->subHours(LegalSearchToken::VALIDITY_HOURS));
+            })
             ->first();
 
         if (!$token) {
             return response()->json([
                 'success' => false,
-                'message' => 'Invalid or fully-used token.'
+                'message' => 'Invalid or expired token.'
             ], 422);
         }
 
-        $before = ['usage_count' => $token->usage_count, 'is_used' => $token->is_used];
+        $before = ['usage_count' => $token->usage_count, 'is_used' => $token->is_used, 'used_at' => $token->used_at];
 
-        $newCount = (int) $token->usage_count + 1;
+        // The 24-hour window starts on first use and does not reset on repeat uses
+        // within that window.
         $token->update([
-            'usage_count' => $newCount,
-            'is_used' => $newCount >= LegalSearchToken::MAX_USES,
-            'used_at' => now(),
+            'usage_count' => (int) $token->usage_count + 1,
+            'is_used' => true,
+            'used_at' => $token->used_at ?? now(),
         ]);
 
         $this->auditService->logAction(
@@ -226,41 +233,31 @@ class LegalSearchTokenController extends Controller
             'LegalSearchToken',
             $token->id,
             $before,
-            ['usage_count' => $token->usage_count, 'is_used' => $token->is_used],
-            "Token {$token->token} used (count {$newCount}/" . LegalSearchToken::MAX_USES . ") for search on file {$token->file_number}"
+            ['usage_count' => $token->usage_count, 'is_used' => $token->is_used, 'used_at' => $token->used_at],
+            "Token {$token->token} used (use #{$token->usage_count}) for search on file {$token->file_number}, valid until " . optional($token->expires_at)->toDateTimeString()
         );
 
         return response()->json([
             'success' => true,
             'usage_count' => $token->usage_count,
-            'remaining_uses' => $token->remaining_uses,
+            'expires_at' => optional($token->expires_at)->toIso8601String(),
         ]);
     }
 
     /**
-     * Reset a token's usage counter to a specific count so it can be spent again.
-     *
-     * count = 1  → reset to the 1st count (usage_count = 0, both uses available)
-     * count = 2  → reset to the 2nd count (usage_count = 1, one use available)
+     * Reset a token back to unused, clearing its usage count and used_at so it
+     * gets a fresh 24-hour validity window starting from its next use.
      */
     public function resetToken(Request $request, $id)
     {
-        $validated = $request->validate([
-            'count' => 'required|integer|min:1|max:' . LegalSearchToken::MAX_USES,
-        ]);
-
         $token = LegalSearchToken::findOrFail($id);
 
-        $before = ['usage_count' => $token->usage_count, 'is_used' => $token->is_used];
-
-        // "Nth count" means the token is positioned to be spent as its Nth use,
-        // i.e. (N - 1) uses have already been consumed.
-        $newCount = (int) $validated['count'] - 1;
+        $before = ['usage_count' => $token->usage_count, 'is_used' => $token->is_used, 'used_at' => $token->used_at];
 
         $token->update([
-            'usage_count' => $newCount,
-            'is_used' => $newCount >= LegalSearchToken::MAX_USES,
-            'used_at' => $newCount > 0 ? $token->used_at : null,
+            'usage_count' => 0,
+            'is_used' => false,
+            'used_at' => null,
         ]);
 
         $this->auditService->logAction(
@@ -268,15 +265,14 @@ class LegalSearchTokenController extends Controller
             'LegalSearchToken',
             $token->id,
             $before,
-            ['usage_count' => $token->usage_count, 'is_used' => $token->is_used],
-            "Token {$token->token} reset to {$validated['count']} count for file {$token->file_number}"
+            ['usage_count' => $token->usage_count, 'is_used' => $token->is_used, 'used_at' => $token->used_at],
+            "Token {$token->token} reset to unused for file {$token->file_number}"
         );
 
         return response()->json([
             'success' => true,
-            'message' => 'Token reset successfully!',
+            'message' => 'Token reset successfully! It is unused, with a fresh 24-hour window starting on next use.',
             'usage_count' => $token->usage_count,
-            'remaining_uses' => $token->remaining_uses,
         ]);
     }
 

@@ -654,6 +654,16 @@
         setHidden('sub_source', 'cop_' + data.id);
         setHidden('source_original_owner', data.applicant_name || '');
 
+        // Force the Alpine component into Change of Purpose mode. Setting the
+        // hidden "source" input's value above does not trigger Alpine's
+        // reactivity, so applicationType must be set directly on the
+        // component instance (same pattern used in instruments-capture.js).
+        var modalContainer = document.querySelector('#generateModal [x-data="fileNumberGenerator()"]');
+        var component = modalContainer && modalContainer._x_dataStack ? modalContainer._x_dataStack[0] : null;
+        if (component) {
+            component.applicationType = 'change_of_purpose';
+        }
+
         // Pre-select land use for the new purpose
         var purposeSelect = document.getElementById('landUse');
         if (purposeSelect && data.purpose) {

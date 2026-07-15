@@ -74,12 +74,7 @@ class PropertyRecordController extends Controller
         $transactionType = trim((string) $request->input('transaction_type'));
         $isCofOType = in_array($transactionType, self::COFO_TRANSACTION_TYPES, true);
 
-        $cofoTypeMap = [
-            'Certificate of Occupancy' => 'Legacy CofO',
-            'ST Certificate of Occupancy' => 'ST CofO',
-            'SLTR Certificate of Occupancy' => 'SLTR CofO',
-        ];
-        $cofoType = $isCofOType ? ($cofoTypeMap[$transactionType] ?? null) : null;
+        $cofoType = $isCofOType ? $this->normalizeValue($request->input('cofo_type')) : null;
 
         if ($isCofOType) {
             // Base query: any CofO row that shares this file number
@@ -597,12 +592,6 @@ class PropertyRecordController extends Controller
         $incomingTransactionType = $request->input('transactionType') ?? $request->input('transaction_type');
         $isCofOSubmission = !$isIndexMode && in_array($incomingTransactionType, self::COFO_TRANSACTION_TYPES, true);
 
-        $cofoTypeMap = [
-            'Certificate of Occupancy' => 'Legacy CofO',
-            'ST Certificate of Occupancy' => 'ST CofO',
-            'SLTR Certificate of Occupancy' => 'SLTR CofO',
-        ];
-
         $dupParams = [
             'fileno' => $request->input('mlsFNo') ?? $request->input('kangisFileNo') ?? $request->input('NewKANGISFileno') ?? $request->input('np_fileno') ?? $request->input('temp_fileno') ?? $request->input('fileno'),
             'prop_id' => $request->input('prop_id'),
@@ -614,7 +603,7 @@ class PropertyRecordController extends Controller
             'transaction_type' => $incomingTransactionType,
             'transaction_date' => $request->input('transactionDate'),
             'cofo_no' => $request->input('cofo_no'),
-            'cofo_type' => $isCofOSubmission ? ($cofoTypeMap[$incomingTransactionType] ?? null) : null,
+            'cofo_type' => $isCofOSubmission ? $this->normalizeValue($request->input('cofo_type')) : null,
         ];
 
         $dupType = $isCofOSubmission ? 'cofo_staging' : 'pra';
@@ -982,13 +971,7 @@ class PropertyRecordController extends Controller
                 }
                 $cofoColumns = Schema::connection('sqlsrv')->getColumnListing('CofO_staging');
 
-                // Map cofo_type
-                $cofoTypeMap = [
-                    'Certificate of Occupancy' => 'Legacy CofO',
-                    'ST Certificate of Occupancy' => 'ST CofO',
-                    'SLTR Certificate of Occupancy' => 'SLTR CofO',
-                ];
-                $cofoType = $cofoTypeMap[$request->transactionType] ?? null;
+                $cofoType = $this->normalizeValue($request->input('cofo_type'));
 
                 // Build full data payload for CofO, then filter by available columns
                 $allCofOData = [
@@ -1629,15 +1612,11 @@ class PropertyRecordController extends Controller
                 $data['updated_at'] = now();
             }
 
-            // For CofO_staging records, keep the cofo_type aligned with the transaction type.
+            // For CofO_staging records, persist the user-selected CofO Type.
             if ($isCofOUpdate && Schema::connection('sqlsrv')->hasColumn($targetTable, 'cofo_type')) {
-                $cofoTypeMap = [
-                    'Certificate of Occupancy' => 'Legacy CofO',
-                    'ST Certificate of Occupancy' => 'ST CofO',
-                    'SLTR Certificate of Occupancy' => 'SLTR CofO',
-                ];
-                if (isset($cofoTypeMap[$request->transactionType])) {
-                    $data['cofo_type'] = $cofoTypeMap[$request->transactionType];
+                $cofoType = $this->normalizeValue($request->input('cofo_type'));
+                if ($cofoType !== null) {
+                    $data['cofo_type'] = $cofoType;
                 }
             }
 
@@ -3022,11 +3001,6 @@ class PropertyRecordController extends Controller
 
                 // Pre-fetch CofO table columns once (used only if needed)
                 $cofoTableColumns = null;
-                $cofoTypeMap = [
-                    'Certificate of Occupancy' => 'Legacy CofO',
-                    'ST Certificate of Occupancy' => 'ST CofO',
-                    'SLTR Certificate of Occupancy' => 'SLTR CofO',
-                ];
 
                 foreach ($transactions as $transaction) {
                     $registrationNumber = trim(implode('/', array_filter([
@@ -3184,7 +3158,7 @@ class PropertyRecordController extends Controller
                         }
 
                         $cofoData = $propertyData;
-                        $cofoData['cofo_type'] = $cofoTypeMap[$transactionType] ?? null;
+                        $cofoData['cofo_type'] = $this->normalizeValue($transaction['cofo_type'] ?? null);
                         $cofoData['source'] = 'indexing';
 
                         // Remap fields that differ between tables
@@ -3211,7 +3185,7 @@ class PropertyRecordController extends Controller
                         \Log::info('Created CofO record from indexing', [
                             'id' => $newCofoId,
                             'transaction_type' => $transactionType,
-                            'cofo_type' => $cofoTypeMap[$transactionType] ?? null,
+                            'cofo_type' => $cofoData['cofo_type'] ?? null,
                             'table' => self::COFO_TABLE,
                             'prop_id' => $propId,
                         ]);
@@ -3227,7 +3201,7 @@ class PropertyRecordController extends Controller
                         }
 
                         $cofoData = $propertyData;
-                        $cofoData['cofo_type'] = $cofoTypeMap[$transactionType] ?? null;
+                        $cofoData['cofo_type'] = $this->normalizeValue($transaction['cofo_type'] ?? null);
 
                         // Remap fields that differ between tables
                         if (isset($cofoData['reg_date'])) {

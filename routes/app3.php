@@ -759,6 +759,7 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('missing-files')->name('missing-files.')->group(function () {
         Route::get('/', [MissingFileController::class, 'index'])->name('index');
         Route::get('/data', [MissingFileController::class, 'data'])->name('data');
+        Route::get('/check', [MissingFileController::class, 'check'])->name('check');
         Route::post('/', [MissingFileController::class, 'store'])->name('store');
         Route::patch('/{id}/found', [MissingFileController::class, 'markFound'])->name('found');
         Route::delete('/{id}', [MissingFileController::class, 'destroy'])->name('destroy');
@@ -1035,6 +1036,7 @@ Route::middleware(['auth'])->group(function () {
 
     Route::prefix('legal_search')->group(function () {
         Route::get('/', [LegalSearchController::class, 'index'])->name('legal_search.index');
+        Route::get('/dashboard-stats', [LegalSearchController::class, 'dashboardStats'])->name('legal_search.dashboard_stats');
         Route::post('/search', [LegalSearchController::class, 'search'])->name('legalsearch.search');
         Route::get('/report', [LegalSearchController::class, 'report'])->name('legal_search.report');
         Route::get('/legal_search_report', [LegalSearchController::class, 'legal_search_report'])->name('legal_search.legal_search_report');

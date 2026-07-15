@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\LegalSearchTimelineWeights;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -77,8 +78,14 @@ class LegalSearchService
         // Fetch active prop_id and parent_prop_id from active indexes if available (bypass for SME searches)
         $activePropIds = [];
         if ($fileNo !== '' && empty($allowedSmeFileNos)) {
+            // Match on file_number OR temp_file_no (and their base/"(T)" variants) so a temp-file
+            // search resolves the same prop_id as searching the main number, and vice versa.
+            $fileNoVariants = $this->fileNumberVariants($fileNo);
             $activeIndexing = $conn->table('file_indexings')
-                ->where('file_number', $fileNo)
+                ->where(function ($q) use ($fileNoVariants) {
+                    $q->whereIn('file_number', $fileNoVariants)
+                        ->orWhereIn('temp_file_no', $fileNoVariants);
+                })
                 ->whereNull('deleted_at')
                 ->first(['prop_id', 'parent_prop_id']);
             if ($activeIndexing) {
@@ -91,7 +98,7 @@ class LegalSearchService
             }
             
             $activeFileNo = $conn->table('fileNumber')
-                ->where('mlsfNo', $fileNo)
+                ->whereIn('mlsfNo', $fileNoVariants)
                 ->first(['parent_prop_id']);
             if ($activeFileNo && $activeFileNo->parent_prop_id) {
                 $activePropIds = array_merge($activePropIds, array_map('trim', explode(',', $activeFileNo->parent_prop_id)));
@@ -308,6 +315,13 @@ class LegalSearchService
             $all = array_merge($all, $relatedRecertRows);
         }
 
+        // When the searched file is linked (as a child) to a DCIV/LPCC master file in
+        // master_dciv_links, surface that DCIV file as a "DCIV File Commissioning" row.
+        $dcivCommissioningRows = $this->fetchDcivCommissioningRows($conn, $fileNo, $all);
+        if (!empty($dcivCommissioningRows)) {
+            $all = array_merge($all, $dcivCommissioningRows);
+        }
+
         // Surface predecessor decommission events (Change of Purpose / Subdivision / Merger /
         // Extension) as timeline rows when viewing the successor file, so the transition that
         // produced this file is visible instead of only the inherited history.
@@ -388,8 +402,8 @@ class LegalSearchService
         // KANGIS Recertification rows carry an empty/unreliable transaction date (or a
         // current-processing-year date), so the plain date sort above can strand them at
         // either end of the timeline. Business rule: when a C of O is present, the
-        // Recertification must sit directly after it, not wherever its own date lands it.
-        $all = $this->placeKangisRecertAfterCofo($all);
+        // Recertification must sit directly before it, not wherever its own date lands it.
+        $all = $this->placeKangisRecertBeforeCofo($all);
 
         // Change of Purpose and Subdivision are Ministry-initiated actions, so Party 1 (the
         // grantor/authority) is always the Ministry — not the file owner. Normalize it here so
@@ -589,9 +603,11 @@ class LegalSearchService
             'total_count' => count($all),
             'file_commissioning_date' => $commissioningInfo['date'],
             'file_commissioned_number' => $commissioningInfo['number'],
+            'file_commissioning_holder' => $this->resolveCommissioningHolder($conn, $fileNo),
             'lineage' => $this->enrichLineageWithCommissioning(
                 $conn,
-                $this->resolveFileLineage($conn, $fileNo)
+                $this->resolveFileLineage($conn, $fileNo),
+                $fileNo
             ),
         ];
     }
@@ -605,8 +621,14 @@ class LegalSearchService
      *  - previous_files: [{file_no, commissioning_date, file_title}, …] for each
      *    predecessor (informational only — predecessors get no commissioning row)
      *  - successor_files / successor_commissioning_date / successor_file_title
+     *
+     * The successor walk is RECURSIVE (breadth-first, generation by generation): a child
+     * can itself be retired by a further land transaction, e.g. a Subdivision child
+     * (CON-AG-2026-108) later retired by a Change of Purpose into CON-COM-2026-430. Each
+     * successor therefore also carries its OWN decommission info, so the timeline can render
+     * that generation's "File Decommissioning" row alongside the grandchild's commissioning.
      */
-    private function enrichLineageWithCommissioning($conn, array $lineage): array
+    private function enrichLineageWithCommissioning($conn, array $lineage, ?string $rootFileNo = null): array
     {
         $lineage['previous_files'] = [];
         foreach ($lineage['previous_file_nos'] as $prevNo) {
@@ -626,20 +648,58 @@ class LegalSearchService
         // timeline can render one File Commissioning row per child instead of a
         // single row captioned with the raw comma-joined string.
         $lineage['successor_files'] = [];
-        foreach (explode(',', (string) ($lineage['successor_file_no'] ?? '')) as $succ) {
-            $succ = trim($succ);
-            if ($succ === '') {
-                continue;
-            }
-            $lineage['successor_files'][] = [
-                'file_no' => $succ,
-                'commissioning_date' => rescue(
-                    fn () => $this->resolveCommissioningInfo($succ)['date'],
-                    '-',
+
+        // Never revisit the searched file or a number already emitted — guards against a
+        // cyclic decommission chain looping forever.
+        $seen = [];
+        if ($rootFileNo !== null && trim($rootFileNo) !== '') {
+            $seen[strtoupper(trim($rootFileNo))] = true;
+        }
+        $splitFileNos = function ($csv): array {
+            return array_values(array_filter(array_map('trim', explode(',', (string) $csv)), fn($v) => $v !== ''));
+        };
+
+        $generation = $splitFileNos($lineage['successor_file_no'] ?? '');
+        $depth = 0;
+        while (!empty($generation) && $depth < 10) {
+            $next = [];
+            foreach ($generation as $succ) {
+                $key = strtoupper($succ);
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+
+                // The successor's own lineage: was IT later retired (e.g. by a Change of
+                // Purpose), and into which file(s)?
+                $succLineage = rescue(
+                    fn () => $this->resolveFileLineage($conn, $succ),
+                    [],
                     false
-                ),
-                'file_title' => $this->resolveFileTitleForNumber($conn, $succ),
-            ];
+                );
+
+                $lineage['successor_files'][] = [
+                    'file_no' => $succ,
+                    'commissioning_date' => rescue(
+                        fn () => $this->resolveCommissioningInfo($succ)['date'],
+                        '-',
+                        false
+                    ),
+                    'file_title' => $this->resolveFileTitleForNumber($conn, $succ),
+                    // This successor's own decommissioning (null/false when still active).
+                    'is_superseded' => (bool) ($succLineage['is_superseded'] ?? false),
+                    'decommission_file_no' => $succLineage['decommission_file_no'] ?? null,
+                    'decommission_date' => $succLineage['decommission_date'] ?? null,
+                    'decommission_reason' => $succLineage['decommission_reason'] ?? null,
+                    'decommission_holder' => $succLineage['decommission_holder'] ?? null,
+                ];
+
+                foreach ($splitFileNos($succLineage['successor_file_no'] ?? '') as $grandChild) {
+                    $next[] = $grandChild;
+                }
+            }
+            $generation = $next;
+            $depth++;
         }
         if (!empty($lineage['successor_files'])) {
             $lineage['successor_commissioning_date'] = $lineage['successor_files'][0]['commissioning_date'];
@@ -1030,6 +1090,29 @@ class LegalSearchService
             }
         }
         $endpointNos = array_keys($endpointNos);
+
+        // Endpoints decommissioned via the Manual Linkage tool: its "Manual Linkage: X -> Y"
+        // reason names a successor but not a real transaction date, so the family/link-creation
+        // date fallbacks below would be misleading here too (same reasoning as
+        // fetchDecommissionLineageRows) — these must not display a Transaction Date either.
+        $manualLinkageFiles = [];
+        if (!empty($endpointNos) && Schema::connection($conn->getName())->hasTable('decommissioned_files')) {
+            try {
+                $mlQuery = $conn->table('decommissioned_files')
+                    ->whereIn('file_no', $endpointNos)
+                    ->where('decommissioning_reason', 'like', 'Manual Linkage:%');
+                if (Schema::connection($conn->getName())->hasColumn('decommissioned_files', 'false_decommissioning')) {
+                    $mlQuery->where(function ($q) {
+                        $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                    });
+                }
+                foreach ($mlQuery->pluck('file_no') as $mlFileNo) {
+                    $k = $norm($mlFileNo);
+                    if ($k !== '') { $manualLinkageFiles[$k] = true; }
+                }
+            } catch (\Throwable $e) { /* non-fatal: fall back to showing the date */ }
+        }
+
         $praDates = [];
         if (!empty($endpointNos)) {
             try {
@@ -1185,6 +1268,10 @@ class LegalSearchService
             }
 
             foreach ($relatedNos as $relNo) {
+            // Manual Linkage endpoints never get a real transaction date (see above) —
+            // suppress the display value per-endpoint even though $displayDate/$sortDate were
+            // computed once for the whole (possibly multi-file) related_file_number row.
+            $relIsManualLinkage = isset($manualLinkageFiles[$norm($relNo)]);
             $out[] = [
                 'id'                => $row->id,
                 'file_number'       => $relNo, // orange-highlighted column
@@ -1196,7 +1283,7 @@ class LegalSearchService
                 // blank transaction_type) must NOT be relabelled "Recertification" — that made
                 // rename/merger links masquerade as KANGIS recerts. Fall back to a neutral label.
                 'transaction_type'  => $row->transaction_type ?: 'Related File',
-                'transaction_date'  => $displayDate,
+                'transaction_date'  => $relIsManualLinkage ? '-' : $displayDate,
                 'sort_date'         => $sortDate,
                 // Title/holder of the endpoint shown in the orange cell (see $displayTitle above).
                 // A deprecated_records fallback for any remaining blanks is applied after the loop.
@@ -1430,6 +1517,44 @@ class LegalSearchService
     }
 
     /**
+     * The neutral field set shared by synthetic lineage timeline rows, so each row carries
+     * every column the timeline/report pipeline reads. Callers override what they need.
+     */
+    private function blankLineageRow(): array
+    {
+        return [
+            'kangisFileNo'      => null,
+            'NewKANGISFileno'   => null,
+            'party_3'           => '-',
+            'party_4'           => '-',
+            'land_use'          => '-',
+            'location'          => '-',
+            'lgsaOrCity'        => '-',
+            'districtName'      => '-',
+            'registration'      => '-',
+            'regNo'             => '-',
+            'serial_no'         => '-',
+            'page_no'           => '-',
+            'volume_no'         => '-',
+            'size'              => '-',
+            'caveat'            => '-',
+            'caveat_id'         => null,
+            'caveated_comment'  => null,
+            'is_caveated'       => 0,
+            'plot_no'           => '-',
+            'comments'          => '-',
+            'cofo_comment'      => null,
+            'prop_id'           => null,
+            'parent_prop_id'    => null,
+            'deeds_date'        => null,
+            'deeds_time'        => null,
+            'reg_date'          => null,
+            'reg_time'          => null,
+            'tp_no'             => null,
+        ];
+    }
+
+    /**
      * Build synthetic timeline rows for the decommission events that PRODUCED the searched
      * file: every decommissioned_files row whose successor_file_no names the searched file
      * (exact member of the possibly-CSV successor list). E.g. viewing CON-COM-2026-430 shows
@@ -1451,27 +1576,34 @@ class LegalSearchService
                 return [];
             }
 
-            $candidates = $conn->table('decommissioned_files')
-                ->where('successor_file_no', 'like', '%' . $fileNo . '%')
-                ->get(['id', 'file_no', 'file_name', 'decommissioning_date', 'decommissioning_reason', 'successor_file_no']);
+            // false_decommissioning = 1 rows are Title-Status flags (not real decommissions) —
+            // excluded here for the same reason getDecommissionedFileNumbers() excludes them.
+            $candidatesQuery = $conn->table('decommissioned_files')
+                ->where('successor_file_no', 'like', '%' . $fileNo . '%');
+            if ($schema->hasColumn('decommissioned_files', 'false_decommissioning')) {
+                $candidatesQuery->where(function ($q) {
+                    $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                });
+            }
+            $candidates = $candidatesQuery->get(['id', 'file_no', 'file_name', 'decommissioning_date', 'decommissioning_reason', 'successor_file_no']);
 
             if ($candidates->isEmpty()) {
                 return [];
             }
 
-            // Skip predecessors already shown as a TYPED Related Fileno row (e.g. a KANGIS/Land &
-            // Physical Planning recert link) — that row already conveys the event. An untyped link
-            // (blank transaction_type, rendered as the generic "Related File" fallback) does NOT
-            // count: it carries no event detail, so it must not suppress the real decommission row
-            // (e.g. "CON-AG-2026-108 — File Decommissioning" for its Change of Purpose to
-            // CON-COM-2026-430).
-            $shownRelated = [];
+            // A predecessor may already have a typed Related Fileno row (e.g. a Merger or KANGIS
+            // recert link from related_file_number). A Merger row doesn't convey the decommission
+            // event itself (retiring authority, decommission date/reason), so both are kept. A
+            // Recertification row (KANGIS / Land & Physical Planning) IS the file's own lifecycle
+            // event for a KANGIS-legacy file, so the decommission row is redundant there and stays
+            // suppressed.
+            $recertified = [];
             foreach ($existingRows as $r) {
-                if (($r['source_table'] ?? '') === 'Related Fileno') {
-                    $type = trim((string) ($r['transaction_type'] ?? ''));
+                if (($r['source_table'] ?? '') === 'Related Fileno'
+                    && stripos((string) ($r['transaction_type'] ?? ''), 'Recertification') !== false) {
                     $v = strtoupper(trim((string) ($r['fileno'] ?? '')));
-                    if ($v !== '' && $type !== '' && strcasecmp($type, 'Related File') !== 0) {
-                        $shownRelated[$v] = true;
+                    if ($v !== '') {
+                        $recertified[$v] = true;
                     }
                 }
             }
@@ -1487,7 +1619,7 @@ class LegalSearchService
                 }
 
                 $oldNo = trim((string) $d->file_no);
-                if ($oldNo === '' || isset($shownRelated[strtoupper($oldNo)])) {
+                if ($oldNo === '' || isset($recertified[strtoupper($oldNo)])) {
                     continue;
                 }
 
@@ -1498,15 +1630,55 @@ class LegalSearchService
                 $reason = trim((string) ($d->decommissioning_reason ?? ''));
                 $label = 'File Decommissioning';
 
+                // decommissioning_date is when the record was administratively archived
+                // (often years after the real-world transaction it describes), not a genuine
+                // transaction date — kept as sort_date for chronological placement, but not
+                // shown in the Transaction Date column.
                 $sortDate = null;
-                $displayDate = '-';
                 if ($d->decommissioning_date) {
                     try {
-                        $c = Carbon::parse($d->decommissioning_date);
-                        $sortDate = $c->toDateString();
-                        $displayDate = $c->format('M j, Y');
+                        $sortDate = Carbon::parse($d->decommissioning_date)->toDateString();
                     } catch (\Exception $e) { /* ignore */ }
                 }
+
+                // A file's life on the timeline runs commissioned → … → decommissioned. This
+                // predecessor's decommissioning is being shown, so surface its File Commissioning
+                // row too, directly ABOVE it — the pair belongs in the lineage block after the
+                // searched file's own transactions, not floated to the top of the timeline (only
+                // the SEARCHED file's commissioning opens the report).
+                //
+                // Pairing is achieved by giving this row the SAME sort-relevant fields as the
+                // decommission row below (source_table, id, transaction_date, sort_date) and
+                // emitting it first: both sorters key on weight → timestamp → id, and both are
+                // stable (PHP 8 usort / ES2019 Array.sort), so an identical key preserves this
+                // emission order. Legacy predecessors have no genuine KLAES commissioning date,
+                // so the year embedded in the file number (CON-RES-2005-148 → 2005) is reported
+                // in the comment instead.
+                $commDate = rescue(
+                    fn () => $this->resolveCommissioningInfo($oldNo)['date'],
+                    '-',
+                    false
+                );
+                if ($commDate === '-' || $commDate === '') {
+                    $commDate = $this->extractYearFromFileNumber($oldNo) ?? '';
+                }
+                $commHolder = $this->resolveCommissioningHolder($conn, $oldNo)
+                    ?: ($this->resolveFileTitleForNumber($conn, $oldNo) ?: (trim((string) $d->file_name) ?: '-'));
+
+                $out[] = array_merge($this->blankLineageRow(), [
+                    'id'                => (int) $d->id,
+                    'file_number'       => $oldNo,
+                    'mlsFNo'            => $oldNo,
+                    'fileno'            => $oldNo,
+                    'transaction_type'  => 'File Commissioning',
+                    'transaction_date'  => '-',
+                    'sort_date'         => $sortDate,
+                    'party_1'           => 'Kano State Ministry of Land and Physical Planning',
+                    'party_2'           => $commHolder,
+                    'comments'          => $commDate !== '' ? 'Commissioned ' . $commDate : '-',
+                    'source_table'      => 'Related Fileno',
+                    'parent_file_number' => $fileNo,
+                ]);
 
                 $out[] = [
                     'id'                => (int) $d->id,
@@ -1516,7 +1688,7 @@ class LegalSearchService
                     'kangisFileNo'      => null,
                     'NewKANGISFileno'   => null,
                     'transaction_type'  => $label,
-                    'transaction_date'  => $displayDate,
+                    'transaction_date'  => '-',
                     'sort_date'         => $sortDate,
                     // Mirrors the self-decommission row: grantor is always the retiring
                     // authority, grantee is the file's holder at the time of decommission.
@@ -1549,6 +1721,151 @@ class LegalSearchService
                     'reg_time'          => null,
                     'tp_no'             => null,
                     'source_table'      => 'Related Fileno',
+                    'parent_file_number' => $fileNo,
+                ];
+            }
+
+            return $out;
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
+     * When the searched file is linked (as the related/child side) to a DCIV or LPCC
+     * master file in master_dciv_links, surface that DCIV file as a synthetic
+     * "DCIV File Commissioning" timeline row.
+     *
+     * Transaction Date resolution:
+     *  - If the DCIV file number was actually generated through the "DCIV File Number
+     *    Commissioning" page (/dciv/generation), a matching dciv_file_no row exists —
+     *    its genuine commissioning_date is used.
+     *  - Otherwise (e.g. a DCIV/LPCC number linked manually or migrated in without going
+     *    through that page) there is no real commissioning date on record, so the year
+     *    embedded in the DCIV file number itself (e.g. DCIV-2025-8 → 2025) is shown instead.
+     */
+    private function fetchDcivCommissioningRows($conn, string $fileNo, array $existingRows): array
+    {
+        try {
+            $schema = Schema::connection($conn->getName());
+            if (!$schema->hasTable('master_dciv_links')) {
+                return [];
+            }
+
+            $candidates = [];
+            $add = function ($v) use (&$candidates) {
+                $v = strtoupper(trim((string) $v));
+                if ($v !== '' && $v !== '-') {
+                    $candidates[$v] = true;
+                }
+            };
+            $add($fileNo);
+            foreach ($existingRows as $r) {
+                foreach (['fileno', 'file_number', 'mlsFNo', 'kangisFileNo', 'NewKANGISFileno'] as $col) {
+                    $add($r[$col] ?? null);
+                }
+            }
+            $candidates = array_keys($candidates);
+            if (empty($candidates)) {
+                return [];
+            }
+
+            $links = $conn->table('master_dciv_links')
+                ->whereIn(DB::raw('UPPER(LTRIM(RTRIM(related_file_number)))'), $candidates)
+                ->whereNotNull('dciv_file_number')
+                ->orderBy('id')
+                ->get(['id', 'dciv_file_number', 'dciv_reason']);
+
+            if ($links->isEmpty()) {
+                return [];
+            }
+
+            $out = [];
+            $seen = [];
+            foreach ($links as $link) {
+                $dcivNo = trim((string) $link->dciv_file_number);
+                if ($dcivNo === '') {
+                    continue;
+                }
+                $key = strtoupper($dcivNo);
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+
+                // Title is informational only — dciv_file_no.file_name first, then the
+                // file's own indexing title.
+                $title = trim((string) $conn->table('dciv_file_no')
+                    ->whereRaw('UPPER(LTRIM(RTRIM(full_file_number))) = ?', [$key])
+                    ->where(function ($q) {
+                        $q->where('is_deleted', 0)->orWhereNull('is_deleted');
+                    })
+                    ->value('file_name'));
+                if ($title === '') {
+                    $title = (string) $conn->table('file_indexings')
+                        ->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = ?', [$key])
+                        ->value('file_title');
+                }
+
+                // dciv_file_no.commissioning_date is NOT trusted on its own — many DCIV/LPCC
+                // rows there were backfilled/migrated with a timestamp that has nothing to do
+                // with a genuine commissioning event. Reuse the same authoritative check used
+                // for the searched file's own "File Commissioning" row (mls_file_no, then the
+                // legacy fileNumber "MLS_Commissioned%" record, then a year-matched indexing
+                // date) so a DCIV number only shows a real date when one genuinely exists.
+                $commissioningInfo = $this->resolveCommissioningInfo($dcivNo);
+                $displayDate = $commissioningInfo['date'];
+                $sortDate = null;
+                if ($displayDate !== '-') {
+                    $sortDate = rescue(fn () => Carbon::parse($displayDate)->toDateString(), null, false);
+                }
+                if ($displayDate === '-') {
+                    $year = $this->extractYearFromFileNumber($dcivNo);
+                    if ($year) {
+                        $displayDate = $year;
+                        $sortDate = $year . '-01-01';
+                    }
+                }
+
+                $out[] = [
+                    'id'                => (int) $link->id,
+                    'file_number'       => $dcivNo,
+                    'mlsFNo'            => $dcivNo,
+                    'fileno'            => $dcivNo,
+                    'kangisFileNo'      => null,
+                    'NewKANGISFileno'   => null,
+                    'transaction_type'  => 'DCIV File Commissioning',
+                    'transaction_date'  => $displayDate,
+                    'sort_date'         => $sortDate,
+                    'party_1'           => 'Kano State Ministry of Land and Physical Planning',
+                    'party_2'           => $title !== '' ? $title : '-',
+                    'party_3'           => '-',
+                    'party_4'           => '-',
+                    'land_use'          => '-',
+                    'location'          => '-',
+                    'lgsaOrCity'        => '-',
+                    'districtName'      => '-',
+                    'registration'      => '-',
+                    'regNo'             => '-',
+                    'serial_no'         => '-',
+                    'page_no'           => '-',
+                    'volume_no'         => '-',
+                    'size'              => '-',
+                    'caveat'            => '-',
+                    'caveat_id'         => null,
+                    'caveated_comment'  => null,
+                    'is_caveated'       => 0,
+                    'plot_no'           => '-',
+                    'comments'          => trim((string) ($link->dciv_reason ?? '')) ?: '-',
+                    'cofo_comment'      => null,
+                    'prop_id'           => null,
+                    'parent_prop_id'    => null,
+                    'deeds_date'        => null,
+                    'deeds_time'        => null,
+                    'reg_date'          => null,
+                    'reg_time'          => null,
+                    'tp_no'             => null,
+                    'source_table'      => 'DCIV File Commissioning',
                     'parent_file_number' => $fileNo,
                 ];
             }
@@ -1699,6 +2016,39 @@ class LegalSearchService
     }
 
     /**
+     * Resolve the "commissioning holder" name for the File Commissioning / Temporary File
+     * rows: the assignor (Party 1) of the file's Deed of Assignment registered through KLAES
+     * (instrument capture). At commissioning the file belonged to the original allottee, who
+     * is precisely the ASSIGNOR of the first KLAES-captured Deed of Assignment — the file
+     * title, by contrast, reflects the latest owner (the assignee). Matching the searched
+     * file's number variants (base and "(T)"). Returns the grantor name, or null when the
+     * file has no KLAES-registered Deed of Assignment.
+     */
+    private function resolveCommissioningHolder($conn, ?string $fileNo): ?string
+    {
+        $variants = $this->fileNumberVariants($fileNo);
+        if (empty($variants)) {
+            return null;
+        }
+
+        $row = $conn->table('deed_registrations')
+            ->whereIn('fileno', $variants)
+            ->whereNotNull('instrument_capture_id')
+            ->whereRaw("UPPER(instrument_type) LIKE '%DEED OF ASSIGNMENT%'")
+            ->when(Schema::hasColumn('deed_registrations', 'is_deleted'), function ($q) {
+                $q->where(function ($qq) {
+                    $qq->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                });
+            })
+            ->orderByRaw('TRY_CONVERT(DATE, deeds_date) ASC')
+            ->orderBy('id')
+            ->first(['grantor']);
+
+        $holder = trim((string) ($row->grantor ?? ''));
+        return $holder !== '' ? $holder : null;
+    }
+
+    /**
      * Place the synthetic commissioning rows into a print-report row list
      * according to the lineage chain:
      *
@@ -1827,22 +2177,56 @@ class LegalSearchService
         // parcel-update row (the transaction that retired the searched file),
         // else at the very end.
         $successorRows = [];
+        $seenSuccKeys = [];
         foreach (($lineage['successor_files'] ?? []) as $succ) {
             $succNo = trim((string) ($succ['file_no'] ?? ''));
             $succKey = $norm($succNo);
-            if ($succNo === '' || $succKey === $searchedKey) {
+            if ($succNo === '' || $succKey === $searchedKey || isset($seenSuccKeys[$succKey])) {
                 continue;
             }
+            $seenSuccKeys[$succKey] = true;
+
             $row = $makeLineageRow(
                 $succNo,
                 $succ['commissioning_date'] ?? null,
                 $succ['file_title'] ?? null
             );
             if ($row) {
-                $successorRows[$succKey] = $row;
+                $successorRows[] = $row;
+            }
+
+            // This successor was itself later retired (e.g. a Subdivision child retired by a
+            // Change of Purpose) — its own File Decommissioning row sits directly below its
+            // commissioning, ahead of the grandchild's commissioning row.
+            if (!empty($succ['is_superseded'])) {
+                $sDecNo = trim((string) ($succ['decommission_file_no'] ?? '')) ?: $succNo;
+                $sDecNo = trim((string) preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $sDecNo));
+                if ($sDecNo !== '') {
+                    $sDecDate = (!empty($succ['decommission_date']) && $succ['decommission_date'] !== '-')
+                        ? $succ['decommission_date'] : '-';
+                    $sHolder = trim((string) ($succ['decommission_holder'] ?? ''))
+                        ?: trim((string) ($succ['file_title'] ?? ''));
+                    $successorRows[] = [
+                        'sn' => 0, // renumbered by the caller
+                        'file_no' => $sDecNo,
+                        'grantor' => 'Kano State Ministry of Land and Physical Planning',
+                        'grantee' => $sHolder !== '' ? $sHolder : '-',
+                        'party_3' => '-',
+                        'party_4' => '-',
+                        'instrument_type' => 'File Decommissioning',
+                        'transaction_date' => $sDecDate,
+                        'reg_time' => '-',
+                        'reg_date' => $sDecDate,
+                        'reg_no' => '0/0/0',
+                        'size' => '-',
+                        'caveat' => 'No',
+                        'comments' => trim((string) ($succ['decommission_reason'] ?? '')) ?: '-',
+                        'source_table' => 'File Decommissioning',
+                        'location' => '',
+                    ];
+                }
             }
         }
-        $successorRows = array_values($successorRows);
         if ($successorRows) {
             $retiredIdx = -1;
             foreach ($rows as $i => $row) {
@@ -2372,6 +2756,11 @@ class LegalSearchService
                     $searchFileNos[] = $motherFileNo;
                 }
             }
+
+            // Expand to base/"(T)" variants so searching the temp file number (e.g.
+            // "RES-2003-537(T)") finds records stored under the base number and vice versa —
+            // both refer to the same physical file.
+            $searchFileNos = $this->fileNumberVariants(...$searchFileNos);
             
             $query->where(function ($subQ) use ($searchFileNos, $fileColumns) {
                 foreach ($fileColumns as $col) {
@@ -3413,9 +3802,11 @@ class LegalSearchService
     /**
      * Business rule shared by the on-screen LS Timeline and the printable report: when both a
      * Certificate of Occupancy and a KANGIS Recertification appear in a file's transaction
-     * history, the Recertification must be displayed directly after the C of O — never at the
-     * end of the list, which is where a missing/current-year recertification date would
-     * otherwise strand it. Every other transaction keeps its existing relative order.
+     * history, the Recertification must be displayed directly BEFORE the C of O. The
+     * recertification is what admits the legacy file into KANGIS; the KANGIS C of O is issued
+     * off the back of it, so the recertification always precedes it — never at the end of the
+     * list, which is where a missing/current-year recertification date would otherwise strand
+     * it. Every other transaction keeps its existing relative order.
      *
      * Works against either row shape produced by this service: the normalized search() rows
      * (keyed by 'transaction_type') and the printable-report rows (keyed by 'instrument_type').
@@ -3423,7 +3814,7 @@ class LegalSearchService
      * @param array<int, array<string, mixed>> $rows
      * @return array<int, array<string, mixed>>
      */
-    private function placeKangisRecertAfterCofo(array $rows): array
+    private function placeKangisRecertBeforeCofo(array $rows): array
     {
         $typeOf = function (array $row): string {
             return strtolower((string) ($row['transaction_type'] ?? ($row['instrument_type'] ?? '')));
@@ -3445,12 +3836,13 @@ class LegalSearchService
             return $rows;
         }
 
-        // Insert after the LAST C of O row (a re-issued/most-recent certificate is the one the
-        // recertification actually follows when a file has more than one on record).
+        // Insert before the FIRST C of O row, so the recertification sits above every
+        // certificate on record when a file has more than one.
         $cofoIdx = null;
         foreach ($rest as $i => $row) {
             if ($isCofo($row)) {
                 $cofoIdx = $i;
+                break;
             }
         }
 
@@ -3459,7 +3851,7 @@ class LegalSearchService
             return $rows;
         }
 
-        array_splice($rest, $cofoIdx + 1, 0, $recertRows);
+        array_splice($rest, $cofoIdx, 0, $recertRows);
 
         return $rest;
     }
@@ -3936,6 +4328,15 @@ class LegalSearchService
                 return $dt ? $dt->timestamp : null;
             }
 
+            // A bare 4-digit year (legacy commissioning rows carry e.g. "2005", the year
+            // embedded in the file number) must not reach Carbon::parse — strtotime reads
+            // "2005" as the TIME 20:05 on TODAY's date, which dates the row to today and
+            // sorts it to the very bottom. Anchor it to Jan 1 of that year instead.
+            if (preg_match('/^(?:19|20)\d{2}$/', $text)) {
+                $dt = \Carbon\Carbon::create((int) $text, 1, 1, $time['h'], $time['m'], $time['s']);
+                return $dt ? $dt->timestamp : null;
+            }
+
             try {
                 $dt = \Carbon\Carbon::parse($text);
                 if ($timeValue) {
@@ -3947,16 +4348,36 @@ class LegalSearchService
             }
         };
 
-        $getTransactionTimestamp = function (array $item) use ($parseTimelineDateValue): ?int {
-            $candidates = [
-                ['date' => $item['reg_date'] ?? null, 'time' => $item['reg_time'] ?? null],
-                ['date' => $item['deeds_date'] ?? null, 'time' => $item['deeds_time'] ?? null],
-                ['date' => $item['transaction_date'] ?? null, 'time' => $item['transaction_time'] ?? ($item['time'] ?? null)],
+        // OP / TOT / RofO carry their operative date in transaction_date; every other event
+        // is keyed off its registration date. Mirrors getTransactionTimestamp() in
+        // resources/views/legal_search/js.blade.php — without this branch the printed slip
+        // dated those three off reg_date and could order them differently from the screen.
+        $getTransactionTimestamp = function (array $item) use ($parseTimelineDateValue, $canonicalTransactionType): ?int {
+            $txType = $canonicalTransactionType($item['transaction_type'] ?? ($item['instrument_type'] ?? ''));
+            $transactionDateFirst = in_array(
+                LegalSearchTimelineWeights::classify($item, $txType),
+                [
+                    LegalSearchTimelineWeights::OCCUPANCY_PERMIT,
+                    LegalSearchTimelineWeights::TRANSFER_OF_TITLE_OP,
+                    LegalSearchTimelineWeights::RIGHT_OF_OCCUPANCY,
+                ],
+                true
+            );
+
+            $regDate = ['date' => $item['reg_date'] ?? null, 'time' => $item['reg_time'] ?? null];
+            $deedsDate = ['date' => $item['deeds_date'] ?? null, 'time' => $item['deeds_time'] ?? null];
+            $txnDate = ['date' => $item['transaction_date'] ?? null, 'time' => $item['transaction_time'] ?? ($item['time'] ?? null)];
+
+            $candidates = $transactionDateFirst
+                ? [$txnDate, $deedsDate, $regDate]
+                : [$regDate, $txnDate, $deedsDate];
+
+            $candidates = array_merge($candidates, [
                 ['date' => $item['cofo_date'] ?? null, 'time' => $item['time'] ?? null],
                 ['date' => $item['certificateDate'] ?? null, 'time' => $item['time'] ?? null],
                 ['date' => $item['approval_date'] ?? null, 'time' => $item['time'] ?? null],
                 ['date' => $item['date'] ?? null, 'time' => $item['time'] ?? null],
-            ];
+            ]);
 
             foreach ($candidates as $candidate) {
                 $ts = $parseTimelineDateValue($candidate['date'], $candidate['time']);
@@ -3966,49 +4387,22 @@ class LegalSearchService
             return null;
         };
 
-        $getTransPriorityWeight = function (array $row) use ($norm, $canonicalTransactionType, $getTransactionTimestamp): int {
-            $currentYear = (int) date('Y');
-            
-            // Check if file number has current year
-            $fileNo = trim((string) ($row['file_number'] ?? ($row['fileno'] ?? ($row['mlsFNo'] ?? ''))));
-            if (preg_match('/\b(?:19|20)\d{2}\b/', $fileNo, $m)) {
-                if ((int) $m[0] === $currentYear) {
-                    return 0;
-                }
-            }
-            
-            // Check if transaction date has current year
-            $ts = $getTransactionTimestamp($row);
-            if ($ts !== null) {
-                if ((int) date('Y', $ts) === $currentYear) {
-                    return 0;
-                }
-            }
-
+        // Weights come from the shared map so the printed slip and the on-screen timeline
+        // (resources/views/legal_search/js.blade.php) order a file identically. Returns null
+        // for floating events — parcel updates, decommissionings — which are injected
+        // chronologically rather than ranked. See LegalSearchTimelineWeights.
+        $getTransPriorityWeight = function (array $row) use ($canonicalTransactionType): ?int {
             $txType = $canonicalTransactionType($row['transaction_type'] ?? ($row['instrument_type'] ?? ''));
-            if ($txType === 'occupancy permit')
-                return 10;
-            if ($txType === 'transfer of title')
-                return 9;
-            if ($txType === 'right of occupancy')
-                return 8;
-            // Certificate of Occupancy — weight 7
-            if (str_contains($txType, 'certificate of occupanc'))
-                return 7;
-            // KANGIS Recertification / Related Fileno — weight 6
-            $sourceTable = trim((string) ($row['source_table'] ?? ''));
-            if ($sourceTable === 'Related Fileno')
-                return 6;
-            return 5;
+            return LegalSearchTimelineWeights::weightFor($row, $txType);
         };
 
-        usort($transactions, function ($a, $b) use ($getTransactionTimestamp, $getTransPriorityWeight) {
-            $wa = $getTransPriorityWeight($a);
-            $wb = $getTransPriorityWeight($b);
-
-            if ($wa !== $wb)
-                return $wb - $wa;
-
+        // The Timeline Weighting Method (spec §3) — the PHP twin of
+        // sortTimelineChronologically() in resources/views/legal_search/js.blade.php.
+        // Weighted and floating events rank on different keys, so they are sorted in two
+        // phases: mixing them in one comparator makes it intransitive (a floater is ordered
+        // against weighted rows by date only, never by weight) and the result would then
+        // depend on input order.
+        $compareByDateThenId = function (array $a, array $b) use ($getTransactionTimestamp): int {
             $ta = $getTransactionTimestamp($a);
             $tb = $getTransactionTimestamp($b);
 
@@ -4023,7 +4417,65 @@ class LegalSearchService
                 return $ta <=> $tb;
 
             return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
+        };
+
+        $weighted = [];
+        $floating = [];
+        foreach ($transactions as $t) {
+            if ($getTransPriorityWeight($t) === null) {
+                $floating[] = $t;
+            } else {
+                $weighted[] = $t;
+            }
+        }
+
+        // Phase 1 — weight DESC, then timestamp ASC, then id.
+        usort($weighted, function ($a, $b) use ($compareByDateThenId, $getTransPriorityWeight) {
+            $wa = $getTransPriorityWeight($a);
+            $wb = $getTransPriorityWeight($b);
+            if ($wa !== $wb)
+                return $wb <=> $wa;
+            return $compareByDateThenId($a, $b);
         });
+
+        // Phase 2 — inject each floater after the last weighted event dated on or before it,
+        // so it lands chronologically without disturbing the hierarchy above it.
+        usort($floating, $compareByDateThenId);
+
+        // Only a weighted event that actually carries a date can anchor a floater in time.
+        $isDatedWeighted = function (array $item) use ($getTransPriorityWeight, $getTransactionTimestamp): bool {
+            return $getTransPriorityWeight($item) !== null && $getTransactionTimestamp($item) !== null;
+        };
+
+        $transactions = $weighted;
+        foreach ($floating as $floater) {
+            $ts = $getTransactionTimestamp($floater);
+            if ($ts === null) {
+                $transactions[] = $floater;
+                continue;
+            }
+
+            // Anchor = the last dated weighted event on or before this floater. Only
+            // originally-weighted rows anchor the search; floaters inserted on an earlier
+            // pass never act as anchors themselves.
+            $insertAt = 0;
+            foreach ($transactions as $i => $existing) {
+                if (!$isDatedWeighted($existing))
+                    continue;
+                if ($getTransactionTimestamp($existing) <= $ts)
+                    $insertAt = $i + 1;
+            }
+            // Advance to just before the next dated weighted event: past floaters already
+            // parked on this anchor ($floating is sorted ascending, so this one belongs
+            // after them — a Decommissioning must not precede the Subdivision that caused
+            // it), and past UNDATED weighted rows, which have no position in time and must
+            // stay attached to their weight group rather than be split off by a floater.
+            $count = count($transactions);
+            while ($insertAt < $count && !$isDatedWeighted($transactions[$insertAt])) {
+                $insertAt++;
+            }
+            array_splice($transactions, $insertAt, 0, [$floater]);
+        }
         $transactions = array_values($transactions);
 
         if (empty($transactions)) {
@@ -4249,9 +4701,14 @@ class LegalSearchService
             // registration date. Formatted like reg_date when parseable.
             $txnDate = trim((string) ($t['transaction_date'] ?? ''));
             if ($txnDate !== '' && $txnDate !== '-') {
-                $parsedTxn = rescue(fn() => \Carbon\Carbon::parse($txnDate), null, false);
-                if ($parsedTxn) {
-                    $txnDate = $parsedTxn->format('M j, Y');
+                // A bare 4-digit year (a legacy file's commissioning year, taken from its file
+                // number) prints as the year itself — Carbon::parse would read "2005" as the
+                // time 20:05 today and stamp the row with today's date.
+                if (!preg_match('/^(?:19|20)\d{2}$/', $txnDate)) {
+                    $parsedTxn = rescue(fn() => \Carbon\Carbon::parse($txnDate), null, false);
+                    if ($parsedTxn) {
+                        $txnDate = $parsedTxn->format('M j, Y');
+                    }
                 }
             } else {
                 $txnDate = '-';
@@ -4281,11 +4738,11 @@ class LegalSearchService
             ];
         }
 
-        // Same rule as the on-screen timeline: keep KANGIS Recertification directly after
+        // Same rule as the on-screen timeline: keep KANGIS Recertification directly before
         // the C of O in the printed transaction history, regardless of where the
         // weight/date sort above placed it. ('sn' is recomputed below once the
         // commissioning/temporary-file rows are unshifted onto the front.)
-        $rows = $this->placeKangisRecertAfterCofo($rows);
+        $rows = $this->placeKangisRecertBeforeCofo($rows);
 
         // ── Default "File Commissioning" record (always the first timeline row) ──
         // Highest priority (weight 12), so it precedes every other transaction.
@@ -4294,6 +4751,12 @@ class LegalSearchService
         // digitized into KLAES the real commissioning date is unknown, so it prints the
         // year embedded in the file number instead. Reg particulars are 0/0/0.
         $commissioningDate = $this->resolveCommissioningInfo($fileNumber, $fileNo)['date'];
+
+        // Party 2 of the commissioning / temporary rows is the ASSIGNOR of the file's
+        // KLAES-registered Deed of Assignment (the original allottee), falling back to the
+        // file title (latest owner) when the file has no such deed.
+        $commissioningHolder = $this->resolveCommissioningHolder(DB::connection('sqlsrv'), $fileNo)
+            ?: ($fileTitle ?: '-');
 
         // ── "Temporary File" record — printed directly below File Commissioning ──
         // Present when the searched file has a temporary "(T)" sibling, OR when the searched
@@ -4315,7 +4778,7 @@ class LegalSearchService
                 'sn' => 0, // renumbered below
                 'file_no' => $tempFileNumber,
                 'grantor' => 'Kano State Ministry of Land and Physical Planning',
-                'grantee' => $fileTitle ?: '-',
+                'grantee' => $commissioningHolder,
                 'party_3' => '-',
                 'party_4' => '-',
                 'instrument_type' => 'Temporary File',
@@ -4354,7 +4817,7 @@ class LegalSearchService
             // Party 1 is the commissioning authority; Party 2 is the file owner/title
             // (the Ministry commissioned the file for them).
             'grantor' => 'Kano State Ministry of Land and Physical Planning',
-            'grantee' => $fileTitle ?: '-',
+            'grantee' => $commissioningHolder,
             'party_3' => '-',
             'party_4' => '-',
             'instrument_type' => 'File Commissioning',
@@ -4380,7 +4843,8 @@ class LegalSearchService
             $tempRow,
             $this->enrichLineageWithCommissioning(
                 DB::connection('sqlsrv'),
-                $this->resolveFileLineage(DB::connection('sqlsrv'), trim((string) $fileNo))
+                $this->resolveFileLineage(DB::connection('sqlsrv'), trim((string) $fileNo)),
+                trim((string) $fileNo)
             )
         );
 
@@ -4552,6 +5016,12 @@ class LegalSearchService
             $litigationComment = $litigation->comment;
         }
 
+        $generalComment = null;
+        $general = $comments->get('general');
+        if ($general && $general->comment) {
+            $generalComment = $general->comment;
+        }
+
         // W/R/C and CoFO status from the duplicate_fileno registry.
         // Mirrors the Caveat note: when the searched file exists in
         // duplicate_fileno under a [WRC] or [COFO_*] tag, surface a general
@@ -4708,6 +5178,7 @@ class LegalSearchService
                     'no_cofo_comment' => $noCofoComment,
                     'encumbrance_comment' => $encumbranceComment,
                     'litigation_comment' => $litigationComment,
+                    'general_comment' => $generalComment,
                     'wrc_comment' => $wrcComment,
                     'cofo_comment' => $cofoComment,
                     'generated_by' => $generatedByText,
@@ -4946,26 +5417,13 @@ class LegalSearchService
             $kangisNumber = null;
         }
 
-        // A file_indexings.related_fileno CSV may list several linked numbers (subdivision
-        // siblings, mergers, ...); pick the first land/MLS-format token, matching the same
-        // heuristic used elsewhere in this service for that column.
+        // NOTE: file_indexings.related_fileno is a general lineage field (subdivision siblings,
+        // merger sources, KANGIS recerts — all mixed together), so it is deliberately NOT used
+        // here to seed $relatedMls: this display is exclusively for the KANGIS <-> MLS pairing
+        // (see docblock above), and a land-format token from related_fileno (e.g. a Subdivision
+        // predecessor like "RES-1999-469") is never a valid KANGIS counterpart. Only the
+        // KANGIS-typed row below, or resolveKangisCanonical() further down, may populate it.
         $relatedMls = null;
-        if ($indexedRelatedFileno) {
-            $text = trim(trim((string) $indexedRelatedFileno), '[]');
-            $parts = array_values(array_filter(array_map(
-                fn($p) => trim(trim($p), "'\" "),
-                preg_split('/[,;|]/', $text) ?: []
-            )));
-            foreach ($parts as $p) {
-                if (preg_match('/^(CON-(COM|RES|AG|IND)|COM|RES|IND|AG)-\d/i', $p)) {
-                    $relatedMls = $p;
-                    break;
-                }
-            }
-            if ($relatedMls === null && !empty($parts)) {
-                $relatedMls = $parts[0];
-            }
-        }
 
         // Resolve the KANGIS Recertification counterpart from the timeline itself, regardless
         // of which number format was searched. The recert row's own file number is always
@@ -5005,6 +5463,17 @@ class LegalSearchService
         }
 
         $display = $resolvedFileNo;
+
+        // When the user searched the temporary "(T)" number, lead the display with the number
+        // they actually searched — the resolved/indexed number is the base permanent form
+        // (e.g. searching "RES-2003-537(T)" resolves to "RES-2003-537"), but File Information
+        // should reflect the searched temp file.
+        $strip = fn($v) => trim((string) preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', (string) $v));
+        if (preg_match('/\(\s*T\s*\)\s*$/i', $searchedFileNo)
+            && strcasecmp($strip($searchedFileNo), $strip($resolvedFileNo)) === 0) {
+            $display = trim($searchedFileNo);
+        }
+
         if ($isKangis($searchedFileNo)) {
             if ($relatedMls && strcasecmp(trim($relatedMls), trim($searchedFileNo)) !== 0) {
                 $display .= ' (' . $relatedMls . ')';

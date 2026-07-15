@@ -237,6 +237,7 @@
                 }
             });
             this.opFieldsWrapper = container.querySelector('[data-role="op-fields-wrapper"]');
+            this.cofoFieldsWrapper = container.querySelector('[data-role="cofo-fields-wrapper"]');
             this.state = {
                 formMode: 'property',
                 transactionType: '',
@@ -282,6 +283,7 @@
                 deedsTime: '',
                 opType: '',
                 opSerialNumber: '',
+                cofoType: '',
                 tempFileNumber: '',
                 tempFileNumberLoading: false,
                 tempFileNumberError: '',
@@ -337,6 +339,7 @@
                 'deedsTime',
                 'opType',
                 'opSerialNumber',
+                'cofoType',
                 'tempFileNumber',
                 'tempFileNumberLoading',
                 'tempFileNumberError',
@@ -880,6 +883,7 @@
             const isOpTransaction = normalizedTx.includes('occupancy permit')
                 || normalizedTx.includes('occupation permit')
                 || normalizedTx === 'op';
+            const isCofOTransaction = normalizedTx.includes('certificate of occupancy');
 
             const updateLabelText = (labelElement, text) => {
                 if (!labelElement || !text) return;
@@ -955,6 +959,15 @@
                 this.syncModelElement('opType', '');
                 this.setState('opSerialNumber', '', { silent: true });
                 this.syncModelElement('opSerialNumber', '');
+            }
+
+            if (this.cofoFieldsWrapper) {
+                this.cofoFieldsWrapper.classList.toggle('hidden', !isCofOTransaction);
+            }
+
+            if (!isCofOTransaction) {
+                this.setState('cofoType', '', { silent: true });
+                this.syncModelElement('cofoType', '');
             }
 
             if (this.transactionDetailsSection) {
@@ -1538,6 +1551,7 @@
                 'deeds_time': 'deedsTime',
                 'op_type': 'opType',
                 'op_serial_number': 'opSerialNumber',
+                'cofo_type': 'cofoType',
                 'transaction_date': 'transactionDate',
                 'land_use': 'landUse',
                 'property_description': 'propertyDescription',

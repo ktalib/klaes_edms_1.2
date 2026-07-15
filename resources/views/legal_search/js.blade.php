@@ -3,21 +3,6 @@
   const dbLandUseOptions = @json($landUseOptions ?? []);
   const dbDistrictOptions = @json($districtOptions ?? []);
 
-  // Mock data for the application
-  const monthlyData = [
-    { month: "Jan", searches: 18, revenue: 270000 },
-    { month: "Feb", searches: 22, revenue: 330000 },
-    { month: "Mar", searches: 25, revenue: 375000 },
-    { month: "Apr", searches: 20, revenue: 300000 },
-    { month: "May", searches: 28, revenue: 420000 },
-    { month: "Jun", searches: 32, revenue: 480000 },
-    { month: "Jul", searches: 35, revenue: 525000 },
-    { month: "Aug", searches: 30, revenue: 450000 },
-    { month: "Sep", searches: 26, revenue: 390000 },
-    { month: "Oct", searches: 22, revenue: 330000 },
-    { month: "Nov", searches: 20, revenue: 300000 },
-    { month: "Dec", searches: 24, revenue: 360000 }
-  ];
 
   // Helper to generate registration numbers in XX/XX/YYY format
   function generateRegNumber() {
@@ -182,9 +167,11 @@
   // card clicks so the search header always reflects what the user picked.
   let userSelectedFileNumber = '';
 
-  // Initialize the search trends chart
-  const initializeChart = () => {
-    const ctx = document.getElementById('searchTrendsChart').getContext('2d');
+  // Initialize the search trends chart with real monthly search volume
+  const initializeChart = (monthlyData) => {
+    const canvas = document.getElementById('searchTrendsChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
     new Chart(ctx, {
       type: 'line',
       data: {
@@ -229,8 +216,56 @@
     });
   };
 
-  // Initialize the chart when the page loads
-  document.addEventListener('DOMContentLoaded', initializeChart);
+  // Populate the Search Statistics card with live figures
+  const renderDashboardStats = (stats) => {
+    const totalEl = document.getElementById('stat-total-searches');
+    const printedEl = document.getElementById('stat-printed-reports');
+    const successEl = document.getElementById('stat-success-rate');
+    const commonTypeEl = document.getElementById('stat-common-type');
+    if (totalEl) totalEl.textContent = stats.total_this_month ?? 0;
+    if (printedEl) printedEl.textContent = stats.printed_this_month ?? 0;
+    if (successEl) successEl.textContent = (stats.success_rate ?? 0) + '%';
+    if (commonTypeEl) commonTypeEl.textContent = stats.most_common_type || '-';
+  };
+
+  // Populate the Recent Activity feed with the latest search logs
+  const renderRecentActivity = (activities) => {
+    const list = document.getElementById('recent-activity-list');
+    if (!list) return;
+    if (!activities || activities.length === 0) {
+      list.innerHTML = '<p class="text-sm text-gray-500">No recent searches.</p>';
+      return;
+    }
+    list.innerHTML = activities.map((activity, index) => {
+      const borderClass = index < activities.length - 1 ? 'border-b pb-2' : '';
+      const badgeClass = activity.status === 'Found' ? 'bg-green-100 text-green-700' : 'bg-gray-100';
+      return `
+        <div class="flex justify-between items-center ${borderClass}">
+          <div>
+            <p class="font-medium">${activity.title}</p>
+            <p class="text-sm text-gray-500">${activity.time}</p>
+          </div>
+          <span class="px-2 py-1 text-xs rounded-full ${badgeClass}">${activity.status}</span>
+        </div>`;
+    }).join('');
+  };
+
+  // Fetch live dashboard data (trends, statistics, recent activity) and render it
+  const loadDashboardData = () => {
+    const statsUrl = window.LEGAL_SEARCH_CONTEXT && window.LEGAL_SEARCH_CONTEXT.dashboardStatsUrl;
+    if (!statsUrl) return;
+    fetch(statsUrl, { headers: { 'Accept': 'application/json' } })
+      .then(response => response.json())
+      .then(data => {
+        initializeChart(data.monthly_trend || []);
+        renderDashboardStats(data.stats || {});
+        renderRecentActivity(data.recent_activity || []);
+      })
+      .catch(error => console.error('Failed to load legal search dashboard stats', error));
+  };
+
+  // Load live dashboard data when the page loads
+  document.addEventListener('DOMContentLoaded', loadDashboardData);
 
   // Event Listeners
   if (searchRecordsBtn) {
@@ -887,6 +922,7 @@ const executeSearchAjax = (filters, searchData) => {
         const _apiFileGroundRentDate = data.file_ground_rent_date || null;
         const _apiCommissioningDate = data.file_commissioning_date || null;
         const _apiCommissionedNumber = data.file_commissioned_number || null;
+        const _apiCommissioningHolder = data.file_commissioning_holder || null;
         const _apiTempFileNumber = data.file_temp_number || null;
         // "SEARCHED (LINKED)" combined file number — e.g. "CON-AG-2014-35 (MLKN 2455)" —
         // resolved server-side so it matches the printable report / Pay-Per-Search template.
@@ -901,6 +937,7 @@ const executeSearchAjax = (filters, searchData) => {
           if (_apiFileTitle) r._file_title = _apiFileTitle;
           if (_apiCommissioningDate) r._file_commissioning_date = _apiCommissioningDate;
           if (_apiCommissionedNumber) r._file_commissioned_number = _apiCommissionedNumber;
+          if (_apiCommissioningHolder) r._file_commissioning_holder = _apiCommissioningHolder;
           if (_apiFileDistrict) r._file_district = _apiFileDistrict;
           if (_apiFileLga) r._file_lga = _apiFileLga;
           if (_apiFileLandUse) r._file_land_use = _apiFileLandUse;
@@ -959,6 +996,7 @@ const executeSearchAjax = (filters, searchData) => {
               _file_size: data.file_size || null,
               _file_commissioning_date: data.file_commissioning_date || null,
               _file_commissioned_number: data.file_commissioned_number || null,
+              _file_commissioning_holder: data.file_commissioning_holder || null,
               _file_temp_number: data.file_temp_number || null,
               _file_number_display: data.file_number_display || null,
               prop_id: '',
@@ -1596,43 +1634,45 @@ const executeSearchAjax = (filters, searchData) => {
     return cleaned.toString().toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
   };
 
-  const CURRENT_FILE_YEAR = new Date().getFullYear();
-  const isCurrentYearFileNumber = (item) => {
-    const fileNo = String(getMappedValue(item, 'fileNumber') || '');
-    const match = fileNo.match(/\b(?:19|20)\d{2}\b/);
-    return match ? Number(match[0]) === CURRENT_FILE_YEAR : false;
-  };
+  // Rule B: event weight for the Timeline sort. The numbers come from
+  // App\Support\LegalSearchTimelineWeights so this table and the printed slip cannot drift
+  // apart. A null weight marks a "floating" event (parcel updates, decommissionings): it
+  // carries no rank and is injected chronologically by sortTimelineChronologically().
+  const TIMELINE_WEIGHTS = @json(\App\Support\LegalSearchTimelineWeights::MAP);
+  const PARCEL_UPDATE_PATTERN = /subdivision|merger|change of purpose|plot extension|separation|parcel update/;
 
-  const isCurrentYearTransaction = (item) => {
-    const dates = [
-        item.reg_date, item.transaction_date, item.deeds_date, 
-        item.cofo_date, item.certificateDate, item.approval_date, item.date
-    ];
-    for (const txDate of dates) {
-      if (txDate && txDate !== '-') {
-        const d = new Date(txDate);
-        if (!isNaN(d.getTime()) && d.getFullYear() === CURRENT_FILE_YEAR) return true;
-        
-        const parts = String(txDate).split(/[\/\-]/);
-        if (parts.length === 3 && parts[2].length === 4 && Number(parts[2]) === CURRENT_FILE_YEAR) return true;
-      }
-    }
-    return false;
-  };
+  const classifyTimelineEvent = (item) => {
+    if (item?._is_commissioning) return 'FILE_COMMISSIONING';
+    if (item?._is_temporary_file) return 'TEMP_FILE_COMMISSIONING';
+    if (item?._is_decommissioning) return 'FILE_DECOMMISSIONING';
 
-  // Rule B: transaction-type priority for Timeline sort order.
-  // Priority group (always displayed first, in weight order): OP=10, TOT=9, RoFO=8.
-  // CofO + all other instruments = 1 → sorted chronologically by reg date within tie.
-  // Current-year file numbers are forced to weight 0 (sorted last).
-  const recordPriorityWeight = (item) => {
-    if (item && item._is_commissioning) return 12;
-    if (item && item._is_temporary_file) return 11;
-    if (isCurrentYearFileNumber(item) || isCurrentYearTransaction(item)) return 0;
+    const source = String(item?.source_table || '').trim();
+    if (source === 'DCIV File Commissioning') return 'DCIV_COMMISSIONING';
+
+    // 'Related Fileno' is a source, not an event: a Merger or Subdivision links files just
+    // as a recertification does, so the type must win. Testing the source first would rank
+    // a Subdivision as a recertification (8) and lift it out of the floating events.
     const txType = canonicalWeightingInstrumentType(getMappedValue(item, 'transactionType'));
-    if (txType === 'occupancy permit') return 10;
-    if (txType === 'transfer of title') return 9;
-    if (txType === 'right of occupancy') return 8;
-    return 1;
+    if (txType === 'occupancy permit') return 'OCCUPANCY_PERMIT';
+    if (txType === 'transfer of title') return 'TRANSFER_OF_TITLE_OP';
+    if (txType === 'right of occupancy') return 'RIGHT_OF_OCCUPANCY';
+    if (txType.includes('recertification')) return 'KANGIS_RECERTIFICATION';
+    if (txType.includes('certificate of occupanc')) return 'CERTIFICATE_OF_OCCUPANCY';
+    if (PARCEL_UPDATE_PATTERN.test(txType)) return 'PARCEL_UPDATE';
+
+    // An untyped 'Related Fileno' row is the synthetic KANGIS recertification marker.
+    if (source === 'Related Fileno') return 'KANGIS_RECERTIFICATION';
+    return 'OTHER_INSTRUMENTS';
+  };
+
+  // Lineage rows (a child file's commissioning/decommissioning) are positioned by splice
+  // against the parcel-update that created them — see renderTimeline. They must never be
+  // weight-sorted, so they float: a later re-sort (e.g. the arrange feature) can no longer
+  // hoist them to the top of the table alongside the searched file's own commissioning.
+  const recordPriorityWeight = (item) => {
+    if (item?._pinned) return null;
+    const weight = TIMELINE_WEIGHTS[classifyTimelineEvent(item)];
+    return weight === undefined ? TIMELINE_WEIGHTS.OTHER_INSTRUMENTS : weight;
   };
 
   // Rule A (Source/Table Weighting)
@@ -2388,6 +2428,7 @@ const executeSearchAjax = (filters, searchData) => {
         const _tf = data.file_temp_number || null;
         const _cd = data.file_commissioning_date || null;
         const _cn = data.file_commissioned_number || null;
+        const _ch = data.file_commissioning_holder || null;
         const _fnd = data.file_number_display || null;
         window._lsFileTempNumber = _tf;
         window._lsLineage = data.lineage || null;
@@ -2407,6 +2448,7 @@ const executeSearchAjax = (filters, searchData) => {
           if (_tf) r._file_temp_number    = _tf;
           if (_cd) r._file_commissioning_date = _cd;
           if (_cn) r._file_commissioned_number = _cn;
+          if (_ch) r._file_commissioning_holder = _ch;
           if (_fnd) r._file_number_display = _fnd;
         });
 
@@ -3119,13 +3161,26 @@ const executeSearchAjax = (filters, searchData) => {
     return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
   };
 
+  // OP / TOT / RofO carry their operative date in transaction_date; every other event —
+  // C of O, recertifications, other instruments — is keyed off its registration date.
+  // Keyed off the event class rather than the weight: the weight scale has no stable
+  // "default" number to test against, and a null (floating) weight is not comparable.
+  const TRANSACTION_DATE_FIRST_EVENTS = new Set([
+    'OCCUPANCY_PERMIT', 'TRANSFER_OF_TITLE_OP', 'RIGHT_OF_OCCUPANCY',
+  ]);
+
   const getTransactionTimestamp = (item) => {
-    const weight = recordPriorityWeight(item);
-    
-    let candidates;
-    if (weight === 1) {
-      // For default weight (1) records, prioritize Reg Date
-      candidates = [
+    const candidates = TRANSACTION_DATE_FIRST_EVENTS.has(classifyTimelineEvent(item))
+      ? [
+        item.transaction_date,
+        item.deeds_date,
+        item.reg_date,
+        item.cofo_date,
+        item.certificateDate,
+        item.approval_date,
+        item.date,
+      ]
+      : [
         item.reg_date,
         item.transaction_date,
         item.deeds_date,
@@ -3134,18 +3189,6 @@ const executeSearchAjax = (filters, searchData) => {
         item.approval_date,
         item.date,
       ];
-    } else {
-      // For high priority (OP, TOT, ROFO), prioritize Transaction Date
-      candidates = [
-        item.transaction_date,
-        item.deeds_date,
-        item.reg_date,
-        item.cofo_date,
-        item.certificateDate,
-        item.approval_date,
-        item.date,
-      ];
-    }
 
     for (const candidate of candidates) {
       const ts = parseTimelineDateValue(candidate);
@@ -3183,24 +3226,110 @@ const executeSearchAjax = (filters, searchData) => {
   };
 
 
-  const sortTimelineChronologically = (transactions) => {
-    return [...transactions].sort((a, b) => {
-      const wa = recordPriorityWeight(a);
-      const wb = recordPriorityWeight(b);
-      if (wa !== wb) return wb - wa;
+  // The Timeline Weighting Method (spec §3). Two phases, because weighted and floating
+  // events are ranked on different keys and must not be compared to each other:
+  //
+  //   1. Weighted events (weight !== null) sort by weight DESC, then timestamp ASC, then id.
+  //   2. Floating events (weight === null — parcel updates, decommissionings, DCIV rows)
+  //      have no rank of their own. Each is injected after the last weighted event that is
+  //      no later than it, so it lands chronologically without disturbing the hierarchy.
+  //
+  // A single comparator cannot express this: floating events are not ordered relative to
+  // weighted ones by weight at all, only by date, so mixing them in one sort makes the
+  // comparator intransitive and the result depends on input order.
+  const compareWeightedEvents = (a, b) => {
+    const wa = recordPriorityWeight(a);
+    const wb = recordPriorityWeight(b);
+    if (wa !== wb) return wb - wa;
 
+    const ta = getTransactionTimestamp(a);
+    const tb = getTransactionTimestamp(b);
+
+    if (ta === null && tb === null) {
+      return (Number(a.id) || 0) - (Number(b.id) || 0);
+    }
+    if (ta === null) return 1;
+    if (tb === null) return -1;
+    if (ta !== tb) return ta - tb;
+
+    return (Number(a.id) || 0) - (Number(b.id) || 0);
+  };
+
+  // Only a weighted event that actually carries a date can anchor a floater in time.
+  const isDatedWeighted = (item) =>
+    recordPriorityWeight(item) !== null && getTransactionTimestamp(item) !== null;
+
+  const sortTimelineChronologically = (transactions) => {
+    const weighted = [];
+    const floating = [];
+    for (const t of transactions) {
+      (recordPriorityWeight(t) === null ? floating : weighted).push(t);
+    }
+
+    weighted.sort(compareWeightedEvents);
+    if (!floating.length) return weighted;
+
+    // Undated floaters keep their arrival order at the very end; dated ones sort among
+    // themselves so several sharing a timestamp stay stable.
+    floating.sort((a, b) => {
       const ta = getTransactionTimestamp(a);
       const tb = getTransactionTimestamp(b);
-
-      if (ta === null && tb === null) {
-        return (Number(a.id) || 0) - (Number(b.id) || 0);
-      }
+      if (ta === null && tb === null) return (Number(a.id) || 0) - (Number(b.id) || 0);
       if (ta === null) return 1;
       if (tb === null) return -1;
       if (ta !== tb) return ta - tb;
-
       return (Number(a.id) || 0) - (Number(b.id) || 0);
     });
+
+    const result = [...weighted];
+    for (const floater of floating) {
+      const ts = getTransactionTimestamp(floater);
+      if (ts === null) { result.push(floater); continue; }
+
+      // Anchor = the LAST dated weighted event on or before this floater. Scanned forward
+      // over the originally-weighted rows only, so floaters inserted on an earlier pass
+      // never act as anchors themselves. The weighted list is ordered by weight, not date,
+      // so "last" is positional: a floater settles below the deepest weighted event it
+      // post-dates, which keeps the hierarchy above it intact.
+      let insertAt = 0;
+      for (let i = 0; i < result.length; i++) {
+        if (!isDatedWeighted(result[i])) continue;
+        if (getTransactionTimestamp(result[i]) <= ts) insertAt = i + 1;
+      }
+      // Advance to just before the next dated weighted event. This steps over two things:
+      // floaters already parked on this anchor (`floating` is sorted ascending, so this one
+      // belongs after them — otherwise a Decommissioning would precede the Subdivision that
+      // caused it), and UNDATED weighted rows, which have no position in time and must stay
+      // attached to their weight group rather than be split off by a dated floater.
+      while (insertAt < result.length && !isDatedWeighted(result[insertAt])) {
+        insertAt++;
+      }
+      result.splice(insertAt, 0, floater);
+    }
+    return result;
+  };
+
+  // Business rule mirrored from LegalSearchService::placeKangisRecertBeforeCofo(). The
+  // recertification is what admits a legacy file into KANGIS and the KANGIS C of O is issued
+  // off the back of it, so it must render directly ABOVE the certificate. The backend already
+  // orders it that way, but sortTimelineChronologically() re-sorts by weight/date on the
+  // client, and a recert row carries an empty (or current-year) date that would otherwise
+  // strand it at the end of the list — so the rule is re-applied here after that sort.
+  const placeKangisRecertBeforeCofo = (rows) => {
+    const typeOf = (r) => String(r?.transaction_type || r?.instrument_type || '').toLowerCase();
+    const isCofo = (r) => typeOf(r).includes('certificate of occupanc');
+    const isRecert = (r) => typeOf(r).includes('recertification');
+
+    const recertRows = rows.filter(isRecert);
+    if (!recertRows.length) return rows;
+
+    const rest = rows.filter(r => !isRecert(r));
+    // Before the FIRST C of O, so the recertification sits above every certificate on record.
+    const cofoIdx = rest.findIndex(isCofo);
+    if (cofoIdx < 0) return rows; // No C of O — leave the recert where it naturally sorted.
+
+    rest.splice(cofoIdx, 0, ...recertRows);
+    return rest;
   };
 
   const sourceBadgeClass = (label) => {
@@ -3258,9 +3387,11 @@ const executeSearchAjax = (filters, searchData) => {
       const yearFromFileNo = extractYearFromFileNumber(fileNo);
       if (yearFromFileNo) mainRowDate = yearFromFileNo;
     }
-    // Party 1 is the commissioning authority; Party 2 is the file owner/title
-    // (the Ministry commissioned the file for them).
-    const ownerName = (selectedFile && (selectedFile._file_title || selectedFile.file_title)) || '-';
+    // Party 1 is the commissioning authority; Party 2 is the file's original holder —
+    // the assignor (Party 1) of the KLAES-registered Deed of Assignment when present,
+    // otherwise the file title (latest owner).
+    const ownerName = (selectedFile && (selectedFile._file_commissioning_holder
+      || selectedFile._file_title || selectedFile.file_title)) || '-';
     return {
       _is_commissioning: true,
       id: 'commissioning',
@@ -3301,6 +3432,8 @@ const executeSearchAjax = (filters, searchData) => {
     return {
       _is_commissioning: true,
       _is_lineage_commissioning: true,
+      // Positioned by splice against the parcel-update that created this file, never by weight.
+      _pinned: true,
       id: 'commissioning-' + idSuffix + '-' + no,
       source_table: 'File Commissioning',
       fileno: no,
@@ -3319,11 +3452,46 @@ const executeSearchAjax = (filters, searchData) => {
     };
   };
 
+  // Build a "File Decommissioning" row for a successor lineage file that was ITSELF
+  // later retired — e.g. the Subdivision child CON-AG-2026-108 retired by a Change of
+  // Purpose into CON-COM-2026-430. Mirrors buildDecommissioningTimelineRow but for a
+  // file other than the searched one.
+  const buildLineageDecommissioningRow = (succ) => {
+    const no = String(succ?.decommission_file_no || succ?.file_no || '')
+      .replace(/\s*\(\s*T\s*\)\s*$/i, '').trim();
+    if (!no) return null;
+    return {
+      _is_decommissioning: true,
+      _is_lineage_decommissioning: true,
+      _pinned: true,
+      id: 'decommissioning-next-' + no,
+      source_table: 'File Decommissioning',
+      fileno: no,
+      file_number: no,
+      mlsFNo: no,
+      transaction_type: 'File Decommissioning',
+      instrument_type: 'File Decommissioning',
+      party_1: 'Kano State Ministry of Land and Physical Planning',
+      party_2: succ?.decommission_holder || succ?.file_title || '-', party_3: '-', party_4: '-',
+      serial_no: '', page_no: '', volume_no: '',
+      transaction_date: (succ?.decommission_date && succ.decommission_date !== '-')
+        ? succ.decommission_date : '-',
+      reg_date: '',
+      caveat: 'No',
+      is_caveated: 0,
+      prop_id: '',
+      comments: succ?.decommission_reason || '-',
+    };
+  };
+
   // Commissioning rows for the searched file's successor(s) (when the searched
   // file was itself superseded by a subdivision/merger/CoP). A batch subdivision
   // retires the mother into SEVERAL children at once (successor_file_no is a CSV
-  // list), so one row is built per successor. They sit after the parcel-update
-  // transaction that retired the searched file.
+  // list), so one row is built per successor. The server resolves the chain
+  // recursively, so a child that was itself retired (Change of Purpose) also
+  // contributes its own File Decommissioning row, followed by the grandchild's
+  // commissioning. They sit after the parcel-update transaction that retired the
+  // searched file.
   const buildSuccessorCommissioningRows = () => {
     const lineage = window._lsLineage || {};
     const succFiles = Array.isArray(lineage.successor_files) && lineage.successor_files.length
@@ -3332,9 +3500,13 @@ const executeSearchAjax = (filters, searchData) => {
       : String(lineage.successor_file_no || '').split(',')
           .map(s => ({ file_no: s.trim(), commissioning_date: '-', file_title: '' }))
           .filter(s => s.file_no);
-    return succFiles
-      .map(s => buildLineageCommissioningRow(s.file_no, s.commissioning_date, s.file_title, 'next'))
-      .filter(Boolean);
+    // Each successor contributes its commissioning row and, when it was itself later
+    // retired, its own decommissioning row directly below — so a Change-of-Purpose child
+    // reads: commissioned → decommissioned, with the grandchild's commissioning next.
+    return succFiles.flatMap(s => [
+      buildLineageCommissioningRow(s.file_no, s.commissioning_date, s.file_title, 'next'),
+      s.is_superseded ? buildLineageDecommissioningRow(s) : null,
+    ]).filter(Boolean);
   };
 
   // Build the synthetic "File Decommissioning" row for the SEARCHED file when it
@@ -3360,6 +3532,8 @@ const executeSearchAjax = (filters, searchData) => {
       || (selectedFile && (selectedFile._file_title || selectedFile.file_title)) || '-';
     return {
       _is_decommissioning: true,
+      // Spliced immediately before the parcel-update row that retired this file.
+      _pinned: true,
       id: 'decommissioning',
       source_table: 'File Decommissioning',
       fileno: fileNo,
@@ -3414,7 +3588,8 @@ const executeSearchAjax = (filters, searchData) => {
     const tempRowDate = (commDate && commDate !== '-' && commissionedIsTemp)
       ? commDate : '-';
 
-    const ownerName = (selectedFile && (selectedFile._file_title || selectedFile.file_title)) || '-';
+    const ownerName = (selectedFile && (selectedFile._file_commissioning_holder
+      || selectedFile._file_title || selectedFile.file_title)) || '-';
     return {
       _is_temporary_file: true,
       id: 'temporary-file',
@@ -3442,6 +3617,8 @@ const executeSearchAjax = (filters, searchData) => {
 
     // Timeline view must be chronological by Transaction Date.
     transactions = sortTimelineChronologically(transactions);
+    // …except a KANGIS Recertification, which always sits directly above the KANGIS C of O.
+    transactions = placeKangisRecertBeforeCofo(transactions);
 
     // Synthetic "File Commissioning" rows. Only the SEARCHED file gets a
     // commissioning row (weight 12) at the top — predecessor "mother" files show
@@ -3559,20 +3736,25 @@ const executeSearchAjax = (filters, searchData) => {
       row.dataset.originalIndex = idx;
       const tintClass = sourceRowTintClass(item.source_table);
       if (tintClass) row.classList.add(tintClass);
-      const dedupScore = item._dedup_score != null ? item._dedup_score : recordPriorityWeight(item);
-      // Rule B: Timeline Weight column shows priority-group weights.
-      // OP=10, TOT=9, RoFO=8. Other instruments are weight 1.
+      // Rule B: the Weight column reports the key this row was actually sorted on.
+      // Floating events (parcel updates, decommissionings) and lineage rows placed by
+      // splice have no weight, and must not claim one — a number here next to a row that
+      // was never weight-sorted is what made the timeline look mis-sorted.
       const timelineWeight = recordPriorityWeight(item);
-      const weightDisplay = timelineWeight;
-      const weightColorClass = 'text-gray-500';
-      
+      const isFloating = timelineWeight === null;
+      const weightDisplay = isFloating ? '—' : timelineWeight;
+      const weightTitle = isFloating
+        ? (item._pinned ? 'Positioned by file lineage' : 'Floating event — placed chronologically')
+        : '';
+      const weightColorClass = isFloating ? 'text-gray-400' : 'text-gray-500';
+
       row.innerHTML = `
         <td class="cleanup-col text-center${cleanupModeActive ? '' : ' hidden'}"><input type="checkbox" class="row-checkbox" data-id="${item.id}" data-table="${timelineSourceToDbTable(item.source_table)}" data-prop-id="${item.prop_id || ''}"></td>
         <td class="arrange-col hidden text-center font-mono text-xs text-gray-400">${idx + 1}</td>
         <td class="text-center text-xs text-gray-500">${idx + 1}</td>
         <td class="text-xs text-gray-600 whitespace-nowrap">${renderFileNumberSpan(item, 'fileNumber')}</td>
         <td><span class="source-badge ${sourceBadgeClass(item.source_table)}">${item.source_table}</span></td>
-        <td class="text-center text-xs ${weightColorClass}">${weightDisplay}</td>
+        <td class="text-center text-xs ${weightColorClass}" title="${weightTitle}">${weightDisplay}</td>
         <td>${transType}</td>
         <td style="white-space:nowrap;">${party1}</td>
         <td>${party2}</td>
@@ -4440,6 +4622,10 @@ const executeSearchAjax = (filters, searchData) => {
         if (litigationInput) {
           litigationInput.value = res.data.litigation?.comment ?? '';
         }
+        const generalInput = document.getElementById('comment-general-text');
+        if (generalInput) {
+          generalInput.value = res.data.general?.comment ?? '';
+        }
         // W/R/C and CoFO overrides — only replace the prefilled default text
         // when this file has a saved override, otherwise keep the editable default.
         if (res.data.wrc?.comment) {
@@ -4468,6 +4654,8 @@ const executeSearchAjax = (filters, searchData) => {
         }
         const litigationInput = document.getElementById('comment-litigation-text');
         if (litigationInput) litigationInput.value = '';
+        const generalInput = document.getElementById('comment-general-text');
+        if (generalInput) generalInput.value = '';
       }
     })
     .catch(() => {});
@@ -5601,6 +5789,19 @@ const executeSearchAjax = (filters, searchData) => {
     return searchedFile;
   }
 
+  function setDigitalArchiveStatus(hasFiles) {
+    const cardEl = document.getElementById('digital-archive-status-card');
+    const headingEl = document.getElementById('digital-archive-status-heading');
+    if (cardEl) {
+      cardEl.classList.remove('bg-green-50', 'border-green-200', 'bg-red-50', 'border-red-200');
+      cardEl.classList.add(...(hasFiles ? ['bg-green-50', 'border-green-200'] : ['bg-red-50', 'border-red-200']));
+    }
+    if (headingEl) {
+      headingEl.classList.remove('text-green-700', 'text-red-700');
+      headingEl.classList.add(hasFiles ? 'text-green-700' : 'text-red-700');
+    }
+  }
+
   async function loadLegalSearchArchive() {
     console.log('[Archive Loader] Starting archive load');
     const section = document.getElementById('digital-archive-section');
@@ -5622,6 +5823,7 @@ const executeSearchAjax = (filters, searchData) => {
         emptyEl.textContent = 'No files found in the digital archive for this file.';
         emptyEl.classList.remove('hidden');
       }
+      setDigitalArchiveStatus(false);
       return;
     }
 
@@ -5654,9 +5856,11 @@ const executeSearchAjax = (filters, searchData) => {
           emptyEl.textContent = data.message || 'No files found in the digital archive for this file.';
           emptyEl.classList.remove('hidden');
         }
+        setDigitalArchiveStatus(false);
         return;
       }
 
+      setDigitalArchiveStatus(true);
       console.log('[Archive Loader] Rendering', folders.length, 'archive button(s)');
       if (foldersEl) {
         foldersEl.innerHTML = folders.map((folder) => {
@@ -5691,6 +5895,7 @@ const executeSearchAjax = (filters, searchData) => {
         emptyEl.textContent = 'No files found in the digital archive for this file.';
         emptyEl.classList.remove('hidden');
       }
+      setDigitalArchiveStatus(false);
     } finally {
       if (loadingEl) loadingEl.classList.add('hidden');
     }

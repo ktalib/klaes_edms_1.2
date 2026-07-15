@@ -534,6 +534,32 @@
     // Expose globally so workflow-3step-js can call it after toggle init
     window.applyKangisOfficeWorkflowGate = applyKangisOfficeWorkflowGate;
 
+    // A KANGIS approval tracker is done once the department has logged the file in
+    // (in_processing) or the tracker was closed outright. Every other status —
+    // including the legacy 'ACTIVE' that older step 2/3 trackers still carry — means
+    // the chain is still awaiting an action, so it stays in flight by default.
+    const KANGIS_WORKFLOW_CLOSED_STATUSES = ['in_processing', 'completed', 'cancelled'];
+
+    function isKangisWorkflowInFlight(status) {
+        return !KANGIS_WORKFLOW_CLOSED_STATUSES.includes(String(status ?? '').trim().toLowerCase());
+    }
+
+    function isKangisWorkflowTracker(tracker) {
+        const wfType = tracker && (tracker.workflowType ?? tracker.workflow_type ?? null);
+        return wfType === 'kangis_3step' || wfType === 'kangis_approval_flow';
+    }
+
+    /**
+     * True while a KANGIS approval file still has no Office Details on it — either the
+     * approvals are outstanding, or every approval is in but the file is still sitting in
+     * the Department Queue waiting to be logged in. Its record is incomplete until then,
+     * so the log sheet / details / print actions must stay disabled.
+     */
+    function isKangisAwaitingOfficeDetails(tracker) {
+        if (!isKangisWorkflowTracker(tracker)) return false;
+        return isKangisWorkflowInFlight(tracker && tracker.status);
+    }
+
     /**
      * Apply button state based on an existing KANGIS workflow tracker.
      * - Steps 1–3 (pending): disable button, show amber "Pending Approval" label.
@@ -555,7 +581,11 @@
 
         const wfType = data && (data.workflow_type || data.workflowType);
         const wfStep = data ? Number(data.workflow_step ?? data.workflowStep ?? 0) : 0;
-        const isKangisWorkflow = wfType === 'kangis_3step' || wfType === 'kangis_approval_flow';
+        const wfStatus = data ? (data.status ?? data.workflow_status ?? null) : null;
+        // A tracker whose chain already closed is history, not the current request,
+        // so it must not gate the button.
+        const isKangisWorkflow = isKangisWorkflowInFlight(wfStatus)
+            && (wfType === 'kangis_3step' || wfType === 'kangis_approval_flow');
 
         if (isKangisWorkflow && wfStep >= 1 && wfStep < 4) {
             // Pending approval — disable the button
@@ -725,10 +755,44 @@
         ) || null;
     }
 
+    // A movement whose label reads Log-in / Completed means the file physically
+    // arrived — mirrors the fileLoggedBackIn test used by the card renderer.
+    function isArrivalMovementEntry(entry) {
+        const label = (resolveStatusDisplay(entry, entry?.status || '').label || '').toLowerCase();
+        return label === 'log-in' || label === 'completed';
+    }
+
+    // The most recent movement that landed the file somewhere. Undated rows sort as
+    // +Infinity, so only dated arrivals count — otherwise one dateless row would
+    // masquerade as the newest movement on every card.
+    function getLatestArrivalEntry(entries) {
+        return (entries || [])
+            .filter(entry => isArrivalMovementEntry(entry) && Number.isFinite(movementChronoValue(entry)))
+            .reduce((latest, entry) => (
+                !latest || movementChronoValue(entry) > movementChronoValue(latest) ? entry : latest
+            ), null);
+    }
+
     function getPendingMovementEntry(tracker) {
-        return (tracker?.logEntries || []).find(
+        const entries = tracker?.logEntries || [];
+        const pending = entries.filter(
             entry => (entry.status || '').toLowerCase() === 'pending_acceptance'
-        ) || null;
+        );
+
+        if (!pending.length) {
+            return null;
+        }
+
+        // A pending_acceptance row only means "still waiting" while it is the file's
+        // last word. Once a chronologically later arrival lands, the file is home and
+        // the pending row is stale history — the transfer must not stay locked behind
+        // an acceptance that events already overtook.
+        const latestArrival = getLatestArrivalEntry(entries);
+        const stillWaiting = pending.find(entry => (
+            !latestArrival || movementChronoValue(entry) > movementChronoValue(latestArrival)
+        ));
+
+        return stillWaiting || null;
     }
 
     function resolveTransferEligibility(tracker) {
@@ -1744,13 +1808,16 @@
             if (applyInTransitVisibility()) return;
 
             const turnaroundDays = parseInt(purposeSelect.selectedOptions?.[0]?.dataset?.turnaroundDays || '', 10);
-            if (!isNaN(turnaroundDays)) {
+            // The purpose's turnaround is only a DEFAULT. Once the deadline has been
+            // set by hand (typed into Timeline (Days), picked on the calendar, or
+            // carried over from a Quick Search request), it is the source of truth —
+            // writing the default over Timeline (Days) here would leave the two
+            // fields disagreeing (e.g. "5 days" next to a date 50 days out).
+            if (!isNaN(turnaroundDays) && !userEditedDeadline) {
                 if (timelineDaysInput) timelineDaysInput.value = turnaroundDays;
-                if (!userEditedDeadline) {
-                    const d = new Date();
-                    d.setDate(d.getDate() + turnaroundDays);
-                    setDeadlineValue(toDateInputValue(d));
-                }
+                const d = new Date();
+                d.setDate(d.getDate() + turnaroundDays);
+                setDeadlineValue(toDateInputValue(d));
             }
             updatePreview();
         });
@@ -1792,6 +1859,20 @@
                 }
             });
         }
+
+        // Quick Search "Log File" backfill entry point. Only the Expected Return Date
+        // is persisted on a File Search Request — the day count the requester typed is
+        // not — so the date is authoritative and Timeline (Days) is derived back from
+        // it. Marks the deadline as user-set so the purpose-change default above stays
+        // out of the way.
+        window._applyRequestTimelineFromRequest = function (dateStr) {
+            if (!dateStr) return;
+            setDeadlineValue(dateStr);
+            userEditedDeadline = true;
+            const days = daysFromToday(dateStr);
+            if (timelineDaysInput && !isNaN(days) && days >= 0) timelineDaysInput.value = days;
+            updatePreview();
+        };
 
         window._resetRequestTimelineField = function () {
             userEditedDeadline = false;
@@ -2123,6 +2204,182 @@
                 }
             });
     }
+    // ── Update Manual File Request Sheet dialog ─────────────────────────────
+    // Edits the tracker-level fields printed on the Manual File Request Sheet
+    // (file title, priority, origin registry, destination department, receiving
+    // office/officer, date requested, remarks). Opened from the File Log Table
+    // row action menu via data-action="update-request-sheet".
+    let updateRequestSheetContext = null;
+
+    function setUpdateSheetError(message) {
+        const box = document.getElementById('update-sheet-error');
+        if (!box) {
+            return;
+        }
+        if (message) {
+            box.textContent = message;
+            box.classList.remove('hidden');
+        } else {
+            box.textContent = '';
+            box.classList.add('hidden');
+        }
+    }
+
+    // dd/mm/yyyy HH:MM display — matches the printed sheet's date format.
+    function formatSheetDateDisplay(value) {
+        if (!value) {
+            return '';
+        }
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) {
+            return String(value);
+        }
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    function openUpdateRequestSheetDialog(trackerIdentifier) {
+        const dialog = document.getElementById('update-request-sheet-dialog');
+        if (!dialog) {
+            return;
+        }
+
+        const tracker = findTrackerForUpdate(trackerIdentifier);
+
+        if (!tracker) {
+            Swal.fire({ icon: 'error', title: 'Not Found', text: 'Unable to locate this tracker. Please refresh and try again.' });
+            return;
+        }
+
+        if (!tracker.id) {
+            Swal.fire({ icon: 'warning', title: 'Unsaved Tracker', text: 'Please save this tracker before updating its request sheet.' });
+            return;
+        }
+
+        updateRequestSheetContext = { trackerId: tracker.id, tracker };
+
+        const setText = (id, value) => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.textContent = value || '—';
+            }
+        };
+
+        setText('update-sheet-file-label', tracker.fileNo || tracker.trackingId || `#${tracker.id}`);
+        setText('update-sheet-detail-title', tracker.fileName);
+        // Same fallback chain as the printed sheet: date_requested, else creation date.
+        setText('update-sheet-detail-date-requested',
+            formatSheetDateDisplay(tracker.dateRequested || tracker.dateCreated || tracker.createdAt));
+        setText('update-sheet-detail-origin', tracker.originOfficeName || tracker.originRegistry);
+        setText('update-sheet-detail-department', tracker.department);
+        setText('update-sheet-detail-receiving-office', tracker.receivingOfficeName);
+        // Officer may live on the tracker or only on a movement entry.
+        const officerName = tracker.receivingOfficer?.name
+            || tracker.receivingOfficerName
+            || (tracker.logEntries || []).find(entry => entry.receivingOfficerName)?.receivingOfficerName
+            || '';
+        setText('update-sheet-detail-receiving-officer', officerName);
+        setText('update-sheet-detail-notes', tracker.notes || tracker.description);
+
+        const currentType = (tracker.fileRequestType || '').toUpperCase();
+        document.querySelectorAll('input[name="update-sheet-request-type"]').forEach(radio => {
+            radio.checked = radio.value === currentType;
+        });
+
+        setUpdateSheetError('');
+        dialog.classList.add('show');
+    }
+
+    function closeUpdateRequestSheetDialog() {
+        const dialog = document.getElementById('update-request-sheet-dialog');
+        if (dialog) {
+            dialog.classList.remove('show');
+        }
+        setUpdateSheetError('');
+        updateRequestSheetContext = null;
+    }
+
+    function submitUpdateRequestSheetForm(printAfterSave = false) {
+        if (!updateRequestSheetContext || !updateRequestSheetContext.trackerId) {
+            Swal.fire({ icon: 'warning', title: 'No Tracker Selected', text: 'No tracker selected for the request sheet update.' });
+            return;
+        }
+
+        const trackerId = updateRequestSheetContext.trackerId;
+
+        const selectedType = document.querySelector('input[name="update-sheet-request-type"]:checked')?.value || '';
+        if (!selectedType) {
+            setUpdateSheetError('Select the file request type (In-transit or Submitted Request).');
+            return;
+        }
+
+        setUpdateSheetError('');
+
+        // Only the request type is editable — the rest of the sheet is read-only here.
+        const payload = { file_request_type: selectedType };
+
+        const saveButton = document.getElementById('update-sheet-save');
+        const savePrintButton = document.getElementById('update-sheet-save-print');
+        const activeButton = printAfterSave ? savePrintButton : saveButton;
+        let originalButtonHtml = '';
+
+        if (activeButton) {
+            originalButtonHtml = activeButton.innerHTML;
+            activeButton.innerHTML = '<i data-lucide="loader" class="mr-2 h-4 w-4 animate-spin"></i>Saving...';
+            lucide.createIcons();
+        }
+        if (saveButton) saveButton.disabled = true;
+        if (savePrintButton) savePrintButton.disabled = true;
+
+        $.ajax({
+            url: `/create-file-tracker/${trackerId}/request-sheet`,
+            method: 'POST',
+            headers: { 'X-CSRF-TOKEN': csrfToken, 'Accept': 'application/json' },
+            data: JSON.stringify(payload),
+            contentType: 'application/json',
+            processData: false
+        })
+            .done(function (response) {
+                if (response && response.success) {
+                    if (response.data) {
+                        const normalizedTracker = transformApiTracker(response.data);
+                        upsertLocalTracker(normalizedTracker);
+                    }
+                    showNotification('File request sheet updated successfully.', 'success');
+                    closeUpdateRequestSheetDialog();
+                    if (printAfterSave) {
+                        window.open(`/create-file-tracker/${trackerId}/request-sheet`, '_blank');
+                    }
+                } else {
+                    setUpdateSheetError(response?.message || 'Unable to update the request sheet.');
+                }
+            })
+            .fail(function (xhr) {
+                let message = 'Unable to update the request sheet.';
+                if (xhr?.responseJSON) {
+                    if (xhr.responseJSON.errors) {
+                        const parts = Object.values(xhr.responseJSON.errors)
+                            .flat()
+                            .filter(Boolean);
+                        if (parts.length) {
+                            message = parts.join(' ');
+                        }
+                    } else if (xhr.responseJSON.message) {
+                        message = xhr.responseJSON.message;
+                    }
+                }
+                setUpdateSheetError(message);
+            })
+            .always(function () {
+                if (activeButton && originalButtonHtml) {
+                    activeButton.innerHTML = originalButtonHtml;
+                }
+                if (saveButton) saveButton.disabled = false;
+                if (savePrintButton) savePrintButton.disabled = false;
+                lucide.createIcons();
+            });
+    }
+
     let lastMetadataLookup = null;
     let activeMetadataRequest = null;
     let resolvedFileIndexingId = null;
@@ -3088,14 +3345,23 @@
                         return;
                     }
 
+                    // Only carry the workflow fields while that tracker's approval chain is
+                    // still awaiting an action. A finished chain (the department already
+                    // logged the file in, so status moved to in_processing / COMPLETED) must
+                    // not bleed into a fresh request for the same file — otherwise the button
+                    // stays on "Save Log" and the save would append a movement to the old
+                    // tracker instead of starting a new submission.
+                    const trackerWorkflowLive = isKangisWorkflowInFlight(matchedTracker.status);
+
                     const metadataPayload = {
                         id: matchedTracker.id ?? matchedTracker.tracking_id ?? null,
                         file_number: matchedTracker.file_number || fileNumber,
                         file_name: matchedTracker.file_title || matchedTracker.file_name || '',
                         tracking_id: matchedTracker.tracking_id,
-                        workflow_type: matchedTracker.workflow_type ?? matchedTracker.workflowType ?? null,
-                        workflow_step: matchedTracker.workflow_step ?? matchedTracker.workflowStep ?? null,
-                        workflow_config: matchedTracker.workflow_config ?? matchedTracker.workflowConfig ?? null,
+                        status: matchedTracker.status ?? null,
+                        workflow_type: trackerWorkflowLive ? (matchedTracker.workflow_type ?? matchedTracker.workflowType ?? null) : null,
+                        workflow_step: trackerWorkflowLive ? (matchedTracker.workflow_step ?? matchedTracker.workflowStep ?? null) : null,
+                        workflow_config: trackerWorkflowLive ? (matchedTracker.workflow_config ?? matchedTracker.workflowConfig ?? null) : null,
                         department: matchedTracker.department || null,
                     };
 
@@ -3954,6 +4220,9 @@
             fileName: tracker.file_title,
             fileType: tracker.file_type,
             priority: tracker.priority || 'MEDIUM',
+            // Tracker-level status (submitted / recommended / approved / in_processing / ...).
+            // Distinct from the per-movement entry.status carried on logEntries.
+            status: tracker.status ?? null,
             currentOffice: tracker.current_office_name,
             currentOfficeId: tracker.current_office_code,
             office: tracker.current_office_name && tracker.current_office_code ? {
@@ -3965,6 +4234,9 @@
             priorLogEntries: priorEntries,
             notes: tracker.notes,
             createdAt: tracker.created_at,
+            dateCreated: tracker.date_created ?? tracker.dateCreated ?? null,
+            dateRequested: tracker.date_requested ?? tracker.dateRequested ?? null,
+            fileRequestType: tracker.file_request_type ?? tracker.fileRequestType ?? null,
             fileIndexingCreatedAt: tracker.file_indexing_created_at || null,
             department: tracker.department,
             description: tracker.description,
@@ -5094,6 +5366,9 @@
                         upsertLocalTracker(normalizedTracker);
                         document.getElementById('preview-dialog').classList.remove('show');
                         showNotification(`File logged to department successfully. Tracking ID: ${response.data.tracking_id}`, 'success');
+                        // The tracker's workflow just closed — drop the cached lookup so
+                        // re-selecting this file re-reads its state instead of replaying it.
+                        trackerMetadataFallbackCache.clear();
                         resetForm();
                         currentTracker = null;
                     } else {
@@ -5222,6 +5497,9 @@
                     const wasDigitalRequest = {{ in_array(strtolower($module ?? ''), ['digital_request','digital-request']) ? 'true' : 'false' }};
                     _crossModuleRequestMode = false;
                     applyCrossModuleFieldLabels(false);
+                    // This file's tracker state just changed — drop the cached lookup so
+                    // re-selecting it re-reads its state instead of replaying it.
+                    trackerMetadataFallbackCache.clear();
                     resetForm();
                     currentTracker = null;
 
@@ -5441,14 +5719,33 @@
             const latestEntry = physicalMovements.length ? physicalMovements[0] : null;
             const pendingMovement = getPendingMovementEntry(tracker);
             const hasActiveMovement = Boolean(activeEntry);
+
+            // A file that has been logged back in reads by its arrival, even when an
+            // earlier log-out row is still flagged 'active'. Without this the stale
+            // log-out wins and a returned file is badged "Log-out" forever.
+            const latestArrivalEntry = getLatestArrivalEntry(physicalMovements);
+            const arrivalIsLastWord = Boolean(latestArrivalEntry) && (
+                !activeEntry || movementChronoValue(latestArrivalEntry) > movementChronoValue(activeEntry)
+            );
+
+            // assignment_status can be left at PENDING server-side when a file comes home
+            // without ever being accepted, so a dangling PENDING only counts while the file
+            // has not arrived. pendingMovement already applies the same arrival test.
+            const awaitingAcceptance = Boolean(pendingMovement)
+                || (assignmentStatusLower === 'pending' && !arrivalIsLastWord);
+
             let statusLabel;
             let statusBadge;
-            if (assignmentStatusLower === 'pending' || pendingMovement) {
+            if (awaitingAcceptance) {
                 statusLabel = 'Pending acceptance';
                 statusBadge = 'bg-amber-100 text-amber-800 border border-amber-200';
             } else if (assignmentStatusLower === 'rejected') {
                 statusLabel = 'Assignment rejected';
                 statusBadge = 'bg-red-100 text-red-700 border border-red-200';
+            } else if (arrivalIsLastWord) {
+                const displayMeta = resolveStatusDisplay(latestArrivalEntry, latestArrivalEntry.status || 'completed');
+                statusLabel = displayMeta.label;
+                statusBadge = displayMeta.badgeClass;
             } else if (hasActiveMovement) {
                 const displayMeta = resolveStatusDisplay(activeEntry, 'active');
                 statusLabel = displayMeta.label;
@@ -5494,6 +5791,8 @@
             const _kangisUrlParam = new URLSearchParams(window.location.search).get('url');
             const isKangisView = _kangisUrlParam === 'kangis' || _kangisUrlParam === 'dgis' || _kangisUrlParam === 'dg';
 
+            const kangisAwaitingOfficeDetails = isKangisAwaitingOfficeDetails(tracker);
+
             const rows = totalMovements > 0
                 ? (isKangisView ? (() => {
                     // KANGIS view: Aggregate all physical movements into ONE summary row
@@ -5502,14 +5801,17 @@
                     const entryStatus = (firstEntry.status || 'completed').toLowerCase();
                     const safeNotes = sanitize(firstEntry.notes);
 
-                    // Admin check (already computed above)
-                    const standardItemClass = isSupperAdmin
+                    // Admin check (already computed above). The whole menu is also locked
+                    // while the file has no Office Details yet — every item below acts on a
+                    // record that isn't finished.
+                    const actionsEnabled = isSupperAdmin && !kangisAwaitingOfficeDetails;
+                    const standardItemClass = actionsEnabled
                         ? 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-100'
                         : 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-400 cursor-not-allowed opacity-50';
-                    const deleteItemClass = isSupperAdmin
+                    const deleteItemClass = actionsEnabled
                         ? 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-red-600 transition hover:bg-gray-100'
                         : 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-400 cursor-not-allowed opacity-50';
-                    const commonDisabledAttr = isSupperAdmin ? '' : 'disabled="true"';
+                    const commonDisabledAttr = actionsEnabled ? '' : 'disabled="true"';
 
                     // Direct GIS — DGIS recommendation
                     let dgisRecCell = '—';
@@ -5545,6 +5847,7 @@
 
                     const statusMeta = resolveStatusDisplay(firstEntry, entryStatus);
                     const isLoginEntry = statusMeta.label === 'Log-in';
+                    const lockActionMenu = isLoginEntry || kangisAwaitingOfficeDetails;
 
                     // Print Log Sheet is a Super Admin–only action (assign_role = Supper Admin).
                     // Hidden entirely for everyone else.
@@ -5584,11 +5887,12 @@
                                     ${(_kangisUrlParam === 'dgis' || _kangisUrlParam === 'dg') ? '' : `
                                     <div class="relative inline-block text-left">
                                         <button type="button"
-                                            class="${isLoginEntry ? 'dropdown-trigger inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-gray-50 cursor-not-allowed opacity-50' : 'dropdown-trigger inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-300 bg-white shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'}"
+                                            class="${lockActionMenu ? 'dropdown-trigger inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-gray-50 cursor-not-allowed opacity-50' : 'dropdown-trigger inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-300 bg-white shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'}"
                                             data-tracker-id="${sanitize(tracker.trackingId)}"
                                             data-log-id="${sanitize(firstEntry.logId)}"
                                             data-status="${entryStatus}"
-                                            ${isLoginEntry ? 'disabled="true"' : ''}>
+                                            ${lockActionMenu ? 'disabled="true"' : ''}
+                                            ${kangisAwaitingOfficeDetails ? 'title="Available once the Office Details are entered for this file"' : ''}>
                                             <i data-lucide="more-horizontal" class="h-4 w-4 text-gray-500"></i>
                                         </button>
                                         <div class="dropdown-menu hidden absolute right-0 bottom-full z-50 mb-2 w-56 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5">
@@ -5598,6 +5902,10 @@
                                                     <span>Generate Log Sheet</span>
                                                 </button>
                                                 ${printLogButtonHtml}
+                                                <button class="${standardItemClass}" data-action="update-request-sheet" ${commonDisabledAttr}>
+                                                    <i data-lucide="file-pen-line" class="mr-2 h-4 w-4"></i>
+                                                    <span>Update Request Type</span>
+                                                </button>
                                                  ${canDelete ? `
                                                 <hr class="my-1 border-gray-200">
                                                 <button class="${deleteItemClass}" data-action="delete-log" ${commonDisabledAttr}>
@@ -5659,6 +5967,16 @@
                         <button class="${updateButtonClasses}" data-action="update-log" ${updateButtonAttrs}>
                             <i data-lucide="edit-3" class="mr-2 h-4 w-4 ${updateButtonIconTone}"></i>
                             <span>Update Log Entry</span>
+                        </button>
+                    `;
+                    // Update Request Sheet edits the tracker-level Manual File Request
+                    // Sheet (title, priority, offices, officer, date, remarks). It stays
+                    // available even after the file is logged back in, so the paper
+                    // record can be corrected at any time — like Delete Log Entry.
+                    const updateSheetButton = `
+                        <button class="dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-100" data-action="update-request-sheet">
+                            <i data-lucide="file-pen-line" class="mr-2 h-4 w-4 text-gray-600"></i>
+                            <span>Update Request Type</span>
                         </button>
                     `;
                     const completeLogClasses = canCompleteLog
@@ -5745,6 +6063,7 @@
                                                 <span>Print Complete Log Sheet</span>
                                             </button>
                                             ${updateButton}
+                                            ${updateSheetButton}
                                             ${canDelete ? `
                                             <hr class="my-1 border-gray-200">
                                             {{-- Delete Log Entry stays enabled even after the file is logged back in,
@@ -5786,9 +6105,9 @@
             );
             // Origin/initial log entry — the file's first tracking entry (oldest movement).
             const homeLogId = sanitize(lastMovement?.logId || '');
-            // Combined registry + rack/shelf label, e.g. "DCIV Registry — Rack/Shelf A1"
-            // (falls back to "… — Rack/Shelf -" when no shelf/rack is recorded).
-            const homeRegistryDisplay = `${homeRegistryName} — Rack/Shelf ${homeShelfLocation || '-'}`;
+            // Combined registry + shelf/rack label, e.g. "DCIV Registry — Shelf/Rack A1"
+            // (falls back to "… — Shelf/Rack -" when no shelf/rack is recorded).
+            const homeRegistryDisplay = `${homeRegistryName} — Shelf/Rack ${homeShelfLocation || '-'}`;
             // Log In for the home row mirrors the file's original file_indexings.created_at.
             const homeCreatedAt = tracker.fileIndexingCreatedAt ? (() => {
                 const d = new Date(tracker.fileIndexingCreatedAt);
@@ -5903,13 +6222,11 @@
 
             const currentModuleCode = (window.currentModule || '').toLowerCase();
             const isWorkflowGateModuleView = ['kangis', 'dgis', 'dg'].includes(currentModuleCode);
-            const isKangisWorkflowTracker = tracker.workflowType === 'kangis_3step'
-                || tracker.workflowType === 'kangis_approval_flow';
-            const workflowStepNumber = Number(tracker.workflowStep || 0);
-            const isKangisWorkflowCompleted = workflowStepNumber >= 4;
+            // Reaching step 4 is not enough: the DG's approval leaves the file in the
+            // Department Queue with no Office Details on it, and the details view would
+            // show a half-written record. Wait for the department to log it in.
             const disableViewDetailsForKangis = isWorkflowGateModuleView
-                && isKangisWorkflowTracker
-                && !isKangisWorkflowCompleted;
+                && kangisAwaitingOfficeDetails;
 
             const viewDetailsHeaderClass = disableViewDetailsForKangis
                 ? 'view-details-btn inline-flex items-center px-3 py-1.5 border border-gray-200 rounded-md text-sm font-medium text-gray-400 bg-gray-100 cursor-not-allowed opacity-70'
@@ -5921,7 +6238,7 @@
                 ? 'view-details-btn inline-flex items-center gap-1 text-sm font-semibold text-gray-400 cursor-not-allowed opacity-80'
                 : 'view-details-btn inline-flex items-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-700';
             const viewDetailsDisabledAttr = disableViewDetailsForKangis
-                ? 'disabled title="View Details is available after KANGIS workflow completion"'
+                ? 'disabled title="View Details is available once the Office Details are entered for this file"'
                 : '';
 
             const transferFooterHtml = (() => {
@@ -5990,6 +6307,20 @@
                         `;
                 }
 
+                // A file that has come home needs no "moved to" line: the arrival row in the
+                // log above already says where it is, and the office this falls back to is
+                // the stale outbound one by then. Only the history link is worth keeping.
+                if (arrivalIsLastWord) {
+                    return `
+                        <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-3 text-gray-700">
+                            <button class="${viewDetailsHistoryClass}" data-tracking-id="${sanitize(tracker.trackingId)}" ${viewDetailsDisabledAttr}>
+                                <span>View full history</span>
+                                <i data-lucide="arrow-up-right" class="h-4 w-4"></i>
+                            </button>
+                        </div>
+                    `;
+                }
+
                 const lastCompleted = [...movements].reverse().find(entry => (entry.status || '').toLowerCase() === 'completed')
                     || movements[movements.length - 1]
                     || null;
@@ -6014,7 +6345,7 @@
                     `;
             })();
 
-            const showAssignmentActions = isOwnedByCurrentUser && assignmentStatusLower === 'pending';
+            const showAssignmentActions = isOwnedByCurrentUser && awaitingAcceptance;
 
             // For approval modules (dgis/dg), show approve/reject/print buttons
             // for any KANGIS approval tracker visible in this module.
@@ -6924,7 +7255,7 @@
                                         <span class="text-sm font-mono font-semibold text-purple-600 text-right whitespace-nowrap">${originOfficeCodeSafe}</span>
                                     </div>
                                     <div class="flex items-center justify-between gap-4">
-                                        <span class="text-xs font-semibold text-gray-500 uppercase">Rack/Shelf:</span>
+                                        <span class="text-xs font-semibold text-gray-500 uppercase">Shelf/Rack:</span>
                                         <span class="text-sm font-semibold text-gray-900 text-right whitespace-nowrap">${rackShelfSafe}</span>
                                     </div>
                                     <div class="flex items-center justify-between gap-4">
@@ -7076,11 +7407,17 @@
 
         // Control the visibility and disabled state of the Print buttons based on the printed attribute
         const isPrinted = tracker.printed === true || tracker.printed === 1 || tracker.printed === '1';
+        const awaitingOfficeDetails = isKangisAwaitingOfficeDetails(tracker);
         const printBtn = document.getElementById('print-details-btn');
         const printHtmlBtn = document.getElementById('print-html-request-sheet-btn');
 
         if (printBtn) {
-            if (isPrinted) {
+            if (awaitingOfficeDetails) {
+                // Nothing to print yet — the file has no Office Details on it.
+                printBtn.disabled = true;
+                printBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                printBtn.setAttribute('title', 'Available once the Office Details are entered for this file.');
+            } else if (isPrinted) {
                 printBtn.disabled = true;
                 printBtn.classList.add('opacity-50', 'cursor-not-allowed');
                 printBtn.setAttribute('title', 'This file request sheet has already been printed.');
@@ -7334,7 +7671,7 @@
                                     <span class="info-value" style="white-space:pre-line;word-break:break-word;">${fileNameValue}</span>
                                 </div>
                                 <div class="info-row">
-                                    <span class="info-label">Rack / Shelf:</span>
+                                    <span class="info-label">Shelf/Rack:</span>
                                     <span class="info-value">${rackShelfValue}</span>
                                 </div>
                                 <div class="info-row">
@@ -7633,16 +7970,16 @@
                             <div class="header-titles">
                             <div class="ministry-name">Ministry of Land &amp; Physical Planning</div>
                             ${urlView === 'st'
-                                ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">DEPARTMENT OF SECTIONAL TITLING</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Tracking Sheet</h2>'
+                                ? '<h1 style="font-size: 0.75rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">DEPARTMENT OF SECTIONAL TITLING</h1><h2 style="font-size: 0.75rem; color: #4b5563; font-weight: bold;">File Tracking Sheet</h2>'
                                 : (urlView === 'dciv'
-                                    ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">DEPARTMENT OF COMPLAINT INVESTIGATION AND VERIFICATION</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Tracking Sheet</h2>'
+                                    ? '<h1 style="font-size: 0.75rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">DEPARTMENT OF COMPLAINT INVESTIGATION AND VERIFICATION</h1><h2 style="font-size: 0.75rem; color: #4b5563; font-weight: bold;">File Tracking Sheet</h2>'
                                     : (urlView === 'sltr'
-                                        ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">SYSTEMATIC LAND TITLING AND REGISTRATION</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Tracking Sheet</h2>'
+                                        ? '<h1 style="font-size: 0.75rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">SYSTEMATIC LAND TITLING AND REGISTRATION</h1><h2 style="font-size: 0.75rem; color: #4b5563; font-weight: bold;">File Tracking Sheet</h2>'
                                         : (urlView && urlView.toLowerCase() === 'cadastral'
-                                            ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">CADASTRAL DEPARTMENT</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Tracking Sheet</h2>'
+                                            ? '<h1 style="font-size: 0.75rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">CADASTRAL DEPARTMENT</h1><h2 style="font-size: 0.75rem; color: #4b5563; font-weight: bold;">File Tracking Sheet</h2>'
                                             : (urlView && ['digital_request','digital-request'].includes(urlView.toLowerCase())
-                                                ? '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">LAND DEPARTMENT</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Request Sheet <span style="color:#7c3aed;">(Digital Request)</span></h2>'
-                                                : '<h1 style="font-size: 1.25rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">LAND DEPARTMENT</h1><h2 style="font-size: 1.1rem; color: #4b5563; font-weight: bold;">File Tracking Sheet</h2>'
+                                                ? '<h1 style="font-size: 0.75rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">LAND DEPARTMENT</h1><h2 style="font-size: 0.75rem; color: #4b5563; font-weight: bold;">File Request Sheet <span style="color:#7c3aed;">(Digital Request)</span></h2>'
+                                                : '<h1 style="font-size: 0.75rem; color: #1f2937; font-weight: bold; text-transform: uppercase; margin-bottom: 0.25rem;">LAND DEPARTMENT</h1><h2 style="font-size: 0.75rem; color: #4b5563; font-weight: bold;">File Tracking Sheet</h2>'
                                             )
                                         )
                                     )
@@ -7679,8 +8016,8 @@
                                         </span>
                                     </div>
                                     <div class="info-row">
-                                        <span class="info-label">RACK/SHELF:</span>
-                                        <span class="info-value ${rackShelfValue === '-' ? 'placeholder' : 'data-value'}">${rackShelfValue}</span>
+                                        <span class="info-label">REQUEST PURPOSE:</span>
+                                        <span class="info-value ${requestPurposeValue === '-' ? 'placeholder' : 'data-value'}">${requestPurposeValue}</span>
                                     </div>
                                     <div class="info-row">
                                         <span class="info-label">DATE CREATED:</span>
@@ -7694,6 +8031,10 @@
                                         <span class="info-value ${originRegistryValue === '-' ? 'placeholder' : 'data-value'}">${originRegistryValue}</span>
                                     </div>
                                     <div class="info-row">
+                                        <span class="info-label">SHELF/RACK:</span>
+                                        <span class="info-value ${rackShelfValue === '-' ? 'placeholder' : 'data-value'}">${rackShelfValue}</span>
+                                    </div>
+                                    <div class="info-row">
                                         <span class="info-label">CURRENT OFFICE:</span>
                                         <span class="info-value ${currentOfficeValue === '-' ? 'placeholder' : 'data-value'}">${currentOfficeValue}</span>
                                     </div>
@@ -7704,10 +8045,6 @@
                                     <div class="info-row">
                                         <span class="info-label">RECEIVING OFFICER (HOLDER):</span>
                                         <span class="info-value ${receivingOfficerValue === '-' ? 'placeholder' : 'data-value'}">${receivingOfficerValue}</span>
-                                    </div>
-                                    <div class="info-row">
-                                        <span class="info-label">REQUEST PURPOSE:</span>
-                                        <span class="info-value ${requestPurposeValue === '-' ? 'placeholder' : 'data-value'}">${requestPurposeValue}</span>
                                     </div>
                                 </div>
                             </div>
@@ -8074,7 +8411,7 @@
                                 <span class="info-value ${receivingOfficerValue === '-' ? 'muted' : ''}">${receivingOfficerValue}</span>
                             </div>
                             <div class="info-row">
-                                <span class="info-label">Rack / Shelf</span>
+                                <span class="info-label">Shelf/Rack</span>
                                 <span class="info-value ${rackShelfValue === '-' ? 'muted' : ''}">${rackShelfValue}</span>
                             </div>
                         </div>
@@ -8564,6 +8901,12 @@
         updateLogSaveButton.addEventListener('click', submitUpdateLogForm);
     }
 
+    // Update Manual File Request Sheet dialog listeners
+    document.getElementById('update-sheet-close')?.addEventListener('click', closeUpdateRequestSheetDialog);
+    document.getElementById('update-sheet-cancel')?.addEventListener('click', closeUpdateRequestSheetDialog);
+    document.getElementById('update-sheet-save')?.addEventListener('click', () => submitUpdateRequestSheetForm(false));
+    document.getElementById('update-sheet-save-print')?.addEventListener('click', () => submitUpdateRequestSheetForm(true));
+
     // Details dialog event listeners
     document.getElementById('close-details')?.addEventListener('click', () => {
         document.getElementById('details-dialog')?.classList.remove('show');
@@ -8738,6 +9081,9 @@
                         break;
                     case 'update-log':
                         openUpdateLogDialog(trackerId, logId);
+                        break;
+                    case 'update-request-sheet':
+                        openUpdateRequestSheetDialog(trackerId);
                         break;
                     case 'update-status':
                         openRegistryStatusModal(trackerId);
@@ -10645,26 +10991,16 @@
 
         if (reqPurposeId || reqDeadline) {
             const purposeSelect = document.getElementById('request-purpose');
-            const deadlineField = document.getElementById('request-deadline');
             if (reqPurposeId && purposeSelect) {
                 purposeSelect.value = reqPurposeId;
+                // Fire first so the purpose's own side effects (Other/In-Transit
+                // visibility) settle, then let the request's dates win below.
+                purposeSelect.dispatchEvent(new Event('change', { bubbles: true }));
             }
-            if (reqDeadline && deadlineField) {
-                // Set through flatpickr's own API when the field has been enhanced
-                // (see setDeadlineValue() in the IIFE near the top of this file) —
-                // assigning .value directly only updates the hidden original input,
-                // leaving the visible altInput blank.
-                if (deadlineField._flatpickr) {
-                    deadlineField._flatpickr.setDate(reqDeadline, true);
-                } else {
-                    deadlineField.value = reqDeadline;
-                }
-                // Mark the deadline as already user-set so the purpose-change
-                // auto-fill (wired in the IIFE near the top of this file) doesn't
-                // clobber the date carried over from Quick Search.
-                deadlineField.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-            if (purposeSelect) purposeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            // Applied AFTER the change event: the requester's agreed return date
+            // overrides the purpose's default turnaround, and Timeline (Days) is
+            // derived from that date rather than from the purpose.
+            if (reqDeadline) window._applyRequestTimelineFromRequest?.(reqDeadline);
         }
 
         // Show the open requesters for this file (the "Log File" path), ordered by

@@ -46,93 +46,127 @@
             </div>
           </div>
           <p class="text-sm text-gray-500 mb-4" id="file-info-subtitle">Details about the selected file</p>
-          
-          <div class="space-y-4">
-            <div class="form-row">
-              <span class="form-label" id="file-number-label">File Number (MLPPFNo):</span>
-              <span class="form-value" id="file-number-value"></span>
-            </div>
-            <div class="form-row hidden" id="temp-file-number-row">
-              <span class="form-label">Temporary File Number:</span>
-              <span class="form-value" id="temp-file-number-value"></span>
-            </div>
-            <div class="form-row">
-              <span class="form-label">KANGIS File Number:</span>
-              <span class="form-value" id="kangis-file-number-value"></span>
-            </div>
-            <div class="form-row">
-              <span class="form-label">New KANGIS File Number:</span>
-              <span class="form-value" id="new-kangis-file-number-value"></span>
-            </div>
-            
-            <div class="form-row">
-              <span class="form-label">File Title:</span>
-              <span class="form-value font-semibold" id="file-title-value"></span>
-            </div>
-            <div class="form-row">
-              <span class="form-label">Plot No:</span>
-              <span class="form-value" id="plot-no-value"></span>
-            </div>
-            <div class="form-row">
-              <span class="form-label">Size:</span>
-              <span class="form-value" id="size-value"></span>
-            </div>
-            <div class="form-row">
-              <span class="form-label">TP No:</span>
-              <span class="form-value" id="tpno-value"></span>
-            </div>
-            
-            <div class="form-row">
-              <span class="form-label">District:</span>
-              <span class="form-value" id="district-value"></span>
-            </div>
-            <div class="form-row">
-              <span class="form-label">LGA:</span>
-              <span class="form-value" id="lga-value"></span>
-            </div>
-            <div class="form-row">
-              <span class="form-label">Land Use:</span>
-              <span class="form-value" id="property-type-value"></span>
-            </div>
-            <div class="form-row">
-              <span class="form-label">Lon/Lat:</span>
-              <span class="form-value" id="lon-lat-value"></span>
-            </div>
-            <div class="form-row">
-              <span class="form-label">Term:</span>
-              <span class="form-value" id="term-value"></span>
-            </div>
-            <div class="form-row">
-              <span class="form-label">Commencement Date:</span>
-              <span class="form-value">
-                <span id="commencement-date-value"></span>
-                <span id="commencement-date-source-badge" class="source-badge" style="display:none; margin-left:0.35rem;"></span>
-              </span>
-            </div>
-            <div class="form-row">
-              <span class="form-label">Residual Term:</span>
-              <span class="form-value" id="residual-term-value"></span>
-            </div>
 
-            <div class="form-row">
-              <span class="form-label">Last Transaction:</span>
-              <span class="form-value" id="last-transaction-value"></span>
+          <div class="fileinfo-tabs">
+            <button type="button" class="fileinfo-tab-btn active" data-fitab="basic">File Details</button>
+            <button type="button" class="fileinfo-tab-btn" data-fitab="details">Land Use &amp; Status</button>
+          </div>
+
+          <div class="fileinfo-tab-content active" data-fitab-content="basic">
+            <div class="space-y-4">
+              <div class="form-row">
+                <span class="form-label" id="file-number-label">File Number (MLPPFNo):</span>
+                <div class="form-value flex flex-col items-end gap-0.5">
+                  <span id="file-number-value"></span>
+                  <span id="kangis-file-number-value" class="text-xs text-gray-500 font-normal"></span>
+                  <span id="new-kangis-file-number-value" class="text-xs text-gray-500 font-normal"></span>
+                </div>
+              </div>
+              <div class="form-row hidden" id="temp-file-number-row">
+                <span class="form-label">Temporary File Number:</span>
+                <span class="form-value" id="temp-file-number-value"></span>
+              </div>
+
+              <div class="form-row">
+                <span class="form-label">File Title:</span>
+                <span class="form-value font-semibold" id="file-title-value"></span>
+              </div>
+              <div class="form-row">
+                <span class="form-label">Plot No:</span>
+                <span class="form-value" id="plot-no-value"></span>
+              </div>
+              <div class="form-row">
+                <span class="form-label">Size:</span>
+                <span class="form-value" id="size-value"></span>
+              </div>
+              <div class="form-row">
+                <span class="form-label">TP No:</span>
+                <span class="form-value" id="tpno-value"></span>
+              </div>
+
+              <div class="form-row">
+                <span class="form-label">District:</span>
+                <span class="form-value" id="district-value"></span>
+              </div>
+              <div class="form-row">
+                <span class="form-label">LGA:</span>
+                <span class="form-value" id="lga-value"></span>
+              </div>
             </div>
-            <div class="form-row">
-              <span class="form-label">Status:</span>
-              <span class="form-value flex justify-end items-center" id="status-value">
-                <span class="status-indicator bg-green-500"></span>
-                Active
-              </span>
-            </div>
-            <div id="digital-archive-section" class="mt-4 pt-3 border-t border-gray-200">
-              <h4 class="text-sm font-semibold text-gray-700 mb-2">Digital Archive</h4>
-              <div id="digital-archive-loading" class="hidden text-xs text-slate-400">Checking archive...</div>
-              <div id="digital-archive-empty" class="hidden text-xs text-slate-400">No digital archive available.</div>
-              <div id="digital-archive-folders" class="flex flex-col gap-2"></div>
+          </div>
+
+          <div class="fileinfo-tab-content" data-fitab-content="details">
+            <div class="space-y-4">
+              <div class="form-row">
+                <span class="form-label">Land Use:</span>
+                <span class="form-value" id="property-type-value"></span>
+              </div>
+              <div class="form-row">
+                <span class="form-label">Lon/Lat:</span>
+                <span class="form-value" id="lon-lat-value"></span>
+              </div>
+              <div class="form-row">
+                <span class="form-label">Term:</span>
+                <span class="form-value" id="term-value"></span>
+              </div>
+              <div class="form-row">
+                <span class="form-label">Commencement Date:</span>
+                <span class="form-value">
+                  <span id="commencement-date-value"></span>
+                  <span id="commencement-date-source-badge" class="source-badge" style="display:none; margin-left:0.35rem;"></span>
+                </span>
+              </div>
+              <div class="form-row">
+                <span class="form-label">Residual Term:</span>
+                <span class="form-value" id="residual-term-value"></span>
+              </div>
+
+              <div class="form-row">
+                <span class="form-label">Last Transaction:</span>
+                <span class="form-value" id="last-transaction-value"></span>
+              </div>
+              <div class="form-row">
+                <span class="form-label">Status:</span>
+                <span class="form-value flex justify-end items-center" id="status-value">
+                  <span class="status-indicator bg-green-500"></span>
+                  Active
+                </span>
+              </div>
+              <div id="digital-archive-section" class="mt-4 pt-3 border-t border-gray-200">
+                <div id="digital-archive-status-card" class="rounded-lg border p-3 shadow-sm transition-colors bg-red-50 border-red-200">
+                  <h4 id="digital-archive-status-heading" class="text-sm font-semibold mb-1 text-red-700">Digital Archive</h4>
+                  <div id="digital-archive-loading" class="hidden text-xs text-slate-400">Checking archive...</div>
+                  <div id="digital-archive-empty" class="hidden text-xs text-slate-500">No digital archive available.</div>
+                  <div id="digital-archive-folders" class="flex flex-col gap-2"></div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
+
+        <script>
+          (function () {
+            if (window.__legalSearchFileInfoTabsBound) return;
+            window.__legalSearchFileInfoTabsBound = true;
+
+            document.addEventListener('click', function (event) {
+              var btn = event.target.closest('.fileinfo-tab-btn');
+              if (!btn) return;
+
+              var panel = btn.closest('.bg-white');
+              if (!panel) return;
+
+              panel.querySelectorAll('.fileinfo-tab-btn').forEach(function (b) {
+                b.classList.toggle('active', b === btn);
+              });
+
+              var target = btn.getAttribute('data-fitab');
+              panel.querySelectorAll('.fileinfo-tab-content').forEach(function (content) {
+                content.classList.toggle('active', content.getAttribute('data-fitab-content') === target);
+              });
+            });
+          })();
+        </script>
 
         {{-- Section 2: File History with Cleanup Mode --}}
         <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden lg:col-span-2">
@@ -852,6 +886,19 @@
               </div>
               <input type="text" id="comment-encumbrance-text" class="w-full px-2 py-1 text-xs border border-gray-300 rounded" value="Based on our available records, the title is free from encumbrances.">
               <p class="comment-status text-xs mt-1 hidden" data-type="encumbrance"></p>
+            </div>
+
+            {{-- General Comment --}}
+            <div class="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+              <div class="flex items-center justify-between mb-2">
+                <h4 class="text-sm font-semibold text-gray-800">General Comment</h4>
+                <button class="save-comment-btn inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-600 text-white hover:bg-gray-700" data-type="general">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                  Save
+                </button>
+              </div>
+              <input type="text" id="comment-general-text" class="w-full px-2 py-1 text-xs border border-gray-300 rounded" placeholder="Optional comment">
+              <p class="comment-status text-xs mt-1 hidden" data-type="general"></p>
             </div>
 
             {{-- W/R/C (Withdrawn / Revoked / Cancelled) Remark --}}

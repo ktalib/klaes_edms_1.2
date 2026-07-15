@@ -1316,6 +1316,112 @@ class InstrumentController extends Controller
         ]);
     }
 
+    /**
+     * Backfill District/LGA for a selected TP No by checking source tables
+     * that carry both a tp_no and district/lga (instrument_capture, file_indexings, pra).
+     */
+    public function tpLookupLocation(Request $request)
+    {
+        $tpNo = strtoupper(trim((string) $request->input('tp_no', '')));
+
+        if ($tpNo === '' || in_array($tpNo, ['OTHER', 'OTHERS', '__OTHER__'], true)) {
+            return response()->json(['district' => null, 'lga' => null]);
+        }
+
+        $matchTpNo = fn ($query, string $column) => $query->whereRaw(
+            'UPPER(LTRIM(RTRIM(CAST(' . $column . ' AS NVARCHAR(255))))) = ?',
+            [$tpNo]
+        );
+
+        $sources = [
+            ['table' => 'instrument_capture', 'tp_col' => 'tp_no', 'district_col' => 'district', 'lga_col' => 'lga'],
+            ['table' => 'file_indexings', 'tp_col' => 'tp_no', 'district_col' => 'district', 'lga_col' => 'lga'],
+            ['table' => 'pra', 'tp_col' => 'tp_no', 'district_col' => 'districtName', 'lga_col' => 'lgsaOrCity'],
+        ];
+
+        foreach ($sources as $source) {
+            if (!Schema::connection('sqlsrv')->hasTable($source['table'])) {
+                continue;
+            }
+
+            $columns = Schema::connection('sqlsrv')->getColumnListing($source['table']);
+            if (!in_array($source['tp_col'], $columns) || !in_array($source['district_col'], $columns) || !in_array($source['lga_col'], $columns)) {
+                continue;
+            }
+
+            $row = $matchTpNo(
+                DB::connection('sqlsrv')->table($source['table']),
+                $source['tp_col']
+            )
+                ->whereNotNull($source['district_col'])
+                ->whereNotNull($source['lga_col'])
+                ->where($source['district_col'], '!=', '')
+                ->where($source['lga_col'], '!=', '')
+                ->orderByDesc('id')
+                ->select([$source['district_col'] . ' as district', $source['lga_col'] . ' as lga'])
+                ->first();
+
+            if ($row) {
+                return response()->json([
+                    'district' => trim((string) $row->district),
+                    'lga' => trim((string) $row->lga),
+                ]);
+            }
+        }
+
+        return response()->json(['district' => null, 'lga' => null]);
+    }
+
+    /**
+     * Backfill LGA for a known District by taking the most common lga value
+     * associated with that district across the same source tables used by
+     * tpLookupLocation(). Data in these tables is inconsistently spelled, so
+     * this picks the majority value rather than the first/latest row.
+     */
+    public function districtLookupLga(Request $request)
+    {
+        $district = strtoupper(trim((string) $request->input('district', '')));
+
+        if ($district === '') {
+            return response()->json(['lga' => null]);
+        }
+
+        $sources = [
+            ['table' => 'instrument_capture', 'district_col' => 'district', 'lga_col' => 'lga'],
+            ['table' => 'file_indexings', 'district_col' => 'district', 'lga_col' => 'lga'],
+            ['table' => 'pra', 'district_col' => 'districtName', 'lga_col' => 'lgsaOrCity'],
+        ];
+
+        foreach ($sources as $source) {
+            if (!Schema::connection('sqlsrv')->hasTable($source['table'])) {
+                continue;
+            }
+
+            $columns = Schema::connection('sqlsrv')->getColumnListing($source['table']);
+            if (!in_array($source['district_col'], $columns) || !in_array($source['lga_col'], $columns)) {
+                continue;
+            }
+
+            $lgaCol = $source['lga_col'];
+
+            $top = DB::connection('sqlsrv')->table($source['table'])
+                ->whereRaw('UPPER(LTRIM(RTRIM(CAST(' . $source['district_col'] . ' AS NVARCHAR(255))))) = ?', [$district])
+                ->whereNotNull($lgaCol)
+                ->where($lgaCol, '!=', '')
+                ->whereRaw('LTRIM(RTRIM(CAST(' . $lgaCol . ' AS NVARCHAR(255)))) NOT LIKE ?', ['%[0-9]%'])
+                ->select($lgaCol . ' as lga', DB::raw('COUNT(*) as cnt'))
+                ->groupBy($lgaCol)
+                ->orderByDesc('cnt')
+                ->first();
+
+            if ($top) {
+                return response()->json(['lga' => trim((string) $top->lga)]);
+            }
+        }
+
+        return response()->json(['lga' => null]);
+    }
+
     public function getNextTempFileNo()
     {
         $prefix = 'TEMP-';

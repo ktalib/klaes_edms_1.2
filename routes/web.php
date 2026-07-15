@@ -656,6 +656,8 @@ Route::group(['middleware' => ['auth'], 'prefix' => 'instruments'], function () 
     Route::get('/get-lgas/{stateId}', [App\Http\Controllers\InstrumentController::class, 'getLgas'])->name('instruments.getLgas');
     Route::get('/tp-lookups/search', [App\Http\Controllers\InstrumentController::class, 'searchTpLookups'])->name('instruments.tpLookups.search');
     Route::post('/tp-lookups', [App\Http\Controllers\InstrumentController::class, 'storeTpLookup'])->name('instruments.tpLookups.store');
+    Route::get('/tp-lookups/location', [App\Http\Controllers\InstrumentController::class, 'tpLookupLocation'])->name('instruments.tpLookups.location');
+    Route::get('/district-lookups/lga', [App\Http\Controllers\InstrumentController::class, 'districtLookupLga'])->name('instruments.districtLookups.lga');
     Route::get('/preview-registration-number', [App\Http\Controllers\InstrumentController::class, 'previewRegistrationNumber'])->name('instruments.previewRegistrationNumber');
     Route::get('/get-next-temp-fileno', [App\Http\Controllers\InstrumentController::class, 'getNextTempFileNo'])->name('instruments.getNextTempFileNo');
     Route::post('/resolve-op-duplicates', [App\Http\Controllers\InstrumentController::class, 'resolveOpDuplicates'])->name('instruments.resolveOpDuplicates');
@@ -1637,6 +1639,7 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'create-file-tracker'
     Route::get('/workflow-progress/{id}', [App\Http\Controllers\CreateFileTrackerController::class, 'workflowProgress'])->name('create-file-tracker.workflow-progress');
     Route::post('/{id}/mark-printed', [App\Http\Controllers\CreateFileTrackerController::class, 'markAsPrinted'])->name('create-file-tracker.mark-printed');
     Route::get('/{id}/request-sheet', [App\Http\Controllers\CreateFileTrackerController::class, 'requestSheet'])->name('create-file-tracker.request-sheet');
+    Route::post('/{id}/request-sheet', [App\Http\Controllers\CreateFileTrackerController::class, 'updateRequestSheet'])->name('create-file-tracker.request-sheet.update');
 });
 
 // File Merger management — curate the files that will be merged / function as a single unit.

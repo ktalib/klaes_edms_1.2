@@ -88,6 +88,7 @@ class OpResettlementApplicationController extends Controller
                 FROM pra
                 WHERE system_source = 'OSSOPCHANGEOFNAME'
                   AND prop_id IS NOT NULL AND prop_id != ''
+                  AND (is_deleted IS NULL OR is_deleted = 0)
                   $instrumentFilter
 
                 UNION ALL
@@ -144,6 +145,7 @@ class OpResettlementApplicationController extends Controller
                     MAX(p1.created_at) as latest_tot_created_at
                 FROM pra p1
                 WHERE p1.system_source = 'OSSOPCHANGEOFNAME'
+                  AND (p1.is_deleted IS NULL OR p1.is_deleted = 0)
                   AND (
                       p1.instrument_type LIKE '%Transfer of Title%'
                       OR p1.transaction_type LIKE '%Transfer of Title%'
@@ -160,6 +162,7 @@ class OpResettlementApplicationController extends Controller
                 SELECT p2_inner.prop_id, MIN(p2_inner.temp_fileno) as earliest_temp_fileno
                 FROM pra p2_inner
                 WHERE p2_inner.system_source = 'OSSOPCHANGEOFNAME'
+                  AND (p2_inner.is_deleted IS NULL OR p2_inner.is_deleted = 0)
                   AND p2_inner.temp_fileno IS NOT NULL AND p2_inner.temp_fileno != ''
                   AND (p2_inner.instrument_type IS NULL OR p2_inner.instrument_type NOT LIKE '%Transfer of Title%')
                 GROUP BY p2_inner.prop_id
@@ -501,6 +504,7 @@ class OpResettlementApplicationController extends Controller
                 FROM pra
                 WHERE system_source = 'OSSOPCHANGEOFNAME'
                   AND prop_id IS NOT NULL AND prop_id != ''
+                  AND (is_deleted IS NULL OR is_deleted = 0)
                   $instrumentFilter
                 
                 " . (!$isChangeOfName ? "
@@ -557,6 +561,9 @@ class OpResettlementApplicationController extends Controller
             ->where('p.system_source', 'OSSOPCHANGEOFNAME')
             ->whereNotNull('p.prop_id')
             ->where('p.prop_id', '!=', '')
+            ->where(function ($q) {
+                $q->whereNull('p.is_deleted')->orWhere('p.is_deleted', 0);
+            })
             ->whereRaw('CAST(COALESCE(mfn.con_commissioned_at, p.created_at) AS DATE) = CAST(GETDATE() AS DATE)')
             ->when($recordType === 'fc', function ($q) {
                 $q->whereNotNull('mfn.full_file_number');
@@ -1222,10 +1229,22 @@ class OpResettlementApplicationController extends Controller
 
             // When a specific PRA row is selected, target it directly
             if ($targetPraId) {
-                $praPropId = DB::connection('sqlsrv')
+                $targetPraRow = DB::connection('sqlsrv')
                     ->table($praTable)
                     ->where('id', $targetPraId)
-                    ->value('prop_id');
+                    ->first();
+                $praPropId = $targetPraRow->prop_id ?? null;
+
+                // Derive row type from the actual PRA row rather than trusting the
+                // client-submitted row_type. The Edit modal auto-selects a
+                // transaction card on open, and a stale/mismatched client
+                // selection must never be allowed to write OP-only party rules
+                // (Grantor = Kano State Government) onto what is really a
+                // Transfer of Title row (or vice versa).
+                if ($targetPraRow) {
+                    $targetRowInstrumentType = (string) ($targetPraRow->instrument_type ?? $targetPraRow->transaction_type ?? '');
+                    $isTransferOfTitle = stripos($targetRowInstrumentType, 'Transfer of Title') !== false;
+                }
             }
 
             if (!$praPropId && !empty($base->source_pra_id)) {

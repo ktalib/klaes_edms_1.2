@@ -145,7 +145,7 @@ duplicate `MLKN 02455`, all collapsed to one row on screen):
 | 1838 | CON-COM-2026-431 | CON-AG-2026-109 | *(untyped → "Related File")* |
 | 7807 | CON-AG-2014-35 | MLKN 2455 | KANGIS Recertification |
 | 7810 | MLKN 2455 | CON-AG-2014-35 | KANGIS Recertification |
-| 8328 | CON-AG-2014-35 | MLKN 02455 | KANGIS Recertification |
+ 
 
 **Searching `CON-COM-2026-430`** (a Change-of-Purpose grandchild) resolves in two hops:
 

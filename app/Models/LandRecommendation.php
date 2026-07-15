@@ -103,6 +103,26 @@ class LandRecommendation extends Model
         'updated_at' => 'datetime',
     ];
 
+    /**
+     * The stored `location` is auto-built as "<plot/house no> <street> <district> <lga> <state>",
+     * but Plot No. / House No. are already shown in their own field wherever this is displayed,
+     * so strip a leading occurrence of either before showing the location.
+     */
+    public function getDisplayLocationAttribute(): string
+    {
+        $location = trim((string) ($this->location ?? ''));
+
+        foreach ([$this->plot_number, $this->house_no] as $prefixValue) {
+            $prefixValue = trim((string) ($prefixValue ?? ''));
+            if ($prefixValue !== '' && stripos($location, $prefixValue) === 0) {
+                $location = trim(substr($location, strlen($prefixValue)));
+                break;
+            }
+        }
+
+        return trim(preg_replace('/\s+/', ' ', $location));
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');

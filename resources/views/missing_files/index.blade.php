@@ -95,8 +95,13 @@
                                             <i data-lucide="search" class="h-4 w-4"></i>
                                         </button>
                                     </div>
-                                    <p class="mt-1 text-xs text-gray-500">Use the smart file selector
+                                    <p id="mf-file-no-hint" class="mt-1 text-xs text-gray-500">Use the smart file selector
                                         <i data-lucide="search" class="h-3 w-3 inline"></i> to search and pick a file number.</p>
+                                    {{-- Duplicate warning (UQ_missing_files_file_number) --}}
+                                    <p id="mf-file-no-error" class="mt-1 hidden items-start gap-1.5 text-xs font-medium text-red-600">
+                                        <i data-lucide="alert-circle" class="h-3.5 w-3.5 shrink-0 mt-px"></i>
+                                        <span id="mf-file-no-error-text">This file has already been recorded as missing.</span>
+                                    </p>
                                 </div>
                                 {{-- Archive / Registry --}}
                                 <div class="flex flex-col">
@@ -248,6 +253,7 @@
     window.MissingFilesConfig = {
         routes: {
             data:    "{{ route('missing-files.data') }}",
+            check:   "{{ route('missing-files.check') }}",
             store:   "{{ route('missing-files.store') }}",
             found:   "{{ url('missing-files') }}",   // + /{id}/found
             destroy: "{{ url('missing-files') }}",   // + /{id}

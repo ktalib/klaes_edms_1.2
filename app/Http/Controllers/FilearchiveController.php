@@ -998,7 +998,7 @@ class FilearchiveController extends Controller
         // The archive home row is not a movement out, so like return rows it
         // carries no duration.
         array_unshift($rows, [
-            'office' => $homeRegistry . ' — Rack/Shelf ' . ($homeShelf !== '' ? $homeShelf : '-'),
+            'office' => $homeRegistry . ' — Shelf/Rack ' . ($homeShelf !== '' ? $homeShelf : '-'),
             'officer' => '',
             'date' => $fileIndexing && $fileIndexing->created_at ? $fileIndexing->created_at->format('d/m/Y') : '',
             'duration' => '',

@@ -796,6 +796,28 @@ class SpecialAssignmentController extends Controller
             }
         }
 
+        // Coordinates normally arrive as JSON ({"lat":..,"lng":..}) from the map picker,
+        // but fall back to parsing a raw "lat, lng" string — and reject outright rather
+        // than silently saving the inspection with no pin — if neither can be understood.
+        $coordinates = null;
+        if ($request->filled('coordinates')) {
+            $decoded = json_decode($request->coordinates, true);
+            if (is_array($decoded) && isset($decoded['lat'], $decoded['lng']) && is_numeric($decoded['lat']) && is_numeric($decoded['lng'])) {
+                $coordinates = ['lat' => (float) $decoded['lat'], 'lng' => (float) $decoded['lng']];
+            } else {
+                preg_match_all('/-?\d+(?:\.\d+)?/', $request->coordinates, $matches);
+                if (count($matches[0]) >= 2) {
+                    $coordinates = ['lat' => (float) $matches[0][0], 'lng' => (float) $matches[0][1]];
+                }
+            }
+            if (!$coordinates) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Coordinates could not be understood — please re-pick the pin location on the map.',
+                ], 422);
+            }
+        }
+
         $photos = [];
         if ($request->hasFile('photos')) {
             foreach ($request->file('photos') as $file) {
@@ -804,7 +826,6 @@ class SpecialAssignmentController extends Controller
             }
         }
 
-        $coordinates    = $request->coordinates ? json_decode($request->coordinates, true) : null;
         $parcelGeometry = $request->parcel_geometry ? json_decode($request->parcel_geometry, true) : null;
 
         $data = SpaFieldData::create([

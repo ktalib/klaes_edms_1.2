@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SLTR Recommendation - {{ $recommendation->sltr_number ?? 'N/A' }}</title>
+    @php
+        $letterheadPath = resource_path('views/sltr_recommendations/templates/letterheader.jpeg');
+        $letterheadBase64 = file_exists($letterheadPath)
+            ? 'data:image/jpeg;base64,' . base64_encode(file_get_contents($letterheadPath))
+            : null;
+    @endphp
     <style>
         :root {
             --primary-green: #2e7d32;
@@ -21,7 +27,16 @@
         }
 
         .a4-page {
-            background: white;
+            background-color: white;
+            @if($letterheadBase64)
+            /* background-image: url('{{ $letterheadBase64 }}'); */
+            background-size: 210mm 297mm;
+            background-position: top left;
+            background-repeat: no-repeat;
+            @endif
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+            color-adjust: exact;
             width: 210mm;
             height: 297mm; /* Forced height to ensure single page */
             margin: 10px auto;
@@ -30,26 +45,13 @@
             box-shadow: 0 0 10px rgba(0,0,0,0.5);
         }
 
-        /* Side Margin Placeholder */
-        .side-placeholder {
-            width: 50px;
-            /* border-right: 2px solid var(--primary-green); */
-            flex-shrink: 0;
-        }
-
         .main-container {
             flex: 1;
-            padding: 10px 35px; /* Reduced padding to save space */
+            /* Keeps content clear of the pre-printed letterhead: the crest/rule
+               sits ~42mm from the top and the vertical rule ~34mm from the left. */
+            padding: 42mm 10mm 10px 34mm;
             display: flex;
             flex-direction: column;
-        }
-
-        /* Top Header Placeholder */
-        .header-placeholder {
-            height: 100px;
-            width: 100%;
-            margin-bottom: 5px;
-            /* border-bottom: 2px solid var(--primary-green); */
         }
 
         .title-block {
@@ -131,32 +133,6 @@
             margin: 18px 0;
         }
  
-        /* Header Logos */
-        .doc-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            height: 100px;
-            width: 100%;
-            margin-bottom: 5px;
-          
-            padding-bottom: 6px;
-        }
-        .doc-header img {
-            height: 85px;
-            width: auto;
-            object-fit: contain;
-        }
-        .doc-header .header-center {
-            text-align: center;
-            flex: 1;
-            padding: 0 8px;
-            font-size: 9.5pt;
-            font-weight: bold;
-            
-            line-height: 1.3;
-        }
-
         /* Footer Logos */
         .doc-footer-logos {
             display: flex;
@@ -187,15 +163,7 @@
 <body>
 
 <div class="a4-page">
-    <div class="side-placeholder"></div>
-    
     <div class="main-container">
-        <div class="doc-header hidden">
-       
-           
-                
-        </div>
-
         <div class="title-block">
             Recommendation for the Conversion of<br>
             Customary Title to SLTR Statutory  Right of Occupancy

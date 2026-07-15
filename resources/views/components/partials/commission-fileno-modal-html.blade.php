@@ -212,7 +212,8 @@
                 <div x-show="!isOpFormHidden" x-transition.opacity.duration.200ms class="space-y-6">
 
                 <!-- Batch Mode Toggle Section -->
-                 <div class="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border-2 border-blue-200"
+                 <div id="batch-mode-section" x-show="!hideBatchMode" x-transition
+                     class="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border-2 border-blue-200"
                      :class="{ 'opacity-70': isBatchModeLocked }">
                     <div class="flex items-center justify-between mb-3">
                         <div class="flex items-center space-x-2">

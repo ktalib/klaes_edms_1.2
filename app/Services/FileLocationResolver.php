@@ -480,11 +480,24 @@ class FileLocationResolver
             ->orderBy('id')
             ->get(['related_file_number', 'related_file_title', 'related_file_type', 'dciv_reason']);
 
-        $flaggedAsRelated = $this->isDcivFile($indexing);
+        // A related file's dciv_status/dciv_reason are normally stamped onto its own
+        // file_indexings row when it's linked — but an unindexed related file (Pending
+        // / Not Indexed) has no such row to stamp, so isDcivFile($indexing) alone would
+        // miss it. Fall back to looking the file up directly in master_dciv_links by
+        // its own number, so searching the related file shows "Under Investigation"
+        // the same way searching the DCIV master does.
+        $ownLinkAsRelated = $this->isDcivFile($indexing)
+            ? null
+            : \App\Models\MasterDcivLink::whereRaw(
+                'UPPER(LTRIM(RTRIM(related_file_number))) = ?', [strtoupper(trim($fileNumber))]
+            )->first(['dciv_file_number', 'dciv_reason']);
+
+        $flaggedAsRelated = $this->isDcivFile($indexing) || (bool) $ownLinkAsRelated;
         $isMaster = $relatedFiles->isNotEmpty() || (is_string($registry) && stripos($registry, 'DCIV') !== false);
 
         $reason = $indexing?->dciv_reason
             ?: optional($relatedFiles->first())?->dciv_reason
+            ?: $ownLinkAsRelated?->dciv_reason
             ?: ($isMaster
                 ? \App\Models\DcivFileNo::whereRaw(
                     'UPPER(LTRIM(RTRIM(full_file_number))) = ?', [strtoupper(trim($fileNumber))]
@@ -495,7 +508,7 @@ class FileLocationResolver
 
         return [
             'status'        => $flaggedAsRelated || $isMaster,
-            'fileno'        => $indexing?->dciv_fileno,
+            'fileno'        => $indexing?->dciv_fileno ?: $ownLinkAsRelated?->dciv_file_number,
             'reason'        => $reason,
             'related_files' => $relatedFiles
                 ->map(fn ($r) => $r->only(['related_file_number', 'related_file_title', 'related_file_type']))
@@ -897,6 +910,23 @@ class FileLocationResolver
 
         if (!$shelf && $indexing) {
             $shelf = $indexing->shelf_location;
+        }
+
+        // Last resort: the shelf captured on the file's Missing File report
+        // (rack/shelf recorded when it was physically re-shelved), for files
+        // with no print-label batch entry or indexing shelf_location.
+        if (!$shelf) {
+            try {
+                if (Schema::connection('sqlsrv')->hasTable('missing_files')) {
+                    $shelf = DB::connection('sqlsrv')
+                        ->table('missing_files')
+                        ->whereIn(DB::raw('UPPER(LTRIM(RTRIM(file_number)))'), $keys)
+                        ->orderByDesc('id')
+                        ->value('shelf_location');
+                }
+            } catch (\Throwable $e) {
+                // Fail open — leave shelf null if the table is missing.
+            }
         }
 
         return $this->rackShelfCache[$key] = ($shelf ?: null);

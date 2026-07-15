@@ -2160,7 +2160,7 @@ class FileIndexingController extends Controller
             'cofo_no' => $cofoPayload['cofo_no'] ?? null,
             'transaction_type' => $cofoPayload['instrument_type'] ?? null,
             'instrument_type' => $cofoPayload['instrument_type'] ?? null,
-            'cofo_type' => $cofoPayload['instrument_type'] ?? null,
+            'cofo_type' => $cofoPayload['cofo_type'] ?? null,
             'transaction_date' => $transactionDate,
             'transaction_time' => $cofoPayload['deeds_time'] ?? null,
             'cofo_date' => $cofoPayload['cofo_date'] ?? $transactionDate,
@@ -3047,6 +3047,28 @@ class FileIndexingController extends Controller
                 }
             }
 
+            // "Has New KANGIS FileNo": the selected KN-series number becomes its own
+            // standalone file_indexings record (see createStandaloneNewKangisRecord()),
+            // with this file only linked to it as a Related File. If that KN number has
+            // already been indexed by someone else, reject rather than silently attach
+            // "Has Transaction" rows to an unrelated existing record.
+            $hasNewKangisFileno = $request->boolean('has_new_kangis_fileno');
+            $newKangisFileNoRaw = trim((string) $request->input('new_kangis_file_no', ''));
+            if ($hasNewKangisFileno && $newKangisFileNoRaw !== '') {
+                $existingKangisIndex = DB::connection('sqlsrv')->table('file_indexings')
+                    ->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = UPPER(?)', [$newKangisFileNoRaw])
+                    ->first();
+
+                if ($existingKangisIndex) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "New KANGIS File No \"{$newKangisFileNoRaw}\" has already been indexed. Please edit that record directly instead of attaching transactions here.",
+                        'error_type' => 'kangis_duplicate',
+                        'existing_record' => (array) $existingKangisIndex,
+                    ], 422);
+                }
+            }
+
             $validated = $request->validate([
                 'file_number' => 'required|string|max:255',
                 'file_title' => 'required', // Allow array or string
@@ -3680,6 +3702,27 @@ class FileIndexingController extends Controller
                 }
             }
 
+            // "Has New KANGIS FileNo": link the main file to the new KN-series record as
+            // a Related File (the KN number gets its OWN file_indexings row — see
+            // createStandaloneNewKangisRecord() below — this file is just related to it).
+            if ($hasNewKangisFileno && $newKangisFileNoRaw !== '') {
+                if (!in_array($newKangisFileNoRaw, $relatedFileNos, true)) {
+                    $relatedFileNos[] = $newKangisFileNoRaw;
+                }
+                if ($indexingType === 'Block') {
+                    $alreadyInDetails = false;
+                    foreach ($relatedDetails as $detail) {
+                        if (($detail['file_number'] ?? null) === $newKangisFileNoRaw) {
+                            $alreadyInDetails = true;
+                            break;
+                        }
+                    }
+                    if (!$alreadyInDetails) {
+                        $relatedDetails[] = ['file_number' => $newKangisFileNoRaw];
+                    }
+                }
+            }
+
             // Reuse relatedFileNos calculated earlier for JSON persistence in group record if needed
             if (!empty($relatedFileNos)) {
                 $validated['related_fileno'] = json_encode($relatedFileNos);
@@ -3997,8 +4040,23 @@ class FileIndexingController extends Controller
             // ordinary file whose related number points at a DCIV.
             $this->syncMasterDcivLinks($fileIndexing, $relatedFileNos, $relatedDetails);
 
-            // Persist New KANGIS transactions (if any) to the pra table.
-            $this->syncFileIndexingTransactions($request, $fileIndexing, $propIdForStore);
+            // "Has New KANGIS FileNo": create a standalone file_indexings row for the
+            // KN-series number itself, copying descriptive fields from this form. The
+            // file being indexed here is only linked to it via the Related File Number
+            // link synced just above — it is NOT where the transactions get saved.
+            $kangisFileIndexing = null;
+            if ($hasNewKangisFileno && $newKangisFileNoRaw !== '') {
+                $kangisFileIndexing = $this->createStandaloneNewKangisRecord(
+                    $newKangisFileNoRaw,
+                    $persistableData,
+                    $propIdForStore
+                );
+            }
+
+            // Persist "Has Transaction" rows to the pra table — against the standalone
+            // New KANGIS record when one was created above, otherwise (no New KANGIS
+            // FileNo selected) against the main file being indexed here.
+            $this->syncFileIndexingTransactions($request, $kangisFileIndexing ?? $fileIndexing, $propIdForStore);
 
             if ($propIdForStore !== null) {
                 $fileNoForHistory = $fileIndexing->file_number;
@@ -4407,7 +4465,7 @@ class FileIndexingController extends Controller
             'cofo_no' => $cofoPayload['cofo_no'] ?? null,
             'transaction_type' => $cofoPayload['instrument_type'] ?? null,
             'instrument_type' => $cofoPayload['instrument_type'] ?? null,
-            'cofo_type' => $cofoPayload['instrument_type'] ?? null,
+            'cofo_type' => $cofoPayload['cofo_type'] ?? null,
             'transaction_date' => $transactionDate,
             'transaction_time' => $cofoPayload['deeds_time'] ?? null,
             'cofo_date' => $cofoPayload['cofo_date'] ?? $transactionDate,
@@ -4468,6 +4526,7 @@ class FileIndexingController extends Controller
             'period' => $this->normalizeValue($request->input('cofo_period')),
             'period_unit' => $this->normalizeValue($request->input('cofo_period_unit')),
             'status' => $this->normalizeValue($request->input('cofo_status')),
+            'cofo_type' => $this->normalizeValue($request->input('cofo_type')),
         ];
     }
 
@@ -4648,9 +4707,53 @@ class FileIndexingController extends Controller
     }
 
     /**
+     * "Has New KANGIS FileNo": create a standalone file_indexings row for the selected
+     * KN-series number. Descriptive fields (title, land use, holder, location, district/lga)
+     * are copied from the form that referenced it; tracking/batch/grouping identifiers are
+     * NOT copied since this KN file hasn't gone through its own grouping/tracking workflow —
+     * it can be picked up and completed later via its own edit page. The caller (store())
+     * has already confirmed this file number isn't indexed yet.
+     */
+    protected function createStandaloneNewKangisRecord(string $newKangisFileNo, array $mainPersistableData, ?int $propId = null): FileIndexing
+    {
+        $currentUserName = $this->resolveCurrentUserName();
+
+        $copyKeys = [
+            'file_title', 'land_use_type', 'plot_number', 'plot_size',
+            'latitude', 'longitude', 'district', 'lga', 'street_name',
+            'current_holder', 'original_holder', 'physical_registry',
+            'tp_no', 'lpkn_no', 'location',
+        ];
+
+        $payload = Arr::only($mainPersistableData, $copyKeys);
+        $payload['file_number'] = $newKangisFileNo;
+        $payload['general_registry'] = 'KANGIS Registry';
+        $payload['indexing_type'] = 'Regular';
+        $payload['workflow_status'] = 'indexed';
+        $payload['created_by'] = $currentUserName;
+        $payload['updated_by'] = $currentUserName;
+
+        $kangisFileIndexing = FileIndexing::on('sqlsrv')->create($payload);
+
+        if ($propId !== null) {
+            try {
+                $this->propertyIdAllocationService->syncPropIdToFileHistory($newKangisFileNo, $propId, null);
+            } catch (\Throwable $e) {
+                Log::warning('createStandaloneNewKangisRecord: prop_id sync to file_history failed', [
+                    'file_number' => $newKangisFileNo,
+                    'prop_id' => $propId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $kangisFileIndexing;
+    }
+
+    /**
      * Persist "Has Transaction" rows captured during New KANGIS file indexing into the pra
-     * table. Each row becomes one pra row; the main indexing file number is stored as mlsFNo,
-     * and every row shares the file's prop_id ($propId), so they all resolve to one property.
+     * table. Each row becomes one pra row; the target file's file number is stored as mlsFNo,
+     * and every row shares $propId, so they all resolve to one property.
      */
     protected function syncFileIndexingTransactions(Request $request, FileIndexing $fileIndexing, ?int $propId = null): void
     {
@@ -4685,6 +4788,7 @@ class FileIndexingController extends Controller
             $regTime    = $this->normalizeValue($row['reg_time'] ?? null);
             $grantor    = $this->normalizeValue($row['grantor'] ?? null);
             $grantee    = $this->normalizeValue($row['grantee'] ?? null);
+            $cofoType   = $this->normalizeValue($row['cofo_type'] ?? null);
 
             // Skip fully-empty rows.
             if (!$instrument && !$txnDate && !$serial && !$page && !$vol && !$regDate && !$regTime && !$grantor && !$grantee) {
@@ -4729,7 +4833,7 @@ class FileIndexingController extends Controller
 
             if ($isCofo) {
                 // CofO-specific columns
-                $payload['cofo_type'] = $instrument;
+                $payload['cofo_type'] = $cofoType;
                 $payload['cofo_date'] = $txnDate;
                 $payload['transaction_time'] = $regTime;
                 $payload['regNo'] = $this->formatRegistrationNumber($serial, $page, $vol);

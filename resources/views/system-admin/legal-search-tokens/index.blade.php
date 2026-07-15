@@ -137,25 +137,31 @@
                                             <div class="text-xs font-bold text-slate-700">{{ $token->receipt_number }}</div>
                                         </td>
                                         <td class="px-6 py-4 text-center">
-                                            @php $maxUses = \App\Models\LegalSearchToken::MAX_USES; @endphp
-                                            <span class="inline-flex items-center gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1 text-xs font-bold border border-slate-200 {{ $token->usage_count >= $maxUses ? 'text-rose-600' : 'text-slate-700' }}"
-                                                  title="{{ $token->usage_count }} of {{ $maxUses }} uses spent">
+                                            <span class="inline-flex items-center gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1 text-xs font-bold border border-slate-200 text-slate-700"
+                                                  title="{{ $token->usage_count }} search(es) run on this token">
                                                 <i data-lucide="repeat" class="h-3 w-3"></i>
-                                                {{ $token->usage_count }}/{{ $maxUses }}
+                                                {{ $token->usage_count }}
                                             </span>
                                         </td>
                                         <td class="px-6 py-4 text-center">
-                                            @if($token->usage_count >= $maxUses)
-                                                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-black bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase tracking-widest">
-                                                    Used
-                                                </span>
-                                            @elseif($token->usage_count > 0)
-                                                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-black bg-blue-50 text-blue-700 border border-blue-100 uppercase tracking-widest">
-                                                    Partial
-                                                </span>
-                                            @else
-                                                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-black bg-amber-50 text-amber-700 border border-amber-100 uppercase tracking-widest">
+                                            @if(!$token->is_used)
+                                                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-black bg-amber-50 text-amber-700 border border-amber-100 uppercase tracking-widest whitespace-nowrap">
                                                     Unused
+                                                </span>
+                                            @elseif(!$token->is_expired)
+                                                <div class="inline-flex flex-col items-center gap-1">
+                                                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-black bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase tracking-widest whitespace-nowrap">
+                                                        Active
+                                                    </span>
+                                                    <span class="text-[10px] text-slate-400 font-medium whitespace-nowrap"
+                                                          title="Expires {{ $token->expires_at->format('d M, Y h:i A') }}">
+                                                        {{ $token->expires_at->diffForHumans(null, true) }} left
+                                                    </span>
+                                                </div>
+                                            @else
+                                                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-black bg-rose-50 text-rose-700 border border-rose-100 uppercase tracking-widest whitespace-nowrap"
+                                                      title="Expired {{ $token->expires_at->format('d M, Y h:i A') }}">
+                                                    Expired
                                                 </span>
                                             @endif
                                         </td>
@@ -374,7 +380,7 @@
                     </div>
                     <div>
                         <h3 class="text-lg font-bold">Token Reset</h3>
-                        <p class="text-indigo-100 text-[11px] font-medium uppercase tracking-wider">Choose a count to reset to</p>
+                        <p class="text-indigo-100 text-[11px] font-medium uppercase tracking-wider">Grant a fresh 24-hour window</p>
                     </div>
                 </div>
                 <button onclick="closeResetModal()" class="text-white/70 hover:text-white transition-colors">
@@ -390,29 +396,22 @@
                         <p id="reset-file-number" class="text-sm font-bold text-slate-800 break-words">—</p>
                     </div>
                     <div class="p-3 rounded-xl bg-slate-50 border border-slate-100">
-                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Current Usage</p>
+                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Times Used</p>
                         <p id="reset-usage" class="text-sm font-bold text-slate-800">—</p>
                     </div>
                 </div>
 
-                {{-- Reset options --}}
+                {{-- Reset action --}}
                 <div class="space-y-2.5">
-                    <p class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Reset To</p>
-                    <button type="button" data-count="1"
+                    <p class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Reset</p>
+                    <button type="button" id="reset-confirm-btn"
                         class="reset-option group w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/50 transition-all text-left">
-                        <span class="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-amber-50 text-amber-600 text-sm font-black border border-amber-100">1</span>
-                        <span>
-                            <span class="block text-sm font-bold text-slate-800">1<sup>st</sup> Count</span>
-                            <span class="block text-[11px] text-slate-400">Both uses available (0/{{ \App\Models\LegalSearchToken::MAX_USES }})</span>
+                        <span class="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-amber-50 text-amber-600 text-sm font-black border border-amber-100">
+                            <i data-lucide="rotate-ccw" class="h-4 w-4"></i>
                         </span>
-                        <i data-lucide="chevron-right" class="h-4 w-4 text-slate-300 ml-auto group-hover:text-indigo-500"></i>
-                    </button>
-                    <button type="button" data-count="2"
-                        class="reset-option group w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/50 transition-all text-left">
-                        <span class="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-blue-50 text-blue-600 text-sm font-black border border-blue-100">2</span>
                         <span>
-                            <span class="block text-sm font-bold text-slate-800">2<sup>nd</sup> Count</span>
-                            <span class="block text-[11px] text-slate-400">One use available (1/{{ \App\Models\LegalSearchToken::MAX_USES }})</span>
+                            <span class="block text-sm font-bold text-slate-800">Reset to Unused</span>
+                            <span class="block text-[11px] text-slate-400">Clears usage; next use starts a fresh 24-hour window</span>
                         </span>
                         <i data-lucide="chevron-right" class="h-4 w-4 text-slate-300 ml-auto group-hover:text-indigo-500"></i>
                     </button>
@@ -521,7 +520,6 @@
     });
 
     // ---- Row Actions Menu (Token Reset / Delete) ----
-    const MAX_TOKEN_USES = {{ \App\Models\LegalSearchToken::MAX_USES }};
     let activeTokenId = null;
     let activeTokenUsage = 0;
     let activeTokenFile = '';
@@ -535,10 +533,11 @@
         const menu = document.getElementById('token-actions-menu');
         const rect = btn.getBoundingClientRect();
 
-        // A fully-exhausted token can no longer be deleted (only reset).
+        // A token that has been used at least once can no longer be deleted (only reset) —
+        // preserves the audit trail of a spent token.
         const deleteBtn = menu.querySelector('[data-action="delete"]');
         const deleteDivider = menu.querySelector('[data-role="delete-divider"]');
-        const canDelete = activeTokenUsage < MAX_TOKEN_USES;
+        const canDelete = activeTokenUsage === 0;
         deleteBtn.classList.toggle('hidden', !canDelete);
         deleteDivider.classList.toggle('hidden', !canDelete);
 
@@ -587,7 +586,7 @@
     // ---- Token Reset Modal ----
     function openResetModal() {
         document.getElementById('reset-file-number').textContent = activeTokenFile || '—';
-        document.getElementById('reset-usage').textContent = activeTokenUsage + '/' + MAX_TOKEN_USES;
+        document.getElementById('reset-usage').textContent = activeTokenUsage;
         $('#token-reset-modal').removeClass('hidden').addClass('flex');
         if (window.lucide) window.lucide.createIcons();
     }
@@ -596,21 +595,16 @@
         $('#token-reset-modal').addClass('hidden').removeClass('flex');
     }
 
-    // Wire the count options inside the reset modal.
-    document.querySelectorAll('#token-reset-modal .reset-option').forEach(function(option) {
-        option.addEventListener('click', function() {
-            const count = parseInt(this.getAttribute('data-count'), 10);
-            closeResetModal();
-            resetToken(activeTokenId, count);
-        });
+    // Wire the reset action inside the reset modal.
+    document.getElementById('reset-confirm-btn')?.addEventListener('click', function() {
+        closeResetModal();
+        resetToken(activeTokenId);
     });
 
-    function resetToken(id, count) {
-        const ordinal = count === 1 ? '1st' : '2nd';
-        const remaining = MAX_TOKEN_USES - (count - 1);
+    function resetToken(id) {
         Swal.fire({
-            title: `Reset to ${ordinal} Count?`,
-            html: `This will position the token at its <b>${ordinal}</b> count, leaving <b>${remaining}</b> use(s) available for this file.`,
+            title: `Reset to Unused?`,
+            html: `This clears the token's usage. Its 24-hour validity window will start fresh from its next use.`,
             icon: 'question',
             showCancelButton: true,
             confirmButtonColor: '#4f46e5',
@@ -622,8 +616,7 @@
                 url: `/legal-search-tokens/${id}/reset`,
                 method: 'POST',
                 data: {
-                    _token: '{{ csrf_token() }}',
-                    count: count
+                    _token: '{{ csrf_token() }}'
                 },
                 success: function(response) {
                     if (response.success) {

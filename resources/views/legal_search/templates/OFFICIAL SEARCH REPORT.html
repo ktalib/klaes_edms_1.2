@@ -423,6 +423,8 @@
 
             <span id="report-caveat-note" class="dynamic-comment"
               style="display:none; margin-bottom:8px; font-size:13px; font-weight:bold;"></span>
+          <p id="report-general-comment" class="dynamic-comment"
+            style="display:none; margin:0 0 8px 0; font-size:13px; font-weight:bold; color:#1f2937;"></p>
         </div>
       </div>
 
@@ -544,6 +546,14 @@
             const ltText = d.litigation_comment.trim();
             ltEl.textContent = ltText.endsWith('.') ? ltText : ltText + '.';
             ltEl.style.display = 'inline';
+          }
+
+          // General comment — its own line under the remarks, not appended inline.
+          const genEl = document.getElementById('report-general-comment');
+          if (genEl && d.general_comment) {
+            const genText = d.general_comment.trim();
+            genEl.textContent = genText.endsWith('.') ? genText : genText + '.';
+            genEl.style.display = 'block';
           }
 
           // No CoFO comment

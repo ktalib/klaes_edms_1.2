@@ -183,6 +183,7 @@ function tsOpenSeeFileSearch() {
             document.getElementById('ts-see-selected').classList.remove('hidden');
             document.getElementById('ts-see-card').classList.add('selected');
             if (typeof lucide !== 'undefined') lucide.createIcons();
+            tsRefreshRemark();
         }
     });
 }
@@ -195,6 +196,7 @@ function tsClearSeeSelection(event) {
     document.getElementById('ts-see-placeholder').classList.remove('hidden');
     document.getElementById('ts-see-selected').classList.add('hidden');
     document.getElementById('ts-see-card').classList.remove('selected');
+    tsRefreshRemark();
 }
 
 function tsApplyTheme(type) {
@@ -300,6 +302,14 @@ function tsRefreshRemark() {
     const applicantName = (document.getElementById('ts-applicant_name')?.value || '').trim();
     const fileTitle     = (document.getElementById('ts-file_title')?.value     || '').trim();
     const fileNo        = (document.getElementById('ts-file_no')?.value        || '').trim();
+
+    if (tsSelectedType === 'Re-grant') {
+        const seeFileno = (document.getElementById('ts-see_fileno')?.value || '').trim();
+        document.getElementById('ts-remark').value = seeFileno
+            ? `This File has been Re-granted from ${seeFileno}`
+            : 'This File has been Re-granted';
+        return;
+    }
 
     const verb = TS_TYPE_VERB[tsSelectedType] || tsSelectedType || '[Status type]';
 

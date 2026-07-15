@@ -10,9 +10,11 @@ class LegalSearchToken extends Model
     use HasFactory;
 
     /**
-     * Maximum number of times a single token may be spent per file number.
+     * How long a token stays valid for repeat use, counted from its first use
+     * (used_at). A never-used token's window has not started yet, so it does
+     * not expire while sitting unused.
      */
-    public const MAX_USES = 2;
+    public const VALIDITY_HOURS = 24;
 
     protected $connection = 'sqlsrv';
     protected $table = 'legal_search_tokens';
@@ -47,18 +49,32 @@ class LegalSearchToken extends Model
     }
 
     /**
-     * Uses still available on this token.
+     * Whether the token's 24-hour window (from its first use) has elapsed.
+     * A never-used token is not expired — its window hasn't started yet.
      */
-    public function getRemainingUsesAttribute(): int
+    public function getIsExpiredAttribute(): bool
     {
-        return max(0, self::MAX_USES - (int) $this->usage_count);
+        if (!$this->used_at) {
+            return false;
+        }
+        return now()->greaterThan($this->used_at->copy()->addHours(self::VALIDITY_HOURS));
     }
 
     /**
-     * Whether the token has been fully spent (no remaining uses).
+     * Whether the token can currently be spent: never used, or used but still
+     * within its 24-hour window.
      */
-    public function getIsExhaustedAttribute(): bool
+    public function getIsAvailableAttribute(): bool
     {
-        return $this->remaining_uses <= 0;
+        return !$this->is_expired;
+    }
+
+    /**
+     * When the token's validity window closes; null while it has never been used
+     * (the window hasn't started).
+     */
+    public function getExpiresAtAttribute(): ?\Illuminate\Support\Carbon
+    {
+        return $this->used_at ? $this->used_at->copy()->addHours(self::VALIDITY_HOURS) : null;
     }
 }

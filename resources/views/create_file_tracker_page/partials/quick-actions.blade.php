@@ -250,7 +250,7 @@
                 </div>
                 <div class="px-5 py-3">
                     ${row('Registry', d.registry)}
-                    ${row('Rack / Shelf', d.rack_shelf)}
+                    ${row('Shelf/Rack', d.rack_shelf)}
                     ${row('Current Location', d.current_location)}
                     ${row('Receiving Officer', d.receiving_officer_name)}
                     ${row('Duration with holder', d.duration_with_holder)}

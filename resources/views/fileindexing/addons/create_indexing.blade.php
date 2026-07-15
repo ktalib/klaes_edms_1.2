@@ -1168,6 +1168,12 @@
                 if (isClassificationType(type)) {
                     return `File${fileRef} was marked as ${type} on ${dt}`;
                 }
+                if (type === 'Re-grant') {
+                    const seeFileno = (seeHidden?.value || '').trim();
+                    return seeFileno
+                        ? `This File has been Re-granted from ${seeFileno}`
+                        : 'This File has been Re-granted';
+                }
                 const verb   = (type === 'Extension')
                     ? (getExtensionKind() || 'Extension')
                     : (TS_TYPE_VERB[type] || type);

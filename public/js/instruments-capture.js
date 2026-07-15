@@ -23,6 +23,10 @@ document.addEventListener('DOMContentLoaded', function () {
     window.handleSubmit = handleSubmit;
     window.populateForm = populateForm;
     const isInstrumentCaptureCreatePage = window.location.pathname.toLowerCase().includes('/instruments/create');
+    // Serial-only OP lookup (fetch candidates, let the user pick one) is restricted
+    // to the MLS File Number Generator page. Everywhere else keeps the 5-field
+    // disambiguation flow — see the comment in lookupOpSerialNumberAndAutofill().
+    const isMlsFileNumberGeneratorPage = window.location.pathname.toLowerCase().replace(/\/+$/, '') === '/file-numbers';
 
     // Wire up `#close-property-form` and cancel button for the property modal dialog on the instruments capture page
     const propDialogCloseBtn = document.getElementById('close-property-form');
@@ -309,10 +313,28 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     if (elements.opSerialNumberInput) {
-        // OP serial lookup disabled — only blur/change reset the system file number.
-        // Input/keydown listeners removed to avoid burning a fresh TEMP- on every keystroke.
         elements.opSerialNumberInput.addEventListener('blur', lookupOpSerialNumberAndAutofill);
         elements.opSerialNumberInput.addEventListener('change', lookupOpSerialNumberAndAutofill);
+
+        // As-you-type search + Enter-to-search only on the MLS File Number Generator
+        // page. Elsewhere the input/keydown listeners are skipped to avoid burning a
+        // fresh TEMP- fileno on every keystroke (blur/change above still fire).
+        if (isMlsFileNumberGeneratorPage) {
+            let opLookupDebounceTimer = null;
+            elements.opSerialNumberInput.addEventListener('input', function () {
+                clearTimeout(opLookupDebounceTimer);
+                opLookupDebounceTimer = setTimeout(() => {
+                    lookupOpSerialNumberAndAutofill();
+                }, 450);
+            });
+            elements.opSerialNumberInput.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    clearTimeout(opLookupDebounceTimer);
+                    lookupOpSerialNumberAndAutofill();
+                }
+            });
+        }
     }
 
     // NEW: Attach listener to file number input for manual entry trigger
@@ -2665,6 +2687,16 @@ document.addEventListener('DOMContentLoaded', function () {
             if (Object.prototype.hasOwnProperty.call(component, '_currentAllocationSourceType')) {
                 component._currentAllocationSourceType = 'op';
             }
+            // The "op" radio and its "New Applications (Existing OP Change of Name)"
+            // sub-option share name="allocation_source_type", so natively checking
+            // the sub-option (which is how this flow was entered) unchecks "op" in
+            // the browser's radio group — setting the JS property above does not
+            // re-check the actual DOM radio. Sync it explicitly so "Occupancy
+            // Permit (OP)" still shows as selected when the modal reappears.
+            const opSourceRadioNow = document.querySelector('input[name="allocation_source_type"][value="op"]');
+            if (opSourceRadioNow) {
+                opSourceRadioNow.checked = true;
+            }
             component.defaultAllocationType = defaultAllocationType;
             component.batchMode = false;
             component.plotNo = plotNo;
@@ -2702,8 +2734,11 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             // Set fileName AFTER handleAllocationFilterChange() which resets it to ''.
-            // For Change of Name, do NOT prefill allottee name as File Name.
-            if (component.subSource !== 'OP Change of Name') {
+            // For Change of Name, do NOT prefill allottee name as File Name. Same
+            // reasoning applies on the MLS File Number Generator page: the OP is
+            // selected only to inherit property/location details, and the new file's
+            // owner must be entered fresh rather than defaulting to the OP's allottee.
+            if (component.subSource !== 'OP Change of Name' && !isMlsFileNumberGeneratorPage) {
                 component.fileName = fileName;
             }
         }
@@ -2750,21 +2785,17 @@ document.addEventListener('DOMContentLoaded', function () {
                 appTypeRadio.dispatchEvent(new Event('change', { bubbles: true }));
             }
 
-            const allocationSourceOpRadio = document.querySelector('input[name="allocated_by_filter"][value=""]');
-            if (allocationSourceOpRadio) {
-                allocationSourceOpRadio.checked = true;
-                allocationSourceOpRadio.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-
-            const defaultTypeValue = defaultAllocationType === 'resettlement' ? 'resettlement' : 'direct';
-            const defaultTypeRadio = document.querySelector(`input[name="default_allocation_type"][value="${defaultTypeValue}"]`);
-            if (defaultTypeRadio) {
-                defaultTypeRadio.checked = true;
+            // Re-affirm the "op" radio here too — Alpine's re-render of the Row 2
+            // sub-option (or any other native radio-group interaction) can steal
+            // the checked state back between the immediate sync above and now.
+            const opSourceRadio = document.querySelector('input[name="allocation_source_type"][value="op"]');
+            if (opSourceRadio) {
+                opSourceRadio.checked = true;
             }
 
             // Re-apply fileName after radio change events which reset it via handleAllocationFilterChange()
             // For Change of Name, do NOT prefill allottee name as File Name (same guard as the initial set).
-            if (component && fileName && component.subSource !== 'OP Change of Name') {
+            if (component && fileName && component.subSource !== 'OP Change of Name' && !isMlsFileNumberGeneratorPage) {
                 component.fileName = fileName;
             }
         }, 50);
@@ -4842,12 +4873,15 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     async function lookupOpSerialNumberAndAutofill() {
-        // OP serial lookup disabled: serial numbers are not unique enough to disambiguate
+        // OP serial-only lookup is disabled everywhere except the MLS File Number
+        // Generator page: serial numbers alone are not unique enough to disambiguate
         // candidate OPs, and auto-selection caused wrong OP→TOT lineage (source_op_id
-        // pointing at the wrong OP). Every OP is now captured fresh; the TOT inherits
-        // the just-captured OP's prop_id + temp_fileno through the normal commissioning flow.
-        // Disambiguation now happens via checkForExistingOpByFields once Reg
-        // Particulars (serial+page+vol) are filled — multi-field match, user-confirmed.
+        // pointing at the wrong OP). Elsewhere every OP is captured fresh; the TOT
+        // inherits the just-captured OP's prop_id + temp_fileno through the normal
+        // commissioning flow, and disambiguation happens via checkForExistingOpByFields
+        // once Reg Particulars (serial+page+vol) are filled — multi-field match,
+        // user-confirmed. The Generator page still wants serial-only search-and-select
+        // (a specific record picked from a results list), so it keeps the old behavior.
         if (currentInstrumentType !== 'occupancy-permit') return;
 
         if (suppressNextOpSerialLookup) {
@@ -4855,8 +4889,53 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        resetOpLookupSelectionAndSystemFile({ requestFreshTemp: true });
-        setOpSerialLookupFeedback('neutral', '');
+        if (!isMlsFileNumberGeneratorPage) {
+            resetOpLookupSelectionAndSystemFile({ requestFreshTemp: true });
+            setOpSerialLookupFeedback('neutral', '');
+            return;
+        }
+
+        try {
+            const serial = (elements.opSerialNumberInput?.value || '').trim().toUpperCase();
+            if (!serial) {
+                resetOpLookupSelectionAndSystemFile({ requestFreshTemp: true });
+                setOpSerialLookupFeedback('neutral', '');
+                return;
+            }
+
+            setOpSerialLookupFeedback('neutral', `Checking OP SerialNo ${serial}...`);
+
+            const url = `/api/instruments/op-serial-lookup?op_serial_number=${encodeURIComponent(serial)}`;
+            const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+            const payload = await response.json();
+
+            if (!response.ok || !payload?.success) {
+                resetOpLookupSelectionAndSystemFile({ requestFreshTemp: true });
+                setOpSerialLookupFeedback('error', 'Lookup failed. Please try again.');
+                return;
+            }
+
+            if (!payload?.found || !payload?.data) {
+                resetOpLookupSelectionAndSystemFile({
+                    requestFreshTemp: true,
+                    infoMessage: 'No OP serial match found. Fresh system file number generated.'
+                });
+                setOpSerialLookupFeedback('success', `OP Serial No <strong>${serial}</strong> is available — no existing records found.`);
+                return;
+            }
+
+            const matches = Array.isArray(payload.records) && payload.records.length > 0
+                ? payload.records
+                : [payload.data];
+
+            // Always show result cards - user must click to select
+            resetOpLookupSelectionAndSystemFile({ requestFreshTemp: true });
+            renderOpLookupResultsCards(matches);
+        } catch (error) {
+            console.error('OP Serial lookup failed:', error);
+            resetOpLookupSelectionAndSystemFile({ requestFreshTemp: true });
+            setOpSerialLookupFeedback('error', 'Lookup failed due to network/server error.');
+        }
     }
 
     // Tracks the set of supplied values the user has already dismissed via

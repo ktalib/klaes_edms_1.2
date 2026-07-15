@@ -1275,7 +1275,7 @@ async function searchFile() {
         detailRows = [
           ['Registry', d.registry],
           // Always show the home shelf label; files without one read "—".
-          ['Rack / Shelf', d.rack_shelf || '—'],
+          ['Shelf/Rack', d.rack_shelf || '—'],
           ['Receiving Officer (holder)', d.receiving_officer_name],
           ['Department', dept || d.current_location],
           // In-transit timeline — only populated for IN_TRANSIT files.
@@ -1287,7 +1287,7 @@ async function searchFile() {
       } else {
         detailRows = [
           ['Registry', d.registry],
-          ['Rack / Shelf', d.rack_shelf || '—'],
+          ['Shelf/Rack', d.rack_shelf || '—'],
           ['Current Location (Expected)', d.current_location],
           ['Receiving Officer', d.receiving_officer_name],
         ];
@@ -1600,6 +1600,18 @@ async function searchFile() {
                     ${list}
                   </div>`;
             })()}
+            ${(d.status === 'MISSING_FILE' && d.is_indexed) ? `
+            <div style="margin-bottom:12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:10px 12px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <i class="fas fa-circle-info" style="color:#2563eb;"></i>
+                <span style="font-size:13px;font-weight:700;color:#1e40af;">This file was indexed and returned to the Original Registry before archiving.</span>
+              </div>
+              ${(d.registry || d.rack_shelf) ? `
+              <div style="margin-top:6px;padding-left:22px;display:flex;flex-wrap:wrap;gap:12px;font-size:11px;color:#1e40af;">
+                ${d.registry ? `<span><strong>Registry:</strong> ${esc(d.registry)}</span>` : ''}
+                ${d.rack_shelf ? `<span><strong>Shelf/Rack:</strong> ${esc(d.rack_shelf)}</span>` : ''}
+              </div>` : ''}
+            </div>` : ''}
             ${d.duplicate_flag ? `
             <div style="margin-bottom:12px;background:${d.duplicate_flag.color}14;border:1px solid ${d.duplicate_flag.color}55;border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
               <span style="font-size:13px;font-weight:800;color:${d.duplicate_flag.color};"><i class="fas fa-copy" style="margin-right:5px;"></i>${esc(d.duplicate_flag.label)}</span>
@@ -1660,7 +1672,7 @@ async function toggleMovementTimeline(fileNumber, detailsEl, originRegistry, rac
           <div style="min-width:0;flex:1 1 65%;">
             <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px;">Archive / Registry</div>
             <div style="font-size:13px;color:var(--text);font-weight:700;line-height:1.35;">
-              <i class="fas fa-box-archive" style="margin-right:5px;color:#10b981;"></i>${esc(originRegistry || 'Registry / Archive')}${rackShelf ? ` — Rack/Shelf ${esc(rackShelf)}` : ''}
+              <i class="fas fa-box-archive" style="margin-right:5px;color:#10b981;"></i>${esc(originRegistry || 'Registry / Archive')}${rackShelf ? ` — Shelf/Rack ${esc(rackShelf)}` : ''}
             </div>
           </div>
           <div style="min-width:0;flex:1 1 30%;text-align:right;">

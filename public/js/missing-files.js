@@ -14,6 +14,7 @@
     const state = {
         page: (cfg.initialPagination && cfg.initialPagination.current_page) || 1,
         search: '',
+        duplicate: false,
     };
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -78,6 +79,7 @@
         if (!data || !data.fileNumber) return;
 
         setValue('mf-file-no', data.fileNumber);
+        checkDuplicate(data.fileNumber);
 
         const record = data.record || {};
         const trackingId = record.tracking_id || record.trackingId || '';
@@ -98,6 +100,62 @@
                 }
             })
             .catch((err) => console.warn('Tracking ID lookup failed', err));
+    }
+
+    /* ---------------------------------------------------------------- Duplicate check */
+
+    function checkDuplicate(fileNumber) {
+        clearDuplicateWarning();
+        if (!fileNumber || !routes.check) return;
+
+        const url = new URL(routes.check, window.location.origin);
+        url.searchParams.set('file_number', fileNumber);
+
+        fetch(url.toString(), { headers: { 'Accept': 'application/json' } })
+            .then(parseJson)
+            .then(function (res) {
+                // Ignore a stale response if the user has since picked another file.
+                if (getValue('mf-file-no').trim() !== fileNumber) return;
+                if (res && res.success && res.exists) {
+                    showDuplicateWarning(res.message);
+                }
+            })
+            .catch(function () { /* the unique constraint still guards the save */ });
+    }
+
+    function showDuplicateWarning(message) {
+        const err = document.getElementById('mf-file-no-error');
+        const text = document.getElementById('mf-file-no-error-text');
+        const input = document.getElementById('mf-file-no');
+
+        if (text && message) text.textContent = message;
+        if (err) {
+            err.classList.remove('hidden');
+            err.classList.add('flex');
+        }
+        if (input) {
+            input.classList.remove('border-gray-300');
+            input.classList.add('border-red-500', 'bg-red-50', 'text-red-700');
+        }
+        state.duplicate = true;
+        setBusy(document.getElementById('mf-submit-btn'), true);
+        refreshIcons();
+    }
+
+    function clearDuplicateWarning() {
+        const err = document.getElementById('mf-file-no-error');
+        const input = document.getElementById('mf-file-no');
+
+        if (err) {
+            err.classList.add('hidden');
+            err.classList.remove('flex');
+        }
+        if (input) {
+            input.classList.remove('border-red-500', 'bg-red-50', 'text-red-700');
+            input.classList.add('border-gray-300');
+        }
+        state.duplicate = false;
+        setBusy(document.getElementById('mf-submit-btn'), false);
     }
 
     /* ---------------------------------------------------------------- Full label */
@@ -154,6 +212,10 @@
             toast('Please select or enter a file number.', 'error');
             return;
         }
+        if (state.duplicate) {
+            toast('This file has already been recorded as missing.', 'error');
+            return;
+        }
 
         const payload = {
             file_number: fileNumber,
@@ -173,22 +235,40 @@
             headers: jsonHeaders(),
             body: JSON.stringify(payload),
         })
-            .then(parseJson)
-            .then(function (res) {
+            .then(function (response) {
+                return parseJson(response).then(function (res) {
+                    return { status: response.status, body: res };
+                });
+            })
+            .then(function (out) {
+                const res = out.body;
+
                 if (res && res.success) {
                     toast(res.message || 'File recorded as missing.', 'success');
                     resetForm();
                     reloadTable(state.search, 1);
                     switchTab('list');
-                } else {
-                    toast((res && res.message) || 'Failed to record the missing file.', 'error');
+                    return;
                 }
+
+                const duplicateMessage = res && (
+                    (res.errors && res.errors.file_number && res.errors.file_number[0]) ||
+                    (res.duplicate && res.message)
+                );
+
+                if (out.status === 422 && duplicateMessage) {
+                    showDuplicateWarning(duplicateMessage);
+                    toast(duplicateMessage, 'error');
+                    return;
+                }
+
+                toast((res && res.message) || 'Failed to record the missing file.', 'error');
             })
             .catch(function () {
                 toast('Something went wrong while saving.', 'error');
             })
             .finally(function () {
-                setBusy(btn, false);
+                setBusy(btn, state.duplicate);
             });
     }
 
@@ -330,6 +410,7 @@
     function resetForm() {
         setValue('mf-file-no', '');
         setValue('mf-tracking-id', '');
+        clearDuplicateWarning();
         const reg = document.getElementById('mf-archive-registry');
         if (reg) reg.value = 'Registry 1';
         const rp = document.getElementById('mf-rack-primary');

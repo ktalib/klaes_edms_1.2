@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\District;
 use App\Models\LandRecommendation;
 use App\Models\LandUse;
 use App\Models\Purpose;
@@ -133,7 +134,7 @@ class LandRecommendationController extends Controller
     {
         $validated = $request->validate([
             'file_number' => 'required|string',
-            'applicant_name' => 'nullable|string',
+            'applicant_name' => 'required|string',
             'purpose_of_clause' => 'nullable|string',
             'purpose_id' => 'required|exists:sqlsrv.purposes,id',
             'location' => 'nullable|string',
@@ -158,8 +159,8 @@ class LandRecommendationController extends Controller
             'development_value' => 'nullable|numeric',
             'development_charge' => 'nullable|numeric',
             'tracking_id' => 'nullable|string',
-            'application_date' => 'nullable|date',
-            'applicant_address' => 'nullable|string',
+            'application_date' => 'required|date',
+            'applicant_address' => 'required|string',
             'type' => 'nullable|string',
             'application_type' => 'nullable|string',
             'page' => 'nullable|string',
@@ -218,6 +219,32 @@ class LandRecommendationController extends Controller
     public function edit($id)
     {
         $recommendation = LandRecommendation::findOrFail($id);
+
+        // Legacy records stored the district name inside the freeform `location`
+        // field (e.g. "PLOT 47, FARI, DAWAKIN KUDU") before the structured
+        // District/LGA builder existed, so `location` is almost never equal to
+        // just the district name — it needs a substring match, not equality.
+        // District catalog names are also often suffixed with "District" (e.g.
+        // "Dawakin Kudu District") which never appears verbatim in the legacy
+        // text, so that suffix is stripped before comparing.
+        if (empty($recommendation->district) && !empty($recommendation->location)) {
+            $locationUpper = strtoupper(trim($recommendation->location));
+
+            $matchedDistrict = District::where('is_active', true)
+                ->get()
+                ->map(function ($district) {
+                    $district->display_name = trim(preg_replace('/\s+District$/i', '', $district->name));
+                    return $district;
+                })
+                ->filter(fn ($district) => $district->display_name !== '' && str_contains($locationUpper, strtoupper($district->display_name)))
+                ->sortByDesc(fn ($district) => strlen($district->display_name))
+                ->first();
+
+            if ($matchedDistrict) {
+                $recommendation->district = $matchedDistrict->display_name;
+            }
+        }
+
         $PageTitle ='Recommendation For Grant Of Statutory Right Of Occupancy';
         $landUses = LandUse::orderBy('landuse')->get();
         $purposes = [];
@@ -233,7 +260,7 @@ class LandRecommendationController extends Controller
 
         $validated = $request->validate([
             'file_number' => 'required|string',
-            'applicant_name' => 'nullable|string',
+            'applicant_name' => 'required|string',
             'purpose_of_clause' => 'nullable|string',
             'purpose_id' => 'required|exists:sqlsrv.purposes,id',
             'location' => 'nullable|string',
@@ -258,8 +285,8 @@ class LandRecommendationController extends Controller
             'development_value' => 'nullable|numeric',
             'development_charge' => 'nullable|numeric',
             'tracking_id' => 'nullable|string',
-            'application_date' => 'nullable|date',
-            'applicant_address' => 'nullable|string',
+            'application_date' => 'required|date',
+            'applicant_address' => 'required|string',
             'edit_reason' => 'nullable|string',
             'type' => 'nullable|string',
             'page' => 'nullable|string',
@@ -383,11 +410,7 @@ class LandRecommendationController extends Controller
             abort(403, 'Document must be approved before printing.');
         }
 
-        // Bypass limit check for Certified True Copy
-        $isCTC = $request->query('status') === 'CTC' || $request->query('isCTC') == 1;
-        if (!$isCTC && $recommendation->print_count >= 2) {
-            abort(403, 'Maximum print limit reached.');
-        }
+        // Print limit enforcement disabled for now.
 
         // Route by Application Type first; fall back to Recommendation Type
         $primaryAppType = $recommendation->application_type ?? null;
@@ -430,15 +453,8 @@ class LandRecommendationController extends Controller
         $recommendation = LandRecommendation::findOrFail($id);
 
         $status = $request->query('status', 'Original');
-        $isCTC = $status === 'CTC' || $request->query('isCTC') == 1;
 
-        // Only enforce limits for non-CTC prints
-        if (!$isCTC && $recommendation->print_count >= 2) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Maximum print limit reached.'
-            ], 403);
-        }
+        // Print limit enforcement disabled for now.
 
         DB::beginTransaction();
         try {

@@ -156,7 +156,7 @@
                                 <td class="px-4 py-2 font-mono font-bold text-slate-900 whitespace-nowrap">{{ $rec->file_number }}</td>
                                 <td class="px-4 py-2 text-slate-700 whitespace-nowrap uppercase font-bold text-blue-900">{{ $rec->applicant_name }}</td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->purpose_of_clause }}</td>
-                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap uppercase">{{ $rec->location }}</td>
+                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap uppercase">{{ $rec->display_location }}</td>
                                 <td class="px-4 py-2 text-blue-600 whitespace-nowrap font-medium italic">{{ $rec->resolved_applicant_address ?? $rec->applicant_address ?? 'N/A' }}</td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->plot_number }}</td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->layout_plan_no }}</td>
@@ -227,15 +227,9 @@
                                                  style="display: none;">
                                                 <div class="py-1">
                                                     <!-- Edit Action -->
-                                                    @if($rec->status === \App\Models\LandRecommendation::STATUS_PENDING)
-                                                        <a href="{{ route('land-recommendations.edit', $rec->id) }}" class="flex items-center px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition gap-2">
-                                                            <i data-lucide="edit-3" class="h-4 w-4"></i> Edit Record
-                                                        </a>
-                                                    @else
-                                                        <span class="flex items-center px-4 py-2.5 text-sm text-slate-300 cursor-not-allowed gap-2 italic" title="Cannot edit approved document">
-                                                            <i data-lucide="edit-3" class="h-4 w-4 text-slate-200"></i> Edit (Disabled)
-                                                        </span>
-                                                    @endif
+                                                    <a href="{{ route('land-recommendations.edit', $rec->id) }}" class="flex items-center px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition gap-2">
+                                                        <i data-lucide="edit-3" class="h-4 w-4"></i> Edit Record
+                                                    </a>
 
                                                     <div class="border-t border-slate-100 my-1"></div>
 

@@ -102,7 +102,7 @@ function renderRows(rows) {
   const fragments = rows.map((row, rowIndex) => {
     const viewUrl = buildViewUrl(row.view_url, row.id);
     const statusBadge = buildStatusBadge(row.status);
-    const fileNumberBadge = buildFileNumberBadge(row.file_number, row.is_temp_fallback);
+    const fileNumberBadge = buildFileNumberBadge(row.file_number, row.is_temp_fallback, row.kangis_fileno_placeholder);
     const landUseBadge = buildLandUseBadge(row.land_use_type);
     const lgaValue = row.lga == null ? '' : String(row.lga).toUpperCase();
     rowCache.set(String(row.id), row);
@@ -220,8 +220,8 @@ function renderRows(rows) {
             </td>`)}
             ${col('kangis_fileno_placeholder', `<td class="${standardCellClass}">
               <div class="flex flex-col gap-1">
-                ${kangisVal ? `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">${escapeHtml(kangisVal)}</span>` : ''}
-                ${placeholderVal && placeholderVal !== kangisVal ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200 mt-1">${escapeHtml(placeholderVal)}</span>` : ''}
+                ${kangisVal ? `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 cursor-help" title="Placeholder File No: ${escapeHtml(placeholderVal || 'N/A')}">${escapeHtml(kangisVal)}</span>` : ''}
+                ${placeholderVal && placeholderVal !== kangisVal ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200 mt-1 cursor-help" title="Placeholder File No: ${escapeHtml(placeholderVal)}">${escapeHtml(placeholderVal)}</span>` : ''}
                 ${!kangisVal && !placeholderVal ? '<span class="text-gray-400">-</span>' : ''}
               </div>
             </td>`)}
@@ -357,16 +357,20 @@ function buildDcivStatusBadge(status) {
   return '<span class="text-gray-400">-</span>';
 }
 
-function buildFileNumberBadge(fileNumber, isTempFallback = false) {
+function buildFileNumberBadge(fileNumber, isTempFallback = false, kangisPlaceholder = '') {
   if (!fileNumber) {
     return '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">No File</span>';
   }
 
+  const hasPlaceholder = kangisPlaceholder && kangisPlaceholder !== fileNumber;
+  const titleAttr = hasPlaceholder ? ` title="Placeholder File No: ${escapeHtml(kangisPlaceholder)}"` : '';
+  const cursorClass = hasPlaceholder ? ' cursor-help' : '';
+
   if (isTempFallback) {
-    return `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200">${escapeHtml(fileNumber)}</span>`;
+    return `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200${cursorClass}"${titleAttr}>${escapeHtml(fileNumber)}</span>`;
   }
 
-  return `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">${escapeHtml(fileNumber)}</span>`;
+  return `<span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200${cursorClass}"${titleAttr}>${escapeHtml(fileNumber)}</span>`;
 }
 
 function buildLatCell(row) {

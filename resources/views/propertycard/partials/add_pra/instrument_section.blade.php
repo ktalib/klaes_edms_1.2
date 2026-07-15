@@ -72,6 +72,18 @@
                 </div>
             </div>
 
+            <div class="grid grid-cols-1 gap-3 mt-3 hidden" data-role="cofo-fields-wrapper">
+                <div>
+                    <label for="cofo_type" class="text-xs">CofO Type</label>
+                    <select id="cofo_type" name="cofo_type" class="form-select text-xs py-1" data-model="cofoType">
+                        <option value="">Select CofO type</option>
+                        <option value="Old CofO (Ministry)">Old CofO (Ministry)</option>
+                        <option value="KANGIS CofO">KANGIS CofO</option>
+                        <option value="New KANGIS CofO">New KANGIS CofO</option>
+                    </select>
+                </div>
+            </div>
+
             <div class="mt-2 p-3 bg-blue-50 border-2 border-blue-200 rounded-lg shadow-sm hidden"
                 data-role="reg-preview">
                 <div class="flex items-center justify-between">

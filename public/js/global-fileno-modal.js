@@ -397,7 +397,8 @@
                     const option = $('<option>', {
                         value: JSON.stringify(file),
                         text: fileNumber,
-                        'data-fileno': fileNumber
+                        'data-fileno': fileNumber,
+                        'data-temp': file.temp_file_no || file.temp_fileno || ''
                     });
                     selector.append(option);
                 }
@@ -427,7 +428,8 @@
                                     results.push({
                                         id: $(this).val(),
                                         text: $(this).text(),
-                                        fileNumber: $(this).data('fileno')
+                                        fileNumber: $(this).data('fileno'),
+                                        tempFileNo: $(this).data('temp')
                                     });
                                 });
                                 success({
@@ -462,7 +464,8 @@
                                             return {
                                                 id: JSON.stringify(file),
                                                 text: fileNumber,
-                                                fileNumber: fileNumber
+                                                fileNumber: fileNumber,
+                                                tempFileNo: file.temp_file_no || file.temp_fileno || ''
                                             };
                                         });
                                         // Apply prefix exclusions for contexts like OSS FEFR
@@ -481,20 +484,11 @@
                         }
                     },
                     templateResult: function (data) {
-                        if (data.loading) {
-                            return data.text;
-                        }
-
-                        // Custom formatting for file numbers
-                        const $result = $(`
-                            <div class="select2-file-result">
-                                <div class="file-number">${data.text || data.fileNumber}</div>
-                            </div>
-                        `);
-                        return $result;
+                        return GlobalFileNoModal.renderFileOption(data);
                     },
                     templateSelection: function (data) {
-                        return data.text || data.fileNumber || data.id;
+                        // Selection chip shows only the real file number (the value that gets applied)
+                        return data.fileNumber || data.text || data.id;
                     }
                 });
 
@@ -526,6 +520,18 @@
                 default:
                     return file.file_number || file.fileNumber || '';
             }
+        },
+
+        // Render a dropdown row: plain single-line, always the record's own main file number.
+        renderFileOption: function (data) {
+            if (data.loading) {
+                return data.text;
+            }
+
+            const fileNo = data.fileNumber || data.text || '';
+            const $result = $('<div class="select2-file-result"><div class="file-number"></div></div>');
+            $result.find('.file-number').text(fileNo);
+            return $result;
         },
 
         // Update preview based on current tab and values with enhanced styling
@@ -1452,7 +1458,9 @@
 
                                 return {
                                     id: JSON.stringify(file),
-                                    text: fileNumber
+                                    text: fileNumber,
+                                    fileNumber: fileNumber,
+                                    tempFileNo: file.temp_file_no || file.temp_fileno || ''
                                 };
                             }).filter(Boolean);
 
@@ -1461,6 +1469,13 @@
                             };
                         },
                         cache: true
+                    },
+                    templateResult: function (data) {
+                        return GlobalFileNoModal.renderFileOption(data);
+                    },
+                    templateSelection: function (data) {
+                        // Selection chip shows only the real file number (the value that gets applied)
+                        return data.fileNumber || data.text || data.id;
                     },
                     language: {
                         searching: function () {

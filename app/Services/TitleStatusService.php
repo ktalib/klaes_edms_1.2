@@ -80,8 +80,14 @@ class TitleStatusService
      * Template: "[Status type] was initiated by [initiator] for File [file_no] on [Time/Date] due to [Reason]"
      * Applicant/Allottee get the holder name with role suffix; Ministry/Court Order render literally.
      */
-    public function generateRemark(string $titleType, string $initiatedBy, string $reason, string $applicantName = '', string $fileNo = ''): string
+    public function generateRemark(string $titleType, string $initiatedBy, string $reason, string $applicantName = '', string $fileNo = '', string $seeFileno = ''): string
     {
+        if ($titleType === TitleStatusApplication::TYPE_REGRANT) {
+            return $seeFileno !== ''
+                ? "This File has been Re-granted from {$seeFileno}"
+                : 'This File has been Re-granted';
+        }
+
         $statusType = self::TYPE_VERB[$titleType] ?? $titleType;
         $datetime   = now()->format('d/m/Y H:i');
         $reasonText = $reason !== '' ? $reason : '[Reason]';
@@ -143,29 +149,7 @@ class TitleStatusService
         $user     = Auth::user();
         $userName = $user ? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? $user->name ?? '')) : 'System';
 
-        foreach (self::SOURCE_TABLES as $table) {
-            try {
-                if (!DB::connection('sqlsrv')->getSchemaBuilder()->hasTable($table)) {
-                    continue;
-                }
-
-                $fileCol = $this->fileNumberColumn($table);
-
-                $exists = DB::connection('sqlsrv')->table($table)->where($fileCol, $fileNo)->exists();
-                if (!$exists) continue;
-
-                $updates = ['title_status' => 1, 'title_status_type' => $slug, 'title_status_remark' => $remark];
-
-                // Only mark the source file as decommissioned for a REAL decommissioning.
-                if (!$falseDecommissioning && DB::connection('sqlsrv')->getSchemaBuilder()->hasColumn($table, 'is_decommissioned')) {
-                    $updates['is_decommissioned'] = 1;
-                }
-
-                DB::connection('sqlsrv')->table($table)->where($fileCol, $fileNo)->update($updates);
-            } catch (\Exception $e) {
-                Log::warning("TitleStatus: could not update {$table} for {$fileNo}: " . $e->getMessage());
-            }
-        }
+        $this->applyFlags($fileNo, $slug, $remark, !$falseDecommissioning);
 
         // Archive to decommissioned_files
         try {
@@ -245,15 +229,175 @@ class TitleStatusService
         }
     }
 
+    /**
+     * Write the title-status flag columns for one file across every source table
+     * that holds a row for it.
+     *
+     * @param string $typeValue Value for title_status_type. flagAndDecommission() passes the
+     *        slug ('regranted'); the Re-grant commissioning path passes the label ('Re-grant').
+     * @param bool $decommission Also set is_decommissioned on tables that have the column.
+     */
+    public function applyFlags(string $fileNo, string $typeValue, string $remark, bool $decommission = false): void
+    {
+        if (trim($fileNo) === '') {
+            return;
+        }
+
+        foreach (self::SOURCE_TABLES as $table) {
+            try {
+                if (!DB::connection('sqlsrv')->getSchemaBuilder()->hasTable($table)) {
+                    continue;
+                }
+
+                $fileCol = $this->fileNumberColumn($table);
+
+                $exists = DB::connection('sqlsrv')->table($table)->where($fileCol, $fileNo)->exists();
+                if (!$exists) continue;
+
+                $updates = ['title_status' => 1, 'title_status_type' => $typeValue, 'title_status_remark' => $remark];
+
+                if ($decommission && DB::connection('sqlsrv')->getSchemaBuilder()->hasColumn($table, 'is_decommissioned')) {
+                    $updates['is_decommissioned'] = 1;
+                }
+
+                DB::connection('sqlsrv')->table($table)->where($fileCol, $fileNo)->update($updates);
+            } catch (\Exception $e) {
+                Log::warning("TitleStatus: could not update {$table} for {$fileNo}: " . $e->getMessage());
+            }
+        }
+    }
+
+    /**
+     * Record a Re-grant raised from MLS file-number commissioning: the new file is
+     * commissioned as a re-grant of $oldFileNo (the selected Related File).
+     *
+     * Writes, all non-fatal:
+     *   - flag columns on the NEW file  → "This File has been Re-granted from {old}"
+     *   - flag columns on the OLD file  → "This File has been Re-granted to {new}"
+     *     (flags only — a re-grant here does not decommission or archive the old file)
+     *   - one title_status_applications row against the new file, see_fileno = old file
+     *   - one related_file_number row linking new → old
+     *
+     * $oldFileNo is optional: a Re-grant may be commissioned without ticking "This file has
+     * a Related File Number". The new file is then still flagged, with the shorter remark,
+     * and the old-file flags / linkage row are skipped since there is no file to point at.
+     *
+     * @param array $context file_indexing_id, prop_id, file_title, applicant_name, plot_no,
+     *                       district, lga, location, land_use, url — all optional.
+     */
+    public function recordRegrant(string $newFileNo, string $oldFileNo = '', array $context = []): void
+    {
+        $newFileNo = trim($newFileNo);
+        $oldFileNo = trim($oldFileNo);
+        if ($newFileNo === '') {
+            return;
+        }
+
+        $regrantedFrom = $oldFileNo !== ''
+            ? "This File has been Re-granted from {$oldFileNo}"
+            : 'This File has been Re-granted';
+        $regrantedTo   = "This File has been Re-granted to {$newFileNo}";
+
+        $this->applyFlags($newFileNo, TitleStatusApplication::TYPE_REGRANT, $regrantedFrom);
+
+        if ($oldFileNo !== '') {
+            $this->applyFlags($oldFileNo, TitleStatusApplication::TYPE_REGRANT, $regrantedTo);
+        }
+
+        try {
+            TitleStatusApplication::create([
+                'url'            => $context['url'] ?? 'land',
+                'title_type'     => TitleStatusApplication::TYPE_REGRANT,
+                'source_table'   => 'file_indexings',
+                'source_id'      => $context['file_indexing_id'] ?? null,
+                'file_no'        => $newFileNo,
+                'see_fileno'     => $oldFileNo !== '' ? $oldFileNo : null,
+                'file_title'     => $context['file_title'] ?? null,
+                'applicant_name' => $context['applicant_name'] ?? null,
+                'plot_no'        => $context['plot_no'] ?? null,
+                'district'       => $context['district'] ?? null,
+                'lga'            => $context['lga'] ?? null,
+                'location'       => $context['location'] ?? null,
+                'land_use'       => $context['land_use'] ?? null,
+                'initiated_by'   => 'Ministry',
+                'reason'         => $regrantedTo,
+                'remark'         => $regrantedTo,
+                'status'         => TitleStatusApplication::STATUS_PENDING,
+                'captured_by'    => Auth::id(),
+            ]);
+        } catch (\Exception $e) {
+            Log::warning("TitleStatus: Re-grant application insert failed for {$newFileNo}: " . $e->getMessage());
+        }
+
+        $this->recordRegrantLink($newFileNo, $oldFileNo, $regrantedTo, $context);
+    }
+
+    /**
+     * Upsert the related_file_number row for a Re-grant. Keyed on (source_table, source_id),
+     * which carries a unique constraint, so an existing row for the indexing record is updated.
+     */
+    private function recordRegrantLink(string $newFileNo, string $oldFileNo, string $comment, array $context): void
+    {
+        $indexingId = $context['file_indexing_id'] ?? null;
+        if (empty($indexingId) || $oldFileNo === '') {
+            return;
+        }
+
+        try {
+            $schema = DB::connection('sqlsrv')->getSchemaBuilder();
+            if (!$schema->hasTable('related_file_number')) {
+                return;
+            }
+
+            $propId = $context['prop_id'] ?? null;
+            $row = [
+                'related_fileno' => mb_substr($oldFileNo, 0, 500),
+                'prop_id'        => ($propId !== null && $propId !== '') ? (string) $propId : null,
+                'file_number'    => $newFileNo,
+                'updated_at'     => now(),
+            ];
+
+            $optional = [
+                'transaction_type' => TitleStatusApplication::TYPE_REGRANT,
+                'comment'          => $comment,
+                'file_title'       => $context['file_title'] ?? null,
+            ];
+            foreach ($optional as $col => $value) {
+                if ($schema->hasColumn('related_file_number', $col)) {
+                    $row[$col] = $value;
+                }
+            }
+
+            $match    = ['source_table' => 'file_indexings', 'source_id' => (int) $indexingId];
+            $existing = DB::connection('sqlsrv')->table('related_file_number')->where($match)->first();
+
+            if ($existing) {
+                DB::connection('sqlsrv')->table('related_file_number')->where('id', $existing->id)->update($row);
+            } else {
+                DB::connection('sqlsrv')->table('related_file_number')->insert($row + $match + ['created_at' => now()]);
+            }
+        } catch (\Exception $e) {
+            Log::warning("TitleStatus: Re-grant related_file_number upsert failed for {$newFileNo}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * The column holding the MLS file number on each source table. These names are not
+     * consistent across the schema, and a wrong name makes the UPDATE throw "Invalid
+     * column name", which applyFlags() swallows as a warning — the flags then silently
+     * never land. Verify against the real schema before changing any of these.
+     */
     private function fileNumberColumn(string $table): string
     {
         return match ($table) {
             'fileNumber'           => 'mlsfNo',
-            'mls_file_no'          => 'file_no',
+            'mls_file_no'          => 'full_file_number',
             'file_indexings'       => 'file_number',
-            'instrument_capture'   => 'file_no',
-            'deed_registrations'   => 'file_no',
+            'instrument_capture'   => 'mlsFNo',
+            'deed_registrations'   => 'fileno',
             'CofO_staging'         => 'mlsFNo',
+            'pra'                  => 'mlsFNo',
+            'file_history_staging' => 'mlsFNo',
             default                => 'file_number',
         };
     }

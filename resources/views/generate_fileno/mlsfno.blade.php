@@ -548,34 +548,22 @@
                                         <div class="flex items-center gap-2 mb-2">
                                             <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">File Type</span>
                                         </div>
-                                        <select id="fileOption" name="file_option"
+                                        {{-- UI-only control: it drives the Alpine `fileOption` state, which the
+                                             File Options > File Type select below owns via x-model and submits.
+                                             It must NOT carry id="fileOption" or name="file_option" — duplicating
+                                             either makes FormData post file_option twice (PHP keeps the last) and
+                                             makes getElementById('fileOption') resolve to this control instead of
+                                             the bound one.
+
+                                             x-model is required, not cosmetic: resetForm() clears fileOption, and
+                                             without a binding this select kept showing the previous choice. Picking
+                                             the value it already displays fires no change event, so the handler
+                                             below never ran and the stale label silently disagreed with the state
+                                             that gets submitted. --}}
+                                        <select id="fileTypeWorkflow" x-model="fileTypeWorkflow"
                                                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-sm font-medium text-gray-700"
-                                                @change="
-                                                    let val = $event.target.value;
-                                                    if (val === 'change_of_purpose') {
-                                                        applicationType = 'change_of_purpose';
-                                                        fileOption = 'normal';
-                                                        updateApplicationType();
-                                                    } else if (val === 'regrant') {
-                                                        // Re-grant uses the same flow as a normal file.
-                                                        // Preserve Conversion; only fall back to Direct
-                                                        // Allocation when leaving Change of Purpose.
-                                                        if (applicationType !== 'conversion') {
-                                                            applicationType = 'new';
-                                                        }
-                                                        fileOption = 'normal';
-                                                        updateFileOption();
-                                                    } else {
-                                                        // Preserve Conversion selection; only reset to
-                                                        // Direct Allocation when not doing a conversion.
-                                                        if (applicationType !== 'conversion') {
-                                                            applicationType = 'new';
-                                                        }
-                                                        fileOption = val;
-                                                        updateFileOption();
-                                                    }
-                                                ">
-                                                 <option  >Select File Type</option>
+                                                @change="applyFileTypeWorkflow($event.target.value)">
+                                                 <option value="">Select File Type</option>
                                             <option value="temporary">Temporary</option>
                                             <option value="extension">Extension</option>
                                             <option value="miscellaneous">Miscellaneous</option>
@@ -624,12 +612,12 @@
 
                                     <!-- Allocation Options - Row 2 (Shown only when OP is selected) -->
                                     <div class="grid grid-cols-1 gap-2" x-show="_currentAllocationSourceType === 'op'" x-transition>
-                                        <!-- New Applications (Existing OP Change of Name) -->
+                                        <!-- New Applications (Existing OP) -->
                                         <label class="flex items-center justify-center p-3 rounded-md border border-blue-200 bg-blue-50/60 cursor-pointer hover:bg-blue-100 transition-colors">
                                             <input type="radio" name="allocation_source_type" value="direct"
                                                    class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                                                    @change="_currentAllocationSourceType = 'direct'; allocatedByFilter = ''; defaultAllocationType = 'direct'; openCommissionOpCaptureModal('direct')">
-                                            <span class="ml-2 text-sm font-semibold text-gray-700 whitespace-nowrap">New Applications (Existing OP Change of Name)</span>
+                                            <span class="ml-2 text-sm font-semibold text-gray-700 whitespace-nowrap">New Applications (Existing OP)</span>
                                         </label>
                                     </div>
 
@@ -743,6 +731,7 @@
                                                     <option value="temporary" hidden>Temporary File</option>
                                                     <option value="extension" hidden>Extension</option>
                                                     <option value="miscellaneous" hidden>Miscellaneous</option>
+                                                    <option value="regrant" hidden>Re-grant</option>
                                                     <option value="old_mls">Old MLS</option>
                                                     <option value="sltr">SLTR</option>
                                                     <option value="sit" x-show="applicationType === 'new'">SIT</option>
@@ -1571,7 +1560,7 @@
                                     <i data-lucide="info" class="w-8 h-8 text-blue-600"></i>
                                 </div>
                                 <h4 class="text-lg font-semibold text-gray-800 mb-2">Capture Occupancy Permit First</h4>
-                                <p class="text-gray-500 max-w-md mx-auto text-sm">Please select <strong>New Applications (Existing OP Change of Name)</strong> above, then capture/select an Occupancy Permit (OP) record to continue with the commissioning process.</p>
+                                <p class="text-gray-500 max-w-md mx-auto text-sm">Please select <strong>New Applications (Existing OP)</strong> above, then capture/select an Occupancy Permit (OP) record to continue with the commissioning process.</p>
                             </div>
                         </form>
                     </div>

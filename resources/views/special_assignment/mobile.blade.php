@@ -256,7 +256,7 @@
             border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-muted); text-align: center;
         }
 
-        #mini-map { height: 160px; border-radius: var(--radius-sm); border: 1.5px solid var(--border); margin-top: 5px; }
+        #mini-map, #add-mini-map { height: 160px; border-radius: var(--radius-sm); border: 1.5px solid var(--border); margin-top: 5px; }
 
         .save-btn {
             width: 100%; height: 50px; border-radius: var(--radius-sm);
@@ -481,6 +481,35 @@
                 <div id="m-photo-preview" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>
             </div>
 
+            <div style="border-top:1px solid var(--border);margin:4px 0 2px;padding-top:14px;">
+                <label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--accent);">Field Inspection</label>
+                <p style="font-size:10px;color:var(--text-dim);margin-top:2px;text-transform:none;">On-site now? Log the inspection below along with the record. Otherwise leave blank and log it later.</p>
+            </div>
+
+            <div class="field">
+                <label>Inspection Date</label>
+                <input type="date" id="m-add-inspection-date" class="inp">
+            </div>
+
+            <div class="field">
+                <label>Coordinates</label>
+                <div class="inp-row">
+                    <input type="text" id="m-add-coords-display" class="inp" placeholder="12.000000,8.519000" style="text-transform:none;">
+                    <button type="button" id="btn-add-gps" class="btn-geo" style="height:46px;">
+                        <i data-lucide="navigation" style="width:14px;"></i> GPS
+                    </button>
+                </div>
+                <input type="hidden" id="m-add-coords-hidden">
+                <input type="hidden" id="m-add-geometry">
+                <div id="add-mini-map"></div>
+                <div style="font-size:10px;color:var(--text-dim);margin-top:4px;">Tap the map to drop a pin, or use the polygon tool to trace the plot boundary.</div>
+            </div>
+
+            <div class="field">
+                <label>Findings</label>
+                <textarea id="m-add-findings" class="inp" rows="3" placeholder="DESCRIBE FINDINGS ON GROUND…" style="text-transform:none;"></textarea>
+            </div>
+
             <button type="submit" class="save-btn" id="btn-save-record">
                 <i data-lucide="save" style="width:16px;"></i> SAVE RECORD
             </button>
@@ -585,8 +614,79 @@ let allRecords  = [];
 let allInspects = [];
 let appMap      = {};
 let leafMap     = null, leafMarkers = [];
-let miniMap     = null, miniMarker  = null, miniDrawnItems = null, miniDrawing = false;
 let mapInited   = false;
+
+// Extracts a {lat, lng} pair from free-typed text ("12.000000,8.519000", GPS
+// output, etc.) instead of requiring an exact "a,b" split — a strict split
+// silently let malformed text through to the server as raw text before.
+function parseLatLngInput(str) {
+    if (!str) return null;
+    const nums = (String(str).match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+    if (nums.length < 2 || nums.some(Number.isNaN)) return null;
+    const [lat, lng] = nums;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+    return { lat, lng };
+}
+
+// Reusable pin + boundary-trace map — one instance for "Log Field Inspection",
+// one for the Field Inspection section of "Add Land Record", so a surveyor can
+// capture the inspection in the same pass as adding the land record.
+function createFieldPinMap({ mapId, coordsDisplayId, coordsHiddenId, geometryId }) {
+    let map = null, marker = null, drawnItems = null, drawing = false;
+
+    function setCoords(lat, lng) {
+        const laN = parseFloat(lat), lnN = parseFloat(lng);
+        document.getElementById(coordsDisplayId).value = `${laN},${lnN}`;
+        document.getElementById(coordsHiddenId).value  = JSON.stringify({ lat: laN, lng: lnN });
+        if (map) {
+            const ll = [laN, lnN];
+            if (marker) marker.setLatLng(ll); else marker = L.marker(ll).addTo(map);
+            map.setView(ll, 15);
+        }
+    }
+
+    function syncGeometryField() {
+        const layer = drawnItems && drawnItems.getLayers()[0];
+        document.getElementById(geometryId).value = layer ? JSON.stringify(layer.toGeoJSON().geometry) : '';
+    }
+
+    function reset() {
+        if (marker && map) { map.removeLayer(marker); marker = null; }
+        if (drawnItems) drawnItems.clearLayers();
+        document.getElementById(coordsDisplayId).value = '';
+        document.getElementById(coordsHiddenId).value  = '';
+        document.getElementById(geometryId).value      = '';
+    }
+
+    function init() {
+        if (map) { map.invalidateSize(); return; }
+        map = L.map(mapId, { zoomControl: false }).setView([12.0, 8.52], 11);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution:'© Esri', maxZoom:19 }).addTo(map);
+        // Tap anywhere to drop / move the pin — suppressed while the polygon draw tool is active.
+        map.on('click', e => { if (!drawing) setCoords(e.latlng.lat.toFixed(6), e.latlng.lng.toFixed(6)); });
+
+        // Polygon boundary tracing (Leaflet.draw) — one plot boundary at a time.
+        drawnItems = new L.FeatureGroup().addTo(map);
+        map.addControl(new L.Control.Draw({
+            position: 'topright',
+            edit: { featureGroup: drawnItems, remove: true },
+            draw: {
+                polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: '#dc2626', weight: 3 } },
+                marker: false, circlemarker: false, circle: false, polyline: false, rectangle: false,
+            },
+        }));
+        map.on(L.Draw.Event.DRAWSTART, () => { drawing = true; });
+        map.on(L.Draw.Event.DRAWSTOP,  () => { drawing = false; });
+        map.on(L.Draw.Event.CREATED, e => { drawnItems.clearLayers(); drawnItems.addLayer(e.layer); syncGeometryField(); });
+        map.on(L.Draw.Event.EDITED,  syncGeometryField);
+        map.on(L.Draw.Event.DELETED, syncGeometryField);
+    }
+
+    return { init, reset, setCoords };
+}
+
+const inspectMiniMapCtrl = createFieldPinMap({ mapId: 'mini-map',     coordsDisplayId: 'm-coords-display',     coordsHiddenId: 'm-coords-hidden',     geometryId: 'm-geometry' });
+const addMiniMapCtrl     = createFieldPinMap({ mapId: 'add-mini-map', coordsDisplayId: 'm-add-coords-display', coordsHiddenId: 'm-add-coords-hidden', geometryId: 'm-add-geometry' });
 
 const LU_COLORS = { RESIDENTIAL:'#0f766e', COMMERCIAL:'#0e7490', AGRICULTURAL:'#b45309', INDUSTRIAL:'#7e22ce' };
 const LU_DEF    = '#4b5563';
@@ -606,10 +706,12 @@ document.addEventListener('DOMContentLoaded', () => {
     loadAppsForSelect();
     initForms();
     initKeyboardDetect();
-    // mini map on sheet open
+    // mini maps on sheet open
     document.getElementById('sheet-log-inspect').addEventListener('transitionend', () => {
-        if (document.getElementById('sheet-log-inspect').classList.contains('open') && !miniMap) initMiniMap();
-        else if (miniMap) miniMap.invalidateSize();
+        if (document.getElementById('sheet-log-inspect').classList.contains('open')) inspectMiniMapCtrl.init();
+    });
+    document.getElementById('sheet-add-record').addEventListener('transitionend', () => {
+        if (document.getElementById('sheet-add-record').classList.contains('open')) addMiniMapCtrl.init();
     });
 });
 
@@ -650,7 +752,7 @@ document.getElementById('btn-primary').addEventListener('click', () => {
     else if (currentTab === 'verify') {
         // Reset search and reload apps when opening
         resetAppField();
-        if (miniMap) resetMiniMap();
+        inspectMiniMapCtrl.reset();
         openSheet('sheet-log-inspect');
     }
     else if (currentTab === 'map') toggleMapFilterBar();
@@ -808,7 +910,7 @@ function renderInspections(data) {
         lucide.createIcons();
         list.querySelector('.action-card').addEventListener('click', () => {
             resetAppField();
-            if (miniMap) resetMiniMap();
+            inspectMiniMapCtrl.reset();
             openSheet('sheet-log-inspect');
         });
         return;
@@ -857,7 +959,7 @@ function renderInspections(data) {
     lucide.createIcons();
     list.querySelector('.action-card').addEventListener('click', () => {
         resetAppField();
-        if (miniMap) resetMiniMap();
+        inspectMiniMapCtrl.reset();
         openSheet('sheet-log-inspect');
     });
 }
@@ -1077,6 +1179,7 @@ function resetLandTitleToggle() {
     });
     document.getElementById('m-land-title-type').value = 'statutory';
     setMobileLandTitleType('statutory');
+    addMiniMapCtrl.reset();
 }
 
 document.querySelectorAll('.ltt-btn').forEach(btn => {
@@ -1097,70 +1200,23 @@ document.querySelectorAll('.ltt-btn').forEach(btn => {
 });
 
 // ── GPS ───────────────────────────────────────────────────────────────────────
-document.getElementById('btn-gps').addEventListener('click', function() {
-    if (!navigator.geolocation) { toast('GPS not supported on this device.', 'error'); return; }
-    this.textContent = '…'; this.disabled = true;
-    navigator.geolocation.getCurrentPosition(pos => {
-        const lat = pos.coords.latitude.toFixed(6);
-        const lng = pos.coords.longitude.toFixed(6);
-        setCoords(lat, lng);
-        this.innerHTML = '<i data-lucide="navigation" style="width:14px;"></i> GPS'; this.disabled = false;
-        lucide.createIcons();
-    }, () => {
-        toast('Could not get location.', 'error');
-        this.innerHTML = '<i data-lucide="navigation" style="width:14px;"></i> GPS'; this.disabled = false;
-        lucide.createIcons();
-    }, { timeout: 10000 });
-});
-
-function setCoords(lat, lng) {
-    document.getElementById('m-coords-display').value = `${lat},${lng}`;
-    document.getElementById('m-coords-hidden').value  = JSON.stringify({ lat: parseFloat(lat), lng: parseFloat(lng) });
-    if (miniMap) {
-        const ll = [parseFloat(lat), parseFloat(lng)];
-        if (miniMarker) miniMarker.setLatLng(ll); else { miniMarker = L.marker(ll).addTo(miniMap); }
-        miniMap.setView(ll, 15);
-    }
-}
-
-// ── mini map (inspect sheet) ──────────────────────────────────────────────────
-function miniSyncGeometryField() {
-    const layer = miniDrawnItems && miniDrawnItems.getLayers()[0];
-    document.getElementById('m-geometry').value = layer ? JSON.stringify(layer.toGeoJSON().geometry) : '';
-}
-
-function resetMiniMap() {
-    if (miniMarker)    { miniMap.removeLayer(miniMarker); miniMarker = null; }
-    if (miniDrawnItems) miniDrawnItems.clearLayers();
-    document.getElementById('m-geometry').value = '';
-}
-
-function initMiniMap() {
-    miniMap = L.map('mini-map', { zoomControl: false }).setView([12.0, 8.52], 11);
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution:'© Esri', maxZoom:19 }).addTo(miniMap);
-    // Tap anywhere to drop / move the pin — suppressed while the polygon draw tool is active.
-    miniMap.on('click', e => { if (!miniDrawing) setCoords(e.latlng.lat.toFixed(6), e.latlng.lng.toFixed(6)); });
-
-    // Polygon boundary tracing (Leaflet.draw) — one plot boundary at a time.
-    miniDrawnItems = new L.FeatureGroup().addTo(miniMap);
-    miniMap.addControl(new L.Control.Draw({
-        position: 'topright',
-        edit: { featureGroup: miniDrawnItems, remove: true },
-        draw: {
-            polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: 'rgb(186,191,12)', weight: 3 } },
-            marker: false, circlemarker: false, circle: false, polyline: false, rectangle: false,
-        },
-    }));
-    miniMap.on(L.Draw.Event.DRAWSTART, () => { miniDrawing = true; });
-    miniMap.on(L.Draw.Event.DRAWSTOP,  () => { miniDrawing = false; });
-    miniMap.on(L.Draw.Event.CREATED, e => {
-        miniDrawnItems.clearLayers(); // only one boundary per inspection
-        miniDrawnItems.addLayer(e.layer);
-        miniSyncGeometryField();
+function wireGpsButton(btnId, ctrl) {
+    document.getElementById(btnId).addEventListener('click', function() {
+        if (!navigator.geolocation) { toast('GPS not supported on this device.', 'error'); return; }
+        this.textContent = '…'; this.disabled = true;
+        navigator.geolocation.getCurrentPosition(pos => {
+            ctrl.setCoords(pos.coords.latitude.toFixed(6), pos.coords.longitude.toFixed(6));
+            this.innerHTML = '<i data-lucide="navigation" style="width:14px;"></i> GPS'; this.disabled = false;
+            lucide.createIcons();
+        }, () => {
+            toast('Could not get location.', 'error');
+            this.innerHTML = '<i data-lucide="navigation" style="width:14px;"></i> GPS'; this.disabled = false;
+            lucide.createIcons();
+        }, { timeout: 10000 });
     });
-    miniMap.on(L.Draw.Event.EDITED,  miniSyncGeometryField);
-    miniMap.on(L.Draw.Event.DELETED, miniSyncGeometryField);
 }
+wireGpsButton('btn-gps', inspectMiniMapCtrl);
+wireGpsButton('btn-add-gps', addMiniMapCtrl);
 
 // ── Leaflet field map ─────────────────────────────────────────────────────────
 function initLeafMap() {
@@ -1234,6 +1290,51 @@ function toggleMapFilterBar() {
 
 // ── forms ─────────────────────────────────────────────────────────────────────
 function initForms() {
+    // If the surveyor logged an inspection alongside the record, save it too —
+    // as a second call, since it needs the spa_application_id the first returns.
+    async function saveMobileInspectionFor(app) {
+        const inspDate     = document.getElementById('m-add-inspection-date').value;
+        const inspFindings = document.getElementById('m-add-findings').value.trim();
+        const inspCoords   = document.getElementById('m-add-coords-display').value.trim();
+        const inspGeometry = document.getElementById('m-add-geometry').value;
+
+        if (!inspDate && !inspFindings && !inspCoords) return; // nothing entered — skip silently
+        if (!inspDate || !inspFindings) {
+            toast('Inspection not logged — date and findings are both required; add it later from Field Records.', 'error');
+            return;
+        }
+
+        const fd = new FormData();
+        fd.append('spa_application_id', app.id);
+        fd.append('file_number', app.file_number);
+        fd.append('inspection_date', inspDate);
+        fd.append('findings', inspFindings);
+        const coordsJson = document.getElementById('m-add-coords-hidden').value || (inspCoords ? JSON.stringify(parseLatLngInput(inspCoords)) : '');
+        if (coordsJson && coordsJson !== 'null') fd.append('coordinates', coordsJson);
+        if (inspGeometry) fd.append('parcel_geometry', inspGeometry);
+
+        try {
+            const res  = await fetch(URLS.storeField, { method:'POST', headers:{'X-CSRF-TOKEN':CSRF,'X-Requested-With':'XMLHttpRequest'}, body: fd });
+            const data = await res.json();
+            if (data.success) {
+                toast('Inspection logged too.', 'success');
+                loadInspections();
+                loadAppsForSelect();
+                if (data.mapPoint && leafMap && data.mapPoint.coords?.lat && data.mapPoint.coords?.lng) {
+                    const p = data.mapPoint;
+                    const col = luColor(p.land_use);
+                    const icon = L.divIcon({ className:'', html:`<div style="width:12px;height:12px;border-radius:50%;background:${col};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5);"></div>`, iconSize:[12,12], iconAnchor:[6,6] });
+                    const m = L.marker([p.coords.lat, p.coords.lng], { icon }); m._lu = (p.land_use||'').toUpperCase(); m.addTo(leafMap); leafMarkers.push(m);
+                    document.getElementById('map-count').textContent = leafMarkers.length;
+                }
+            } else {
+                toast('Inspection not logged: ' + (data.message || 'save failed') + ' — add it later from Field Records.', 'error');
+            }
+        } catch (err) {
+            toast('Inspection not logged due to a network error — add it later from Field Records.', 'error');
+        }
+    }
+
     // Save record
     document.getElementById('form-add-record').addEventListener('submit', async function(e) {
         e.preventDefault();
@@ -1248,12 +1349,15 @@ function initForms() {
             const res  = await fetch(URLS.storeRec, { method:'POST', headers:{'X-CSRF-TOKEN':CSRF}, body: new FormData(this) });
             const data = await res.json();
             if (data.success) {
-                closeSheet('sheet-add-record'); this.reset();
+                closeSheet('sheet-add-record');
+                toast('Record saved.', 'success');
+                loadRecords();
+                // Read the inspection fields (if any) before this.reset() clears them.
+                await saveMobileInspectionFor({ id: data.id, file_number: data.file_number });
+                this.reset();
                 document.getElementById('m-location-badge').style.display = 'none';
                 document.getElementById('lookup-msg').style.display = 'none';
                 document.getElementById('m-contravening-badge').style.display = 'none';
-                toast('Record saved.', 'success');
-                loadRecords();
             } else { toast(data.message || 'Save failed.', 'error'); }
         } catch(err) { toast('Unexpected error.', 'error'); }
         btn.disabled = false; btn.innerHTML = '<i data-lucide="save" style="width:16px;"></i> SAVE RECORD'; lucide.createIcons();
@@ -1297,18 +1401,16 @@ function initForms() {
         // encode coordinates from display input if not set via GPS/map
         const coordStr = document.getElementById('m-coords-display').value.trim();
         if (coordStr && !fd.get('coordinates')) {
-            const parts = coordStr.split(',');
-            if (parts.length === 2) fd.set('coordinates', JSON.stringify({ lat: parseFloat(parts[0]), lng: parseFloat(parts[1]) }));
+            const parsed = parseLatLngInput(coordStr);
+            if (parsed) fd.set('coordinates', JSON.stringify(parsed));
         }
         try {
             const res  = await fetch(URLS.storeField, { method:'POST', headers:{'X-CSRF-TOKEN':CSRF,'X-Requested-With':'XMLHttpRequest'}, body: fd });
             const data = await res.json();
             if (data.success) {
                 closeSheet('sheet-log-inspect'); this.reset();
-                document.getElementById('m-coords-display').value = '';
-                document.getElementById('m-coords-hidden').value  = '';
                 resetAppField();
-                if (miniMap) resetMiniMap();
+                inspectMiniMapCtrl.reset();
                 toast('Inspection logged.', 'success');
                 loadInspections();
                 loadAppsForSelect();

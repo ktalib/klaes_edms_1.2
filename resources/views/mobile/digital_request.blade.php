@@ -431,9 +431,9 @@ function renderLocationLine(loc) {
     parts.push(esc(loc.registry));
     // Files with a registry (Archive / In Transit) always show a rack/shelf slot —
     // placeholder "—" when none is on record.
-    parts.push('Rack/Shelf ' + (loc.rack_shelf ? esc(loc.rack_shelf) : '—'));
+    parts.push('Shelf/Rack ' + (loc.rack_shelf ? esc(loc.rack_shelf) : '—'));
   } else if (loc.rack_shelf) {
-    parts.push('Rack/Shelf ' + esc(loc.rack_shelf));
+    parts.push('Shelf/Rack ' + esc(loc.rack_shelf));
   }
   // Fall back to the resolver's composed location when we have no registry/shelf detail.
   const detail = parts.length ? parts.join(' · ')

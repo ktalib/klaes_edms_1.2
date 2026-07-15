@@ -39,6 +39,13 @@
 
     @if($hasRole('Shadow File Commissioning'))
       <!-- Shadow File Commissioning -->
+      <a href="{{ route('lands-file-no-matching.index') }}"
+        class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('lands-file-no-matching.index') ? 'active' : '' }}">
+        <i data-lucide="files" class="h-4 w-4 text-red-500"></i>
+        <span>Shadow File Commissioning</span>
+      </a>
+
+      {{--
       <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
         data-section="shadowFileCommissioning">
         <div class="flex items-center gap-2">
@@ -66,6 +73,7 @@
           <span>SLTR</span>
         </a>
       </div>
+      --}}
    @endif
 
       

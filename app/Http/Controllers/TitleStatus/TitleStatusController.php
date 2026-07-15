@@ -268,8 +268,9 @@ class TitleStatusController extends Controller
         $reason        = (string) $request->input('reason', '');
         $applicantName = (string) $request->input('applicant_name', '');
         $fileNo        = (string) $request->input('file_no', '');
+        $seeFileno     = (string) $request->input('see_fileno', '');
 
-        $remark = $this->titleStatusService->generateRemark($titleType, $initiatedBy, $reason, $applicantName, $fileNo);
+        $remark = $this->titleStatusService->generateRemark($titleType, $initiatedBy, $reason, $applicantName, $fileNo, $seeFileno);
 
         return response()->json(['success' => true, 'remark' => $remark]);
     }

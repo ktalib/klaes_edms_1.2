@@ -486,19 +486,28 @@
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div class="md:col-span-2">
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Name of Applicant</label>
-                                    <input type="text" name="applicant_name" id="applicant_name" value="{{ old('applicant_name', $recommendation->applicant_name ?? '') }}"
-                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                    <input type="text" name="applicant_name" id="applicant_name" required value="{{ old('applicant_name', $recommendation->applicant_name ?? '') }}"
+                                        class="w-full border @error('applicant_name') border-red-500 @else border-slate-200 @enderror rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                    @error('applicant_name')
+                                        <p class="text-red-500 text-[10px] mt-1 font-semibold uppercase">{{ $message }}</p>
+                                    @enderror
                                 </div>
                                 <div>
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Application Date</label>
-                                    <input type="date" name="application_date" id="application_date" value="{{ old('application_date', (isset($recommendation) && $recommendation->application_date) ? $recommendation->application_date->format('Y-m-d') : '') }}"
-                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                    <input type="date" name="application_date" id="application_date" required value="{{ old('application_date', (isset($recommendation) && $recommendation->application_date) ? $recommendation->application_date->format('Y-m-d') : '') }}"
+                                        class="w-full border @error('application_date') border-red-500 @else border-slate-200 @enderror rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                    @error('application_date')
+                                        <p class="text-red-500 text-[10px] mt-1 font-semibold uppercase">{{ $message }}</p>
+                                    @enderror
                                 </div>
                             </div>
                             <div>
                                 <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Applicant Address</label>
-                                <input type="text" name="applicant_address" id="applicant_address" value="{{ old('applicant_address', $recommendation->applicant_address ?? '') }}"
-                                    class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                <input type="text" name="applicant_address" id="applicant_address" required value="{{ old('applicant_address', $recommendation->applicant_address ?? '') }}"
+                                    class="w-full border @error('applicant_address') border-red-500 @else border-slate-200 @enderror rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                @error('applicant_address')
+                                    <p class="text-red-500 text-[10px] mt-1 font-semibold uppercase">{{ $message }}</p>
+                                @enderror
                             </div>
                             <div class="grid grid-cols-2 gap-4">
                        <div>
@@ -550,6 +559,8 @@
                                             <option value="{{ $existingTp }}" selected>{{ $existingTp }}</option>
                                         @endif
                                     </select>
+                                    <input type="text" id="layout_plan_no_other" placeholder="Specify TP No..."
+                                        class="mt-2 w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition bg-amber-50" style="display:none;">
                                 </div>
                             </div>
                             {{-- Location structured fields --}}
@@ -886,6 +897,73 @@
             }
         });
 
+        // Backfill District/LGA from the selected TP No's known records, but only
+        // when the applicant hasn't already picked a District/LGA themselves.
+        function backfillDistrictLgaFromTpNo(tpNo) {
+            if (!tpNo || tpNo === '__other__') return;
+
+            var districtEmpty = !$('#district').val();
+            var lgaEmpty = !$('#lga').val();
+            if (!districtEmpty && !lgaEmpty) return;
+
+            $.getJSON('{{ route("instruments.tpLookups.location") }}', { tp_no: tpNo })
+                .done(function (data) {
+                    if (districtEmpty && data.district) {
+                        var distOpt = new Option(data.district, data.district, true, true);
+                        $('#district_select').append(distOpt).trigger('change');
+                    }
+                    if (lgaEmpty && data.lga) {
+                        var lgaOpt = new Option(data.lga, data.lga, true, true);
+                        $('#lga_select').append(lgaOpt).trigger('change');
+                    }
+                });
+        }
+
+        // TP No "Other → specify": when the applicant can't find their TP No in the
+        // list, let them type it in and use that as the submitted value.
+        var $tpNoOther = $('#layout_plan_no_other');
+
+        function isUnspecifiedTpNo(val) {
+            val = (val || '').trim().toLowerCase();
+            return val === '__other__' || val === 'other' || val === 'others';
+        }
+
+        $('#layout_plan_no').on('select2:select', function (e) {
+            var tpNo = e.params.data.id;
+            if (isUnspecifiedTpNo(tpNo)) {
+                $tpNoOther.show().focus();
+            } else {
+                $tpNoOther.hide().val('');
+                backfillDistrictLgaFromTpNo(tpNo);
+            }
+        });
+
+        $tpNoOther.on('input', function () {
+            var val = $(this).val().trim().toUpperCase();
+            $(this).val(val);
+            if (!val) return;
+            var opt = new Option(val, val, true, true);
+            $('#layout_plan_no').empty().append(opt).trigger('change');
+        });
+
+        $tpNoOther.on('blur', function () {
+            var val = $(this).val().trim().toUpperCase();
+            if (!val) return;
+            backfillDistrictLgaFromTpNo(val);
+            // Persist so this TP No shows up in future searches too.
+            $.post('{{ route("instruments.tpLookups.store") }}', {
+                _token: '{{ csrf_token() }}',
+                tp_no: val
+            });
+        });
+
+        // An edit page may render a TP No that was previously saved as the
+        // literal "Other"/"__other__" placeholder (from before this specify
+        // box existed) — reveal the input so it can be corrected.
+        @if(in_array(strtolower(trim($existingTp ?? '')), ['__other__', 'other', 'others'], true))
+            $tpNoOther.show();
+        @endif
+
         // Helper: wire up a Select2 with an "Other → specify" pattern
         // selectId: jQuery selector for the <select>
         // hiddenId: jQuery selector for the hidden input (actual submitted value)
@@ -945,6 +1023,30 @@
 
         initOtherSelect2('#lga_select', '#lga', '#lga_other',
             '/api/reference/lgas', 'search');
+
+        // Run once on load: an edit page renders the TP No as already selected
+        // (from the saved record), so select2:select never fires for it.
+        @if($existingTp ?? false)
+            backfillDistrictLgaFromTpNo(@json($existingTp));
+        @endif
+
+        // A District may already be known on load (either saved directly, or
+        // backed into from a legacy `location` value by the edit() controller).
+        // If so and LGA is still blank, resolve LGA from that District.
+        if ($('#district').val() && !$('#lga').val()) {
+            $.getJSON('{{ route("instruments.districtLookups.lga") }}', { district: $('#district').val() })
+                .done(function (data) {
+                    if (data.lga && !$('#lga').val()) {
+                        var lgaOpt = new Option(data.lga, data.lga, true, true);
+                        $('#lga_select').append(lgaOpt).trigger('change');
+                    }
+                });
+        }
+
+        // Rebuild Full Location from the structured fields on load, so a stale/legacy
+        // value stored in the database (e.g. one that includes a "Plot" prefix) gets
+        // replaced with the current auto-generated format.
+        if (window._buildLocation) window._buildLocation();
 
         // ── Number to Naira Words ──
         function numberToNairaWords(num) {

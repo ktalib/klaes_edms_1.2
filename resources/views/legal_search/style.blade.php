@@ -470,6 +470,38 @@
       display: block;
     }
 
+    /* File Information panel tabs (scoped separately from the main record tabs above) */
+    .fileinfo-tabs {
+      display: flex;
+      border-bottom: 1px solid #e5e7eb;
+      margin-bottom: 1rem;
+    }
+
+    .fileinfo-tab-btn {
+      padding: 0.6rem 0.9rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      border-bottom: 2px solid transparent;
+      background: none;
+      color: #6b7280;
+    }
+
+    .fileinfo-tab-btn.active {
+      border-bottom-color: #000;
+      color: #000;
+      font-weight: 600;
+    }
+
+    .fileinfo-tab-content {
+      display: none;
+    }
+
+    .fileinfo-tab-content.active {
+      display: block;
+    }
+
     /* Match each tab table theme color to its tab badge */
     #transaction-history-tab thead th {
       background-color: #d1fae5;

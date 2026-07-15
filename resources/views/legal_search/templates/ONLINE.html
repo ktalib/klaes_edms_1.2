@@ -400,6 +400,7 @@
           <p id="report-no-cofo-comment" style="font-size:12px;font-weight:bold;margin:8px 0;color:#1e40af;display:none;"></p>
           <p id="report-encumbrance-comment" style="font-size:12px;font-weight:bold;margin:8px 0;color:#166534;display:none;"></p>
           <p id="report-litigation-comment" style="font-size:12px;font-weight:bold;margin:8px 0;color:#be123c;display:none;"></p>
+          <p id="report-general-comment" style="font-size:12px;font-weight:bold;margin:8px 0;color:#1f2937;display:none;"></p>
           <p id="report-wrc-comment" style="font-size:12px;font-weight:bold;margin:8px 0;color:#dc2626;display:none;"></p>
           <p id="report-cofo-comment" style="font-size:12px;font-weight:bold;margin:8px 0;color:#166534;display:none;"></p>
         </div>
@@ -546,6 +547,12 @@
             if (ecEl && d.encumbrance_comment) {
               ecEl.textContent = d.encumbrance_comment;
               ecEl.style.display = 'block';
+            }
+
+            const genEl = document.getElementById('report-general-comment');
+            if (genEl && d.general_comment) {
+              genEl.textContent = d.general_comment;
+              genEl.style.display = 'block';
             }
 
             // W/R/C (Withdrawn / Revoked / Cancelled) notice from duplicate_fileno

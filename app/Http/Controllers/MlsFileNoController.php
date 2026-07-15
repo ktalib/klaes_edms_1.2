@@ -824,15 +824,34 @@ class MlsFileNoController extends Controller
                 ], 404);
             }
 
-            // Fetch the original (earliest) PRA record for the OP card
+            // Fetch the original (earliest) PRA record for the OP card. Prefer the
+            // resolved record's own prop_id over the request's — when $praRecord was
+            // found via explicit pra_id, that id can point at a later Transfer of
+            // Title row sharing the same prop_id (no request prop_id is sent in that
+            // case), and without this the OP card would show the TOT's parties
+            // instead of the true Grantor/Grantee.
             $origParty1 = $praRecord->Grantor ?? ($praRecord->party_1 ?? null);
             $origParty2 = $praRecord->Grantee ?? ($praRecord->party_2 ?? null);
-            if (!empty($propId)) {
+            $origPropId = $praRecord->prop_id ?? $propId;
+            if (!empty($origPropId)) {
                 $origPra = DB::connection('sqlsrv')
                     ->table('pra')
-                    ->where('prop_id', $propId)
+                    ->where('prop_id', $origPropId)
+                    ->where(function ($q) {
+                        $q->where('instrument_type', 'like', '%Occupancy Permit%')
+                            ->orWhere('source', 'like', '%Occupancy Permit%');
+                    })
                     ->orderBy('id')
                     ->first();
+
+                if (!$origPra) {
+                    $origPra = DB::connection('sqlsrv')
+                        ->table('pra')
+                        ->where('prop_id', $origPropId)
+                        ->orderBy('id')
+                        ->first();
+                }
+
                 if ($origPra) {
                     $origParty1 = $origPra->Grantor ?? ($origPra->party_1 ?? $origParty1);
                     $origParty2 = $origPra->Grantee ?? ($origPra->party_2 ?? $origParty2);
@@ -1436,6 +1455,7 @@ class MlsFileNoController extends Controller
      * - Direct Allocation + Default + Direct Allocation → "OP Direct Allocation"
      * - Direct Allocation + Default + Resettlement → "OP Resettlement"
      * - Direct Allocation + Default (no sub-option) → "Direct Allocation"
+     * - File Type "Re-grant" → "Re-grant"
      */
     private function resolveSourceValue($applicationType, $allocatedByFilter, $defaultAllocationType, $fileOption = 'normal')
     {
@@ -1494,6 +1514,10 @@ class MlsFileNoController extends Controller
 
         if ($fileOption === 'extension') {
             return 'Extension';
+        }
+
+        if ($fileOption === 'regrant') {
+            return 'Re-grant';
         }
 
         // Default case: no sub-option selected
@@ -2627,6 +2651,7 @@ class MlsFileNoController extends Controller
                 }
 
                 // Auto-index the file in file_indexings table
+                $newFileIndexing = null;
                 if ($fileOption !== 'temporary') {
                     try {
                         $fileIndexingService = app(\App\Services\FileIndexingService::class);
@@ -2646,6 +2671,7 @@ class MlsFileNoController extends Controller
                             'parent_prop_id' => $parentPropId,
                             'related_fileno' => $relatedFileNumbers ?? ($relatedFileNo ? json_encode([$relatedFileNo]) : null),
                         ]);
+                        $newFileIndexing = $fileIndexing;
 
                         // Create file_indexing_links record to link lineage (Subdivision/Merger/Extension/Recertification)
                         $now = now();
@@ -2725,6 +2751,27 @@ class MlsFileNoController extends Controller
                     }
                 }
 
+                // Re-grant: the new file is a re-grant of the selected Related File. Flag both
+                // files' title status and record the Re-grant application + linkage. The
+                // Related File is optional — without one, only the new file is flagged.
+                if ($fileOption === 'regrant') {
+                    app(\App\Services\TitleStatusService::class)->recordRegrant(
+                        $fullFileNumber,
+                        (string) ($validated['related_fileno'] ?? ''),
+                        [
+                            'url'               => 'land',
+                            'file_indexing_id'  => $newFileIndexing->id ?? null,
+                            'prop_id'           => $newFileIndexing->prop_id ?? null,
+                            'file_title'        => $validated['file_name'] ?? null,
+                            'applicant_name'    => $validated['file_name'] ?? null,
+                            'plot_no'           => $validated['plot_no'] ?? null,
+                            'district'          => $validated['district'] ?? null,
+                            'lga'               => $validated['lga'] ?? null,
+                            'location'          => $validated['location'] ?? null,
+                            'land_use'          => $landUse,
+                        ]
+                    );
+                }
 
                 $workflowService = app(PlotWorkflowService::class);
                 $propIdService = app(PropertyIdAllocationService::class);

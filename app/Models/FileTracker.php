@@ -25,6 +25,7 @@ class FileTracker extends Model
         'destination',
         'request_purpose_id',
         'request_purpose_name',
+        'file_request_type',
         'description',
         'status',
         'date_created',

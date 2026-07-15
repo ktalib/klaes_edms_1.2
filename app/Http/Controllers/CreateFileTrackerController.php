@@ -4190,6 +4190,76 @@ HTML;
     }
 
     /**
+     * Update the Manual File Request Sheet details for a tracker.
+     * Only the fields shown on the printed sheet are updatable here; the file
+     * number stays read-only so the tracker keeps pointing at the same file.
+     * POST /create-file-tracker/{id}/request-sheet
+     */
+    public function updateRequestSheet(Request $request, $id)
+    {
+        $tracker = FileTracker::find($id);
+
+        if (!$tracker) {
+            $tracker = FileTracker::where('tracking_id', $id)->first();
+        }
+
+        if (!$tracker) {
+            return response()->json([
+                'success' => false,
+                'message' => 'File Tracker not found.'
+            ], 404);
+        }
+
+        $validated = $request->validate([
+            'file_request_type' => 'nullable|string|in:MANUAL,SUBMITTED',
+            'file_title' => 'nullable|string|max:500',
+            'priority' => 'nullable|string|in:LOW,MEDIUM,HIGH',
+            'origin_office_code' => 'nullable|string|max:50',
+            'origin_office_name' => 'nullable|string|max:255',
+            'department' => 'nullable|string|max:255',
+            'receiving_office_code' => 'nullable|string|max:50',
+            'receiving_office_name' => 'nullable|string|max:255',
+            'receiving_officer_id' => 'nullable|string|max:50',
+            'receiving_officer_name' => 'nullable|string|max:255',
+            'date_requested' => 'nullable|date',
+            'notes' => 'nullable|string|max:2000',
+        ]);
+
+        try {
+            $oldData = $tracker->only(array_keys($validated));
+
+            $tracker->update($validated);
+
+            // Log action in AuditLog via AuditService
+            try {
+                $auditService = app(\App\Services\AuditService::class);
+                $auditService->logAction(
+                    'UPDATED',
+                    'FileTracker',
+                    $tracker->id,
+                    $oldData,
+                    $validated,
+                    "Updated manual file request sheet for tracker {$tracker->tracking_id}"
+                );
+            } catch (\Exception $ae) {
+                Log::warning('CreateFileTrackerController updateRequestSheet audit logging failed: ' . $ae->getMessage());
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'File request sheet updated.',
+                'data' => $this->decorateTrackerForResponse($tracker->fresh()),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('updateRequestSheet failed', ['id' => $id, 'error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update request sheet: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Render a location slip directly from a file number for the outcomes that
      * have no tracker (Archive Tracking Sheet, Missing File Confirmation, or
      * Refer to Original Registry). In-Transit keeps using requestSheet().

@@ -46,6 +46,7 @@ window.LEGAL_SEARCH_CONTEXT = {
     printManagerDocType: "{{ $moduleConfig['printManagerDocType'] ?? '' }}",
     searchRouteName: "{{ $moduleConfig['searchRouteName'] ?? 'legalsearch.search' }}",
     requiresPayment: false,
+    dashboardStatsUrl: "{{ route('legal_search.dashboard_stats') }}"
 };
 </script>
 @include('legal_search.js')

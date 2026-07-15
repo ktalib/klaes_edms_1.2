@@ -11,14 +11,11 @@ document.addEventListener('DOMContentLoaded', function () {
     const submitBtn = form?.querySelector('button[type="submit"]');
 
     // Location auto-builder
-    const houseNoInput   = document.getElementById('house_no');
     const streetInput    = document.getElementById('street_name');
     const districtInput  = document.getElementById('district');
     const stateInput     = document.getElementById('state');
 
     function buildLocation() {
-        const houseNo  = (houseNoInput?.value || '').trim();
-        const plotNo   = (plotInput?.value || '').trim();
         // street, district, lga are now hidden inputs — read .value directly
         const street   = (streetInput?.value || '').trim();
         const district = (districtInput?.value || '').trim();
@@ -27,8 +24,22 @@ document.addEventListener('DOMContentLoaded', function () {
         const stateHidden = document.querySelector('input[type="hidden"][name="state"]');
         const state    = ((stateHidden?.value || stateInput?.value || '')).trim();
 
-        const prefix = plotNo ? plotNo : (houseNo ? 'No. ' + houseNo : '');
-        const parts = [prefix, street, district, lga, state].filter(Boolean);
+        // House No / Plot No are shown in their own fields elsewhere on the form
+        // and on print templates, so they're deliberately excluded here.
+        // District and LGA legitimately share the same name for some Kano
+        // locations (e.g. "Dawakin Kudu" is both the LGA and its district),
+        // so skip a part when it repeats the immediately preceding one to
+        // avoid a duplicated-looking location like "... Dawakin Kudu Dawakin Kudu ...".
+        const rawParts = [street, district, lga, state];
+        const parts = [];
+        let lastLower = null;
+        rawParts.forEach(function (val) {
+            val = (val || '').trim();
+            if (!val) return;
+            if (val.toLowerCase() === lastLower) return;
+            parts.push(val);
+            lastLower = val.toLowerCase();
+        });
         if (locationInput) locationInput.value = parts.join(' ');
     }
 
@@ -36,7 +47,7 @@ document.addEventListener('DOMContentLoaded', function () {
     window._buildLocation = buildLocation;
 
     // lga/street/district are hidden inputs updated by Select2 — no input listener needed
-    [houseNoInput, plotInput, stateInput].forEach(el => {
+    [stateInput].forEach(el => {
         if (el) el.addEventListener('input', buildLocation);
     });
 

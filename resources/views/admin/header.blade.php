@@ -277,6 +277,14 @@
   Pages that init their own pickers use type="text" inputs, so this only touches type="date".
 -->
 <link rel="stylesheet" href="{{ asset('assets/css/plugins/flatpickr.min.css') }}">
+<style>
+  /* flatpickr's own stylesheet sets .flatpickr-calendar.open { z-index: 99999 },
+     which renders behind several high-z-index modals in this app (instrument
+     capture dialog, FEFR modal, global file selector, etc. — some well past
+     1,000,000). Rather than chase that number every time a new modal tops it,
+     force the calendar above anything the site could plausibly stack on top of. */
+  .flatpickr-calendar.open { z-index: 2000000000; }
+</style>
 <script src="{{ asset('assets/js/plugins/flatpickr.min.js') }}"></script>
 <script>
   (function () {

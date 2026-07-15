@@ -1374,7 +1374,7 @@ class FileIndexController extends Controller
             'cofo_no' => $cofoPayload['cofo_no'] ?? null,
             'transaction_type' => $cofoPayload['instrument_type'] ?? null,
             'instrument_type' => $cofoPayload['instrument_type'] ?? null,
-            'cofo_type' => $cofoPayload['instrument_type'] ?? null,
+            'cofo_type' => $cofoPayload['cofo_type'] ?? null,
             'transaction_date' => $transactionDate,
             'transaction_time' => $cofoPayload['deeds_time'] ?? null,
             'cofo_date' => $cofoPayload['cofo_date'] ?? $transactionDate,
@@ -1596,6 +1596,7 @@ class FileIndexController extends Controller
             'land_use' => $this->normalizeValue($request->input('cofo_land_use')),
             'period' => $this->normalizeValue($request->input('cofo_period')),
             'period_unit' => $this->normalizeValue($request->input('cofo_period_unit')),
+            'cofo_type' => $this->normalizeValue($request->input('cofo_type')),
         ];
     }
 

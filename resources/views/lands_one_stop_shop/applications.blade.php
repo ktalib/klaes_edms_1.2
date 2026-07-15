@@ -737,6 +737,8 @@
     @include('components.global-fileno-modal')
 
     {{-- ──────────────── Commission New File Number Modal ──────────────── --}}
+    {{-- Change of Name commissions one file per OP record, so Batch Mode has no meaning here. --}}
+    <script>window.commissionModalHideBatchMode = {{ $isChangeOfName ? 'true' : 'false' }};</script>
     @include('components.commission-fileno-modal-include')
 
     {{-- ──────────────── Capture Existing File Number Modal (Inline) ──────────────── --}}
@@ -1939,6 +1941,10 @@
                 component.defaultAllocationType = '';
                 component.requireOpSource = true;
                 component.subSource = @json($isChangeOfName ? 'OP Change of Name' : '');
+                component.hideBatchMode = {{ $isChangeOfName ? 'true' : 'false' }};
+                if (component.hideBatchMode) {
+                    component.batchMode = false;
+                }
                 if (mode === 'new' && preselectedFileNo) {
                     component.existingFileNo = preselectedFileNo;
                 }

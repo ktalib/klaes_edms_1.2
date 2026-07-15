@@ -189,6 +189,16 @@
                     </td>
                 </tr>
                 <tr>
+                    <td class="label">File Request Type</td>
+                    <td>
+                        @php
+                            $requestType = strtoupper($tracker->file_request_type ?? '');
+                        @endphp
+                        <span style="{{ $requestType === 'MANUAL' ? 'font-weight: bold; color: #1d4ed8;' : 'color: #9ca3af;' }}">Manual Request</span> /
+                        <span style="{{ $requestType === 'SUBMITTED' ? 'font-weight: bold; color: #1d4ed8;' : 'color: #9ca3af;' }}">Submitted Request</span>
+                    </td>
+                </tr>
+                <tr>
                     <td class="label">Registry (Origin)</td>
                     <td>{{ $tracker->origin_office_name ?? '—' }}</td>
                 </tr>

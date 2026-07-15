@@ -270,142 +270,191 @@
     </div>
 </div>
 
-{{-- Add Record (Add to SPA) Modal --}}
-<div id="modal-add-record" class="fixed inset-0 z-[1100] hidden items-center justify-center bg-black/40">
-    <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 overflow-hidden">
-        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+{{-- Add Record (Add to SPA) Modal — land record details + optional field inspection in one pass --}}
+<div id="modal-add-record" class="fixed inset-0 z-[1100] hidden items-center justify-center bg-black/40 p-4">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-6xl mx-auto overflow-hidden max-h-[92vh] flex flex-col">
+        <div class="flex items-center justify-between px-6 py-3 border-b border-gray-100 flex-shrink-0">
             <h3 class="text-base font-semibold text-gray-800">Add Land Record</h3>
             <button id="btn-close-modal" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="h-5 w-5"></i></button>
         </div>
-        <form id="form-add-record" class="p-6 space-y-4" enctype="multipart/form-data">
+        <form id="form-add-record" enctype="multipart/form-data" class="p-6 flex-1 overflow-y-auto min-h-0">
             @csrf
 
-            {{-- Land Title Type --}}
-            <div>
-                <label class="block text-xs font-medium text-gray-600 mb-1.5">Land Title Type <span class="text-red-500">*</span></label>
-                <div class="flex gap-5">
-                    <label class="inline-flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
-                        <input type="radio" name="land_title_type" id="ltt-statutory" value="statutory" checked
-                            class="text-[rgb(186,191,12)] focus:ring-[rgb(186,191,12)]">
-                        Statutory Title
-                    </label>
-                    <label class="inline-flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
-                        <input type="radio" name="land_title_type" id="ltt-customary" value="customary"
-                            class="text-[rgb(186,191,12)] focus:ring-[rgb(186,191,12)]">
-                        Customary Title
-                    </label>
-                </div>
-            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                {{-- Left: land record details --}}
+                <div class="lg:col-span-2 space-y-4">
 
-            {{-- File Number picker --}}
-            <div>
-                <label class="block text-xs font-medium text-gray-600 mb-1">File Number <span class="text-red-500">*</span></label>
-                <div class="flex gap-2">
-                    <input type="text" id="display-file-number" readonly placeholder="No file number selected"
-                        class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 cursor-default outline-none">
-                    <button type="button" id="btn-pick-fileno"
-                        class="inline-flex items-center gap-1.5 px-4 py-2 bg-[rgb(186,191,12)] hover:opacity-90 text-white text-sm font-medium rounded-lg transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i data-lucide="search" class="h-4 w-4"></i> Select
-                    </button>
-                </div>
-                <p id="lookup-msg" class="text-xs mt-1 hidden"></p>
-            </div>
-
-            {{-- Owner / File Title – readonly, filled from file_title (editable for customary) --}}
-            <div>
-                <label class="block text-xs font-medium text-gray-600 mb-1">Owner / File Title <span class="text-red-500">*</span></label>
-                <input type="text" name="owner_name" id="f-owner_name" readonly required
-                    placeholder="Auto-filled from file number"
-                    class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 outline-none cursor-default">
-            </div>
-
-            {{-- Location badge (shown after file lookup) --}}
-            <div id="location-badge-wrap" class="hidden">
-                <div class="flex items-start gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-800">
-                    <i data-lucide="map-pin" class="h-3.5 w-3.5 mt-0.5 shrink-0 text-blue-500"></i>
-                    <span id="location-badge-text" class="leading-relaxed"></span>
-                </div>
-            </div>
-
-            {{-- DCIV Investigation Banner (shown when file has dciv_status = 1) --}}
-            <div id="dciv-banner-wrap" class="hidden">
-                <div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 space-y-2">
-                    <div class="flex items-center gap-2">
-                        <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 border border-rose-300">
-                            <i data-lucide="alert-triangle" class="h-3 w-3"></i> Under Investigation
-                        </span>
-                        <span id="dciv-banner-fileno" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-white text-rose-700 border border-rose-200"></span>
-                    </div>
-                    <div class="flex items-start gap-2 text-xs text-rose-800">
-                        <i data-lucide="file-text" class="h-3.5 w-3.5 mt-0.5 shrink-0 text-rose-400"></i>
-                        <div>
-                            <span class="font-semibold uppercase tracking-wide text-rose-500 text-[10px]">Reason&nbsp;</span>
-                            <span id="dciv-banner-reason" class="leading-relaxed"></span>
+                    {{-- Land Title Type --}}
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1.5">Land Title Type <span class="text-red-500">*</span></label>
+                        <div class="flex gap-5">
+                            <label class="inline-flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                                <input type="radio" name="land_title_type" id="ltt-statutory" value="statutory" checked
+                                    class="text-[rgb(186,191,12)] focus:ring-[rgb(186,191,12)]">
+                                Statutory Title
+                            </label>
+                            <label class="inline-flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                                <input type="radio" name="land_title_type" id="ltt-customary" value="customary"
+                                    class="text-[rgb(186,191,12)] focus:ring-[rgb(186,191,12)]">
+                                Customary Title
+                            </label>
                         </div>
                     </div>
+
+                    {{-- File Number picker --}}
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">File Number <span class="text-red-500">*</span></label>
+                        <div class="flex gap-2">
+                            <input type="text" id="display-file-number" readonly placeholder="No file number selected"
+                                class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 cursor-default outline-none">
+                            <button type="button" id="btn-pick-fileno"
+                                class="inline-flex items-center gap-1.5 px-4 py-2 bg-[rgb(186,191,12)] hover:opacity-90 text-white text-sm font-medium rounded-lg transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
+                                <i data-lucide="search" class="h-4 w-4"></i> Select
+                            </button>
+                        </div>
+                        <p id="lookup-msg" class="text-xs mt-1 hidden"></p>
+                    </div>
+
+                    {{-- Owner / File Title – readonly, filled from file_title (editable for customary) --}}
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Owner / File Title <span class="text-red-500">*</span></label>
+                        <input type="text" name="owner_name" id="f-owner_name" readonly required
+                            placeholder="Auto-filled from file number"
+                            class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 outline-none cursor-default">
+                    </div>
+
+                    {{-- Location badge (shown after file lookup) --}}
+                    <div id="location-badge-wrap" class="hidden">
+                        <div class="flex items-start gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-800">
+                            <i data-lucide="map-pin" class="h-3.5 w-3.5 mt-0.5 shrink-0 text-blue-500"></i>
+                            <span id="location-badge-text" class="leading-relaxed"></span>
+                        </div>
+                    </div>
+
+                    {{-- DCIV Investigation Banner (shown when file has dciv_status = 1) --}}
+                    <div id="dciv-banner-wrap" class="hidden">
+                        <div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 space-y-2">
+                            <div class="flex items-center gap-2">
+                                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 border border-rose-300">
+                                    <i data-lucide="alert-triangle" class="h-3 w-3"></i> Under Investigation
+                                </span>
+                                <span id="dciv-banner-fileno" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-white text-rose-700 border border-rose-200"></span>
+                            </div>
+                            <div class="flex items-start gap-2 text-xs text-rose-800">
+                                <i data-lucide="file-text" class="h-3.5 w-3.5 mt-0.5 shrink-0 text-rose-400"></i>
+                                <div>
+                                    <span class="font-semibold uppercase tracking-wide text-rose-500 text-[10px]">Reason&nbsp;</span>
+                                    <span id="dciv-banner-reason" class="leading-relaxed"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- Hidden fields --}}
+                    <input type="hidden" name="file_number"      id="h-file_number">
+                    <input type="hidden" name="file_indexing_id" id="h-file_indexing_id">
+                    <input type="hidden" name="tracking_id"      id="h-tracking_id">
+                    <input type="hidden" name="is_indexed"       id="h-is_indexed" value="0">
+                    <input type="hidden" name="location"         id="h-location">
+                    <input type="hidden" name="lga"              id="h-lga">
+                    {{-- proposed_use is required server-side; mirror the applied land use --}}
+                    <input type="hidden" name="proposed_use"     id="h-proposed_use">
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {{-- Applied Land Use – readonly auto-fill --}}
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Applied Land Use</label>
+                            <input type="text" name="land_use_type" id="f-land_use_type" readonly
+                                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 outline-none"
+                                placeholder="Auto-filled from file">
+                        </div>
+
+                        {{-- Phone --}}
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Phone</label>
+                            <input type="text" name="phone" id="f-phone"
+                                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Prevailing Land Use <span class="text-red-500">*</span></label>
+                            <select name="existing_use" id="f-existing_use" required
+                                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                                <option value="">Select…</option>
+                                @foreach($landUseTypes as $lut)
+                                    <option value="{{ $lut }}">{{ $lut }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        {{-- Contravention badge – same row as Prevailing Land Use --}}
+                        <div class="flex items-end justify-center">
+                            <div id="contravention-badge" class="hidden items-center gap-2 px-6 py-2 rounded-lg bg-red-100 text-red-700 border-2 border-red-400" style="font-size:15px;font-weight:900;letter-spacing:.07em;animation:contraventionPulse 1.2s ease-in-out infinite;">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+                                 CONTRAVENTION
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- Property Photos --}}
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Property Photos</label>
+                        <label for="f-photos" class="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-gray-200 rounded-lg cursor-pointer hover:border-[rgb(186,191,12)] hover:bg-[rgba(186,191,12,0.03)] transition-colors">
+                            <div class="flex flex-col items-center gap-1 pointer-events-none">
+                                <i data-lucide="image-plus" class="h-6 w-6 text-gray-400"></i>
+                                <span class="text-xs text-gray-400">Click to upload photos <span class="text-gray-300">(JPG, PNG — multiple allowed)</span></span>
+                            </div>
+                            <input type="file" id="f-photos" name="photos[]" multiple accept="image/*" class="hidden">
+                        </label>
+                        <div id="photo-preview" class="flex flex-wrap gap-2 mt-2"></div>
+                    </div>
                 </div>
-            </div>
 
-            {{-- Hidden fields --}}
-            <input type="hidden" name="file_number"      id="h-file_number">
-            <input type="hidden" name="file_indexing_id" id="h-file_indexing_id">
-            <input type="hidden" name="tracking_id"      id="h-tracking_id">
-            <input type="hidden" name="is_indexed"       id="h-is_indexed" value="0">
-            <input type="hidden" name="location"         id="h-location">
-            <input type="hidden" name="lga"              id="h-lga">
-            {{-- proposed_use is required server-side; mirror the applied land use --}}
-            <input type="hidden" name="proposed_use"     id="h-proposed_use">
+                {{-- Right: optional field inspection, logged in the same pass via the map --}}
+                <div class="lg:col-span-3 space-y-3">
+                    <div>
+                        <h4 class="text-sm font-semibold text-gray-700 flex items-center gap-1.5">
+                            <i data-lucide="clipboard-check" class="h-4 w-4 text-[rgb(186,191,12)]"></i>
+                            Field Inspection <span class="text-xs font-normal text-gray-400">(optional)</span>
+                        </h4>
+                        <p class="text-xs text-gray-400 mt-0.5">On-site now? Capture the inspection below and it will be logged together with the record. Otherwise leave this blank and log it later from Field Data.</p>
+                    </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {{-- Applied Land Use – readonly auto-fill --}}
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Applied Land Use</label>
-                    <input type="text" name="land_use_type" id="f-land_use_type" readonly
-                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 outline-none"
-                        placeholder="Auto-filled from file">
-                </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Inspection Date</label>
+                            <input type="date" id="ar-inspection-date"
+                                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Coordinates (lat, lng)</label>
+                            <input type="text" id="ar-coords" placeholder="e.g. 12.0022, 8.5919"
+                                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                        </div>
+                    </div>
 
-                {{-- Phone --}}
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Phone</label>
-                    <input type="text" name="phone" id="f-phone"
-                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
-                </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Findings</label>
+                        <textarea id="ar-findings" rows="3"
+                            class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none resize-none focus:border-[rgb(186,191,12)]"
+                            placeholder="Describe on-site observations…"></textarea>
+                    </div>
+                    <input type="hidden" id="ar-geometry">
 
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Prevailing Land Use <span class="text-red-500">*</span></label>
-                    <select name="existing_use" id="f-existing_use" required
-                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
-                        <option value="">Select…</option>
-                        @foreach($landUseTypes as $lut)
-                            <option value="{{ $lut }}">{{ $lut }}</option>
-                        @endforeach
-                    </select>
-                </div>
-
-                {{-- Contravention badge – same row as Prevailing Land Use --}}
-                <div class="flex items-end justify-center">
-                    <div id="contravention-badge" class="hidden items-center gap-2 px-6 py-2 rounded-lg bg-red-100 text-red-700 border-2 border-red-400" style="font-size:15px;font-weight:900;letter-spacing:.07em;animation:contraventionPulse 1.2s ease-in-out infinite;">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
-                         CONTRAVENTION
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="block text-xs font-medium text-gray-600">Pin Location &amp; Trace Boundary</label>
+                            <button type="button" id="ar-locate" class="inline-flex items-center gap-1 text-xs text-[rgb(140,144,8)] hover:underline">
+                                <i data-lucide="locate-fixed" class="h-3.5 w-3.5"></i> Use my location
+                            </button>
+                        </div>
+                        <div id="ar-map" class="rounded-lg overflow-hidden border border-gray-200" style="height:280px;width:100%;"></div>
+                        <p id="ar-map-status" class="text-[11px] text-gray-400 mt-1">Click the map or drag the pin to set coordinates. Use the polygon tool (top-right) to trace the plot boundary.</p>
                     </div>
                 </div>
             </div>
 
-            {{-- Property Photos --}}
-            <div>
-                <label class="block text-xs font-medium text-gray-600 mb-1">Property Photos</label>
-                <label for="f-photos" class="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-gray-200 rounded-lg cursor-pointer hover:border-[rgb(186,191,12)] hover:bg-[rgba(186,191,12,0.03)] transition-colors">
-                    <div class="flex flex-col items-center gap-1 pointer-events-none">
-                        <i data-lucide="image-plus" class="h-6 w-6 text-gray-400"></i>
-                        <span class="text-xs text-gray-400">Click to upload photos <span class="text-gray-300">(JPG, PNG — multiple allowed)</span></span>
-                    </div>
-                    <input type="file" id="f-photos" name="photos[]" multiple accept="image/*" class="hidden">
-                </label>
-                <div id="photo-preview" class="flex flex-wrap gap-2 mt-2"></div>
-            </div>
-
-            <div class="flex justify-end gap-3 pt-2">
+            <div class="flex justify-end gap-3 pt-5">
                 <button type="button" id="btn-cancel-modal" class="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
                 <button type="submit" id="btn-save-record" class="px-5 py-2 text-sm text-white bg-[rgb(186,191,12)] rounded-lg hover:opacity-90">Save Record</button>
             </div>
@@ -445,6 +494,173 @@ const CSRF          = '{{ csrf_token() }}';
 const STORE         = '{{ route("special-assignment.field-data.store") }}';
 const APP_URL       = '{{ route("special-assignment.land-records") }}';
 const DELETE_FIELD  = '{{ url("special-assignment/field-data") }}';
+
+// Extracts a {lat, lng} pair from free-typed text ("12.0022, 8.5919", pasted
+// "12.0022° N, 8.5919° E", etc.) rather than requiring an exact "a, b" split —
+// a strict split silently produced garbage that the server then rejected (or,
+// worse, quietly dropped the pin) whenever the input didn't match exactly.
+function parseLatLngInput(str) {
+    if (!str) return null;
+    const nums = (String(str).match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+    if (nums.length < 2 || nums.some(Number.isNaN)) return null;
+    const [lat, lng] = nums;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+    return { lat, lng };
+}
+
+// ── Reusable pin + boundary-trace map controller ────────────────────────────
+// Shared by the "Log Field Inspection" modal and the Field Inspection section
+// of "Add Land Record", so both get the same pin/drag/geocode/polygon-trace UX.
+function createInspectionMapController({ mapId, coordsId, geometryId, statusId, locateBtnId, center = [12.0, 8.52], zoom = 12 }) {
+    let map = null, marker = null, drawnItems = null, drawing = false;
+
+    function pinIcon() {
+        return L.divIcon({
+            className: '',
+            html: `<svg width="30" height="40" viewBox="0 0 30 40" xmlns="http://www.w3.org/2000/svg"><path d="M15 0C7 0 1 6 1 14c0 10 14 26 14 26s14-16 14-26C29 6 23 0 15 0z" fill="rgb(186,191,12)" stroke="#fff" stroke-width="2"/><circle cx="15" cy="14" r="5.5" fill="#fff"/></svg>`,
+            iconSize:   [30, 40],
+            iconAnchor: [15, 40],
+        });
+    }
+
+    function syncCoordsField(lat, lng) {
+        const el = document.getElementById(coordsId);
+        if (!el) return;
+        const la = Math.round(lat * 1e6) / 1e6, ln = Math.round(lng * 1e6) / 1e6;
+        el.value = `${la}, ${ln}`;
+    }
+
+    function syncGeometryField() {
+        const el = document.getElementById(geometryId);
+        if (!el) return;
+        const layer = drawnItems && drawnItems.getLayers()[0];
+        el.value = layer ? JSON.stringify(layer.toGeoJSON().geometry) : '';
+    }
+
+    function setStatus(type, msg) {
+        const el = document.getElementById(statusId);
+        if (!el) return;
+        const colors = { loading: 'text-gray-400', ok: 'text-green-600', warn: 'text-amber-600' };
+        el.className = 'text-[11px] mt-1 ' + (colors[type] || 'text-gray-400');
+        el.textContent = msg || 'Click the map or drag the pin to set coordinates. You can also type them above.';
+    }
+
+    function placeMarker(lat, lng, recenter = true) {
+        const pos = [lat, lng];
+        if (!marker) {
+            marker = L.marker(pos, { icon: pinIcon(), draggable: true }).addTo(map);
+            marker.on('dragend', e => { const p = e.target.getLatLng(); syncCoordsField(p.lat, p.lng); });
+        } else {
+            marker.setLatLng(pos);
+        }
+        if (recenter) map.setView(pos, Math.max(map.getZoom(), 16));
+        syncCoordsField(lat, lng);
+    }
+
+    // Auto-pin from the file's stored location, then advise the surveyor to adjust.
+    // Uses the client-side Google geocoder (the API key is referer-restricted, so it
+    // only works in the browser) — same approach/key as Create File Indexing.
+    function geocode(location) {
+        const coordsEl = document.getElementById(coordsId);
+        if (!location || !location.trim() || location.trim() === '—') { setStatus('', ''); return; }
+        // Never overwrite coordinates the surveyor has already picked / typed.
+        if (coordsEl && coordsEl.value.trim()) { setStatus('', ''); return; }
+
+        if (typeof google === 'undefined' || !google.maps) {
+            setStatus('warn', 'Map service still loading — click the map to drop the pin manually.');
+            return;
+        }
+
+        setStatus('loading', 'Locating the file address on the map…');
+        // Bias toward Kano State; stored locations rarely name it.
+        const address = location.trim() + ', Kano, Nigeria';
+        new google.maps.Geocoder().geocode({ address, region: 'NG' }, (results, status) => {
+            if (status === 'OK' && results[0]) {
+                const pos = results[0].geometry.location;
+                placeMarker(pos.lat(), pos.lng(), true);
+                setStatus('ok', '📍 Pin auto-placed from the file location — drag the pin or click the map to adjust if it’s off.');
+            } else if (status === 'ZERO_RESULTS') {
+                setStatus('warn', 'Couldn’t auto-locate this address — click the map to drop the pin manually.');
+            } else {
+                setStatus('warn', 'Auto-locate unavailable — click the map to drop the pin manually.');
+            }
+        });
+    }
+
+    function ensureMap() {
+        if (map) return;
+        map = L.map(mapId, { zoomControl: true }).setView(center, zoom);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            { attribution: '© Esri', maxZoom: 19 }).addTo(map);
+        // Click anywhere to drop / move the pin — suppressed while the polygon draw tool is active.
+        map.on('click', e => { if (!drawing) placeMarker(e.latlng.lat, e.latlng.lng, false); });
+
+        // Polygon boundary tracing (Leaflet.draw) — one plot boundary at a time.
+        drawnItems = new L.FeatureGroup().addTo(map);
+        map.addControl(new L.Control.Draw({
+            position: 'topright',
+            edit: { featureGroup: drawnItems, remove: true },
+            draw: {
+                polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: '#dc2626', weight: 3 } },
+                marker: false, circlemarker: false, circle: false, polyline: false, rectangle: false,
+            },
+        }));
+        map.on(L.Draw.Event.DRAWSTART, () => { drawing = true; });
+        map.on(L.Draw.Event.DRAWSTOP,  () => { drawing = false; });
+        map.on(L.Draw.Event.CREATED, e => {
+            drawnItems.clearLayers(); // only one boundary per inspection
+            drawnItems.addLayer(e.layer);
+            syncGeometryField();
+        });
+        map.on(L.Draw.Event.EDITED,  syncGeometryField);
+        map.on(L.Draw.Event.DELETED, syncGeometryField);
+
+        // Two-way sync: typing coordinates moves the pin.
+        const coordsEl = document.getElementById(coordsId);
+        if (coordsEl) {
+            coordsEl.addEventListener('change', function () {
+                const parts = this.value.split(',');
+                if (parts.length !== 2) return;
+                const lat = parseFloat(parts[0]), lng = parseFloat(parts[1]);
+                if (!isNaN(lat) && !isNaN(lng)) placeMarker(lat, lng, true);
+            });
+        }
+
+        // "Use my location" — capture the surveyor's current GPS position.
+        const locateBtn = document.getElementById(locateBtnId);
+        if (locateBtn) {
+            locateBtn.addEventListener('click', function () {
+                if (!navigator.geolocation) {
+                    Swal.fire({ icon: 'warning', title: 'Not supported', text: 'Geolocation is not available in this browser.' });
+                    return;
+                }
+                this.disabled = true;
+                navigator.geolocation.getCurrentPosition(
+                    pos => { placeMarker(pos.coords.latitude, pos.coords.longitude, true); this.disabled = false; },
+                    err => { Swal.fire({ icon: 'error', title: 'Location unavailable', text: err.message }); this.disabled = false; },
+                    { enableHighAccuracy: true, timeout: 10000 }
+                );
+            });
+        }
+    }
+
+    // Container may have been display:none while its modal was hidden — recalc size,
+    // reset any prior pin/boundary, then attempt to auto-pin from the given location.
+    function init(location) {
+        ensureMap();
+        setTimeout(() => {
+            map.invalidateSize();
+            if (marker) { map.removeLayer(marker); marker = null; }
+            drawnItems.clearLayers();
+            const geomEl = document.getElementById(geometryId);
+            if (geomEl) geomEl.value = '';
+            map.setView(center, zoom);
+            geocode(location);
+        }, 150);
+    }
+
+    return { init, geocode, reset: () => init('') };
+}
 
 $(document).ready(function () {
     // ── Tab switching ──────────────────────────────────────────────────────
@@ -577,6 +793,28 @@ $(document).ready(function () {
         marker.addTo(map);
         markersAll.push(marker);
     });
+
+    // Plot a freshly-logged inspection point on the live map — used by both the
+    // "Log Field Inspection" modal and the field-inspection section of "Add Land
+    // Record" (exposed on window so the latter's script block, further down the
+    // page, can reach this map/markersAll closure without re-creating them).
+    window.plotFieldMapPoint = function (p) {
+        if (!p || !p.coords || !p.coords.lat || !p.coords.lng) return;
+        const color  = landUseColor(p.applied_use || p.approved_use);
+        const marker = L.marker([p.coords.lat, p.coords.lng], { icon: makeIcon(color) });
+        marker._landUse = (p.applied_use || '').toString().trim().toUpperCase();
+        function lc2(val) { const cols={RESIDENTIAL:'#0e7490',COMMERCIAL:'#ea580c',INDUSTRIAL:'#7c3aed',AGRICULTURAL:'#92400e'}; const bg=cols[(val||'').toUpperCase().split(' ')[0]]||'#4b5563'; return val?`<span style="display:inline-block;padding:1px 7px;border-radius:99px;background:${bg};color:#fff;font-size:10px;">${val}</span>`:'<span style="color:#9ca3af;font-size:10px;">—</span>'; }
+        const cb = p.contravening
+            ? `<span style="padding:3px 10px;border-radius:99px;background:#fee2e2;border:1.5px solid #fca5a5;color:#dc2626;font-size:10px;font-weight:900;letter-spacing:.05em;">⚠ CONTRAVENTION</span>`
+            : `<span style="padding:3px 10px;border-radius:99px;background:#dcfce7;border:1.5px solid #86efac;color:#16a34a;font-size:10px;font-weight:900;letter-spacing:.05em;">✓ COMPLIANT</span>`;
+        const ph = p.photo ? `<img src="${p.photo}" style="width:100%;height:110px;object-fit:cover;border-radius:6px;margin-bottom:8px;display:block;">` : '';
+        marker.bindPopup(`<div style="min-width:240px;font-family:inherit;font-size:12px;">${ph}<div style="font-weight:700;font-size:13px;margin-bottom:2px;color:#1f2937;">${p.file_number||'—'}</div><div style="color:#6b7280;font-size:11px;margin-bottom:2px;">${p.owner||'—'}</div><div style="color:#374151;font-size:11px;margin-bottom:8px;padding:5px 7px;background:#f9fafb;border-radius:5px;border-left:3px solid rgb(186,191,12);">${p.location||'—'}</div><div style="border-top:1px solid #f3f4f6;padding-top:7px;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;"><span style="font-size:10px;color:#9ca3af;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Applied Land Use</span>${lc2(p.applied_use)}</div><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;"><span style="font-size:10px;color:#9ca3af;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Approved Land Use</span>${lc2(p.approved_use)}</div><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;padding-bottom:7px;border-bottom:1px solid #f3f4f6;"><span style="font-size:10px;color:#9ca3af;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Prevailing Land Use</span>${lc2(p.prevailing)}</div><div style="margin-top:5px;">${cb}</div></div></div>`);
+        marker.addTo(map);
+        markersAll.push(marker);
+        const countEl = document.getElementById('map-point-count');
+        if (countEl) countEl.textContent = markersAll.length;
+        map.panTo([p.coords.lat, p.coords.lng]);
+    };
 
     // Hide loading overlay once map is ready
     map.whenReady(() => {
@@ -730,140 +968,10 @@ $(document).ready(function () {
     const modal = document.getElementById('modal-log-inspection');
     let _currentApp = null;
 
-    // ── Inspection map picker (Leaflet) ────────────────────────────────────
-    let liMap = null, liMarker = null, liDrawnItems = null, liDrawing = false;
-    const LI_CENTER = KANO_CENTER, LI_ZOOM = 12;
-
-    // Reflect the traced boundary (if any) into the hidden geometry field.
-    function liSyncGeometryField() {
-        const layer = liDrawnItems && liDrawnItems.getLayers()[0];
-        document.getElementById('f-geometry').value = layer ? JSON.stringify(layer.toGeoJSON().geometry) : '';
-    }
-
-    function liPinIcon() {
-        return L.divIcon({
-            className: '',
-            html: `<svg width="30" height="40" viewBox="0 0 30 40" xmlns="http://www.w3.org/2000/svg"><path d="M15 0C7 0 1 6 1 14c0 10 14 26 14 26s14-16 14-26C29 6 23 0 15 0z" fill="rgb(186,191,12)" stroke="#fff" stroke-width="2"/><circle cx="15" cy="14" r="5.5" fill="#fff"/></svg>`,
-            iconSize:   [30, 40],
-            iconAnchor: [15, 40],
-        });
-    }
-
-    function liSyncCoordsField(lat, lng) {
-        const la = Math.round(lat * 1e6) / 1e6;
-        const ln = Math.round(lng * 1e6) / 1e6;
-        document.getElementById('f-coords').value = `${la}, ${ln}`;
-    }
-
-    function liPlaceMarker(lat, lng, recenter = true) {
-        const pos = [lat, lng];
-        if (!liMarker) {
-            liMarker = L.marker(pos, { icon: liPinIcon(), draggable: true }).addTo(liMap);
-            liMarker.on('dragend', e => { const p = e.target.getLatLng(); liSyncCoordsField(p.lat, p.lng); });
-        } else {
-            liMarker.setLatLng(pos);
-        }
-        if (recenter) liMap.setView(pos, Math.max(liMap.getZoom(), 16));
-        liSyncCoordsField(lat, lng);
-    }
-
-    function setMapStatus(type, msg) {
-        const el = document.getElementById('li-map-status');
-        if (!el) return;
-        const colors = { loading: 'text-gray-400', ok: 'text-green-600', warn: 'text-amber-600' };
-        el.className = 'text-[11px] mt-1 ' + (colors[type] || 'text-gray-400');
-        el.textContent = msg || 'Click the map or drag the pin to set coordinates. You can also type them above.';
-    }
-
-    // Auto-pin from the file's stored location, then advise the surveyor to adjust.
-    // Uses the client-side Google geocoder (the API key is referer-restricted, so it
-    // only works in the browser) — same approach/key as Create File Indexing.
-    function geocodeInspectionLocation(location) {
-        if (!location || !location.trim() || location.trim() === '—') { setMapStatus('', ''); return; }
-        // Never overwrite coordinates the surveyor has already picked / typed.
-        if (document.getElementById('f-coords').value.trim()) { setMapStatus('', ''); return; }
-
-        if (typeof google === 'undefined' || !google.maps) {
-            setMapStatus('warn', 'Map service still loading — click the map to drop the pin manually.');
-            return;
-        }
-
-        setMapStatus('loading', 'Locating the file address on the map…');
-        // Bias toward Kano State; stored locations rarely name it.
-        const address = location.trim() + ', Kano, Nigeria';
-        new google.maps.Geocoder().geocode({ address, region: 'NG' }, (results, status) => {
-            if (status === 'OK' && results[0]) {
-                const pos = results[0].geometry.location;
-                liPlaceMarker(pos.lat(), pos.lng(), true);
-                setMapStatus('ok', '📍 Pin auto-placed from the file location — drag the pin or click the map to adjust if it’s off.');
-            } else if (status === 'ZERO_RESULTS') {
-                setMapStatus('warn', 'Couldn’t auto-locate this address — click the map to drop the pin manually.');
-            } else {
-                setMapStatus('warn', 'Auto-locate unavailable — click the map to drop the pin manually.');
-            }
-        });
-    }
-
-    function initInspectionMap(location) {
-        if (!liMap) {
-            liMap = L.map('li-map', { zoomControl: true }).setView(LI_CENTER, LI_ZOOM);
-            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                { attribution: '© Esri', maxZoom: 19 }).addTo(liMap);
-            // Click anywhere to drop / move the pin — suppressed while the polygon draw tool is active.
-            liMap.on('click', e => { if (!liDrawing) liPlaceMarker(e.latlng.lat, e.latlng.lng, false); });
-
-            // Polygon boundary tracing (Leaflet.draw) — one plot boundary at a time.
-            liDrawnItems = new L.FeatureGroup().addTo(liMap);
-            liMap.addControl(new L.Control.Draw({
-                position: 'topright',
-                edit: { featureGroup: liDrawnItems, remove: true },
-                draw: {
-                    polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: 'rgb(186,191,12)', weight: 3 } },
-                    marker: false, circlemarker: false, circle: false, polyline: false, rectangle: false,
-                },
-            }));
-            liMap.on(L.Draw.Event.DRAWSTART, () => { liDrawing = true; });
-            liMap.on(L.Draw.Event.DRAWSTOP,  () => { liDrawing = false; });
-            liMap.on(L.Draw.Event.CREATED, e => {
-                liDrawnItems.clearLayers(); // only one boundary per inspection
-                liDrawnItems.addLayer(e.layer);
-                liSyncGeometryField();
-            });
-            liMap.on(L.Draw.Event.EDITED,  liSyncGeometryField);
-            liMap.on(L.Draw.Event.DELETED, liSyncGeometryField);
-        }
-        // Container was display:none while the modal was hidden — recalc size & reset,
-        // then attempt to auto-pin from the file's location.
-        setTimeout(() => {
-            liMap.invalidateSize();
-            if (liMarker) { liMap.removeLayer(liMarker); liMarker = null; }
-            liDrawnItems.clearLayers();
-            document.getElementById('f-geometry').value = '';
-            liMap.setView(LI_CENTER, LI_ZOOM);
-            geocodeInspectionLocation(location);
-        }, 150);
-    }
-
-    // Two-way sync: typing coordinates moves the pin.
-    document.getElementById('f-coords').addEventListener('change', function () {
-        const parts = this.value.split(',');
-        if (parts.length !== 2 || !liMap) return;
-        const lat = parseFloat(parts[0]), lng = parseFloat(parts[1]);
-        if (!isNaN(lat) && !isNaN(lng)) liPlaceMarker(lat, lng, true);
-    });
-
-    // "Use my location" — capture the surveyor's current GPS position.
-    document.getElementById('li-locate').addEventListener('click', function () {
-        if (!navigator.geolocation) {
-            Swal.fire({ icon: 'warning', title: 'Not supported', text: 'Geolocation is not available in this browser.' });
-            return;
-        }
-        this.disabled = true;
-        navigator.geolocation.getCurrentPosition(
-            pos => { if (liMap) liPlaceMarker(pos.coords.latitude, pos.coords.longitude, true); this.disabled = false; },
-            err => { Swal.fire({ icon: 'error', title: 'Location unavailable', text: err.message }); this.disabled = false; },
-            { enableHighAccuracy: true, timeout: 10000 }
-        );
+    // ── Inspection map picker (Leaflet) ─────────────────────────────────────
+    const liMapCtrl = createInspectionMapController({
+        mapId: 'li-map', coordsId: 'f-coords', geometryId: 'f-geometry',
+        statusId: 'li-map-status', locateBtnId: 'li-locate',
     });
 
     function openInspectionModal(app) {
@@ -898,7 +1006,7 @@ $(document).ready(function () {
             photosWrap.classList.add('hidden');
         }
         modal.classList.remove('hidden'); modal.classList.add('flex');
-        initInspectionMap(app.location);
+        liMapCtrl.init(app.location);
         lucide.createIcons();
     }
     function closeModal() { modal.classList.add('hidden'); modal.classList.remove('flex'); }
@@ -917,39 +1025,24 @@ $(document).ready(function () {
     document.getElementById('form-log-inspection').addEventListener('submit', async function(e) {
         e.preventDefault();
         const btn = document.getElementById('btn-save-inspection');
-        btn.disabled = true; btn.textContent = 'Saving…';
         const fd = new FormData(this);
         const coordStr = fd.get('coordinates');
         if (coordStr) {
-            const parts = coordStr.split(',');
-            if (parts.length === 2) fd.set('coordinates', JSON.stringify({ lat: parseFloat(parts[0].trim()), lng: parseFloat(parts[1].trim()) }));
+            const parsed = parseLatLngInput(coordStr);
+            if (!parsed) {
+                Swal.fire({ icon:'warning', title:'Invalid coordinates', text:'Please pick a location on the map, or enter coordinates as "lat, lng".' });
+                return;
+            }
+            fd.set('coordinates', JSON.stringify(parsed));
         }
+        btn.disabled = true; btn.textContent = 'Saving…';
         try {
             const res  = await fetch(STORE, { method:'POST', headers:{'X-CSRF-TOKEN':CSRF}, body:fd });
             const data = await res.json();
             if (data.success) {
                 closeModal(); this.reset();
                 fieldTable.ajax.reload();
-                // Add marker to live map
-                if (data.mapPoint) {
-                    const p = data.mapPoint;
-                    if (p.coords && p.coords.lat && p.coords.lng) {
-                        const color  = landUseColor(p.applied_use || p.approved_use);
-                        const marker = L.marker([p.coords.lat, p.coords.lng], { icon: makeIcon(color) });
-                        marker._landUse = (p.applied_use || '').toUpperCase();
-                        function lc2(val) { const cols={RESIDENTIAL:'#0e7490',COMMERCIAL:'#ea580c',INDUSTRIAL:'#7c3aed',AGRICULTURAL:'#92400e'}; const bg=cols[(val||'').toUpperCase().split(' ')[0]]||'#4b5563'; return val?`<span style="display:inline-block;padding:1px 7px;border-radius:99px;background:${bg};color:#fff;font-size:10px;">${val}</span>`:'<span style="color:#9ca3af;font-size:10px;">—</span>'; }
-                        const cb = p.contravening
-                            ? `<span style="padding:3px 10px;border-radius:99px;background:#fee2e2;border:1.5px solid #fca5a5;color:#dc2626;font-size:10px;font-weight:900;letter-spacing:.05em;">⚠ CONTRAVENTION</span>`
-                            : `<span style="padding:3px 10px;border-radius:99px;background:#dcfce7;border:1.5px solid #86efac;color:#16a34a;font-size:10px;font-weight:900;letter-spacing:.05em;">✓ COMPLIANT</span>`;
-                        const ph = p.photo ? `<img src="${p.photo}" style="width:100%;height:110px;object-fit:cover;border-radius:6px;margin-bottom:8px;display:block;">` : '';
-                        marker.bindPopup(`<div style="min-width:240px;font-family:inherit;font-size:12px;">${ph}<div style="font-weight:700;font-size:13px;margin-bottom:2px;color:#1f2937;">${p.file_number||'—'}</div><div style="color:#6b7280;font-size:11px;margin-bottom:2px;">${p.owner||'—'}</div><div style="color:#374151;font-size:11px;margin-bottom:8px;padding:5px 7px;background:#f9fafb;border-radius:5px;border-left:3px solid rgb(186,191,12);">${p.location||'—'}</div><div style="border-top:1px solid #f3f4f6;padding-top:7px;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;"><span style="font-size:10px;color:#9ca3af;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Applied Land Use</span>${lc2(p.applied_use)}</div><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;"><span style="font-size:10px;color:#9ca3af;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Approved Land Use</span>${lc2(p.approved_use)}</div><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;padding-bottom:7px;border-bottom:1px solid #f3f4f6;"><span style="font-size:10px;color:#9ca3af;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">Prevailing Land Use</span>${lc2(p.prevailing)}</div><div style="margin-top:5px;">${cb}</div></div></div>`);
-                        marker.addTo(map);
-                        markersAll.push(marker);
-                        const countEl = document.getElementById('map-point-count');
-                        if (countEl) countEl.textContent = markersAll.length;
-                        map.panTo([p.coords.lat, p.coords.lng]);
-                    }
-                }
+                if (data.mapPoint) window.plotFieldMapPoint(data.mapPoint);
                 Swal.fire({ icon:'success', title:'Saved', text:data.message, timer:2000, showConfirmButton:false });
             } else {
                 Swal.fire({ icon:'error', title:'Error', text:data.message||'Save failed.' });
@@ -969,9 +1062,18 @@ const NEXT_CUSTOMARY_URL = '{{ route("special-assignment.next-customary-fileno")
 $(document).ready(function () {
     const spaModal = document.getElementById('modal-add-record');
 
+    // Reuses the same pin/drag/geocode/polygon-trace controller as "Log Field
+    // Inspection", so a surveyor can capture the inspection in the same pass as
+    // adding the land record instead of coming back to it later.
+    const arMapCtrl = createInspectionMapController({
+        mapId: 'ar-map', coordsId: 'ar-coords', geometryId: 'ar-geometry',
+        statusId: 'ar-map-status', locateBtnId: 'ar-locate',
+    });
+
     function openSpaModal() {
         spaModal.classList.remove('hidden');
         spaModal.classList.add('flex');
+        arMapCtrl.init(document.getElementById('h-location').value || '');
         if (typeof lucide !== 'undefined') lucide.createIcons();
     }
     function closeSpaModal() {
@@ -1057,6 +1159,9 @@ $(document).ready(function () {
         document.getElementById('dciv-banner-wrap').classList.add('hidden');
         document.getElementById('ltt-statutory').checked = true;
         setLandTitleType('statutory');
+        // Note: the Field Inspection inputs (ar-*) live inside this <form>, so the
+        // native reset() call above already clears them; the map pin/boundary are
+        // reset separately by arMapCtrl.init() when the modal (re)opens.
     }
 
     // Pull details from file indexing and pre-fill the modal
@@ -1095,6 +1200,8 @@ $(document).ready(function () {
                 } else {
                     document.getElementById('location-badge-wrap').classList.add('hidden');
                 }
+                // Try to auto-pin the inspection map from the file's address
+                arMapCtrl.geocode(loc);
                 // DCIV investigation banner
                 const dcivWrap   = document.getElementById('dciv-banner-wrap');
                 const dcivFileNo = document.getElementById('dciv-banner-fileno');
@@ -1176,7 +1283,46 @@ $(document).ready(function () {
         });
     });
 
-    // Form submit → create SPA application
+    // If the surveyor logged an inspection alongside the record, save it too —
+    // as a second call, since it needs the spa_application_id the first call returns.
+    async function saveInspectionFor(app) {
+        const inspDate     = document.getElementById('ar-inspection-date').value;
+        const inspFindings = document.getElementById('ar-findings').value.trim();
+        const inspCoords   = document.getElementById('ar-coords').value.trim();
+        const inspGeometry = document.getElementById('ar-geometry').value;
+
+        if (!inspDate && !inspFindings && !inspCoords) return ''; // nothing entered — skip silently
+        if (!inspDate || !inspFindings) {
+            return ' Field inspection was not logged — an inspection date and findings are both required; you can add them later from Field Data.';
+        }
+
+        const fd = new FormData();
+        fd.append('spa_application_id', app.id);
+        fd.append('file_number', app.file_number);
+        fd.append('inspection_date', inspDate);
+        fd.append('findings', inspFindings);
+        let coordsWarning = '';
+        if (inspCoords) {
+            const parsed = parseLatLngInput(inspCoords);
+            if (parsed) fd.append('coordinates', JSON.stringify(parsed));
+            else coordsWarning = ' The pin location could not be understood, so it was not saved — you can add it later from Field Data.';
+        }
+        if (inspGeometry) fd.append('parcel_geometry', inspGeometry);
+
+        try {
+            const res  = await fetch(STORE, { method:'POST', headers:{ 'X-CSRF-TOKEN': CSRF }, body: fd });
+            const data = await res.json();
+            if (data.success) {
+                if (data.mapPoint) window.plotFieldMapPoint(data.mapPoint);
+                return ' Field inspection logged.' + coordsWarning;
+            }
+            return ' Field inspection could not be saved (' + (data.message || 'save failed') + ') — you can log it later from Field Data.';
+        } catch (err) {
+            return ' Field inspection could not be saved due to a network error — you can log it later from Field Data.';
+        }
+    }
+
+    // Form submit → create SPA application (and, if filled in, its field inspection)
     document.getElementById('form-add-record').addEventListener('submit', async function (e) {
         e.preventDefault();
 
@@ -1208,10 +1354,11 @@ $(document).ready(function () {
             const data = await res.json();
 
             if (data.success) {
+                const inspectionNote = await saveInspectionFor({ id: data.id, file_number: data.file_number });
                 closeSpaModal();
                 resetSpaForm();
                 $('#field-records-table').DataTable().ajax.reload(null, false);
-                Swal.fire({ icon:'success', title:'Added to SPA', text:data.message, timer:2000, showConfirmButton:false });
+                Swal.fire({ icon:'success', title:'Added to SPA', text: data.message + inspectionNote, timer: inspectionNote ? 3500 : 2000, showConfirmButton:false });
             } else {
                 Swal.fire({ icon:'error', title:'Error', text:data.message || 'Save failed.' });
             }

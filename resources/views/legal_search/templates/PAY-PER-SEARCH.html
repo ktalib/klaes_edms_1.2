@@ -501,16 +501,16 @@
           <tr class="header-row">
             <th style="width: 3%">S/N</th>
             <th style="width: 11%">File No</th>
-            <th style="width: 15%; white-space: nowrap;">Instrument/<br>Transaction Type</th>
+            <th style="width: 10%; white-space: nowrap;">Instrument/<br>Transaction Type</th>
             <th style="width: 11%">Party 1</th>
             <th style="width: 11%">Party 2</th>
-            <th style="width: 8%" class="party-3-col">Party 3</th>
-            <th style="width: 8%" class="party-4-col">Party 4</th>
+            <th style="width: 6%" class="party-3-col">Party 3</th>
+            <th style="width: 6%" class="party-4-col">Party 4</th>
             <th style="width: 9%">Transaction Date</th>
             <th style="width: 9%">Reg. Time/Date</th>
             <th style="width: 9%">Particulars</th>
             <th style="width: 5%">Caveat</th>
-            <th>Comments</th>
+            <th style="width: 10%">Comments</th>
           </tr>
         </thead>
         <tbody id="report-transactions-body">
@@ -533,6 +533,8 @@
 
             <span id="report-caveat-note" class="dynamic-comment"
               style="display:none; margin-bottom:8px; font-size:13px; font-weight:bold;"></span>
+          <p id="report-general-comment" class="dynamic-comment"
+            style="display:none; margin:0 0 8px 0; font-size:13px; font-weight:bold; color:#1f2937;"></p>
         </div>
       </div>
 
@@ -726,6 +728,14 @@
             const ltText = d.litigation_comment.trim();
             ltEl.textContent = ltText.endsWith('.') ? ltText : ltText + '.';
             ltEl.style.display = 'inline';
+          }
+
+          // General comment — its own line under the remarks, not appended inline.
+          const genEl = document.getElementById('report-general-comment');
+          if (genEl && d.general_comment) {
+            const genText = d.general_comment.trim();
+            genEl.textContent = genText.endsWith('.') ? genText : genText + '.';
+            genEl.style.display = 'block';
           }
 
           // No CoFO comment

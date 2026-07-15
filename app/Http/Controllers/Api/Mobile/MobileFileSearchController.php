@@ -111,6 +111,11 @@ class MobileFileSearchController extends Controller
                 // When true, the "Send Blind Request to SCB Monitor" button changes to
                 // "Send Blind Request to the Original Registry" and saves without SCB.
                 'is_missing_file'  => (bool) ($result['is_missing_file'] ?? false),
+                // True when a FileIndexing row exists for this file number. Combined
+                // with is_missing_file above, this flags a stale missing_files report —
+                // the file has since been indexed (physically returned and filed), so
+                // the UI can surface a note instead of treating it as still missing.
+                'is_indexed'       => (bool) ($result['indexing'] ?? null),
                 // Temporary "(T)" file — resolved standalone (never against its stripped
                 // base number); the UI shows an "Is Temporary File" badge.
                 'is_temp_file'     => (bool) ($result['is_temp_file'] ?? false),

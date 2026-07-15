@@ -374,6 +374,7 @@ class ApplicationController extends Controller
                 WHERE system_source = 'OSSOPCHANGEOFNAME'
                   AND prop_id IS NOT NULL AND prop_id != ''
                   AND (instrument_type LIKE '%Transfer of Title%' OR transaction_type LIKE '%Transfer of Title%')
+                  AND (is_deleted IS NULL OR is_deleted = 0)
             ) as p"), function ($join) {
                 $join->whereRaw("(p.mlsFNo = oa.file_no OR p.fileno = oa.file_no)")
                     ->where('p.p_rn', 1);
@@ -487,7 +488,12 @@ class ApplicationController extends Controller
             $rawLandUse = strtoupper(trim((string) ($row->resolved_land_use ?? '')));
             $applicationType = strtolower(trim((string) ($row->resolved_application_type ?? 'residential')));
             $applicantName = trim((string) ($row->oa_applicant_name ?: ($row->Grantee ?: ($row->source_party_2_name ?: $row->indexed_file_title))));
-            $originalHolder = trim((string) ($row->source_party_1_name ?: ($row->Grantor ?: $row->party_1)));
+            // Prefer the Transfer of Title row's own Grantor/party_1 (the real
+            // original holder). Only fall back to the linked OP capture's
+            // party_2_name (the allottee) when no ToT row exists yet — its
+            // party_1_name is always "Kano State Government" (the OP issuer)
+            // and must never be used as the "Original Holder" here.
+            $originalHolder = trim((string) ($row->Grantor ?: ($row->party_1 ?: $row->source_party_2_name)));
             $plotNo = trim((string) ($row->pra_plot_no_raw ?: ($row->ic_plot_number ?: $row->fn_plot_no)));
             $planNo = trim((string) ($row->tp_no ?: ($row->ic_plan_no ?: $row->fn_plan_no)));
             $loc = trim((string) ($row->oa_location ?? ''));
@@ -1633,6 +1639,24 @@ class ApplicationController extends Controller
             ], 422);
         }
 
+        // Safety net: this is always a Transfer of Title row, so Party 1 must be
+        // the previous holder — "Kano State Government" is only ever valid as an
+        // OP's Grantor, never a ToT's. Refuse rather than silently corrupt.
+        if (strcasecmp($partyFromOp, 'Kano State Government') === 0) {
+            Log::error('FFR save blocked: resolved Party 1 is Kano State Government', [
+                'source_file_no' => $sourceFileNo,
+                'request_party1' => $validated['party_1'] ?? null,
+                'op_record_id' => data_get($opRecord, 'id'),
+                'op_record_party_2' => data_get($opRecord, 'party_2'),
+                'user_id' => Auth::id(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to resolve the original holder for this Transfer of Title. Please provide Party 1 manually and try again.',
+            ], 422);
+        }
+
         $propId = $validated['prop_id']
             ?? data_get($opRecord, 'prop_id')
             ?? data_get($sourceHistory, '0.prop_id');
@@ -2132,6 +2156,31 @@ class ApplicationController extends Controller
         $resolvedGrantee = $hasNameChange
             ? $enteredAllottee
             : ($originalAllottee !== '' ? $originalAllottee : $enteredAllottee);
+
+        // Safety net: "Kano State Government" is only ever valid as an OP's
+        // Grantor (the issuing authority). A Transfer of Title's Party 1 must
+        // be the previous holder — if every resolution path above still landed
+        // on the government literal, refuse the write instead of silently
+        // corrupting the record (this exact corruption has recurred multiple
+        // times without a confirmed root cause; log full context for the next one).
+        if (($hasNameChange || $fromOpFlow) && strcasecmp(trim($resolvedGrantor), 'Kano State Government') === 0) {
+            Log::error('FFR existing capture blocked: resolved ToT Party 1 is Kano State Government', [
+                'source_file_no' => $sourceFileNo,
+                'from_op_flow' => $fromOpFlow,
+                'has_name_change' => $hasNameChange,
+                'original_allottee' => $originalAllottee,
+                'request_party1' => $party1,
+                'request_party2' => $party2,
+                'mother_op_record_id' => data_get($motherOpRecord, 'id'),
+                'mother_op_party_2' => data_get($motherOpRecord, 'party_2'),
+                'user_id' => Auth::id(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to resolve the original holder for this Transfer of Title. Please provide Party 1 manually and try again.',
+            ], 422);
+        }
 
         $isTransferRecord = $hasNameChange || $fromOpFlow;
         $resolvedSerialNo = $isTransferRecord ? '0' : ($serialNo !== '' ? $serialNo : null);

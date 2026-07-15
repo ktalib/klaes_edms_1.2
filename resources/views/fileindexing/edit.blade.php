@@ -1070,9 +1070,19 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label for="cofo_instrument_type" class="form-label-clean">Instrument Type</label>
-                            <input type="text" id="cofo_instrument_type_display" class="w-full form-input-clean bg-gray-50" 
+                            <input type="text" id="cofo_instrument_type_display" class="w-full form-input-clean bg-gray-50"
                                 value="Certificate of Occupancy" readonly>
                             <input type="hidden" id="cofo_instrument_type" name="cofo_instrument_type" value="Certificate of Occupancy">
+                        </div>
+                        <div>
+                            <label for="cofo_type" class="form-label-clean">CofO Type</label>
+                            @php $cofoTypeValue = $cofoValue('cofo_type', null); @endphp
+                            <select id="cofo_type" name="cofo_type" class="w-full form-input-clean">
+                                <option value="" {{ !$cofoTypeValue ? 'selected' : '' }}>Select CofO Type</option>
+                                <option value="Old CofO (Ministry)" {{ $cofoTypeValue === 'Old CofO (Ministry)' ? 'selected' : '' }}>Old CofO (Ministry)</option>
+                                <option value="KANGIS CofO" {{ $cofoTypeValue === 'KANGIS CofO' ? 'selected' : '' }}>KANGIS CofO</option>
+                                <option value="New KANGIS CofO" {{ $cofoTypeValue === 'New KANGIS CofO' ? 'selected' : '' }}>New KANGIS CofO</option>
+                            </select>
                         </div>
                         <div>
                             <label class="form-label-clean">Registration Serial No</label>

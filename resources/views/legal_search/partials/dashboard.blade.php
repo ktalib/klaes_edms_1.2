@@ -93,19 +93,19 @@
             <div class="space-y-4">
               <div class="flex justify-between items-center">
                 <span class="text-sm font-medium">Total Searches (This Month)</span>
-                <span class="font-bold">24</span>
+                <span class="font-bold" id="stat-total-searches">-</span>
               </div>
               <div class="flex justify-between items-center">
-                <span class="text-sm font-medium">Average Search Time</span>
-                <span class="font-bold">3.2 minutes</span>
+                <span class="text-sm font-medium">Printed Reports (This Month)</span>
+                <span class="font-bold" id="stat-printed-reports">-</span>
               </div>
               <div class="flex justify-between items-center">
                 <span class="text-sm font-medium">Success Rate</span>
-                <span class="font-bold">92%</span>
+                <span class="font-bold" id="stat-success-rate">-</span>
               </div>
               <div class="flex justify-between items-center">
                 <span class="text-sm font-medium">Most Common Search Type</span>
-                <span class="font-bold">File Number</span>
+                <span class="font-bold" id="stat-common-type">-</span>
               </div>
             </div>
           </div>
@@ -116,35 +116,8 @@
           <div class="p-6">
             <h3 class="text-lg font-semibold mb-1">Recent Activity</h3>
             <p class="text-sm text-gray-500 mb-4">Latest official search activities</p>
-            <div class="space-y-4">
-              <div class="flex justify-between items-center border-b pb-2">
-                <div>
-                  <p class="font-medium">File Search #2024</p>
-                  <p class="text-sm text-gray-500">Just now</p>
-                </div>
-                <span class="px-2 py-1 text-xs rounded-full bg-gray-100">Completed</span>
-              </div>
-              <div class="flex justify-between items-center border-b pb-2">
-                <div>
-                  <p class="font-medium">File Search #2025</p>
-                  <p class="text-sm text-gray-500">2 hours ago</p>
-                </div>
-                <span class="px-2 py-1 text-xs rounded-full bg-gray-100">Completed</span>
-              </div>
-              <div class="flex justify-between items-center border-b pb-2">
-                <div>
-                  <p class="font-medium">File Search #2026</p>
-                  <p class="text-sm text-gray-500">Yesterday</p>
-                </div>
-                <span class="px-2 py-1 text-xs rounded-full bg-gray-100">Completed</span>
-              </div>
-              <div class="flex justify-between items-center">
-                <div>
-                  <p class="font-medium">File Search #2027</p>
-                  <p class="text-sm text-gray-500">3 days ago</p>
-                </div>
-                <span class="px-2 py-1 text-xs rounded-full bg-gray-100">Completed</span>
-              </div>
+            <div class="space-y-4" id="recent-activity-list">
+              <p class="text-sm text-gray-500">Loading...</p>
             </div>
           </div>
         </div>

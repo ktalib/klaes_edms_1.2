@@ -12,7 +12,7 @@
 
     body {
       font-family: "Times New Roman", Times, serif;
-      font-size: 10.8pt;
+      font-size: 9.8pt;
       line-height: 1.28;
       color: black;
       margin: 0;
@@ -64,13 +64,13 @@
     .serial {
       border: 1px solid black;
       padding: 4px 7px;
-      font-size: 9pt;
+      font-size: 8pt;
       line-height: 1.2;
       text-align: center;
     }
 
     .ministry {
-      font-size: 17pt;
+      font-size: 15pt;
       font-weight: bold;
       text-transform: uppercase;
       text-align: center;
@@ -79,7 +79,7 @@
     }
 
     .address {
-      font-size: 10pt;
+      font-size: 9pt;
       text-align: center;
       margin-bottom: 0.45cm;
     }
@@ -101,7 +101,7 @@
       background: #006400;
       color: white;
       padding: 0.1cm 0.5cm;
-      font-size: 10.5pt;
+      font-size: 9.5pt;
       font-weight: bold;
       text-transform: uppercase;
       line-height: 1.1;
@@ -112,7 +112,7 @@
     .subtitle {
       font-weight: bold;
       text-transform: uppercase;
-      font-size: 10.5pt;
+      font-size: 9.5pt;
       margin: 0.3cm 0 0.15cm;
       text-align: center;
     }
@@ -121,6 +121,7 @@
       border-bottom: 1px solid black;
       display: inline-block;
       min-width: 160px;
+      min-height: 1.3em;
       margin: 0 3px;
       font-weight: bold;
       vertical-align: bottom;
@@ -129,7 +130,7 @@
 
     .field-row {
       display: flex;
-      align-items: flex-end;
+      align-items: flex-start;
       margin-bottom: 0.12cm;
     }
 
@@ -141,13 +142,21 @@
     .paired {
       display: flex;
       justify-content: space-between;
+      align-items: flex-start;
       margin-bottom: 0.12cm;
     }
 
     .paired > div {
-      width: 49%;
       display: flex;
       align-items: flex-end;
+    }
+
+    .paired > div.paired-narrow {
+      width: 38%;
+    }
+
+    .paired > div.paired-wide {
+      width: 60%;
     }
 
     .full-line {
@@ -166,7 +175,7 @@
       display: flex;
       justify-content: space-between;
       margin: 0.7cm 0 0.35cm;
-      font-size: 10.5pt;
+      font-size: 9.5pt;
     }
 
     .sig-label {
@@ -198,7 +207,7 @@
       background: #006400;
       color: white;
       padding: 0.1cm 0.5cm;
-      font-size: 10.5pt;
+      font-size: 9.5pt;
       font-weight: bold;
       text-transform: uppercase;
       line-height: 1.1;
@@ -210,7 +219,7 @@
       color: #b00000;
       font-weight: bold;
       margin: 0.8cm 0 0.5cm;
-      font-size: 11pt;
+      font-size: 10pt;
     }
 
     .camscanner {
@@ -224,8 +233,8 @@
       .no-print { 
         display: none !important; 
       }
-      body { 
-        font-size: 10.8pt !important; 
+      body {
+        font-size: 9.8pt !important;
       }
       .title-green, .approval-green {
         background: #006400 !important;
@@ -286,7 +295,7 @@
 
     <div class="serial">
         @if($version !== 'Original')
-            <span style="color: {{ $versionColors[$version] ?? '#ff0000' }}; font-weight: bold; font-size: 10pt;">
+            <span style="color: {{ $versionColors[$version] ?? '#ff0000' }}; font-weight: bold; font-size: 9pt;">
                 {{ strtoupper($version) }}
             </span><br>
         @endif
@@ -309,21 +318,30 @@
 
   <div class="subtitle">CONDITIONS FOR APPLICATION</div>
 
+  @php
+      // Plot No. is already shown in its own field on this template ($recommendation->display_location
+      // strips it from the front of location). Legacy district/street text is also inconsistently
+      // cased (e.g. "HOTORO Nasarawa Kano State" mixes full caps with title case), so normalize to
+      // a consistent Title Case for display here too.
+      $normalizedLocation = $recommendation->display_location;
+      if ($normalizedLocation !== '') {
+          $normalizedLocation = mb_convert_case(mb_strtolower($normalizedLocation, 'UTF-8'), MB_CASE_TITLE, 'UTF-8');
+      }
+  @endphp
+
   <div class="field-row">Name of Applicant: <span class="field" style="width:450px;">{{ $recommendation->applicant_name }}</span></div>
 
   <div class="paired">
-    <div class="field-row"><span class="field-label">(a) File Ref. No.:</span> <span class="field" style="flex:1;">{{ $recommendation->file_number }}</span></div>
-    <div class="field-row"><span class="field-label">(b) Purpose Clause:</span> <span class="field" style="flex:1;">{{ $recommendation->purpose_of_clause }}</span></div>
+    <div class="field-row paired-narrow"><span class="field-label">(a) File Ref. No.:</span> <span class="field" style="flex:1;">{{ $recommendation->file_number }}</span></div>
+    <div class="field-row paired-wide"><span class="field-label">(b) Purpose Clause:</span> <span class="field" style="flex:1;">{{ $recommendation->purpose_of_clause }}</span></div>
   </div>
 
   <div class="paired">
-    <div class="field-row"><span class="field-label">(c) Location:</span> <span class="field" style="flex:1;">{{ $recommendation->location }}</span></div>
-    <div class="field-row"><span class="field-label">(d) Plot No.:</span> <span class="field" style="flex:1;">{{ $recommendation->plot_number }}</span></div>
+    <div class="field-row paired-wide"><span class="field-label">(c) Location:</span> <span class="field" style="flex:1;">{{ $normalizedLocation }}</span></div>
+    <div class="field-row paired-narrow"><span class="field-label">(d) Plot No.:</span> <span class="field" style="flex:1;">{{ $recommendation->plot_number }}</span></div>
   </div>
 
   <div class="field-row">(e) Layout Plan No.: <span class="field" style="width:450px;">{{ $recommendation->layout_plan_no }}</span></div>
-
-  <div class="full-line"></div>
 
   <div class="field-row">Term: <span class="field" style="width:530px;">{{ $recommendation->term }}</span></div>
 
@@ -363,7 +381,7 @@
   <div class="paired" style="margin-bottom:0.6cm;">
     <div class="field-row"><span class="field-label">Plan No.:</span> <span class="field" style="flex:1;">{{ $recommendation->layout_plan_no }}</span></div>
     <div class="field-row" style="justify-content: flex-end;">
-      <span class="field-label">Location:</span> <span class="field" style="flex:1;">{{ $recommendation->location }}</span>
+      <span class="field-label">Location:</span> <span class="field" style="flex:1;">{{ $normalizedLocation }}</span>
     </div>
   </div>
 

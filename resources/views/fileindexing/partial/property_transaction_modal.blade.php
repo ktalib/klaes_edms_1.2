@@ -47,6 +47,7 @@
                 transactionDate: '',
                 opType: '',
                 opSerialNumber: '',
+                cofoType: '',
                 serialNo: '',
                 pageNo: '',
                 volumeNo: '',
@@ -190,6 +191,7 @@
                     status: 'Normal',
                     transactionDate: '',
                     opSerialNumber: '',
+                    cofoType: '',
                     serialNo: '',
                     pageNo: '',
                     volumeNo: '',
@@ -275,6 +277,13 @@
 
             isOPTransaction(transactionType) {
                 return normalizePropertyTransactionType(transactionType) === 'Occupancy Permit (OP)';
+            },
+
+            // Detects Certificate of Occupancy transactions (and its ST/SLTR variants),
+            // which require a CofO Type (Old CofO (Ministry) / KANGIS CofO / New KANGIS CofO).
+            isCofOTransaction(transactionType) {
+                if (!transactionType) return false;
+                return /CERTIFICATE OF OCCUPANCY/i.test(String(transactionType));
             },
 
             // Detects Right of Occupancy / Customary Right of Occupancy transactions.
@@ -421,6 +430,10 @@
 
                 if (!this.isOPTransaction(transaction.transactionType)) {
                     transaction.opSerialNumber = '';
+                }
+
+                if (!this.isCofOTransaction(transaction.transactionType)) {
+                    transaction.cofoType = '';
                 }
 
                 // Right of Occupancy: Registration Number is fixed at 0/0/0 and Reg Date/Time are not applicable.
@@ -686,7 +699,7 @@
                                         <label class="block text-sm font-medium text-gray-700 mb-1">Transaction Type
                                             <span class="text-red-500">*</span></label>
                                         <select x-model="transaction.transactionType"
-                                            @change="handleTransactionTypeChange(transaction); if (!isOPTransaction(transaction.transactionType)) transaction.opType = ''"
+                                            @change="handleTransactionTypeChange(transaction); if (!isOPTransaction(transaction.transactionType)) transaction.opType = ''; if (!isCofOTransaction(transaction.transactionType)) transaction.cofoType = ''"
                                             :name="'transactions[' + index + '][transaction_type]'"
                                             class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors bg-white">
                                             <option value="">Select type</option>
@@ -710,16 +723,31 @@
                                     </div>
                                 </div>
 
-                                <!-- Status (applies to all instruments) -->
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                                    <select x-model="transaction.status"
-                                        :name="'transactions[' + index + '][status]'"
-                                        class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors bg-white">
-                                        <option value="Normal">Normal</option>
-                                        <option value="Normal Cancellation">Normal Cancellation</option>
-                                        <option value="Total Cancellation">Total Cancellation</option>
-                                    </select>
+                                <!-- Status (applies to all instruments) / CofO Type -->
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                                        <select x-model="transaction.status"
+                                            :name="'transactions[' + index + '][status]'"
+                                            class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors bg-white">
+                                            <option value="Normal">Normal</option>
+                                            <option value="Normal Cancellation">Normal Cancellation</option>
+                                            <option value="Total Cancellation">Total Cancellation</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- CofO Type (shown only for Certificate of Occupancy) -->
+                                    <div x-show="isCofOTransaction(transaction.transactionType)" x-cloak>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">CofO Type</label>
+                                        <select x-model="transaction.cofoType"
+                                            :name="'transactions[' + index + '][cofo_type]'"
+                                            class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors bg-white">
+                                            <option value="">Select CofO type</option>
+                                            <option value="Old CofO (Ministry)">Old CofO (Ministry)</option>
+                                            <option value="KANGIS CofO">KANGIS CofO</option>
+                                            <option value="New KANGIS CofO">New KANGIS CofO</option>
+                                        </select>
+                                    </div>
                                 </div>
 
                                 <!-- OP Type (shown only for Occupancy Permit) -->
@@ -1360,6 +1388,7 @@
                                         transactionDate: formattedTransactionDate || '',
                                         opType: record.op_type || record.opType || '',
                                         opSerialNumber: record.op_serial_number || record.opSerialNumber || '',
+                                        cofoType: record.cofo_type || record.cofoType || '',
                                         serialNo: record.serialNo || record.serial_no || '',
                                         pageNo: record.pageNo || record.page_no || '',
                                         volumeNo: record.volumeNo || record.volume_no || '',
@@ -1407,6 +1436,7 @@
                                     status: 'Normal',
                                     transactionDate: '',
                                     opSerialNumber: '',
+                                    cofoType: '',
                                     serialNo: '',
                                     pageNo: '',
                                     volumeNo: '',
@@ -1528,6 +1558,7 @@
             instrument_type: t.instrumentType || '',
             status: t.status || 'Normal',
             op_type: t.opType || '',
+            cofo_type: t.cofoType || '',
             transaction_date: t.transactionDate || '',
             op_serial_number: String(t.opSerialNumber || '').trim().replace(/^0+(\d)/, '$1'),
             serial_no: String(t.serialNo || '').trim().replace(/^0+(\d)/, '$1'),

@@ -47,6 +47,62 @@ class LegalSearchController extends Controller
         return view($this->viewPrefix . '.index', compact('PageTitle', 'PageDescription', 'moduleConfig', 'landUseOptions', 'districtOptions'));
     }
 
+    /**
+     * Aggregate real search-log data to power the dashboard cards, trend chart and recent activity feed.
+     */
+    public function dashboardStats()
+    {
+        $now = now();
+        $startOfMonth = $now->copy()->startOfMonth();
+
+        $monthlyTrend = [];
+        for ($i = 11; $i >= 0; $i--) {
+            $monthStart = $now->copy()->subMonths($i)->startOfMonth();
+            $monthEnd = $monthStart->copy()->endOfMonth();
+            $count = \App\Models\LegalSearchLog::whereBetween('created_at', [$monthStart, $monthEnd])->count();
+            $monthlyTrend[] = [
+                'month' => $monthStart->format('M'),
+                'searches' => $count,
+            ];
+        }
+
+        $thisMonthLogs = \App\Models\LegalSearchLog::where('created_at', '>=', $startOfMonth);
+        $totalThisMonth = (clone $thisMonthLogs)->count();
+        $foundThisMonth = (clone $thisMonthLogs)->where('result_status', 'Found')->count();
+        $successRate = $totalThisMonth > 0 ? round(($foundThisMonth / $totalThisMonth) * 100) : 0;
+        $printedThisMonth = (clone $thisMonthLogs)->where('printed', true)->count();
+
+        $mostCommonType = (clone $thisMonthLogs)
+            ->select('search_parameter', DB::raw('COUNT(*) as total'))
+            ->whereNotNull('search_parameter')
+            ->groupBy('search_parameter')
+            ->orderByDesc('total')
+            ->first();
+
+        $recentActivity = \App\Models\LegalSearchLog::with('user')
+            ->latest()
+            ->take(6)
+            ->get()
+            ->map(function ($log) {
+                return [
+                    'title' => trim(($log->search_parameter ?: 'Search') . ($log->search_value ? ' - ' . $log->search_value : '')),
+                    'time' => $log->created_at ? $log->created_at->diffForHumans() : '-',
+                    'status' => $log->result_status ?: 'Not Found',
+                ];
+            });
+
+        return response()->json([
+            'monthly_trend' => $monthlyTrend,
+            'stats' => [
+                'total_this_month' => $totalThisMonth,
+                'success_rate' => $successRate,
+                'most_common_type' => $mostCommonType->search_parameter ?? '-',
+                'printed_this_month' => $printedThisMonth,
+            ],
+            'recent_activity' => $recentActivity,
+        ]);
+    }
+
     public function search(Request $request)
     {
         $results = $this->searchService->search($request->all());
@@ -720,7 +776,7 @@ class LegalSearchController extends Controller
     {
         $request->validate([
             'file_number' => 'required|string|max:100',
-            'comment_type' => 'required|string|in:ground_rent,ground_rent_paid,no_cofo,encumbrance,litigation,wrc,cofo,commencement_date',
+            'comment_type' => 'required|string|in:ground_rent,ground_rent_paid,no_cofo,encumbrance,litigation,wrc,cofo,commencement_date,general',
             'amount' => 'nullable|numeric|min:0',
             'comment' => 'nullable|string|max:2000',
         ]);
