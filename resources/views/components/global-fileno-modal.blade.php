@@ -203,6 +203,9 @@
                                                 <option value="CON-IND">CON-IND - Con. Industrial</option>
                                                 <option value="CON-AG">CON-AG - Con. Agricultural</option>
                                             </optgroup>
+                                            <optgroup label="CMD">
+                                                <option value="CMD-COM">CMD-COM - CMD Commercial</option>
+                                            </optgroup>
                                             <optgroup label="RC Options">
                                                 <option value="RES-RC">RES-RC</option>
                                                 <option value="COM-RC">COM-RC</option>

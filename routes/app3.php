@@ -244,6 +244,18 @@ Route::middleware(['auth'])->group(function () {
         Route::put('/applications/op-resettlement/{id}/update-land-use', [OpResettlementApplicationController::class, 'updateLandUse'])->name('applications.update-land-use')->where('id', '[0-9]+');
         Route::put('/applications/op-resettlement/{id}/update-details', [OpResettlementApplicationController::class, 'updateDetails'])->name('applications.update-details')->where('id', '[0-9]+|pra-[0-9]+|ic-[0-9]+');
         Route::get('/applications/op-resettlement/pra-transactions', [OpResettlementApplicationController::class, 'praTransactions'])->name('applications.pra-transactions');
+        Route::get('/applications/op-resettlement/op-batch-records', [OpResettlementApplicationController::class, 'opBatchRecords'])->name('applications.op-batch-records');
+        Route::get('/applications/op-resettlement/op-search-by-serial', [OpResettlementApplicationController::class, 'opSearchBySerial'])->name('applications.op-search-by-serial');
+        Route::post('/applications/op-resettlement/op-match-existing', [OpResettlementApplicationController::class, 'opMatchExisting'])->name('applications.op-match-existing');
+        Route::post('/applications/op-resettlement/op-capture-and-link', [OpResettlementApplicationController::class, 'opCaptureAndLink'])->name('applications.op-capture-and-link');
+        Route::post('/applications/op-resettlement/op-check-duplicates', [OpResettlementApplicationController::class, 'opCheckDuplicates'])->name('applications.op-check-duplicates');
+        Route::post('/applications/op-resettlement/op-batch-capture', [OpResettlementApplicationController::class, 'opBatchCapture'])->name('applications.op-batch-capture');
+        Route::post('/applications/op-resettlement/op-match-tot-batch', [OpResettlementApplicationController::class, 'matchTotBatchToOps'])->name('applications.op-match-tot-batch');
+        Route::post('/applications/op-resettlement/op-link-commissioned', [OpResettlementApplicationController::class, 'linkOpBatchToCommissioned'])->name('applications.op-link-commissioned');
+        Route::get('/applications/op-resettlement/op-next-temp-fileno', [OpResettlementApplicationController::class, 'opNextTempFileno'])->name('applications.op-next-temp-fileno');
+        Route::get('/applications/op-resettlement/op-districts', [OpResettlementApplicationController::class, 'opDistricts'])->name('applications.op-districts');
+        Route::get('/applications/op-resettlement/op-lgas', [OpResettlementApplicationController::class, 'opLgas'])->name('applications.op-lgas');
+        Route::post('/applications/op-resettlement/op-update-tot', [OpResettlementApplicationController::class, 'opUpdateTot'])->name('applications.op-update-tot');
         Route::get('/applications/op-resettlement/{id}/capture-edit', [OpResettlementApplicationController::class, 'captureEdit'])->name('applications.capture-edit')->where('id', '[0-9]+|pra-[0-9]+|ic-[0-9]+');
         Route::get('/applications/match-op/preview', [OpResettlementApplicationController::class, 'matchOpPreview'])->name('applications.match-op-preview');
         Route::post('/applications/match-op', [OpResettlementApplicationController::class, 'matchOp'])->name('applications.match-op');

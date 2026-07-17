@@ -9,13 +9,177 @@ use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 
 class OpResettlementApplicationController extends Controller
 {
+    /**
+     * Collapse a batch's first/last file numbers into a range label.
+     *
+     * Port of the renderer in generate_fileno/mls_js.blade.php: RES-2026-2385 + RES-2026-2392
+     * becomes RES-2026-2385-2392. Falls back to the plain file number when the two do not
+     * share a prefix or the batch holds a single file.
+     */
+    private function buildBatchRangeLabel(string $firstFile, string $lastFile): string
+    {
+        $first = strtoupper(trim($firstFile));
+        $last = strtoupper(trim($lastFile));
+
+        if ($first === '' || $last === '' || $first === $last) {
+            return $first !== '' ? $first : ($last !== '' ? $last : '—');
+        }
+
+        $firstParts = explode('-', $first);
+        $lastParts = explode('-', $last);
+
+        if (count($lastParts) < 2 || count($firstParts) !== count($lastParts)) {
+            return $last;
+        }
+
+        $firstPrefix = implode('-', array_slice($firstParts, 0, -1));
+        $lastPrefix = implode('-', array_slice($lastParts, 0, -1));
+
+        if ($firstPrefix !== $lastPrefix) {
+            return $last;
+        }
+
+        return $lastPrefix . '-' . end($firstParts) . '-' . end($lastParts);
+    }
+
+    /**
+     * Lean record set for the OP Batch Commissioning view.
+     *
+     * The main FC query carries per-row correlated subqueries (MAX(id) on mls_file_no,
+     * several OUTER APPLYs) that are affordable for a 25-row page and ruinous for the
+     * full 374-row batch set — it measured ~73s. The grouped view only needs the file
+     * number, title, land use, batch and commissioning stamp, so fetch exactly that.
+     *
+     * INNER JOIN to pra deliberately: it drops BATCH-20260610-1781088970, whose two files
+     * have no pra row, matching the pra-driven behaviour of the main query. That batch is
+     * flagged status='ignored' in pra_tot_staging2.
+     */
+    private function fetchOpBatchRecords(): \Illuminate\Support\Collection
+    {
+        return DB::connection('sqlsrv')
+            ->table('mls_file_no as m')
+            ->join('pra as p', function ($join) {
+                $join->whereRaw("UPPER(LTRIM(RTRIM(p.mlsFNo))) = UPPER(LTRIM(RTRIM(m.full_file_number)))")
+                    ->whereRaw('p.op_batch IS NOT NULL');
+            })
+            ->whereNotNull('m.op_batch')
+            ->select([
+                'm.id as mls_id',
+                'm.full_file_number',
+                'm.batch_no',
+                'm.op_batch',
+                'm.serial_number',
+                'm.file_name',
+                'm.created_by',
+                'm.customer_type',
+                'm.land_use as mls_land_use',
+                'm.con_commissioned_at',
+                'm.commissioning_date',
+                'm.commissioning_time',
+                'm.created_at as mls_created_at',
+                'p.id as pra_id',
+                'p.Grantee',
+                'p.land_use as pra_land_use',
+                // Location: pra first, mls_file_no as fallback. tp_no comes from
+                // mls_file_no only — pra.tp_no is NULL on every one of these rows.
+                DB::raw("COALESCE(NULLIF(LTRIM(RTRIM(p.plot_no)), ''), NULLIF(LTRIM(RTRIM(m.plot_no)), '')) as plot_no"),
+                DB::raw("NULLIF(LTRIM(RTRIM(m.tp_no)), '') as tp_no"),
+                DB::raw("COALESCE(NULLIF(LTRIM(RTRIM(p.lgsaOrCity)), ''), NULLIF(LTRIM(RTRIM(m.lga)), '')) as lga"),
+                DB::raw("COALESCE(
+                    NULLIF(LTRIM(RTRIM(p.location)), ''),
+                    NULLIF(LTRIM(RTRIM(p.property_description)), ''),
+                    NULLIF(LTRIM(RTRIM(m.location)), '')
+                ) as location"),
+            ])
+            ->orderByDesc('m.batch_no')
+            ->orderBy('m.serial_number')
+            ->get()
+            ->map(function ($row) {
+                // con_commissioned_at is NULL on every batch row — the stamp lives in
+                // commissioning_date + commissioning_time.
+                $stamp = $row->con_commissioned_at ?: ($row->commissioning_date ?: $row->mls_created_at);
+                $date = null;
+                if ($stamp) {
+                    try { $date = Carbon::parse($stamp); } catch (\Throwable $e) { $date = null; }
+                }
+
+                $time = null;
+                if ($row->commissioning_time) {
+                    try { $time = Carbon::parse((string) $row->commissioning_time); } catch (\Throwable $e) { $time = null; }
+                } elseif ($row->con_commissioned_at) {
+                    try { $time = Carbon::parse($row->con_commissioned_at); } catch (\Throwable $e) { $time = null; }
+                }
+
+                $created = null;
+                if ($row->mls_created_at) {
+                    try { $created = Carbon::parse($row->mls_created_at); } catch (\Throwable $e) { $created = null; }
+                }
+
+                $rawLandUse = strtoupper(trim((string) ($row->mls_land_use ?: $row->pra_land_use ?: '')));
+                $landUseMap = [
+                    'RES' => 'RESIDENTIAL', 'COM' => 'COMMERCIAL',
+                    'IND' => 'INDUSTRIAL', 'AGR' => 'AGRICULTURAL',
+                ];
+
+                return [
+                    'id' => $row->mls_id,
+                    'pra_id' => $row->pra_id,
+                    'mls_file_no' => strtoupper((string) $row->full_file_number),
+                    'customer_type' => $row->customer_type ? strtoupper((string) $row->customer_type) : '—',
+                    'file_title' => $row->Grantee
+                        ? strtoupper((string) $row->Grantee)
+                        : ($row->file_name ? strtoupper((string) $row->file_name) : '—'),
+                    'land_use' => $rawLandUse !== '' ? ($landUseMap[$rawLandUse] ?? $rawLandUse) : '—',
+                    'tp_no' => $row->tp_no ? strtoupper((string) $row->tp_no) : '—',
+                    'plot_no' => $row->plot_no ? strtoupper((string) $row->plot_no) : '—',
+                    'lga' => $row->lga ? strtoupper((string) $row->lga) : '—',
+                    'location' => $row->location ? strtoupper((string) $row->location) : '—',
+                    'commissioned_by' => $row->created_by ? strtoupper((string) $row->created_by) : '—',
+                    'time_commissioned' => $time ? strtoupper($time->format('g:i A')) : '—',
+                    'date_commissioned' => $date ? strtoupper($date->format('M d, Y')) : '—',
+                    'date_created' => $created ? strtoupper($created->format('M d, Y')) : '—',
+                    'batch_no' => $row->batch_no ? trim((string) $row->batch_no) : null,
+                    'op_batch' => $row->op_batch ? trim((string) $row->op_batch) : null,
+                    'serial_number' => $row->serial_number !== null ? (int) $row->serial_number : null,
+                ];
+            });
+    }
+
+    /**
+     * Collapse one field across a batch's records into a single cell value.
+     *
+     * A batch row stands for N files. Where every file agrees, show the value; where they
+     * differ, say so rather than showing the first file's value as if it spoke for all —
+     * 13 of 68 batches genuinely carry different plots. '—' means no file had a value.
+     */
+    private function collapseBatchField($records, string $key): string
+    {
+        $values = collect($records)
+            ->pluck($key)
+            ->map(fn($v) => trim((string) $v))
+            ->filter(fn($v) => $v !== '' && $v !== '—')
+            ->unique()
+            ->values();
+
+        if ($values->isEmpty()) {
+            return '—';
+        }
+        if ($values->count() === 1) {
+            return (string) $values->first();
+        }
+
+        return 'MULTIPLE (' . $values->count() . ')';
+    }
+
     public function index(Request $request): View
     {
         set_time_limit(120);
@@ -25,6 +189,18 @@ class OpResettlementApplicationController extends Controller
         $offset = ($page - 1) * $limit;
         $isChangeOfName = trim((string) $request->query('type')) === 'change-of-name';
         $recordType = $request->query('record_type'); // fc or fefr
+
+        // OP Batch Commissioning view: only records flagged with op_batch, grouped by
+        // batch_no. These were commissioned through the Batch Mode that was enabled by
+        // mistake, so they are scattered across the FC listing by commissioning date.
+        // The set is small (~374) — show it whole rather than paginating a grouped view.
+        $opBatchMode = $request->boolean('op_batch');
+        $opBatchStart = microtime(true);
+        if ($opBatchMode) {
+            $limit = 500;
+            $page = 1;
+            $offset = 0;
+        }
 
         $hasSqlsrvColumn = static function (string $table, string $column): bool {
             static $cache = [];
@@ -245,6 +421,9 @@ class OpResettlementApplicationController extends Controller
                 'mfn.source_instrument_capture_id',
                 'mfn.source_pra_id',
                 'mfn.con_commissioned_at',
+                'mfn.batch_no',
+                'mfn.op_batch',
+                'mfn.serial_number as mfn_serial_number',
                 'source_capture.purpose as source_purpose',
                 'source_capture.land_use as source_land_use',
                 'source_capture.district as source_district',
@@ -292,6 +471,18 @@ class OpResettlementApplicationController extends Controller
             });
         }
 
+        // OP Batch Commissioning: restrict to op_batch-flagged files. Uses EXISTS for the
+        // same reason as the fc/fefr filters above — a WHERE on the mfn join column forces
+        // SQL Server to materialize the correlated MAX(id) for every candidate row.
+        if ($opBatchMode) {
+            $query->whereExists(function ($q) {
+                $q->select(DB::raw(1))
+                    ->from('mls_file_no as mfn_ob')
+                    ->whereRaw("mfn_ob.full_file_number = COALESCE(NULLIF(p.mlsFNo, ''), p.fileno)")
+                    ->whereNotNull('mfn_ob.op_batch');
+            });
+        }
+
         if ($search = trim((string) $request->input('search'))) {
             $query->where(function ($builder) use ($search, $praFileNoExpr, $resolvedCustomerTypeSql) {
                 $builder
@@ -326,6 +517,15 @@ class OpResettlementApplicationController extends Controller
                 ->where('p.prop_id', '!=', '')
                 ->whereRaw($instrumentWhereClause);
 
+            if ($opBatchMode) {
+                $lightCountQuery->whereExists(function ($q) {
+                    $q->select(DB::raw(1))
+                        ->from('mls_file_no as mfn_ob')
+                        ->whereRaw("mfn_ob.full_file_number = COALESCE(NULLIF(p.mlsFNo, ''), p.fileno)")
+                        ->whereNotNull('mfn_ob.op_batch');
+                });
+            }
+
             if ($recordType === 'fc') {
                 $lightCountQuery->join('mls_file_no as mfn_c', function ($j) {
                     $j->whereRaw("mfn_c.full_file_number = COALESCE(NULLIF(p.mlsFNo, ''), p.fileno)")
@@ -348,6 +548,14 @@ class OpResettlementApplicationController extends Controller
         $totalPages = max(1, (int) ceil($totalRecords / $limit));
         $page = min($page, $totalPages);
 
+        // OP Batch mode uses a lean query — see fetchOpBatchRecords(). Running the main
+        // query over all 374 rows costs ~73s because of its per-row correlated subqueries.
+        if ($opBatchMode) {
+            $records = $this->fetchOpBatchRecords();
+            $totalRecords = $records->count();
+            $totalPages = 1;
+            $page = 1;
+        } else {
         $records = $query
             ->offset($offset)
             ->limit($limit)
@@ -452,6 +660,9 @@ class OpResettlementApplicationController extends Controller
                     'source_mls_file_no_id' => $row->mls_file_no_id ?? null,
                     'mfn_full_file_number' => $row->mfn_full_file_number ?? null,
                     'op_serial_number' => $row->op_serial_number ? strtoupper((string) $row->op_serial_number) : '—',
+                    'batch_no' => $row->batch_no ? trim((string) $row->batch_no) : null,
+                    'op_batch' => $row->op_batch ? trim((string) $row->op_batch) : null,
+                    'serial_number' => $row->mfn_serial_number !== null ? (int) $row->mfn_serial_number : null,
                     'scenario_type' => 'standard', // placeholder; overwritten below
                 ];
             });
@@ -488,6 +699,58 @@ class OpResettlementApplicationController extends Controller
 
             return $record;
         });
+        } // end !$opBatchMode
+
+        // ── OP Batch Commissioning: collapse to one entry per batch ──
+        // Mirrors the grouping in generate_fileno/mls_js.blade.php: a batch renders as a
+        // single serial-range row (PREFIX-FIRST-LAST) plus a Group (N) affordance.
+        $opBatchGroups = collect();
+        if ($opBatchMode) {
+            $opBatchGroups = $records
+                ->filter(fn($r) => !empty($r['batch_no']))
+                ->groupBy('batch_no')
+                ->map(function ($grp, $batchNo) {
+                    $sorted = $grp->sortBy(fn($r) => $r['serial_number'] ?? PHP_INT_MAX)->values();
+                    $first = $sorted->first();
+                    $last = $sorted->last();
+
+                    return [
+                        'batch_no' => $batchNo,
+                        'count' => $sorted->count(),
+                        'first_file' => $first['mls_file_no'] ?? '—',
+                        'last_file' => $last['mls_file_no'] ?? '—',
+                        'range_label' => $this->buildBatchRangeLabel(
+                            $first['mls_file_no'] ?? '',
+                            $last['mls_file_no'] ?? ''
+                        ),
+                        'customer_type' => $this->collapseBatchField($sorted, 'customer_type'),
+                        'file_title' => $this->collapseBatchField($sorted, 'file_title'),
+                        'land_use' => $this->collapseBatchField($sorted, 'land_use'),
+                        'tp_no' => $this->collapseBatchField($sorted, 'tp_no'),
+                        'plot_no' => $this->collapseBatchField($sorted, 'plot_no'),
+                        'lga' => $this->collapseBatchField($sorted, 'lga'),
+                        'location' => $this->collapseBatchField($sorted, 'location'),
+                        'commissioned_by' => $this->collapseBatchField($sorted, 'commissioned_by'),
+                        'time_commissioned' => $this->collapseBatchField($sorted, 'time_commissioned'),
+                        'date_commissioned' => $this->collapseBatchField($sorted, 'date_commissioned'),
+                        'date_created' => $this->collapseBatchField($sorted, 'date_created'),
+                        'records' => $sorted->all(),
+                    ];
+                })
+                ->sortByDesc(fn($g) => $g['batch_no'])
+                ->values();
+
+            Log::channel('op_batch')->info('OP Batch view built', [
+                'user' => Auth::id(),
+                'records' => $records->count(),
+                'batches' => $opBatchGroups->count(),
+                'total_records' => $totalRecords,
+                'build_ms' => (int) round((microtime(true) - $opBatchStart) * 1000),
+                'peak_mem_mb' => round(memory_get_peak_usage(true) / 1048576, 1),
+                'largest_batch' => $opBatchGroups->max('count'),
+            ]);
+
+        }
 
         // Data for the instrument-capture modal
         $states = DB::connection('sqlsrv')->table('States')->orderBy('StateName')->get();
@@ -596,6 +859,28 @@ class OpResettlementApplicationController extends Controller
             $totalOssRecords = (int) $records->count();
         }
 
+        // Page weight watch. The browser OOM on this screen is driven by the shared dropdown
+        // lists, not by the rows: every district <select> across the included modals renders
+        // one <option> per district, ~23 selects deep. Log the inputs so a regression here is
+        // visible instead of guessed at.
+        if ($opBatchMode) {
+            $districtCount = is_countable($districts) ? count($districts) : 0;
+            $estimatedOptionNodes = $districtCount * 23;
+            Log::channel('op_batch')->info('Page weight inputs', [
+                'districts' => $districtCount,
+                'lgas' => is_countable($lgas) ? count($lgas) : 0,
+                'street_names' => is_countable($streetNames) ? count($streetNames) : 0,
+                'states' => is_countable($states) ? count($states) : 0,
+                'est_district_option_nodes' => $estimatedOptionNodes,
+            ]);
+            if ($estimatedOptionNodes > 20000) {
+                Log::channel('op_batch')->warning('Dropdown option count is in browser-OOM territory', [
+                    'est_district_option_nodes' => $estimatedOptionNodes,
+                    'hint' => 'District lists are duplicated across the included modals. Pre-existing, not caused by the OP Batch view. Populate them on demand instead of server-rendering every <option>.',
+                ]);
+            }
+        }
+
         return view('lands_one_stop_shop.applications', [
             'pageTitle' => 'Applications (Occupancy Permit)',
             'records' => $records,
@@ -613,7 +898,1171 @@ class OpResettlementApplicationController extends Controller
             'totalOssRecords' => $totalOssRecords,
             'todayCount' => $todayCount,
             'recordType' => $recordType,
+            'opBatchMode' => $opBatchMode,
+            'opBatchGroups' => $opBatchGroups,
         ]);
+    }
+
+    /**
+     * An OP is available for matching only when nothing already claims it.
+     *
+     * Two link representations exist in this schema and they disagree in the wild (266 of
+     * 312 TOTs carrying source_op_id do NOT share their OP's prop_id), so both are checked:
+     * an explicit source_op_id pointer, and the shared-prop_id pairing directOpCapture uses.
+     * Either one means the OP is spoken for and must not be matched to a second TOT.
+     */
+    private function applyUnlinkedOpFilter($query, string $table, string $idColumn, string $propColumn): void
+    {
+        $query->whereNotExists(function ($q) use ($table, $idColumn) {
+            $q->select(DB::raw(1))->from('pra as lnk')
+                ->whereRaw("lnk.source_op_id = $idColumn")
+                ->where('lnk.source_op_table', $table);
+        })->whereNotExists(function ($q) use ($propColumn) {
+            $q->select(DB::raw(1))->from('pra as lnk2')
+                ->whereRaw("lnk2.prop_id = CAST($propColumn AS nvarchar(100))")
+                ->where('lnk2.instrument_type', 'LIKE', '%Transfer of Title%');
+        });
+    }
+
+    /**
+     * Search unlinked OPs by serial number, across pra and instrument_capture.
+     *
+     * Serials are heavily reused — ~3 OPs per serial on average, some serials carry 20+ —
+     * so this routinely returns several candidates and the caller must pick one.
+     */
+    public function opSearchBySerial(Request $request): JsonResponse
+    {
+        $serial = trim((string) $request->query('serial'));
+        if ($serial === '') {
+            return response()->json(['success' => false, 'message' => 'serial is required'], 422);
+        }
+
+        $praQuery = DB::connection('sqlsrv')->table('pra as o')
+            ->whereRaw("LTRIM(RTRIM(o.op_serial_number)) = ?", [$serial])
+            ->where('o.instrument_type', 'LIKE', '%Occupancy Permit%')
+            ->where(function ($q) { $q->whereNull('o.is_deleted')->orWhere('o.is_deleted', 0); });
+        $this->applyUnlinkedOpFilter($praQuery, 'pra', 'o.id', 'o.prop_id');
+
+        $praOps = $praQuery->select([
+            'o.id', 'o.prop_id', 'o.op_type', 'o.op_serial_number', 'o.mlsFNo', 'o.fileno',
+            'o.temp_fileno', 'o.party_1', 'o.party_2', 'o.transaction_date', 'o.regNo',
+            'o.serialNo', 'o.pageNo', 'o.volumeNo', 'o.plot_no', 'o.tp_no',
+            'o.lgsaOrCity as lga', 'o.location', 'o.property_description', 'o.land_use', 'o.created_at',
+        ])->orderByDesc('o.id')->limit(50)->get()
+          ->map(fn($r) => [
+              'source_table' => 'pra',
+              'op_id' => $r->id,
+              'prop_id' => $r->prop_id ?: '—',
+              'op_type' => $r->op_type ?: '—',
+              'op_serial_number' => $r->op_serial_number ?: '—',
+              'file_no' => $r->mlsFNo ?: ($r->fileno ?: ($r->temp_fileno ?: '—')),
+              'grantor' => $r->party_1 ?: '—',
+              'allottee' => $r->party_2 ?: '—',   // OP Part 2 — becomes the TOT's Part 1
+              'transaction_date' => $r->transaction_date ?: null,
+              'reg_no' => $r->regNo ?: '—',
+              'serial_no' => $r->serialNo ?: '',
+              'page_no' => $r->pageNo ?: '',
+              'volume_no' => $r->volumeNo ?: '',
+              'plot_no' => $r->plot_no ?: '—',
+              'tp_no' => $r->tp_no ?: '—',
+              'lga' => $r->lga ?: '—',
+              'location' => $r->location ?: ($r->property_description ?: '—'),
+              'land_use' => $r->land_use ?: '',
+              'created_at' => $r->created_at,
+          ]);
+
+        $icQuery = DB::connection('sqlsrv')->table('instrument_capture as o')
+            ->whereRaw("LTRIM(RTRIM(o.op_serial_number)) = ?", [$serial])
+            ->where('o.instrument_type', 'Occupancy Permit (OP)')
+            ->where(function ($q) { $q->whereNull('o.is_deleted')->orWhere('o.is_deleted', 0); });
+        $this->applyUnlinkedOpFilter($icQuery, 'instrument_capture', 'o.id', 'o.prop_id');
+
+        $icOps = $icQuery->select([
+            'o.id', 'o.prop_id', 'o.op_type', 'o.op_serial_number', 'o.mlsFNo', 'o.temp_fileno',
+            'o.party_1_name', 'o.party_2_name', 'o.instrument_date', 'o.registration_number',
+            'o.serial_no', 'o.page_no', 'o.volume_no', 'o.plot_number', 'o.tp_no',
+            'o.lga', 'o.property_location', 'o.property_description', 'o.land_use', 'o.created_at',
+        ])->orderByDesc('o.id')->limit(50)->get()
+          ->map(fn($r) => [
+              'source_table' => 'instrument_capture',
+              'op_id' => $r->id,
+              'prop_id' => $r->prop_id ?: '—',
+              'op_type' => $r->op_type ?: '—',
+              'op_serial_number' => $r->op_serial_number ?: '—',
+              'file_no' => $r->mlsFNo ?: ($r->temp_fileno ?: '—'),
+              'grantor' => $r->party_1_name ?: '—',
+              'allottee' => $r->party_2_name ?: '—',
+              'transaction_date' => $r->instrument_date ?: null,
+              'reg_no' => $r->registration_number ?: '—',
+              'serial_no' => $r->serial_no ?: '',
+              'page_no' => $r->page_no ?: '',
+              'volume_no' => $r->volume_no ?: '',
+              'plot_no' => $r->plot_number ?: '—',
+              'tp_no' => $r->tp_no ?: '—',
+              'lga' => $r->lga ?: '—',
+              'location' => $r->property_location ?: ($r->property_description ?: '—'),
+              'land_use' => $r->land_use ?: '',
+              'created_at' => $r->created_at,
+          ]);
+
+        $all = $praOps->concat($icOps)->values();
+
+        Log::channel('op_batch')->info('OP serial search', [
+            'user' => Auth::id(),
+            'serial' => $serial,
+            'pra_hits' => $praOps->count(),
+            'ic_hits' => $icOps->count(),
+            'total' => $all->count(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'serial' => $serial,
+            'count' => $all->count(),
+            'data' => $all,
+        ]);
+    }
+
+    /**
+     * Resolve the Awaiting TOT and refuse anything that is not a valid target.
+     *
+     * Returns [$tot, null] on success or [null, JsonResponse] on rejection.
+     */
+    private function resolveAwaitingTot($totPraId): array
+    {
+        $tot = DB::connection('sqlsrv')->table('pra')->where('id', $totPraId)->first();
+
+        if (!$tot) {
+            return [null, response()->json(['success' => false, 'message' => 'Awaiting TOT not found.'], 404)];
+        }
+        if (empty($tot->op_batch)) {
+            return [null, response()->json([
+                'success' => false,
+                'message' => 'That row is not part of the OP batch remediation.',
+            ], 422)];
+        }
+        // Prevent duplicate links: a TOT that already points at an OP is done.
+        if (!empty($tot->source_op_id)) {
+            return [null, response()->json([
+                'success' => false,
+                'message' => 'This TOT is already linked to an OP (' . $tot->source_op_table . ' #' . $tot->source_op_id . ').',
+            ], 409)];
+        }
+
+        return [$tot, null];
+    }
+
+    /**
+     * Write the link. Deliberately does NOT touch prop_id on either row — the explicit
+     * source_op_id pointer is the record of truth here, and propids:rebuild-all is the tool
+     * that reconciles parcel identity from that lineage.
+     */
+    private function linkOpToTot(object $tot, string $opTable, $opId, string $allottee, ?string $location = null, ?string $tempFileno = null): void
+    {
+        $now = now();
+
+        $totUpdate = [
+            'source_op_table' => $opTable,
+            'source_op_id' => $opId,
+            // The whole point: the TOT's Part 1 is the OP's allottee (OP Part 2).
+            'party_1' => $allottee,
+            'Grantor' => $allottee,
+            'updated_at' => $now->toDateTimeString(),
+            'updated_by' => (string) Auth::id(),
+        ];
+        // Carry the OP's / captured location onto the TOT so a blank TOT location gets filled.
+        $location = $location !== null ? trim($location) : '';
+        if ($location !== '') {
+            $totUpdate['location'] = $location;
+            $totUpdate['property_description'] = $location;
+        }
+        // The ToT shares the OP's TEMP file number (correct pair shape) — it keeps its own
+        // commissioned mlsFNo, but the temp_fileno links it to the OP.
+        $tempFileno = $tempFileno !== null ? trim($tempFileno) : '';
+        if ($tempFileno !== '') {
+            $totUpdate['temp_fileno'] = $tempFileno;
+        }
+
+        DB::connection('sqlsrv')->table('pra')->where('id', $tot->id)->update($totUpdate);
+
+        DB::connection('sqlsrv')->table('pra_tot_staging2')
+            ->where('op_batch', $tot->op_batch)
+            ->update([
+                'status' => 'linked',
+                'is_processed' => 1,
+                'processed_at' => $now,
+                'processed_by' => Auth::id(),
+                'has_op_row' => 1,
+                'remarks' => 'Linked to ' . $opTable . ' #' . $opId . ' on ' . $now->toDateString()
+                    . '; party_1 set to OP allottee',
+            ]);
+    }
+
+    /**
+     * Match an EXISTING unlinked OP to an Awaiting TOT. Creates no OP record.
+     */
+    public function opMatchExisting(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'tot_pra_id' => 'required|integer',
+            'op_table' => 'required|string|in:pra,instrument_capture',
+            'op_id' => 'required|integer',
+        ]);
+
+        [$tot, $error] = $this->resolveAwaitingTot($validated['tot_pra_id']);
+        if ($error) {
+            Log::channel('op_batch')->warning('Match OP rejected', [
+                'user' => Auth::id(), 'tot_pra_id' => $validated['tot_pra_id'],
+                'status' => $error->getStatusCode(),
+            ]);
+            return $error;
+        }
+
+        // Re-check availability at write time: the candidate list may be stale.
+        $opTable = $validated['op_table'];
+        $opQuery = DB::connection('sqlsrv')->table($opTable . ' as o')->where('o.id', $validated['op_id']);
+        $this->applyUnlinkedOpFilter($opQuery, $opTable, 'o.id', 'o.prop_id');
+        $op = $opQuery->first();
+
+        if (!$op) {
+            Log::channel('op_batch')->warning('Match OP rejected: OP unavailable', [
+                'user' => Auth::id(), 'op_table' => $opTable, 'op_id' => $validated['op_id'],
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'That OP is no longer available — it may have been linked to another TOT. Search again.',
+            ], 409);
+        }
+
+        $allottee = trim((string) ($opTable === 'pra' ? ($op->party_2 ?? '') : ($op->party_2_name ?? '')));
+        if ($allottee === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'That OP has no allottee name, so the TOT allottee cannot be set from it.',
+            ], 422);
+        }
+
+        // The OP's own location (pra.location / IC.property_location), backfilled onto the TOT.
+        $opLocation = $opTable === 'pra'
+            ? ($op->location ?? $op->property_description ?? null)
+            : ($op->property_location ?? $op->property_description ?? null);
+        $opTemp = $op->temp_fileno ?? null;
+
+        try {
+            DB::connection('sqlsrv')->transaction(function () use ($tot, $opTable, $op, $allottee, $opLocation, $opTemp) {
+                $this->linkOpToTot($tot, $opTable, $op->id, $allottee, $opLocation, $opTemp);
+            });
+        } catch (\Throwable $e) {
+            Log::channel('op_batch')->error('Match OP failed', [
+                'user' => Auth::id(), 'tot_pra_id' => $tot->id,
+                'op_table' => $opTable, 'op_id' => $op->id, 'error' => $e->getMessage(),
+            ]);
+            return response()->json(['success' => false, 'message' => 'Link failed: ' . $e->getMessage()], 500);
+        }
+
+        Log::channel('op_batch')->info('Matched existing OP to Awaiting TOT', [
+            'user' => Auth::id(),
+            'op_batch' => $tot->op_batch,
+            'tot_pra_id' => $tot->id,
+            'op_table' => $opTable,
+            'op_id' => $op->id,
+            'party_1_before' => $tot->party_1,
+            'party_1_after' => $allottee,
+            'created_op' => false,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'OP matched and linked. Allottee updated to ' . $allottee . '.',
+            'op_batch' => $tot->op_batch,
+            'allottee' => $allottee,
+        ]);
+    }
+
+    /**
+     * Allocate the next temporary file number (TEMP-XXXXX) from temp_fileno_sequence.
+     * Same allocation the standalone Capture OP card uses (InstrumentController::getNextTempFileNo):
+     * insert a row marked used so the id can never be handed out twice. Shown as the card's
+     * System FileNo, then submitted back so the captured OP carries exactly that temp number.
+     */
+    public function opNextTempFileno(): JsonResponse
+    {
+        try {
+            $seqId = DB::connection('sqlsrv')->table('temp_fileno_sequence')->insertGetId([
+                'created_by' => Auth::id(),
+                'is_used' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'temp_fileno' => 'TEMP-' . str_pad((string) $seqId, 5, '0', STR_PAD_LEFT),
+            ]);
+        } catch (\Throwable $e) {
+            Log::channel('op_batch')->error('opNextTempFileno failed', ['user' => Auth::id(), 'error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => 'Could not allocate a temp file number.'], 500);
+        }
+    }
+
+    /**
+     * Capture a NEW OP and link it to the Awaiting TOT in one transaction.
+     */
+    public function opCaptureAndLink(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'tot_pra_id' => 'required|integer',
+            'grantee' => 'required|string|max:255',        // the allottee
+            'op_type' => 'required|string|in:OP Resettlement,OP Direct Allocation',
+            'status' => 'required|string|in:Normal',
+            'system_fileno' => 'nullable|string|max:50',   // TEMP-XXXXX the OP will carry
+            'op_serial_number' => 'nullable|string|max:100',
+            'transaction_date' => 'nullable|date',
+            'land_use' => 'nullable|string|max:100',
+            'location' => 'nullable|string|max:1000',
+            'plot_no' => 'nullable|string|max:100',
+            'serial_no' => 'nullable|string|max:50',
+            'page_no' => 'nullable|string|max:50',
+            'volume_no' => 'nullable|string|max:50',
+            'deeds_date' => 'nullable|string|max:100',
+            'deeds_time' => 'nullable|string|max:100',
+        ]);
+
+        [$tot, $error] = $this->resolveAwaitingTot($validated['tot_pra_id']);
+        if ($error) {
+            Log::channel('op_batch')->warning('Capture & Link rejected', [
+                'user' => Auth::id(), 'tot_pra_id' => $validated['tot_pra_id'],
+                'status' => $error->getStatusCode(),
+            ]);
+            return $error;
+        }
+
+        $allottee = trim($validated['grantee']);
+        // Hand-entered location falls back to whatever the TOT already had.
+        $location = trim((string) ($validated['location'] ?? '')) ?: ($tot->location ?: $tot->property_description);
+        // The OP carries a TEMP file number — NOT the TOT's commissioned file number, which
+        // belongs to the TOT alone. Trust the one allocated when the card opened; if it is
+        // missing/malformed, allocate a fresh one now.
+        $systemFileno = trim((string) ($validated['system_fileno'] ?? ''));
+        if (!preg_match('/^TEMP-\d+$/i', $systemFileno)) {
+            $seqId = DB::connection('sqlsrv')->table('temp_fileno_sequence')->insertGetId([
+                'created_by' => Auth::id(), 'is_used' => 1, 'created_at' => now(), 'updated_at' => now(),
+            ]);
+            $systemFileno = 'TEMP-' . str_pad((string) $seqId, 5, '0', STR_PAD_LEFT);
+        }
+        $now = now();
+
+        try {
+            $opId = DB::connection('sqlsrv')->transaction(function () use ($tot, $validated, $allottee, $location, $systemFileno, $now) {
+                // New OP mirrors directOpCapture's Row 1: Grantor is the State, Grantee is the
+                // allottee, mlsFNo stays NULL, and the OP carries its own TEMP file number —
+                // the commissioned file number belongs to the TOT, never the OP.
+                $opId = DB::connection('sqlsrv')->table('pra')->insertGetId([
+                    'mlsFNo' => null,
+                    'fileno' => $systemFileno,
+                    'temp_fileno' => $systemFileno,
+                    'prop_id' => $tot->prop_id,
+                    'transaction_type' => 'Occupancy Permit (OP)',
+                    'instrument_type' => 'Occupancy Permit (OP)',
+                    'status' => $validated['status'],       // required, currently only 'Normal'
+                    // ?? throughout: validate() returns only the keys actually submitted,
+                    // so a partially-filled form would otherwise throw on the absent ones.
+                    'op_type' => $validated['op_type'],     // required
+                    'op_serial_number' => ($validated['op_serial_number'] ?? null) ?: null,
+                    'transaction_date' => ($validated['transaction_date'] ?? null) ?: null,
+                    'serialNo' => ($validated['serial_no'] ?? null) ?: null,
+                    'pageNo' => ($validated['page_no'] ?? null) ?: null,
+                    'volumeNo' => ($validated['volume_no'] ?? null) ?: null,
+                    'deeds_date' => ($validated['deeds_date'] ?? null) ?: null,
+                    'deeds_time' => ($validated['deeds_time'] ?? null) ?: null,
+                    'location' => $location,
+                    'property_description' => $location,
+                    'plot_no' => ($validated['plot_no'] ?? null) ?: $tot->plot_no,
+                    'tp_no' => $tot->tp_no,
+                    'lgsaOrCity' => $tot->lgsaOrCity,
+                    'land_use' => ($validated['land_use'] ?? null) ?: $tot->land_use,
+                    'source' => 'OP Batch Commissioning',
+                    'system_source' => 'OSSOPCHANGEOFNAME',
+                    'Grantor' => 'Kano State Government',
+                    'Grantee' => $allottee,
+                    'party_1' => 'Kano State Government',
+                    'party_2' => $allottee,
+                    'created_by' => (string) Auth::id(),
+                    'created_at' => $now->toDateTimeString(),
+                    'updated_at' => $now->toDateTimeString(),
+                    'is_deleted' => 0,
+                ]);
+
+                $this->linkOpToTot($tot, 'pra', $opId, $allottee, $location, $systemFileno);
+
+                return $opId;
+            });
+        } catch (\Throwable $e) {
+            Log::channel('op_batch')->error('Capture & Link failed', [
+                'user' => Auth::id(), 'tot_pra_id' => $tot->id, 'error' => $e->getMessage(),
+            ]);
+            return response()->json(['success' => false, 'message' => 'Capture failed: ' . $e->getMessage()], 500);
+        }
+
+        Log::channel('op_batch')->info('Captured new OP and linked to Awaiting TOT', [
+            'user' => Auth::id(),
+            'op_batch' => $tot->op_batch,
+            'tot_pra_id' => $tot->id,
+            'op_table' => 'pra',
+            'op_id' => $opId,
+            'party_1_before' => $tot->party_1,
+            'party_1_after' => $allottee,
+            'created_op' => true,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'OP captured and linked. Allottee updated to ' . $allottee . '.',
+            'op_batch' => $tot->op_batch,
+            'op_id' => $opId,
+            'temp_fileno' => $systemFileno,
+            'allottee' => $allottee,
+        ]);
+    }
+
+    /**
+     * Batch Capture OP — create N UNLINKED Occupancy Permit rows sharing one Batch ID.
+     *
+     * Launched from the OSS Commission New File Number card in Batch Mode. Each OP carries its
+     * own TEMP file number (mlsFNo NULL) and a fresh prop_id; none are linked to a TOT yet
+     * (source_op_id stays NULL). A later TOT commissioning matches them by batch sequence
+     * (matchTotBatchToOps), where a shared prop_id is assigned per pair.
+     *
+     * Row shape mirrors opCaptureAndLink's OP insert; the only differences are the shared
+     * op_batch, the per-OP fresh prop_id, and no linkage.
+     */
+    /**
+     * Flag OP rows that already exist with the same identifying fields, so the user can be
+     * warned before saving a batch that would duplicate an existing Occupancy Permit.
+     *
+     * "Exact match" = an existing OP pra row (instrument_type 'Occupancy Permit (OP)', not
+     * deleted) whose OP Serial Number, Serial No, Page No, Vol No, Plot No AND Party 2 all
+     * equal the ones entered. Comparison is trimmed; SQL Server's default collation is
+     * case-insensitive. Blank incoming fields are skipped (never treated as a wildcard).
+     *
+     * Returns, per submitted OP, whether a duplicate exists and a short description of the
+     * matched record(s). This is advisory only — it never writes and never blocks the save.
+     */
+    public function opCheckDuplicates(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ops' => 'required|array|min:1',
+            'ops.*.sequence' => 'nullable',
+            'ops.*.op_serial_number' => 'nullable|string|max:100',
+            'ops.*.serial_no' => 'nullable|string|max:50',
+            'ops.*.page_no' => 'nullable|string|max:50',
+            'ops.*.volume_no' => 'nullable|string|max:50',
+            'ops.*.plot_no' => 'nullable|string|max:100',
+            'ops.*.party_2' => 'nullable|string|max:255',
+        ]);
+
+        // The identifying fields, mapped to their pra columns. Plot No is intentionally
+        // EXCLUDED — a property's plot may be missing/unknown, so it must not gate the match
+        // (nor be required for one). It is still returned on each match for the user to see.
+        $map = [
+            'op_serial_number' => 'op_serial_number',
+            'serial_no'        => 'serialNo',
+            'page_no'          => 'pageNo',
+            'volume_no'        => 'volumeNo',
+            'party_2'          => 'party_2',
+        ];
+
+        $duplicates = [];
+        foreach ($validated['ops'] as $i => $op) {
+            // Only compare on fields the user actually filled; require the core ones so we
+            // don't match a sparse historical row on a single shared value.
+            $conds = [];
+            foreach ($map as $key => $col) {
+                $val = trim((string) ($op[$key] ?? ''));
+                if ($val === '') continue;
+                $conds[$col] = $val;
+            }
+            // Need the full identifying set present to call something an exact duplicate.
+            if (count($conds) < count($map)) continue;
+
+            $q = DB::connection('sqlsrv')->table('pra')
+                ->where('instrument_type', 'Occupancy Permit (OP)')
+                ->where(function ($w) {
+                    $w->where('is_deleted', 0)->orWhereNull('is_deleted');
+                });
+            foreach ($conds as $col => $val) {
+                $q->whereRaw("LTRIM(RTRIM([$col])) = ?", [$val]);
+            }
+
+            $matches = $q->orderByDesc('id')
+                ->limit(5)
+                ->get(['id', 'fileno', 'temp_fileno', 'mlsFNo', 'op_batch', 'op_serial_number', 'plot_no', 'party_2', 'created_at']);
+
+            if ($matches->isNotEmpty()) {
+                $duplicates[] = [
+                    'sequence' => $op['sequence'] ?? ($i + 1),
+                    'entered'  => [
+                        'op_serial_number' => $op['op_serial_number'] ?? '',
+                        'serial_no' => $op['serial_no'] ?? '',
+                        'page_no' => $op['page_no'] ?? '',
+                        'volume_no' => $op['volume_no'] ?? '',
+                        'plot_no' => $op['plot_no'] ?? '',
+                        'party_2' => $op['party_2'] ?? '',
+                    ],
+                    'matches' => $matches->map(fn ($m) => [
+                        'id' => $m->id,
+                        'file' => $m->mlsFNo ?: ($m->fileno ?: $m->temp_fileno),
+                        'op_batch' => $m->op_batch,
+                        'party_2' => $m->party_2,
+                        'plot_no' => $m->plot_no,
+                    ])->values(),
+                ];
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'has_duplicates' => count($duplicates) > 0,
+            'duplicates' => $duplicates,
+        ]);
+    }
+
+    public function opBatchCapture(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ops' => 'required|array|min:1',
+            'ops.*.op_type' => 'required|string|in:OP Resettlement,OP Direct Allocation',
+            'ops.*.status' => 'required|string|in:Normal',
+            'ops.*.grantee' => 'required|string|max:255',       // the allottee (becomes TOT Part 1 later)
+            'ops.*.update_op_id' => 'nullable|integer',          // existing OP row to backfill instead of inserting
+            'ops.*.system_fileno' => 'nullable|string|max:50',  // TEMP-XXXXX the OP carries
+            'ops.*.op_serial_number' => 'nullable|string|max:100',
+            'ops.*.transaction_date' => 'nullable|date',
+            'ops.*.land_use' => 'nullable|string|max:100',
+            'ops.*.purpose_id' => 'nullable',                     // commission purpose id (for backfill parity)
+            'ops.*.purpose' => 'nullable|string|max:255',         // purpose name → pra.purpose
+            'ops.*.lga' => 'nullable|string|max:150',             // → pra.lgsaOrCity
+            'ops.*.location' => 'nullable|string|max:1000',
+            'ops.*.plot_no' => 'nullable|string|max:100',
+            'ops.*.district' => 'nullable|string|max:150',       // already folded into location; kept for reference
+            'ops.*.serial_no' => 'nullable|string|max:50',
+            'ops.*.page_no' => 'nullable|string|max:50',
+            'ops.*.volume_no' => 'nullable|string|max:50',
+            'ops.*.deeds_date' => 'nullable|string|max:100',
+            'ops.*.deeds_time' => 'nullable|string|max:100',
+        ]);
+
+        // One shared Batch ID for every OP created in this save.
+        $opBatch = 'OPB-' . date('Ymd') . '-' . time();
+        $allocator = app(\App\Services\PropertyIdAllocationService::class);
+        $now = now();
+        $created = [];
+
+        try {
+            DB::connection('sqlsrv')->transaction(function () use ($validated, $opBatch, $allocator, $now, &$created) {
+                $seq = 0;
+                foreach ($validated['ops'] as $op) {
+                    $seq++;
+
+                    $allottee = trim($op['grantee']);
+                    $location = trim((string) ($op['location'] ?? '')) ?: null;
+
+                    // Duplicate that the user chose to backfill: UPDATE the existing OP row in
+                    // place instead of inserting a new one. Keep its identity (fileno, prop_id,
+                    // op_batch, mlsFNo) — only complete the captured/detail fields.
+                    $updateId = isset($op['update_op_id']) ? (int) $op['update_op_id'] : 0;
+                    if ($updateId > 0) {
+                        $existing = DB::connection('sqlsrv')->table('pra')
+                            ->where('id', $updateId)
+                            ->where('instrument_type', 'Occupancy Permit (OP)')
+                            ->first();
+                        if ($existing) {
+                            DB::connection('sqlsrv')->table('pra')->where('id', $updateId)->update([
+                                'status' => $op['status'],
+                                'op_type' => $op['op_type'],
+                                'op_serial_number' => ($op['op_serial_number'] ?? null) ?: null,
+                                'transaction_date' => ($op['transaction_date'] ?? null) ?: null,
+                                'serialNo' => ($op['serial_no'] ?? null) ?: null,
+                                'pageNo' => ($op['page_no'] ?? null) ?: null,
+                                'volumeNo' => ($op['volume_no'] ?? null) ?: null,
+                                'deeds_date' => ($op['deeds_date'] ?? null) ?: null,
+                                'deeds_time' => ($op['deeds_time'] ?? null) ?: null,
+                                'location' => $location,
+                                'property_description' => $location,
+                                'plot_no' => ($op['plot_no'] ?? null) ?: null,
+                                'lgsaOrCity' => ($op['lga'] ?? null) ?: null,
+                                'land_use' => ($op['land_use'] ?? null) ?: null,
+                                'Grantee' => $allottee,
+                                'party_2' => $allottee,
+                                'updated_at' => $now->toDateTimeString(),
+                            ]);
+                            $created[] = [
+                                'sequence' => $seq, 'op_id' => $updateId, 'action' => 'updated',
+                                'temp_fileno' => $existing->temp_fileno ?: ($existing->mlsFNo ?: $existing->fileno),
+                                'prop_id' => $existing->prop_id,
+                            ];
+                            continue;
+                        }
+                        // update_op_id given but the row vanished/isn't an OP — fall through to insert.
+                    }
+
+                    // Trust the TEMP allocated when the card opened; re-allocate if missing/malformed.
+                    $systemFileno = trim((string) ($op['system_fileno'] ?? ''));
+                    if (!preg_match('/^TEMP-\d+$/i', $systemFileno)) {
+                        $seqId = DB::connection('sqlsrv')->table('temp_fileno_sequence')->insertGetId([
+                            'created_by' => Auth::id(), 'is_used' => 1, 'created_at' => $now, 'updated_at' => $now,
+                        ]);
+                        $systemFileno = 'TEMP-' . str_pad((string) $seqId, 5, '0', STR_PAD_LEFT);
+                    }
+
+                    // Fresh parcel identity per OP, keyed on its TEMP. The shared prop_id with a
+                    // TOT is assigned later, at match time.
+                    $propId = $allocator->allocateOrRetrievePropId(
+                        $systemFileno, null, null, null,
+                        ['temp_fileno' => $systemFileno, 'allow_temp_only' => true]
+                    );
+
+                    $opId = DB::connection('sqlsrv')->table('pra')->insertGetId([
+                        'mlsFNo' => null,
+                        'fileno' => $systemFileno,
+                        'temp_fileno' => $systemFileno,
+                        'prop_id' => $propId,
+                        'transaction_type' => 'Occupancy Permit (OP)',
+                        'instrument_type' => 'Occupancy Permit (OP)',
+                        'status' => $op['status'],
+                        'op_type' => $op['op_type'],
+                        'op_serial_number' => ($op['op_serial_number'] ?? null) ?: null,
+                        'transaction_date' => ($op['transaction_date'] ?? null) ?: null,
+                        'serialNo' => ($op['serial_no'] ?? null) ?: null,
+                        'pageNo' => ($op['page_no'] ?? null) ?: null,
+                        'volumeNo' => ($op['volume_no'] ?? null) ?: null,
+                        'deeds_date' => ($op['deeds_date'] ?? null) ?: null,
+                        'deeds_time' => ($op['deeds_time'] ?? null) ?: null,
+                        'location' => $location,
+                        'property_description' => $location,
+                        'plot_no' => ($op['plot_no'] ?? null) ?: null,
+                        'lgsaOrCity' => ($op['lga'] ?? null) ?: null,
+                        'land_use' => ($op['land_use'] ?? null) ?: null,
+                        // NB: pra has no `purpose` column in this DB — Purpose is carried through the
+                        // UI backfill into the commission record (which stores purpose_id), not on pra.
+                        // Shared batch group id; capture order (pra.id asc) is the batch sequence.
+                        'op_batch' => $opBatch,
+                        'source' => 'OP Batch Commissioning',
+                        'system_source' => 'OSSOPCHANGEOFNAME',
+                        'Grantor' => 'Kano State Government',
+                        'Grantee' => $allottee,
+                        'party_1' => 'Kano State Government',
+                        'party_2' => $allottee,
+                        // Explicitly unlinked — matched to a TOT later.
+                        'source_op_id' => null,
+                        'source_op_table' => null,
+                        'created_by' => (string) Auth::id(),
+                        'created_at' => $now->toDateTimeString(),
+                        'updated_at' => $now->toDateTimeString(),
+                        'is_deleted' => 0,
+                    ]);
+
+                    $created[] = [
+                        'sequence' => $seq, 'op_id' => $opId, 'action' => 'created',
+                        'temp_fileno' => $systemFileno, 'prop_id' => $propId,
+                    ];
+                }
+            });
+        } catch (\Throwable $e) {
+            Log::channel('op_batch')->error('Batch Capture OP failed', [
+                'user' => Auth::id(), 'op_batch' => $opBatch, 'error' => $e->getMessage(),
+            ]);
+            return response()->json(['success' => false, 'message' => 'Batch save failed: ' . $e->getMessage()], 500);
+        }
+
+        $updatedCount = count(array_filter($created, fn ($c) => ($c['action'] ?? '') === 'updated'));
+        $newCount = count($created) - $updatedCount;
+
+        Log::channel('op_batch')->info('Batch Capture OP saved', [
+            'user' => Auth::id(), 'op_batch' => $opBatch,
+            'count' => count($created), 'updated' => $updatedCount, 'new' => $newCount,
+        ]);
+
+        $message = count($created) . ' OPs saved under batch ' . $opBatch . '.';
+        if ($updatedCount > 0) {
+            $message = $newCount . ' new OP' . ($newCount === 1 ? '' : 's') . ' captured and '
+                . $updatedCount . ' existing OP' . ($updatedCount === 1 ? '' : 's') . ' backfilled'
+                . ' (batch ' . $opBatch . ').';
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $message,
+            'op_batch' => $opBatch,
+            'count' => count($created),
+            'updated_count' => $updatedCount,
+            'new_count' => $newCount,
+            'ops' => $created,
+        ]);
+    }
+
+    /**
+     * Match a saved OP batch to freshly-commissioned TOT file numbers, in sequence.
+     *
+     * Given the batch's op_batch id and an ORDERED list of TOT pra ids (TOT 1..N in the same
+     * order the OPs were captured), pair OP i <-> TOT i, assign both a single shared prop_id,
+     * and link them (TOT.source_op_id = OP.id, TOT.party_1 = OP.party_2 via linkOpToTot).
+     *
+     * NOTE: the TOT-commissioning trigger/UI is a follow-up; this endpoint provides the matching
+     * capability and is safe to drive directly (e.g. from a match action once TOTs exist).
+     */
+    public function matchTotBatchToOps(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'op_batch' => 'required|string|max:50',
+            'tot_pra_ids' => 'required|array|min:1',
+            'tot_pra_ids.*' => 'integer',
+        ]);
+
+        // OPs of the batch, in capture order (id asc == sequence), still unlinked.
+        $ops = DB::connection('sqlsrv')->table('pra')
+            ->where('op_batch', $validated['op_batch'])
+            ->whereNull('source_op_id')
+            ->where('instrument_type', 'Occupancy Permit (OP)')
+            ->orderBy('id')
+            ->get();
+
+        if ($ops->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No unlinked OPs found for batch ' . $validated['op_batch'] . '.',
+            ], 404);
+        }
+
+        $totIds = array_values($validated['tot_pra_ids']);
+        if (count($totIds) !== $ops->count()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Count mismatch: ' . $ops->count() . ' OPs vs ' . count($totIds)
+                    . ' TOTs. They must pair 1:1 in order.',
+            ], 422);
+        }
+
+        $pairs = [];
+        try {
+            DB::connection('sqlsrv')->transaction(function () use ($ops, $totIds, &$pairs) {
+                foreach ($ops as $i => $op) {
+                    $tot = DB::connection('sqlsrv')->table('pra')->where('id', $totIds[$i])->first();
+                    if (!$tot) {
+                        throw new \RuntimeException('TOT pra #' . $totIds[$i] . ' not found.');
+                    }
+
+                    // Both records share one prop_id — the OP<->TOT linking convention.
+                    $sharedPropId = $tot->prop_id ?: $op->prop_id;
+                    DB::connection('sqlsrv')->table('pra')->where('id', $op->id)
+                        ->update(['prop_id' => $sharedPropId, 'updated_at' => now()->toDateTimeString()]);
+                    if ($tot->prop_id != $sharedPropId) {
+                        DB::connection('sqlsrv')->table('pra')->where('id', $tot->id)
+                            ->update(['prop_id' => $sharedPropId, 'updated_at' => now()->toDateTimeString()]);
+                        $tot->prop_id = $sharedPropId;
+                    }
+
+                    $allottee = trim((string) ($op->party_2 ?? ''));
+                    $this->linkOpToTot(
+                        $tot, 'pra', $op->id, $allottee,
+                        $op->location ?? $op->property_description, $op->temp_fileno
+                    );
+
+                    $pairs[] = ['op_id' => $op->id, 'tot_id' => $tot->id, 'prop_id' => $sharedPropId];
+                }
+            });
+        } catch (\Throwable $e) {
+            Log::channel('op_batch')->error('TOT batch match failed', [
+                'user' => Auth::id(), 'op_batch' => $validated['op_batch'], 'error' => $e->getMessage(),
+            ]);
+            return response()->json(['success' => false, 'message' => 'Matching failed: ' . $e->getMessage()], 500);
+        }
+
+        Log::channel('op_batch')->info('TOT batch matched to OPs', [
+            'user' => Auth::id(), 'op_batch' => $validated['op_batch'], 'pairs' => count($pairs),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => count($pairs) . ' OP/TOT pairs linked under batch ' . $validated['op_batch'] . '.',
+            'op_batch' => $validated['op_batch'],
+            'pairs' => $pairs,
+        ]);
+    }
+
+    /**
+     * Link a saved OP batch to the file numbers just commissioned for it, in sequence.
+     *
+     * Called right after MlsFileNoController::generateBatch succeeds when the commissioning was
+     * launched from a Batch OP Capture (the client passes the ordered `files` array it returns).
+     * Pairs OP i <-> file i and completes the OP -> ToT pair the rest of this module expects:
+     *
+     *   OP  (pra, mlsFNo NULL, TEMP-xxxxx, prop_id P, party_2 = allottee)
+     *     └─ source_op_id ─┐
+     *   ToT (pra, mlsFNo = the commissioned number, temp_fileno = the OP's TEMP,
+     *        prop_id = P  ← SHARED, party_1 = the OP's allottee, party_2 = the new holder)
+     *
+     * The OP is the only side that has a prop_id (plain commissioning allocates none — the
+     * file's file_indexings.prop_id is NULL), so the commissioned file ADOPTS the OP's prop_id:
+     * onto the new ToT row and onto file_indexings. `mls_file_no.op_batch` is stamped so the
+     * batch is discoverable in the OP Batch Commissioning view. Idempotent: re-running updates
+     * an existing ToT for the file instead of creating a second one.
+     */
+    public function linkOpBatchToCommissioned(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'op_batch' => 'required|string|max:50',
+            'files' => 'required|array|min:1',
+            'files.*' => 'nullable|string|max:100',
+        ]);
+
+        $opBatch = $validated['op_batch'];
+
+        $ops = DB::connection('sqlsrv')->table('pra')
+            ->where('op_batch', $opBatch)
+            ->where('instrument_type', 'Occupancy Permit (OP)')
+            ->orderBy('id')
+            ->get();
+
+        if ($ops->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No OPs found for batch ' . $opBatch . '.',
+            ], 404);
+        }
+
+        $files = array_values(array_filter(
+            $validated['files'],
+            fn ($f) => trim((string) $f) !== ''
+        ));
+
+        $now = now();
+        $pairs = [];
+        try {
+            DB::connection('sqlsrv')->transaction(function () use ($ops, $files, $opBatch, $now, &$pairs) {
+                foreach ($ops as $i => $op) {
+                    if (!isset($files[$i])) {
+                        break; // fewer commissioned files than OPs — link what we can, in order
+                    }
+                    $fileNo = trim($files[$i]);
+
+                    $mfn = DB::connection('sqlsrv')->table('mls_file_no')
+                        ->where('full_file_number', $fileNo)->first();
+
+                    $allottee  = trim((string) ($op->party_2 ?? ''));        // OP Part 2 -> ToT Part 1
+                    $newHolder = trim((string) ($mfn->file_name ?? ''));     // commissioned applicant
+                    $location  = ($mfn && !empty($mfn->location))
+                        ? $mfn->location
+                        : ($op->location ?: $op->property_description);
+
+                    // Idempotency: update an existing ToT for this file rather than duplicating.
+                    $existingTot = DB::connection('sqlsrv')->table('pra')
+                        ->where('mlsFNo', $fileNo)
+                        ->where('instrument_type', 'Transfer of Title (OP)')
+                        ->first();
+
+                    if ($existingTot) {
+                        DB::connection('sqlsrv')->table('pra')->where('id', $existingTot->id)->update([
+                            'prop_id' => $op->prop_id,
+                            'temp_fileno' => $op->temp_fileno,
+                            'source_op_table' => 'pra',
+                            'source_op_id' => $op->id,
+                            'party_1' => $allottee,
+                            'Grantor' => $allottee,
+                            'op_batch' => $opBatch,
+                            'updated_at' => $now->toDateTimeString(),
+                            'updated_by' => (string) Auth::id(),
+                        ]);
+                        $totId = $existingTot->id;
+                    } else {
+                        $totId = DB::connection('sqlsrv')->table('pra')->insertGetId([
+                            'mlsFNo' => $fileNo,
+                            'fileno' => $fileNo,
+                            'temp_fileno' => $op->temp_fileno,   // pairs the ToT to its OP
+                            'prop_id' => $op->prop_id,           // SHARED with the OP
+                            'transaction_type' => 'Transfer of Title (OP)',
+                            'instrument_type' => 'Transfer of Title (OP)',
+                            'status' => 'Normal',
+                            'op_type' => $op->op_type,
+                            'op_serial_number' => $op->op_serial_number,
+                            'transaction_date' => $op->transaction_date,
+                            'location' => $location,
+                            'property_description' => $location,
+                            'plot_no' => ($mfn->plot_no ?? null) ?: $op->plot_no,
+                            'tp_no' => ($mfn->tp_no ?? null) ?: $op->tp_no,
+                            'lgsaOrCity' => ($mfn->lga ?? null) ?: $op->lgsaOrCity,
+                            'land_use' => ($mfn->land_use ?? null) ?: $op->land_use,
+                            'op_batch' => $opBatch,
+                            'source_op_table' => 'pra',
+                            'source_op_id' => $op->id,
+                            'source' => 'OP Batch Commissioning',
+                            'system_source' => 'OSSOPCHANGEOFNAME',
+                            'Grantor' => $allottee,
+                            'Grantee' => $newHolder,
+                            'party_1' => $allottee,
+                            'party_2' => $newHolder,
+                            'created_by' => (string) Auth::id(),
+                            'created_at' => $now->toDateTimeString(),
+                            'updated_at' => $now->toDateTimeString(),
+                            'is_deleted' => 0,
+                        ]);
+                    }
+
+                    // The commissioned file adopts the OP's parcel identity.
+                    DB::connection('sqlsrv')->table('file_indexings')
+                        ->where('file_number', $fileNo)
+                        ->update(['prop_id' => $op->prop_id, 'updated_at' => $now]);
+
+                    // Make the batch discoverable in the OP Batch Commissioning view.
+                    DB::connection('sqlsrv')->table('mls_file_no')
+                        ->where('full_file_number', $fileNo)
+                        ->update(['op_batch' => $opBatch, 'updated_at' => $now]);
+
+                    $pairs[] = [
+                        'op_id' => $op->id,
+                        'op_temp' => $op->temp_fileno,
+                        'tot_id' => $totId,
+                        'file_number' => $fileNo,
+                        'prop_id' => $op->prop_id,
+                        'party_1' => $allottee,
+                        'party_2' => $newHolder,
+                    ];
+                }
+            });
+        } catch (\Throwable $e) {
+            Log::channel('op_batch')->error('Link OP batch to commissioned failed', [
+                'user' => Auth::id(), 'op_batch' => $opBatch, 'error' => $e->getMessage(),
+            ]);
+            return response()->json(['success' => false, 'message' => 'Linking failed: ' . $e->getMessage()], 500);
+        }
+
+        Log::channel('op_batch')->info('Linked OP batch to commissioned files', [
+            'user' => Auth::id(), 'op_batch' => $opBatch, 'pairs' => count($pairs),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => count($pairs) . ' OP/ToT pair(s) linked under batch ' . $opBatch . '.',
+            'op_batch' => $opBatch,
+            'pairs' => $pairs,
+        ]);
+    }
+
+    /**
+     * Active districts, for the Location Builder's searchable dropdown. Values are the names
+     * (that is what the composed location string uses).
+     */
+    public function opDistricts(): JsonResponse
+    {
+        $names = DB::connection('sqlsrv')->table('districts')
+            ->where(function ($q) { $q->whereNull('is_active')->orWhere('is_active', 1); })
+            ->whereRaw("NULLIF(LTRIM(RTRIM(name)), '') IS NOT NULL")
+            ->orderBy('name')
+            ->pluck('name')
+            ->map(fn($n) => trim((string) $n))
+            ->filter()
+            ->unique()
+            ->values();
+
+        return response()->json(['success' => true, 'count' => $names->count(), 'data' => $names]);
+    }
+
+    /**
+     * Active LGAs, for the ToT card's searchable LGA dropdown.
+     */
+    public function opLgas(): JsonResponse
+    {
+        $names = DB::connection('sqlsrv')->table('lgas')
+            ->where(function ($q) { $q->whereNull('is_active')->orWhere('is_active', 1); })
+            ->whereRaw("NULLIF(LTRIM(RTRIM(name)), '') IS NOT NULL")
+            ->orderBy('name')
+            ->pluck('name')
+            ->map(fn($n) => trim((string) $n))
+            ->filter()
+            ->unique()
+            ->values();
+
+        return response()->json(['success' => true, 'count' => $names->count(), 'data' => $names]);
+    }
+
+    /**
+     * Update an Awaiting TOT's details (Part 1/2, land use, TP/plot, location). Allowed whether
+     * or not the TOT is already linked — this edits the ToT record itself. op_batch-guarded.
+     */
+    public function opUpdateTot(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'tot_pra_id' => 'required|integer',
+            'party_1' => 'nullable|string|max:255',
+            'party_2' => 'nullable|string|max:255',
+            'land_use' => 'nullable|string|max:100',
+            'tp_no' => 'nullable|string|max:100',
+            'plot_no' => 'nullable|string|max:100',
+            'lga' => 'nullable|string|max:150',
+            'location' => 'nullable|string|max:1000',
+        ]);
+
+        $tot = DB::connection('sqlsrv')->table('pra')->where('id', $validated['tot_pra_id'])->first();
+        if (!$tot) {
+            return response()->json(['success' => false, 'message' => 'TOT not found.'], 404);
+        }
+        if (empty($tot->op_batch)) {
+            return response()->json(['success' => false, 'message' => 'That row is not part of the OP batch remediation.'], 422);
+        }
+
+        $update = ['updated_at' => now()->toDateTimeString(), 'updated_by' => (string) Auth::id()];
+        // Only overwrite a field when the form actually submitted a non-empty value.
+        $set = function (string $key) use (&$update, $validated) {
+            $v = isset($validated[$key]) ? trim((string) $validated[$key]) : '';
+            return $v !== '' ? $v : null;
+        };
+        if ($p1 = $set('party_1')) { $update['party_1'] = $p1; $update['Grantor'] = $p1; }
+        if ($p2 = $set('party_2')) { $update['party_2'] = $p2; $update['Grantee'] = $p2; }
+        if ($lu = $set('land_use')) { $update['land_use'] = $lu; }
+        if ($tp = $set('tp_no')) { $update['tp_no'] = $tp; }
+        if ($plot = $set('plot_no')) { $update['plot_no'] = $plot; }
+        if ($loc = $set('location')) { $update['location'] = $loc; $update['property_description'] = $loc; }
+
+        DB::connection('sqlsrv')->table('pra')->where('id', $tot->id)->update($update);
+
+        Log::channel('op_batch')->info('TOT details updated', [
+            'user' => Auth::id(), 'op_batch' => $tot->op_batch, 'tot_pra_id' => $tot->id,
+            'fields' => array_keys(array_diff_key($update, ['updated_at' => 1, 'updated_by' => 1])),
+        ]);
+
+        return response()->json(['success' => true, 'message' => 'TOT details updated.', 'op_batch' => $tot->op_batch]);
+    }
+
+    /**
+     * Rows belonging to one op_batch batch, for the OP Batch Commissioning modal.
+     *
+     * These are Transfer of Title (OP) rows awaiting an OP: the batch run created the ToT
+     * but never the paired OP row, so every row here has no OP sibling on its prop_id.
+     */
+    public function opBatchRecords(Request $request): JsonResponse
+    {
+        $batchNo = trim((string) $request->query('batch_no'));
+        if ($batchNo === '') {
+            Log::channel('op_batch')->warning('opBatchRecords called without batch_no', [
+                'user' => Auth::id(),
+            ]);
+            return response()->json(['success' => false, 'message' => 'batch_no is required'], 422);
+        }
+
+        $startedAt = microtime(true);
+
+        $rows = DB::connection('sqlsrv')
+            ->table('mls_file_no as m')
+            ->leftJoin('pra as p', function ($join) {
+                $join->whereRaw("UPPER(LTRIM(RTRIM(p.mlsFNo))) = UPPER(LTRIM(RTRIM(m.full_file_number)))")
+                    ->whereRaw("p.op_batch IS NOT NULL");
+            })
+            ->where('m.batch_no', $batchNo)
+            ->whereNotNull('m.op_batch')
+            ->select([
+                'm.op_batch',
+                'm.full_file_number',
+                'm.batch_no',
+                'm.serial_number',
+                'm.file_name',
+                'm.land_use as mls_land_use',
+                'p.id as pra_id',
+                'p.prop_id',
+                'p.instrument_type',
+                'p.transaction_type',
+                'p.op_type',
+                'p.op_serial_number',
+                'p.party_1',
+                'p.party_2',
+                'p.source_op_id',
+                'p.source_op_table',
+                // pra first, mls_file_no behind it — so values saved onto the pra ToT row
+                // (via Update ToT) are reflected here.
+                DB::raw("COALESCE(NULLIF(LTRIM(RTRIM(p.plot_no)), ''), NULLIF(LTRIM(RTRIM(m.plot_no)), '')) as plot_no"),
+                DB::raw("COALESCE(NULLIF(LTRIM(RTRIM(p.tp_no)), ''), NULLIF(LTRIM(RTRIM(m.tp_no)), '')) as tp_no"),
+                DB::raw("COALESCE(NULLIF(LTRIM(RTRIM(p.land_use)), ''), NULLIF(LTRIM(RTRIM(m.land_use)), '')) as land_use"),
+                DB::raw("COALESCE(NULLIF(LTRIM(RTRIM(p.lgsaOrCity)), ''), NULLIF(LTRIM(RTRIM(m.lga)), '')) as lga"),
+                DB::raw("COALESCE(
+                    NULLIF(LTRIM(RTRIM(p.location)), ''),
+                    NULLIF(LTRIM(RTRIM(p.property_description)), ''),
+                    NULLIF(LTRIM(RTRIM(m.location)), '')
+                ) as location"),
+            ])
+            ->orderBy('m.serial_number')
+            ->get()
+            ->map(function ($r) {
+                // Linked either explicitly (source_op_id — how this screen links them) or by
+                // the shared-prop_id pairing directOpCapture uses. Resolve the paired OP row so
+                // its TEMP file number can be shown/clicked, checking both mechanisms.
+                $opRow = null;
+                if (!empty($r->source_op_id) && $r->source_op_table === 'pra') {
+                    $opRow = DB::connection('sqlsrv')->table('pra')->where('id', $r->source_op_id)
+                        ->select('id', 'temp_fileno', 'fileno', 'prop_id')->first();
+                } elseif (!empty($r->source_op_id) && $r->source_op_table === 'instrument_capture') {
+                    $opRow = DB::connection('sqlsrv')->table('instrument_capture')->where('id', $r->source_op_id)
+                        ->select('id', 'temp_fileno', 'prop_id')->first();
+                }
+                if (!$opRow && !empty($r->prop_id)) {
+                    $opRow = DB::connection('sqlsrv')->table('pra')
+                        ->where('prop_id', $r->prop_id)
+                        ->where('instrument_type', 'LIKE', '%Occupancy Permit%')
+                        ->select('id', 'temp_fileno', 'fileno', 'prop_id')
+                        ->orderByDesc('id')->first();
+                }
+                $hasOp = (bool) $opRow || !empty($r->source_op_id);
+                $opTemp = $opRow ? ($opRow->temp_fileno ?: ($opRow->fileno ?? null)) : null;
+
+                return [
+                    'source_op_id' => $r->source_op_id,
+                    'source_op_table' => $r->source_op_table,
+                    'op_pra_id' => $opRow->id ?? ($r->source_op_id ?: null),
+                    'op_temp_fileno' => $opTemp ?: null,
+                    'op_batch' => $r->op_batch,
+                    'file_number' => strtoupper((string) $r->full_file_number),
+                    'batch_no' => $r->batch_no,
+                    'serial_number' => $r->serial_number,
+                    'file_name' => $r->file_name ? strtoupper((string) $r->file_name) : '—',
+                    'pra_id' => $r->pra_id,
+                    'prop_id' => $r->prop_id ?: '—',
+                    'instrument_type' => $r->instrument_type ?: '—',
+                    'transaction_type' => $r->transaction_type ?: '—',
+                    'op_type' => $r->op_type ?: '—',
+                    'op_serial_number' => $r->op_serial_number ?: '—',
+                    'party_1' => $r->party_1 ?: '—',
+                    'party_2' => $r->party_2 ?: '—',
+                    'plot_no' => $r->plot_no ?: '—',
+                    'tp_no' => $r->tp_no ?: '—',
+                    'land_use' => $r->land_use ?: '—',
+                    'lga' => $r->lga ?: '—',
+                    'location' => $r->location ?: '—',
+                    'has_op' => $hasOp,
+                    'awaiting_op' => !$hasOp,
+                ];
+            });
+
+        $payload = [
+            'success' => true,
+            'batch_no' => $batchNo,
+            'count' => $rows->count(),
+            'awaiting_op' => $rows->where('awaiting_op', true)->count(),
+            'data' => $rows->values(),
+        ];
+
+        Log::channel('op_batch')->info('opBatchRecords served', [
+            'user' => Auth::id(),
+            'batch_no' => $batchNo,
+            'count' => $payload['count'],
+            'awaiting_op' => $payload['awaiting_op'],
+            'no_pra_row' => $rows->whereNull('pra_id')->count(),
+            'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+            'payload_kb' => round(strlen(json_encode($payload)) / 1024, 1),
+        ]);
+
+        if ($rows->isEmpty()) {
+            Log::channel('op_batch')->warning('Batch resolved to zero rows', ['batch_no' => $batchNo]);
+        }
+
+        return response()->json($payload);
     }
 
     /**
@@ -657,6 +2106,25 @@ class OpResettlementApplicationController extends Controller
             'success' => true,
             'message' => 'Land use updated successfully.',
         ]);
+    }
+
+    /**
+     * Registration number for the OP Details card: the stored regNo, or — when it is blank —
+     * composed from serialNo/pageNo/volumeNo (that is exactly the regNo format, e.g. 48/48/27).
+     */
+    private function composeRegNo($row): ?string
+    {
+        $reg = trim((string) ($row->regNo ?? ''));
+        if ($reg !== '') {
+            return $reg;
+        }
+        $parts = array_filter([
+            trim((string) ($row->serialNo ?? '')),
+            trim((string) ($row->pageNo ?? '')),
+            trim((string) ($row->volumeNo ?? '')),
+        ], fn($v) => $v !== '');
+
+        return $parts ? implode('/', $parts) : null;
     }
 
     /**
@@ -735,7 +2203,7 @@ class OpResettlementApplicationController extends Controller
                     'transaction_type' => $row->transaction_type ?? null,
                     'op_type' => $row->op_type ?? null,
                     'op_serial_number' => $row->op_serial_number ?? null,
-                    'registration_number' => $row->regNo ?? null,
+                    'registration_number' => $this->composeRegNo($row),
                     'party_1_name' => $row->Grantor ?? $row->Assignor ?? $row->Mortgagor ?? null,
                     'party_2_name' => $row->Grantee ?? $row->Assignee ?? $row->Mortgagee ?? null,
                     'property_description' => $row->property_description ?? null,
@@ -784,7 +2252,7 @@ class OpResettlementApplicationController extends Controller
                         'transaction_type' => $row->transaction_type ?? null,
                         'op_type' => $row->op_type ?? null,
                         'op_serial_number' => $row->op_serial_number ?? null,
-                        'registration_number' => $row->regNo ?? null,
+                        'registration_number' => $this->composeRegNo($row),
                         'party_1_name' => $row->Grantor ?? $row->Assignor ?? $row->Mortgagor ?? null,
                         'party_2_name' => $row->Grantee ?? $row->Assignee ?? $row->Mortgagee ?? null,
                         'property_description' => $row->property_description ?? null,
@@ -865,6 +2333,52 @@ class OpResettlementApplicationController extends Controller
                 ];
             });
 
+        // Follow explicit OP<->ToT links (source_op_id) even when prop_id differs. The OP Details
+        // card groups strictly by prop_id, so an OP that was linked to its ToT but never had its
+        // prop_id aligned (the "two rival linking mechanisms" case) would otherwise be invisible.
+        // Pull those linked rows in explicitly, in both directions.
+        $currentPraIds = $praRows->pluck('id')->filter()->values();
+        if ($currentPraIds->isNotEmpty()) {
+            $links = DB::connection('sqlsrv')->table('pra')
+                ->whereIn('id', $currentPraIds->all())
+                ->whereNotNull('source_op_id')
+                ->get(['source_op_id', 'source_op_table']);
+
+            // Forward: OP rows that our ToT rows point at.
+            $linkedPraIds = $links->where('source_op_table', 'pra')->pluck('source_op_id')->filter()->unique();
+            $linkedIcIds  = $links->where('source_op_table', 'instrument_capture')->pluck('source_op_id')->filter()->unique();
+
+            // Reverse: ToT rows that point AT any pra row currently in the result (opened via the OP).
+            $reverseTots = DB::connection('sqlsrv')->table('pra')
+                ->where('source_op_table', 'pra')
+                ->whereIn('source_op_id', $currentPraIds->all())
+                ->where(function ($q) { $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })
+                ->pluck('id');
+            $linkedPraIds = $linkedPraIds->concat($reverseTots)->unique();
+
+            $havePraIds = $praRows->pluck('id')->all();
+            $missingPraIds = $linkedPraIds->reject(fn ($id) => in_array($id, $havePraIds))->values();
+            if ($missingPraIds->isNotEmpty()) {
+                $extraPra = DB::connection('sqlsrv')->table('pra')
+                    ->whereIn('id', $missingPraIds->all())
+                    ->where(function ($q) { $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })
+                    ->orderBy('id')->get()
+                    ->map(fn ($row) => $this->mapPraTransactionRow($row));
+                $praRows = $praRows->concat($extraPra)->unique('id')->values();
+            }
+
+            $haveIcIds = $icRows->pluck('id')->all();
+            $missingIcIds = $linkedIcIds->reject(fn ($id) => in_array($id, $haveIcIds))->values();
+            if ($missingIcIds->isNotEmpty()) {
+                $extraIc = DB::connection('sqlsrv')->table('instrument_capture')
+                    ->whereIn('id', $missingIcIds->all())
+                    ->where(function ($q) { $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })
+                    ->orderBy('id')->get()
+                    ->map(fn ($row) => $this->mapIcTransactionRow($row));
+                $icRows = $icRows->concat($extraIc)->unique('id')->values();
+            }
+        }
+
         // Merge: IC (source OP) first, then PRA (Transfer of Title etc.)
         // Sort so Occupancy Permit records appear before Transfer of Title.
         $rows = $icRows->merge($praRows)->sortBy(function ($item) {
@@ -875,6 +2389,71 @@ class OpResettlementApplicationController extends Controller
             'success' => true,
             'data' => $rows,
         ]);
+    }
+
+    /**
+     * Shape a raw pra row into the flat transaction array praTransactions returns.
+     * (Mirrors the inline map used for the primary pra query; shared by the source_op_id follow.)
+     */
+    private function mapPraTransactionRow($row): array
+    {
+        return [
+            'id' => $row->id,
+            'source_table' => 'pra',
+            'prop_id' => $row->prop_id ?? null,
+            'fileno' => $row->fileno ?? null,
+            'mlsFNo' => $row->mlsFNo ?? null,
+            'temp_fileno' => $row->temp_fileno ?? null,
+            'instrument_type' => $row->instrument_type ?? null,
+            'transaction_type' => $row->transaction_type ?? null,
+            'op_type' => $row->op_type ?? null,
+            'op_serial_number' => $row->op_serial_number ?? null,
+            'registration_number' => $this->composeRegNo($row),
+            'party_1_name' => $row->Grantor ?? $row->Assignor ?? $row->Mortgagor ?? null,
+            'party_2_name' => $row->Grantee ?? $row->Assignee ?? $row->Mortgagee ?? null,
+            'property_description' => $row->property_description ?? null,
+            'land_use' => $row->land_use ?? null,
+            'lga' => $row->lgsaOrCity ?? null,
+            'location' => $row->location ?? null,
+            'tp_no' => $row->tp_no ?? null,
+            'plot_number' => $row->plot_no ?? null,
+            'merger_group_id' => $row->merger_group_id ?? null,
+            'is_merger_op' => isset($row->is_merger_op) ? (int) $row->is_merger_op : 0,
+            'transaction_date' => $row->transaction_date ?? null,
+            'created_at' => $row->created_at ?? null,
+        ];
+    }
+
+    /**
+     * Shape a raw instrument_capture OP row into the flat transaction array praTransactions returns.
+     */
+    private function mapIcTransactionRow($row): array
+    {
+        return [
+            'id' => $row->id,
+            'source_table' => 'instrument_capture',
+            'prop_id' => $row->prop_id ?? null,
+            'fileno' => $row->mlsFNo ?? $row->kangisFileNo ?? $row->NewKANGISFileno ?? null,
+            'mlsFNo' => $row->mlsFNo ?? null,
+            'temp_fileno' => $row->temp_fileno ?? null,
+            'instrument_type' => $row->instrument_type ?? null,
+            'transaction_type' => $row->transaction_type ?? $row->instrument_type ?? null,
+            'op_type' => $row->op_type ?? null,
+            'op_serial_number' => $row->op_serial_number ?? null,
+            'registration_number' => $row->registration_number ?? null,
+            'party_1_name' => $row->party_1_name ?? null,
+            'party_2_name' => $row->party_2_name ?? null,
+            'property_description' => $row->property_location ?? null,
+            'land_use' => $row->land_use ?? null,
+            'lga' => $row->lga ?? null,
+            'location' => $row->property_location ?? null,
+            'tp_no' => $row->tp_no ?? null,
+            'plot_number' => $row->plot_number ?? null,
+            'merger_group_id' => $row->merger_group_id ?? null,
+            'is_merger_op' => isset($row->is_merger_op) ? (int) $row->is_merger_op : 0,
+            'transaction_date' => $row->instrument_date ?? null,
+            'created_at' => $row->created_at ?? null,
+        ];
     }
 
     /**

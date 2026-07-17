@@ -266,7 +266,53 @@ class MobileFileSearchController extends Controller
             ], $this->requestTypeMeta($fr));
         });
 
-        return response()->json(['success' => true, 'data' => $data, 'total' => $total]);
+        return response()->json([
+            'success' => true,
+            'data'    => $data,
+            'total'   => $total,
+            'today'   => $this->todaySummary($userId, $isAdmin),
+        ]);
+    }
+
+    /**
+     * "Requests Today" summary for the SCB Monitor's File Search card — mirrors the
+     * web Quick Search tile. Found / Not Found are what this monitor *resolved
+     * today* (by responded_at), so a request raised earlier but answered this
+     * morning counts; Awaiting is what was *raised today* with no response yet.
+     * The three always sum to the header total.
+     */
+    private function todaySummary(int $userId, bool $isAdmin): array
+    {
+        $today = now()->toDateString();
+
+        // Same visibility rule as the inbox: assigned to this monitor or broadcast.
+        $scope = function ($q) use ($userId, $isAdmin) {
+            if ($isAdmin) return;
+            $q->where(function ($q2) use ($userId) {
+                $q2->whereNull('assigned_monitor_id')
+                    ->orWhere('assigned_monitor_id', $userId);
+            });
+        };
+
+        $found = (int) FileSearchRequest::query()->where($scope)
+            ->where('status', FileSearchRequest::STATUS_FOUND)
+            ->whereDate('responded_at', $today)->count();
+
+        $notFound = (int) FileSearchRequest::query()->where($scope)
+            ->where('status', FileSearchRequest::STATUS_NOT_FOUND)
+            ->whereDate('responded_at', $today)->count();
+
+        $awaiting = (int) FileSearchRequest::query()->where($scope)
+            ->whereIn('status', [FileSearchRequest::STATUS_PENDING, FileSearchRequest::STATUS_SEARCHING])
+            ->whereDate('created_at', $today)->count();
+
+        return [
+            'date'      => now()->format('M j, Y'),
+            'total'     => $found + $notFound + $awaiting,
+            'found'     => $found,
+            'not_found' => $notFound,
+            'awaiting'  => $awaiting,
+        ];
     }
 
     /**

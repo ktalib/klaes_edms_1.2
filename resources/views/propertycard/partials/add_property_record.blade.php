@@ -63,7 +63,7 @@
                                     <div class="relative flex-1">
                                         <input type="text" id="related_file_number" name="related_file_number"
                                             class="w-full p-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            placeholder="Enter related file number if applicable">
+                                            placeholder="Enter related file number if applicable" readonly>
                                         <div
                                             class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                                             <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor"

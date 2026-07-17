@@ -1038,6 +1038,10 @@ class FileTrackerApiController extends Controller
                 'office_name' => 'required|string|max:255',
                 'receiving_officer_id' => 'required|string|max:50',
                 'receiving_officer_name' => 'nullable|string|max:255',
+                'origin_office_name' => 'nullable|string|max:255',
+                'origin_registry_code' => 'nullable|string|max:100',
+                'origin_office_department' => 'nullable|string|max:255',
+                'department' => 'nullable|string|max:150',
             ]);
 
             if ($validator->fails()) {
@@ -1084,6 +1088,16 @@ class FileTrackerApiController extends Controller
             $movementLog[$entryIndex]['receiving_officer_name'] = $officerName;
             $movementLog[$entryIndex]['receiving_office_code'] = $request->office_code;
             $movementLog[$entryIndex]['receiving_office_name'] = $request->office_name;
+
+            // Registry (Origin) and Destination department come from the corrected modal;
+            // persist them onto the entry when supplied so the timeline reflects the fix.
+            if ($request->filled('origin_office_name')) {
+                $movementLog[$entryIndex]['origin_office_name'] = $request->origin_office_name;
+            }
+            if ($request->filled('origin_office_department')) {
+                $movementLog[$entryIndex]['origin_office_department'] = $request->origin_office_department;
+            }
+
             $movementLog[$entryIndex]['manual_update'] = true;
             $movementLog[$entryIndex]['manual_update_by'] = Auth::id();
             $movementLog[$entryIndex]['manual_update_at'] = now()->toIso8601String();
@@ -1105,6 +1119,21 @@ class FileTrackerApiController extends Controller
                 $tracker->receiving_office_name = $request->office_name;
                 $tracker->receiving_officer_id = $isOtherOfficer ? null : $officerId;
                 $tracker->receiving_officer_name = $officerName;
+
+                // Origin entry: reflect corrected Registry (Origin) + Destination department
+                // on the tracker so its header/summary stays in sync with the timeline.
+                if ($request->filled('origin_office_name')) {
+                    $tracker->origin_office_name = $request->origin_office_name;
+                }
+                if ($request->filled('origin_registry_code')) {
+                    $tracker->registry_code = $request->origin_registry_code;
+                }
+                if ($request->filled('origin_office_department')) {
+                    $tracker->origin_office_department = $request->origin_office_department;
+                }
+                if ($request->filled('department')) {
+                    $tracker->department = $request->department;
+                }
             }
 
             $tracker->save();

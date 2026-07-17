@@ -148,13 +148,18 @@
     @php
         $isChangeOfName = request()->filled('type') && request()->query('type') === 'change-of-name';
         $isGenerateChangeOfName = $isChangeOfName && request()->query('source') === 'lands-one-stop-shop';
+
+        // OP Batch Commissioning mode. Defaulted here because this view is also rendered
+        // by ApplicationController, which does not pass these.
+        $isOpBatchMode = $opBatchMode ?? false;
+        $opBatchGroups = $opBatchGroups ?? collect();
         $recordTypeSuffix = '';
         if (isset($recordType)) {
             $recordTypeSuffix = $recordType === 'fc' ? ' (FC)' : ($recordType === 'fefr' ? ' (FEFR)' : '');
         }
 
         $pageTitle = $isChangeOfName 
-            ? 'OSS File Commissioning & OP Matching Applications (Change of Name)' . $recordTypeSuffix
+            ? 'OSS File Commissioning (Change of Name)' . $recordTypeSuffix
             : 'Applications (No Change of Name)';
         $pageDescription = $isChangeOfName
             ? 'Land One Stop Shop overview of Change of Name Occupancy Permit records' . ($recordType ? ' filtered by ' . strtoupper($recordType) : '') . '.'
@@ -214,6 +219,21 @@
                     <div class="flex flex-col gap-2">
 
                         @if(!isset($recordType) || $recordType === 'fc')
+                            @php
+                                $opBatchOn = url()->current() . '?' . http_build_query(array_merge(request()->except('page'), ['op_batch' => 1]));
+                                $opBatchOff = url()->current() . '?' . http_build_query(request()->except(['page', 'op_batch']));
+                            @endphp
+                            <a href="{{ $isOpBatchMode ? $opBatchOff : $opBatchOn }}"
+                                id="btn-op-batch-commissioning"
+                                class="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold shadow-sm transition {{ $isOpBatchMode ? 'bg-amber-600 text-white hover:bg-amber-700' : 'bg-white border border-amber-300 text-amber-700 hover:bg-amber-50' }}"
+                                title="{{ $isOpBatchMode ? 'Back to the full FC listing' : 'Show only files commissioned through the mistaken Batch Mode, grouped by batch' }}">
+                                <i data-lucide="layers" class="w-4 h-4"></i>
+                                View OP Batch
+                                @if($isOpBatchMode)
+                                    <i data-lucide="x" class="w-3.5 h-3.5 opacity-80"></i>
+                                @endif
+                            </a>
+
                             <button type="button" id="btn-file-commissioning"
                                 class="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold shadow-sm hover:bg-blue-700 transition">
                                 <i data-lucide="file-plus-2" class="w-4 h-4"></i>
@@ -442,6 +462,78 @@
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-100">
+                            @if($isOpBatchMode)
+                                {{-- ── OP Batch Commissioning: one collapsed row per batch ── --}}
+                                @forelse($opBatchGroups as $group)
+                                    <tr data-batch-no="{{ $group['batch_no'] }}" class="op-batch-row">
+                                        @if($isSupperAdmin)
+                                            <td class="checkbox-col hidden px-4 py-2.5 text-center">
+                                                <span class="text-slate-300 font-bold">—</span>
+                                            </td>
+                                        @endif
+                                        <td class="px-4 py-2.5 font-mono text-xs text-slate-700 op-sn-cell">{{ $loop->iteration }}</td>
+                                        <td class="px-4 py-2.5 text-slate-700">{{ ucfirst(strtolower($group['customer_type'])) }}</td>
+                                        <td class="px-4 py-2.5">
+                                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-violet-50 text-violet-700 border border-violet-200 whitespace-nowrap">
+                                                TRANSFER OF TITLE (OP)
+                                            </span>
+                                        </td>
+                                        <td class="px-4 py-2.5">
+                                            <button type="button"
+                                                    onclick="openOpBatchModal('{{ $group['batch_no'] }}')"
+                                                    class="inline-flex items-center px-2.5 py-0.5 rounded-md text-sm font-medium bg-indigo-100 text-indigo-800 border border-indigo-200 hover:bg-indigo-200 transition"
+                                                    title="View the {{ $group['count'] }} file(s) in this batch">
+                                                {{ $group['range_label'] }}
+                                            </button>
+                                            <div class="mt-1">
+                                                <button type="button" onclick="openOpBatchModal('{{ $group['batch_no'] }}')"
+                                                        class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors border border-blue-200">
+                                                    <i data-lucide="layers" class="w-3 h-3 mr-1"></i>
+                                                    Group ({{ $group['count'] }})
+                                                </button>
+                                            </div>
+                                            <div class="mt-1 font-mono text-[10px] text-slate-400">{{ $group['batch_no'] }}</div>
+                                        </td>
+                                        @php
+                                            // A batch row speaks for N files. Where they disagree the cell reads
+                                            // MULTIPLE (n) — flag it so it is not mistaken for a real value.
+                                            $batchCell = function ($value) {
+                                                if ($value === '—') {
+                                                    return '<span class="text-slate-400">—</span>';
+                                                }
+                                                if (str_starts_with($value, 'MULTIPLE (')) {
+                                                    return '<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200" title="Varies across the files in this batch — open the batch to see each">'
+                                                        . e($value) . '</span>';
+                                                }
+                                                return '<span class="text-slate-700">' . e($value) . '</span>';
+                                            };
+                                        @endphp
+                                        <td class="px-4 py-2.5">{!! $batchCell($group['file_title']) !!}</td>
+                                        <td class="px-4 py-2.5">{!! $batchCell($group['land_use']) !!}</td>
+                                        <td class="px-4 py-2.5">{!! $batchCell($group['tp_no']) !!}</td>
+                                        <td class="px-4 py-2.5">{!! $batchCell($group['plot_no']) !!}</td>
+                                        <td class="px-4 py-2.5">{!! $batchCell($group['lga']) !!}</td>
+                                        <td class="px-4 py-2.5">{!! $batchCell($group['location']) !!}</td>
+                                        <td class="px-4 py-2.5">{!! $batchCell($group['commissioned_by']) !!}</td>
+                                        <td class="px-4 py-2.5">{!! $batchCell($group['time_commissioned']) !!}</td>
+                                        <td class="px-4 py-2.5">{!! $batchCell($group['date_commissioned']) !!}</td>
+                                        <td class="px-4 py-2.5">{!! $batchCell($group['date_created']) !!}</td>
+                                        <td class="px-4 py-2.5 text-center">
+                                            <button type="button" onclick="openOpBatchModal('{{ $group['batch_no'] }}')"
+                                                    class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold text-blue-700 hover:bg-blue-50 transition">
+                                                <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                                                View
+                                            </button>
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="{{ $isSupperAdmin ? 16 : 15 }}" class="px-4 py-10 text-center text-slate-500">
+                                            No op_batch records found.
+                                        </td>
+                                    </tr>
+                                @endforelse
+                            @else
                             @forelse($records as $record)
                                 <tr data-record='@json($record)'>
                                     @if($isSupperAdmin)
@@ -704,6 +796,7 @@
                                     <td colspan="15" class="px-4 py-10 text-center text-slate-400 italic">No records found.</td>
                                 </tr>
                             @endforelse
+                            @endif
                         </tbody>
                     </table>
                 </div>
@@ -736,9 +829,134 @@
     {{-- ──────────────── Instrument Capture Modal & Supporting Templates ──────────────── --}}    @php unset($record); @endphp    @include('instruments.partials.register_modal')
     @include('components.global-fileno-modal')
 
+    {{-- ──────────────── OP Batch Commissioning Modal ──────────────── --}}
+    {{-- Lists the Transfer of Title (OP) rows in a batch that are still awaiting an OP row. --}}
+    <div id="opBatchModal" class="fixed inset-0 bg-slate-900/50 hidden overflow-y-auto h-full w-full z-[9999]">
+        <div class="relative top-8 mx-auto p-0 border w-full max-w-6xl shadow-2xl rounded-2xl bg-white overflow-hidden">
+            <div class="flex items-start justify-between px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-amber-50 to-white">
+                <div>
+                    <h3 id="opBatchModalTitle" class="text-lg font-semibold text-slate-900">Batch Details</h3>
+                    <p id="opBatchModalSubtitle" class="text-sm text-slate-500 mt-0.5">Transfer of Title (OP) rows awaiting an OP</p>
+                </div>
+                <button type="button" onclick="closeOpBatchModal()" class="text-slate-400 hover:text-slate-600 transition">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div id="opBatchModalSummary" class="px-6 py-3 border-b border-slate-100 bg-slate-50/60 flex flex-wrap items-center gap-3 text-xs"></div>
+
+            <div class="max-h-[60vh] overflow-auto">
+                <table class="w-full table-auto text-sm" style="min-width:1100px">
+                    <thead class="sticky top-0 bg-slate-50 border-b border-slate-200">
+                        <tr>
+                            <th class="px-3 py-2.5 text-left whitespace-nowrap font-semibold text-slate-600">S/N</th>
+                            <th class="px-3 py-2.5 text-left whitespace-nowrap font-semibold text-slate-600">File Number</th>
+                            <th class="px-3 py-2.5 text-left whitespace-nowrap font-semibold text-slate-600">Status</th>
+                            <th class="px-3 py-2.5 text-left whitespace-nowrap font-semibold text-slate-600">Instrument</th>
+                            <th class="px-3 py-2.5 text-left whitespace-nowrap font-semibold text-slate-600">OP Type</th>
+                            <th class="px-3 py-2.5 text-left whitespace-nowrap font-semibold text-slate-600">Prop ID</th>
+                            <th class="px-3 py-2.5 text-left whitespace-nowrap font-semibold text-slate-600">Party 1</th>
+                            <th class="px-3 py-2.5 text-left whitespace-nowrap font-semibold text-slate-600">Party 2</th>
+                            <th class="px-3 py-2.5 text-left whitespace-nowrap font-semibold text-slate-600">TP No</th>
+                            <th class="px-3 py-2.5 text-left whitespace-nowrap font-semibold text-slate-600">Plot No</th>
+                            <th class="px-3 py-2.5 text-left whitespace-nowrap font-semibold text-slate-600">LGA</th>
+                            <th class="px-3 py-2.5 text-left whitespace-nowrap font-semibold text-slate-600">Location</th>
+                            <th class="px-3 py-2.5 text-center whitespace-nowrap font-semibold text-slate-600">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="opBatchModalBody" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+
+            <div class="px-6 py-3 border-t border-slate-200 bg-slate-50 flex justify-end">
+                <button type="button" onclick="closeOpBatchModal()"
+                        class="px-4 py-2 border border-slate-300 rounded-lg text-sm text-slate-700 hover:bg-white transition">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    {{-- ──────────────── Capture OP Card ──────────────── --}}
+    {{-- Match an existing unlinked OP to an Awaiting TOT, or capture a new one and link it.
+         Either way the TOT's Part 1 (allottee) is set from the OP's Part 2.
+         Shared with the MLS commission page, which uses its Batch Capture OP mode. --}}
+    @include('lands_one_stop_shop.partials.capture-op-card')
+
+    {{-- ──────────────── Update ToT Card ──────────────── --}}
+    {{-- Edit the Transfer of Title (OP) record's details. --}}
+    <div id="updateTotModal" class="fixed inset-0 bg-slate-900/60 hidden overflow-y-auto h-full w-full z-[10000]">
+        <div class="relative top-6 mx-auto border w-full max-w-3xl shadow-2xl rounded-2xl bg-white overflow-hidden mb-10">
+            <div class="flex items-start justify-between px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-emerald-50 to-white">
+                <div>
+                    <h3 class="text-lg font-semibold text-slate-900">Update ToT</h3>
+                    <p class="text-sm text-slate-500 mt-0.5">Edit the Transfer of Title (OP) details for this file</p>
+                </div>
+                <button type="button" onclick="closeUpdateTotModal()" class="text-slate-400 hover:text-slate-600 transition">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="px-6 py-3 bg-emerald-50/50 border-b border-emerald-100">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div>
+                        <div class="text-slate-400 font-semibold uppercase tracking-wide text-[10px]">File Number</div>
+                        <div id="utFileNo" class="font-mono font-bold text-slate-800 mt-0.5">—</div>
+                    </div>
+                    <div>
+                        <div class="text-slate-400 font-semibold uppercase tracking-wide text-[10px]">Prop ID</div>
+                        <div id="utPropId" class="font-mono text-slate-700 mt-0.5">—</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Part 1 (Allottee)</label>
+                    <input type="text" id="utParty1" placeholder="Part 1 name"
+                           class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Part 2 (New Holder)</label>
+                    <input type="text" id="utParty2" placeholder="Part 2 name"
+                           class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Land Use</label>
+                    <select id="utLandUse" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                        <option value="">Select Land Use</option>
+                        <option value="RES">Residential</option>
+                        <option value="COM">Commercial</option>
+                        <option value="IND">Industrial</option>
+                        <option value="AGR">Agricultural</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">TP No</label>
+                    <input type="text" id="utTpNo" placeholder="TP number"
+                           class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">LGA</label>
+                    <select id="utLga" class="w-full text-sm"></select>
+                </div>
+                @include('lands_one_stop_shop.partials.location-builder', ['prefix' => 'tot'])
+            </div>
+
+            <div class="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2">
+                <button type="button" onclick="closeUpdateTotModal()"
+                        class="px-4 py-2 border border-slate-300 rounded-lg text-sm text-slate-700 hover:bg-white transition">Cancel</button>
+                <button type="button" id="utSaveBtn" onclick="saveUpdateTot()"
+                        class="px-5 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 transition">
+                    <i data-lucide="save" class="w-4 h-4 inline"></i> Update ToT
+                </button>
+            </div>
+        </div>
+    </div>
+
     {{-- ──────────────── Commission New File Number Modal ──────────────── --}}
-    {{-- Change of Name commissions one file per OP record, so Batch Mode has no meaning here. --}}
-    <script>window.commissionModalHideBatchMode = {{ $isChangeOfName ? 'true' : 'false' }};</script>
+    {{-- Batch Mode re-enabled (was previously hidden for Change of Name). --}}
+    <script>window.commissionModalHideBatchMode = false;</script>
     @include('components.commission-fileno-modal-include')
 
     {{-- ──────────────── Capture Existing File Number Modal (Inline) ──────────────── --}}
@@ -1272,9 +1490,15 @@
                 // Override info text to reflect server-side totals
                 var infoEl = document.querySelector('.dataTables_info');
                 if (infoEl) {
-                    var start = offset + 1;
-                    var end   = offset + api.rows({ page: 'current' }).count();
-                    infoEl.textContent = 'Showing ' + start + ' to ' + end + ' of {{ $totalRecords }} applications';
+                    @if($isOpBatchMode)
+                        // Rows here are batches, not files — count both so the two numbers
+                        // can't be read as the same thing.
+                        infoEl.textContent = 'Showing {{ $opBatchGroups->count() }} batch(es) covering {{ $totalRecords }} file(s) flagged op_batch';
+                    @else
+                        var start = offset + 1;
+                        var end   = offset + api.rows({ page: 'current' }).count();
+                        infoEl.textContent = 'Showing ' + start + ' to ' + end + ' of {{ $totalRecords }} applications';
+                    @endif
                 }
             }
         });
@@ -1658,11 +1882,14 @@
                                     <svg class="w-3 h-3 mt-0.5 ${style.icon} shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h8m-8 6h16"/></svg>
                                     <div><div class="text-[9px] text-slate-400">OP Serial No</div><div class="font-bold text-slate-800 text-[11px]">${esc(tx.op_serial_number)}</div></div>
                                 </div>` : ''}
-                                ${!isTransfer && tx.registration_number ? `
                                 <div class="flex items-start gap-1.5">
                                     <svg class="w-3 h-3 mt-0.5 ${style.icon} shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
                                     <div><div class="text-[9px] text-slate-400">Registration No</div><div class="font-semibold text-slate-800 text-[11px]">${esc(tx.registration_number)}</div></div>
-                                </div>` : ''}
+                                </div>
+                                <div class="flex items-start gap-1.5">
+                                    <svg class="w-3 h-3 mt-0.5 ${style.icon} shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                                    <div><div class="text-[9px] text-slate-400">Transaction Date</div><div class="font-semibold text-slate-800 text-[11px]">${esc(txDate)}</div></div>
+                                </div>
                                 <div class="col-span-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
                                     <div class="flex items-start gap-1.5">
                                         <svg class="w-3 h-3 mt-0.5 ${style.icon} shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
@@ -1678,16 +1905,14 @@
                                     <svg class="w-3 h-3 mt-0.5 ${style.icon} shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 7h4l3 9 4-16 3 7h4"/></svg>
                                     <div><div class="text-[9px] text-slate-400">Land Use</div><div class="font-semibold text-slate-800 text-[11px]">${esc(normalizeText(tx.land_use, 'land_use'))}</div></div>
                                 </div>` : ''}
-                                ${!isTransfer && tx.tp_no ? `
                                 <div class="flex items-start gap-1.5">
                                     <svg class="w-3 h-3 mt-0.5 ${style.icon} shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
                                     <div><div class="text-[9px] text-slate-400">TP No</div><div class="font-semibold text-slate-800 text-[11px]">${esc(tx.tp_no)}</div></div>
-                                </div>` : ''}
-                                ${tx.plot_number ? `
+                                </div>
                                 <div class="flex items-start gap-1.5">
                                     <svg class="w-3 h-3 mt-0.5 ${style.icon} shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
                                     <div><div class="text-[9px] text-slate-400">Plot No</div><div class="font-semibold text-slate-800 text-[11px]">${esc(tx.plot_number)}</div></div>
-                                </div>` : ''}
+                                </div>
                                 ${tx.property_description || tx.location ? `
                                 <div class="col-span-2 flex items-start gap-1.5">
                                     <svg class="w-3 h-3 mt-0.5 ${style.icon} shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path d="M15 11a3 3 0 11-6 0 3 3 0 016 0"/></svg>
@@ -1751,6 +1976,8 @@
                 Swal.fire('Error', err.message || 'Unable to load OP details.', 'error');
             }
         }
+        // Expose so the OP Batch Commissioning modal (separate scope) can open the same card.
+        window.showTempFileDetailsByPropId = showTempFileDetailsByPropId;
 
         document.getElementById('op-resettlement-table')?.addEventListener('click', function (evt) {
             const trigger = evt.target.closest('.js-op-temp-file-link');
@@ -1879,6 +2106,275 @@
      * Open the Commission New File Number modal for OP page flow.
         * Uses OP page defaults: Occupancy Permit (OP) flow.
      */
+    /* ═══════════════════════════════════════════════════════════════════
+       OP Batch Commissioning — batch details modal
+       Read-only. Update OP / Link OP are placeholders pending instructions.
+       ═══════════════════════════════════════════════════════════════════ */
+    const OP_BATCH_COLSPAN = 13;
+    // Rows from the last batch fetch, so the Capture OP card can read the full TOT
+    // (pra_id, parties, op_type) rather than just the tracking id the button carries.
+    let opBatchRowCache = [];
+
+    window.openOpBatchModal = function (batchNo) {
+        if (!batchNo) return;
+
+        const modal = document.getElementById('opBatchModal');
+        const title = document.getElementById('opBatchModalTitle');
+        const subtitle = document.getElementById('opBatchModalSubtitle');
+        const summary = document.getElementById('opBatchModalSummary');
+        const body = document.getElementById('opBatchModalBody');
+        if (!modal) return;
+
+        title.textContent = `Batch Details: ${batchNo}`;
+        subtitle.textContent = 'Transfer of Title (OP) rows awaiting an OP';
+        summary.innerHTML = '';
+        body.innerHTML = `<tr><td colspan="${OP_BATCH_COLSPAN}" class="px-3 py-10 text-center text-slate-500">Loading records…</td></tr>`;
+
+        modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+
+        const url = '{{ route("lands-one-stop-shop.applications.op-batch-records") }}?batch_no=' + encodeURIComponent(batchNo);
+        fetch(url, { headers: { 'Accept': 'application/json' } })
+            .then(r => r.json())
+            .then(res => {
+                if (!res.success || !Array.isArray(res.data) || res.data.length === 0) {
+                    body.innerHTML = `<tr><td colspan="${OP_BATCH_COLSPAN}" class="px-3 py-10 text-center text-slate-500">No records found for this batch.</td></tr>`;
+                    return;
+                }
+                opBatchRowCache = res.data.map(r => ({ ...r, batch_no: batchNo }));
+                renderOpBatchSummary(summary, res);
+                renderOpBatchRows(body, res.data);
+                if (window.lucide) window.lucide.createIcons();
+            })
+            .catch(err => {
+                console.error('Failed to load batch records', err);
+                body.innerHTML = `<tr><td colspan="${OP_BATCH_COLSPAN}" class="px-3 py-10 text-center text-rose-600">Failed to load batch data.</td></tr>`;
+            });
+    };
+
+    function renderOpBatchSummary(el, res) {
+        el.innerHTML = `
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-semibold bg-white border border-slate-200 text-slate-600">
+                <span class="text-slate-400">Batch</span>
+                <span class="font-mono">${res.batch_no}</span>
+            </span>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-semibold bg-white border border-slate-200 text-slate-600">
+                <span class="text-slate-400">Files</span> ${res.count}
+            </span>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-semibold bg-amber-50 border border-amber-200 text-amber-700">
+                <span class="opacity-70">Awaiting OP</span> ${res.awaiting_op}
+            </span>`;
+    }
+
+    // Title-case a table value; leave codes/dashes alone. Fixes ALL-CAPS party names and
+    // lowercase filler locations so the batch table reads consistently.
+    function opBatchNorm(v) {
+        const raw = String(v ?? '').trim();
+        if (!raw || raw === '—') return '—';
+        return raw.toLowerCase()
+            .replace(/\b\w/g, c => c.toUpperCase())
+            .replace(/\bOp\b/g, 'OP').replace(/\bLga\b/g, 'LGA').replace(/\bTp\b/g, 'TP');
+    }
+
+    function renderOpBatchRows(body, rows) {
+        body.innerHTML = rows.map((r, i) => {
+            const status = r.awaiting_op
+                ? '<span class="inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">Awaiting OP</span>'
+                : '<span class="inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">OP linked</span>';
+
+            // Once linked, show the OP's TEMP file number under the TOT file number (like the
+            // main FC listing) — clickable to open the Occupancy Permit (OP) Details card.
+            const tempLine = r.op_temp_fileno
+                ? `<button type="button" onclick="opBatchShowOpDetails(${i})"
+                        class="mt-0.5 block whitespace-nowrap font-mono text-[11px] text-violet-600 hover:text-violet-800 hover:underline">
+                        ${r.op_temp_fileno}
+                   </button>`
+                : '';
+
+            return `
+                <tr class="hover:bg-slate-50">
+                    <td class="px-3 py-2 align-top font-mono text-xs text-slate-500">${i + 1}</td>
+                    <td class="px-3 py-2 align-top whitespace-nowrap">
+                        <span class="font-bold text-slate-900 whitespace-nowrap">${r.file_number}</span>
+                        ${tempLine}
+                    </td>
+                    <td class="px-3 py-2 align-top whitespace-nowrap">${status}</td>
+                    <td class="px-3 py-2 align-top whitespace-nowrap text-slate-600">${r.instrument_type}</td>
+                    <td class="px-3 py-2 align-top whitespace-nowrap text-slate-600">${r.op_type}</td>
+                    <td class="px-3 py-2 align-top font-mono text-xs text-slate-600">${r.prop_id}</td>
+                    <td class="px-3 py-2 align-top text-slate-700">${r.awaiting_op ? '—' : opBatchNorm(r.party_1)}</td>
+                    <td class="px-3 py-2 align-top text-slate-700">${opBatchNorm(r.party_2)}</td>
+                    <td class="px-3 py-2 align-top text-slate-600">${r.tp_no}</td>
+                    <td class="px-3 py-2 align-top text-slate-600">${r.plot_no}</td>
+                    <td class="px-3 py-2 align-top text-slate-600">${opBatchNorm(r.lga)}</td>
+                    <td class="px-3 py-2 align-top text-slate-600">${opBatchNorm(r.location)}</td>
+                    <td class="px-3 py-2 align-top text-center">
+                        <div class="relative inline-block text-left" x-data="{ open: false }">
+                            <button type="button" @click="open = !open" @click.away="open = false"
+                                    title="Actions"
+                                    class="inline-flex items-center justify-center w-8 h-8 rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition">
+                                <i data-lucide="more-vertical" class="w-4 h-4"></i>
+                            </button>
+                            <div x-show="open" x-cloak x-transition
+                                 class="absolute right-0 z-50 mt-1 w-40 rounded-lg border border-slate-200 bg-white shadow-lg py-1 text-left">
+                                <button type="button" ${r.awaiting_op ? `onclick="opBatchCaptureOp('${r.op_batch}')"` : 'disabled'}
+                                        title="${r.awaiting_op ? 'Capture the OP for this file' : 'OP already captured'}"
+                                        class="w-full px-3 py-2 text-xs flex items-center gap-2 ${r.awaiting_op ? 'text-slate-700 hover:bg-slate-50' : 'text-slate-300 cursor-not-allowed'}">
+                                    <i data-lucide="plus" class="w-3.5 h-3.5 ${r.awaiting_op ? 'text-violet-500' : 'text-slate-300'}"></i> Capture OP
+                                </button>
+                                <button type="button" onclick="opBatchUpdateTot('${r.op_batch}')"
+                                        class="w-full px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                                    <i data-lucide="pencil" class="w-3.5 h-3.5 text-emerald-500"></i> Update ToT
+                                </button>
+                            </div>
+                        </div>
+                    </td>
+                </tr>`;
+        }).join('');
+    }
+
+    window.closeOpBatchModal = function () {
+        const modal = document.getElementById('opBatchModal');
+        if (modal) modal.classList.add('hidden');
+        document.body.style.overflow = '';
+    };
+
+    // Open the shared Occupancy Permit (OP) Details card for a linked batch row. Index-based so
+    // party names with apostrophes don't need escaping into an inline handler.
+    window.opBatchShowOpDetails = function (i) {
+        const r = opBatchRowCache[i];
+        if (!r || !r.op_temp_fileno) return;
+        if (typeof window.showTempFileDetailsByPropId !== 'function') {
+            console.error('showTempFileDetailsByPropId is not available');
+            return;
+        }
+        const propId = (r.prop_id && r.prop_id !== '—') ? r.prop_id : null;
+        // pra OP → source_pra_id; instrument_capture OP → source_capture_id.
+        const isIc = r.source_op_table === 'instrument_capture';
+        window.showTempFileDetailsByPropId(
+            propId,
+            isIc ? r.op_pra_id : null,
+            isIc ? null : r.op_pra_id,
+            r.op_temp_fileno,
+            r.file_number,
+            r.party_2
+        );
+    };
+
+    // Capture OP card entry point from the OP Batch modal. The card itself (markup + JS)
+    // lives in lands_one_stop_shop.partials.capture-op-card, included above.
+    window.opBatchCaptureOp = function (opBatch) {
+        const row = (opBatchRowCache || []).find(r => r.op_batch === opBatch);
+        if (!row) return;
+        if (row.has_op) {
+            Swal.fire({ icon: 'info', title: 'Already linked',
+                text: `${row.file_number} is already linked to ${row.source_op_table} #${row.source_op_id}.` });
+            return;
+        }
+        openCaptureOpModal(row);
+    };
+
+    /* ─── Update ToT Card ─── */
+    // Land Use data is free-text ("RESIDENTIAL"…) but the select values are codes (RES…).
+    // Map the common words, and inject an option if it still doesn't match so nothing is lost.
+    function setLandUseSelect(selectId, raw) {
+        const sel = document.getElementById(selectId);
+        const v = (raw && raw !== '—') ? String(raw).trim() : '';
+        if (v === '') { sel.value = ''; return; }
+        const map = { 'RESIDENTIAL': 'RES', 'COMMERCIAL': 'COM', 'INDUSTRIAL': 'IND', 'AGRICULTURAL': 'AGR' };
+        const code = map[v.toUpperCase()] || v;
+        if (![...sel.options].some(o => o.value === code)) sel.add(new Option(v, code));
+        sel.value = code;
+    }
+
+    function initLgaSelect(modalEl, current) {
+        opEnsureLgas().then(list => {
+            const $sel = $('#utLga');
+            if (!$sel.hasClass('select2-hidden-accessible')) {
+                $sel.select2({
+                    data: [{ id: '', text: 'Select LGA' }].concat(list.map(n => ({ id: n, text: n }))),
+                    dropdownParent: $(modalEl), width: '100%', placeholder: 'Select LGA',
+                });
+            }
+            const cur = (current && current !== '—') ? String(current).trim() : '';
+            // Backfill: add the current value as an option if the list doesn't already have it.
+            if (cur && !$sel.find('option').toArray().some(o => o.value === cur)) {
+                $sel.append(new Option(cur, cur, true, true));
+            }
+            $sel.val(cur).trigger('change.select2');
+        });
+    }
+
+    let utTot = null;
+    window.opBatchUpdateTot = function (opBatch) {
+        const row = (opBatchRowCache || []).find(r => r.op_batch === opBatch);
+        if (!row) return;
+        utTot = row;
+        document.getElementById('utFileNo').textContent = row.file_number;
+        document.getElementById('utPropId').textContent = row.prop_id;
+        const p1 = (row.party_1 && !/^kano state government$/i.test(row.party_1) && row.party_1 !== '—') ? row.party_1 : '';
+        document.getElementById('utParty1').value = p1;
+        document.getElementById('utParty2').value = (row.party_2 && row.party_2 !== '—') ? row.party_2 : '';
+        document.getElementById('utTpNo').value = (row.tp_no && row.tp_no !== '—') ? row.tp_no : '';
+        setLandUseSelect('utLandUse', row.land_use);
+
+        const modal = document.getElementById('updateTotModal');
+        modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+        initLgaSelect(modal, row.lga);
+        initLocationBuilder('tot', modal);
+        resetLocationBuilder('tot', row.plot_no);
+        document.getElementById('totLocation').value = (row.location && row.location !== '—') ? row.location : '';
+        if (window.lucide) window.lucide.createIcons();
+    };
+
+    window.closeUpdateTotModal = function () {
+        document.getElementById('updateTotModal').classList.add('hidden');
+        document.body.style.overflow = 'hidden'; // batch modal is still open behind
+        utTot = null;
+    };
+
+    window.saveUpdateTot = function () {
+        if (!utTot) return;
+        const btn = document.getElementById('utSaveBtn');
+        btn.disabled = true;
+        fetch('{{ route("lands-one-stop-shop.applications.op-update-tot") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json', 'Accept': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+            },
+            body: JSON.stringify({
+                tot_pra_id: utTot.pra_id,
+                party_1: document.getElementById('utParty1').value,
+                party_2: document.getElementById('utParty2').value,
+                land_use: document.getElementById('utLandUse').value,
+                tp_no: document.getElementById('utTpNo').value,
+                lga: $('#utLga').val() || '',
+                plot_no: document.getElementById('totPlot').value,
+                location: document.getElementById('totLocation').value,
+            }),
+        })
+        .then(r => r.json().then(d => ({ ok: r.ok, d })))
+        .then(({ ok, d }) => {
+            if (!ok || !d.success) {
+                Swal.fire({ icon: 'error', title: 'Could not save', text: d.message || 'Update failed.' });
+                return;
+            }
+            const batchNo = utTot.batch_no;
+            Swal.fire({ icon: 'success', title: 'ToT updated', text: d.message, timer: 2200, showConfirmButton: false });
+            closeUpdateTotModal();
+            if (batchNo) window.openOpBatchModal(batchNo); // refresh the batch list
+        })
+        .catch(err => {
+            console.error('Update ToT failed', err);
+            Swal.fire({ icon: 'error', title: 'Request failed', text: 'See the console for details.' });
+        })
+        .finally(() => { btn.disabled = false; });
+    };
+
+
+
     function openCommissionModalForOP(config = {}) {
         var mode = (config.mode || 'existing').toString().toLowerCase();
         var preselectedFileNo = (config.preselectedFileNo || '').toString().trim();
@@ -1941,10 +2437,7 @@
                 component.defaultAllocationType = '';
                 component.requireOpSource = true;
                 component.subSource = @json($isChangeOfName ? 'OP Change of Name' : '');
-                component.hideBatchMode = {{ $isChangeOfName ? 'true' : 'false' }};
-                if (component.hideBatchMode) {
-                    component.batchMode = false;
-                }
+                component.hideBatchMode = false; // Batch Mode re-enabled
                 if (mode === 'new' && preselectedFileNo) {
                     component.existingFileNo = preselectedFileNo;
                 }

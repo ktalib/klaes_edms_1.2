@@ -1407,9 +1407,47 @@ class FileNumberController extends Controller
     /**
      * Show a specific record
      */
-    public function show($id)
+    public function show($id, Request $request)
     {
         try {
+            // Plot Extensions live in their own isolated `plot_extensions` table and
+            // reuse numeric ids that collide with `fileNumber.id`. When the DataTable
+            // row is a Plot Extension it flags entity=plot_extension so we resolve the
+            // record from the right table and backfill the edit form correctly.
+            if ($request->query('entity') === 'plot_extension') {
+                $pe = DB::connection('sqlsrv')
+                    ->table('plot_extensions')
+                    ->where('id', $id)
+                    ->where(function ($q) {
+                        $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                    })
+                    ->first();
+
+                if (!$pe) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Record not found'
+                    ], 404);
+                }
+
+                return response()->json([
+                    'id'            => $pe->id,
+                    'entity'        => 'plot_extension',
+                    'mlsfNo'        => $pe->original_file_no,
+                    'kangisFileNo'  => $pe->original_file_no,
+                    'FileName'      => $pe->file_name,
+                    'plot_no'       => $pe->plot_no,
+                    'tp_no'         => $pe->tp_no,
+                    'location'      => $pe->location,
+                    'lga'           => $pe->lga,
+                    'district'      => $pe->district,
+                    'customer_type' => $pe->customer_type,
+                    'purpose_id'    => $pe->purpose_id,
+                    'phone_no'      => $pe->phone_no,
+                    'address'       => $pe->address,
+                ]);
+            }
+
             $record = DB::connection('sqlsrv')
                 ->table('fileNumber')
                 ->leftJoin('mls_file_no', 'fileNumber.mlsfNo', '=', 'mls_file_no.full_file_number')
@@ -1508,6 +1546,78 @@ class FileNumberController extends Controller
         }
 
         try {
+            // Plot Extension rows are stored in their own table with colliding ids.
+            // Route the update to plot_extensions so the edit modal saves back to the
+            // correct record instead of a same-id fileNumber row.
+            if ($request->input('entity') === 'plot_extension') {
+                $pe = DB::connection('sqlsrv')
+                    ->table('plot_extensions')
+                    ->where('id', $id)
+                    ->where(function ($q) {
+                        $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                    })
+                    ->first();
+
+                if (!$pe) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Record not found'
+                    ], 404);
+                }
+
+                $peUpdate = [
+                    'file_name'  => $request->file_name,
+                    'updated_at' => now(),
+                ];
+                if ($request->has('lga'))           $peUpdate['lga'] = $request->lga;
+                if ($request->has('district'))      $peUpdate['district'] = $request->district;
+                if ($request->has('plot_no'))       $peUpdate['plot_no'] = $request->plot_no;
+                if ($request->has('tp_no'))         $peUpdate['tp_no'] = $request->tp_no;
+                if ($request->has('location'))      $peUpdate['location'] = $request->location;
+                if ($request->has('purpose_id'))    $peUpdate['purpose_id'] = $request->purpose_id;
+                if ($request->has('customer_type')) $peUpdate['customer_type'] = $request->customer_type;
+                if ($request->has('phone_no'))      $peUpdate['phone_no'] = $request->phone_no;
+                if ($request->has('address'))       $peUpdate['address'] = $request->address;
+
+                DB::connection('sqlsrv')
+                    ->table('plot_extensions')
+                    ->where('id', $id)
+                    ->update($peUpdate);
+
+                // Keep the matching file_indexings row in sync — the original file
+                // number is retained as-is on the plot extension, so the indexing
+                // screen must reflect the edited file name and location details.
+                if (!empty($pe->original_file_no)) {
+                    try {
+                        $fiUpdate = [
+                            'file_title' => $request->file_name,
+                            'current_holder' => $request->file_name,
+                            'updated_by' => Auth::user()->name ?? Auth::user()->email ?? 'System',
+                            'updated_at' => now(),
+                        ];
+                        if ($request->has('location')) $fiUpdate['location'] = $request->location;
+                        if ($request->has('lga'))      $fiUpdate['lga'] = $request->lga;
+                        if ($request->has('district')) $fiUpdate['district'] = $request->district;
+                        if ($request->has('plot_no'))  $fiUpdate['plot_number'] = $request->plot_no;
+                        if ($request->has('tp_no'))    $fiUpdate['tp_no'] = $request->tp_no;
+
+                        DB::connection('sqlsrv')->table('file_indexings')
+                            ->where('file_number', $pe->original_file_no)
+                            ->update($fiUpdate);
+                    } catch (\Exception $e) {
+                        Log::warning('Failed to propagate plot extension FileName to file_indexings', [
+                            'plot_extension_id' => $id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Plot extension updated successfully'
+                ]);
+            }
+
             $record = DB::connection('sqlsrv')
                 ->table('fileNumber')
                 ->where('id', $id)
@@ -1641,14 +1751,21 @@ class FileNumberController extends Controller
 
                 if (!empty($fileNoCandidates)) {
                     try {
+                        $fiUpdate = [
+                            'file_title' => $updateData['FileName'],
+                            'current_holder' => $updateData['FileName'],
+                            'updated_by' => $updateData['updated_by'],
+                            'updated_at' => now(),
+                        ];
+                        if ($request->has('location')) $fiUpdate['location'] = $request->location;
+                        if ($request->has('lga'))      $fiUpdate['lga'] = $request->lga;
+                        if ($request->has('district')) $fiUpdate['district'] = $request->district;
+                        if ($request->has('plot_no'))  $fiUpdate['plot_number'] = $request->plot_no;
+                        if ($request->has('tp_no'))    $fiUpdate['tp_no'] = $request->tp_no;
+
                         DB::connection('sqlsrv')->table('file_indexings')
                             ->whereIn('file_number', $fileNoCandidates)
-                            ->update([
-                                'file_title' => $updateData['FileName'],
-                                'current_holder' => $updateData['FileName'],
-                                'updated_by' => $updateData['updated_by'],
-                                'updated_at' => now(),
-                            ]);
+                            ->update($fiUpdate);
                     } catch (\Exception $e) {
                         Log::warning('Failed to propagate FileName to file_indexings', [
                             'fileNumber_id' => $id,

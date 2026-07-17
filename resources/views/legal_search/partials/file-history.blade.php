@@ -132,14 +132,17 @@
                   Active
                 </span>
               </div>
-              <div id="digital-archive-section" class="mt-4 pt-3 border-t border-gray-200">
-                <div id="digital-archive-status-card" class="rounded-lg border p-3 shadow-sm transition-colors bg-red-50 border-red-200">
-                  <h4 id="digital-archive-status-heading" class="text-sm font-semibold mb-1 text-red-700">Digital Archive</h4>
-                  <div id="digital-archive-loading" class="hidden text-xs text-slate-400">Checking archive...</div>
-                  <div id="digital-archive-empty" class="hidden text-xs text-slate-500">No digital archive available.</div>
-                  <div id="digital-archive-folders" class="flex flex-col gap-2"></div>
-                </div>
-              </div>
+            </div>
+          </div>
+
+          {{-- Digital Archive lives outside the tab panels so it shows on both
+               "File Details" and "Land Use & Status". --}}
+          <div id="digital-archive-section" class="mt-4 pt-3 border-t border-gray-200">
+            <div id="digital-archive-status-card" class="rounded-lg border p-3 shadow-sm transition-colors bg-red-50 border-red-200">
+              <h4 id="digital-archive-status-heading" class="text-sm font-semibold mb-1 text-red-700">Digital Archive</h4>
+              <div id="digital-archive-loading" class="hidden text-xs text-slate-400">Checking archive...</div>
+              <div id="digital-archive-empty" class="hidden text-xs text-slate-500">No digital archive available.</div>
+              <div id="digital-archive-folders" class="flex flex-col gap-2"></div>
             </div>
           </div>
         </div>

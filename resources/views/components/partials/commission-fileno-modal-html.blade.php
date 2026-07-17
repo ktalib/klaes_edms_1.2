@@ -208,10 +208,9 @@
                     </div>
                 </div>
 
-                <!-- Sections hidden when OP source is selected but not yet captured -->
-                <div x-show="!isOpFormHidden" x-transition.opacity.duration.200ms class="space-y-6">
-
-                <!-- Batch Mode Toggle Section -->
+                {{-- Batch Mode Toggle — kept OUTSIDE the !isOpFormHidden wrapper so it stays
+                     visible even when an Occupancy Permit (OP) source is selected. Turning it on
+                     and picking an OP allocation type opens the Batch Capture OP stepper. --}}
                  <div id="batch-mode-section" x-show="!hideBatchMode" x-transition
                      class="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border-2 border-blue-200"
                      :class="{ 'opacity-70': isBatchModeLocked }">
@@ -241,7 +240,7 @@
                         </label>
                         <div class="flex items-center space-x-3">
                             <input type="number" id="batchQuantity" x-model="batchQuantity" @input="updateBatchPreview()"
-                                   min="2" max="100" 
+                                   min="2" max="100"
                                    class="w-32 px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                             <span class="text-sm text-gray-600">files (Max: 100)</span>
                             <div class="flex-1"></div>
@@ -255,6 +254,9 @@
                         </p>
                     </div>
                 </div>
+
+                <!-- Sections hidden when OP source is selected but not yet captured -->
+                <div x-show="!isOpFormHidden" x-transition.opacity.duration.200ms class="space-y-6">
 
                 <!-- Main Form Grid -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -273,10 +275,41 @@
 
                         <!-- File Options Section - 2x2 Grid -->
                         <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                            <label class="block text-sm font-semibold text-gray-700 mb-3">
-                                <i data-lucide="settings" class="w-4 h-4 inline mr-1"></i>
-                                File Options
-                            </label>
+                            <div class="flex items-center justify-between mb-3">
+                                <div class="flex items-center space-x-2">
+                                    <i data-lucide="settings" class="w-4 h-4 inline mr-1"></i>
+                                    <label class="block text-sm font-semibold text-gray-700">File Options</label>
+                                    <!-- Applicant counter (batch mode) — mirrors the MLS modal + Location Details nav -->
+                                    <span x-show="batchMode" class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium">
+                                        Applicant <span x-text="currentEntryIndex + 1"></span> of <span x-text="batchQuantity"></span>
+                                    </span>
+                                </div>
+                                <div x-show="batchMode" class="flex items-center space-x-2">
+                                    <button type="button" @click="previousEntry()"
+                                            :disabled="currentEntryIndex === 0"
+                                            :class="currentEntryIndex === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-100'"
+                                            class="p-1 rounded-md text-blue-600 transition-colors">
+                                        <i data-lucide="chevron-left" class="w-5 h-5"></i>
+                                    </button>
+                                    <button type="button" @click="nextEntry()"
+                                            :disabled="currentEntryIndex >= batchQuantity - 1"
+                                            :class="currentEntryIndex >= batchQuantity - 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-100'"
+                                            class="p-1 rounded-md text-blue-600 transition-colors">
+                                        <i data-lucide="chevron-right" class="w-5 h-5"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {{-- Part 1 for this applicant: the paired OP's Party 2 (allottee), matched by
+                                 batch sequence. Only present after a Batch Capture OP hand-off. --}}
+                            <div x-show="batchMode && opBatchAllottees.length > 0" x-cloak
+                                 class="mb-3 pb-3 border-b border-gray-200">
+                                <div class="text-xs font-medium text-gray-500">
+                                    Part 1 — allottee from OP <span x-text="currentEntryIndex + 1"></span>
+                                </div>
+                                <div class="text-sm font-semibold text-violet-700"
+                                     x-text="opBatchAllottees[currentEntryIndex] || '—'"></div>
+                            </div>
 
                             <!-- 2x2 Grid Layout -->
                             <div class="grid grid-cols-2 gap-4">

@@ -624,6 +624,12 @@ class CreateFileTrackerController extends Controller
                 $query->where('priority', $request->priority);
             }
 
+            // File Request Type tabs: In-transit (MANUAL) / Submitted Request (SUBMITTED).
+            $fileRequestType = strtoupper(trim((string) $request->input('file_request_type', '')));
+            if (in_array($fileRequestType, ['MANUAL', 'SUBMITTED'], true)) {
+                $query->where('file_request_type', $fileRequestType);
+            }
+
             if ($request->has('search') && $request->search) {
                 $search = $request->search;
                 $query->where(function ($q) use ($search) {
@@ -645,6 +651,9 @@ class CreateFileTrackerController extends Controller
                                 ->where('status', '!=', FileTracker::STATUS_COMPLETED)->count(),
                 'completed' => (clone $statsBase)->where('status', FileTracker::STATUS_COMPLETED)->count(),
                 'active' => (clone $statsBase)->where('status', '!=', FileTracker::STATUS_COMPLETED)->count(),
+                // File Request Type tab counts (In-transit = MANUAL, Submitted Request = SUBMITTED).
+                'in_transit' => (clone $statsBase)->where('file_request_type', 'MANUAL')->count(),
+                'submitted' => (clone $statsBase)->where('file_request_type', 'SUBMITTED')->count(),
             ];
 
             // Extra new_kangis dashboard metrics:

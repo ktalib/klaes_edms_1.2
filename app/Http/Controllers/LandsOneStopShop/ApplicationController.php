@@ -644,10 +644,18 @@ class ApplicationController extends Controller
         }
 
         if (($data['system_source'] ?? null) === 'OSSOPCHANGEOFNAME' && $fileNo !== '') {
-            if (!$this->fileHasTransferOfTitle($fileNo, $praService)) {
+            if (!$this->fileHasOccupancyPermit($fileNo, $praService)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'The selected file number cannot proceed on the Change of Name page because it does not have a Transfer of Title (OP) record in PRA.',
+                    'message' => 'The selected file number cannot proceed on the Change of Name page because it is not linked to any Occupancy Permit (OP) record in PRA.',
+                ], 422);
+            }
+
+            // OP Serial Number is mandatory on the Change of Name page.
+            if (trim((string) $request->input('op_serial_number', '')) === '') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'OP Serial Number is required. Enter it in the "Occupancy Permit Details" section.',
                 ], 422);
             }
         }
@@ -3543,7 +3551,20 @@ class ApplicationController extends Controller
         $hasTransferOfTitle = $totRecords->isNotEmpty();
         $row = $totRecords->first() ?: [];
 
-        if (!$hasTransferOfTitle && !$indexingRow && !$mlsRow && !$fileNumberRow) {
+        // Occupancy Permit row — a file may carry an OP transaction separate from
+        // (and usually older than) the latest transfer. The Occupancy Permit
+        // Details section must backfill from THIS row, not the mother row.
+        $opRow = collect($records)
+            ->map(static fn ($record) => (array) $record)
+            ->filter(function (array $r): bool {
+                $t = strtoupper(trim((string) ($r['instrument_type'] ?? '') . ' ' . ($r['transaction_type'] ?? '')));
+                return str_contains($t, 'OCCUPANCY PERMIT') || str_contains($t, 'OP)');
+            })
+            ->sortByDesc(fn (array $r) => $this->rowTimestampForMotherSelection($r))
+            ->first() ?: [];
+        $hasOccupancyPermit = !empty($opRow);
+
+        if (!$hasTransferOfTitle && !$hasOccupancyPermit && !$indexingRow && !$mlsRow && !$fileNumberRow) {
             return response()->json([
                 'success' => false,
                 'message' => 'File not found in any registry or history.',
@@ -3595,7 +3616,29 @@ class ApplicationController extends Controller
         $lga = strtoupper((string) ($this->firstFilledValue($row, ['lga', 'lgsaOrCity', 'lga_name']) ?? ($idx($indexingRow, 'idx_lga') ?: $fnr($fileNumberRow, 'lga'))));
         $state = strtoupper((string) ($this->firstFilledValue($row, ['state', 'state_name']) ?? ''));
         $registrationNo = strtoupper((string) ($this->firstFilledValue($row, ['regNo', 'reg_no', 'registration_number']) ?? $idx($indexingRow, 'idx_registration_number')));
-        $opSerialNo = strtoupper((string) ($this->firstFilledValue($row, ['op_serial_number', 'serialNo', 'pageNo']) ?? ''));
+
+        // ── Occupancy Permit Details (sourced from the OP row) ──
+        $toIsoDate = static function ($value): string {
+            $value = trim((string) $value);
+            if ($value === '') {
+                return '';
+            }
+            $ts = strtotime($value);
+            return $ts !== false ? date('Y-m-d', $ts) : '';
+        };
+
+        // OP serial only from an OP-specific column (never the deed serial/page).
+        $opSerialNo   = strtoupper((string) ($this->firstFilledValue($opRow, ['op_serial_number', 'op_serial', 'opSerialNo']) ?? ''));
+        $opType       = strtoupper((string) ($this->firstFilledValue($opRow, ['op_type']) ?? ''));
+        $opDeedSerial = strtoupper((string) ($this->firstFilledValue($opRow, ['serialNo', 'serial_no']) ?? ''));
+        $opDeedPage   = strtoupper((string) ($this->firstFilledValue($opRow, ['pageNo', 'page_no']) ?? ''));
+        $opDeedVol    = strtoupper((string) ($this->firstFilledValue($opRow, ['volumeNo', 'volNo', 'vol_no']) ?? ''));
+        $opGrantor    = strtoupper((string) ($this->firstFilledValue($opRow, ['Grantor', 'grantor', 'party_1']) ?? 'KANO STATE GOVERNMENT'));
+        $opGrantee    = strtoupper((string) ($this->firstFilledValue($opRow, ['Grantee', 'grantee', 'party_2']) ?? ''));
+        $opLandUse    = strtoupper((string) ($this->firstFilledValue($opRow, ['land_use', 'landUse']) ?? ''));
+        $opTxnDate    = $toIsoDate($this->firstFilledValue($opRow, ['transaction_date', 'reg_date', 'regDate']) ?? '');
+        $opDeedsDate  = $toIsoDate($this->firstFilledValue($opRow, ['deeds_date', 'reg_date']) ?? '');
+        $opDeedsTime  = trim((string) ($this->firstFilledValue($opRow, ['deeds_time', 'reg_time']) ?? ''));
         $phone = (string) ($this->firstFilledValue($row, [
             'phone',
             'phone_no',
@@ -3630,21 +3673,33 @@ class ApplicationController extends Controller
                 'purpose' => $purpose,
                 'customer_type' => strtoupper(trim((string) (($indexingRow->applicant_customer_type ?? '') ?: ($mlsRow->mls_customer_type ?? '')))),
                 'has_transfer_of_title' => $hasTransferOfTitle,
+
+                // Occupancy Permit Details backfill (from the OP transaction)
+                'has_occupancy_permit' => $hasOccupancyPermit,
+                'op_type'              => $opType,
+                'op_land_use'          => $opLandUse,
+                'grantor'              => $opGrantor,
+                'grantee'              => $opGrantee,
+                'transaction_date'     => $opTxnDate,
+                'deed_serial_no'       => $opDeedSerial,
+                'deed_page_no'         => $opDeedPage,
+                'deed_vol_no'          => $opDeedVol,
+                'deeds_date'           => $opDeedsDate,
+                'deeds_time'           => $opDeedsTime,
             ],
         ]);
     }
 
-    private function fileHasTransferOfTitle(string $fileNo, PraRecordService $praService): bool
+    private function fileHasOccupancyPermit(string $fileNo, PraRecordService $praService): bool
     {
         $records = $praService->findAllByFileNumber(strtoupper(trim($fileNo)));
 
         return collect($records)->contains(function ($record) {
             $row = (array) $record;
-            $instrumentType = strtoupper(trim((string) ($row['instrument_type'] ?? '')));
-            $transactionType = strtoupper(trim((string) ($row['transaction_type'] ?? '')));
+            // Match the same signal the lookup uses to set has_occupancy_permit.
+            $t = strtoupper(trim((string) ($row['instrument_type'] ?? '') . ' ' . ($row['transaction_type'] ?? '')));
 
-            return str_contains($instrumentType, 'TRANSFER OF TITLE')
-                || str_contains($transactionType, 'TRANSFER OF TITLE');
+            return str_contains($t, 'OCCUPANCY PERMIT') || str_contains($t, 'OP)');
         });
     }
 

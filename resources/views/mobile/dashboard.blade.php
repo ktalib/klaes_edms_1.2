@@ -606,6 +606,34 @@
       <div><h1>File Requests</h1><p>Physical searches & FSR History</p></div>
       <button class="icon-circle" id="frRefreshBtn" title="Refresh"><i class="fas fa-rotate-right"></i></button>
     </div>
+
+    <!-- Requests Today — mirrors the web Quick Search tile. -->
+    <div id="fsTodayCard" style="position:relative;overflow:hidden;border:1px solid #a5b4fc;background:#6366f1;border-radius:16px;padding:16px;margin-bottom:16px;box-shadow:0 4px 10px rgba(79,70,229,.25);">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+        <div>
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#e0e7ff;">Requests Today</div>
+          <div id="fsToday" style="margin-top:4px;font-size:30px;font-weight:800;line-height:1;color:#fff;">—</div>
+        </div>
+        <span style="display:flex;height:36px;width:36px;flex-shrink:0;align-items:center;justify-content:center;border-radius:10px;background:#4338ca;color:#fff;">
+          <i class="fas fa-inbox"></i>
+        </span>
+      </div>
+      <div style="margin-top:12px;border-top:1px solid #818cf8;padding-top:8px;font-size:11px;font-weight:500;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+          <span style="color:#e0e7ff;"><span style="display:inline-block;height:6px;width:6px;border-radius:50%;background:#fff;margin-right:6px;"></span>Found</span>
+          <span id="fsTodayFound" style="font-weight:700;color:#fff;">—</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+          <span style="color:#e0e7ff;"><span style="display:inline-block;height:6px;width:6px;border-radius:50%;background:#fff;margin-right:6px;"></span>Not Found</span>
+          <span id="fsTodayNotFound" style="font-weight:700;color:#fff;">—</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="color:#e0e7ff;"><span style="display:inline-block;height:6px;width:6px;border-radius:50%;background:#fff;margin-right:6px;"></span>Awaiting</span>
+          <span id="fsTodayAwaiting" style="font-weight:700;color:#fff;">—</span>
+        </div>
+      </div>
+    </div>
+
     <div class="fr-seg">
       <button type="button" class="fr-seg-btn active" data-frview="open" onclick="setFrView('open')">Open <span class="fr-count" id="frCountOpen">0</span></button>
       <button type="button" class="fr-seg-btn" data-frview="log" onclick="setFrView('log')">FSR History <span class="fr-count" id="frCountLog">0</span></button>
@@ -2605,8 +2633,10 @@ function setFrView(view) {
   const log  = document.getElementById('frLogContainer');
   if (open) open.style.display = view === 'open' ? 'block' : 'none';
   if (log)  log.style.display  = view === 'log'  ? 'block' : 'none';
+  // loadFileRequests() refreshes the Requests Today tile itself; the History view
+  // fetches a different endpoint, so top the tile up separately there.
   if (view === 'open') loadFileRequests();
-  else loadFsrLog();
+  else { loadFsrLog(); loadFsToday(); }
 }
 
 // Filter a File Request list by the search box term (file no, title, request no, requester).
@@ -2729,6 +2759,24 @@ async function revertFr(id, btn) {
   }
 }
 
+// ─── SCB Monitor: "Requests Today" card on File Search ─────────────────────
+function renderFsToday(t) {
+  if (!t) return;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = (v ?? 0); };
+  set('fsToday', t.total);
+  set('fsTodayFound', t.found);
+  set('fsTodayNotFound', t.not_found);
+  set('fsTodayAwaiting', t.awaiting);
+}
+
+async function loadFsToday() {
+  if (!IS_SCB_MONITOR || !document.getElementById('fsTodayCard')) return;
+  try {
+    const res = await api(`${MOB_BASE}/file-requests`);
+    if (res && res.success) { openFileRequests = res.data || []; renderFsToday(res.today); }
+  } catch (e) { /* leave the tile on its placeholder dashes */ }
+}
+
 // ─── SCB Monitor: File Requests inbox ──────────────────────────────────────
 // Cached open-FR list so File Search can offer a Found/Not-Found shortcut.
 let openFileRequests = null;
@@ -2737,6 +2785,7 @@ async function getOpenFileRequests() {
   try {
     const res = await api(`${MOB_BASE}/file-requests`);
     openFileRequests = (res && res.success) ? (res.data || []) : [];
+    if (res && res.success) renderFsToday(res.today);
   } catch (e) { openFileRequests = []; }
   return openFileRequests;
 }
@@ -2758,6 +2807,7 @@ async function loadFileRequests() {
     frOpenTotal = (res && res.success && res.total != null) ? res.total : frOpenList.length;
     frLogTotal  = (logRes && logRes.success && logRes.total != null) ? logRes.total : frLogList.length;
     openFileRequests = frOpenList;  // keep the search shortcut in sync
+    renderFsToday(res && res.today);  // keep File Search's Requests Today tile in sync
     updateFrCounts();
     renderFileRequests();
   } catch(e) {

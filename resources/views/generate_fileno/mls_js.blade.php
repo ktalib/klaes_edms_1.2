@@ -1112,7 +1112,7 @@
                                     </button>
                                     <div class="action-dropdown-menu">
                                     <!-- Edit Record -->
-                                    <button onclick="openEditModalFromAction(event, ${row.id})" 
+                                    <button onclick="openEditModalFromAction(event, ${row.id}, '${row.type || ''}')"
                                             class="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 flex items-center space-x-3">
                                         <i data-lucide="edit-3" class="w-4 h-4 text-slate-500"></i>
                                         <span class="font-medium">Edit</span>
@@ -2813,6 +2813,28 @@
                         headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content') }
                     }).catch(e => console.warn('Cache clear failed:', e));
 
+                    // Batch OP Capture → Commissioning: link each generated file to its OP
+                    // (OP i ↔ file i) with a shared prop_id. Set by copReopenCommissionForBatch.
+                    if (window.pendingOpBatch && window.pendingOpBatch.op_batch
+                        && Array.isArray(data.files) && data.files.length) {
+                        try {
+                            const linkResp = await fetch('{{ route("lands-one-stop-shop.applications.op-link-commissioned") }}', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Accept': 'application/json',
+                                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                                },
+                                body: JSON.stringify({ op_batch: window.pendingOpBatch.op_batch, files: data.files }),
+                            });
+                            const linkData = await linkResp.json();
+                            console.log('OP↔commissioned-file linking:', linkData);
+                        } catch (e) {
+                            console.warn('OP linking failed', e);
+                        }
+                        window.pendingOpBatch = null;
+                    }
+
                     let batchSuccessTitle = 'Batch Generated!';
                     let summaryTitle = 'Batch Summary';
                     let summaryIcon = 'layers';
@@ -3001,7 +3023,7 @@
             });
     }
 
-    function openEditModalFromAction(event, id) {
+    function openEditModalFromAction(event, id, type) {
         if (event) {
             event.preventDefault();
             event.stopPropagation();
@@ -3012,21 +3034,33 @@
             d.classList.remove('show');
         });
 
-        editRecord(id);
+        editRecord(id, type);
     }
 
-    function editRecord(id) {
+    function editRecord(id, type) {
         // Show loading while fetching record details
         showGlobalLoading('Loading record details...');
 
-        fetch(`{{ route("file-numbers.show", ":id") }}`.replace(':id', id))
+        // Plot Extensions live in a separate table and reuse ids that collide with
+        // fileNumber ids, so flag the entity to resolve the correct record.
+        const isPlotExtension = (type || '') === 'Plot Extension';
+        let showUrl = `{{ route("file-numbers.show", ":id") }}`.replace(':id', id);
+        if (isPlotExtension) {
+            showUrl += (showUrl.includes('?') ? '&' : '?') + 'entity=plot_extension';
+        }
+
+        fetch(showUrl)
             .then(response => response.json())
             .then(data => {
                 hideGlobalLoading();
-                
+
+                // Remember the entity so the save path targets the same table.
+                const entityField = document.getElementById('editEntity');
+                if (entityField) entityField.value = data.entity || '';
+
                 // Populate fields
                 document.getElementById('editId').value = data.id;
-                document.getElementById('editMlsfNo').value = data.mlsfNo || data.kangisFileNo;
+                document.getElementById('editMlsfNo').value = data.mlsfNo || data.kangisFileNo || '';
                 document.getElementById('editFileName').value = data.FileName || '';
                 document.getElementById('editPlotNo').value = data.plot_no || '';
                 document.getElementById('editTpNo').value = data.tp_no || '';
@@ -3040,7 +3074,11 @@
 
                 const customerTypeSelect = document.getElementById('editCustomerType');
                 if (customerTypeSelect) {
-                    customerTypeSelect.value = 'Individual';
+                    // Normalise stored value (e.g. "INDIVIDUAL") to the option casing.
+                    const ct = (data.customer_type || '').toString().trim();
+                    const match = Array.from(customerTypeSelect.options)
+                        .find(o => o.value.toLowerCase() === ct.toLowerCase());
+                    customerTypeSelect.value = match ? match.value : 'Individual';
                 }
                 document.getElementById('editPurpose').value = data.purpose_id || '';
                 
@@ -3223,25 +3261,18 @@
     }
 
     function updateEditLocation() {
-        const plotNo = document.getElementById('editPlotNo')?.value.trim() || '';
         const district = document.getElementById('editDistrictValue')?.value.trim() || '';
         const lga = document.getElementById('editLga')?.value.trim() || '';
-        
-        let parts = [];
-        if (plotNo) {
-            parts.push(`PLOT NUMBER ${plotNo}`);
-        }
-        
+
+        // Location is composed from district/LGA only — the plot number is a
+        // separate field and must not be echoed into the location string.
         let locationDetails = [];
         if (district) locationDetails.push(district);
         if (lga) locationDetails.push(lga);
         locationDetails.push('KANO');
-        
-        const plotPart = parts.join(' ');
-        const addressPart = locationDetails.join(', ');
-        
-        const locationString = [plotPart, addressPart].filter(Boolean).join(' ');
-        
+
+        const locationString = locationDetails.join(', ');
+
         const locationInput = document.getElementById('editLocation');
         if (locationInput) {
             locationInput.value = locationString.toUpperCase();
@@ -4067,6 +4098,10 @@
             currentEntryIndex: 0,
             serialRangePreview: '-',
             applyLocationToAll: false, // Toggle for batch location sync
+            // Allottees (each OP's Party 2) by batch sequence, set by the Batch Capture OP
+            // hand-off (copReopenCommissionForBatch). Index i pairs with applicant i, and
+            // becomes the ToT's Part 1 at link time. Empty outside that flow.
+            opBatchAllottees: [],
 
             // Initialize the Select2 for Direct Allocation
             init() {
@@ -4364,15 +4399,16 @@
                         $select.select2('destroy');
                     }
 
-                    const mergedAllocationFilters = ['Governor', 'Commissioner'];
-
                     // Pre-filter options before initializing Select2
                     $select.find('option').each(function() {
                         const $opt = $(this);
                         const optAllocatedBy = $opt.attr('data-allocated-by');
 
+                        // "Allocation List" is the catch-all: show every unallocated entry
+                        // regardless of allocated_by (these rows come straight from
+                        // allocation_list_stage, where allocated_by is typically blank).
                         const isMergedAllocationList = self.allocatedByFilter === 'Allocation List';
-                        const matchesMergedFilter = isMergedAllocationList && mergedAllocationFilters.includes(optAllocatedBy);
+                        const matchesMergedFilter = isMergedAllocationList;
                         const matchesSpecificFilter = !isMergedAllocationList && optAllocatedBy === self.allocatedByFilter;
 
                         if (matchesMergedFilter || matchesSpecificFilter) {
@@ -5492,6 +5528,10 @@
 
             // Batch Mode Methods
             toggleBatchMode() {
+                // Toggling by hand starts a fresh batch, so any allottees carried over from a
+                // previous Batch Capture OP hand-off no longer line up — drop them.
+                this.opBatchAllottees = [];
+
                 if (this.isBatchModeLocked) {
                     this.batchMode = false;
                     this.locationEntries = [];
@@ -8154,7 +8194,83 @@
      */
     function openCommissionOpCaptureModal(selection) {
         const normalized = String(selection || '').toLowerCase() === 'resettlement' ? 'resettlement' : 'direct';
+        const opType = normalized === 'resettlement' ? 'OP Resettlement' : 'OP Direct Allocation';
 
+        // Batch Capture OP: when Batch Mode is ON (qty > 1) and the reused Batch Capture OP
+        // card is present (the OSS applications page), open the OP stepper (OP i of N) instead
+        // of the single-record registration dialog. Otherwise fall through to single capture.
+        const alpineRoot = document.querySelector('[x-data="fileNumberGenerator()"]');
+        const alpineData = (alpineRoot && alpineRoot._x_dataStack) ? alpineRoot._x_dataStack[0] : null;
+        if (alpineData && alpineData.batchMode && parseInt(alpineData.batchQuantity) > 1
+            && typeof window.openBatchCaptureOp === 'function') {
+            window.openBatchCaptureOp(parseInt(alpineData.batchQuantity), opType);
+            return;
+        }
+
+        // Picking an OP type with Batch Mode still off: ask whether this is a batch or a
+        // single OP. Batch turns the Batch Mode toggle on and opens the OP stepper; Single
+        // proceeds straight to the existing one-record dialog.
+        if (alpineData && typeof window.openBatchCaptureOp === 'function' && typeof Swal !== 'undefined') {
+            promptOpBatchOrSingle(alpineData, normalized, opType);
+            return;
+        }
+
+        openSingleOpRegistrationDialog(normalized);
+    }
+
+    /**
+     * Batch-or-Single prompt shown when an OP type (Direct Allocation / Resettlement) is
+     * picked. Choosing Batch enables Batch Mode with the entered quantity and opens the
+     * Batch Capture OP stepper; Single leaves Batch Mode off.
+     */
+    function promptOpBatchOrSingle(alpineData, normalized, opType) {
+        Swal.fire({
+            title: 'Occupancy Permit (OP)',
+            html: `<p class="text-sm text-gray-600 mb-3">Are you capturing a <strong>single</strong> OP, or a <strong>batch</strong> of OPs for ${opType}?</p>
+                   <input id="opBatchQtyInput" type="number" min="2" max="100" value="2"
+                          class="swal2-input" style="width:8rem;margin:0 auto;" placeholder="Qty">
+                   <p class="text-xs text-gray-500">Number of OPs (used only for Batch)</p>`,
+            icon: 'question',
+            showCancelButton: true,
+            showDenyButton: true,
+            confirmButtonText: 'Batch',
+            denyButtonText: 'Single',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#2563eb',
+            denyButtonColor: '#059669',
+            focusConfirm: false,
+            preConfirm: () => {
+                const qty = parseInt(document.getElementById('opBatchQtyInput')?.value, 10);
+                if (!qty || qty < 2 || qty > 100) {
+                    Swal.showValidationMessage('Enter a batch quantity between 2 and 100.');
+                    return false;
+                }
+                return qty;
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                const qty = result.value;
+                alpineData.batchMode = true;
+                alpineData.batchQuantity = qty;
+                if (typeof alpineData.toggleBatchMode === 'function') alpineData.toggleBatchMode();
+                window.openBatchCaptureOp(qty, opType);
+                return;
+            }
+
+            if (result.isDenied) {
+                alpineData.batchMode = false;
+                if (typeof alpineData.toggleBatchMode === 'function') alpineData.toggleBatchMode();
+                openSingleOpRegistrationDialog(normalized);
+                return;
+            }
+
+            // Cancelled: undo the OP type selection so the user can choose again.
+            alpineData.defaultAllocationType = '';
+        });
+    }
+
+    // The original single-record OP capture: opens the shared registration dialog.
+    function openSingleOpRegistrationDialog(normalized) {
         if (typeof window.openRegistrationDialog !== 'function') {
             Swal.fire({
                 icon: 'warning',

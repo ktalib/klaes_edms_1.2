@@ -595,6 +595,10 @@ class LegalSearchService
             'file_ground_rent_date' => $fileIndexingData->ground_rent_receipt_date ?? null,
             'file_related_fileno' => $fileIndexingData->related_fileno ?? null,
             'file_index_number' => $fileIndexingData->file_number ?? null,
+            // Whether the searched file has its own file_indexings row. Drives whether
+            // the synthetic "File Commissioning" row is shown in the timeline — an
+            // un-indexed file must not display one.
+            'is_indexed' => $this->isFileIndexed($ownIndexedNumber ?? $fileNo),
             'file_temp_number' => $tempFileNumber,
             'file_history_count' => count($fileHistoryRecords),
             'cofo_count' => count($cofoRecords),
@@ -1268,6 +1272,12 @@ class LegalSearchService
             }
 
             foreach ($relatedNos as $relNo) {
+            // A related_fileno endpoint that points back at the searched file itself (any of its
+            // own number formats) is redundant — the file is already represented by its own rows,
+            // so it must never appear in the timeline as a separate "Related Fileno" row.
+            if (isset($searchedOwnSet[$norm($relNo)])) {
+                continue;
+            }
             // Manual Linkage endpoints never get a real transaction date (see above) —
             // suppress the display value per-endpoint even though $displayDate/$sortDate were
             // computed once for the whole (possibly multi-file) related_file_number row.
@@ -2345,6 +2355,30 @@ class LegalSearchService
         }
 
         return $conn->table('fileNumber')->whereIn('mlsfNo', $variants)->exists();
+    }
+
+    /**
+     * Whether the searched file (or its "(T)"/base variant) has its OWN row in
+     * file_indexings — i.e. it has actually been indexed, as opposed to merely
+     * commissioned (present in fileNumber) or loosely linked via another file's
+     * related_fileno. Used to gate the synthetic "File Commissioning" timeline row:
+     * a file that is not yet indexed must not show a commissioning row.
+     */
+    private function isFileIndexed(?string $fileNo): bool
+    {
+        $variants = $this->fileNumberVariants($fileNo);
+        if (empty($variants)) {
+            return false;
+        }
+
+        return DB::connection('sqlsrv')->table('file_indexings')
+            ->whereNull('deleted_at')
+            ->where(function ($q) use ($variants) {
+                foreach ($variants as $v) {
+                    $q->orWhere('file_number', $v)->orWhere('temp_file_no', $v);
+                }
+            })
+            ->exists();
     }
 
     /**
@@ -5388,11 +5422,11 @@ class LegalSearchService
 
     /**
      * Build the "SEARCHED (LINKED)" file-number display string shared by the on-screen LS
-     * Timeline, the Pay-Per-Search template and the printable report:
+     * Timeline, the Pay-Per-Search template and the printable report. The SEARCHED number
+     * always leads, with its counterpart parenthesised:
      *   - Searched by the land/MLS file number (e.g. CON-AG-2014-35) → "CON-AG-2014-35 (MLKN 2455)"
      *   - Searched by the KANGIS file number (e.g. MLKN 2455)       → "MLKN 2455 (CON-AG-2014-35)"
-     * The searched value always leads; its KANGIS Recertification counterpart (whichever
-     * direction is needed) is appended in parentheses when one is on record. Presentation
+     * When no counterpart is on record the searched number is shown alone. Presentation
      * only — the underlying stored values are never touched.
      *
      * @param array $transactions Normalized timeline rows (as produced by search()/buildPrintReport()).
@@ -5475,8 +5509,18 @@ class LegalSearchService
         }
 
         if ($isKangis($searchedFileNo)) {
-            if ($relatedMls && strcasecmp(trim($relatedMls), trim($searchedFileNo)) !== 0) {
-                $display .= ' (' . $relatedMls . ')';
+            // Searched by the KANGIS alias (e.g. "MLKN 3725") — it leads the display, with its
+            // land/MLS counterpart parenthesised: "MLKN 3725 (CON-IND-2021-18)". $display holds
+            // the resolved land number here, so the land number is the counterpart (either the
+            // recert-derived $relatedMls or the resolved $resolvedFileNo — same value); using it
+            // as the counterpart rather than the lead is what avoids the old
+            // "CON-IND-2021-18 (CON-IND-2021-18)" duplicate.
+            $landNo = ($relatedMls && !$isKangis($relatedMls))
+                ? $relatedMls
+                : (!$isKangis($resolvedFileNo) ? $resolvedFileNo : null);
+            $display = trim($searchedFileNo);
+            if ($landNo && strcasecmp(trim($landNo), trim($searchedFileNo)) !== 0) {
+                $display .= ' (' . $landNo . ')';
             }
         } elseif ($searchedFileNo === '') {
             if ($kangisNumber) {

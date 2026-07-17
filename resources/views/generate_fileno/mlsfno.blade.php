@@ -568,6 +568,7 @@
                                             <option value="extension">Extension</option>
                                             <option value="miscellaneous">Miscellaneous</option>
                                             <option value="change_of_purpose">Change of Purpose</option>
+                                            <option value="resettlement">Resettlement</option>
                                             <option value="regrant">Re-grant</option>
                                             <option value="subdivision">Subdivision</option>
                                             <option value="merger">Merger</option>
@@ -580,7 +581,7 @@
                                 <div x-show="applicationType === 'new'" class="mt-4 pt-4 border-t border-gray-200" x-transition>
                                     <label class="block text-[10px] font-bold text-gray-400 uppercase mb-3">
                                         <i data-lucide="filter" class="w-3 h-3 inline mr-1 text-blue-500"></i>
-                                        Select Registry
+                                        Direct allocation type
                                     </label>
                                     
                                     <!-- Allocation Options - Row 1 -->
@@ -605,7 +606,7 @@
                                         <label class="flex items-center justify-center p-2 rounded-md border border-gray-200 bg-white cursor-pointer hover:bg-gray-50 transition-colors">
                                             <input type="radio" name="allocation_source_type" value="allocation_list"
                                                    class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                                                   @change="_currentAllocationSourceType = 'allocation_list'; allocatedByFilter = 'Allocation List'; handleAllocationFilterChange(); defaultAllocationType = ''">
+                                                   @change="_currentAllocationSourceType = 'allocation_list'; hasCustomFileName = false; allocatedByFilter = 'Allocation List'; handleAllocationFilterChange(); defaultAllocationType = ''">
                                             <span class="ml-2 text-xs font-semibold text-gray-700 whitespace-nowrap">Allocation List</span>
                                         </label>
                                     </div>
@@ -716,6 +717,17 @@
                                                     <i data-lucide="chevron-right" class="w-5 h-5"></i>
                                                 </button>
                                             </div>
+                                        </div>
+
+                                        {{-- Part 1 for this applicant: the paired OP's Party 2 (allottee), matched by
+                                             batch sequence. Only present after a Batch Capture OP hand-off. --}}
+                                        <div x-show="batchMode && opBatchAllottees.length > 0" x-cloak
+                                             class="mb-3 pb-3 border-b border-gray-200">
+                                            <div class="text-xs font-medium text-gray-500">
+                                                Part 1 — allottee from OP <span x-text="currentEntryIndex + 1"></span>
+                                            </div>
+                                            <div class="text-sm font-semibold text-violet-700"
+                                                 x-text="opBatchAllottees[currentEntryIndex] || '—'"></div>
                                         </div>
 
                                         <!-- 2x2 Grid Layout -->
@@ -1773,6 +1785,7 @@
                             @csrf
                             @method('PUT')
                             <input type="hidden" id="editId" name="id">
+                            <input type="hidden" id="editEntity" name="entity">
 
                             <!-- MLSF Number (Read-only) -->
                             <div class="mb-4">
@@ -2509,6 +2522,11 @@
     @include('instruments.partials.register_modal')
     @include('components.global-fileno-modal')
     <template id="template-occupancy-permit">@include('instruments.partials.types.occupancy-permit')</template>
+
+    {{-- Batch Capture OP — shared with the OSS Applications page. Opened by
+         openCommissionOpCaptureModal (mls_js) when the OP type is captured as a batch;
+         the single-record TOT-link mode is unused here (that flow is OSS-only). --}}
+    @include('lands_one_stop_shop.partials.capture-op-card')
 
     <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
     <script src="{{ asset('js/instruments-capture.js') }}?v={{ time() }}"></script>

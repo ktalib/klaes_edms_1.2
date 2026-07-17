@@ -105,6 +105,16 @@ return [
             'days' => 90,
         ],
 
+        // OP Batch Commissioning — the remediation view for files commissioned through
+        // the Batch Mode that was enabled by mistake. Kept on its own channel so the
+        // payload sizes and timings for this one screen are readable in isolation.
+        'op_batch' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/op_batch.log'),
+            'level' => 'debug',
+            'days' => 90,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

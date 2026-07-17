@@ -523,7 +523,6 @@ function ossSelectType(type) {
 var _ossFieldMap = {
     residential: {
         'oss_file_no': 'file_no',
-        'oss_op_serial_number': 'op_serial_number',
         'oss_applicant_name': 'applicant_name',
         'oss_age': 'age',
         'oss_sex': 'sex',
@@ -568,7 +567,6 @@ var _ossFieldMap = {
     },
     commercial: {
         'oss_file_no': 'file_no',
-        'oss_op_serial_number': 'op_serial_number',
         'oss_com_applicant_name': 'applicant_name',
         'oss_com_nationality': 'nationality',
         'oss_com_state_of_origin': 'state_of_origin',
@@ -604,7 +602,6 @@ var _ossFieldMap = {
     },
     industrial: {
         'oss_file_no': 'file_no',
-        'oss_op_serial_number': 'op_serial_number',
         'oss_ind_applicant_name': 'applicant_name',
         'oss_ind_nationality': 'nationality',
         'oss_ind_state_of_origin': 'state_of_origin',
@@ -642,7 +639,6 @@ var _ossFieldMap = {
     },
     agricultural: {
         'oss_file_no': 'file_no',
-        'oss_op_serial_number': 'op_serial_number',
         'oss_agr_applicant_name': 'applicant_name',
         'oss_agr_nationality': 'nationality',
         'oss_agr_state_of_origin': 'state_of_origin',
@@ -699,16 +695,39 @@ function _ossCollectPayload() {
         if (!payload.plot_no) payload.plot_no = (_ossLinkedPraData.plot_no || '').toString().trim();
         if (!payload.plan_no) payload.plan_no = (_ossLinkedPraData.plan_no || _ossLinkedPraData.tp_no || '').toString().trim();
         if (!payload.location) payload.location = (_ossLinkedPraData.location || _ossLinkedPraData.property_description || '').toString().trim();
-        // OP Serial No: prefer the manual entry, otherwise inherit the serial that
-        // was found on the looked-up record so it is always carried on the payload.
-        if (!(payload.op_serial_number || '').toString().trim()) {
-            payload.op_serial_number = (
-                _ossLinkedPraData.op_serial_number
-                || _ossLinkedPraData.ic_op_serial_number
-                || _ossLinkedPraData.pra_op_serial_number
-                || ''
-            ).toString().trim();
-        }
+    }
+
+    // ── Occupancy Permit Details ──
+    // The OPD section is now the single source of the OP serial (the old manual
+    // box is gone). op_from_record tells the backend whether this OP already
+    // exists (update) or was entered by the user (insert).
+    var opdVal = function (elId) {
+        var el = document.getElementById(elId);
+        return el ? (el.value || '').toString().trim() : '';
+    };
+    // The OP section is visible only when the selected file has an Occupancy Permit.
+    var opdSection = document.getElementById('oss_opd_section');
+    var hasOpd = !!(opdSection && !opdSection.classList.contains('hidden'));
+    payload.has_occupancy_permit = hasOpd ? 1 : 0;
+    payload.op_serial_number = opdVal('oss_opd_op_serial_number');
+    if (hasOpd) {
+        payload.op_from_record = _ossOpdFromRecord ? 1 : 0;
+        payload.occupancy_permit = {
+            status: opdVal('oss_opd_status'),
+            op_type: opdVal('oss_opd_op_type'),
+            op_serial_number: payload.op_serial_number,
+            transaction_date: opdVal('oss_opd_date'),
+            file_number: opdVal('oss_opd_file_number'),
+            land_use: opdVal('oss_opd_land_use'),
+            grantor: opdVal('oss_opd_grantor'),
+            grantee: opdVal('oss_opd_grantee'),
+            serial_no: opdVal('oss_opd_serial_no'),
+            page_no: opdVal('oss_opd_page_no'),
+            vol_no: opdVal('oss_opd_vol_no'),
+            deeds_time: opdVal('oss_opd_deeds_time'),
+            deeds_date: opdVal('oss_opd_deeds_date'),
+            from_record: _ossOpdFromRecord ? 1 : 0
+        };
     }
 
     // For residential: collect previous allocation details as JSON
@@ -755,6 +774,7 @@ function ossOpenFileNumberSelector() {
             var hiddenEl = document.getElementById('oss_file_no');
             if (displayEl) displayEl.value = selectedFileNo;
             if (hiddenEl) hiddenEl.value = selectedFileNo;
+            _ossSetOpdFileNumber(selectedFileNo);
 
             // Fetch PRA record details
             _ossFetchFileIndexing(selectedFileNo);
@@ -802,8 +822,8 @@ function _ossSetChangeOfNameEligibility(isEligible, message) {
         banner.innerHTML = '<div class="flex items-start gap-2">' +
             '<svg class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 9v2m0 4h.01M12 3l9 16H3L12 3z"/></svg>' +
             '<div>' +
-            '<p class="font-bold text-amber-700">Transfer of Title Required</p>' +
-            '<p class="text-amber-700 text-xs mt-0.5">' + _ossEsc(message || 'This file number does not have a Transfer of Title (OP) record in PRA. You cannot proceed on the Change of Name page.') + '</p>' +
+            '<p class="font-bold text-amber-700">Occupancy Permit Required</p>' +
+            '<p class="text-amber-700 text-xs mt-0.5">' + _ossEsc(message || 'This file number is not linked to any Occupancy Permit (OP) record in PRA. You cannot proceed on the Change of Name page.') + '</p>' +
             '</div></div>';
         container.parentElement.appendChild(banner);
         return;
@@ -832,20 +852,13 @@ function _ossFetchFileIndexing(fileNo) {
                 if (details) details.innerHTML = '<span class="text-amber-600">' + (body.message || 'No PRA record found for this file number.') + '</span>';
                 if (idField) idField.value = '';
                 if (_ossIsChangeOfNamePage()) {
-                    _ossSetChangeOfNameEligibility(false, 'No PRA record found for this file number. You cannot proceed on the Change of Name page without a Transfer of Title (OP) record.');
+                    _ossSetChangeOfNameEligibility(false, 'No PRA record found for this file number. You cannot proceed on the Change of Name page without an Occupancy Permit (OP) record.');
                 }
                 return;
             }
             var d = body.data;
             _ossLinkedPraData = d;
             if (idField) idField.value = d.id || '';
-
-            if (_ossIsChangeOfNamePage() && !d.has_transfer_of_title) {
-                if (details) {
-                    details.innerHTML = '<span class="text-amber-600">This file number has no Transfer of Title (OP) record in PRA. You must enter the serial manually below.</span>';
-                }
-                // We don't return here anymore; we allow prefill to show the manual input
-            }
 
             _ossPrefillFromPra(d);
 
@@ -868,13 +881,17 @@ function _ossFetchFileIndexing(fileNo) {
             }
 
             if (_ossIsChangeOfNamePage()) {
-                _ossSetChangeOfNameEligibility(true);
+                if (d.has_occupancy_permit) {
+                    _ossSetChangeOfNameEligibility(true);
+                } else {
+                    _ossSetChangeOfNameEligibility(false, 'This file number is not linked to any Occupancy Permit (OP) record in PRA. You cannot proceed on the Change of Name page without an OP.');
+                }
             }
         })
         .catch(function () {
             if (details) details.innerHTML = '<span class="text-red-500">Network error looking up file.</span>';
             if (_ossIsChangeOfNamePage()) {
-                _ossSetChangeOfNameEligibility(false, 'File lookup failed. Change of Name cannot proceed until a PRA Transfer of Title record is confirmed.');
+                _ossSetChangeOfNameEligibility(false, 'File lookup failed. Change of Name cannot proceed until a PRA Occupancy Permit (OP) record is confirmed.');
             }
         });
 }
@@ -950,10 +967,10 @@ function _ossCheckFileNoDuplicate(fileNo) {
 function _ossEnableSubmitBtn() {
     if (_ossIsChangeOfNamePage()) {
         var selectedFileNo = (document.getElementById('oss_file_no')?.value || '').toString().trim();
-        if (_ossLinkedPraData && !_ossLinkedPraData.has_transfer_of_title) {
-            return;
-        }
-        if (selectedFileNo && !_ossLinkedPraData) {
+        // On the Change of Name page the selected file must be linked to an OP.
+        // Keep Save disabled if there's no PRA record, or a record with no OP —
+        // this blocks other callers (e.g. the duplicate check) from re-enabling it.
+        if (selectedFileNo && (!_ossLinkedPraData || !_ossLinkedPraData.has_occupancy_permit)) {
             return;
         }
     }
@@ -981,6 +998,7 @@ function ossClearFileNumberSelection() {
     if (displayEl) displayEl.value = '';
     if (hiddenEl) hiddenEl.value = '';
     if (idField) idField.value = '';
+    _ossSetOpdFileNumber('');
     if (card) card.classList.add('hidden');
     if (empty) empty.classList.remove('hidden');
     if (clearBtn) clearBtn.classList.add('hidden');
@@ -991,6 +1009,170 @@ function ossClearFileNumberSelection() {
     var transferBanner = document.getElementById('oss_transfer_requirement_banner');
     if (transferBanner) transferBanner.remove();
     _ossEnableSubmitBtn();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Occupancy Permit Details section
+
+   Behaviour:
+     - When the selected file already has an OP, the fields are backfilled and
+       locked. An "Edit" button unlocks them so the user can override.
+     - When the file has no OP, the section stays editable so the user can
+       enter a new OP that will be created on save.
+   The collected values ride on the payload (see _ossCollectPayload); the
+   backend wiring to update/insert the OP is still to come.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+// Editable OPD inputs (instrument type, grantor, file number and page number
+// are always kept read-only, so they are excluded here).
+var _OSS_OPD_EDITABLE = [
+    'oss_opd_status', 'oss_opd_op_type', 'oss_opd_op_serial_number', 'oss_opd_date',
+    'oss_opd_land_use', 'oss_opd_grantee', 'oss_opd_serial_no', 'oss_opd_vol_no',
+    'oss_opd_deeds_time', 'oss_opd_deeds_date'
+];
+
+// True when the OP was backfilled from an existing record (so save = update).
+var _ossOpdFromRecord = false;
+
+// Show or hide the whole Occupancy Permit Details section (header + body).
+function _ossSetOpdVisible(show) {
+    var section = document.getElementById('oss_opd_section');
+    if (section) section.classList.toggle('hidden', !show);
+    var body = document.getElementById('oss_opd_body');
+    if (body) body.classList.toggle('hidden', !show);
+    if (window.lucide) window.lucide.createIcons();
+}
+
+// Enable/disable the Save button (blocked when the selected file has no OP).
+function _ossSetSaveDisabled(disabled) {
+    var btn = document.getElementById('ossSubmitBtn');
+    if (!btn) return;
+    btn.disabled = !!disabled;
+    btn.classList.toggle('opacity-50', !!disabled);
+    btn.classList.toggle('cursor-not-allowed', !!disabled);
+}
+
+function ossSyncOpdPageNo() {
+    var serial = document.getElementById('oss_opd_serial_no');
+    var page = document.getElementById('oss_opd_page_no');
+    if (serial && page) page.value = serial.value;
+}
+
+function _ossSetOpdFileNumber(fileNo) {
+    var el = document.getElementById('oss_opd_file_number');
+    if (el) el.value = fileNo || '';
+}
+
+// Lock or unlock the editable OPD inputs.
+function _ossSetOpdLocked(locked) {
+    _OSS_OPD_EDITABLE.forEach(function (elId) {
+        var el = document.getElementById(elId);
+        if (!el) return;
+        el.disabled = !!locked;
+        el.classList.toggle('bg-slate-100', !!locked);
+        el.classList.toggle('text-slate-500', !!locked);
+    });
+    var btnText = document.getElementById('oss_opd_edit_btn_text');
+    if (btnText) btnText.textContent = locked ? 'Edit' : 'Lock';
+}
+
+// Toggle the backfilled OP between locked and editable (the "Edit" button).
+function ossToggleOpdEdit() {
+    var first = document.getElementById('oss_opd_op_serial_number');
+    var isLocked = first ? first.disabled : true;
+    _ossSetOpdLocked(!isLocked);
+}
+
+// Treat empty / "0" / "0.0" as no value — these are placeholder junk in PRA
+// and must not be backfilled as if they were real serials.
+function _ossMeaningful(value) {
+    var v = (value == null ? '' : value).toString().trim();
+    if (v === '') return '';
+    if (/^0+(\.0+)?$/.test(v)) return '';
+    return v;
+}
+
+function _ossSetOpdValue(elId, value) {
+    var el = document.getElementById(elId);
+    if (!el) return;
+    var v = value || '';
+    // Date inputs are wrapped by the global flatpickr enhancer (altInput), so a
+    // plain `.value =` is ignored — the picker owns the displayed/real value.
+    if (el._flatpickr) {
+        el._flatpickr.setDate(v, false);
+    } else {
+        el.value = v;
+    }
+}
+
+// Backfill and lock the section from a looked-up PRA record.
+function _ossApplyOccupancyPermitFromPra(d) {
+    if (!d) return;
+
+    var opSerial = _ossMeaningful(d.op_serial_number || d.ic_op_serial_number || d.pra_op_serial_number);
+    var editBtn = document.getElementById('oss_opd_edit_btn');
+    var badge = document.getElementById('oss_opd_source_badge');
+
+    if (!opSerial) {
+        // Selected file has no Occupancy Permit → hide the details and block saving.
+        _ossOpdFromRecord = false;
+        _ossSetOpdVisible(false);
+        _ossSetSaveDisabled(true);
+        if (editBtn) editBtn.classList.add('hidden');
+        if (badge) badge.classList.add('hidden');
+        return;
+    }
+
+    // Selected file has an OP → reveal the section and allow saving.
+    _ossSetOpdVisible(true);
+    _ossSetSaveDisabled(false);
+
+    // Common backfill from the OP transaction.
+    _ossSetOpdFileNumber((d.file_number || '').toString().trim());
+    _ossSetOpdValue('oss_opd_grantee', (d.grantee || d.file_name || '').toString().trim());
+    _ossSelectIfFound('oss_opd_land_use', _ossExpandLandUsePrefix(d.op_land_use || d.land_use));
+    _ossSelectIfFound('oss_opd_op_type', (d.op_type || '').toString().trim());
+    _ossSetOpdValue('oss_opd_op_serial_number', opSerial);
+
+    // Deeds registration particulars.
+    _ossSetOpdValue('oss_opd_serial_no', _ossMeaningful(d.deed_serial_no));
+    _ossSetOpdValue('oss_opd_vol_no', _ossMeaningful(d.deed_vol_no));
+    ossSyncOpdPageNo(); // Page No mirrors Serial No
+    _ossSetOpdValue('oss_opd_deeds_date', (d.deeds_date || '').toString().trim());
+    _ossSetOpdValue('oss_opd_deeds_time', (d.deeds_time || '').toString().trim());
+    _ossSetOpdValue('oss_opd_date', (d.transaction_date || '').toString().trim());
+
+    // Existing OP → lock the section and expose the Edit button.
+    _ossOpdFromRecord = true;
+    _ossSetOpdLocked(true);
+    if (editBtn) editBtn.classList.remove('hidden');
+    if (badge) badge.classList.remove('hidden');
+}
+
+function _ossResetOccupancyPermit() {
+    _ossOpdFromRecord = false;
+
+    _ossSetOpdVisible(false);
+    _ossSetSaveDisabled(false);
+
+    ['oss_opd_op_type', 'oss_opd_op_serial_number', 'oss_opd_date', 'oss_opd_file_number',
+     'oss_opd_land_use', 'oss_opd_grantee', 'oss_opd_serial_no', 'oss_opd_page_no',
+     'oss_opd_vol_no', 'oss_opd_deeds_time', 'oss_opd_deeds_date'].forEach(function (elId) {
+        // Use the flatpickr-aware setter so wrapped date inputs actually clear.
+        _ossSetOpdValue(elId, '');
+    });
+
+    var status = document.getElementById('oss_opd_status');
+    if (status) status.value = 'Normal';
+    var grantor = document.getElementById('oss_opd_grantor');
+    if (grantor) grantor.value = 'KANO STATE GOVERNMENT';
+
+    // Back to the default editable-but-unlocked state; hide Edit button + badge.
+    _ossSetOpdLocked(false);
+    var editBtn = document.getElementById('oss_opd_edit_btn');
+    if (editBtn) editBtn.classList.add('hidden');
+    var badge = document.getElementById('oss_opd_source_badge');
+    if (badge) badge.classList.add('hidden');
 }
 
 function _ossEsc(value) {
@@ -1091,20 +1273,8 @@ function _ossPrefillFromPra(d) {
     _ossSetIfEmpty('oss_ind_purpose', purposeWithPlan);
     _ossSetIfEmpty('oss_agr_purpose', purposeWithPlan);
 
-    // Handle Manual OP Serial Number visibility
-    var manualOpContainer = document.getElementById('oss_manual_op_serial_container');
-    var manualOpInput = document.getElementById('oss_op_serial_number');
-    if (manualOpContainer && manualOpInput) {
-        var opSerial = (d.op_serial_number || '').toString().trim();
-        if (!opSerial) {
-            manualOpContainer.classList.remove('hidden');
-            manualOpInput.required = true;
-        } else {
-            manualOpContainer.classList.add('hidden');
-            manualOpInput.required = false;
-            manualOpInput.value = ''; // Clear it if a serial was found
-        }
-    }
+    // Backfill the Occupancy Permit Details from the record (locks it if an OP exists).
+    _ossApplyOccupancyPermitFromPra(d);
 }
 /* ═══════════════════════════════════════════════════════════════════════
    Clear all fields in all 3 form sections
@@ -1146,14 +1316,7 @@ function _ossClearAllFields() {
     // Reset residential passport photo
     if (typeof ossResRemovePassport === 'function') ossResRemovePassport();
 
-    // Reset manual OP serial entry
-    var manualOpContainer = document.getElementById('oss_manual_op_serial_container');
-    var manualOpInput = document.getElementById('oss_op_serial_number');
-    if (manualOpContainer) manualOpContainer.classList.add('hidden');
-    if (manualOpInput) {
-        manualOpInput.value = '';
-        manualOpInput.required = false;
-    }
+    _ossResetOccupancyPermit();
 }
 
 
@@ -1209,6 +1372,7 @@ function ossEditRecord(btn) {
     if (data.file_no) {
         var displayEl = document.getElementById('oss_file_no_display');
         if (displayEl) displayEl.value = data.file_no;
+        _ossSetOpdFileNumber(data.file_no);
         _ossFetchFileIndexing(data.file_no);
         var clearBtn = document.getElementById('oss_file_no_clear_btn');
         if (clearBtn) clearBtn.classList.remove('hidden');
@@ -1346,18 +1510,12 @@ function _ossValidatePayload(payload) {
     var errors = [];
     var type = payload.application_type || 'residential';
 
-    // OP Serial Number is mandatory for every Change of Name application. The
-    // payload already inherits the serial from the looked-up record when present,
-    // so this only blocks records that genuinely have none and were not entered
-    // manually in the "Manual OP Serial Entry" box.
+    // OP Serial Number is mandatory for every Change of Name application. It is
+    // sourced from the Occupancy Permit Details section — backfilled when the
+    // record already has one, or entered by the user when it does not.
     if (_ossIsChangeOfNamePage()) {
-        var manualOp = (payload.op_serial_number || '').trim();
-        if (!manualOp) {
-            if (_ossLinkedPraData && !_ossLinkedPraData.has_transfer_of_title) {
-                errors.push('The selected file number has no Transfer of Title (OP) record in PRA. Please enter the OP Serial Number manually below the file lookup.');
-            } else {
-                errors.push('OP Serial Number is required. Please enter it in the "Manual OP Serial Entry" box below the file lookup.');
-            }
+        if (!(payload.op_serial_number || '').trim()) {
+            errors.push('OP Serial Number is required. Enter it in the "Occupancy Permit Details" section.');
         }
     }
 

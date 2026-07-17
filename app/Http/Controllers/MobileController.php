@@ -90,7 +90,9 @@ class MobileController extends Controller
             ->get();
 
         $user = Auth::user();
-        $isScbMonitor = ($user->fr_permissions ?? '') === 'SCB';
+        // Super Admins included — mirrors MobileFileSearchController::isScbMonitor(),
+        // which already serves them the File Requests endpoints (unscoped).
+        $isScbMonitor = $user->isSuperAdmin() || ($user->fr_permissions ?? '') === 'SCB';
         // OFS (Office Priority Search): a ranked officer (users.rank matches the
         // hierarchy) who may raise prioritised File/Blind Requests from File Search.
         $isOfs = $user->isOfs();
@@ -112,7 +114,7 @@ class MobileController extends Controller
         // Super Admins can skip the mandatory destination-office selection.
         $isSuperAdmin = $user->isSuperAdmin();
         // Role flags drive the bottom navigation (mirrors the dashboard tab bar).
-        $isScbMonitor = ($user->fr_permissions ?? '') === 'SCB';
+        $isScbMonitor = $isSuperAdmin || ($user->fr_permissions ?? '') === 'SCB';
         $isOfs        = $user->isOfs();
 
         return view('mobile.digital_request', compact('user', 'isSuperAdmin', 'isScbMonitor', 'isOfs'));

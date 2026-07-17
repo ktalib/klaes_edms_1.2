@@ -966,9 +966,8 @@
             // physically moving (In Transit) or resting In Archive.
             const movementDetailsHtml = (() => {
                 if (!/^IN_TRANSIT|^IN_ARCHIVE/.test(d.status || '')) return '';
-                const jsStr = v => String(v || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                 return `
-                    <details class="mb-3 rounded-lg border border-gray-200" ontoggle="toggleMovementTimeline('${jsStr(d.file_number)}', this, '${jsStr(d.registry)}', '${jsStr(d.rack_shelf)}')">
+                    <details class="mb-3 rounded-lg border border-gray-200" data-movement-timeline>
                         <summary class="cursor-pointer select-none px-4 py-2 text-xs font-semibold text-gray-600 flex items-center gap-2">
                             <i data-lucide="route" class="h-3.5 w-3.5"></i> Movement Timeline
                         </summary>
@@ -1261,6 +1260,8 @@
             if (logBtn) logBtn.addEventListener('click', () => handleLogFileClick(d, d.fr_found));
             const saveBtn = result.querySelector('[data-us-save]');
             if (saveBtn) saveBtn.addEventListener('click', () => updateStatus(d, result.querySelector('[data-us-status]').value, result.querySelector('[data-us-loc]').value, saveBtn));
+            const movementDetails = result.querySelector('[data-movement-timeline]');
+            if (movementDetails) movementDetails.addEventListener('toggle', () => toggleMovementTimeline(d.file_number, movementDetails, d.registry, d.rack_shelf));
             if (window.lucide) window.lucide.createIcons();
 
             // Load the File Digital Library (same FileIndexing source as the DFR / mobile

@@ -5,7 +5,8 @@
             data-id="{{ $file->id }}"
             data-pages-url="{{ route('filearchive.document-pages', ['id' => $file->id, 'url' => request('url')]) }}"
             data-file-number="{{ e($file->file_number) }}"
-            data-file-title="{{ e($file->file_title) }}">
+            data-file-title="{{ e($file->file_title) }}"
+            data-shelf-location="{{ e($file->shelf_location ?? '') }}">
             <div class="aspect-[3/4] bg-gray-100 relative">
                     <!-- Document cover with actual cover page preview -->
                     <div class="absolute inset-0 flex flex-col bg-white">

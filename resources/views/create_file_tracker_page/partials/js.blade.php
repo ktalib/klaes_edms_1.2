@@ -156,6 +156,8 @@
     const movementErrorBox = document.getElementById('movement-error');
     const movementNotesField = document.getElementById('new-log-notes');
     const updateLogDialog = document.getElementById('update-log-dialog');
+    const updateLogOriginSelect = $('#update-log-origin-office');
+    const updateLogDestinationSelect = $('#update-log-destination');
     const updateLogOfficeSelect = $('#update-log-office');
     const updateLogOfficerSelect = $('#update-log-receiving-officer');
     const updateLogErrorBox = document.getElementById('update-log-error');
@@ -1900,6 +1902,39 @@
         });
     }
 
+    // In the Correct Log Entry modal, narrow the Receiving Office options to those in
+    // the chosen Destination department, mirroring the main form's department cascade.
+    function filterUpdateLogReceivingOffices(departmentName) {
+        if (!updateLogOfficeSelect || !updateLogOfficeSelect.length) {
+            return;
+        }
+
+        const selectEl = updateLogOfficeSelect.get(0);
+        const options = selectEl.querySelectorAll('option');
+        const dept = (departmentName || '').trim();
+
+        options.forEach(option => {
+            if (!option.value) return; // keep placeholder
+            const officeDept = option.getAttribute('data-department') || '';
+            // With no department chosen, show every office; otherwise match on department.
+            const visible = !dept || officeDept === dept;
+            option.style.display = visible ? '' : 'none';
+            option.disabled = !visible;
+        });
+
+        const selected = selectEl.selectedOptions[0];
+        if (selected && selected.value && selected.style.display === 'none') {
+            updateLogOfficeSelect.val('');
+        }
+    }
+
+    if (updateLogDestinationSelect && updateLogDestinationSelect.length) {
+        updateLogDestinationSelect.on('change', function () {
+            filterUpdateLogReceivingOffices($(this).val());
+            updateLogOfficeSelect.val('');
+        });
+    }
+
     if (movementOfficerSelect && movementOfficerSelect.length) {
         movementOfficerSelect.on('change', function () {
             const value = $(this).val();
@@ -2005,6 +2040,30 @@
 
         setUpdateLogError('');
 
+        // Registry (Origin) and Destination Office are server-rendered static selects,
+        // so preselect them synchronously from the tracker/log entry.
+        if (updateLogOriginSelect && updateLogOriginSelect.length) {
+            const originName = logEntry.originOfficeName
+                || tracker.originOfficeName
+                || tracker.originRegistry
+                || '';
+            updateLogOriginSelect.val(originName);
+            if (updateLogOriginSelect.val() !== originName) {
+                updateLogOriginSelect.val('');
+            }
+        }
+
+        const destinationDepartment = logEntry.originOfficeDepartment
+            || tracker.department
+            || '';
+
+        if (updateLogDestinationSelect && updateLogDestinationSelect.length) {
+            updateLogDestinationSelect.val(destinationDepartment);
+            if (updateLogDestinationSelect.val() !== destinationDepartment) {
+                updateLogDestinationSelect.val('');
+            }
+        }
+
         if (updateLogOfficeSelect && updateLogOfficeSelect.length) {
             updateLogOfficeSelect.prop('disabled', true);
         }
@@ -2028,9 +2087,16 @@
 
                 if (updateLogOfficeSelect && updateLogOfficeSelect.length) {
                     populateOfficeSelect(updateLogOfficeSelect, {
-                        placeholder: 'Select office',
+                        placeholder: 'Select receiving office',
                         autoSelectDefault: false
                     });
+
+                    // Narrow to the preselected destination department (if any) before
+                    // resolving which office to select.
+                    const currentDestination = updateLogDestinationSelect && updateLogDestinationSelect.length
+                        ? (updateLogDestinationSelect.val() || '')
+                        : '';
+                    filterUpdateLogReceivingOffices(currentDestination);
 
                     const officeCode = logEntry.officeId
                         || logEntry.receivingOfficeCode
@@ -2046,6 +2112,14 @@
                                 || officeData[officeCode]?.name
                                 || officeCode;
                             updateLogOfficeSelect.append(`<option value="${escapeHtml(officeCode)}">${escapeHtml(fallbackLabel)}</option>`);
+                        }
+                        // The department filter may have hidden the office this entry
+                        // already points at; keep it visible so the current value stays valid.
+                        const selectedOption = updateLogOfficeSelect.find('option').toArray()
+                            .find(option => option.value === officeCode);
+                        if (selectedOption) {
+                            selectedOption.style.display = '';
+                            selectedOption.disabled = false;
                         }
                         updateLogOfficeSelect.val(officeCode);
                     } else {
@@ -2086,6 +2160,14 @@
         }
 
         setUpdateLogError('');
+
+        if (updateLogOriginSelect && updateLogOriginSelect.length) {
+            updateLogOriginSelect.val('');
+        }
+
+        if (updateLogDestinationSelect && updateLogDestinationSelect.length) {
+            updateLogDestinationSelect.val('');
+        }
 
         if (updateLogOfficeSelect && updateLogOfficeSelect.length) {
             updateLogOfficeSelect.prop('disabled', false).val('').trigger('change');
@@ -2145,11 +2227,25 @@
         const officeLabel = office?.name || office?.displayName || updateLogOfficeSelect.find('option:selected').text() || officeCodeRaw;
         const officerName = officer.name || resolveOfficerName(officer) || `Officer ${officerId}`;
 
+        const originName = updateLogOriginSelect && updateLogOriginSelect.length
+            ? (updateLogOriginSelect.val() || '').toString().trim()
+            : '';
+        const originRegistryCode = updateLogOriginSelect && updateLogOriginSelect.length
+            ? (updateLogOriginSelect.find('option:selected').data('registry-code') || '').toString().trim()
+            : '';
+        const destinationDepartment = updateLogDestinationSelect && updateLogDestinationSelect.length
+            ? (updateLogDestinationSelect.val() || '').toString().trim()
+            : '';
+
         const payload = {
             office_code: officeCodeRaw,
             office_name: officeLabel,
             receiving_officer_id: officerId,
-            receiving_officer_name: officerName
+            receiving_officer_name: officerName,
+            origin_office_name: originName,
+            origin_registry_code: originRegistryCode,
+            origin_office_department: destinationDepartment,
+            department: destinationDepartment
         };
 
         const saveButton = updateLogSaveButton;
@@ -3732,6 +3828,18 @@
                 console.log('File number modal applied:', data);
             });
 
+            // The Office Details fieldset unlocks when EITHER override is checked:
+            // the in-transit file-selector override or the dedicated manual-edit
+            // override. Recompute from both so toggling one doesn't clobber the other.
+            function syncOfficeDetailsLock() {
+                const officeOverride = document.getElementById('office-details-override');
+                const filenoOverride = document.getElementById('fileno-selector-override');
+                const unlocked = (officeOverride && officeOverride.checked)
+                    || (filenoOverride && filenoOverride.checked);
+                $('#office-details-fieldset').prop('disabled', !unlocked)
+                    .toggleClass('opacity-60', !unlocked);
+            }
+
             // In-transit override: when the user opts in, re-enable the smart
             // file selector button that is locked on the Log-a-File registries
             // so an already-out file can be picked manually without going back
@@ -3747,9 +3855,13 @@
                 // Office Details stays locked until the override is checked,
                 // since the office fields don't apply until a file has been
                 // manually selected in place of the Quick Search flow.
-                $('#office-details-fieldset').prop('disabled', !enabled)
-                    .toggleClass('opacity-60', !enabled);
+                syncOfficeDetailsLock();
             });
+
+            // Dedicated Office Details override: unlocks the fieldset so the user
+            // can manually fill in fields that the Quick Search "Log File" redirect
+            // left blank, without having to re-enable the file selector.
+            $('#office-details-override').on('change', syncOfficeDetailsLock);
         } else {
             console.warn('GlobalFileNoModal not available');
         }
@@ -7417,11 +7529,9 @@
                 printBtn.disabled = true;
                 printBtn.classList.add('opacity-50', 'cursor-not-allowed');
                 printBtn.setAttribute('title', 'Available once the Office Details are entered for this file.');
-            } else if (isPrinted) {
-                printBtn.disabled = true;
-                printBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                printBtn.setAttribute('title', 'This file request sheet has already been printed.');
             } else {
+                // Print Details stays enabled even for already-printed files so users
+                // can reprint on demand (per user request).
                 printBtn.disabled = false;
                 printBtn.classList.remove('opacity-50', 'cursor-not-allowed');
                 printBtn.removeAttribute('title');
@@ -8943,11 +9053,12 @@
                             fileTrackers[idx].printed = true;
                         }
 
-                        // Disable the Print Details button
-                        printBtn.disabled = true;
-                        printBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                        // Keep the Print Details button enabled so users can reprint
+                        // on demand (per user request); just restore its default label.
+                        printBtn.disabled = false;
+                        printBtn.classList.remove('opacity-50', 'cursor-not-allowed');
                         printBtn.innerHTML = '<i data-lucide="printer" class="h-4 w-4 mr-2"></i> Print Details';
-                        printBtn.setAttribute('title', 'This file request sheet has already been printed.');
+                        printBtn.removeAttribute('title');
 
                         // Show the red Print Request Sheet button
                         const printHtmlBtn = document.getElementById('print-html-request-sheet-btn');
@@ -9522,6 +9633,14 @@
         setTimeout(tryPrefill, 120);
     }
 
+    // The list is reloaded from several triggers (typing in the search box, filters,
+    // pagination, refresh) and the responses can land out of order. A broad, slow
+    // query fired first ("KN345") can come back after the narrow one the user is
+    // actually waiting on ("KN3455") and repopulate the list with look-alike files
+    // seconds later. Only the newest request is allowed to render.
+    let activeTrackerListRequest = null;
+    let trackerListRequestSeq = 0;
+
     // Load existing file trackers from API
     function loadFileTrackers(page = 1) {
         console.log('Fetching file trackers from server, page:', page);
@@ -9558,7 +9677,14 @@
         const dateFrom = document.getElementById('mr-date-from')?.value || undefined;
         const dateTo   = document.getElementById('mr-date-to')?.value || undefined;
 
-        $.ajax({
+        // Supersede any in-flight load: its answer is for an older search term.
+        const requestSeq = ++trackerListRequestSeq;
+        if (activeTrackerListRequest) {
+            activeTrackerListRequest.abort();
+            activeTrackerListRequest = null;
+        }
+
+        activeTrackerListRequest = $.ajax({
             url: '/create-file-tracker/list',
             method: 'GET',
             data: {
@@ -9569,10 +9695,12 @@
                 priority: priorityFilter,
                 module: window.currentModule || undefined,
                 tab: window._dgLogTab || undefined,
+                file_request_type: window._fileRequestTypeFilter || undefined,
                 date_from: dateFrom,
                 date_to: dateTo
             },
             success: function (response) {
+                if (requestSeq !== trackerListRequestSeq) return; // a newer load already owns the list
                 if (response.success && response.data) {
                     fileTrackers = response.data.map(transformApiTracker).filter(Boolean);
                     window.fileTrackers = fileTrackers;
@@ -9602,10 +9730,17 @@
                     showNotification(response.message || 'Failed to load file trackers', 'error');
                 }
             },
-            error: function (xhr) {
+            error: function (xhr, status) {
+                // A superseded load was aborted on purpose — not an error to report.
+                if (status === 'abort' || requestSeq !== trackerListRequestSeq) return;
                 console.error('Error loading file trackers:', xhr);
                 const message = xhr.responseJSON?.message || 'Error loading file trackers';
                 showNotification(message, 'error');
+            },
+            complete: function () {
+                if (requestSeq === trackerListRequestSeq) {
+                    activeTrackerListRequest = null;
+                }
             }
         });
     }
@@ -9620,6 +9755,12 @@
         if (activeEl) activeEl.textContent = stats.awaiting || 0;
         if (highEl) highEl.textContent = stats.others || 0;
         if (movementEl) movementEl.textContent = stats.completed || 0;
+
+        // File Request Type tab counts (In-transit = MANUAL, Submitted Request = SUBMITTED)
+        const inTransitCountEl = document.getElementById('in-transit-count');
+        const submittedCountEl = document.getElementById('submitted-request-count');
+        if (inTransitCountEl && stats.in_transit !== undefined) inTransitCountEl.textContent = stats.in_transit ?? 0;
+        if (submittedCountEl && stats.submitted !== undefined) submittedCountEl.textContent = stats.submitted ?? 0;
 
         // File Log Table sub-tab counts (Active vs Completed/logged-back-in)
         const fileLogActiveCountEl = document.getElementById('file-log-active-count');
@@ -10053,6 +10194,12 @@
                     switchDgLogTab(this, logTab);
                     return;
                 }
+                // File Request Type tabs (In-transit = MANUAL, Submitted Request = SUBMITTED)
+                const reqTypeTab = this.getAttribute('data-request-type-tab');
+                if (reqTypeTab) {
+                    switchRequestTypeTab(this, reqTypeTab);
+                    return;
+                }
                 const tabName = this.getAttribute('data-tab');
                 switchMainTab(tabName);
             });
@@ -10210,6 +10357,10 @@
     function switchMainTab(tabName) {
         console.log('Switching to tab:', tabName);
 
+        // Leaving the File Request Type tabs — clear their filter so the plain
+        // File Tracker Log / Create tabs show the full unfiltered dataset.
+        window._fileRequestTypeFilter = '';
+
         // Update tab buttons
         document.querySelectorAll('.main-tab').forEach(tab => {
             tab.classList.remove('active');
@@ -10318,6 +10469,40 @@
         }
     }
     window.switchDgLogTab = switchDgLogTab;
+
+    /**
+     * Switch to a File Request Type tab (In-transit = MANUAL, Submitted Request = SUBMITTED).
+     * Shares the #content-logs panel with the File Tracker Log but filters the
+     * dataset by file_request_type via the server list endpoint.
+     */
+    window._fileRequestTypeFilter = window._fileRequestTypeFilter || '';
+    function switchRequestTypeTab(clickedBtn, type) {
+        // Visually mark clicked tab active, others idle
+        document.querySelectorAll('.main-tab').forEach(t => {
+            t.classList.remove('active', 'border-blue-500', 'text-blue-600', 'bg-blue-50');
+            t.classList.add('border-transparent', 'text-gray-500');
+        });
+        clickedBtn.classList.add('active', 'border-blue-500', 'text-blue-600');
+        clickedBtn.classList.remove('border-transparent', 'text-gray-500');
+
+        // Show the shared File Tracker Log panel
+        document.querySelectorAll('.main-tab-content').forEach(c => {
+            c.classList.remove('active');
+            c.classList.add('hidden');
+        });
+        const logsPanel = document.getElementById('content-logs');
+        if (logsPanel) {
+            logsPanel.classList.add('active');
+            logsPanel.classList.remove('hidden');
+        }
+
+        window._fileRequestTypeFilter = type;
+        currentPage = 1;
+        if (typeof loadFileTrackers === 'function') {
+            loadFileTrackers(1);
+        }
+    }
+    window.switchRequestTypeTab = switchRequestTypeTab;
 
     function filterTrackerLogs(searchTerm) {
         const trackerCards = document.querySelectorAll('#trackers-container .tracker-card');

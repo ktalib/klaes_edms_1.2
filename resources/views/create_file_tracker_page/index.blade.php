@@ -416,6 +416,25 @@
                                         <span id="log-count"
                                             class="ml-2 bg-blue-100 text-blue-800 py-1 px-2 rounded-full text-xs">0</span>
                                     </button>
+                                    @if(!in_array($module ?? '', ['dgis', 'dg']))
+                                    {{-- File Request Type tabs — filter the File Tracker Log by file_request_type. --}}
+                                    <button id="tab-in-transit"
+                                        class="main-tab border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                        data-request-type-tab="MANUAL">
+                                        <i data-lucide="truck" class="h-4 w-4 inline mr-2"></i>
+                                        In-transit
+                                        <span id="in-transit-count"
+                                            class="ml-2 bg-amber-100 text-amber-800 py-1 px-2 rounded-full text-xs">0</span>
+                                    </button>
+                                    <button id="tab-submitted-request"
+                                        class="main-tab border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                        data-request-type-tab="SUBMITTED">
+                                        <i data-lucide="send" class="h-4 w-4 inline mr-2"></i>
+                                        Submitted Request
+                                        <span id="submitted-request-count"
+                                            class="ml-2 bg-indigo-100 text-indigo-800 py-1 px-2 rounded-full text-xs">0</span>
+                                    </button>
+                                    @endif
                                     @if(in_array($module ?? '', ['dgis', 'dg']))
                                         <button id="tab-track-new"
                                             class="main-tab border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300"
@@ -1013,6 +1032,19 @@
                                                 {{-- Office Details is locked until the in-transit override checkbox
                                                      is checked, so an already-out file's office fields can't be
                                                      edited via a stale/locked file selector. --}}
+                                                @if($lockFileSelector)
+                                                {{-- Manual-edit override: when Quick Search's "Log File" redirect
+                                                     leaves some Office Details blank, this lets the user unlock the
+                                                     fields and fill in whatever wasn't backfilled. --}}
+                                                <label for="office-details-override"
+                                                    class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 cursor-pointer">
+                                                    <input type="checkbox" id="office-details-override"
+                                                        class="mt-0.5 h-3.5 w-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500">
+                                                    <span class="text-xs text-amber-700">Some fields didn't fill in
+                                                        automatically? Check to enable manual editing of the Office
+                                                        Details below.</span>
+                                                </label>
+                                                @endif
                                                 <fieldset id="office-details-fieldset" @if($lockFileSelector) disabled @endif class="space-y-4 @if($lockFileSelector) opacity-60 @endif">
                                                 @if(($module ?? '') === 'kangis')
                                                 <!-- Step 1 label -->
@@ -2227,22 +2259,60 @@
                                         </p>
                                     </div>
 
-                                    <div class="space-y-2">
-                                        <label for="update-log-office"
-                                            class="block text-sm font-medium text-gray-700">Current Office *</label>
-                                        <select id="update-log-office"
-                                            class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40">
-                                            <option value="">Select office</option>
-                                        </select>
+                                    {{-- Mirrors the main form's Office Details card so a
+                                         corrected log entry can capture the full routing:
+                                         Registry (Origin) → Destination Office → Receiving
+                                         Office → Receiving Officer. Laid out two per row. --}}
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div class="space-y-2">
+                                            <label for="update-log-origin-office"
+                                                class="block text-sm font-medium text-gray-700">Registry (Origin)</label>
+                                            <select id="update-log-origin-office"
+                                                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40">
+                                                <option value="">Select Registry (Origin)</option>
+                                                @foreach ($registries as $registry)
+                                                    @php
+                                                        $registryDisplay = ($registry->name === 'Registry 1 - Lands')
+                                                            ? 'Registry 1 - Land'
+                                                            : $registry->name;
+                                                    @endphp
+                                                    <option value="{{ $registry->name }}"
+                                                        data-registry-code="{{ $registry->registry_code }}">{{ $registryDisplay }}</option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+
+                                        <div class="space-y-2">
+                                            <label for="update-log-destination"
+                                                class="block text-sm font-medium text-gray-700">Destination Office (Departments) *</label>
+                                            <select id="update-log-destination"
+                                                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40">
+                                                <option value="">Select destination</option>
+                                                @foreach ($departments as $dept)
+                                                    <option value="{{ $dept->department }}">{{ $dept->department }}</option>
+                                                @endforeach
+                                            </select>
+                                        </div>
                                     </div>
 
-                                    <div class="space-y-2">
-                                        <label for="update-log-receiving-officer"
-                                            class="block text-sm font-medium text-gray-700">Receiving Officer *</label>
-                                        <select id="update-log-receiving-officer"
-                                            class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40">
-                                            <option value="">Select receiving officer</option>
-                                        </select>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div class="space-y-2">
+                                            <label for="update-log-office"
+                                                class="block text-sm font-medium text-gray-700">Receiving Office *</label>
+                                            <select id="update-log-office"
+                                                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40">
+                                                <option value="">Select receiving office</option>
+                                            </select>
+                                        </div>
+
+                                        <div class="space-y-2">
+                                            <label for="update-log-receiving-officer"
+                                                class="block text-sm font-medium text-gray-700">Receiving Officer *</label>
+                                            <select id="update-log-receiving-officer"
+                                                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40">
+                                                <option value="">Select receiving officer</option>
+                                            </select>
+                                        </div>
                                     </div>
 
                                     <div id="update-log-error"

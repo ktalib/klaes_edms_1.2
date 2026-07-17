@@ -933,7 +933,11 @@ const executeSearchAjax = (filters, searchData) => {
         // Lineage (previous/successor files + their commissioning info) — used by the
         // timeline to render the full commissioning chain (mother → split/CoP → child).
         window._lsLineage = data.lineage || null;
+        // Whether the searched file is actually indexed (has its own file_indexings row).
+        // When false, the synthetic "File Commissioning" timeline row is suppressed.
+        const _apiIsIndexed = (data.is_indexed === true);
         searchResults.forEach(r => {
+          r._file_is_indexed = _apiIsIndexed;
           if (_apiFileTitle) r._file_title = _apiFileTitle;
           if (_apiCommissioningDate) r._file_commissioning_date = _apiCommissioningDate;
           if (_apiCommissionedNumber) r._file_commissioned_number = _apiCommissionedNumber;
@@ -999,6 +1003,7 @@ const executeSearchAjax = (filters, searchData) => {
               _file_commissioning_holder: data.file_commissioning_holder || null,
               _file_temp_number: data.file_temp_number || null,
               _file_number_display: data.file_number_display || null,
+              _file_is_indexed: (data.is_indexed === true),
               prop_id: '',
             };
             // Set only the selected file — leave searchResults empty so getRelatedTransactions()
@@ -2179,18 +2184,29 @@ const executeSearchAjax = (filters, searchData) => {
     // Prefer the server-resolved "SEARCHED (LINKED)" combined display (e.g.
     // "CON-AG-2014-35 (MLKN 2455)") — same format used by the printable report and
     // Pay-Per-Search template — falling back to the plain number when none was resolved.
-    document.getElementById('file-number-value').textContent = selectedFile._file_number_display || mlsDisplay;
+    const displayedValue = selectedFile._file_number_display || mlsDisplay;
+    document.getElementById('file-number-value').textContent = displayedValue;
 
-    // Label the primary file number by what is actually displayed — legacy
-    // files are searched by their KANGIS number, which lands in this slot.
+    // Label the primary file number to match what is actually displayed. The value is
+    // either a lone number or "<lead> (<counterpart>)" (searched number leads). Each
+    // slot is named by its type, so:
+    //   - KANGIS searched:            "KANGIS FileNo (File Number):"  MLKN 3725 (CON-IND-2021-18)
+    //   - Land searched w/ KANGIS:    "File Number (KANGIS FileNo):"  CON-IND-2021-18 (MLKN 3725)
+    //   - No counterpart:             "File Number:"                  CON-IND-2021-18
     const fileNumberLabel = document.getElementById('file-number-label');
     if (fileNumberLabel) {
-      const displayedType = identifyFileNumberType(mlsDisplay);
-      fileNumberLabel.textContent = displayedType === 'kangis'
-        ? 'File Number (KANGIS FileNo):'
-        : (displayedType === 'new_kangis'
-          ? 'File Number (New KANGIS FileNo):'
-          : 'File Number (MLPPFNo):');
+      const m = String(displayedValue).match(/^\s*(.+?)\s*(?:\(\s*([^)]*?)\s*\))?\s*$/);
+      const leadPart = m ? m[1].trim() : String(displayedValue).trim();
+      const parenPart = (m && m[2]) ? m[2].trim() : '';
+      const slotName = (v) => {
+        const t = identifyFileNumberType(v);
+        if (t === 'kangis') return 'KANGIS FileNo';
+        if (t === 'new_kangis') return 'New KANGIS FileNo';
+        return 'File Number';
+      };
+      fileNumberLabel.textContent = parenPart
+        ? `${slotName(leadPart)} (${slotName(parenPart)}):`
+        : 'File Number:';
     }
 
     // Temporary "(T)" file number — shown as a second line when the searched
@@ -2432,7 +2448,9 @@ const executeSearchAjax = (filters, searchData) => {
         const _fnd = data.file_number_display || null;
         window._lsFileTempNumber = _tf;
         window._lsLineage = data.lineage || null;
+        const _isIndexed = (data.is_indexed === true);
         searchResults.forEach(function (r) {
+          r._file_is_indexed = _isIndexed;
           if (_t)  r._file_title          = _t;
           if (_d)  r._file_district       = _d;
           if (_l)  r._file_lga            = _l;
@@ -3332,6 +3350,55 @@ const executeSearchAjax = (filters, searchData) => {
     return rest;
   };
 
+  // Business rule: a Mortgage (Deed of Mortgage / Tripartite Mortgage) is later discharged by a
+  // Surrender & Release involving the SAME lender bank. The mortgage must render directly ABOVE
+  // its matching Surrender & Release row regardless of transaction date — the discharge often
+  // carries a later or missing date that would otherwise strand the mortgage at the end of the
+  // chronologically-sorted list (e.g. mortgage below its own surrender).
+  const placeMortgageAboveSurrender = (rows) => {
+    const typeOf = (r) => String(r?.transaction_type || r?.instrument_type || '').toLowerCase();
+    const isMortgage = (r) => typeOf(r).includes('mortgage');
+    const isSurrender = (r) => typeOf(r).includes('surrender');
+
+    if (!rows.some(isMortgage) || !rows.some(isSurrender)) return rows;
+
+    // Normalize a party name for loose bank matching: lowercase, strip punctuation and common
+    // company suffixes so "Bank Of The North Ltd" ≈ "Bank Of The North" and "Ja'Iz Bank Plc" ≈
+    // "Jaiz Bank Plc".
+    const normParty = (v) => String(v || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g, '')
+      .replace(/\b(ltd|limited|plc|nig|nigeria|company|co)\b/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const partiesOf = (r) => [r?.party_1, r?.party_2, r?.party_3, r?.party_4]
+      .map(normParty).filter(p => p.length > 3);
+    // The discharging lender is a bank-like party — used to pair a mortgage with its surrender.
+    const isBankLike = (p) => /bank|mortgage|micro ?finance|building society/.test(p);
+    const sharesLender = (a, b) => {
+      const pa = partiesOf(a), pb = partiesOf(b);
+      for (const x of pa) for (const y of pb) {
+        if (!isBankLike(x) && !isBankLike(y)) continue;
+        if (x === y || (x.length > 4 && y.length > 4 && (x.includes(y) || y.includes(x)))) return true;
+      }
+      return false;
+    };
+
+    // Move each mortgage row to sit directly above the surrender it matches. Prefer a surrender
+    // that shares the lender bank; otherwise fall back to the first unclaimed surrender.
+    let result = rows.slice();
+    const usedSurrender = new Set();
+    result.filter(isMortgage).forEach((m) => {
+      let target = result.find(r => isSurrender(r) && !usedSurrender.has(r) && sharesLender(m, r))
+        || result.find(r => isSurrender(r) && !usedSurrender.has(r));
+      if (!target || target === m) return;
+      usedSurrender.add(target);
+      result = result.filter(r => r !== m);
+      result.splice(result.indexOf(target), 0, m);
+    });
+    return result;
+  };
+
   const sourceBadgeClass = (label) => {
     const map = { 'PRA': 'source-badge-pra', 'File History': 'source-badge-fh', 'Deed Registration': 'source-badge-deed', 'CofO': 'source-badge-cofo', 'Related Fileno': 'source-badge-related' };
     return map[label] || '';
@@ -3361,17 +3428,39 @@ const executeSearchAjax = (filters, searchData) => {
   // (resolved server-side; '-' when the file was not commissioned within KLAES),
   // and its Reg Particulars are 0/0/0.
   const buildCommissioningTimelineRow = () => {
+    // A file that has not yet been indexed (no file_indexings row) gets no synthetic
+    // "File Commissioning" row — the commissioning event is only surfaced once the
+    // file has actually been indexed into KLAES.
+    if (selectedFile && selectedFile._file_is_indexed === false) return null;
     const commDate = (selectedFile && selectedFile._file_commissioning_date)
       ? selectedFile._file_commissioning_date : '-';
-    const rawFileNo = (userSelectedFileNumber && String(userSelectedFileNumber).trim())
+    // The File Commissioning row represents the permanent/main LAND file, so it must
+    // carry the land/MLS file number — never the KANGIS alias (e.g. "MLKN 3725") the
+    // user may have searched by. Prefer the land number that leads the "SEARCHED
+    // (LINKED)" display (e.g. "CON-IND-2021-18 (MLKN 3725)" → "CON-IND-2021-18"), then
+    // the indexed land number, then whatever was searched.
+    const _notKangisNo = (v) => {
+      const t = identifyFileNumberType(v);
+      return v && v !== '-' && t !== 'kangis' && t !== 'new_kangis';
+    };
+    const _displayLead = String((selectedFile && selectedFile._file_number_display) || '').split('(')[0].trim();
+    const _indexedNo = String((selectedFile && selectedFile._file_index_number) || '').trim();
+    const _searchedNo = (userSelectedFileNumber && String(userSelectedFileNumber).trim())
       || window._currentFileNumber
       || (selectedFile && (selectedFile.mlsFNo || selectedFile.fileno || selectedFile.fileNo))
       || '-';
+    const rawFileNo = _notKangisNo(_displayLead) ? _displayLead
+      : (_notKangisNo(_indexedNo) ? _indexedNo : _searchedNo);
     // The File Commissioning row represents the permanent/main file, so it always
     // carries the main file number. When the searched file is itself a temporary
     // "(T)" number, strip the "(T)" here — the temporary number is shown on its own
     // "Temporary File" row directly below.
     const fileNo = String(rawFileNo).replace(/\s*\(\s*T\s*\)\s*$/i, '').trim() || rawFileNo;
+    // The File Commissioning row represents the permanent/main LAND file. When no
+    // land/MLS number could be resolved and the row would fall back to a KANGIS alias
+    // (e.g. "MLKN 1934"), suppress the row entirely — a KANGIS file is never shown as
+    // a File Commissioning event.
+    if (!_notKangisNo(fileNo)) return null;
     // The commissioning date belongs to whichever file number was actually
     // commissioned (fileNumber.mlsfNo, resolved server-side). It carries a "(T)"
     // suffix when the temporary file was the commissioned one. Show the date on
@@ -3619,19 +3708,29 @@ const executeSearchAjax = (filters, searchData) => {
     transactions = sortTimelineChronologically(transactions);
     // …except a KANGIS Recertification, which always sits directly above the KANGIS C of O.
     transactions = placeKangisRecertBeforeCofo(transactions);
+    // A Mortgage always sits directly above the Surrender & Release that discharges it,
+    // regardless of transaction date.
+    transactions = placeMortgageAboveSurrender(transactions);
 
     // Synthetic "File Commissioning" rows. Only the SEARCHED file gets a
     // commissioning row (weight 12) at the top — predecessor "mother" files show
     // through their real transactions (CofO, recertification, parcel-update rows)
     // but never as a synthetic commissioning row. Successor commissioning rows
     // follow the parcel-update row that retired the searched file.
-    const commissioningRow = buildCommissioningTimelineRow();
+    const commissioningRow = buildCommissioningTimelineRow(); // null when the file is not yet indexed
     // "Temporary File" row sits directly below File Commissioning when present.
     const temporaryFileRow = buildTemporaryFileTimelineRow();
-    const searchedPair = temporaryFileRow ? [commissioningRow, temporaryFileRow] : [commissioningRow];
+    const searchedPair = [commissioningRow, temporaryFileRow].filter(Boolean);
 
     const normalizeNo = (v) => String(v || '').toUpperCase().replace(/\s+/g, '').replace(/\(T\)$/, '');
-    const searchedNoKey = normalizeNo(commissioningRow.fileno);
+    // Fall back to the searched/indexed number when there's no commissioning row so
+    // successor-row de-duplication still keys off the searched file.
+    const searchedNoKey = normalizeNo(
+      (commissioningRow && commissioningRow.fileno)
+      || (selectedFile && (selectedFile._file_index_number || selectedFile.mlsFNo || selectedFile.fileno || selectedFile.file_number))
+      || window._currentFileNumber
+      || ''
+    );
 
     transactions = [...searchedPair, ...transactions];
 

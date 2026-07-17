@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\ScannerService;
+use App\Services\ShelfRackLocator;
 use App\Models\FileIndexing;
 use App\Models\FileTracker;
 use App\Models\PageTyping;
@@ -399,6 +400,10 @@ class FilearchiveController extends Controller
 
         $completedFiles = $completedFiles->paginate(12)->appends($request->query());
 
+        // Files with no recorded shelf_location fall back to the rack/shelf the
+        // shelf_rack_ranges map implies for their file number.
+        app(ShelfRackLocator::class)->applyTo($completedFiles->getCollection());
+
         if ($isStorageDemoMode) {
             $completedFiles = $this->enrichStorageMetadataForPaginator($completedFiles, $module);
         }
@@ -562,6 +567,8 @@ class FilearchiveController extends Controller
                 'updated_at' => $pageTyping->updated_at
             ];
         }
+
+        app(ShelfRackLocator::class)->applyTo([$file]);
 
         // Create response data with transformed pagetypings
         $responseData = $file->toArray();
@@ -840,9 +847,27 @@ class FilearchiveController extends Controller
             'trackingId' => $latestTracker->tracking_id ?? '',
             'fileTitle' => $fileIndexing->file_title ?? ($latestTracker->file_title ?? ''),
             'registry' => $fileIndexing->registry ?? ($latestTracker->registry_code ?? ''),
-            'shelf' => $fileIndexing->shelf_location ?? '',
+            'shelf' => $this->shelfFor($fileIndexing),
             'rows' => $rows,
         ]);
+    }
+
+    /**
+     * A file's recorded shelf_location, falling back to the rack/shelf derived
+     * from the shelf_rack_ranges map. Empty string when neither is available.
+     */
+    private function shelfFor($fileIndexing): string
+    {
+        $recorded = trim((string) ($fileIndexing->shelf_location ?? ''));
+
+        if ($recorded !== '' || !$fileIndexing) {
+            return $recorded;
+        }
+
+        return (string) app(ShelfRackLocator::class)->resolve(
+            $fileIndexing->file_number ?? '',
+            $fileIndexing->registry ?? null
+        );
     }
 
     /**
@@ -993,7 +1018,7 @@ class FilearchiveController extends Controller
         $homeRegistry = trim((string) ($latestTracker->origin_office_name ?? ''))
             ?: trim((string) ($fileIndexing->registry ?? ''))
             ?: 'Registry / Archive';
-        $homeShelf = trim((string) ($fileIndexing->shelf_location ?? ''));
+        $homeShelf = $this->shelfFor($fileIndexing);
 
         // The archive home row is not a movement out, so like return rows it
         // carries no duration.
@@ -1144,6 +1169,8 @@ class FilearchiveController extends Controller
         }
 
         $files = $query->paginate(12);
+
+        app(ShelfRackLocator::class)->applyTo($files->getCollection());
 
         if ($isStorageDemoMode && $files->total() === 0) {
             $files = $this->buildStorageDemoPaginator($request, $module);
