@@ -879,7 +879,7 @@
 
     {{-- ──────────────── Capture OP Card ──────────────── --}}
     {{-- Match an existing unlinked OP to an Awaiting TOT, or capture a new one and link it.
-         Either way the TOT's Part 1 (allottee) is set from the OP's Part 2.
+         Either way the TOT's Party 1 (allottee) is set from the OP's Party 2.
          Shared with the MLS commission page, which uses its Batch Capture OP mode. --}}
     @include('lands_one_stop_shop.partials.capture-op-card')
 
@@ -912,13 +912,13 @@
 
             <div class="px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
                 <div>
-                    <label class="block text-xs font-semibold text-slate-700 mb-1">Part 1 (Allottee)</label>
-                    <input type="text" id="utParty1" placeholder="Part 1 name"
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Party 1 (Allottee)</label>
+                    <input type="text" id="utParty1" placeholder="Party 1 name"
                            class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
                 </div>
                 <div>
-                    <label class="block text-xs font-semibold text-slate-700 mb-1">Part 2 (New Holder)</label>
-                    <input type="text" id="utParty2" placeholder="Part 2 name"
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Party 2 (New Holder)</label>
+                    <input type="text" id="utParty2" placeholder="Party 2 name"
                            class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
                 </div>
                 <div>

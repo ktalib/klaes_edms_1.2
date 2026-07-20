@@ -315,12 +315,12 @@
                                 </div>
                             </div>
 
-                            {{-- Part 1 for this applicant: the paired OP's Party 2 (allottee), matched by
+                            {{-- Party 1 for this applicant: the paired OP's Party 2 (allottee), matched by
                                  batch sequence. Only present after a Batch Capture OP hand-off. --}}
                             <div x-show="batchMode && opBatchAllottees.length > 0" x-cloak
                                  class="mb-3 pb-3 border-b border-gray-200">
                                 <div class="text-xs font-medium text-gray-500">
-                                    Part 1 — allottee from OP <span x-text="currentEntryIndex + 1"></span>
+                                    Party 1 — allottee from OP <span x-text="currentEntryIndex + 1"></span>
                                 </div>
                                 <div class="text-sm font-semibold text-violet-700"
                                      x-text="opBatchAllottees[currentEntryIndex] || '—'"></div>

@@ -2316,37 +2316,77 @@ const executeSearchAjax = (filters, searchData) => {
     }
     lsRecomputeResidualTerm();
 
-    // Last transaction — pick the most recent record (by transaction_date,
-    // falling back to reg_date) from all related transactions and use its
-    // transaction_type. Falls back to the selected file's own type if no
-    // related rows have a usable date.
+    // Last transaction — the most recent real transaction on the MAIN (searched)
+    // file itself. It must NOT reflect events that belong to parcel-update-derived
+    // files (subdivision/merger children), nor the parcel-update events themselves
+    // (Subdivision, Merger, Change of Purpose…), nor the synthetic lifecycle rows
+    // (File Commissioning/Decommissioning, Temporary File).
     let lastTransactionValue = '-';
     try {
-      const relatedForLast = getRelatedTransactions(selectedFile) || [];
+      // Use the SAME deduped/preferred set the timeline table displays, so the
+      // status reflects what the user actually sees. Duplicate instruments attributed
+      // to a related file (e.g. a shared Deed of Assignment) are therefore excluded
+      // from the main file's dealings, exactly as in the table.
+      const rawForLast = getRelatedTransactions(selectedFile) || [];
+      let relatedForLast = rawForLast;
+      try {
+        const dd = dedupeTransactionsForTimelineAndReport(rawForLast);
+        if (dd && Array.isArray(dd.preferred)) relatedForLast = dd.preferred;
+      } catch (_) { /* fall back to raw set */ }
+
+      const typeOf = (item) => item?.transaction_type || item?.instrument_type || item?.transactionType || '';
+      const isParcelUpdateType = (t) => /subdivision|merger|consolidat|change of purpose|reconstitut|resettlement|extension|regrant/i.test(String(t || ''));
+      // Certificate / administrative events are not "dealings": a Certificate of
+      // Occupancy is the title document and a KANGIS Recertification is an
+      // administrative re-issuance — neither is the file's last transaction.
+      const isCertOrAdminType = (t) => /certificate of occupanc|recertification/i.test(String(t || ''));
+      const isLifecycleSyntheticType = (t) => {
+        const s = String(t || '').toLowerCase();
+        return s.includes('commissioning') || s.includes('decommissioning') || s === 'temporary file';
+      };
+
+      // Resolve the main file's lifecycle key (map a searched KANGIS alias to its land file).
+      const rawMain = userSelectedFileNumber || window._currentFileNumber || (mlsDisplay !== '-' ? mlsDisplay : '');
+      let mainKey = normalizeLifecycleFileNo(baseFileNo(rawMain));
+      const aliasMap = buildKangisAliasMap(relatedForLast);
+      if (mainKey && aliasMap[mainKey]) mainKey = aliasMap[mainKey];
+      const ownerKey = (item) => {
+        let k = normalizeLifecycleFileNo(item?.lifecycle_file_no || extractLifecycleFileNo(item) || '');
+        if (k && aliasMap[k]) k = aliasMap[k];
+        return k;
+      };
+
       const pickDate = (item) => {
-        const candidates = [item?.transaction_date, item?.reg_date];
-        for (const c of candidates) {
+        for (const c of [item?.transaction_date, item?.reg_date]) {
           const ts = parseTimelineDateValue(c);
           if (ts !== null) return ts;
         }
         return null;
       };
+
+      // Only real dealings on the main file are eligible.
+      const eligible = relatedForLast.filter((item) => {
+        if (mainKey && ownerKey(item) !== mainKey) return false;
+        const t = typeOf(item);
+        return t && !isParcelUpdateType(t) && !isCertOrAdminType(t) && !isLifecycleSyntheticType(t);
+      });
+
       let latestItem = null;
       let latestTs = -Infinity;
-      for (const item of relatedForLast) {
+      for (const item of eligible) {
         const ts = pickDate(item);
-        if (ts !== null && ts > latestTs) {
-          latestTs = ts;
-          latestItem = item;
-        }
+        if (ts !== null && ts >= latestTs) { latestTs = ts; latestItem = item; }
       }
+      // If none carried a usable date, still prefer any eligible main-file row.
+      if (!latestItem && eligible.length) latestItem = eligible[eligible.length - 1];
+
       if (latestItem) {
-        lastTransactionValue = latestItem.transaction_type || latestItem.instrument_type ||
-                               latestItem.transactionType || lastTransactionValue;
+        lastTransactionValue = typeOf(latestItem) || lastTransactionValue;
       } else {
-        lastTransactionValue = selectedFile.transaction_type || selectedFile.instrument_type ||
-                               selectedFile.application_status || selectedFile.deeds_status ||
-                               selectedFile.planning_recommendation_status || '-';
+        const own = selectedFile.transaction_type || selectedFile.instrument_type ||
+                    selectedFile.application_status || selectedFile.deeds_status ||
+                    selectedFile.planning_recommendation_status || '-';
+        lastTransactionValue = (isParcelUpdateType(own) || isCertOrAdminType(own) || isLifecycleSyntheticType(own)) ? '-' : own;
       }
     } catch (e) {
       console.warn('Last transaction calculation failed:', e);

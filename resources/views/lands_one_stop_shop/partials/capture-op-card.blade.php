@@ -77,11 +77,11 @@
                     <div id="copTotFileNo" class="font-mono font-bold text-slate-800 mt-0.5">—</div>
                 </div>
                 <div>
-                    <div class="text-slate-400 font-semibold uppercase tracking-wide text-[10px]">Part 1</div>
+                    <div class="text-slate-400 font-semibold uppercase tracking-wide text-[10px]">Party 1</div>
                     <div id="copTotParty1" class="text-rose-600 font-semibold mt-0.5">—</div>
                 </div>
                 <div>
-                    <div class="text-slate-400 font-semibold uppercase tracking-wide text-[10px]">Part 2</div>
+                    <div class="text-slate-400 font-semibold uppercase tracking-wide text-[10px]">Party 2</div>
                     <div id="copTotParty2" class="text-slate-700 font-semibold mt-0.5">—</div>
                 </div>
             </div>
@@ -161,7 +161,7 @@
             </div>
             <div>
                 <label class="block text-xs font-semibold text-slate-700 mb-1">
-                    Party 2 <span class="text-violet-600 font-normal">— becomes the TOT's Part 1 (allottee)</span>
+                    Party 2 <span class="text-violet-600 font-normal">— becomes the TOT's Party 1 (allottee)</span>
                 </label>
                 <input type="text" id="copGrantee" placeholder="ENTER PARTY 2 NAME"
                        oninput="copLiveDupCheck()" onblur="copLiveDupCheck()"
@@ -360,7 +360,7 @@
         copTot = row;
 
         document.getElementById('copTotFileNo').textContent = row.file_number;
-        // Part 1 is still the placeholder 'Kano State Government' until an OP is linked — hide it.
+        // Party 1 is still the placeholder 'Kano State Government' until an OP is linked — hide it.
         const p1 = (row.party_1 || '').trim();
         const p1IsPlaceholder = /^kano state government$/i.test(p1) || p1 === '' || p1 === '—';
         const party1El = document.getElementById('copTotParty1');
@@ -436,7 +436,7 @@
         }
         if (!grantee) {
             Swal.fire({ icon: 'warning', title: 'Party 2 required',
-                text: "Party 2 is the allottee — it becomes the TOT's Part 1, so it can't be blank." });
+                text: "Party 2 is the allottee — it becomes the TOT's Party 1, so it can't be blank." });
             return;
         }
         Swal.fire({
@@ -446,7 +446,7 @@
                    <div class="mt-3 text-left text-xs bg-slate-50 border border-slate-200 rounded-lg p-3">
                      <div><b>TOT:</b> ${copTot.file_number} (${copTot.op_batch})</div>
                      <div><b>Prop ID:</b> ${copTot.prop_id}</div>
-                     <div class="mt-1"><b>Allottee (Part 1):</b> <span class="text-rose-600">${copTot.party_1}</span> → <span class="text-emerald-700 font-semibold">${grantee}</span></div>
+                     <div class="mt-1"><b>Allottee (Party 1):</b> <span class="text-rose-600">${copTot.party_1}</span> → <span class="text-emerald-700 font-semibold">${grantee}</span></div>
                    </div>`,
             showCancelButton: true,
             confirmButtonText: 'Yes, Capture OP',
@@ -1298,7 +1298,7 @@
     function copValidateForm(f) {
         if (!f.op_type) return 'Select the Occupancy Permit (OP) Type.';
         if (!f.status) return 'Select a Status.';
-        if (!f.grantee) return "Party 2 (allottee) is required — it becomes the file's Part 1.";
+        if (!f.grantee) return "Party 2 (allottee) is required — it becomes the file's Party 1.";
         if (!f.purpose_id) return 'Select a Purpose.';
         if (!f.lga) return 'Select an LGA.';
         if (!(f.op_serial_number || '').trim()) return 'OP Serial Number is required.';
@@ -1501,7 +1501,7 @@
             if (first.purpose_id) a.purpose = String(first.purpose_id);
 
             // Each OP's Party 2, by sequence — shown under File Options as the applicant's
-            // Part 1, and what the ToT row's party_1 gets set to when the batch is linked.
+            // Party 1, and what the ToT row's party_1 gets set to when the batch is linked.
             a.opBatchAllottees = forms.map(f => (f.grantee || '').trim());
 
             // Turn Batch Mode on with the OP count.

@@ -747,12 +747,12 @@
                                             </div>
                                         </div>
 
-                                        {{-- Part 1 for this applicant: the paired OP's Party 2 (allottee), matched by
+                                        {{-- Party 1 for this applicant: the paired OP's Party 2 (allottee), matched by
                                              batch sequence. Only present after a Batch Capture OP hand-off. --}}
                                         <div x-show="batchMode && opBatchAllottees.length > 0" x-cloak
                                              class="mb-3 pb-3 border-b border-gray-200">
                                             <div class="text-xs font-medium text-gray-500">
-                                                Part 1 — allottee from OP <span x-text="currentEntryIndex + 1"></span>
+                                                Party 1 — allottee from OP <span x-text="currentEntryIndex + 1"></span>
                                             </div>
                                             <div class="text-sm font-semibold text-violet-700"
                                                  x-text="opBatchAllottees[currentEntryIndex] || '—'"></div>
@@ -1091,8 +1091,12 @@
                                             </div>
                                         </div>
 
-                                        <!-- Related File Section (Available for all file types) -->
-                                        <div class="mb-4">
+                                        <!-- Related File Section. Hidden for the workflows that carry their own
+                                             dedicated related/source selectors (Merger, Subdivision, Separation),
+                                             for Temporary (inherits its source file), and for Change of Purpose
+                                             (has its own application selector above). -->
+                                        <div x-show="!['subdivision', 'merger', 'separation', 'temporary'].includes(fileOption) && applicationType !== 'change_of_purpose'"
+                                             class="mb-4">
                                             <!-- Checkbox to enable Related File (hidden for RC prefix since it's mandatory) -->
                                             <div x-show="!isRecertificationPrefix" class="mb-3">
                                                 <label class="flex items-center cursor-pointer">

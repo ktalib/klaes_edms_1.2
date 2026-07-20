@@ -4219,7 +4219,7 @@
             applyLocationToAll: false, // Toggle for batch location sync
             // Allottees (each OP's Party 2) by batch sequence, set by the Batch Capture OP
             // hand-off (copReopenCommissionForBatch). Index i pairs with applicant i, and
-            // becomes the ToT's Part 1 at link time. Empty outside that flow.
+            // becomes the ToT's Party 1 at link time. Empty outside that flow.
             opBatchAllottees: [],
 
             // Initialize the Select2 for Direct Allocation
