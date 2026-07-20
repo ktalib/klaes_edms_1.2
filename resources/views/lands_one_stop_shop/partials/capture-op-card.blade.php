@@ -39,6 +39,8 @@
         <div id="copBatchBar" class="hidden px-6 py-3 bg-violet-50 border-b border-violet-100 flex flex-wrap items-center justify-between gap-3">
             <div class="flex items-center gap-4">
                 <span class="text-sm font-semibold text-violet-800">OP <span id="copBatchIndex">1</span> of <span id="copBatchCount">1</span></span>
+                {{-- Shown only when resuming a saved, uncommissioned batch --}}
+                <span id="copBatchResumeBadge" class="hidden px-2 py-0.5 rounded-full bg-violet-600 text-white text-[10px] font-mono font-semibold"></span>
                 <label class="flex items-center gap-2 text-xs text-slate-600">
                     <input type="checkbox" id="copApplyAll" onchange="copApplyLocationToAll()"
                            class="w-4 h-4 text-violet-600 border-slate-300 rounded focus:ring-violet-500">
@@ -47,6 +49,15 @@
                 </label>
             </div>
             <div class="flex items-center gap-2">
+                <button type="button" id="copBatchAdd" onclick="copBatchAddRecord()"
+                        class="px-3 py-1.5 border border-violet-300 bg-white rounded-lg text-sm text-violet-700 hover:bg-violet-50 transition">
+                    + Add OP
+                </button>
+                <button type="button" id="copBatchRemove" onclick="copBatchRemoveRecord()"
+                        class="px-3 py-1.5 border border-red-300 bg-white rounded-lg text-sm text-red-600 hover:bg-red-50 transition disabled:opacity-40 disabled:cursor-not-allowed">
+                    Remove
+                </button>
+                <span class="w-px h-5 bg-violet-200"></span>
                 <button type="button" id="copBatchPrev" onclick="copBatchNav(-1)"
                         class="px-3 py-1.5 border border-slate-300 rounded-lg text-sm text-slate-700 hover:bg-white transition disabled:opacity-40 disabled:cursor-not-allowed">
                     &lt; Previous
@@ -208,12 +219,18 @@
                 </button>
                 <button type="button" id="copSaveBatchBtn" onclick="copSaveBatch()"
                         class="hidden px-5 py-2 bg-violet-600 text-white rounded-lg text-sm font-semibold hover:bg-violet-700 transition">
-                    <i data-lucide="save" class="w-4 h-4 inline"></i> Save Batch
+                    <i data-lucide="save" class="w-4 h-4 inline"></i> <span id="copSaveBatchLabel">Save Batch</span>
                 </button>
             </div>
         </div>
     </div>
 </div>
+
+{{-- Pings /session/keep-alive and rotates the CSRF token so a long batch fill never 419s.
+     Guarded so the two host pages including this partial cannot double-load it. --}}
+@once
+    <script src="{{ asset('js/primaryform/session-keepalive.js') }}"></script>
+@endonce
 
 <script>
     /* ═══════════════════════════════════════════════════════════════════
@@ -464,7 +481,7 @@
             headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                'X-CSRF-TOKEN': copCsrf(),
             },
             body: JSON.stringify(payload),
         })
@@ -492,7 +509,123 @@
        the commission form's locationEntries[], then saves all in one call
        as UNLINKED OP rows sharing a single Batch ID (op_batch). No TOT yet.
        ═══════════════════════════════════════════════════════════════════ */
-    let copBatch = null;   // { opType, count, index, forms: [] }
+    let copBatch = null;   // { opType, index, opBatch, forms: [] }  — count is always forms.length
+
+    // A blank OP form. Records loaded from a saved batch carry op_id (the pra row) so the save
+    // updates them in place instead of inserting duplicates.
+    function copBlankForm(opType) {
+        return {
+            op_id: null,
+            op_type: opType || '', status: 'Normal', system_fileno: '',
+            op_serial_number: '', transaction_date: '', land_use: '', land_use_id: '', grantee: '',
+            purpose_id: '', purpose_name: '', lga: '',
+            plot: '', street: '', district: '', district_other: '', location: '',
+            serial_no: '', page_no: '', volume_no: '', deeds_date: '', deeds_time: '',
+        };
+    }
+    function copBatchSize() { return copBatch ? copBatch.forms.length : 0; }
+
+    /* ── Session survival ───────────────────────────────────────────────
+       A batch of 50 OPs is an hour of typing, and every record lives only in
+       copBatch.forms[] until Save Batch. A 419 (expired CSRF token) at that
+       moment would throw the whole sitting away, so: keep the session warm
+       while the stepper is open, always post the freshest token we have, and
+       on a 419 refresh the token and retry once before bothering the user.
+       Nothing here ever clears copBatch — the user can always retry. */
+
+    // SessionKeepAlive republishes the rotated token as window._freshCsrfToken; prefer it
+    // over the meta tag, which is only accurate as of page load.
+    function copCsrf() {
+        if (window._freshCsrfToken) return window._freshCsrfToken;
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.getAttribute('content') : '';
+    }
+
+    function copKeepAliveStart() {
+        if (window.SessionKeepAlive) {
+            window.SessionKeepAlive.start({
+                url: '{{ route("session.keepalive") }}',
+                interval: 4 * 60 * 1000,
+            });
+        }
+    }
+
+    // Resolves to a fresh token, or null if the session is genuinely gone.
+    function copRefreshToken() {
+        return fetch('{{ route("session.keepalive") }}', {
+            method: 'GET',
+            credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+        })
+            .then(r => (r.ok ? r.json() : null))
+            .then(d => {
+                if (d && d.csrf_token) {
+                    window._freshCsrfToken = d.csrf_token;
+                    const meta = document.querySelector('meta[name="csrf-token"]');
+                    if (meta) meta.setAttribute('content', d.csrf_token);
+                    document.querySelectorAll('input[name="_token"]').forEach(el => { el.value = d.csrf_token; });
+                    return d.csrf_token;
+                }
+                return null;
+            })
+            .catch(() => null);
+    }
+
+    // Every POST from this card goes through here. Returns { ok, status, d } where d is the
+    // parsed body ({} when the response was not JSON — a 419 returns Laravel's HTML page).
+    function copFetch(url, payload, _retried) {
+        return fetch(url, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': copCsrf(),
+            },
+            body: JSON.stringify(payload),
+        }).then(r => {
+            if (r.status === 419 && !_retried) {
+                // Stale token. Get a new one and replay the request once — invisible to the user.
+                return copRefreshToken().then(token => {
+                    if (!token) return { ok: false, status: 419, d: {} };
+                    return copFetch(url, payload, true);
+                });
+            }
+            return r.json()
+                .then(d => ({ ok: r.ok, status: r.status, d: d || {} }))
+                .catch(() => ({ ok: r.ok, status: r.status, d: {} }));
+        });
+    }
+
+    // Shown when the retry still failed, i.e. the login itself is gone. Deliberately offers
+    // re-login in a NEW tab so this tab — and the unsaved batch in it — stays alive.
+    function copSessionExpiredDialog(onRetry) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Session expired',
+            html: '<p class="text-gray-700">Your login timed out, so this could not be saved.</p>'
+                + '<p class="text-gray-700 mt-2"><strong>Your batch has not been lost.</strong> '
+                + 'Log in again in the new tab, come back here, and press Retry.</p>',
+            showCancelButton: true,
+            confirmButtonText: 'Open Login in New Tab',
+            cancelButtonText: 'Retry',
+            confirmButtonColor: '#2563eb',
+            allowOutsideClick: false,
+        }).then(res => {
+            if (res.isConfirmed) {
+                window.open('{{ url("/login") }}', '_blank');
+                copSessionExpiredDialog(onRetry);
+            } else if (res.dismiss === Swal.DismissReason.cancel && typeof onRetry === 'function') {
+                copRefreshToken().then(onRetry);
+            }
+        });
+    }
+
+    // Generic JSON POST returning the parsed body. Unlike copPost (which drives the TOT-link
+    // flow and its own dialogs), this leaves all UI handling to the caller.
+    function copPostJson(url, payload) {
+        return copFetch(url, payload).then(({ d }) => d);
+    }
 
     // Read/write the commission modal's Alpine component (fileNumberGenerator) so OP
     // location edits mirror into its per-applicant locationEntries[] and vice-versa.
@@ -510,34 +643,61 @@
         document.getElementById('copTotBand').classList.toggle('hidden', on);
         document.getElementById('copCaptureBtn').classList.toggle('hidden', on);
         document.getElementById('copSaveBatchBtn').classList.toggle('hidden', !on);
-        document.getElementById('copCardTitle').textContent = on ? 'Batch Capture OP' : 'Capture OP';
-        document.getElementById('copCardSubtitle').textContent = on
-            ? 'Capture each OP in the batch. Navigate with Previous / Next, then Save Batch.'
-            : 'Match an existing OP, or capture a new one and link it to this Awaiting TOT';
+        if (on) {
+            copRefreshBatchChrome();
+        } else {
+            document.getElementById('copCardTitle').textContent = 'Capture OP';
+            document.getElementById('copCardSubtitle').textContent =
+                'Match an existing OP, or capture a new one and link it to this Awaiting TOT';
+        }
+    }
+
+    // Title, subtitle and action label depend on whether this is a new batch or an edit of a
+    // saved one — kept in one place so they stay consistent as the batch is navigated.
+    function copRefreshBatchChrome() {
+        const editing = !!(copBatch && copBatch.opBatch);
+        document.getElementById('copCardTitle').textContent = editing ? 'Edit OP Batch' : 'Batch Capture OP';
+        document.getElementById('copCardSubtitle').textContent = editing
+            ? 'Edit any OP in this batch, add or remove records, then Update Batch.'
+            : 'Capture each OP in the batch. Navigate with Previous / Next, then Save Batch.';
+        document.getElementById('copSaveBatchLabel').textContent = editing ? 'Update Batch' : 'Save Batch';
     }
 
     // Entry point invoked by the commission card (openCommissionOpCaptureModal) in batch mode.
-    window.openBatchCaptureOp = function (count, opType) {
+    // `resume` (optional) = { op_batch, forms } from opBatchRecords — loads a saved,
+    // uncommissioned batch for editing instead of starting a fresh one.
+    window.openBatchCaptureOp = function (count, opType, resume) {
         count = Math.max(1, parseInt(count) || 1);
+        // Batch capture is long-running — keep the session (and the CSRF token) alive for it.
+        copKeepAliveStart();
         copTot = null;
+        const resuming = !!(resume && resume.op_batch && Array.isArray(resume.forms) && resume.forms.length);
         copBatch = {
             opType: opType || '',
-            count: count,
             index: 0,
-            forms: Array.from({ length: count }, () => ({
-                op_type: opType || '', status: 'Normal', system_fileno: '',
-                op_serial_number: '', transaction_date: '', land_use: '', land_use_id: '', grantee: '',
-                purpose_id: '', purpose_name: '', lga: '',
-                plot: '', street: '', district: '', district_other: '', location: '',
-                serial_no: '', page_no: '', volume_no: '', deeds_date: '', deeds_time: '',
-            })),
+            opBatch: resuming ? resume.op_batch : null,
+            forms: resuming
+                ? resume.forms.map(r => Object.assign(copBlankForm(opType), r))
+                : Array.from({ length: count }, () => copBlankForm(opType)),
         };
         const a = copAlpine();
         // Populate Land Use (with land_use ids, for Purpose filtering) and LGA options.
         copFillLandUseOptions(a);
         copFillLgaOptions();
+        // A resumed record's Land Use arrives as a code (pra stores no land_use id) — resolve it
+        // back to the option's data-id so Purpose filtering works as it does for fresh entries.
+        if (resuming) {
+            const luOpts = [...document.getElementById('copLandUse').options];
+            copBatch.forms.forEach(f => {
+                if (f.land_use && !f.land_use_id) {
+                    const opt = luOpts.find(o => o.value === f.land_use);
+                    if (opt) f.land_use_id = opt.dataset.id || '';
+                }
+            });
+        }
         // Seed each OP's location from the matching commission applicant entry, if present.
-        if (a && Array.isArray(a.locationEntries)) {
+        // Skipped when resuming — the saved record's own location must not be overwritten.
+        if (!resuming && a && Array.isArray(a.locationEntries)) {
             copBatch.forms.forEach((f, i) => {
                 const e = a.locationEntries[i];
                 if (!e) return;
@@ -568,6 +728,145 @@
         copBatchLoad(0);
         if (window.lucide) window.lucide.createIcons();
     };
+
+    /**
+     * Batch Mode entry: start a new batch, or resume an uncommissioned one.
+     *
+     * `onStart(quantity, resume)` is invoked once the choice is made, so the host page can set
+     * its own Batch Mode state before the stepper opens — `resume` is null for a new batch, or
+     * { op_batch, forms } when continuing a saved one.
+     */
+    window.copPromptBatchStart = function (opType, onStart) {
+        const openNew = () => copPromptNewBatchQty(opType, onStart);
+
+        fetch('{{ route("lands-one-stop-shop.applications.op-uncommissioned-batches") }}', {
+            headers: { 'Accept': 'application/json' },
+        })
+            .then(r => r.json())
+            .then(d => {
+                const batches = (d && d.success && Array.isArray(d.batches)) ? d.batches : [];
+                // Nothing to resume — skip the choice and go straight to the quantity prompt.
+                if (!batches.length) { openNew(); return; }
+
+                Swal.fire({
+                    icon: 'question',
+                    title: 'Batch Capture OP',
+                    html: '<p class="text-sm text-gray-600">Start a new batch, or continue one you have already begun?</p>'
+                        + '<p class="text-xs text-gray-500 mt-2">' + batches.length + ' uncommissioned batch'
+                        + (batches.length === 1 ? '' : 'es') + ' available.</p>',
+                    showCancelButton: true,
+                    showDenyButton: true,
+                    confirmButtonText: 'Continue an Existing Batch',
+                    denyButtonText: 'Start a New Batch',
+                    cancelButtonText: 'Cancel',
+                    confirmButtonColor: '#7c3aed',
+                    denyButtonColor: '#2563eb',
+                }).then(res => {
+                    if (res.isConfirmed) copPromptPickBatch(batches, opType, onStart);
+                    else if (res.isDenied) openNew();
+                    else if (typeof onStart === 'function') onStart(null, null);   // cancelled
+                });
+            })
+            .catch(err => {
+                // The batch list is a convenience — never let its failure block a new batch.
+                console.error('Could not load uncommissioned batches', err);
+                openNew();
+            });
+    };
+
+    // Quantity prompt for a brand-new batch.
+    function copPromptNewBatchQty(opType, onStart) {
+        Swal.fire({
+            icon: 'question',
+            title: 'Start a New Batch',
+            html: '<p class="text-sm text-gray-600 mb-3">How many OPs are you capturing for <strong>'
+                + (opType || 'this batch') + '</strong>?</p>'
+                + '<input id="copNewBatchQty" type="number" min="2" max="100" value="2" class="swal2-input" '
+                + 'style="width:8rem;margin:0 auto;" placeholder="Qty">'
+                + '<p class="text-xs text-gray-500">You can add or remove records later, before commissioning.</p>',
+            showCancelButton: true,
+            confirmButtonText: 'Start',
+            confirmButtonColor: '#2563eb',
+            focusConfirm: false,
+            preConfirm: () => {
+                const qty = parseInt(document.getElementById('copNewBatchQty')?.value, 10);
+                if (!qty || qty < 2 || qty > 100) {
+                    Swal.showValidationMessage('Enter a batch quantity between 2 and 100.');
+                    return false;
+                }
+                return qty;
+            },
+        }).then(res => {
+            if (typeof onStart !== 'function') return;
+            onStart(res.isConfirmed ? res.value : null, null);
+        });
+    }
+
+    // Picker listing every uncommissioned batch, with enough detail to identify one on sight.
+    function copPromptPickBatch(batches, opType, onStart) {
+        const esc = s => String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        const when = ts => {
+            const d = new Date(String(ts || '').replace(' ', 'T'));
+            return isNaN(d) ? esc(ts) : d.toLocaleString();
+        };
+
+        const rows = batches.map(b => {
+            const names = (b.allottees || []).map(esc).join(', ')
+                + (b.more > 0 ? ' <span class="text-gray-400">+' + b.more + ' more</span>' : '');
+            return '<label class="flex items-start gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-violet-50 text-left">'
+                + '<input type="radio" name="copBatchPick" value="' + esc(b.op_batch) + '" class="mt-1">'
+                + '<span class="flex-1">'
+                + '<span class="block font-mono font-semibold text-sm text-violet-800">' + esc(b.op_batch) + '</span>'
+                + '<span class="block text-xs text-gray-500 mt-0.5">' + when(b.created_at)
+                + ' &middot; <strong>' + b.count + '</strong> record' + (b.count === 1 ? '' : 's')
+                + (b.captured_by
+                    ? ' &middot; by <span class="inline-block px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold">'
+                        + esc(b.captured_by) + '</span>'
+                    : '')
+                + '</span>'
+                + '<span class="block text-xs text-gray-600 mt-1">' + (names || '<em class="text-gray-400">No names captured</em>') + '</span>'
+                + '</span></label>';
+        }).join('');
+
+        Swal.fire({
+            title: 'Continue an Existing Batch',
+            html: '<div class="space-y-2 max-h-80 overflow-y-auto text-left">' + rows + '</div>',
+            width: 640,
+            showCancelButton: true,
+            confirmButtonText: 'Load Batch',
+            confirmButtonColor: '#7c3aed',
+            focusConfirm: false,
+            preConfirm: () => {
+                const picked = document.querySelector('input[name="copBatchPick"]:checked');
+                if (!picked) { Swal.showValidationMessage('Select a batch to continue.'); return false; }
+                return picked.value;
+            },
+        }).then(res => {
+            if (!res.isConfirmed) { if (typeof onStart === 'function') onStart(null, null); return; }
+            copLoadBatchForResume(res.value, opType, onStart);
+        });
+    }
+
+    // Fetch a batch's saved records and hand them to the host page to open the stepper.
+    function copLoadBatchForResume(opBatch, opType, onStart) {
+        const url = '{{ route("lands-one-stop-shop.applications.op-uncommissioned-batch-records") }}?op_batch=' + encodeURIComponent(opBatch);
+        fetch(url, { headers: { 'Accept': 'application/json' } })
+            .then(r => r.json())
+            .then(d => {
+                if (!d || !d.success || !Array.isArray(d.forms) || !d.forms.length) {
+                    Swal.fire({ icon: 'error', title: 'Could not load batch', text: (d && d.message) || 'That batch has no editable records.' });
+                    if (typeof onStart === 'function') onStart(null, null);
+                    return;
+                }
+                if (typeof onStart === 'function') onStart(d.forms.length, { op_batch: d.op_batch, forms: d.forms });
+            })
+            .catch(err => {
+                console.error('Batch load failed', err);
+                Swal.fire({ icon: 'error', title: 'Request failed', text: 'See the console for details.' });
+                if (typeof onStart === 'function') onStart(null, null);
+            });
+    }
 
     // Land Use options come from the commission component's landUses (value=code, data-id=land_use id).
     function copDeriveLandUseCode(name) {
@@ -687,9 +986,15 @@
         copBatch.index = i;
         const f = copBatch.forms[i];
         document.getElementById('copBatchIndex').textContent = (i + 1);
-        document.getElementById('copBatchCount').textContent = copBatch.count;
+        document.getElementById('copBatchCount').textContent = copBatchSize();
         document.getElementById('copBatchPrev').disabled = (i === 0);
-        document.getElementById('copBatchNext').disabled = (i >= copBatch.count - 1);
+        document.getElementById('copBatchNext').disabled = (i >= copBatchSize() - 1);
+        // A batch must keep at least one record.
+        document.getElementById('copBatchRemove').disabled = (copBatchSize() <= 1);
+        const badge = document.getElementById('copBatchResumeBadge');
+        badge.classList.toggle('hidden', !copBatch.opBatch);
+        badge.textContent = copBatch.opBatch || '';
+        copRefreshBatchChrome();
 
         document.getElementById('copOpType').value = f.op_type || copBatch.opType || '';
         document.getElementById('copStatus').value = f.status || 'Normal';
@@ -746,9 +1051,94 @@
         if (!copBatch) return;
         copBatchStash();
         const target = copBatch.index + delta;
-        if (target < 0 || target >= copBatch.count) return;
+        if (target < 0 || target >= copBatchSize()) return;
         copBatchLoad(target);
     };
+
+    // Append a blank OP to the batch and jump to it. Works for both a fresh batch and a
+    // resumed one — on save, records with no op_id are inserted under the same batch id.
+    window.copBatchAddRecord = function () {
+        if (!copBatch) return;
+        copBatchStash();
+        copBatch.forms.push(copBlankForm(copBatch.opType));
+        copSyncCommissionQuantity();
+        copBatchLoad(copBatch.forms.length - 1);
+    };
+
+    /**
+     * Remove the current OP from the batch.
+     *
+     * A record that was never saved is simply dropped from memory. A saved one (op_id set) is
+     * HARD deleted server-side first — these file numbers were never commissioned, so there is
+     * nothing to preserve — and only removed from the stepper once the server confirms.
+     */
+    window.copBatchRemoveRecord = function () {
+        if (!copBatch || copBatchSize() <= 1) return;
+        copBatchStash();
+        const i = copBatch.index;
+        const f = copBatch.forms[i];
+        const label = f.grantee ? ('“' + f.grantee + '”') : ('OP ' + (i + 1));
+
+        const drop = () => {
+            copBatch.forms.splice(i, 1);
+            copSyncCommissionQuantity();
+            copBatchLoad(Math.min(i, copBatch.forms.length - 1));
+        };
+
+        // Unsaved record: no server round-trip needed.
+        if (!f.op_id) {
+            Swal.fire({
+                icon: 'question', title: 'Remove ' + label + ' from this batch?',
+                text: 'This record has not been saved yet.',
+                showCancelButton: true, confirmButtonText: 'Remove', confirmButtonColor: '#dc2626',
+            }).then(res => { if (res.isConfirmed) drop(); });
+            return;
+        }
+
+        Swal.fire({
+            icon: 'warning', title: 'Permanently delete ' + label + '?',
+            html: 'This OP has been saved but <strong>not commissioned</strong>, so it will be '
+                + 'permanently deleted from the database. This cannot be undone.',
+            showCancelButton: true, confirmButtonText: 'Delete permanently', confirmButtonColor: '#dc2626',
+        }).then(res => {
+            if (!res.isConfirmed) return;
+            copPostJson('{{ route("lands-one-stop-shop.applications.op-batch-delete-record") }}', {
+                op_batch: copBatch.opBatch, op_id: f.op_id,
+            })
+                .then(d => {
+                    if (!d || !d.success) {
+                        Swal.fire({ icon: 'error', title: 'Could not delete', text: (d && d.message) || 'Unknown error.' });
+                        return;
+                    }
+                    drop();
+                    if (typeof Swal.fire === 'function') {
+                        Swal.fire({
+                            icon: 'success', title: 'Record deleted',
+                            text: 'Batch ' + copBatch.opBatch + ' now has ' + copBatchSize() + ' record'
+                                + (copBatchSize() === 1 ? '' : 's') + '.',
+                            timer: 2200, showConfirmButton: false,
+                        });
+                    }
+                })
+                .catch(err => {
+                    console.error('Batch record delete failed', err);
+                    Swal.fire({ icon: 'error', title: 'Request failed', text: 'See the console for details.' });
+                });
+        });
+    };
+
+    // Keep the commission card's Batch Mode quantity in step with the OP count, so returning
+    // to Commission New File Number shows the batch's true size (45, not the original 50).
+    function copSyncCommissionQuantity() {
+        const a = copAlpine();
+        if (!a) return;
+        const n = copBatchSize();
+        a.batchQuantity = n;
+        if (Array.isArray(a.locationEntries) && a.locationEntries.length > n) {
+            a.locationEntries.splice(n);
+        }
+        if (typeof a.updateBatchPreview === 'function') a.updateBatchPreview();
+    }
 
     // Compose "<plot>, District, LGA" from an in-memory OP form — the copApplyLocationToAll
     // equivalent of composeLocation(), which reads the live card fields instead.
@@ -936,7 +1326,9 @@
             op_type: f.op_type,
             status: f.status,
             grantee: f.grantee,
-            update_op_id: f._updateId || null,   // set when the user chose to backfill a duplicate
+            // Set when the user chose to backfill a duplicate, or when editing a record that
+            // was already saved under a resumed batch (op_id) — both update in place.
+            update_op_id: f._updateId || f.op_id || null,
             system_fileno: f.system_fileno || null,
             op_serial_number: f.op_serial_number || null,
             transaction_date: f.transaction_date || null,
@@ -958,20 +1350,13 @@
     // Ask the server whether any OP duplicates an existing record; returns a Promise of the
     // duplicates array (empty on any failure — a check outage must not block saving).
     function copCheckDuplicates(ops) {
-        return fetch('{{ route("lands-one-stop-shop.applications.op-check-duplicates") }}', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-            },
-            body: JSON.stringify({ ops: ops.map(o => ({
+        return copFetch('{{ route("lands-one-stop-shop.applications.op-check-duplicates") }}', {
+            ops: ops.map(o => ({
                 sequence: o.sequence, op_serial_number: o.op_serial_number, serial_no: o.serial_no,
                 page_no: o.page_no, volume_no: o.volume_no, plot_no: o.plot_no, party_2: o.grantee,
-            })) }),
+            })),
         })
-            .then(r => r.json())
-            .then(d => (d && d.success && Array.isArray(d.duplicates)) ? d.duplicates : [])
+            .then(({ d }) => (d && d.success && Array.isArray(d.duplicates)) ? d.duplicates : [])
             .catch(err => { console.error('Duplicate check failed', err); return []; });
     }
 
@@ -993,33 +1378,33 @@
 
         // Duplicates the user chose to backfill are saved as UPDATES to the existing rows; the
         // rest are new. Reflect that split in the confirmation.
-        const updateCount = copBatch.forms.filter(f => f._updateId).length;
+        const resumeBatch = copBatch.opBatch || null;
+        const updateCount = copBatch.forms.filter(f => f._updateId || f.op_id).length;
         const newCount = ops.length - updateCount;
-        let summary = 'Save ' + ops.length + ' OP' + (ops.length === 1 ? '' : 's') + '?';
+        let summary = (resumeBatch ? 'Update ' : 'Save ') + ops.length + ' OP' + (ops.length === 1 ? '' : 's') + '?';
         if (updateCount > 0) {
             summary = newCount + ' new OP' + (newCount === 1 ? '' : 's') + ' and '
-                + updateCount + ' backfilled (updated) OP' + (updateCount === 1 ? '' : 's') + ' — continue?';
+                + updateCount + ' updated OP' + (updateCount === 1 ? '' : 's') + ' — continue?';
         }
 
         Swal.fire({
             icon: 'question', title: summary,
-            showCancelButton: true, confirmButtonText: 'NEXT', confirmButtonColor: '#7c3aed',
-        }).then(res => { if (res.isConfirmed) copPersistBatch(ops, formsSnapshot); });
+            text: resumeBatch ? 'Saving into existing batch ' + resumeBatch + '.' : '',
+            showCancelButton: true,
+            confirmButtonText: resumeBatch ? 'Update Batch' : 'NEXT',
+            confirmButtonColor: '#7c3aed',
+        }).then(res => { if (res.isConfirmed) copPersistBatch(ops, formsSnapshot, resumeBatch); });
     };
 
     // Persist the validated batch, then offer to proceed to File Number Commissioning.
-    function copPersistBatch(ops, formsSnapshot) {
-        fetch('{{ route("lands-one-stop-shop.applications.op-batch-capture") }}', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-            },
-            body: JSON.stringify({ ops }),
-        })
-            .then(r => r.json().then(d => ({ ok: r.ok, d })))
-            .then(({ ok, d }) => {
+    function copPersistBatch(ops, formsSnapshot, resumeBatch) {
+        copFetch('{{ route("lands-one-stop-shop.applications.op-batch-capture") }}', { ops, op_batch: resumeBatch || null })
+            .then(({ ok, status, d }) => {
+                if (status === 419 || status === 401 || status === 403) {
+                    // copBatch is still intact — Retry replays this exact save.
+                    copSessionExpiredDialog(() => copPersistBatch(ops, formsSnapshot, resumeBatch));
+                    return;
+                }
                 if (!ok || !d.success) {
                     Swal.fire({ icon: 'error', title: 'Could not save batch', text: d.message || 'Unknown error.' });
                     return;
@@ -1031,7 +1416,7 @@
                 // Confirmation: proceed straight to File Number Commissioning for this batch?
                 Swal.fire({
                     icon: 'success',
-                    title: 'OP batch captured successfully',
+                    title: resumeBatch ? 'OP batch updated successfully' : 'OP batch captured successfully',
                     html: (d.message || (d.count + ' OPs saved under Batch ' + opBatch + '.')) + '<br><br>',
                     showCancelButton: true,
                     confirmButtonText: 'Next',
@@ -1056,6 +1441,35 @@
     // generate step can link each commissioned file to its OP.
     // On pages where the commission form is inline (MLS), there is no modal to reopen — the
     // backfill below still applies to the on-page form.
+    /**
+     * Go back from Commission New File Number to the OP Batch card, to correct a mistake before
+     * the file numbers are commissioned.
+     *
+     * Records are re-fetched from the server rather than reused from memory, so the card always
+     * opens on the batch as actually stored — including any edits or deletions made since.
+     */
+    window.copBackToBatchCard = function () {
+        const pending = window.pendingOpBatch;
+        const opBatch = pending && pending.op_batch;
+        if (!opBatch) return;
+
+        copLoadBatchForResume(opBatch, '', (qty, resume) => {
+            if (!qty || !resume) return;   // load failed — the helper has already reported it
+            const a = copAlpine();
+            if (a) {
+                a.batchMode = true;
+                a.batchQuantity = qty;
+                // Re-set by copReopenCommissionForBatch when the batch is saved again.
+                a.pendingOpBatchId = '';
+            }
+            // Close the commission modal where there is one (OSS); the MLS form is inline.
+            if (typeof window.closeCommissionFileNoModal === 'function') {
+                window.closeCommissionFileNoModal();
+            }
+            window.openBatchCaptureOp(qty, '', resume);
+        });
+    };
+
     function copReopenCommissionForBatch(opBatch, savedOps, forms) {
         window.pendingOpBatch = { op_batch: opBatch, ops: savedOps, count: forms.length };
 
@@ -1077,6 +1491,9 @@
             a.defaultAllocationType = '';
             a.allocatedByFilter = '';
             a.applicationType = 'new';
+            // Drives the "Back to OP Batch" button — set only while an uncommissioned batch is
+            // waiting to be commissioned.
+            a.pendingOpBatchId = opBatch;
 
             // Batch-level: land use + purpose from the first OP.
             const first = forms[0] || {};

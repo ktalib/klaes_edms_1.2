@@ -6,6 +6,7 @@
 // Initialize on DOM ready
 document.addEventListener('DOMContentLoaded', function() {
     initializeGlobalFileNoModal();
+    initializeQrScanner();
     initializeLucideIcons();
 });
 
@@ -32,112 +33,643 @@ function initializeGlobalFileNoModal() {
     }
 }
 
+/* ─── QR Scanner (hardware keyboard-wedge device) ────────────────────────── */
+
+/**
+ * Wire up the search-mode toggle and the QR scan input
+ */
+function initializeQrScanner() {
+    document.querySelectorAll('.archive-mode-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            setArchiveSearchMode(btn.dataset.mode);
+        });
+    });
+
+    const qrInput = document.getElementById('archive-qr-input');
+    if (!qrInput) return;
+
+    // Hardware scanners type the payload then send Enter
+    qrInput.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        submitArchiveScan(qrInput.value);
+    });
+}
+
+/**
+ * Resolve a scanned payload to a file number and load its record
+ * @param {string} rawValue - Raw text delivered by the scanner
+ */
+function submitArchiveScan(rawValue) {
+    const qrInput = document.getElementById('archive-qr-input');
+    const fileNumber = extractFileNumberFromQr(rawValue);
+
+    if (!fileNumber) {
+        updateArchiveScanStatus('QR code did not contain a file number.', 'error');
+        if (qrInput) qrInput.select();
+        return;
+    }
+
+    updateArchiveScanStatus('Scanned: ' + fileNumber, 'success');
+    loadArchiveFileNumber(fileNumber);
+
+    // Clear and refocus so the next scan lands here too
+    if (qrInput) {
+        qrInput.value = '';
+        qrInput.focus();
+    }
+}
+
+/**
+ * Switch between "File Number" and "QR Scan" input modes
+ * @param {string} mode - 'fileno' or 'qr'
+ */
+function setArchiveSearchMode(mode) {
+    document.querySelectorAll('.archive-mode-btn').forEach(function(btn) {
+        const active = btn.dataset.mode === mode;
+        btn.classList.toggle('bg-blue-600', active);
+        btn.classList.toggle('text-white', active);
+        btn.classList.toggle('bg-white', !active);
+        btn.classList.toggle('text-gray-700', !active);
+    });
+
+    const panel = document.getElementById('archive-qr-panel');
+    if (panel) panel.classList.toggle('hidden', mode !== 'qr');
+
+    if (mode === 'qr') {
+        const qrInput = document.getElementById('archive-qr-input');
+        if (qrInput) {
+            qrInput.value = '';
+            qrInput.focus();
+        }
+        updateArchiveScanStatus('Waiting for scan — keep this box focused', 'info');
+    }
+
+    initializeLucideIcons();
+}
+
+/**
+ * Pull a file number out of a QR payload (plain text or JSON)
+ * @param {string} decodedText
+ * @returns {string} file number, or '' if none found
+ */
+function extractFileNumberFromQr(decodedText) {
+    const raw = (decodedText || '').trim();
+    if (!raw) return '';
+
+    if (raw.charAt(0) === '{') {
+        try {
+            const payload = JSON.parse(raw);
+            return (payload.file_number
+                || payload.fileNumber
+                || payload.NewKANGISFileNo
+                || payload.kangisFileNo
+                || payload.mlsfNo
+                || payload.tracking_id
+                || '').toString().trim();
+        } catch (e) {
+            // Not JSON after all — fall through to the raw value
+        }
+    }
+
+    return raw;
+}
+
+function updateArchiveScanStatus(message, type) {
+    const el = document.getElementById('archive-qr-status');
+    if (!el) return;
+
+    el.textContent = message;
+    el.className = 'mt-3 text-sm text-center px-3 py-2 border rounded-md '
+        + (type === 'success' ? 'text-green-700 bg-green-50 border-green-200'
+        : type === 'error' ? 'text-red-700 bg-red-50 border-red-200'
+        : 'text-gray-600 bg-gray-50 border-gray-200');
+}
+
+/**
+ * Load a file number (or scanned tracking ID) and populate every File Details
+ * field from the archive endpoint. Shared by QR scanning, manual entry and the
+ * file number picker — one request, one authoritative payload.
+ * @param {string} fileNumber
+ */
+async function loadArchiveFileNumber(fileNumber) {
+    resetFileDetails();
+
+    const fileNoInput = document.getElementById('archive-file-no');
+    if (fileNoInput) fileNoInput.value = fileNumber;
+
+    showFileNumberBadge(fileNumber);
+    setArchiveLoadingState();
+
+    try {
+        const response = await fetch(
+            `/api/track-file-archive/details?file_number=${encodeURIComponent(fileNumber)}`,
+            { headers: { 'Accept': 'application/json' } }
+        );
+        const payload = await response.json();
+
+        if (!response.ok || !payload || !payload.success || !payload.data) {
+            setArchiveNotFoundState((payload && payload.message) || 'No archive record found for this file.');
+            return;
+        }
+
+        applyArchiveDetails(payload.data);
+    } catch (error) {
+        console.error('Error loading archive details:', error);
+        setArchiveNotFoundState('Could not load archive details.');
+    }
+}
+
+/**
+ * Put every badge into a loading state while the lookup is in flight
+ */
+function setArchiveLoadingState() {
+    ['detail-tracking-id', 'detail-land-use', 'detail-registry', 'detail-current-location',
+     'detail-shelf', 'detail-rack', 'detail-full-shelf-rack', 'detail-status'
+    ].forEach(function(id) {
+        updateBadge(id, 'Loading...', 'gray');
+    });
+
+    const fileNameInput = document.getElementById('archive-file-name');
+    if (fileNameInput) fileNameInput.value = 'Loading...';
+
+    setFileHistoryTimelineLoading();
+}
+
+/**
+ * Nothing resolved — leave the land use we can infer from the number itself
+ * and blank everything that has to come from a record.
+ * @param {string} message
+ */
+function setArchiveNotFoundState(message) {
+    resetBadgesToNA();
+    updateBadge('detail-registry', 'N/A', 'gray');
+    updateBadge('detail-current-location', 'N/A', 'gray');
+    updateBadge('detail-status', message || 'Not found', 'gray');
+
+    const fileNameInput = document.getElementById('archive-file-name');
+    if (fileNameInput) fileNameInput.value = '';
+
+    const fileNumber = (document.getElementById('archive-file-no') || {}).value || '';
+    if (fileNumber) applyDerivedLandUseFromFileNumber(fileNumber);
+
+    setFileHistoryTimelineFallback(message || 'No movement history available.');
+}
+
+/**
+ * Render a resolved archive payload into the File Details card
+ * @param {Object} d - Data block from /api/track-file-archive/details
+ */
+function applyArchiveDetails(d) {
+    // The endpoint accepts a tracking ID too, so reflect back the file number
+    // it actually resolved to.
+    const fileNoInput = document.getElementById('archive-file-no');
+    if (d.file_number && fileNoInput && fileNoInput.value !== d.file_number) {
+        fileNoInput.value = d.file_number;
+        showFileNumberBadge(d.file_number);
+    }
+
+    const fileNameInput = document.getElementById('archive-file-name');
+    if (fileNameInput) {
+        fileNameInput.value = d.file_title || '';
+        fileNameInput.classList.toggle('text-gray-900', Boolean(d.file_title));
+        fileNameInput.classList.toggle('text-gray-500', !d.file_title);
+    }
+
+    updateBadge('detail-tracking-id', d.tracking_id || 'Not Tracked', d.tracking_id ? 'blue' : 'gray');
+
+    if (d.land_use_type) {
+        updateBadge('detail-land-use', String(d.land_use_type).toUpperCase(), getLandUseColor(d.land_use_type));
+    } else {
+        applyDerivedLandUseFromFileNumber(d.file_number || '');
+    }
+
+    updateBadge('detail-registry', d.registry || 'N/A', 'purple');
+    updateBadge('detail-current-location', composeDestinationLabel(d), 'cyan');
+
+    // "Rack" holds the letter, "Shelf" the number — note the two badge ids are
+    // swapped relative to their labels in the markup.
+    updateBadge('detail-shelf', d.rack || 'N/A', 'orange');
+    updateBadge('detail-rack', d.shelf || 'N/A', 'amber');
+    updateBadge('detail-full-shelf-rack', d.rack_shelf || 'N/A', 'indigo');
+
+    const fullShelfBadge = document.getElementById('detail-full-shelf-rack');
+    if (fullShelfBadge) {
+        fullShelfBadge.title = d.shelf_is_derived
+            ? 'Derived from the shelf/rack range map — not a recorded shelf location.'
+            : '';
+        if (d.shelf_is_derived && d.rack_shelf) {
+            fullShelfBadge.textContent = d.rack_shelf + ' (derived)';
+        }
+    }
+
+    applyArchiveStatus(d);
+    renderArchiveTimeline(d);
+}
+
+/**
+ * Destination (Location) badge text: who currently holds the file and in which
+ * department/office. Falls back to the resolved current_location when the
+ * holder/department are not known.
+ * @param {Object} d - Archive detail payload
+ * @returns {string}
+ */
+function composeDestinationLabel(d) {
+    const holder = (d.holder || '').toString().trim();
+    const department = ((d.tracker && (d.tracker.department || d.tracker.current_office_name)) || d.current_location || '')
+        .toString().trim();
+
+    const parts = [holder, department].filter(Boolean);
+    return parts.length ? parts.join(' — ') : 'N/A';
+}
+
+/**
+ * Compose the File Log History badge from status, holder and location
+ * @param {Object} d - Archive detail payload
+ */
+function applyArchiveStatus(d) {
+    const statusLabel = formatStatusText(d.status || '') || 'Unknown';
+    const parts = [statusLabel];
+
+    if (d.holder) parts.push('Held by ' + d.holder);
+    if (d.duration_with_holder) parts.push(d.duration_with_holder);
+
+    const isOverdue = Boolean(d.tracker && d.tracker.is_overdue);
+    updateBadge('detail-status', parts.join(' • '), getArchiveStatusColor(d.status, isOverdue));
+}
+
+/**
+ * Badge colour for a resolver status
+ * @param {string} status - Resolver status (IN_ARCHIVE, IN_TRANSIT, ...)
+ * @param {boolean} isOverdue
+ */
+function getArchiveStatusColor(status, isOverdue) {
+    if (isOverdue) return 'red';
+
+    switch (String(status || '').toUpperCase()) {
+        case 'IN_ARCHIVE':   return 'green';
+        case 'IN_POOL':      return 'teal';
+        case 'IN_TRANSIT':   return 'blue';
+        case 'PENDING_FILE': return 'yellow';
+        case 'MISSING_FILE': return 'red';
+        case 'REFER':        return 'orange';
+        default:             return 'gray';
+    }
+}
+
+/* ─── Movement History ───────────────────────────────────────────────────────
+ * Mirrors the mobile dashboard's "Movement timeline" panel (same /track data,
+ * same arrangement): the Archive / Registry home row first, then movement
+ * entries oldest → newest, each carrying Receiving Officer, Log In, Log Out,
+ * Request Purpose, Timeline, Expected Return Date and Delay Reason. Approval
+ * steps are split out into their own Workflow Approvals list below.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+const APPROVAL_PURPOSES = ['recommendation', 'approval'];
+
+/**
+ * Render the movement timeline for a resolved archive payload
+ * @param {Object} d - Archive detail payload
+ */
+function renderArchiveTimeline(d) {
+    const container = document.getElementById('file-history-timeline');
+    if (!container) return;
+
+    const priorLogs = Array.isArray(d.prior_movements) ? d.prior_movements : [];
+    const currentLogs = Array.isArray(d.movement_history) ? d.movement_history : [];
+    const allLogs = priorLogs.concat(currentLogs).sort(compareMovementEntries);
+
+    const isApproval = (e) => APPROVAL_PURPOSES.includes(String(e.purpose || '').toLowerCase());
+    const movementLogs = allLogs.filter((e) => !isApproval(e));
+    const approvalLogs = allLogs.filter(isApproval);
+
+    // Request Purpose / Timeline / Expected Return Date belong to the tracker
+    // (one per tracking cycle), so every row shows the same values.
+    const trackerMeta = {
+        requestPurposeName: (d.tracker && d.tracker.request_purpose_name) || '',
+        timelineStatus: (d.tracker && d.tracker.timeline_status) || null,
+        daysUntilDeadline: d.tracker && d.tracker.days_until_deadline !== null && d.tracker.days_until_deadline !== undefined
+            ? Number(d.tracker.days_until_deadline)
+            : null,
+        expectedReturnDate: (d.tracker && d.tracker.deadline) || null,
+    };
+
+    const emptyRow = (message) =>
+        `<div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-500">${escapeHtml(message)}</div>`;
+
+    container.innerHTML = `
+        ${priorLogs.length ? `<div class="mb-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-500">Tracking cycles for this file.</div>` : ''}
+        ${buildArchiveHomeRow(d)}
+        ${movementLogs.length
+            ? movementLogs.map((entry) => buildMovementRow(entry, trackerMeta)).join('')
+            : emptyRow(allLogs.length
+                ? 'No physical movement entries found. Approval steps are listed below.'
+                : 'No movement history available for this file.')}
+        ${approvalLogs.length ? `
+            <div class="mt-3 mb-1 text-[10px] font-extrabold uppercase tracking-wider text-gray-500">Workflow Approvals</div>
+            <div class="flex flex-col gap-2">${approvalLogs.map(buildApprovalRow).join('')}</div>` : ''}`;
+
+    applyIndexingLastUpdated(d);
+    initializeLucideIcons();
+}
+
+/**
+ * The file's resting place — always the first row of the timeline
+ * @param {Object} d - Archive detail payload
+ * @returns {string} HTML
+ */
+function buildArchiveHomeRow(d) {
+    if (!d.registry && !d.rack_shelf) return '';
+
+    const home = [d.registry || 'Registry / Archive', d.rack_shelf ? 'Shelf/Rack ' + d.rack_shelf : null]
+        .filter(Boolean)
+        .join(' — ');
+
+    return `
+        <div class="relative pb-3">
+            <span class="absolute -left-6 top-1 h-3 w-3 rounded-full bg-emerald-500 border-2 border-emerald-200 shadow-sm"></span>
+            <div class="flex items-start justify-between gap-2 flex-wrap">
+                <div>
+                    <div class="text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-0.5">Archive / Registry</div>
+                    <div class="text-[13px] font-bold text-gray-900">${escapeHtml(home)}</div>
+                </div>
+                <span class="inline-flex items-center rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 text-[11px] font-bold whitespace-nowrap">In Archive</span>
+            </div>
+        </div>`;
+}
+
+/**
+ * One movement entry, laid out like the mobile timeline row
+ * @param {Object} entry - Movement log entry
+ * @param {Object} trackerMeta - Tracker-level request/timeline values
+ * @returns {string} HTML
+ */
+function buildMovementRow(entry, trackerMeta) {
+    const office = entry.office_name || entry.office || entry.receiving_office_name || 'Unknown';
+    const officer = entry.receiving_officer_name || entry.receivingOfficerName || entry.accepted_by_name || '-';
+    const status = resolveMovementStatus(entry);
+
+    // Log In is only meaningful once the file has actually been logged back in.
+    const loggedIn = status.label === 'Log-in' || status.label === 'Completed';
+    const inDate = loggedIn
+        ? formatMovementDate(entry.log_in_date || entry.logInDate, entry.log_in_time || entry.logInTime)
+        : '-';
+
+    const outDateRaw = entry.log_out_date || entry.logOutDate;
+    const rawStatus = String(entry.status || '').trim().toLowerCase();
+    const outDate = outDateRaw
+        ? formatMovementDate(outDateRaw, entry.log_out_time || entry.logOutTime)
+        : (['active', 'pending_acceptance', 'in-transit', 'in transit'].includes(rawStatus) ? 'In transit' : '-');
+
+    const timelineMeta = formatTimelineMeta(trackerMeta);
+
+    return `
+        <div class="relative pb-4">
+            <span class="absolute -left-6 top-1 h-3 w-3 rounded-full bg-blue-500 border-2 border-blue-200 shadow-sm"></span>
+            <div class="flex items-start justify-between gap-2 flex-wrap">
+                <div>
+                    <div class="text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-0.5">Office</div>
+                    <div class="text-[13px] font-bold text-gray-900">${escapeHtml(office)}</div>
+                </div>
+                <span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-bold whitespace-nowrap ${status.classes}">${escapeHtml(status.label)}</span>
+            </div>
+            <div class="mt-2 grid grid-cols-2 gap-x-4 gap-y-2">
+                ${timelineField('Receiving Officer', officer, 'col-span-2')}
+                ${timelineField('Log In', inDate)}
+                ${timelineField('Log Out', outDate)}
+                ${timelineField('Request Purpose', trackerMeta.requestPurposeName || '—', 'col-span-2')}
+                <div>
+                    <div class="text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-0.5">Timeline</div>
+                    ${timelineMeta
+                        ? `<span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-bold ${timelineMeta.classes}">${escapeHtml(timelineMeta.label)}</span>`
+                        : '<div class="text-[13px] text-gray-400">—</div>'}
+                </div>
+                ${timelineField('Expected Return Date', formatExpectedReturnDate(trackerMeta.expectedReturnDate))}
+                ${timelineField('Delay Reason', entry.delay_reason || '—', 'col-span-2')}
+            </div>
+            ${entry.notes ? `<div class="mt-2 text-xs text-gray-500">${escapeHtml(entry.notes)}</div>` : ''}
+        </div>`;
+}
+
+/**
+ * A recommendation / approval step, rendered as a flat card
+ * @param {Object} entry - Movement log entry with an approval purpose
+ * @returns {string} HTML
+ */
+function buildApprovalRow(entry) {
+    const office = entry.office_name || entry.office || entry.receiving_office_name || 'Unknown';
+    const officer = entry.receiving_officer_name || entry.accepted_by_name || '—';
+    const status = resolveMovementStatus(entry);
+    const purposeLabel = String(entry.purpose || '').toLowerCase() === 'recommendation' ? 'Recommendation' : 'Approval';
+    const eventDate = formatMovementDate(entry.log_in_date || entry.logInDate, entry.log_in_time || entry.logInTime);
+
+    return `
+        <div class="rounded-lg border border-gray-200 bg-white px-3 py-2.5">
+            <div class="flex items-start justify-between gap-2 flex-wrap">
+                <div>
+                    <div class="text-xs font-bold text-gray-900">${escapeHtml(purposeLabel)} — ${escapeHtml(office)}</div>
+                    <div class="mt-0.5 text-[11px] text-gray-500">${escapeHtml(officer)} · ${escapeHtml(eventDate)}</div>
+                </div>
+                <span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-bold whitespace-nowrap ${status.classes}">${escapeHtml(status.label)}</span>
+            </div>
+            ${entry.notes ? `<div class="mt-2 text-xs text-gray-500">${escapeHtml(entry.notes)}</div>` : ''}
+        </div>`;
+}
+
+/**
+ * A label/value pair inside a movement row
+ * @param {string} label
+ * @param {string} value
+ * @param {string} [extraClasses] - Extra grid classes for the wrapper
+ * @returns {string} HTML
+ */
+function timelineField(label, value, extraClasses) {
+    return `
+        <div class="${extraClasses || ''}">
+            <div class="text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-0.5">${escapeHtml(label)}</div>
+            <div class="text-[13px] font-semibold text-gray-800">${escapeHtml(value)}</div>
+        </div>`;
+}
+
+/**
+ * Status label + badge classes for a movement entry
+ * @param {Object} entry - Movement log entry
+ * @returns {{label: string, classes: string}}
+ */
+function resolveMovementStatus(entry) {
+    const green = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+    const amber = 'bg-amber-100 text-amber-800 border-amber-200';
+    const red = 'bg-red-100 text-red-700 border-red-200';
+    const gray = 'bg-gray-100 text-gray-600 border-gray-300';
+    const indigo = 'bg-indigo-100 text-indigo-800 border-indigo-200';
+
+    const override = (entry.status_label || entry.statusLabel || entry.new_status || entry.newStatus || '').toString().trim();
+    const normalize = (value) => value.toLowerCase().replace(/_/g, ' ');
+
+    if (override) {
+        switch (normalize(override)) {
+            case 'log-in':
+            case 'log in':  return { label: 'Log-in', classes: green };
+            case 'log-out':
+            case 'log out': return { label: 'Log-out', classes: green };
+            case 'pending acceptance':
+            case 'in-transit':
+            case 'in transit': return { label: 'In-Transit', classes: amber };
+            case 'rejected': return { label: 'Rejected', classes: red };
+            case 'cancelled':
+            case 'canceled': return { label: 'Cancelled', classes: gray };
+            default: return { label: override, classes: indigo };
+        }
+    }
+
+    switch (String(entry.status || '').trim().toLowerCase()) {
+        case 'pending_acceptance': return { label: 'In-Transit', classes: amber };
+        case 'active':    return { label: 'Log-out', classes: green };
+        case 'completed': return { label: 'Log-in', classes: green };
+        case 'rejected':  return { label: 'Rejected', classes: red };
+        default: return { label: String(entry.status || 'Completed').replace(/_/g, ' '), classes: indigo };
+    }
+}
+
+/**
+ * Green/amber/red timeline badge for the tracker's deadline — mirrors
+ * FileTracker::getTimelineStatusAttribute().
+ * @param {Object} meta - trackerMeta block
+ * @returns {{label: string, classes: string}|null}
+ */
+function formatTimelineMeta(meta) {
+    const byStatus = {
+        green: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+        amber: 'bg-amber-100 text-amber-800 border-amber-200',
+        red: 'bg-red-100 text-red-700 border-red-200',
+    };
+
+    if (!meta || !meta.timelineStatus || !byStatus[meta.timelineStatus]) return null;
+
+    const days = meta.daysUntilDeadline;
+    let label;
+
+    if (days === null || days === undefined || Number.isNaN(days)) {
+        label = { green: 'On Track', amber: 'Due Soon', red: 'Overdue' }[meta.timelineStatus];
+    } else if (days > 0) {
+        label = `${days} day${days === 1 ? '' : 's'} left`;
+    } else if (days === 0) {
+        label = 'Due today';
+    } else {
+        const abs = Math.abs(days);
+        label = `${abs} day${abs === 1 ? '' : 's'} overdue`;
+    }
+
+    return { label, classes: byStatus[meta.timelineStatus] };
+}
+
+/**
+ * Order movement entries oldest → newest
+ */
+function compareMovementEntries(a, b) {
+    return movementEntryTimestamp(a) - movementEntryTimestamp(b);
+}
+
+/**
+ * Sortable timestamp for a movement entry: log-in, else log-out, else created
+ * @param {Object} entry - Movement log entry
+ * @returns {number} Epoch milliseconds
+ */
+function movementEntryTimestamp(entry) {
+    const parseDateTime = (date, time) => {
+        const d = (date || '').toString().trim();
+        if (!d) return null;
+        const parsed = Date.parse(`${d} ${(time || '').toString().trim() || '00:00'}`);
+        return Number.isNaN(parsed) ? null : parsed;
+    };
+
+    const inTs = parseDateTime(entry.log_in_date || entry.logInDate, entry.log_in_time || entry.logInTime);
+    if (inTs !== null) return inTs;
+
+    const outTs = parseDateTime(entry.log_out_date || entry.logOutDate, entry.log_out_time || entry.logOutTime);
+    if (outTs !== null) return outTs;
+
+    const createdTs = Date.parse(entry.created_at || entry.createdAt || '');
+    return Number.isNaN(createdTs) ? Number.POSITIVE_INFINITY : createdTs;
+}
+
+/**
+ * "2026-07-15" + "11:51" => "2026-07-15 11:51 AM"
+ */
+function formatMovementDate(date, time) {
+    const d = (date || '').toString().trim();
+    if (!d) return '—';
+    if (!time) return d;
+
+    const parts = time.toString().trim().split(':');
+    if (parts.length < 2) return `${d} ${time}`;
+
+    let hour = parseInt(parts[0], 10);
+    if (Number.isNaN(hour)) return `${d} ${time}`;
+
+    const period = hour >= 12 ? 'PM' : 'AM';
+    hour = hour % 12 || 12;
+
+    return `${d} ${hour}:${parts[1].padStart(2, '0')} ${period}`;
+}
+
+/**
+ * Expected return date as dd/mm/yyyy
+ */
+function formatExpectedReturnDate(value) {
+    if (!value) return '—';
+
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
+
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+}
+
+/**
+ * Escape a value for interpolation into timeline markup
+ * @param {*} value
+ * @returns {string}
+ */
+function escapeHtml(value) {
+    return String(value === null || value === undefined ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+/**
+ * "Last updated" reports the file_indexings row's updated_at (who/when the
+ * indexing record last changed) — not the tracker's own timestamp.
+ * @param {Object} d - Archive detail payload
+ */
+function applyIndexingLastUpdated(d) {
+    const el = document.getElementById('file-history-last-updated');
+    if (!el) return;
+
+    const formatted = formatDateTimeDisplay(d.indexing_updated_at);
+
+    if (!formatted) {
+        el.textContent = 'Last updated: --';
+        return;
+    }
+
+    el.textContent = 'Last updated: ' + formatted
+        + (d.indexing_updated_by ? ' by ' + d.indexing_updated_by : '');
+}
+
 /**
  * Handle file number selection from modal
  * @param {Object} data - Data from modal callback
  */
 function handleFileNumberSelection(data) {
-    console.log('Modal callback data:', data);
-    
     if (!data || !data.fileNumber) {
         console.warn('No file number selected');
         return;
     }
 
-    // Reset details before populating fresh data
-    resetFileDetails();
-
-    // Set file number
-    const fileNoInput = document.getElementById('archive-file-no');
-    if (fileNoInput) {
-        fileNoInput.value = data.fileNumber;
-        
-        // Show file number as bold green badge
-        showFileNumberBadge(data.fileNumber);
-    }
-
-    // Set registry to hardcoded value "3"
-    updateBadge('detail-registry', '3', 'purple');
-
-    // Derive land use from file number if record data is unavailable
-    applyDerivedLandUseFromFileNumber(data.fileNumber);
-    
-    // Set file name from record data
-    const fileNameInput = document.getElementById('archive-file-name');
-    if (fileNameInput && data.record) {
-        // Try multiple possible field names for file name
-        const fileName = data.record.file_name 
-            || data.record.fileName 
-            || data.record.file_title 
-            || data.record.fileTitle
-            || data.record.name
-            || data.record.title
-            || '';
-        
-        if (fileName) {
-            fileNameInput.value = fileName;
-            fileNameInput.classList.remove('text-gray-500');
-            fileNameInput.classList.add('text-gray-900');
-        } else {
-            // File number found but no name - try to fetch from API
-            fetchFileNameFromApi(data.fileNumber);
-        }
-        
-        // Update file details in second card
-        updateFileDetails(data.record);
-    } else if (fileNameInput) {
-        // No record data - try to fetch from API
-        fetchFileNameFromApi(data.fileNumber);
-    }
-    
-    console.log('File number selected:', data.fileNumber);
-
-    fetchFileTrackerHistory(data.fileNumber);
-    fetchLabelMetadata(data.fileNumber);
-}
-
-/**
- * Fetch and display label metadata for a file number
- * @param {string} fileNumber - The file number to fetch metadata for
- */
-async function fetchLabelMetadata(fileNumber) {
-    console.log('Fetching metadata for file number:', fileNumber);
-    
-    try {
-        // Show loading state
-        updateBadge('detail-tracking-id', 'Loading...', 'gray');
-        updateBadge('detail-land-use', 'Loading...', 'gray');
-        updateBadge('detail-shelf', 'Loading...', 'gray');
-        updateBadge('detail-rack', 'Loading...', 'gray');
-        updateBadge('detail-full-shelf-rack', 'Loading...', 'gray');
-
-        const response = await fetch(`/api/track-file-archive/label-metadata?file_number=${encodeURIComponent(fileNumber)}`);
-        console.log('API response status:', response.status);
-        console.log('API response headers:', response.headers);
-        
-        if (!response.ok) {
-            console.error('API response not ok:', response.status, response.statusText);
-            const errorText = await response.text();
-            console.error('API error body:', errorText);
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        console.log('Raw API response data:', data);
-        console.log('API response success:', data.success);
-        console.log('API response data:', data.data);
-        console.log('API response message:', data.message);
-
-        if (data.success) {
-            applyLabelMetadata(data.data);
-        } else {
-            console.warn('API returned success=false:', data.message);
-            resetBadgesToNA();
-        }
-    } catch (error) {
-        console.error('Error fetching label metadata:', error);
-        resetBadgesToNA();
-    }
+    loadArchiveFileNumber(data.fileNumber);
 }
 
 /**
@@ -164,107 +696,6 @@ function resetBadgeIfLoading(elementId) {
     const current = (badge.textContent || '').trim().toLowerCase();
     if (current === '' || current === 'loading...' || current === 'n/a' || current === 'not selected') {
         updateBadge(elementId, 'N/A', 'gray');
-    }
-}
-
-/**
- * Fetch file name from API
- * @param {string} fileNumber - File number to lookup
- */
-function fetchFileNameFromApi(fileNumber) {
-    const fileNameInput = document.getElementById('archive-file-name');
-    if (!fileNameInput || !fileNumber) return;
-    
-    // Show loading state
-    fileNameInput.value = 'Loading...';
-    fileNameInput.classList.add('text-gray-500');
-    
-    // Fetch file details from file indexing API
-    fetch(`/api/file-indexings/lookup-by-number?file_number=${encodeURIComponent(fileNumber)}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data && data.success && data.data) {
-                const fileName = data.data.file_name || data.data.file_title || '';
-                if (fileName) {
-                    fileNameInput.value = fileName;
-                    fileNameInput.classList.remove('text-gray-500');
-                    fileNameInput.classList.add('text-gray-900');
-                } else {
-                    fileNameInput.value = '';
-                    fileNameInput.classList.add('text-gray-500');
-                }
-                
-                // Update file details in second card
-                updateFileDetails(data.data);
-
-                fetchLabelMetadata(fileNumber);
-                fetchFileTrackerHistory(fileNumber);
-            } else {
-                fileNameInput.value = '';
-                fileNameInput.classList.add('text-gray-500');
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching file name:', error);
-            fileNameInput.value = '';
-            fileNameInput.classList.add('text-gray-500');
-        });
-}
-
-/**
- * Update file details in the second card
- * @param {Object} record - File record data
- */
-function updateFileDetails(record) {
-    if (!record) {
-        return;
-    }
-
-    const trackingId = record.tracking_id || record.trackingId || null;
-    if (trackingId) {
-        updateBadge('detail-tracking-id', trackingId, 'blue');
-    }
-
-    const landUse = record.land_use || record.landUse || null;
-    if (landUse) {
-        updateBadge('detail-land-use', String(landUse).toUpperCase(), getLandUseColor(landUse));
-    }
-
-    const fileType = record.file_type || record.fileType || record.type || null;
-    if (fileType) {
-        updateBadge('detail-file-type', fileType, 'purple');
-    }
-
-    const shelf = record.shelf || record.shelf_number || record.shelfNumber || null;
-    if (shelf) {
-        updateBadge('detail-shelf', shelf, 'amber');
-    }
-
-    const rack = record.rack || record.rack_number || record.rackNumber || null;
-    if (rack) {
-        updateBadge('detail-rack', rack, 'orange');
-    }
-
-    const locationCode = record.full_shelf_rack || record.fullShelfRack || record.location_code || null;
-    if (locationCode) {
-        updateBadge('detail-full-shelf-rack', locationCode, 'indigo');
-    } else if (shelf && rack) {
-        updateBadge('detail-full-shelf-rack', `${shelf}${rack}`, 'indigo');
-    }
-
-    const currentLocation = record.current_location
-        || record.currentLocation
-        || record.location
-        || record.office_location
-        || record.officeLocation
-        || null;
-    if (currentLocation) {
-        updateBadge('detail-current-location', currentLocation, 'cyan');
-    }
-
-    const status = record.status || null;
-    if (status) {
-        updateBadge('detail-status', status, getStatusColor(status));
     }
 }
 
@@ -310,26 +741,6 @@ function getLandUseColor(landUse) {
             return 'orange';
         case 'AGRICULTURAL':
         case 'AG':
-            return 'yellow';
-        default:
-            return 'gray';
-    }
-}
-
-/**
- * Get color for status
- * @param {string} status - Status value
- * @returns {string} Color name
- */
-function getStatusColor(status) {
-    const statusLower = status.toLowerCase();
-    
-    switch(statusLower) {
-        case 'active':
-            return 'green';
-        case 'archived':
-            return 'indigo';
-        case 'pending':
             return 'yellow';
         default:
             return 'gray';
@@ -452,207 +863,6 @@ function applyDerivedLandUseFromFileNumber(fileNumber) {
 }
 
 /**
- * Fetch file tracker history and update status indicator
- * @param {string} fileNumber - File number to query
- */
-function fetchFileTrackerHistory(fileNumber) {
-    if (!fileNumber) {
-        return;
-    }
-
-    updateBadge('detail-status', 'Loading history...', 'gray');
-    updateBadge('detail-current-location', 'Loading...', 'gray');
-    setFileHistoryTimelineLoading();
-
-    const params = new URLSearchParams({
-        file_numbers: fileNumber,
-        sort_by: 'updated_at',
-        sort_order: 'desc',
-        per_page: '10'
-    });
-
-    fetch(`/api/file-trackers?${params.toString()}`)
-        .then(async (response) => {
-            let payload = null;
-
-            try {
-                payload = await response.json();
-            } catch (error) {
-                console.error('Invalid JSON from file tracker endpoint', error);
-            }
-
-            if (!response.ok) {
-                if (payload && payload.message) {
-                    console.info('File tracker history not available:', payload.message);
-                }
-                setTrackerFallbackState('Tracker unavailable');
-                return;
-            }
-
-            const paginated = payload && payload.data ? payload.data : null;
-            const trackers = Array.isArray(paginated?.data) ? paginated.data : [];
-
-            if (trackers.length === 0) {
-                setTrackerFallbackState('No tracker history');
-                return;
-            }
-
-            const normalizedFileNumber = String(fileNumber).toUpperCase();
-            const matchingTracker = trackers.find((item) => {
-                const candidate = (item?.file_number || '').toString().toUpperCase();
-                return candidate === normalizedFileNumber;
-            }) || trackers[0];
-
-            applyFileTrackerDetails(matchingTracker);
-        })
-        .catch((error) => {
-            console.error('Error fetching file tracker history:', error);
-            setTrackerFallbackState('Tracker unavailable');
-        });
-}
-
-/**
- * Apply tracker details to UI badges
- * @param {Object} tracker - Tracker record from API
- */
-function applyFileTrackerDetails(tracker) {
-    if (!tracker || typeof tracker !== 'object') {
-        setTrackerFallbackState('No tracker history');
-        return;
-    }
-
-    const statusLabel = formatStatusText(tracker.status || tracker.assignment_status || 'Active');
-    const isOverdue = Boolean(tracker.is_overdue);
-
-    const movementLog = normalizeMovementLog(tracker.movement_log);
-    const latestMovement = getLatestMovementEntry(movementLog);
-
-    let locationLabel = tracker.current_office_name
-        || tracker.receiving_office_name
-        || (latestMovement && (latestMovement.receiving_office_name || latestMovement.office_name))
-        || null;
-
-    if (!locationLabel && tracker.department) {
-        locationLabel = tracker.department;
-    }
-
-    const movementStatus = latestMovement ? formatStatusText(latestMovement.status || '') : '';
-    const composedStatus = [statusLabel, movementStatus, locationLabel]
-        .filter(Boolean)
-        .reduce((acc, part, index) => {
-            if (index === 0) {
-                return part;
-            }
-            if (acc.includes(part)) {
-                return acc;
-            }
-            return `${acc} • ${part}`;
-        }, '');
-
-    const trackerColor = getTrackerStatusBadgeColor(statusLabel, isOverdue, movementStatus);
-
-    updateBadge('detail-status', composedStatus || statusLabel, trackerColor);
-
-    if (locationLabel) {
-        updateBadge('detail-current-location', locationLabel, 'cyan');
-    } else {
-        updateBadge('detail-current-location', 'N/A', 'gray');
-    }
-
-    const trackingId = tracker.tracking_id || tracker.trackingId;
-    if (trackingId) {
-        updateBadge('detail-tracking-id', trackingId, 'blue');
-    }
-
-    renderFileHistoryTimeline(tracker, movementLog);
-}
-
-/**
- * Normalize movement log entries to an array
- * @param {*} movementLog - Raw movement log value
- * @returns {Array<Object>} Array of movement entries
- */
-function normalizeMovementLog(movementLog) {
-    if (!movementLog) {
-        return [];
-    }
-
-    if (Array.isArray(movementLog)) {
-        return movementLog;
-    }
-
-    if (typeof movementLog === 'string') {
-        const trimmed = movementLog.trim();
-        if (!trimmed) {
-            return [];
-        }
-        try {
-            const parsed = JSON.parse(trimmed);
-            return Array.isArray(parsed) ? parsed : [];
-        } catch (error) {
-            console.error('Unable to parse movement log string', error);
-        }
-    }
-
-    return [];
-}
-
-/**
- * Select the latest movement entry based on timestamp or date
- * @param {Array<Object>} movementLog - Movement entries
- * @returns {Object|null} Latest movement entry
- */
-function getLatestMovementEntry(movementLog) {
-    if (!Array.isArray(movementLog) || movementLog.length === 0) {
-        return null;
-    }
-
-    let latest = null;
-    let latestValue = -Infinity;
-
-    movementLog.forEach((entry) => {
-        const timestamp = resolveMovementTimestamp(entry);
-        if (timestamp > latestValue) {
-            latestValue = timestamp;
-            latest = entry;
-        }
-    });
-
-    return latest;
-}
-
-/**
- * Convert movement entry timestamps to comparable numeric value
- * @param {Object} entry - Movement entry
- * @returns {number} Epoch milliseconds fallback to 0
- */
-function resolveMovementTimestamp(entry) {
-    if (!entry || typeof entry !== 'object') {
-        return 0;
-    }
-
-    const tsCandidates = [
-        entry.timestamp,
-        entry.updated_at,
-        entry.created_at,
-        entry.log_in_date ? `${entry.log_in_date}T${entry.log_in_time || '00:00'}` : null
-    ];
-
-    for (const value of tsCandidates) {
-        if (!value) {
-            continue;
-        }
-
-        const parsed = Date.parse(value);
-        if (!Number.isNaN(parsed)) {
-            return parsed;
-        }
-    }
-
-    return 0;
-}
-
-/**
  * Format status label text for display
  * @param {string} status - Raw status string
  * @returns {string} Human-readable status
@@ -671,210 +881,6 @@ function formatStatusText(status) {
         .join(' ');
 }
 
-/**
- * Determine tracker status badge color
- * @param {string} statusLabel - Normalized status label
- * @param {boolean} isOverdue - Whether tracker is overdue
- * @param {string} movementStatus - Latest movement status
- * @returns {string} Tailwind color keyword
- */
-function getTrackerStatusBadgeColor(statusLabel, isOverdue, movementStatus) {
-    if (isOverdue) {
-        return 'red';
-    }
-
-    const status = statusLabel.toLowerCase();
-    const movement = (movementStatus || '').toLowerCase();
-
-    if (movement.includes('pending')) {
-        return 'amber';
-    }
-
-    switch (status) {
-        case 'active':
-            return 'green';
-        case 'completed':
-        case 'archived':
-            return 'indigo';
-        case 'cancelled':
-        case 'closed':
-            return 'gray';
-        case 'on hold':
-        case 'pending':
-            return 'yellow';
-        default:
-            return 'gray';
-    }
-}
-
-/**
- * Apply fallback status when tracker data is unavailable
- * @param {string} message - Message to display in status badge
- */
-function setTrackerFallbackState(message) {
-    updateBadge('detail-status', message || 'No tracker history', 'gray');
-    updateBadge('detail-current-location', 'N/A', 'gray');
-    setFileHistoryTimelineFallback(message || 'No tracker history');
-}
-
-/**
- * Render movement history timeline inside the details card
- * @param {Object|null} tracker - Tracker record containing metadata
- * @param {Array<Object>} movementLog - Ordered movement entries
- */
-function renderFileHistoryTimeline(tracker, movementLog) {
-    const container = document.getElementById('file-history-timeline');
-    const lastUpdatedEl = document.getElementById('file-history-last-updated');
-
-    if (!container) {
-        return;
-    }
-
-    container.innerHTML = '';
-
-    if (!Array.isArray(movementLog) || movementLog.length === 0) {
-        setFileHistoryTimelineFallback('No movement history available.');
-        if (lastUpdatedEl) {
-            lastUpdatedEl.textContent = 'Last updated: --';
-        }
-        return;
-    }
-
-    const sortedLog = [...movementLog].sort((a, b) => resolveMovementTimestamp(b) - resolveMovementTimestamp(a));
-
-    sortedLog.forEach((entry, index) => {
-        container.appendChild(buildTimelineEntry(entry, index === 0));
-    });
-
-    if (lastUpdatedEl) {
-        const updatedSource = tracker && (tracker.updated_at || tracker.date_created || tracker.created_at);
-        const formatted = formatDateTimeDisplay(updatedSource);
-        lastUpdatedEl.textContent = formatted ? `Last updated: ${formatted}` : 'Last updated: --';
-    }
-}
-
-function buildTimelineEntry(entry, isLatest) {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'relative';
-
-    const marker = document.createElement('span');
-    const markerClasses = ['absolute', '-left-6', 'top-1', 'h-3', 'w-3', 'rounded-full', 'border-2', 'shadow-sm'];
-    if (isLatest) {
-        markerClasses.push('bg-blue-500', 'border-blue-200');
-    } else {
-        markerClasses.push('bg-white', 'border-slate-300');
-    }
-    marker.className = markerClasses.join(' ');
-    wrapper.appendChild(marker);
-
-    const headerRow = document.createElement('div');
-    headerRow.className = 'flex flex-wrap items-center gap-2';
-
-    const officeName = entry.receiving_office_name || entry.office_name || 'Unknown Office';
-    const officeEl = document.createElement('span');
-    officeEl.className = 'text-sm font-semibold text-gray-900';
-    officeEl.textContent = officeName;
-    headerRow.appendChild(officeEl);
-
-    const statusLabel = formatStatusText(entry.status || '');
-    if (statusLabel) {
-        headerRow.appendChild(createTimelineStatusBadge(statusLabel));
-    }
-
-    if (isLatest) {
-        const latestTag = document.createElement('span');
-        latestTag.className = 'text-xs font-semibold uppercase tracking-wide text-blue-600';
-        latestTag.textContent = 'Most Recent';
-        headerRow.appendChild(latestTag);
-    }
-
-    const timeLabel = formatMovementEntryDateTime(entry);
-    if (timeLabel) {
-        const timeEl = document.createElement('span');
-        timeEl.className = 'text-xs uppercase tracking-wide text-gray-500';
-        timeEl.textContent = timeLabel;
-        headerRow.appendChild(timeEl);
-    }
-
-    wrapper.appendChild(headerRow);
-
-    const metaParts = [];
-    if (entry.origin_office_name) {
-        metaParts.push(`Origin: ${entry.origin_office_name}`);
-    }
-    if (entry.receiving_officer_name) {
-        metaParts.push(`Assigned to: ${entry.receiving_officer_name}`);
-    }
-    if (entry.user_name) {
-        metaParts.push(`Logged by ${entry.user_name}`);
-    }
-    if (entry.manual_update && entry.manual_update_at) {
-        const manualStamp = formatDateTimeDisplay(entry.manual_update_at);
-        metaParts.push(`Manual update: ${manualStamp || entry.manual_update_at}`);
-    }
-
-    if (metaParts.length > 0) {
-        const metaEl = document.createElement('div');
-        metaEl.className = 'text-xs text-gray-500';
-        metaEl.textContent = metaParts.join(' • ');
-        wrapper.appendChild(metaEl);
-    }
-
-    const notes = (entry.notes || '').trim();
-    if (notes) {
-        const notesEl = document.createElement('div');
-        notesEl.className = 'text-xs text-gray-600 italic';
-        notesEl.textContent = `Notes: ${notes}`;
-        wrapper.appendChild(notesEl);
-    }
-
-    return wrapper;
-}
-
-function createTimelineStatusBadge(label) {
-    const badge = document.createElement('span');
-    badge.textContent = label;
-
-    const badgeClasses = ['inline-flex', 'items-center', 'rounded-full', 'px-2', 'py-0.5', 'text-xs', 'font-medium', 'border'];
-    badgeClasses.push(...getTimelineStatusBadgeColor(label));
-    badge.className = badgeClasses.join(' ');
-
-    return badge;
-}
-
-function getTimelineStatusBadgeColor(label) {
-    const safe = (label || '').toLowerCase();
-
-    if (safe.includes('pending')) {
-        return ['bg-amber-100', 'text-amber-700', 'border-amber-200'];
-    }
-    if (safe.includes('complete') || safe.includes('accept') || safe.includes('receive')) {
-        return ['bg-green-100', 'text-green-700', 'border-green-200'];
-    }
-    if (safe.includes('reject') || safe.includes('cancel')) {
-        return ['bg-red-100', 'text-red-700', 'border-red-200'];
-    }
-
-    return ['bg-slate-100', 'text-slate-700', 'border-slate-200'];
-}
-
-function formatMovementEntryDateTime(entry) {
-    const candidates = [
-        entry.log_in_date ? `${entry.log_in_date}T${entry.log_in_time || '00:00'}` : null,
-        entry.timestamp,
-        entry.updated_at,
-        entry.created_at
-    ];
-
-    for (const candidate of candidates) {
-        const formatted = formatDateTimeDisplay(candidate);
-        if (formatted) {
-            return formatted;
-        }
-    }
-
-    return null;
-}
 
 function formatDateTimeDisplay(value) {
     if (!value) {
@@ -969,83 +975,5 @@ function searchArchive() {
     }
     
     console.log('Searching archive for:', fileNumber);
-    // TODO: Implement archive search functionality
-}
-
-/**
- * Apply label metadata to badge fields
- * @param {Object} metadata - Label metadata response
- */
-function applyLabelMetadata(metadata) {
-    console.log('Applying metadata:', metadata);
-    
-    if (!metadata || typeof metadata !== 'object') {
-        console.warn('Invalid metadata object:', metadata);
-        return;
-    }
-
-    // Force update land use from either source
-    const rawLandUse = metadata.land_use_type_label
-        || metadata.land_use_type
-        || (metadata.raw_record && metadata.raw_record.land_use_type)
-        || (metadata.qr_code_payload && (metadata.qr_code_payload.land_use_type || metadata.qr_code_payload.landUseType))
-        || null;
-
-    console.log('Raw land use found:', rawLandUse);
-
-    if (rawLandUse) {
-        const safeLandUse = String(rawLandUse).trim();
-        if (safeLandUse !== '') {
-            console.log('Updating land use badge with:', safeLandUse.toUpperCase());
-            updateBadge('detail-land-use', safeLandUse.toUpperCase(), getLandUseColor(safeLandUse));
-        }
-    }
-
-    // Force update tracking ID
-    const trackingId = metadata.tracking_id
-        || (metadata.raw_record && metadata.raw_record.tracking_id)
-        || (metadata.qr_code_payload && metadata.qr_code_payload.tracking_id)
-        || 'N/A';
-    
-    console.log('Tracking ID found:', trackingId);
-    if (trackingId && trackingId !== 'N/A') {
-        updateBadge('detail-tracking-id', trackingId, 'blue');
-    }
-
-    // Force update shelf location data
-    const shelfLocationLabel = metadata.shelf_location_label
-        || (metadata.raw_record && metadata.raw_record.shelf_location)
-        || (metadata.qr_code_payload && (metadata.qr_code_payload.shelf_location_label || metadata.qr_code_payload.shelfLocationLabel))
-        || null;
-
-    console.log('Shelf location found:', shelfLocationLabel);
-
-    const normalizedShelfLocation = metadata.shelf_location
-        || (shelfLocationLabel ? String(shelfLocationLabel).replace(/[\s\/\\-]+/g, '').toUpperCase() : null)
-        || null;
-
-    const shelf = metadata.shelf
-        || (normalizedShelfLocation ? normalizedShelfLocation.charAt(0) : null);
-    console.log('Shelf found:', shelf);
-    if (shelf) {
-        updateBadge('detail-shelf', shelf, 'amber');
-    }
-
-    const rack = metadata.rack
-        || (normalizedShelfLocation && normalizedShelfLocation.length > 1
-            ? normalizedShelfLocation.substring(1)
-            : null);
-    console.log('Rack found:', rack);
-    if (rack) {
-        updateBadge('detail-rack', rack, 'orange');
-    }
-
-    const fullShelfRack = normalizedShelfLocation
-        || (shelfLocationLabel ? String(shelfLocationLabel).trim() : null)
-        || (shelf && rack ? `${shelf}${rack}` : null);
-
-    console.log('Full shelf rack found:', fullShelfRack);
-    if (fullShelfRack) {
-        updateBadge('detail-full-shelf-rack', fullShelfRack, 'indigo');
-    }
+    loadArchiveFileNumber(fileNumber.trim());
 }

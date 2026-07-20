@@ -93,6 +93,10 @@ class MobileFileSearchController extends Controller
             'success' => true,
             'data' => [
                 'file_number'      => $result['file_number'],
+                // Related counterpart file number (KANGIS ↔ Land). When a KANGIS
+                // file is searched and it carries a related land file — or vice
+                // versa — the UI renders "KANGIS FileNo (Land FileNo)".
+                'linked_file_number' => $resolver->linkedFileNumber($result['file_number'], $result['indexing'] ?? null),
                 'file_title'       => $fileTitle,
                 'status'           => $result['status'],
                 'registry'         => $result['registry'],

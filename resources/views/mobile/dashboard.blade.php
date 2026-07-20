@@ -262,6 +262,8 @@
     .tab-item i { font-size:18px; }
     .tab-item.active { color:var(--primary); }
     .tab-item.active i { transform:translateY(-1px); }
+    /* Longer labels (e.g. "Requests- SCB View") wrap instead of stretching the bar. */
+    .tab-item span { text-align:center; line-height:1.15; word-break:break-word; }
 
     @media (min-width:768px) {
       .screen { padding:24px 24px 110px; max-width:560px; margin:0 auto; }
@@ -379,14 +381,52 @@
       </div>
     </div>
 
+    @if($isScbMonitor)
+    <!-- Requests Today — mirrors the web Quick Search tile. Lives here rather than
+         on the File Requests screen so that screen stays a compact working queue. -->
+    <div id="fsTodayCard" style="position:relative;overflow:hidden;border:1px solid #a5b4fc;background:#6366f1;border-radius:16px;padding:16px;margin-bottom:16px;box-shadow:0 4px 10px rgba(79,70,229,.25);cursor:pointer;" onclick="setActiveTab('requests')">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+        <div>
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#e0e7ff;">Requests Today</div>
+          <div id="fsToday" style="margin-top:4px;font-size:30px;font-weight:800;line-height:1;color:#fff;">—</div>
+        </div>
+        <span style="display:flex;height:36px;width:36px;flex-shrink:0;align-items:center;justify-content:center;border-radius:10px;background:#4338ca;color:#fff;">
+          <i class="fas fa-inbox"></i>
+        </span>
+      </div>
+      <div style="margin-top:12px;border-top:1px solid #818cf8;padding-top:8px;font-size:11px;font-weight:500;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+          <span style="color:#e0e7ff;"><span style="display:inline-block;height:6px;width:6px;border-radius:50%;background:#fff;margin-right:6px;"></span>Found</span>
+          <span id="fsTodayFound" style="font-weight:700;color:#fff;">—</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+          <span style="color:#e0e7ff;"><span style="display:inline-block;height:6px;width:6px;border-radius:50%;background:#fff;margin-right:6px;"></span>Not Found</span>
+          <span id="fsTodayNotFound" style="font-weight:700;color:#fff;">—</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="color:#e0e7ff;"><span style="display:inline-block;height:6px;width:6px;border-radius:50%;background:#fff;margin-right:6px;"></span>Awaiting</span>
+          <span id="fsTodayAwaiting" style="font-weight:700;color:#fff;">—</span>
+        </div>
+      </div>
+    </div>
+    @endif
+
     <div class="section-title">Quick Actions</div>
     <div class="quick-actions-grid">
       <div class="quick-action-btn" onclick="setActiveTab('scanner')">
         <div class="qa-ic"><i class="fas fa-qrcode"></i></div><span>Scan QR</span>
       </div>
+      {{-- SCB Monitors don't raise searches — they work the request queue — so the
+           Quick Search shortcut is replaced by one into their File Requests View. --}}
+      @if($isScbMonitor && !auth()->user()->isSuperAdmin())
+      <div class="quick-action-btn" onclick="setActiveTab('requests')">
+        <div class="qa-ic"><i class="fas fa-inbox"></i></div><span>SCB-V</span>
+      </div>
+      @else
       <div class="quick-action-btn" onclick="setActiveTab('files')">
         <div class="qa-ic"><i class="fas fa-magnifying-glass"></i></div><span>Quick Search</span>
       </div>
+      @endif
       {{-- DFR quick action commented out for now
       <div class="quick-action-btn red" onclick="window.location='{{ route('mobile.digital-request') }}'">
         <div class="qa-ic"><i class="fas fa-paper-plane"></i></div><span>Digital File Request</span>
@@ -603,36 +643,13 @@
   <!-- ═══ SCB MONITOR — FILE REQUESTS SCREEN ═══ -->
   <div id="requests-screen" class="screen">
     <div class="page-header" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-end;">
-      <div><h1>File Requests</h1><p>Physical searches & FSR History</p></div>
+      <div><h1>File Requests View</h1><p>Physical searches & FSR History</p></div>
       <button class="icon-circle" id="frRefreshBtn" title="Refresh"><i class="fas fa-rotate-right"></i></button>
     </div>
 
-    <!-- Requests Today — mirrors the web Quick Search tile. -->
-    <div id="fsTodayCard" style="position:relative;overflow:hidden;border:1px solid #a5b4fc;background:#6366f1;border-radius:16px;padding:16px;margin-bottom:16px;box-shadow:0 4px 10px rgba(79,70,229,.25);">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
-        <div>
-          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#e0e7ff;">Requests Today</div>
-          <div id="fsToday" style="margin-top:4px;font-size:30px;font-weight:800;line-height:1;color:#fff;">—</div>
-        </div>
-        <span style="display:flex;height:36px;width:36px;flex-shrink:0;align-items:center;justify-content:center;border-radius:10px;background:#4338ca;color:#fff;">
-          <i class="fas fa-inbox"></i>
-        </span>
-      </div>
-      <div style="margin-top:12px;border-top:1px solid #818cf8;padding-top:8px;font-size:11px;font-weight:500;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-          <span style="color:#e0e7ff;"><span style="display:inline-block;height:6px;width:6px;border-radius:50%;background:#fff;margin-right:6px;"></span>Found</span>
-          <span id="fsTodayFound" style="font-weight:700;color:#fff;">—</span>
-        </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-          <span style="color:#e0e7ff;"><span style="display:inline-block;height:6px;width:6px;border-radius:50%;background:#fff;margin-right:6px;"></span>Not Found</span>
-          <span id="fsTodayNotFound" style="font-weight:700;color:#fff;">—</span>
-        </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;">
-          <span style="color:#e0e7ff;"><span style="display:inline-block;height:6px;width:6px;border-radius:50%;background:#fff;margin-right:6px;"></span>Awaiting</span>
-          <span id="fsTodayAwaiting" style="font-weight:700;color:#fff;">—</span>
-        </div>
-      </div>
-    </div>
+    {{-- The "Requests Today" tile lives on the Home dashboard, not here — this
+         screen is a working queue and the tile ate most of the first screenful. --}}
+
 
     <div class="fr-seg">
       <button type="button" class="fr-seg-btn active" data-frview="open" onclick="setFrView('open')">Open <span class="fr-count" id="frCountOpen">0</span></button>
@@ -650,6 +667,11 @@
     .fr-seg { display:flex; gap:6px; background:var(--primary-soft); padding:4px; border-radius:12px; margin-bottom:12px; }
     .fr-seg-btn { flex:1; border:none; background:transparent; padding:9px; border-radius:9px; font-size:12px; font-weight:700; color:var(--muted); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:6px; }
     .fr-seg-btn.active { background:var(--primary); color:#fff; }
+    /* Compact SCB list rows: the whole row is the <summary>, so drop the marker. */
+    .fr-row summary::-webkit-details-marker { display:none; }
+    .fr-row summary::marker { content:''; }
+    .fr-row-chev { transition:transform .15s ease; }
+    .fr-row details[open] .fr-row-chev { transform:rotate(180deg); }
     .fr-count { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 5px; border-radius:30px; font-size:10px; font-weight:800; background:rgba(0,0,0,0.12); color:inherit; }
     .fr-seg-btn.active .fr-count { background:rgba(255,255,255,0.28); color:#fff; }
     .fr-search { position:relative; margin-bottom:14px; }
@@ -696,12 +718,24 @@
   <div class="tab-bar">
     <button class="tab-item" data-tab="dashboard"><i class="fas fa-house"></i><span>Home</span></button>
 
+    {{-- SCB Monitors work the request queue rather than raising searches, so Quick
+         Search is hidden for them (super admins keep it). --}}
+    @if(!$isScbMonitor || auth()->user()->isSuperAdmin())
     <button class="tab-item" data-tab="files"><i class="fas fa-magnifying-glass"></i><span>Search</span></button>
+    @endif
   @if($isOfs)
     <button class="tab-item" data-tab="myreq"><i class="fas fa-list-check"></i><span>My FRs</span></button>
     @endif
   @if($isScbMonitor)
+    {{-- SCB Monitors get the compact list view under "SCB-V". Super admins keep
+         the full FSR card view AND get a matching "SCB-V" tab so they can see the
+         screen exactly as an SCB Monitor sees it. --}}
+    @if(auth()->user()->isSuperAdmin())
     <button class="tab-item" data-tab="requests"><i class="fas fa-clipboard-list"></i><span>FSR</span></button>
+    <button class="tab-item" data-tab="requests-scb"><i class="fas fa-eye"></i><span>SCB-V</span></button>
+    @else
+    <button class="tab-item" data-tab="requests"><i class="fas fa-inbox"></i><span>SCB-V</span></button>
+    @endif
     @endif
     <button class="tab-item" data-tab="scanner"><i class="fas fa-qrcode"></i><span>Scan</span></button>
     {{-- DFR tab commented out for now
@@ -726,6 +760,9 @@ const IS_SCB_MONITOR = {{ $isScbMonitor ? 'true' : 'false' }};
 // Requests to the SCB Monitor straight from File Search.
 const IS_OFS = {{ ($isOfs ?? false) ? 'true' : 'false' }};
 const IS_SUPER_ADMIN = {{ auth()->user()->isSuperAdmin() ? 'true' : 'false' }};
+// Render the File Requests inbox as the compact SCB list rather than full cards.
+// Always on for SCB Monitors; for super admins only on the "FSR (SCB)" tab.
+let frCompact = !IS_SUPER_ADMIN;
 // Origin registries (+ short codes) for the File Search request dropdown.
 const REGISTRIES = @json($registries ?? []);
 // Registry theme colours — mirror Create File Tracker (?url=kangis / sltr / st /
@@ -902,6 +939,7 @@ async function renderDashboard() {
   const hr = new Date().getHours();
   const greet = hr<12?'Good Morning':hr<18?'Good Afternoon':'Good Evening';
   document.getElementById('greetingMsg').textContent = `${greet}, ${CURRENT_USER.name.split(' ')[0]}!`;
+  loadFsToday();   // "Requests Today" tile now sits on this screen (SCB Monitors only)
   try {
     const res = await api(`${API_BASE}/dashboard/stats`);
     if (!res || res._authError || (!res.success && !res.data)) return;
@@ -1220,15 +1258,19 @@ async function manualLookup() {
 // ─── Tab router ───────────────────────────────────────────────────────────
 function setActiveTab(tabId) {
   if (tabId !== 'scanner') stopScanner();
+  // "requests-scb" is the same File Requests screen rendered in SCB (compact)
+  // mode — a preview tab for super admins, who otherwise see the full cards.
+  frCompact = IS_SUPER_ADMIN ? (tabId === 'requests-scb') : true;
+  const screenId = tabId === 'requests-scb' ? 'requests' : tabId;
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
-  document.getElementById(`${tabId}-screen`).classList.add('active');
+  document.getElementById(`${screenId}-screen`).classList.add('active');
   document.querySelectorAll('.tab-item').forEach(t=>t.classList.remove('active'));
   document.querySelector(`.tab-item[data-tab="${tabId}"]`)?.classList.add('active');
   if (tabId==='dashboard') renderDashboard();
   if (tabId==='files')     $('#fileSearchSelect').select2('open');
   if (tabId==='scanner')   updateScanStatus('Click Start to begin scanning','info');
   if (tabId==='create')    initCreateForm();
-  if (tabId==='requests')  { setFrView(frView); frView === 'open' ? loadFsrLog() : loadFileRequests(); }
+  if (tabId==='requests' || tabId==='requests-scb') { setFrView(frView); frView === 'open' ? loadFsrLog() : loadFileRequests(); }
   if (tabId==='myreq')     loadMyRequests();
 }
 
@@ -1411,11 +1453,6 @@ async function searchFile() {
               <label style="${fieldLblCss}"><i class="fas fa-hourglass-half" style="margin-right:5px;color:var(--primary);"></i>Timeline (Days)</label>
               <input id="fsTimelineDays" type="number" min="0" max="365" placeholder="e.g. 5" oninput="onFsTimelineDaysInput()" style="${fieldSelCss}">
             </div>
-            <div id="fsDeadlineWrap">
-              <label style="${fieldLblCss}"><i class="fas fa-calendar-check" style="margin-right:5px;color:var(--primary);"></i>Expected Return Date <span style="color:#ef4444;">*</span></label>
-              <input id="fsDeadline" type="date" oninput="onFsDeadlineInput()" disabled style="${fieldSelCss}opacity:.6;cursor:not-allowed;">
-              <div style="font-size:10px;color:var(--muted);margin-top:4px;">Auto-calculated from Request Purpose or Timeline (Days).</div>
-            </div>
           </div>`;
         // Send button is disabled until an origin Registry is chosen.
         ofsButton = `<button id="fsSendBtn" class="btn" disabled style="width:100%;margin-top:12px;padding:12px;font-size:13px;box-shadow:none;background:${grad};opacity:.5;cursor:not-allowed;" onclick="sendFrFromSearch(this)"><i class="fas fa-paper-plane"></i> ${label}</button>`;
@@ -1595,7 +1632,7 @@ async function searchFile() {
         <div class="result-card">
           <div style="background:var(--surface-2);padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px;">
             <div>
-              <div style="font-size:15px;font-weight:800;">${esc(d.file_number)}</div>
+              <div style="font-size:15px;font-weight:800;">${esc(d.file_number)}${d.linked_file_number ? ` <span style="font-size:12px;font-weight:700;color:var(--muted);">(${esc(d.linked_file_number)})</span>` : ''}</div>
               <div style="font-size:12px;font-weight:600;color:var(--text);opacity:.82;margin-top:3px;">${esc(d.file_title||'—')}</div>
             </div>
             <span style="white-space:nowrap;font-size:11px;font-weight:700;color:${badge.color};background:${badge.color}1a;border:1px solid ${badge.color}55;padding:5px 10px;border-radius:30px;"><i class="fas ${badge.icon}" style="margin-right:4px;"></i>${esc(badge.label)}</span>
@@ -1847,11 +1884,18 @@ function resolveMovementStatus(entry) {
 // FileTracker::getTimelineStatusAttribute() / the desktop day-count badge.
 function formatTimelineMeta(meta) {
   const byStatus = {
-    green: { color: '#166534', bg: '#d1fae5', border: '#a7f3d0' },
-    amber: { color: '#78350f', bg: '#fef9c3', border: '#fde68a' },
-    red:   { color: '#b91c1c', bg: '#fee2e2', border: '#fecaca' },
+    green:   { color: '#166534', bg: '#d1fae5', border: '#a7f3d0' },
+    amber:   { color: '#78350f', bg: '#fef9c3', border: '#fde68a' },
+    red:     { color: '#b91c1c', bg: '#fee2e2', border: '#fecaca' },
+    // The clock has not started: the file is still being searched for / not yet
+    // logged out, so there is nothing to count down from.
+    pending: { color: '#475569', bg: '#e2e8f0', border: '#cbd5e1' },
   };
   if (!meta || !meta.timelineStatus || !byStatus[meta.timelineStatus]) return null;
+
+  if (meta.timelineStatus === 'pending') {
+    return { label: 'Pending', icon: 'fa-clock', ...byStatus.pending };
+  }
 
   const days = meta.daysUntilDeadline;
   let label;
@@ -1911,7 +1955,7 @@ function renderMovementRow(entry, trackerMeta) {
           <div>
             <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:3px;">Timeline</div>
             <div style="font-size:13px;">${timelineMeta
-              ? `<span style="display:inline-block;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${timelineMeta.bg};color:${timelineMeta.color};border:1px solid ${timelineMeta.border};">${esc(timelineMeta.label)}</span>`
+              ? `<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${timelineMeta.bg};color:${timelineMeta.color};border:1px solid ${timelineMeta.border};">${timelineMeta.icon ? `<i class="fas ${timelineMeta.icon}"></i>` : ''}${esc(timelineMeta.label)}</span>`
               : `<span style="color:var(--muted);">—</span>`}</div>
           </div>
           <div>
@@ -2320,16 +2364,15 @@ function onFsOfficeChange() {
   }
 }
 
-// Request Purpose → Expected Return Date: pre-fill the date from the selected
-// purpose's default turnaround (mirrors Create File Tracker / Quick Search),
-// staying editable once the user touches the date field directly.
-let fsUserEditedDeadline = false;
+// Request Purpose → Timeline (Days): pre-fill the days from the selected purpose's
+// default turnaround. The Expected Return Date is NOT captured here — the return
+// clock starts when the file is logged out on Create File Tracker, not when the
+// request is raised, so that date is only set on the Log a File page.
 function onFsPurposeChange() {
   const purposeSel = document.getElementById('fsPurpose');
-  const deadlineInput = document.getElementById('fsDeadline');
   const purposeOther = document.getElementById('fsPurposeOther');
   const timelineDaysInput = document.getElementById('fsTimelineDays');
-  if (!purposeSel || !deadlineInput) return;
+  if (!purposeSel) return;
   const isOther = purposeSel.value === 'other';
   if (purposeOther) {
     purposeOther.style.display = isOther ? 'block' : 'none';
@@ -2337,46 +2380,19 @@ function onFsPurposeChange() {
   }
 
   // "In-Transit" is a purely internal movement (no loan/return expected) —
-  // hide Timeline (Days) / Expected Return Date and clear any stale value
-  // instead of just skipping validation.
+  // hide Timeline (Days) and clear any stale value instead of just skipping
+  // validation.
   const isInTransit = purposeSel.value === 'in_transit';
   const timelineDaysWrap = document.getElementById('fsTimelineDaysWrap');
-  const deadlineWrap = document.getElementById('fsDeadlineWrap');
   if (timelineDaysWrap) timelineDaysWrap.style.display = isInTransit ? 'none' : '';
-  if (deadlineWrap) deadlineWrap.style.display = isInTransit ? 'none' : '';
   if (isInTransit) {
     if (timelineDaysInput) timelineDaysInput.value = '';
-    deadlineInput.value = '';
     return;
   }
 
-  const days = parseInt(purposeSel.selectedOptions[0]?.dataset.turnaroundDays || '', 10);
-  if (!isNaN(days)) {
-    if (timelineDaysInput) timelineDaysInput.value = days;
-    if (!fsUserEditedDeadline) {
-      const d = new Date();
-      d.setDate(d.getDate() + days);
-      const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
-      deadlineInput.value = `${y}-${m}-${day}`;
-    }
-  }
+  // No turnaround pre-fill — Timeline (Days) is entered by hand.
 }
-function onFsDeadlineInput() {
-  fsUserEditedDeadline = true;
-}
-function onFsTimelineDaysInput() {
-  const timelineDaysInput = document.getElementById('fsTimelineDays');
-  const deadlineInput = document.getElementById('fsDeadline');
-  if (!timelineDaysInput || !deadlineInput) return;
-  const days = parseInt(timelineDaysInput.value, 10);
-  if (!isNaN(days) && days >= 0) {
-    const d = new Date();
-    d.setDate(d.getDate() + days);
-    const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
-    deadlineInput.value = `${y}-${m}-${day}`;
-    fsUserEditedDeadline = true;
-  }
-}
+function onFsTimelineDaysInput() { /* Timeline (Days) is captured as-is; no date derived here. */ }
 
 async function sendFrFromSearch(btn) {
   const d = lastFileSearch;
@@ -2415,13 +2431,11 @@ async function sendFrFromSearch(btn) {
 
   const purposeSel = document.getElementById('fsPurpose');
   const purposeOther = document.getElementById('fsPurposeOther');
-  const deadlineInput = document.getElementById('fsDeadline');
   const rawPurposeValue = purposeSel ? purposeSel.value : '';
   const purposeIsOther = rawPurposeValue === 'other';
   const purposeIsInTransit = rawPurposeValue === 'in_transit';
   const requestPurposeId = (purposeIsOther || purposeIsInTransit) ? '' : rawPurposeValue;
   const requestPurposeOther = purposeIsOther ? (purposeOther ? purposeOther.value.trim() : '') : (purposeIsInTransit ? 'In-Transit' : '');
-  const expectedReturnDate = deadlineInput ? deadlineInput.value : '';
 
   if (deptSel && !requesterDept)   { toast('Please select the requester department.', 'error'); (deptIsOther ? deptOther : deptSel).focus(); return; }
   if (officeIsOther && !requesterOffice) { toast('Please specify the requester office.', 'error'); officeOther.focus(); return; }
@@ -2430,7 +2444,7 @@ async function sendFrFromSearch(btn) {
   if (purposeSel && !rawPurposeValue) { toast('Please select the Request Purpose.', 'error'); purposeSel.focus(); return; }
   if (purposeIsOther && !requestPurposeOther) { toast('Please specify the Request Purpose.', 'error'); purposeOther.focus(); return; }
   // "In-Transit" is a purely internal movement (no loan/return expected), so
-  // Timeline (Days) and Expected Return Date are not required or validated.
+  // Timeline (Days) is not required or validated.
   const timelineDaysInput = document.getElementById('fsTimelineDays');
   if (!purposeIsInTransit && timelineDaysInput && timelineDaysInput.value.trim() !== '') {
     const timelineDaysNum = Number(timelineDaysInput.value);
@@ -2439,11 +2453,6 @@ async function sendFrFromSearch(btn) {
       timelineDaysInput.focus();
       return;
     }
-  }
-  if (!purposeIsInTransit && deadlineInput && !expectedReturnDate) {
-    toast('Expected Return Date could not be calculated — select a Request Purpose or enter Timeline (Days).', 'error');
-    timelineDaysInput?.focus();
-    return;
   }
   const original = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending…';
@@ -2463,7 +2472,6 @@ async function sendFrFromSearch(btn) {
         receiving_officer:     receivingOfficer || null,
         request_purpose_id:    requestPurposeId || null,
         request_purpose_other: requestPurposeOther || null,
-        expected_return_date:  expectedReturnDate || null,
       }),
     });
     if (res.success) {
@@ -2819,23 +2827,34 @@ async function loadFileRequests() {
 // Return Date, Delay Reason — tucked away by default so the inbox card stays
 // scannable; reuses the same timeline/date helpers as the File Search timeline.
 function frDetailsSection(fr) {
-  const purpose = fr.request_purpose_name ? esc(fr.request_purpose_name) : '—';
-  const timelineMeta = formatTimelineMeta({ timelineStatus: fr.timeline_status, daysUntilDeadline: fr.days_until_deadline });
-  const timelineHtml = timelineMeta
-    ? `<span style="display:inline-block;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${timelineMeta.bg};color:${timelineMeta.color};border:1px solid ${timelineMeta.border};">${esc(timelineMeta.label)}</span>`
-    : '<span style="color:var(--muted);">—</span>';
-  const expectedReturnDate = formatExpectedReturnDate(fr.expected_return_date);
-  const delayReason = fr.delay_reason ? esc(fr.delay_reason) : '—';
   return `
     <details style="margin-top:10px;">
       <summary style="cursor:pointer;font-size:11.5px;font-weight:700;color:var(--primary);">Request Details</summary>
+      ${frDetailsBody(fr)}
+    </details>`;
+}
+
+// The Request Details panel itself — shared by the admin card (inside its own
+// <details>) and the compact SCB row (already inside the row's <details>).
+function frDetailsBody(fr) {
+  const purpose = fr.request_purpose_name ? esc(fr.request_purpose_name) : '—';
+  const timelineMeta = formatTimelineMeta({ timelineStatus: fr.timeline_status, daysUntilDeadline: fr.days_until_deadline });
+  const timelineHtml = timelineMeta
+    ? `<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${timelineMeta.bg};color:${timelineMeta.color};border:1px solid ${timelineMeta.border};">${timelineMeta.icon ? `<i class="fas ${timelineMeta.icon}"></i>` : ''}${esc(timelineMeta.label)}</span>`
+    : '<span style="color:var(--muted);">—</span>';
+  const delayReason = fr.delay_reason ? esc(fr.delay_reason) : '—';
+  // The Expected Return Date is deliberately NOT the stored request date — a request has
+  // no return window until the file is handed over. The row stays visible (so the field
+  // is not mistaken for missing) but reads "Pending" until the file is logged out, at
+  // which point the FileTracker supplies the real date.
+  const pendingChip = `<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:700;background:#e2e8f0;color:#475569;border:1px solid #cbd5e1;"><i class="fas fa-clock"></i>Pending</span>`;
+  return `
       <div style="margin-top:8px;padding:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;display:flex;flex-direction:column;gap:7px;">
         <div><span style="font-size:10.5px;font-weight:700;color:var(--muted);">Request Purpose:</span> <span style="font-size:12px;color:var(--text);">${purpose}</span></div>
         <div><span style="font-size:10.5px;font-weight:700;color:var(--muted);">Timeline:</span> ${timelineHtml}</div>
-        <div><span style="font-size:10.5px;font-weight:700;color:var(--muted);">Expected Return Date:</span> <span style="font-size:12px;color:var(--text);">${expectedReturnDate}</span></div>
+        <div><span style="font-size:10.5px;font-weight:700;color:var(--muted);">Expected Return Date:</span> ${pendingChip}</div>
         <div><span style="font-size:10.5px;font-weight:700;color:var(--muted);">Delay Reason:</span> <span style="font-size:12px;color:var(--text);">${delayReason}</span></div>
-      </div>
-    </details>`;
+      </div>`;
 }
 
 // Compact "who is asking" block — the requester details selected in Quick Search.
@@ -2851,6 +2870,43 @@ function frRequesterDetails(fr) {
   ).join('') + `</div>`;
 }
 
+// Slim list row used by SCB Monitors: collapsed it is just the file number, who
+// asked and when. Tapping it opens the details AND the Found / Not Found / delete
+// actions, so the queue stays one thin line per request.
+function frListRow(fr, histIds) {
+  const mix  = histIds.has(fr.id)
+    ? `<span title="Also in FSR History" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;margin-right:6px;vertical-align:middle;"></span>` : '';
+  // Second line is the file title — the requester and timestamp move into the
+  // expanded body, since the title is what identifies the file at a glance.
+  const title = (fr.file_title && String(fr.file_title).trim()) || '';
+  const loc   = fr.current_location && String(fr.current_location).trim();
+  const meta  = [fr.receiving_officer, fr.created_at].filter(v => v && String(v).trim() && String(v).trim() !== '—');
+  return `
+    <div class="result-card fr-row" style="margin-bottom:5px;${fr.is_ofs ? 'border-left:3px solid #f59e0b;' : ''}" data-fr="${fr.id}">
+      <details style="padding:7px 10px;">
+        <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12.5px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${mix}${esc(fr.file_number)}</div>
+            ${title ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(title)}</div>` : ''}
+          </div>
+          <i class="fas fa-chevron-down fr-row-chev" style="flex:0 0 auto;font-size:10px;color:var(--faint);"></i>
+        </summary>
+        <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border);font-size:11px;color:var(--text);display:flex;flex-direction:column;gap:3px;">
+          ${meta.length ? `<div><span style="color:var(--muted);">Requested by:</span> ${meta.map(esc).join(' · ')}</div>` : ''}
+          <div><span style="color:var(--muted);">Type:</span> ${esc(fr.request_type || 'Open Request')}${fr.is_ofs ? ' · OFS' : ''}</div>
+          ${loc ? `<div><span style="color:var(--muted);">Location:</span> ${esc(loc)}</div>` : ''}
+          ${fr.requester_office ? `<div><span style="color:var(--muted);">Office:</span> ${esc(fr.requester_office)}</div>` : ''}
+        </div>
+        ${frDetailsBody(fr)}
+        <div style="display:flex;gap:6px;margin-top:8px;">
+          <button class="btn" style="flex:1;width:auto;min-width:0;padding:9px;font-size:12px;box-shadow:none;background:linear-gradient(135deg,#10b981,#059669);" onclick="respondFr(${fr.id}, 'found', this)"><i class="fas fa-check"></i> Found</button>
+          <button class="btn ghost-btn" style="flex:1;width:auto;min-width:0;padding:9px;font-size:12px;box-shadow:none;" onclick="respondFr(${fr.id}, 'not_found', this)"><i class="fas fa-xmark"></i> Not&nbsp;Found</button>
+          ${IS_SUPER_ADMIN ? `<button class="btn" style="flex:0 0 auto;width:auto;padding:9px 12px;font-size:12px;box-shadow:none;background:#fee2e2;color:#991b1b;" onclick="deleteFr(${fr.id}, this)" title="Delete request"><i class="fas fa-trash"></i></button>` : ''}
+        </div>
+      </details>
+    </div>`;
+}
+
 function renderFileRequests() {
   const container = document.getElementById('frListContainer');
   if (!container) return;
@@ -2861,6 +2917,10 @@ function renderFileRequests() {
   }
   // IDs present in FSR History — a request here AND in Open is a mix-up (flagged with a green dot).
   const histIds = new Set((frLogList || []).map(r => r.id));
+  // SCB Monitors work through a queue, so they get a stripped-down list view with
+  // the Found / Not Found / delete actions. Super admins keep the full card here,
+  // but read-only — they act on requests from the SCB tab instead.
+  if (frCompact) { container.innerHTML = list.map(fr => frListRow(fr, histIds)).join(''); return; }
   container.innerHTML = list.map(fr => `
       <div class="result-card" style="margin-bottom:12px;${fr.is_ofs ? 'border-left:4px solid #f59e0b;background:rgba(245,158,11,0.06);' : ''}" data-fr="${fr.id}">
         <div style="padding:14px 16px;">
@@ -2878,11 +2938,6 @@ function renderFileRequests() {
           ${frRequesterDetails(fr)}
           ${fr.created_at ? `<div style="font-size:12px;color:var(--text);margin-top:6px;"><i class="fas fa-clock" style="margin-right:4px;color:var(--primary);"></i>Sent ${esc(fr.created_at)}</div>` : ''}
           ${frDetailsSection(fr)}
-          <div style="display:flex;gap:8px;margin-top:14px;align-items:stretch;">
-            <button class="btn" style="flex:1;width:auto;min-width:0;padding:12px;font-size:13px;box-shadow:none;background:linear-gradient(135deg,#10b981,#059669);" onclick="respondFr(${fr.id}, 'found', this)"><i class="fas fa-check"></i> Found</button>
-            <button class="btn ghost-btn" style="flex:1;width:auto;min-width:0;padding:12px;font-size:13px;box-shadow:none;" onclick="respondFr(${fr.id}, 'not_found', this)"><i class="fas fa-xmark"></i> Not&nbsp;Found</button>
-            ${IS_SUPER_ADMIN ? `<button class="btn" style="flex:0 0 auto;width:auto;padding:12px 15px;box-shadow:none;background:#fee2e2;color:#991b1b;" onclick="deleteFr(${fr.id}, this)" title="Delete request"><i class="fas fa-trash"></i></button>` : ''}
-          </div>
         </div>
       </div>`).join('');
 }

@@ -1695,10 +1695,10 @@
         }
     })();
 
-    // Request Purpose → Expected Return Date: pre-fill the deadline from the
-    // selected purpose's default turnaround, and preview the Green/Amber/Red
+    // Timeline (Days) → Expected Return Date, plus a preview of the Green/Amber/Red
     // status that date would produce (mirrors FileTracker::getTimelineStatusAttribute
-    // — 20% of the window remaining = amber, past the date = red).
+    // — 20% of the window remaining = amber, past the date = red). The Request Purpose
+    // no longer pre-fills either field.
     (function () {
         const purposeSelect = document.getElementById('request-purpose');
         const deadlineField = document.getElementById('request-deadline');
@@ -1809,18 +1809,10 @@
 
             if (applyInTransitVisibility()) return;
 
-            const turnaroundDays = parseInt(purposeSelect.selectedOptions?.[0]?.dataset?.turnaroundDays || '', 10);
-            // The purpose's turnaround is only a DEFAULT. Once the deadline has been
-            // set by hand (typed into Timeline (Days), picked on the calendar, or
-            // carried over from a Quick Search request), it is the source of truth —
-            // writing the default over Timeline (Days) here would leave the two
-            // fields disagreeing (e.g. "5 days" next to a date 50 days out).
-            if (!isNaN(turnaroundDays) && !userEditedDeadline) {
-                if (timelineDaysInput) timelineDaysInput.value = turnaroundDays;
-                const d = new Date();
-                d.setDate(d.getDate() + turnaroundDays);
-                setDeadlineValue(toDateInputValue(d));
-            }
+            // The purpose deliberately does NOT pre-fill Timeline (Days) or the
+            // Expected Return Date: every purpose currently carries the same 5-day
+            // turnaround, so auto-filling it just buried the real figure the user
+            // meant to enter. Timeline (Days) is typed by hand and drives the date.
             updatePreview();
         });
 
@@ -3838,6 +3830,17 @@
                     || (filenoOverride && filenoOverride.checked);
                 $('#office-details-fieldset').prop('disabled', !unlocked)
                     .toggleClass('opacity-60', !unlocked);
+
+                // The Quick Search "Log File" flow greys the fields out with a separate
+                // visual lock (pointer-events / styling, not `disabled`), so release or
+                // re-apply that too — otherwise the fields stay uneditable after override.
+                if (unlocked) {
+                    if (typeof window._unlockOfficeDetails === 'function') {
+                        window._unlockOfficeDetails();
+                    }
+                } else if (typeof window._lockOfficeDetails === 'function') {
+                    window._lockOfficeDetails();
+                }
             }
 
             // In-transit override: when the user opts in, re-enable the smart
@@ -4669,6 +4672,10 @@
             : (requestPurposeSelect?.selectedOptions?.[0]?.text || '');
         const requestDeadlineField = document.getElementById('request-deadline');
         const requestDeadline = requestDeadlineField?.value || '';
+        // Timeline (Days) is persisted alongside the date so the agreed return window
+        // survives on the record instead of being inferred back from the deadline.
+        const requestTimelineDaysRaw = document.getElementById('request-timeline-days')?.value ?? '';
+        const requestTimelineDays = requestTimelineDaysRaw.trim() === '' ? null : parseInt(requestTimelineDaysRaw, 10);
         let notes = document.getElementById('office-notes').value;
         // Tag Internal SLTR movements so the scope stays visible in logs/prints
         if (sltrInternal) {
@@ -4937,6 +4944,7 @@
             requestPurposeName: requestPurposeName || null,
             requestPurposeOther: isOtherRequestPurpose ? requestPurposeOther : (isInTransitRequestPurpose ? 'In-Transit' : null),
             deadline: requestDeadline || null,
+            timelineDays: Number.isInteger(requestTimelineDays) ? requestTimelineDays : null,
             notes,
             createdAt: now.toISOString()
         };
@@ -5396,10 +5404,12 @@
             request_purpose_id: currentTracker.requestPurposeId || null,
             request_purpose_other: currentTracker.requestPurposeOther || null,
             description: `File tracked in ${office.name || currentTracker.currentOffice || 'Unknown Office'}`,
-            // Expected Return Date chosen on the form (pre-filled from the Request
-            // Purpose's default turnaround, editable). Server falls back to the
-            // purpose's turnaround only if this is somehow empty.
+            // Expected Return Date chosen on the form, derived from Timeline (Days).
+            // Both are sent: the days are stored so the agreed window stays visible
+            // (and a manual override is auditable), and the server falls back to
+            // created_at + days if the date is somehow empty.
             deadline: currentTracker.deadline || null,
+            timeline_days: currentTracker.timelineDays ?? null,
             movement_log: [{
                 office_code: currentTracker.currentOfficeId,
                 office_name: office.name || currentTracker.currentOffice || 'Unknown Office',
@@ -5881,6 +5891,38 @@
                 return lbl === 'log-in' || lbl === 'completed';
             });
 
+            // Request Purpose / Timeline / Expected Return Date are tracker-level values
+            // agreed at LOG-OUT (one per out-cycle) — the movement rows do not each carry
+            // their own. So render them only on the row that started the return clock (the
+            // first out-state / log-out entry), and blank them everywhere else: the Archive
+            // home row, the return (Log-in / Completed) rows, and prior-cycle rows.
+            const emptyCell = '<span class="text-gray-400">—</span>';
+
+            const isOutStateEntry = (e) => {
+                const lbl = resolveStatusDisplay(e, (e.status || 'completed').toLowerCase()).label || '';
+                return lbl !== 'Log-in' && lbl !== 'Completed' && lbl !== 'Cancelled' && lbl !== 'Rejected';
+            };
+            // Chronologically-ordered movements, reused by the row renderer below so the
+            // "primary departure" reference matches the entry actually rendered.
+            const sortedMovements = [...movements].sort((a, b) => movementChronoValue(a) - movementChronoValue(b));
+            // The log-out that the deadline pertains to: the earliest out-state entry, or
+            // (for single-entry trackers that store the whole trip on one completed row) the
+            // earliest entry that carries a log-out date.
+            const primaryDepartureEntry = sortedMovements.find(isOutStateEntry)
+                || sortedMovements.find(e => Boolean(e.logOutDate))
+                || null;
+
+            // Once the file is logged back in, the return clock stops: show a frozen
+            // "Returned" state instead of a live "N days left / overdue" countdown. Only
+            // when a timeline was actually agreed (the tracker carries a deadline).
+            const timelineReturnedHtml = tracker.deadline
+                ? `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                        <span class="inline-flex h-1.5 w-1.5 rounded-full" style="background:#6b7280"></span>
+                        Returned
+                   </span>`
+                : emptyCell;
+            const timelineDisplayHtml = fileLoggedBackIn ? timelineReturnedHtml : timelineCellHtml;
+
             const lastMovement = physicalMovements[physicalMovements.length - 1] || null;
             const lastMovementDate = lastMovement ? `${lastMovement.logInDate || ''} ${lastMovement.logInTime || ''}`.trim() || '—' : '—';
             const lastMovementDuration = lastMovement
@@ -6032,15 +6074,15 @@
                                 </td>
                             </tr>
                         `;
-                })() : [...movements].sort((a, b) => {
-                    // Order rows chronologically (arrival, else departure, else created)
-                    // so a re-tracked / multi-cycle file reads as one continuous timeline
-                    // — a "Completed" return row sits right after the out-row of the same
-                    // cycle instead of being forced to the bottom of the table.
-                    return movementChronoValue(a) - movementChronoValue(b);
-                }).map(entry => {
-                    // General view: one row per log entry
+                })() : sortedMovements.map(entry => {
+                    // General view: one row per log entry. Rows are ordered chronologically
+                    // (arrival, else departure, else created) so a re-tracked / multi-cycle
+                    // file reads as one continuous timeline — a "Completed" return row sits
+                    // right after the out-row of the same cycle instead of at the bottom.
                     const entryStatus = (entry.status || 'completed').toLowerCase();
+                    // Only the log-out row carries the tracker's Request Purpose / Timeline /
+                    // Expected Return Date; every other row leaves those columns blank.
+                    const isPrimaryDeparture = primaryDepartureEntry !== null && entry === primaryDepartureEntry;
                     const entryOwnedByViewer = entryBelongsToCurrentUser(entry, tracker);
                     const statusMeta = resolveStatusDisplay(entry, entryStatus);
                     const entryStatusLabel = statusMeta.label;
@@ -6144,9 +6186,9 @@
                                     ${entryStatusLabel}
                                 </span>
                             </td>
-                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">${requestPurposeCellHtml}</td>
-                            <td class="whitespace-nowrap px-4 py-3 text-sm">${timelineCellHtml}</td>
-                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">${expectedReturnDateCellHtml}</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">${isPrimaryDeparture ? requestPurposeCellHtml : emptyCell}</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm">${isPrimaryDeparture ? timelineDisplayHtml : emptyCell}</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">${isPrimaryDeparture ? expectedReturnDateCellHtml : emptyCell}</td>
                             <td class="px-4 py-3 text-sm text-gray-600">
                                 ${safeNotes ? '<span class="line-clamp-2" title="' + safeNotes + '">' + safeNotes + '</span>' : '—'}
                             </td>
@@ -6318,9 +6360,9 @@
                                     ${entryStatusLabel}
                                 </span>
                             </td>
-                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600">${requestPurposeCellHtml}</td>
-                            <td class="whitespace-nowrap px-4 py-3 text-sm">${timelineCellHtml}</td>
-                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600">${expectedReturnDateCellHtml}</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600">${emptyCell}</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm">${emptyCell}</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600">${emptyCell}</td>
                             <td class="px-4 py-3 text-sm text-gray-500">
                                 ${safeNotes ? `<span class="line-clamp-2" title="${safeNotes}">${safeNotes}</span>` : '—'}
                             </td>
@@ -7995,6 +8037,27 @@
             })())
             : '-';
 
+        // Request Purpose / Timeline / Expected Return Date belong to the log-out that
+        // started the return clock (one per out-cycle), so on the printed sheet they too
+        // appear only on the primary departure row and freeze to "Returned" once the file
+        // is logged back in — mirroring the on-screen File Log Table.
+        const printMovements = Array.isArray(tracker.logEntries) ? tracker.logEntries : [];
+        const printFileLoggedBackIn = printMovements.some(e => {
+            const lbl = (resolveStatusDisplay(e, (e.status || '')).label || '').toLowerCase();
+            return lbl === 'log-in' || lbl === 'completed';
+        });
+        const printSortedMovements = [...printMovements].sort((a, b) => movementChronoValue(a) - movementChronoValue(b));
+        const printIsOutState = (e) => {
+            const lbl = resolveStatusDisplay(e, (e.status || 'completed').toLowerCase()).label || '';
+            return lbl !== 'Log-in' && lbl !== 'Completed' && lbl !== 'Cancelled' && lbl !== 'Rejected';
+        };
+        const printPrimaryDeparture = printSortedMovements.find(printIsOutState)
+            || printSortedMovements.find(e => Boolean(e.logOutDate))
+            || null;
+        const timelineCellForPrintFrozen = printFileLoggedBackIn
+            ? (tracker.deadline ? 'Returned' : '-')
+            : timelineCellForPrint;
+
         const printContent = `
                 <!DOCTYPE html>
                 <html>
@@ -8261,19 +8324,18 @@
                                             + '<td>' + logOut + '</td>'
                                             + '<td>' + logInCell + '</td>'
                                             + '<td><span class="' + statusClass + '">' + statusLabel + '</span></td>'
-                                            + '<td>' + requestPurposeValue + '</td>'
-                                            + '<td>' + timelineCellForPrint + '</td>'
-                                            + '<td>' + expectedReturnDateForPrint + '</td>'
+                                            + '<td>-</td>'
+                                            + '<td>-</td>'
+                                            + '<td>-</td>'
                                             + '<td>' + (entry.notes || '-') + '</td>'
                                             + '<td>' + (entry.delayReason || '-') + '</td>'
                                             + '</tr>';
                                     }).join('') : ''}
-                                    ${tracker.logEntries && tracker.logEntries.length > 0 ? [...tracker.logEntries].sort((a, b) => {
-                                        // Chronological order so the printed sheet reads as one
-                                        // continuous timeline (return rows sit with their cycle,
-                                        // not all forced to the bottom).
-                                        return movementChronoValue(a) - movementChronoValue(b);
-                                    }).map(entry => {
+                                    ${printSortedMovements.length > 0 ? printSortedMovements.map(entry => {
+                                        // Chronological order (see printSortedMovements) so the
+                                        // printed sheet reads as one continuous timeline. Only the
+                                        // log-out row carries the Purpose / Timeline / Return date.
+                                        const isPrimaryDeparture = printPrimaryDeparture !== null && entry === printPrimaryDeparture;
                                         const formatDateTime = (value) => {
                                             if (!value) return '-';
                                             const date = new Date(value);
@@ -8303,9 +8365,9 @@
                                             + '<td>' + logOut + '</td>'
                                             + '<td>' + logInCell + '</td>'
                                             + '<td><span class="' + statusClass + '">' + statusLabel + '</span></td>'
-                                            + '<td>' + requestPurposeValue + '</td>'
-                                            + '<td>' + timelineCellForPrint + '</td>'
-                                            + '<td>' + expectedReturnDateForPrint + '</td>'
+                                            + '<td>' + (isPrimaryDeparture ? requestPurposeValue : '-') + '</td>'
+                                            + '<td>' + (isPrimaryDeparture ? timelineCellForPrintFrozen : '-') + '</td>'
+                                            + '<td>' + (isPrimaryDeparture ? expectedReturnDateForPrint : '-') + '</td>'
                                             + '<td>' + (entry.notes || '-') + '</td>'
                                             + '<td>' + (entry.delayReason || '-') + '</td>'
                                             + '</tr>';
@@ -11162,10 +11224,11 @@
         // Quick Search marked this as a temporary file → pre-check the toggle so
         // the TMP code is appended once the tracking ID resolves.
         const isTempFromQs   = urlParams.get('is_temp') === '1';
-        // Request Purpose + Expected Return Date, captured on Quick Search's
-        // "Log File" prompt (promptForRequestPurposeAndDeadline in quick_search.blade.php).
+        // Request Purpose, captured on Quick Search's "Log File" prompt
+        // (promptForRequestPurposeAndDeadline in quick_search.blade.php). No deadline
+        // is carried over — the Expected Return Date is derived here, at log-out, so
+        // that time spent searching for the file doesn't eat into its turnaround.
         const reqPurposeId   = urlParams.get('req_purpose_id');
-        const reqDeadline    = urlParams.get('req_deadline');
 
         if (!returnFileNo && !returnTracking) return;
 
@@ -11174,18 +11237,14 @@
             if (tempCb) tempCb.checked = true;
         }
 
-        if (reqPurposeId || reqDeadline) {
+        if (reqPurposeId) {
             const purposeSelect = document.getElementById('request-purpose');
-            if (reqPurposeId && purposeSelect) {
+            if (purposeSelect) {
                 purposeSelect.value = reqPurposeId;
-                // Fire first so the purpose's own side effects (Other/In-Transit
-                // visibility) settle, then let the request's dates win below.
+                // The change event applies the purpose's turnaround, which sets the
+                // Expected Return Date counting from today (i.e. from log-out).
                 purposeSelect.dispatchEvent(new Event('change', { bubbles: true }));
             }
-            // Applied AFTER the change event: the requester's agreed return date
-            // overrides the purpose's default turnaround, and Timeline (Days) is
-            // derived from that date rather than from the purpose.
-            if (reqDeadline) window._applyRequestTimelineFromRequest?.(reqDeadline);
         }
 
         // Show the open requesters for this file (the "Log File" path), ordered by
@@ -11198,7 +11257,7 @@
 
         // Clean the URL immediately so a refresh doesn't re-apply
         const cleanUrl = new URL(window.location.href);
-        ['file_number','tracking_id','file_title','req_officer','req_office','req_office_code','req_department','req_registry','lock_office','is_temp','req_purpose_id','req_deadline']
+        ['file_number','tracking_id','file_title','req_officer','req_office','req_office_code','req_department','req_registry','lock_office','is_temp','req_purpose_id']
             .forEach(p => cleanUrl.searchParams.delete(p));
         window.history.replaceState({}, '', cleanUrl.toString());
 
@@ -11300,6 +11359,10 @@
                 if (window.lucide) window.lucide.createIcons();
             }
         }
+
+        // Exposed so the manual-edit override checkbox can re-apply the Quick Search
+        // visual lock when it is unchecked.
+        window._lockOfficeDetails = greyOutOfficeDetails;
 
         // Unlock the Office Details when the user changes the file number away from
         // the backfilled one, so they can enter fresh requester/office details.

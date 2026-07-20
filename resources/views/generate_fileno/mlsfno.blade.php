@@ -26,13 +26,16 @@
             display: inline-block;
         }
 
+        /* Menu is opened by the click handler in mls_js.blade.php, which promotes it
+           to position:fixed and writes inline left/top. Never open it on :hover --
+           that rule outranks .hidden and re-opens closed menus at stale coordinates
+           (and fires on tap on touch devices, fighting the click handler). */
         .action-dropdown-menu {
             display: none;
             position: absolute;
             right: 0;
             top: 100%;
             z-index: 9999;
-            min-width: 200px;
             padding: 0.5rem 0;
             margin-top: 2px;
             background-color: #ffffff;
@@ -40,10 +43,29 @@
             border-radius: 0.5rem;
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
             text-align: left;
+
+            /* Responsive sizing: never wider than the viewport, never taller than the
+               space available -- scroll internally instead of overflowing off-screen. */
+            width: max-content;
+            min-width: 14rem;
+            max-width: calc(100vw - 20px);
+            max-height: calc(100vh - 20px);
+            overflow-y: auto;
+            overscroll-behavior: contain;
         }
 
-        .action-dropdown:hover .action-dropdown-menu {
+        .action-dropdown-menu.show {
             display: block;
+        }
+
+        .action-dropdown-menu.hidden {
+            display: none;
+        }
+
+        /* Menu items must stay on one line and keep a comfortable tap target */
+        .action-dropdown-menu button {
+            white-space: nowrap;
+            min-height: 44px;
         }
 
         /* Ensure table doesn't clip dropdown */
@@ -53,15 +75,6 @@
 
         .dataTables_scrollBody {
             overflow: visible !important;
-        }
-
-        /* Responsive adjustment */
-        @media (max-width: 768px) {
-            .action-dropdown-menu {
-                right: auto;
-                left: 0;
- 
-            }
         }
     </style>
             <!-- Main Content -->
@@ -647,6 +660,21 @@
                                     </label>
                                 </div>
 
+                                <!-- Uncommissioned OP batch awaiting commissioning: offer a way back
+                                     to the OP Batch card to correct a mistake before generating. -->
+                                <div x-show="pendingOpBatchId" x-transition
+                                     class="mt-3 flex flex-wrap items-center justify-between gap-3 px-3 py-2 bg-violet-50 border border-violet-200 rounded-lg">
+                                    <div class="text-xs text-violet-800">
+                                        Commissioning OP batch
+                                        <span class="font-mono font-semibold" x-text="pendingOpBatchId"></span>
+                                        <span class="text-violet-500">— not yet commissioned, so it can still be edited.</span>
+                                    </div>
+                                    <button type="button" onclick="copBackToBatchCard()"
+                                            class="px-3 py-1.5 bg-white border border-violet-300 rounded-lg text-xs font-semibold text-violet-700 hover:bg-violet-100 transition">
+                                        &lt; Back to OP Batch
+                                    </button>
+                                </div>
+
                                 <!-- Batch Quantity Input (shown when batch mode is active) -->
                                 <div x-show="batchMode" x-transition class="mt-3">
                                     <label for="batchQuantity" class="block text-xs font-medium text-gray-600 mb-1">
@@ -664,7 +692,7 @@
                                     </div>
                                     <p class="text-xs text-gray-500 mt-2">
                                         <i data-lucide="info" class="w-3 h-3 inline"></i>
-                                        All files will share the same File Name and Prefix. You'll add unique location details for each.
+                                       All files will share the same File Name (File Title) and Prefix. You can only add unique location details for each file (if need be)
                                     </p>
                                 </div>
                             </div>
@@ -744,8 +772,8 @@
                                                     <option value="extension" hidden>Extension</option>
                                                     <option value="miscellaneous" hidden>Miscellaneous</option>
                                                     <option value="regrant" hidden>Re-grant</option>
+                                                    <option value="resettlement" hidden>Resettlement</option>
                                                     <option value="old_mls">Old MLS</option>
-                                                    <option value="sltr">SLTR</option>
                                                     <option value="sit" x-show="applicationType === 'new'">SIT</option>
                                                 </select>
                                             </div>
@@ -1118,6 +1146,90 @@
                                                             :required="isRecertificationPrefix && relatedFileNo">
                                                         <p class="text-[11px] text-gray-500 mt-1">Auto-filled from the selected file. If empty (e.g. legacy files), please type the original file title.</p>
                                                     </div>
+                                                    <div x-show="relatedFileNo">
+                                                        <label class="block text-xs font-medium text-gray-600 mb-1">Related File Type</label>
+                                                        <select x-model="relatedFileType"
+                                                                class="w-full px-3 py-2 border border-gray-200 rounded-md text-gray-700 bg-white">
+                                                            <option value="">-- Select type --</option>
+                                                            <template x-for="t in relatedFileTypes" :key="t">
+                                                                <option :value="t" x-text="t"></option>
+                                                            </template>
+                                                        </select>
+                                                        <div x-show="relatedFileType === 'Other'" x-transition class="mt-2">
+                                                            <label class="block text-xs font-medium text-gray-600 mb-1">
+                                                                Please specify <span class="text-red-500">*</span>
+                                                            </label>
+                                                            <input type="text" x-model="relatedFileTypeOther" maxlength="60"
+                                                                class="w-full px-3 py-2 border border-gray-200 rounded-md text-gray-700"
+                                                                placeholder="Describe the relationship (e.g. Court Order)"
+                                                                :required="relatedFileType === 'Other'">
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Additional related files: a file can relate to more than one -->
+                                                <template x-for="(row, idx) in extraRelatedFiles" :key="idx">
+                                                    <div class="mt-4 pt-4 border-t border-amber-200">
+                                                        <div class="flex items-center justify-between mb-2">
+                                                            <span class="text-xs font-semibold text-gray-600">
+                                                                Related File #<span x-text="idx + 2"></span>
+                                                            </span>
+                                                            <button type="button" @click="removeRelatedFile(idx)"
+                                                                    class="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-red-600 bg-red-50 rounded hover:bg-red-100 transition">
+                                                                <i data-lucide="trash-2" class="w-3 h-3"></i>Remove
+                                                            </button>
+                                                        </div>
+                                                        <div class="grid grid-cols-1 gap-3">
+                                                            <div>
+                                                                <label class="block text-xs font-medium text-gray-600 mb-1">Related File Number</label>
+                                                                <div class="flex items-center gap-2">
+                                                                    <input type="text" readonly x-model="row.file_no"
+                                                                        class="flex-1 px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 font-mono cursor-not-allowed"
+                                                                        placeholder="No file selected">
+                                                                    <button type="button" @click="openRelatedFileModal(idx)"
+                                                                            class="px-3 py-2 bg-amber-600 text-white text-xs font-semibold rounded-md hover:bg-amber-700 transition-colors flex items-center gap-1.5 whitespace-nowrap">
+                                                                        <i data-lucide="search" class="w-3.5 h-3.5"></i>
+                                                                        Select
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                            <div x-show="row.file_no">
+                                                                <label class="block text-xs font-medium text-gray-600 mb-1">Related File Title</label>
+                                                                <input type="text" x-model="row.title"
+                                                                    class="w-full px-3 py-2 border border-gray-200 rounded-md text-gray-700"
+                                                                    placeholder="Enter the related file title">
+                                                            </div>
+                                                            <div x-show="row.file_no">
+                                                                <label class="block text-xs font-medium text-gray-600 mb-1">Related File Type</label>
+                                                                <select x-model="row.type"
+                                                                        class="w-full px-3 py-2 border border-gray-200 rounded-md text-gray-700 bg-white">
+                                                                    <option value="">-- Select type --</option>
+                                                                    <template x-for="t in relatedFileTypes" :key="t">
+                                                                        <option :value="t" x-text="t"></option>
+                                                                    </template>
+                                                                </select>
+                                                                <div x-show="row.type === 'Other'" x-transition class="mt-2">
+                                                                    <label class="block text-xs font-medium text-gray-600 mb-1">
+                                                                        Please specify <span class="text-red-500">*</span>
+                                                                    </label>
+                                                                    <input type="text" x-model="row.type_other" maxlength="60"
+                                                                        class="w-full px-3 py-2 border border-gray-200 rounded-md text-gray-700"
+                                                                        placeholder="Describe the relationship (e.g. Court Order)"
+                                                                        :required="row.type === 'Other'">
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </template>
+
+                                                {{-- Conversion links to exactly one existing file, so it never
+                                                     offers additional related files. --}}
+                                                <div x-show="applicationType !== 'conversion'" class="mt-4 pt-3 border-t border-amber-200">
+                                                    <button type="button" @click="addRelatedFile()"
+                                                            class="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-amber-300 text-amber-700 text-xs font-semibold rounded-md hover:bg-amber-100 transition-colors">
+                                                        <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                                                        Add Another Related File
+                                                    </button>
                                                 </div>
                                             </div>
                                         </div>
@@ -2738,6 +2850,29 @@
                     <i data-lucide="info" class="w-4 h-4 text-amber-600 flex-shrink-0"></i>
                     <span class="text-sm text-amber-800">No commissioning sheets found for the selected date.</span>
                 </div>
+
+                <!-- Documents to generate -->
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Documents to generate</label>
+                    <div class="space-y-2">
+                        <label class="flex items-start space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
+                            <input type="checkbox" id="bpDocCommissioning" checked
+                                class="mt-0.5 w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500">
+                            <span>
+                                <span class="block text-sm font-medium text-gray-800">Commissioning Sheets</span>
+                                <span class="block text-xs text-gray-500">The standard batch commissioning sheet for every file on this date.</span>
+                            </span>
+                        </label>
+                        <label class="flex items-start space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
+                            <input type="checkbox" id="bpDocConversion"
+                                class="mt-0.5 w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500">
+                            <span>
+                                <span class="block text-sm font-medium text-gray-800">Application for Conversion</span>
+                                <span class="block text-xs text-gray-500">For Conversion (CON-) files only. You will review the recipient LGA before it generates.</span>
+                            </span>
+                        </label>
+                    </div>
+                </div>
             </div>
 
             <!-- Action Buttons -->
@@ -2749,7 +2884,7 @@
                 <button id="bpPrintBtn" onclick="executeBatchPrint()" disabled
                     class="px-5 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors">
                     <i data-lucide="printer" class="w-4 h-4"></i>
-                    <span>Print Remaining Commissioning Sheets</span>
+                    <span>Generate Selected Documents</span>
                 </button>
             </div>
         </div>

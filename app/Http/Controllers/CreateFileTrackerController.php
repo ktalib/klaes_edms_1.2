@@ -29,7 +29,24 @@ class CreateFileTrackerController extends Controller
 
     protected array $indexingCreatedAtCache = [];
 
+    /**
+     * Per-request map of normalized (UPPER+trim) file number => the highest-id
+     * file_indexings row {id, created_at}. Primed once per results page so
+     * getFileIndexingCreatedAt() reads from memory instead of scanning the
+     * 130k-row file_indexings table once per row. Null means "not primed".
+     */
+    protected ?array $indexingRowCache = null;
+
     protected array $fileTrackerMovementHistoryCache = [];
+
+    /**
+     * Set of normalized (UPPER+trim) file numbers that actually exist in
+     * file_tracker or file_indexings. Primed once per results page so the
+     * mother/temp counterpart lookups can skip the (expensive) location
+     * resolver for the vast majority of files that have no counterpart.
+     * A null value means "not primed" — callers then resolve on demand.
+     */
+    protected ?array $relatedFileExistsCache = null;
 
     public function __construct(
         protected UserNotificationService $notificationService
@@ -129,6 +146,7 @@ class CreateFileTrackerController extends Controller
                 'request_purpose_other' => 'nullable|string|max:255',
                 'description' => 'nullable|string',
                 'deadline' => 'nullable|date',
+                'timeline_days' => 'nullable|integer|min:0|max:365',
                 'movement_log' => 'required|array',
                 'movement_log.*.office_code' => 'required|string',
                 'movement_log.*.office_name' => 'required|string',
@@ -268,21 +286,25 @@ class CreateFileTrackerController extends Controller
                 $storedModule = 'kangis';
             }
 
-            // Request Purpose drives the default deadline (date_created + turnaround_days),
-            // which in turn feeds the Green/Amber/Red timeline badge. An explicit deadline
-            // from the client (the Expected Return Date field) always wins, so this only
-            // fills the gap when none was sent.
             $requestPurpose = $request->filled('request_purpose_id')
                 ? RequestPurpose::find($request->input('request_purpose_id'))
                 : null;
             $requestPurposeOther = trim((string) $request->input('request_purpose_other', ''));
             $requestPurposeName = $requestPurpose?->name ?: ($requestPurposeOther !== '' ? $requestPurposeOther : null);
-            // A date-only value (from the <input type="date">) means "by the end of that
-            // day" — parsed literally it's midnight, which would read as overdue from the
-            // first second of the due date. endOfDay() keeps the whole due date "on time".
+
+            // Timeline (Days) is the source of truth for the return window and is entered
+            // by hand — the Request Purpose no longer supplies a default, since every
+            // purpose carries the same turnaround and auto-filling it hid the real figure.
+            // A date-only Expected Return Date means "by the end of that day": parsed
+            // literally it's midnight, which would read as overdue from the first second
+            // of the due date. setTime(23,59,59) keeps the whole due date "on time" —
+            // note endOfDay() must NOT be used here, as its .999999 microseconds round
+            // UP to the next midnight in SQL Server's `datetime` (~3.33ms precision),
+            // silently granting an extra day.
+            $timelineDays = $request->filled('timeline_days') ? (int) $request->input('timeline_days') : null;
             $deadline = $request->deadline
-                ? \Carbon\Carbon::parse($request->deadline)->endOfDay()
-                : ($requestPurpose ? now()->addDays($requestPurpose->turnaround_days) : null);
+                ? \Carbon\Carbon::parse($request->deadline)->setTime(23, 59, 59)
+                : ($timelineDays !== null ? now()->addDays($timelineDays)->setTime(23, 59, 59) : null);
 
             // Create file tracker
             $tracker = FileTracker::create([
@@ -302,6 +324,7 @@ class CreateFileTrackerController extends Controller
                 'date_created' => now(),
                 'date_requested' => now(),
                 'deadline' => $deadline,
+                'timeline_days' => $timelineDays,
                 'total_offices' => count($request->movement_log),
                 'notes' => $request->notes,
                 'receiving_office_code' => $receivingOfficeCode,
@@ -639,6 +662,57 @@ class CreateFileTrackerController extends Controller
                 });
             }
 
+            // Collapse to one row per file number, keeping only the most recent
+            // tracker within the given scope (see the main-query collapse below for
+            // the full rationale). Shared so the File Log Table sub-tab badges count
+            // the SAME unit — files, not raw tracker records — as the table total.
+            //   $mode === 'active'    : newest active (non-completed) tracker per file
+            //   $mode === 'completed' : newest completed tracker per file
+            //   $mode === 'any'       : newest tracker per file, any status
+            $applyCollapse = function ($builder, string $mode) {
+                return $builder->where(function ($outer) use ($mode) {
+                    $outer->whereNull('file_number')
+                        ->orWhereRaw("LTRIM(RTRIM(file_number)) = ''")
+                        ->orWhereNotExists(function ($sub) use ($mode) {
+                            $sub->selectRaw('1')
+                                ->from('file_tracker as ft2')
+                                ->whereColumn('ft2.file_number', 'file_tracker.file_number')
+                                ->whereColumn('ft2.id', '>', 'file_tracker.id');
+
+                            if ($mode === 'completed') {
+                                $sub->where('ft2.status', FileTracker::STATUS_COMPLETED);
+                            } elseif ($mode === 'active') {
+                                $sub->where('ft2.status', '!=', FileTracker::STATUS_COMPLETED);
+                            }
+                        });
+                });
+            };
+
+            // Cheap equivalent of counting the collapsed rows above, WITHOUT the
+            // correlated NOT EXISTS (which is slow layered on the non-sargable
+            // module scan). The collapse keeps exactly one row — the highest id —
+            // per non-empty file number, and keeps every empty/null-numbered row
+            // as-is, so the collapsed count is:
+            //   COUNT(DISTINCT non-empty file_number)  +  COUNT(empty/null rows).
+            // The passed builder must already carry the same module/status scope as
+            // the rows being collapsed. Mathematically identical to $applyCollapse.
+            $collapsedCount = function ($builder): int {
+                $nonEmpty = (clone $builder)
+                    ->whereNotNull('file_number')
+                    ->whereRaw("LTRIM(RTRIM(file_number)) <> ''")
+                    ->distinct()
+                    ->count('file_number');
+
+                $empty = (clone $builder)
+                    ->where(function ($q) {
+                        $q->whereNull('file_number')
+                          ->orWhereRaw("LTRIM(RTRIM(file_number)) = ''");
+                    })
+                    ->count();
+
+                return $nonEmpty + $empty;
+            };
+
             // Global stats for the dashboard matching the UI cards
             $statsBase = FileTracker::query();
             $applyModuleScope($statsBase);
@@ -649,8 +723,15 @@ class CreateFileTrackerController extends Controller
                                 ->where('assignment_status', FileTracker::ASSIGNMENT_PENDING)->count(),
                 'others' => (clone $statsBase)->where('receiving_officer_id', '!=', $userId)
                                 ->where('status', '!=', FileTracker::STATUS_COMPLETED)->count(),
-                'completed' => (clone $statsBase)->where('status', FileTracker::STATUS_COMPLETED)->count(),
-                'active' => (clone $statsBase)->where('status', '!=', FileTracker::STATUS_COMPLETED)->count(),
+                // Completed / Active sub-tab badges label the File Log Table, so they
+                // count collapsed files (one card per file number) to match its
+                // "N files found" total — not raw tracker records.
+                'completed' => $collapsedCount(
+                                (clone $statsBase)->where('status', FileTracker::STATUS_COMPLETED)
+                              ),
+                'active' => $collapsedCount(
+                                (clone $statsBase)->where('status', '!=', FileTracker::STATUS_COMPLETED)
+                              ),
                 // File Request Type tab counts (In-transit = MANUAL, Submitted Request = SUBMITTED).
                 'in_transit' => (clone $statsBase)->where('file_request_type', 'MANUAL')->count(),
                 'submitted' => (clone $statsBase)->where('file_request_type', 'SUBMITTED')->count(),
@@ -773,22 +854,7 @@ class CreateFileTrackerController extends Controller
             }
 
             if ($collapseMode !== null) {
-                $query->where(function ($outer) use ($collapseMode) {
-                    $outer->whereNull('file_number')
-                        ->orWhereRaw("LTRIM(RTRIM(file_number)) = ''")
-                        ->orWhereNotExists(function ($sub) use ($collapseMode) {
-                            $sub->selectRaw('1')
-                                ->from('file_tracker as ft2')
-                                ->whereColumn('ft2.file_number', 'file_tracker.file_number')
-                                ->whereColumn('ft2.id', '>', 'file_tracker.id');
-
-                            if ($collapseMode === 'completed') {
-                                $sub->where('ft2.status', FileTracker::STATUS_COMPLETED);
-                            } elseif ($collapseMode === 'active') {
-                                $sub->where('ft2.status', '!=', FileTracker::STATUS_COMPLETED);
-                            }
-                        });
-                });
+                $applyCollapse($query, $collapseMode);
             }
 
             // Sorting
@@ -815,6 +881,17 @@ class CreateFileTrackerController extends Controller
             // decorateTrackerForResponse() resolves prior_movements from cache instead of
             // running one query per row (N+1).
             $this->primeMovementHistoryCache($results->pluck('file_number'));
+
+            // Bulk pre-load which mother/temp counterparts exist so the per-row
+            // counterpart location strip skips the heavy location resolver for the
+            // (common) files that have no counterpart — the dominant cost of this
+            // endpoint before priming.
+            $this->primeRelatedLocationCache($results->pluck('file_number'));
+
+            // Bulk pre-load the file_indexings created_at ("home location" timestamp)
+            // for every file number on this page in one indexed query instead of a
+            // 130k-row scan per row.
+            $this->primeIndexingCreatedAtCache($results->pluck('file_number'));
 
             $collection = $results->map(function ($tracker) {
                 return $this->decorateTrackerForResponse($tracker);
@@ -2231,6 +2308,10 @@ HTML;
                 'note'                 => $notFoundFr->feedback_note,
             ] : null,
             'file_number'      => $result['file_number'],
+            // Related counterpart file number (KANGIS ↔ Land). When a KANGIS file
+            // is searched and it carries a related land file — or vice versa — the
+            // UI renders "KANGIS FileNo (Land FileNo)". Null when there is no pair.
+            'linked_file_number' => app(FileLocationResolver::class)->linkedFileNumber($result['file_number'], $indexing),
             'status'           => $result['status'],
             'registry'         => $result['registry'],
             'zone'             => $result['zone'],
@@ -2317,7 +2398,6 @@ HTML;
             'update_existing_id' => 'nullable|integer',
             'request_purpose_id' => 'nullable|integer|exists:sqlsrv.request_purposes,id',
             'request_purpose_other' => 'nullable|string|max:255',
-            'expected_return_date' => 'nullable|date',
         ]);
 
         if ($validator->fails()) {
@@ -2336,7 +2416,9 @@ HTML;
             $requestPurposeName = $requestPurposeId
                 ? optional(RequestPurpose::find($requestPurposeId))->name
                 : ($requestPurposeOther !== '' ? $requestPurposeOther : null);
-            $expectedReturnDate = $request->input('expected_return_date');
+            // No expected_return_date is captured when a request is raised. The return
+            // clock starts when the file is logged out on Create File Tracker, so that
+            // days spent searching don't eat into the file's turnaround.
 
             // Update-existing mode: the user chose to refresh the requester details on
             // an existing active request rather than raise a duplicate. No new row and no
@@ -2369,7 +2451,6 @@ HTML;
                     'priority'             => FileSearchRequest::priorityFor($isOfs ? $ofsRank : ($officerRank ?: $receivingOfficer)),
                     'request_purpose_id'   => $requestPurposeId,
                     'request_purpose_name' => $requestPurposeName,
-                    'expected_return_date' => $expectedReturnDate,
                 ]);
 
                 return response()->json([
@@ -2478,7 +2559,6 @@ HTML;
                 'ofs_rank'          => $ofsRank,
                 'request_purpose_id'   => $requestPurposeId,
                 'request_purpose_name' => $requestPurposeName,
-                'expected_return_date' => $expectedReturnDate,
                 'priority'          => FileSearchRequest::priorityFor($isOfs ? $ofsRank : ($officerRank ?: $receivingOfficer)),
             ]);
 
@@ -2731,7 +2811,7 @@ HTML;
         }
 
         $motherFileNumber = trim(preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $fileNumber));
-        if ($motherFileNumber === '') {
+        if ($motherFileNumber === '' || !$this->relatedFileWorthResolving($motherFileNumber)) {
             return null;
         }
 
@@ -2753,8 +2833,18 @@ HTML;
         }
 
         // Temp numbers appear both with and without a space before the "(T)".
-        return $this->resolveRelatedFileLocation($fileNumber . '(T)')
-            ?? $this->resolveRelatedFileLocation($fileNumber . ' (T)');
+        // Only hit the (expensive) location resolver for a variant that actually
+        // exists — the page-level existence cache filters out the common case of
+        // a mother file that has no temporary counterpart at all.
+        $result = null;
+        if ($this->relatedFileWorthResolving($fileNumber . '(T)')) {
+            $result = $this->resolveRelatedFileLocation($fileNumber . '(T)');
+        }
+        if ($result === null && $this->relatedFileWorthResolving($fileNumber . ' (T)')) {
+            $result = $this->resolveRelatedFileLocation($fileNumber . ' (T)');
+        }
+
+        return $result;
     }
 
     /**
@@ -3373,6 +3463,65 @@ HTML;
     }
 
     /**
+     * The file_indexings lookup variants for a file number: the number itself
+     * plus, for a temporary "(T)" file, its stripped base number — both
+     * upper-cased for cache keying.
+     */
+    protected function indexingVariantsFor(string $normalized): array
+    {
+        $key = mb_strtoupper($normalized);
+        $stripped = preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $normalized);
+
+        return array_values(array_unique(array_filter([$key, mb_strtoupper((string) $stripped)])));
+    }
+
+    /**
+     * Bulk-load the latest file_indexings {id, created_at} for every file number
+     * (and its stripped "(T)" base) on a results page in one indexed query, so
+     * getFileIndexingCreatedAt() never scans the 130k-row file_indexings table
+     * per row (N+1).
+     */
+    protected function primeIndexingCreatedAtCache($fileNumbers): void
+    {
+        $variants = collect($fileNumbers)
+            ->flatMap(fn ($value) => $this->indexingVariantsFor(trim((string) $value)))
+            ->filter(fn ($value) => $value !== '')
+            ->unique()
+            ->values();
+
+        // Mark the cache primed so the getter uses the fast path even when the
+        // page has no matching indexing rows (empty result is a valid answer).
+        if ($this->indexingRowCache === null) {
+            $this->indexingRowCache = [];
+        }
+
+        if ($variants->isEmpty()) {
+            return;
+        }
+
+        try {
+            $rows = DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->whereIn('file_number', $variants->all())
+                ->orderBy('id')
+                ->get(['id', 'file_number', 'created_at']);
+        } catch (Exception $exception) {
+            Log::warning('Unable to prime file indexing created_at cache', [
+                'error' => $exception->getMessage(),
+            ]);
+            return;
+        }
+
+        // Ascending id order means the last row written per key is the highest id.
+        foreach ($rows as $row) {
+            $this->indexingRowCache[mb_strtoupper(trim((string) $row->file_number))] = [
+                'id' => $row->id,
+                'created_at' => $row->created_at,
+            ];
+        }
+    }
+
+    /**
      * Resolve the original created_at timestamp of the matching file_indexings
      * row for a file number. Returns an ISO-8601 string (or null) so the front-end
      * can render it as the Movement History "home location" Date & Time / Log In.
@@ -3389,15 +3538,33 @@ HTML;
             return $this->indexingCreatedAtCache[$key];
         }
 
-        try {
-            // Match on file_number directly (case-insensitive). Temporary file
-            // numbers like "RES-2026-1(T)" fall back to their base number.
-            $stripped = preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $normalized);
-            $variants = array_values(array_unique(array_filter([$key, mb_strtoupper((string) $stripped)])));
+        // Temporary file numbers like "RES-2026-1(T)" fall back to their base
+        // number, so the created_at can come from either indexing row — take the
+        // most recently indexed (highest id) among the variants.
+        $variants = $this->indexingVariantsFor($normalized);
 
+        // Fast path: served from the page-level prime (no query).
+        if ($this->indexingRowCache !== null) {
+            $best = null;
+            foreach ($variants as $variant) {
+                $row = $this->indexingRowCache[$variant] ?? null;
+                if ($row && ($best === null || $row['id'] > $best['id'])) {
+                    $best = $row;
+                }
+            }
+            $createdAt = $best && $best['created_at']
+                ? \Illuminate\Support\Carbon::parse($best['created_at'])->toIso8601String()
+                : null;
+            $this->indexingCreatedAtCache[$key] = $createdAt;
+            return $createdAt;
+        }
+
+        try {
+            // Plain equality (no UPPER wrapping) so the file_number index seeks —
+            // the CI collation already matches case-insensitively.
             $createdAt = DB::connection('sqlsrv')
                 ->table('file_indexings')
-                ->whereIn(DB::raw('UPPER(file_number)'), $variants)
+                ->whereIn('file_number', $variants)
                 ->orderByDesc('id')
                 ->value('created_at');
 
@@ -3452,6 +3619,94 @@ HTML;
             // treats it as primed and never re-queries.
             $this->fileTrackerMovementHistoryCache[$key] = $grouped->get($key, collect());
         }
+    }
+
+    /**
+     * Build the candidate counterpart file numbers for a single file:
+     *   - a temporary "(T)" file  -> its stripped mother number
+     *   - a mother (non-temp) file -> its "X(T)" and "X (T)" temp variants
+     * Mirrors the candidates that getMotherFileLocation()/getTempFileLocation()
+     * would otherwise hand straight to the location resolver.
+     */
+    protected function relatedCandidatesFor(?string $fileNumber): array
+    {
+        $fileNumber = trim((string) $fileNumber);
+        if ($fileNumber === '') {
+            return [];
+        }
+
+        if (preg_match('/\(\s*T\s*\)\s*$/i', $fileNumber)) {
+            $mother = trim(preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $fileNumber));
+            return $mother === '' ? [] : [$mother];
+        }
+
+        return [$fileNumber . '(T)', $fileNumber . ' (T)'];
+    }
+
+    /**
+     * Bulk-load, for a page of file numbers, which of their mother/temp
+     * counterparts actually exist in file_tracker or file_indexings. The
+     * counterpart location strip only ever renders for files that exist in one
+     * of those tables (IN_TRANSIT lives in file_tracker, IN_ARCHIVE in
+     * file_indexings), so priming this set lets getMotherFileLocation()/
+     * getTempFileLocation() skip the ~22-query location resolver for the vast
+     * majority of rows that have no counterpart — turning a per-row N+1 into two
+     * batched existence queries for the whole page.
+     */
+    protected function primeRelatedLocationCache($fileNumbers): void
+    {
+        $candidates = collect($fileNumbers)
+            ->flatMap(fn ($value) => $this->relatedCandidatesFor($value))
+            ->map(fn ($value) => mb_strtoupper(trim((string) $value)))
+            ->filter(fn ($value) => $value !== '')
+            ->unique()
+            ->values();
+
+        $this->relatedFileExistsCache = [];
+
+        if ($candidates->isEmpty()) {
+            return;
+        }
+
+        $exists = [];
+        foreach (['file_tracker', 'file_indexings'] as $table) {
+            try {
+                // Plain equality (no UPPER/TRIM wrapping) so the existing
+                // file_number index does a seek: the SQL_Latin1_General_CP1_CI_AS
+                // collation already matches case-insensitively and ignores trailing
+                // spaces, so the candidate set matches regardless of stored casing.
+                $found = DB::connection('sqlsrv')
+                    ->table($table)
+                    ->whereIn('file_number', $candidates->all())
+                    ->pluck('file_number');
+                foreach ($found as $value) {
+                    $exists[mb_strtoupper(trim((string) $value))] = true;
+                }
+            } catch (Exception $exception) {
+                // A missing table or transient error must not break the listing —
+                // fall back to on-demand resolution for the affected rows.
+                Log::warning('Unable to prime related-file existence cache', [
+                    'table' => $table,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
+        }
+
+        $this->relatedFileExistsCache = $exists;
+    }
+
+    /**
+     * True when the given counterpart file number is worth resolving — i.e. the
+     * page-level existence cache was not primed (resolve on demand), or the cache
+     * confirms the file exists in file_tracker/file_indexings.
+     */
+    protected function relatedFileWorthResolving(string $candidate): bool
+    {
+        if ($this->relatedFileExistsCache === null) {
+            return true;
+        }
+
+        return isset($this->relatedFileExistsCache[mb_strtoupper(trim($candidate))]);
     }
 
     /**

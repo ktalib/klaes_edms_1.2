@@ -117,6 +117,8 @@ Route::get('/file-indexings/lookup-by-number', [FileIndexingController::class, '
 Route::get('/file-indexings/scan-count', [FileIndexingController::class, 'scanCountByFileNumber']);
 Route::get('/track-file-archive/label-metadata', [TrackFileArchiveController::class, 'labelMetadata'])
     ->name('api.track-file-archive.label-metadata');
+Route::get('/track-file-archive/details', [TrackFileArchiveController::class, 'details'])
+    ->name('api.track-file-archive.details');
 
 // New API endpoints for CofO and Property Transaction data
 Route::get('/cofo-record/{fileNo}', [FileIndexingController::class, 'getCofORecord']);

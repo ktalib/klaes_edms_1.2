@@ -20,6 +20,9 @@
     </div>
 
     <div id="cofo-details-container" class="hidden">
+        {{-- CofO duplicate pre-check card (populated by window.CofoDuplicateGuard) --}}
+        <div id="cofo-dup-card" class="hidden mt-1 mb-3"></div>
+
         <div class="grid grid-cols-3 gap-4">
             <div class="form-group">
                 <label for="cofo-instrument-type" class="block text-sm font-medium text-gray-700 mb-2">Instrument
@@ -172,3 +175,111 @@
         </div>
     </div>
 </div>
+
+{{-- CofO duplicate check (inline card + form lock) --}}
+@include('fileindexing.partials.cofo_duplicate_check')
+<script>
+(function () {
+    function initCofoDetailsDupGuard() {
+        const form = document.getElementById('new-file-form');
+        const section = document.getElementById('cofo-section');
+        const container = document.getElementById('cofo-details-container');
+        const card = document.getElementById('cofo-dup-card');
+        const toggle = document.getElementById('has-cofo-toggle');
+        if (!form || !section || !card || !window.CofoDuplicateGuard) return;
+        if (section.dataset.cofoDupBound === '1') return;
+        section.dataset.cofoDupBound = '1';
+
+        const val = (id) => {
+            const el = document.getElementById(id);
+            return el && el.value ? String(el.value).trim() : '';
+        };
+
+        const guard = window.CofoDuplicateGuard.create({
+            card: card,
+            lockOnAnyMatch: true,
+            getFields: function () {
+                // Only run while the CofO section is active.
+                if (toggle && !toggle.checked) return null;
+                if (container && container.classList.contains('hidden')) return null;
+
+                const fileNumber = val('fileno') || val('file-number-display');
+                return {
+                    file_number: fileNumber,
+                    transaction_type: val('cofo-instrument-type'),
+                    cofo_type: val('cofo-type'),
+                    party_2: val('cofo-second-party'),
+                    transaction_date: val('cofo-date'),
+                    reg_no: val('cofo-number'),
+                    vol: val('cofo-vol-no'),
+                    page: val('cofo-page-no'),
+                    serial: val('cofo-serial-no'),
+                };
+            },
+            setLocked: function (locked, message) {
+                if (locked) {
+                    form.dataset.cofoDupLocked = '1';
+                    container && container.classList.add('opacity-60');
+                    form.dataset.cofoDupMessage = message || 'A Certificate of Occupancy with matching details already exists for this file number.';
+                } else {
+                    delete form.dataset.cofoDupLocked;
+                    container && container.classList.remove('opacity-60');
+                    delete form.dataset.cofoDupMessage;
+                }
+            },
+        });
+
+        // Watch the CofO fields + the file number for changes.
+        const watchedIds = [
+            'cofo-instrument-type', 'cofo-type', 'cofo-second-party', 'cofo-date',
+            'cofo-number', 'cofo-vol-no', 'cofo-page-no', 'cofo-serial-no',
+            'fileno', 'file-number-display',
+        ];
+        watchedIds.forEach((id) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('change', () => guard.run());
+            el.addEventListener('input', () => guard.run());
+        });
+
+        // The file number is set programmatically by the file selector — observe it.
+        const fileHidden = document.getElementById('fileno');
+        if (fileHidden) {
+            new MutationObserver(() => guard.run()).observe(fileHidden, { attributes: true, attributeFilter: ['value'] });
+        }
+
+        if (toggle) {
+            toggle.addEventListener('change', () => {
+                if (toggle.checked) {
+                    guard.run({ force: true });
+                } else {
+                    guard.clear();
+                }
+            });
+        }
+
+        // Block submitting a locked (duplicate) CofO.
+        form.addEventListener('submit', function (e) {
+            if (form.dataset.cofoDupLocked === '1') {
+                e.preventDefault();
+                e.stopPropagation();
+                const msg = form.dataset.cofoDupMessage || 'A Certificate of Occupancy with matching details already exists for this file number.';
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({ icon: 'error', title: 'Duplicate CofO', text: msg, confirmButtonText: 'OK' });
+                } else {
+                    alert(msg);
+                }
+            }
+        }, true);
+
+        // Run once in case the section is pre-populated (e.g. edit mode).
+        guard.run({ force: true });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initCofoDetailsDupGuard);
+    } else {
+        initCofoDetailsDupGuard();
+    }
+})();
+</script>

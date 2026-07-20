@@ -7,6 +7,7 @@ use App\Models\PlotSubdivisionApplication;
 use App\Models\PlotApplicationSize;
 use App\Models\StreetName;
 use App\Services\ParcelUpdateNotificationService;
+use App\Services\TitleStatusParcelRouter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -28,6 +29,10 @@ class PlotSubdivisionController extends Controller
             ->where(function($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
             })
+            // Hide rows routed in from Title Status / File Indexing until processed.
+            ->where(function($q) {
+                $q->whereNull('status')->orWhere('status', '!=', TitleStatusParcelRouter::HIDDEN_STATUS);
+            })
             ->when($search, function ($q) use ($search) {
                 $q->where(function ($sub) use ($search) {
                     $sub->where('applicant_name', 'LIKE', "%{$search}%")
@@ -44,9 +49,11 @@ class PlotSubdivisionController extends Controller
         $districts   = DB::connection('sqlsrv')->table('districts')->where('is_active', 1)->orderBy('name')->get();
         $streetNames = StreetName::orderBy('name')->get(['id', 'name'])->toBase();
 
+        $visible = fn($q) => $q->where(fn($x) => $x->whereNull('is_deleted')->orWhere('is_deleted', 0))
+                               ->where(fn($x) => $x->whereNull('status')->orWhere('status', '!=', TitleStatusParcelRouter::HIDDEN_STATUS));
         $stats = [
-            'total'        => PlotSubdivisionApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->count(),
-            'daily'        => PlotSubdivisionApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->whereDate('created_at', today())->count(),
+            'total'        => PlotSubdivisionApplication::where($visible)->count(),
+            'daily'        => PlotSubdivisionApplication::where($visible)->whereDate('created_at', today())->count(),
             'pending'      => PlotSubdivisionApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', 'pending')->count(),
             'approved'     => PlotSubdivisionApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', 'approved')->count(),
             'rejected'     => PlotSubdivisionApplication::where(function($q){ $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', 'rejected')->count(),

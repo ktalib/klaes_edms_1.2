@@ -379,6 +379,25 @@ class ApplicationController extends Controller
                 $join->whereRaw("(p.mlsFNo = oa.file_no OR p.fileno = oa.file_no)")
                     ->where('p.p_rn', 1);
             })
+            // The Transfer of Title row (`p`) carries an unreliable Grantor for these
+            // batch change-of-name records — it is stamped with the OP issuer
+            // "Kano State Government" rather than the previous holder. The real
+            // original holder is the Grantee of the original OP allocation row, so
+            // pull it from the earliest Occupancy Permit (OP) pra row for the file.
+            ->leftJoin(DB::raw("(
+                SELECT COALESCE(NULLIF(mlsFNo,''), fileno) as op_file,
+                    Grantee as op_grantee, party_2 as op_party_2,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY COALESCE(NULLIF(mlsFNo,''), fileno)
+                        ORDER BY id ASC
+                    ) as op_rn
+                FROM pra
+                WHERE (instrument_type LIKE '%Occupancy Permit%' OR transaction_type LIKE '%Occupancy Permit%')
+                  AND (is_deleted IS NULL OR is_deleted = 0)
+            ) as op"), function ($join) {
+                $join->whereRaw("op.op_file = oa.file_no")
+                    ->where('op.op_rn', 1);
+            })
             ->leftJoin(DB::raw("(
                 SELECT *, ROW_NUMBER() OVER (PARTITION BY mlsfNo ORDER BY id DESC) as fn_rn
                 FROM fileNumber
@@ -427,7 +446,18 @@ class ApplicationController extends Controller
                 'p.Grantee',
                 'p.party_1',
                 'p.party_2',
-                'p.op_serial_number',
+                'op.op_grantee',
+                'op.op_party_2',
+                // `oa.*` above already emits an op_serial_number column, so selecting
+                // p.op_serial_number bare would silently shadow it — the OSS value could
+                // never reach the row and files whose Transfer of Title row carries no
+                // serial rendered blank. Coalesce instead: the ToT row stays authoritative,
+                // the application's own captured serial is the fallback.
+                // '0' is a sentinel for "no serial", not a serial — the OP card applies the
+                // same guard (op_capture_edit.blade.php). Treat it as absent on both sides so
+                // a placeholder never renders as though a real serial were on file.
+                DB::raw("COALESCE(NULLIF(NULLIF(LTRIM(RTRIM(p.op_serial_number)), ''), '0'), NULLIF(NULLIF(LTRIM(RTRIM(oa.op_serial_number)), ''), '0')) as op_serial_number"),
+                DB::raw("NULLIF(NULLIF(LTRIM(RTRIM(p.op_serial_number)), ''), '0') as pra_op_serial_number"),
                 // Aliased to avoid clashing with oa.plot_no / oa.property_description
                 // brought in by `oa.*` above. Without these aliases the OSS values
                 // would shadow the PRA values in $row->plot_no / $row->property_description.
@@ -488,12 +518,21 @@ class ApplicationController extends Controller
             $rawLandUse = strtoupper(trim((string) ($row->resolved_land_use ?? '')));
             $applicationType = strtolower(trim((string) ($row->resolved_application_type ?? 'residential')));
             $applicantName = trim((string) ($row->oa_applicant_name ?: ($row->Grantee ?: ($row->source_party_2_name ?: $row->indexed_file_title))));
-            // Prefer the Transfer of Title row's own Grantor/party_1 (the real
-            // original holder). Only fall back to the linked OP capture's
-            // party_2_name (the allottee) when no ToT row exists yet — its
-            // party_1_name is always "Kano State Government" (the OP issuer)
-            // and must never be used as the "Original Holder" here.
-            $originalHolder = trim((string) ($row->Grantor ?: ($row->party_1 ?: $row->source_party_2_name)));
+            // The original holder is the OP allottee — the Grantee of the original
+            // Occupancy Permit (OP) allocation row (op_grantee). The Transfer of Title
+            // row's Grantor/party_1 is unreliable for these batch change-of-name
+            // records: it is stamped with the OP issuer "Kano State Government" rather
+            // than the previous holder, so it is only used as a last resort when it
+            // actually names a real party (never when it is the government issuer).
+            $opAllottee = trim((string) ($row->op_grantee ?: $row->op_party_2));
+            $totGrantor = trim((string) ($row->Grantor ?: $row->party_1));
+            $originalHolder = $opAllottee;
+            if ($originalHolder === '') {
+                $originalHolder = trim((string) $row->source_party_2_name);
+            }
+            if ($originalHolder === '' && $totGrantor !== '' && stripos($totGrantor, 'kano state government') === false) {
+                $originalHolder = $totGrantor;
+            }
             $plotNo = trim((string) ($row->pra_plot_no_raw ?: ($row->ic_plot_number ?: $row->fn_plot_no)));
             $planNo = trim((string) ($row->tp_no ?: ($row->ic_plan_no ?: $row->fn_plan_no)));
             $loc = trim((string) ($row->oa_location ?? ''));

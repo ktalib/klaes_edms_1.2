@@ -46,6 +46,7 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'file-numbers'], func
     Route::post('/migrate', [FileNumberController::class, 'migrate'])->name('file-numbers.migrate');
     Route::get('/conversion-application/{id}', [FileNumberController::class, 'generateConversionApplication'])->name('file-numbers.conversion-application');
     Route::get('/batch-conversion-application/{batchNo}', [FileNumberController::class, 'generateBatchConversionApplication'])->name('file-numbers.batch-conversion-application');
+    Route::get('/date-conversion-application', [FileNumberController::class, 'generateDateConversionApplication'])->name('file-numbers.date-conversion-application');
     Route::get('/get-print-status', [FileNumberController::class, 'getPrintStatus'])->name('file-numbers.get-print-status');
     Route::post('/record-print', [FileNumberController::class, 'recordPrint'])->name('file-numbers.record-print');
     Route::get('/consolidation-report', [FileNumberController::class, 'getConsolidationReport'])->name('file-numbers.consolidation-report');

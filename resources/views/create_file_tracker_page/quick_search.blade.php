@@ -549,17 +549,18 @@
             // appends the TMP code to the Tracking ID (standalone tracking only).
             const tempCb = result.querySelector('[data-temp-file]');
             if (tempCb && tempCb.checked) params.set('is_temp', '1');
-            // Request Purpose + Expected Return Date, captured via promptForRequestPurposeAndDeadline()
-            // just before this call — backfilled straight into #request-purpose / #request-deadline.
+            // Request Purpose only — backfilled into #request-purpose, which then derives
+            // the Expected Return Date from its turnaround on the Log a File page. The
+            // date is deliberately NOT carried from request time: the return clock starts
+            // when the file is logged out.
             if (d.request_purpose_id) params.set('req_purpose_id', d.request_purpose_id);
-            if (d.request_deadline)   params.set('req_deadline', d.request_deadline);
             window.location = '/create-file-tracker?' + params.toString();
         }
 
-        // Ask for the Request Purpose + Expected Return Date before handing off to
-        // logFile(). Shared by both "Log File" entry points (the main search result
-        // and each SCB Feedback row) so the values always carry over to the Create
-        // File Tracker form instead of being re-entered there.
+        // Ask for the Request Purpose before handing off to logFile(). Shared by both
+        // "Log File" entry points (the main search result and each SCB Feedback row) so
+        // the purpose carries over to the Create File Tracker form instead of being
+        // re-entered there. The Expected Return Date is set on that form, not here.
         function promptForRequestPurposeAndDeadline(d) {
             const purposeOptions = REQUEST_PURPOSES.map(p =>
                 `<option value="${p.id}" data-turnaround-days="${p.turnaround_days}">${esc(p.name)}</option>`
@@ -576,62 +577,40 @@
                                 ${purposeOptions}
                             </select>
                         </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Expected Return Date *</label>
-                            <input type="date" id="qs-log-deadline" class="swal2-input" style="margin:0;width:100%;">
-                        </div>
                     </div>
                 `,
                 showCancelButton: true,
                 confirmButtonText: 'Continue to Log File',
                 confirmButtonColor: '#059669',
                 focusConfirm: false,
-                didOpen: () => {
-                    const purposeSel = document.getElementById('qs-log-purpose');
-                    const deadlineInput = document.getElementById('qs-log-deadline');
-                    let userEditedDeadline = false;
-                    purposeSel.addEventListener('change', () => {
-                        const days = parseInt(purposeSel.selectedOptions[0]?.dataset.turnaroundDays || '', 10);
-                        if (!userEditedDeadline && !isNaN(days)) {
-                            const dt = new Date();
-                            dt.setDate(dt.getDate() + days);
-                            const y = dt.getFullYear(), m = String(dt.getMonth() + 1).padStart(2, '0'), day = String(dt.getDate()).padStart(2, '0');
-                            deadlineInput.value = `${y}-${m}-${day}`;
-                        }
-                    });
-                    deadlineInput.addEventListener('input', () => { userEditedDeadline = true; });
-                },
                 preConfirm: () => {
                     const purposeSel = document.getElementById('qs-log-purpose');
                     const purposeId = purposeSel.value;
                     const purposeName = purposeSel.selectedOptions[0]?.text || '';
-                    const deadline = document.getElementById('qs-log-deadline').value;
-                    if (!purposeId || !deadline) {
-                        Swal.showValidationMessage('Please select a Request Purpose and Expected Return Date.');
+                    if (!purposeId) {
+                        Swal.showValidationMessage('Please select a Request Purpose.');
                         return false;
                     }
-                    return { purposeId, purposeName, deadline };
+                    return { purposeId, purposeName };
                 }
             }).then(result => {
                 if (!result.isConfirmed) return;
                 d.request_purpose_id = result.value.purposeId;
                 d.request_purpose_name = result.value.purposeName;
-                d.request_deadline = result.value.deadline;
                 logFile(d);
             });
         }
 
-        // Entry point for both "Log File" buttons. Request Purpose + Expected Return
-        // Date are normally already captured on the Requester form when the File
-        // Search Request was raised (carried on `purpose`/`deadline`) — in that case
-        // skip straight to logFile(). Only prompt as a fallback (e.g. legacy/blind
-        // requests raised before this existed, or a file logged with no prior FR).
+        // Entry point for both "Log File" buttons. The Request Purpose is normally
+        // already captured on the Requester form when the File Search Request was
+        // raised — in that case skip straight to logFile(). Only prompt as a fallback
+        // (e.g. legacy/blind requests raised before this existed, or a file logged
+        // with no prior FR). The Expected Return Date is always set on Log a File.
         function handleLogFileClick(d, purpose) {
             const src = purpose || {};
-            if (src.request_purpose_id && src.expected_return_date) {
+            if (src.request_purpose_id) {
                 d.request_purpose_id = src.request_purpose_id;
                 d.request_purpose_name = src.request_purpose_name || '';
-                d.request_deadline = src.expected_return_date;
                 logFile(d);
                 return;
             }
@@ -789,11 +768,16 @@
         // FileTracker::getTimelineStatusAttribute() / the mobile day-count badge.
         function formatTimelineMeta(meta) {
             const byStatus = {
-                green: { color: '#166534', bg: '#d1fae5', border: '#a7f3d0' },
-                amber: { color: '#78350f', bg: '#fef9c3', border: '#fde68a' },
-                red:   { color: '#b91c1c', bg: '#fee2e2', border: '#fecaca' },
+                green:   { color: '#166534', bg: '#d1fae5', border: '#a7f3d0' },
+                amber:   { color: '#78350f', bg: '#fef9c3', border: '#fde68a' },
+                red:     { color: '#b91c1c', bg: '#fee2e2', border: '#fecaca' },
+                // Clock not started — the file has not been logged out yet.
+                pending: { color: '#475569', bg: '#e2e8f0', border: '#cbd5e1' },
             };
             if (!meta || !meta.timelineStatus || !byStatus[meta.timelineStatus]) return null;
+            if (meta.timelineStatus === 'pending') {
+                return { label: 'Pending', icon: 'fa-clock', ...byStatus.pending };
+            }
             const days = meta.daysUntilDeadline;
             let label;
             if (days === null || days === undefined) {
@@ -807,6 +791,17 @@
                 label = `${abs} day${abs === 1 ? '' : 's'} overdue`;
             }
             return { label, ...byStatus[meta.timelineStatus] };
+        }
+
+        // Timeline cell for an SCB feedback row. A file search request never counts
+        // down: the return clock starts when the file is logged OUT, so a request that
+        // is still being searched for (or found but not yet logged) shows a neutral
+        // "Pending" clock rather than a number of days. Mirrors
+        // FileSearchRequest::getTimelineStatusAttribute().
+        function fbTimelineBadge(r) {
+            const meta = formatTimelineMeta({ timelineStatus: 'pending', daysUntilDeadline: null });
+            return `<span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold" style="background:${meta.bg};color:${meta.color};border:1px solid ${meta.border};" title="The return clock starts when the file is logged out">`
+                 + `<i data-lucide="clock" class="h-3 w-3"></i> ${esc(meta.label)}</span>`;
         }
 
         function formatExpectedReturnDate(value) {
@@ -854,7 +849,7 @@
                         </div>
                         <div class="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                             <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Receiving Officer</div><div class="text-gray-800 font-semibold">${officer}</div></div>
-                            <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Timeline</div><div>${timelineMeta ? `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold" style="background:${timelineMeta.bg};color:${timelineMeta.color};border:1px solid ${timelineMeta.border};">${esc(timelineMeta.label)}</span>` : '<span class="text-gray-400">—</span>'}</div></div>
+                            <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Timeline</div><div>${timelineMeta ? `<span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold" style="background:${timelineMeta.bg};color:${timelineMeta.color};border:1px solid ${timelineMeta.border};">${timelineMeta.icon ? `<i class="fas ${timelineMeta.icon}"></i>` : ''}${esc(timelineMeta.label)}</span>` : '<span class="text-gray-400">—</span>'}</div></div>
                             <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Log In</div><div class="text-gray-800 font-semibold">${inDate}</div></div>
                             <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Log Out</div><div class="text-gray-800 font-semibold">${outDate}</div></div>
                             <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Request Purpose</div><div class="text-gray-800 font-semibold">${requestPurposeName}</div></div>
@@ -981,7 +976,7 @@
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                     <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                         <div>
-                            <div class="text-lg font-bold text-gray-900">${esc(d.file_number)}</div>
+                            <div class="text-lg font-bold text-gray-900">${esc(d.file_number)}${d.linked_file_number ? ` <span class="text-sm font-semibold text-gray-500">(${esc(d.linked_file_number)})</span>` : ''}</div>
                             <div class="text-sm text-gray-500">${esc(d.file_title || '—')}</div>
                         </div>
                         <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${metaCls}">
@@ -1213,11 +1208,9 @@
                                 <label class="block text-[11px] font-semibold text-gray-600 mb-1">Timeline (Days)</label>
                                 <input data-fr-timeline-days type="number" min="0" max="365" placeholder="e.g. 5" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500">
                             </div>
-                            <div data-fr-deadline-wrap>
-                                <label class="block text-[11px] font-semibold text-gray-600 mb-1">Expected Return Date <span class="text-red-500">*</span></label>
-                                <input data-fr-deadline type="date" disabled class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-gray-100 text-gray-500 cursor-not-allowed">
-                                <p class="text-[10px] text-gray-400 mt-1">Auto-calculated from Request Purpose or Timeline (Days).</p>
-                            </div>
+                            {{-- No Expected Return Date here: the return clock starts when the
+                                 file is logged out on Create File Tracker, not when the request
+                                 is raised, so that date is captured only on the Log a File page. --}}
                         </div>
 
                         <!-- Add Receiving Officer card (shown when the office/officer is not listed) -->
@@ -1403,32 +1396,15 @@
             }
             refreshOfficerSelect2();
 
-            // Request Purpose → Expected Return Date: pre-fill the date from the
-            // selected purpose's default turnaround (mirrors Create File Tracker),
-            // staying editable once the user touches the date field directly.
+            // Request Purpose → Timeline (Days): pre-fill the days from the selected
+            // purpose's default turnaround. No Expected Return Date is derived here —
+            // the return clock starts at log-out (Create File Tracker), not at request
+            // time, so the date is captured only on the Log a File page.
             const purposeSel      = result.querySelector('[data-fr-purpose]');
             const purposeOther    = result.querySelector('[data-fr-purpose-other]');
-            const deadlineInput   = result.querySelector('[data-fr-deadline]');
             const timelineDaysInput = result.querySelector('[data-fr-timeline-days]');
-            if (purposeSel && deadlineInput) {
-                let userEditedDeadline = false;
-
-                // admin/header.blade.php globally converts every input[type=date] into a
-                // flatpickr instance (altInput:true, DD/MM/YYYY display): the ORIGINAL
-                // <input> is hidden and keeps the Y-m-d value for submission, while a
-                // separate visible text field (altInput) is what the user actually sees.
-                // Setting .value directly only updates the hidden original, leaving the
-                // visible altInput blank — go through flatpickr's own API when present.
-                // This form is injected via innerHTML at runtime, so the header's
-                // MutationObserver enhances it asynchronously; fall back to plain .value
-                // for the brief window before that runs.
-                const setDeadlineValue = (dateStr) => {
-                    const fp = deadlineInput._flatpickr;
-                    if (fp) { fp.setDate(dateStr, true); } else { deadlineInput.value = dateStr; }
-                };
-
+            if (purposeSel) {
                 const timelineDaysWrap = result.querySelector('[data-fr-timeline-days-wrap]');
-                const deadlineWrap = result.querySelector('[data-fr-deadline-wrap]');
 
                 purposeSel.addEventListener('change', () => {
                     const isOther = purposeSel.value === 'other';
@@ -1438,57 +1414,17 @@
                     }
 
                     // "In-Transit" is a purely internal movement (no loan/return
-                    // expected) — hide Timeline (Days) / Expected Return Date and
-                    // clear any stale value instead of just skipping validation.
+                    // expected) — hide Timeline (Days) and clear any stale value
+                    // instead of just skipping validation.
                     const isInTransit = purposeSel.value === 'in_transit';
                     if (timelineDaysWrap) timelineDaysWrap.classList.toggle('hidden', isInTransit);
-                    if (deadlineWrap) deadlineWrap.classList.toggle('hidden', isInTransit);
                     if (isInTransit) {
                         if (timelineDaysInput) timelineDaysInput.value = '';
-                        const fp = deadlineInput._flatpickr;
-                        if (fp) { fp.clear(); } else { deadlineInput.value = ''; }
                         return;
                     }
 
-                    // The purpose's turnaround is only a DEFAULT — once the deadline
-                    // has been set by hand (typed into Timeline (Days) or picked on
-                    // the calendar) it wins, otherwise the two fields would end up
-                    // disagreeing (e.g. "5 days" next to a date 50 days out).
-                    const days = parseInt(purposeSel.selectedOptions[0]?.dataset.turnaroundDays || '', 10);
-                    if (!isNaN(days) && !userEditedDeadline) {
-                        if (timelineDaysInput) timelineDaysInput.value = days;
-                        const dt = new Date();
-                        dt.setDate(dt.getDate() + days);
-                        const y = dt.getFullYear(), m = String(dt.getMonth() + 1).padStart(2, '0'), day = String(dt.getDate()).padStart(2, '0');
-                        setDeadlineValue(`${y}-${m}-${day}`);
-                    }
+                    // No turnaround pre-fill — Timeline (Days) is entered by hand.
                 });
-                deadlineInput.addEventListener('input', () => { userEditedDeadline = true; });
-                // This form is injected via innerHTML long after DOMContentLoaded has
-                // already fired, so the header's MutationObserver enhances the date field
-                // asynchronously (microtask) right after insertion — a DOMContentLoaded
-                // fallback would never fire here. A deferred check picks it up instead.
-                function hookFlatpickrOnChange() {
-                    const fp = deadlineInput._flatpickr;
-                    if (fp && Array.isArray(fp.config?.onChange)) {
-                        fp.config.onChange.push(() => { userEditedDeadline = true; });
-                    }
-                }
-                if (deadlineInput._flatpickr) { hookFlatpickrOnChange(); }
-                else { setTimeout(hookFlatpickrOnChange, 0); }
-
-                if (timelineDaysInput) {
-                    timelineDaysInput.addEventListener('input', () => {
-                        const days = parseInt(timelineDaysInput.value, 10);
-                        if (!isNaN(days) && days >= 0) {
-                            const dt = new Date();
-                            dt.setDate(dt.getDate() + days);
-                            const y = dt.getFullYear(), m = String(dt.getMonth() + 1).padStart(2, '0'), day = String(dt.getDate()).padStart(2, '0');
-                            setDeadlineValue(`${y}-${m}-${day}`);
-                            userEditedDeadline = true;
-                        }
-                    });
-                }
             }
 
             deptSel.addEventListener('change', () => {
@@ -1704,17 +1640,16 @@
             const registry     = registrySel ? registrySel.value.trim() : '';
             const registryCode = registrySel && registrySel.selectedOptions[0] ? (registrySel.selectedOptions[0].dataset.code || '') : '';
 
-            // Request Purpose + Expected Return Date — captured once here so they carry
-            // through automatically to Create File Tracker's "Log File" step.
+            // Request Purpose — captured once here so it carries through automatically
+            // to Create File Tracker's "Log File" step. The Expected Return Date is NOT
+            // captured at request time; it is set when the file is logged out.
             const purposeSel    = result.querySelector('[data-fr-purpose]');
             const purposeOther  = result.querySelector('[data-fr-purpose-other]');
-            const deadlineInput = result.querySelector('[data-fr-deadline]');
             const rawPurposeValue  = purposeSel ? purposeSel.value : '';
             const purposeIsOther   = rawPurposeValue === 'other';
             const purposeIsInTransit = rawPurposeValue === 'in_transit';
             const requestPurposeId = (purposeIsOther || purposeIsInTransit) ? '' : rawPurposeValue;
             const requestPurposeOther = purposeIsOther ? (purposeOther ? purposeOther.value.trim() : '') : (purposeIsInTransit ? 'In-Transit' : '');
-            const expectedReturnDate = deadlineInput ? deadlineInput.value : '';
 
             const flag = (el) => { if (el) { el.classList.add('ring-2','ring-red-400','border-red-400'); } };
             const unflag = (el) => { if (el) el.classList.remove('ring-2','ring-red-400','border-red-400'); };
@@ -1723,7 +1658,7 @@
             const officerSelect2Box = () => $(officerSel).next('.select2-container').find('.select2-selection');
             const flagOfficerSelect2 = () => officerSelect2Box().css({ boxShadow: '0 0 0 2px #f87171', borderColor: '#f87171' });
             const unflagOfficerSelect2 = () => officerSelect2Box().css({ boxShadow: '', borderColor: '' });
-            [deptSel, officeSel, officerSel, deptOther, officeOther, registrySel, purposeSel, purposeOther, deadlineInput].forEach(unflag);
+            [deptSel, officeSel, officerSel, deptOther, officeOther, registrySel, purposeSel, purposeOther].forEach(unflag);
             unflagOfficerSelect2();
             if (deptIsOther && !requesterDept) { flag(deptOther); deptOther.focus(); return; }
             if (officeIsOther && !requesterOffice) { flag(officeOther); officeOther.focus(); return; }
@@ -1732,7 +1667,7 @@
             if (purposeSel && !rawPurposeValue) { flag(purposeSel); purposeSel.focus(); return; }
             if (purposeIsOther && !requestPurposeOther) { flag(purposeOther); purposeOther.focus(); return; }
             // "In-Transit" is a purely internal movement (no loan/return expected),
-            // so Timeline (Days) and Expected Return Date are not required or validated.
+            // so Timeline (Days) is not required or validated.
             const timelineDaysInput = result.querySelector('[data-fr-timeline-days]');
             if (!purposeIsInTransit && timelineDaysInput && timelineDaysInput.value.trim() !== '') {
                 const timelineDaysNum = Number(timelineDaysInput.value);
@@ -1742,12 +1677,6 @@
                     Swal.fire({ icon: 'warning', title: 'Invalid Timeline', text: 'Timeline (Days) must be a whole number between 0 and 365.' });
                     return;
                 }
-            }
-            if (!purposeIsInTransit && deadlineInput && !expectedReturnDate) {
-                flag(deadlineInput);
-                timelineDaysInput?.focus();
-                Swal.fire({ icon: 'warning', title: 'Missing Field', text: 'Expected Return Date could not be calculated — select a Request Purpose or enter Timeline (Days).' });
-                return;
             }
 
             frBtn.disabled = true;
@@ -1759,7 +1688,7 @@
                 const res = await fetch(FR_URL, {
                     method:'POST',
                     headers:{ 'Content-Type':'application/json', 'X-CSRF-TOKEN':CSRF, 'Accept':'application/json' },
-                    body: JSON.stringify({ file_number:d.file_number, file_title:d.file_title, current_location:d.current_location, resolved_status:d.status, receiving_officer: receivingOfficer, requester_department: requesterDept, requester_office: requesterOffice, requester_office_code: requesterOfficeCode, registry: registry || null, registry_code: registryCode || null, force: force ? 1 : 0, update_existing_id: updateId || null, request_purpose_id: requestPurposeId || null, request_purpose_other: requestPurposeOther || null, expected_return_date: expectedReturnDate || null }),
+                    body: JSON.stringify({ file_number:d.file_number, file_title:d.file_title, current_location:d.current_location, resolved_status:d.status, receiving_officer: receivingOfficer, requester_department: requesterDept, requester_office: requesterOffice, requester_office_code: requesterOfficeCode, registry: registry || null, registry_code: registryCode || null, force: force ? 1 : 0, update_existing_id: updateId || null, request_purpose_id: requestPurposeId || null, request_purpose_other: requestPurposeOther || null }),
                 });
                 const json = await res.json();
                 if (json.success) {
@@ -2371,6 +2300,7 @@
                             <th class="px-3 py-2.5">Requester</th>
                             <th class="px-3 py-2.5">Location</th>
                             <th class="px-3 py-2.5">SCB Response</th>
+                            <th class="px-3 py-2.5 whitespace-nowrap">Timeline</th>
                             <th class="px-3 py-2.5 whitespace-nowrap">Sent</th>
                             <th class="px-3 py-2.5 whitespace-nowrap">Responded</th>
                             <th class="px-3 py-2.5 text-right">Action</th>
@@ -2444,6 +2374,7 @@
                                     <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${badge}">
                                         <i data-lucide="${icon}" class="h-3 w-3"></i> ${esc(respLabel)}</span>
                                 </td>
+                                <td class="px-3 py-3 whitespace-nowrap">${fbTimelineBadge(r)}</td>
                                 <td class="px-3 py-3 whitespace-nowrap text-xs">
                                     ${sentDt ? `<div class="text-gray-700 font-medium">${esc(sentDt.d)}</div><div class="text-gray-400">${esc(sentDt.t)}</div>` : dash}
                                 </td>

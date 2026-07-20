@@ -1456,6 +1456,7 @@ class MlsFileNoController extends Controller
      * - Direct Allocation + Default + Resettlement → "OP Resettlement"
      * - Direct Allocation + Default (no sub-option) → "Direct Allocation"
      * - File Type "Re-grant" → "Re-grant"
+     * - File Type "Resettlement" → "Resettlement"
      */
     private function resolveSourceValue($applicationType, $allocatedByFilter, $defaultAllocationType, $fileOption = 'normal')
     {
@@ -1518,6 +1519,10 @@ class MlsFileNoController extends Controller
 
         if ($fileOption === 'regrant') {
             return 'Re-grant';
+        }
+
+        if ($fileOption === 'resettlement') {
+            return 'Resettlement';
         }
 
         // Default case: no sub-option selected
@@ -1610,6 +1615,8 @@ class MlsFileNoController extends Controller
                 'related_fileno' => 'nullable|string|max:255',
                 'related_file_title' => 'nullable|string|max:500',
                 'related_file_indexing_id' => 'nullable|integer',
+                // JSON array of {file_no, title, type, indexing_id}; see parseRelatedFiles().
+                'related_files' => 'nullable|string',
                 'merger_app_id' => 'nullable|integer',
                 'subdivision_app_id' => 'nullable|integer',
                 'separation_app_id' => 'nullable|integer',
@@ -2657,6 +2664,22 @@ class MlsFileNoController extends Controller
                         $fileIndexingService = app(\App\Services\FileIndexingService::class);
                         $relatedFileNo = $validated['related_fileno'] ?? null;
                         $relatedFileTitle = $validated['related_file_title'] ?? null;
+
+                        // Typed related files from the form. Their numbers join the JSON
+                        // column (so lineage/PRA readers see them), while the type itself
+                        // is written to related_file_number below.
+                        $typedRelatedFiles = $this->parseRelatedFiles($validated['related_files'] ?? null);
+                        if (!empty($typedRelatedFiles)) {
+                            $existingRelated = $relatedFileNumbers
+                                ? (json_decode($relatedFileNumbers, true) ?: [])
+                                : ($relatedFileNo ? [$relatedFileNo] : []);
+                            $mergedRelated = array_values(array_unique(array_merge(
+                                $existingRelated,
+                                array_column($typedRelatedFiles, 'file_no')
+                            )));
+                            $relatedFileNumbers = json_encode($mergedRelated);
+                        }
+
                         $fileIndexing = $fileIndexingService->createFromFileNumberData([
                             'tracking_id' => $trackingId,
                             'file_number' => $fullFileNumber,
@@ -2672,6 +2695,16 @@ class MlsFileNoController extends Controller
                             'related_fileno' => $relatedFileNumbers ?? ($relatedFileNo ? json_encode([$relatedFileNo]) : null),
                         ]);
                         $newFileIndexing = $fileIndexing;
+
+                        // One related_file_number row per typed link (source_id is NOT NULL,
+                        // so this has to wait until the indexing row exists).
+                        $this->storeRelatedFileLinks(
+                            $typedRelatedFiles,
+                            $fullFileNumber,
+                            $validated['file_name'] ?? null,
+                            $fileIndexing->prop_id ?? null,
+                            $fileIndexing->id ?? null
+                        );
 
                         // Create file_indexing_links record to link lineage (Subdivision/Merger/Extension/Recertification)
                         $now = now();
@@ -2756,6 +2789,29 @@ class MlsFileNoController extends Controller
                 // Related File is optional — without one, only the new file is flagged.
                 if ($fileOption === 'regrant') {
                     app(\App\Services\TitleStatusService::class)->recordRegrant(
+                        $fullFileNumber,
+                        (string) ($validated['related_fileno'] ?? ''),
+                        [
+                            'url'               => 'land',
+                            'file_indexing_id'  => $newFileIndexing->id ?? null,
+                            'prop_id'           => $newFileIndexing->prop_id ?? null,
+                            'file_title'        => $validated['file_name'] ?? null,
+                            'applicant_name'    => $validated['file_name'] ?? null,
+                            'plot_no'           => $validated['plot_no'] ?? null,
+                            'district'          => $validated['district'] ?? null,
+                            'lga'               => $validated['lga'] ?? null,
+                            'location'          => $validated['location'] ?? null,
+                            'land_use'          => $landUse,
+                        ]
+                    );
+                }
+
+                // Resettlement: mirrors Re-grant. The new file is a resettlement of the selected
+                // Related File. Flag both files' title status and record the Resettlement
+                // application + linkage. The Related File is optional — without one, only the new
+                // file is flagged.
+                if ($fileOption === 'resettlement') {
+                    app(\App\Services\TitleStatusService::class)->recordResettlement(
                         $fullFileNumber,
                         (string) ($validated['related_fileno'] ?? ''),
                         [
@@ -3124,7 +3180,12 @@ class MlsFileNoController extends Controller
                         'source_pra_id' => $validated['source_pra_id'] ?? null,
                         'mother_file_no' => $motherFileNo ?? $validated['existing_file_no'] ?? null,
                         'source_files' => $sourceFiles ?? [],
-                        'prop_id' => $propId ?? $parentPropId ?? null
+                        'prop_id' => $propId ?? $parentPropId ?? null,
+                        // Only set for subdivision/merger/extension/separation, where the new
+                        // parcel really does descend from an existing one. Null for a plain
+                        // new allocation, which gets a fresh prop_id of its own -- the UI uses
+                        // this to avoid claiming lineage that doesn't exist.
+                        'parent_prop_id' => $parentPropId ?? null,
                     ]
                 ]);
 
@@ -3175,6 +3236,155 @@ class MlsFileNoController extends Controller
      * so taken serials are burned rather than retried later. Returns the free serial, its
      * file number, and the list of skipped serials so the UI can point out what was replaced.
      */
+    /**
+     * The relationship kinds an officer can tag a related file with. Anything outside
+     * this list falls back to 'Other' rather than being written through verbatim.
+     */
+    private const RELATED_FILE_TYPES = [
+        'Re-grant',
+        'Resettlement',
+        'Subdivision',
+        'Merger',
+        'Change of Purpose',
+        'Mother File',
+        'Temporary File',
+        'Dummy File',
+        'Other',
+    ];
+
+    /**
+     * Decode the related_files JSON posted by the generate form into a clean list of
+     * ['file_no' => ..., 'title' => ..., 'type' => ..., 'indexing_id' => ...].
+     *
+     * Rows without a file number are dropped, and duplicates on file number collapse to
+     * the first occurrence so a double-click on "Add Another Related File" can't write
+     * the same link twice.
+     */
+    private function parseRelatedFiles(?string $json): array
+    {
+        if (empty($json)) {
+            return [];
+        }
+
+        $decoded = json_decode($json, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ($decoded as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $fileNo = trim((string) ($row['file_no'] ?? ''));
+            if ($fileNo === '' || isset($rows[$fileNo])) {
+                continue;
+            }
+
+            $type = trim((string) ($row['type'] ?? ''));
+            if ($type !== '' && !in_array($type, self::RELATED_FILE_TYPES, true)) {
+                $type = 'Other';
+            }
+
+            // 'Other' is a prompt, not an answer: when the officer specified what the
+            // relationship actually is, that text becomes the stored type. transaction_type
+            // is nvarchar(60), so the free text is capped to fit.
+            if ($type === 'Other') {
+                $specified = trim((string) ($row['type_other'] ?? ''));
+                if ($specified !== '') {
+                    $type = mb_substr($specified, 0, 60);
+                }
+            }
+
+            $rows[$fileNo] = [
+                'file_no' => $fileNo,
+                'title' => trim((string) ($row['title'] ?? '')),
+                'type' => $type,
+                'indexing_id' => $row['indexing_id'] ?? null,
+            ];
+        }
+
+        return array_values($rows);
+    }
+
+    /**
+     * Persist typed related-file links for a newly commissioned file into
+     * related_file_number (one row per link, carrying the type in transaction_type).
+     *
+     * The plain file numbers are stored separately as a JSON array on
+     * file_indexings.related_fileno by the caller -- both stores are kept, since existing
+     * lineage/PRA readers depend on the JSON column while the type only fits here.
+     */
+    private function storeRelatedFileLinks(array $relatedFiles, string $fileNumber, ?string $fileTitle, ?string $propId, $sourceId = null): void
+    {
+        // source_id is NOT NULL, so without an indexing row there is nothing to anchor
+        // the link to; skip rather than write an orphan.
+        if (empty($relatedFiles) || empty($sourceId)) {
+            return;
+        }
+
+        $now = now();
+        $rows = [];
+
+        foreach ($relatedFiles as $related) {
+            $rows[] = [
+                'related_fileno' => $related['file_no'],
+                'prop_id' => $propId,
+                'source_table' => 'file_indexings',
+                'source_id' => $sourceId,
+                'file_number' => $fileNumber,
+                'file_title' => $fileTitle,
+                'location' => null,
+                'comment' => trim(($related['type'] ?: 'Related file') . ' of ' . $related['file_no'] . ' for ' . $fileNumber),
+                'transaction_type' => $related['type'] ?: 'Other',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        try {
+            DB::connection('sqlsrv')->table('related_file_number')->insert($rows);
+        } catch (\Exception $e) {
+            // A failed link must not roll back a successfully commissioned file number.
+            Log::warning('Failed to store related file links', [
+                'file_number' => $fileNumber,
+                'related' => array_column($relatedFiles, 'file_no'),
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Which of $candidates are already present in file_indexings.
+     *
+     * Legacy imported rows carry a trailing CRLF in file_number (e.g. "IND-2026-213\r\n"),
+     * which an exact `where` never matches -- the serial then looks free, gets handed out,
+     * and no skip is reported even though the number is in use. Comparing on the
+     * whitespace-stripped value catches both the clean and the dirty rows.
+     *
+     * Returns a set keyed by the *candidate* string (not the stored value) so callers can
+     * look up by the number they asked about.
+     */
+    private function takenInFileIndexings(array $candidates): array
+    {
+        $candidates = array_values(array_unique(array_filter($candidates, 'strlen')));
+        if (empty($candidates)) {
+            return [];
+        }
+
+        $normalized = "LTRIM(RTRIM(REPLACE(REPLACE(file_number, CHAR(13), ''), CHAR(10), '')))";
+        $placeholders = implode(',', array_fill(0, count($candidates), '?'));
+
+        $found = DB::connection('sqlsrv')->table('file_indexings')
+            ->whereRaw("{$normalized} IN ({$placeholders})", $candidates)
+            ->selectRaw("{$normalized} AS normalized_file_number")
+            ->pluck('normalized_file_number')
+            ->all();
+
+        return array_flip($found);
+    }
+
     private function allocateNextFreeSerial(string $landUse, int $year, string $suffix = '', int $maxTries = 200): array
     {
         $skipped = [];
@@ -3188,7 +3398,7 @@ class MlsFileNoController extends Controller
 
             $taken = \App\Models\MlsFileNo::where('full_file_number', $candidate)->exists()
                 || DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $candidate)->exists()
-                || DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $candidate)->exists();
+                || count($this->takenInFileIndexings([$candidate])) > 0;
 
             if ($taken) {
                 $skipped[] = ['serial' => $serial, 'file_number' => $candidate];
@@ -3254,6 +3464,8 @@ class MlsFileNoController extends Controller
                 'subdivision_app_id' => 'nullable|integer',
                 'separation_app_id' => 'nullable|integer',
                 'merger_app_id' => 'nullable|integer',
+                // JSON array of {file_no, title, type, indexing_id}; see parseRelatedFiles().
+                'related_files' => 'nullable|string',
             ]);
 
             $landUse = $validated['land_use'];
@@ -3307,11 +3519,9 @@ class MlsFileNoController extends Controller
                         ->all();
                     $takenMlsFull = array_flip($takenMlsFull);
 
-                    $takenIndexing = DB::connection('sqlsrv')->table('file_indexings')
-                        ->whereIn('file_number', array_values($candidateNumbers))
-                        ->pluck('file_number')
-                        ->all();
-                    $takenIndexing = array_flip($takenIndexing);
+                    // Whitespace-insensitive: legacy rows store a trailing CRLF, which
+                    // whereIn() misses. See takenInFileIndexings().
+                    $takenIndexing = $this->takenInFileIndexings(array_values($candidateNumbers));
 
                     $takenFileNumber = DB::connection('sqlsrv')->table('fileNumber')
                         ->whereIn('mlsfNo', array_values($candidateNumbers))
@@ -3467,6 +3677,9 @@ class MlsFileNoController extends Controller
                 $motherOwner = null;
                 $propIdService = app(\App\Services\PropertyIdAllocationService::class);
 
+                // Typed related files apply to every file in the batch.
+                $typedRelatedFiles = $this->parseRelatedFiles($validated['related_files'] ?? null);
+
                 if (!empty($validated['subdivision_app_id'])) {
                     $subApp = \App\Models\PlotSubdivisionApplication::find($validated['subdivision_app_id']);
                     if ($subApp) {
@@ -3595,6 +3808,17 @@ class MlsFileNoController extends Controller
                     $motherOwner = $extFile->file_title ?? 'Original Owner';
                 }
 
+                // What the indexing rows record as related: the resolved lineage plus any
+                // officer-entered related files. $relatedFileNumbers itself is left alone
+                // because file_indexing_links treats it as the pure parent/source list.
+                $batchRelatedFileNumbers = $relatedFileNumbers;
+                if (!empty($typedRelatedFiles)) {
+                    $batchRelatedFileNumbers = json_encode(array_values(array_unique(array_merge(
+                        $relatedFileNumbers ? (json_decode($relatedFileNumbers, true) ?: []) : [],
+                        array_column($typedRelatedFiles, 'file_no')
+                    ))));
+                }
+
                 // 3. Count how many new tracking IDs we need (only if not found in grouping or request)
                 $neededNewIds = 0;
                 foreach ($validated['location_entries'] as $index => $entry) {
@@ -3693,7 +3917,7 @@ class MlsFileNoController extends Controller
                         'current_holder' => $entry['file_name'] ?? ($validated['file_name'] ?? null),
                         'original_holder' => $motherOwner ?? ($entry['file_name'] ?? ($validated['file_name'] ?? null)),
                         'parent_prop_id' => $parentPropId,
-                        'related_fileno' => $relatedFileNumbers,
+                        'related_fileno' => $batchRelatedFileNumbers,
                         'workflow_status' => 'indexed',
                         'is_updated' => false,
                         'is_deleted' => false,
@@ -3753,6 +3977,24 @@ class MlsFileNoController extends Controller
                 }
                 foreach (array_chunk($indexingData, 90) as $chunk) {
                     DB::connection('sqlsrv')->table('file_indexings')->insert($chunk);
+                }
+
+                // Typed related-file links for every file in the batch. Re-queried rather
+                // than captured on insert because the bulk insert above returns no ids.
+                if (!empty($typedRelatedFiles) && !empty($generatedFiles)) {
+                    $indexingRows = DB::connection('sqlsrv')->table('file_indexings')
+                        ->whereIn('file_number', $generatedFiles)
+                        ->get(['id', 'file_number', 'file_title', 'prop_id']);
+
+                    foreach ($indexingRows as $row) {
+                        $this->storeRelatedFileLinks(
+                            $typedRelatedFiles,
+                            $row->file_number,
+                            $row->file_title,
+                            $row->prop_id ?? null,
+                            $row->id
+                        );
+                    }
                 }
 
                 // Create lineage links for batch records (Subdivision/Merger/Extension)
@@ -4248,7 +4490,10 @@ class MlsFileNoController extends Controller
                         'year' => $year,
                         'serial_range' => $serialRange,
                         'mother_file_no' => $motherFileNo ?? $validated['existing_file_no'] ?? null,
-                        'source_files' => $sourceFiles ?? []
+                        'source_files' => $sourceFiles ?? [],
+                        // Null for plain new allocations: each file in the batch gets its own
+                        // fresh prop_id rather than descending from a parent parcel.
+                        'parent_prop_id' => $parentPropId ?? null,
                     ]
                 ]);
 

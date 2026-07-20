@@ -28,8 +28,7 @@
     }
 
     /* Ensure dropdown appears above DataTable elements */
-    .dropdown-menu,
-    .action-dropdown-menu {
+    .dropdown-menu {
         z-index: 1050 !important;
         background-color: white;
         border: 1px solid #e5e7eb;
@@ -40,19 +39,8 @@
         padding-bottom: 0.25rem;
     }
 
-    /* Hide by default */
-    .action-dropdown-menu {
-        display: none;
-    }
-
-    .action-dropdown-menu.show {
-        display: block;
-    }
-
-    /* Initially hidden state for the JS toggle logic which uses 'hidden' class */
-    .action-dropdown-menu.hidden {
-        display: none;
-    }
+    /* .action-dropdown-menu is styled in mlsfno.blade.php -- kept in one place so the
+       min-width / show / hidden rules can't disagree between the two stylesheets. */
 </style>
 
 <!-- jsPDF Library for PDF Generation -->
@@ -398,7 +386,7 @@
         // If we have an existing file number (from OP capture, etc.),
         // it's the primary candidate for finding the record in the grouping/index table.
         // For subdivision and merger, we use the selected File Options (preview) instead of the temp app number.
-        if (existing !== '' && (fileOption === 'normal' || fileOption === 'regrant' || fileOption === 'temporary' || fileOption === 'extension')) {
+        if (existing !== '' && (fileOption === 'normal' || fileOption === 'regrant' || fileOption === 'resettlement' || fileOption === 'temporary' || fileOption === 'extension')) {
             return existing;
         }
 
@@ -1592,7 +1580,7 @@
             previewText = `SLTR-${serialNo}`;
         } else if (fileOption === 'sit' && serialNo) {
             previewText = `SIT-${year}-${serialNo}`;
-        } else if ((fileOption === 'normal' || fileOption === 'regrant') && serialNo && year && landUse) {
+        } else if ((fileOption === 'normal' || fileOption === 'regrant' || fileOption === 'resettlement') && serialNo && year && landUse) {
             previewText = `${landUse}-${year}-${serialNo}`;
         }
 
@@ -1655,7 +1643,7 @@
         const batchModeToggled = document.querySelector('[x-model="batchMode"]')?.checked;
         const batchQty = parseInt(document.getElementById('batchQuantity')?.value || '1');
 
-        if ((fileOption === 'normal' || fileOption === 'regrant') && hasCode && year && !isOverrideMode) {
+        if ((fileOption === 'normal' || fileOption === 'regrant' || fileOption === 'resettlement') && hasCode && year && !isOverrideMode) {
             try {
                 if (typeof commissionModalReservation !== 'undefined') {
                     if (batchModeToggled && batchQty > 1) {
@@ -1714,7 +1702,7 @@
             previewText = `SLTR-${serialNo}`;
         } else if (fileOption === 'sit' && serialNo) {
             previewText = `SIT-${year}-${serialNo}`;
-        } else if ((fileOption === 'normal' || fileOption === 'regrant') && serialNo && year) {
+        } else if ((fileOption === 'normal' || fileOption === 'regrant' || fileOption === 'resettlement') && serialNo && year) {
             const code = prefix || landUse;
             if (code) {
                 if (batchModeToggled && batchQty > 1) {
@@ -1774,9 +1762,9 @@
         // Reset text field tracking attribute
         serialNoField.removeAttribute('data-text-field');
 
-        if (type === 'normal' || type === 'regrant') {
+        if (type === 'normal' || type === 'regrant' || type === 'resettlement') {
             yearSection.classList.remove('hidden');
-            // For normal/regrant files, keep serial as number for auto-padding
+            // For normal/regrant/resettlement files, keep serial as number for auto-padding
             serialNoField.type = 'number';
             serialNoField.setAttribute('min', '1');
             serialNoField.setAttribute('max', '9999');
@@ -2173,6 +2161,13 @@
         formData.set('allocated_by_filter', alpineData ? (alpineData.allocatedByFilter || '') : '');
         formData.set('default_allocation_type', alpineData ? (alpineData.defaultAllocationType || '') : '');
 
+        // Typed related files (primary + any added via "Add Another Related File").
+        // related_fileno still carries the primary number on its own for the existing
+        // -RC / PRA lineage paths that read it.
+        if (alpineData && typeof alpineData.relatedFilesPayload === 'function') {
+            formData.set('related_files', JSON.stringify(alpineData.relatedFilesPayload()));
+        }
+
         // Use prefix as land_use if available (for normal files)
         const prefix = alpineData ? alpineData.prefix : document.getElementById('prefix')?.value;
         const fileOption = alpineData ? alpineData.fileOption : document.getElementById('fileOption')?.value;
@@ -2182,7 +2177,7 @@
         if (fileOption) {
             formData.set('file_option', fileOption);
         }
-        if (prefix && (fileOption === 'normal' || fileOption === 'regrant')) {
+        if (prefix && (fileOption === 'normal' || fileOption === 'regrant' || fileOption === 'resettlement')) {
             formData.set('land_use', prefix);
         }
 
@@ -2280,6 +2275,19 @@
             });
             return;
         }
+
+        // Single-file confirmation gate. Sits after every validation so the summary
+        // is never shown for a submission that would have been rejected anyway.
+        // confirmBatchGeneration() sets singleSummaryConfirmed and replays this event.
+        if (!singleSummaryConfirmed && alpineData) {
+            hideGlobalLoading();
+            if (submitBtn) {
+                hideLoadingButton(submitBtn, originalText);
+            }
+            showSingleSummaryModal(alpineData, event);
+            return;
+        }
+        singleSummaryConfirmed = false;
 
         // Send to new MLS generation endpoint
         const controller = new AbortController();
@@ -2453,7 +2461,9 @@
                                         ` : ''}
                                         <li class="flex items-start gap-2.5">
                                             <div class="mt-1 w-1 h-1 rounded-full bg-${summaryColor}-400"></div>
-                                            <span>Lineage established via Parent Property ID linkage${data.data.prop_id ? `: <b class="font-black text-${summaryColor}-900 underline decoration-2 underline-offset-2">${data.data.prop_id}</b>` : ''}.</span>
+                                            <span>${data.data.parent_prop_id
+                                                ? `Lineage established via Parent Property ID linkage${data.data.prop_id ? `: <b class="font-black text-${summaryColor}-900 underline decoration-2 underline-offset-2">${data.data.prop_id}</b>` : ''}.`
+                                                : `New Property ID generated${data.data.prop_id ? `: <b class="font-black text-${summaryColor}-900 underline decoration-2 underline-offset-2">${data.data.prop_id}</b>` : ''}.`}</span>
                                         </li>
                                     </ul>
                                 </div>
@@ -2495,7 +2505,7 @@
                             </div>` : ''}
                         </div>`,
                         confirmButtonColor: '#10b981',
-                        confirmButtonText: 'Great, Continue',
+                        confirmButtonText: 'OK',
                         customClass: {
                             popup: 'rounded-[2.5rem] border-none shadow-2xl p-7',
                             confirmButton: 'rounded-xl px-8 py-3 font-bold text-sm tracking-wide shadow-lg shadow-emerald-200'
@@ -2600,8 +2610,86 @@
             });
     }
 
-    // Batch Summary Modal Functions
+    // Summary Modal Functions
+    // The same modal serves batch and single generation; summaryModalMode decides
+    // which confirm path runs and what the header reads.
+    let summaryModalMode = 'batch';
+    // The original submit event, replayed once the user confirms a single generation.
+    let pendingSingleSubmitEvent = null;
+    // Set for one pass only, so the replayed submit skips the confirmation gate.
+    let singleSummaryConfirmed = false;
+
+    function setSummaryModalHeader(title, subtitle) {
+        const titleEl = document.querySelector('#batchSummaryModal h3 span');
+        const subtitleEl = document.querySelector('#batchSummaryModal h3 + p');
+        if (titleEl) titleEl.textContent = title;
+        if (subtitleEl) subtitleEl.textContent = subtitle;
+    }
+
+    function summaryLocationRow(fileNo, index, details) {
+        return `
+                <div class="flex items-start justify-between">
+                    <div class="flex-1">
+                        <p class="text-sm font-semibold text-gray-900 mb-1">${fileNo}</p>
+                        <div class="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                            <div class="col-span-2"><span class="font-medium">Name:</span> ${details.file_name || '-'}</div>
+                            <div><span class="font-medium">Plot:</span> ${details.plotNo || 'N/A'}</div>
+                            <div><span class="font-medium">TP:</span> ${details.tpNo || 'N/A'}</div>
+                            <div><span class="font-medium">Location:</span> ${details.location || 'N/A'}</div>
+                            <div><span class="font-medium">LGA:</span> ${details.lga || 'N/A'}</div>
+                        </div>
+                    </div>
+                    <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">#${index}</span>
+                </div>
+        `;
+    }
+
+    // Single-file confirmation step. Called from submitForm() after every validation
+    // has passed but before the generate request fires; confirmBatchGeneration()
+    // replays the stored submit event to actually generate.
+    function showSingleSummaryModal(alpineData, event) {
+        summaryModalMode = 'single';
+        pendingSingleSubmitEvent = event;
+
+        const serial = parseInt(alpineData.serialNo);
+        const hasSerial = !isNaN(serial);
+        const code = alpineData.prefix || alpineData.landUse;
+        const fileNo = hasSerial ? `${code}-${alpineData.year}-${serial}` : (alpineData.preview || '-');
+
+        setSummaryModalHeader('Generation Summary', 'Review the details before generating this file');
+
+        document.getElementById('summaryBatchSize').textContent = '1 file';
+        document.getElementById('summarySerialRange').textContent = hasSerial ? String(serial) : '-';
+        document.getElementById('summaryLandUse').textContent = alpineData.landUseFullText || alpineData.landUse || '-';
+        document.getElementById('summaryFileName').textContent = alpineData.fileName || '-';
+        document.getElementById('summaryTotalFiles').textContent = '1';
+        document.getElementById('summaryFileNumbers').textContent = fileNo;
+
+        const locationList = document.getElementById('summaryLocationList');
+        locationList.innerHTML = '';
+        const entryDiv = document.createElement('div');
+        entryDiv.className = 'mb-3 pb-3 border-b border-gray-200 last:border-0';
+        entryDiv.innerHTML = summaryLocationRow(fileNo, 1, {
+            file_name: alpineData.fileName,
+            plotNo: alpineData.plotNo,
+            tpNo: alpineData.tpNo,
+            location: alpineData.location || alpineData.district,
+            lga: alpineData.lga
+        });
+        locationList.appendChild(entryDiv);
+
+        document.getElementById('batchSummaryModal').classList.remove('hidden');
+
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+        }
+    }
+
     function showBatchSummaryModal(alpineData) {
+        summaryModalMode = 'batch';
+        pendingSingleSubmitEvent = null;
+        setSummaryModalHeader('Batch Generation Summary', 'Review the details before generating files');
+
         // Persist the currently displayed applicant into its entry before validating,
         // otherwise the file name typed for the active entry would be missed.
         if (typeof alpineData.saveCurrentApplicantToEntry === 'function') {
@@ -2681,21 +2769,7 @@
 
             const entryDiv = document.createElement('div');
             entryDiv.className = 'mb-3 pb-3 border-b border-gray-200 last:border-0';
-            entryDiv.innerHTML = `
-                <div class="flex items-start justify-between">
-                    <div class="flex-1">
-                        <p class="text-sm font-semibold text-gray-900 mb-1">${fileNo}</p>
-                        <div class="grid grid-cols-2 gap-2 text-xs text-gray-600">
-                            <div class="col-span-2"><span class="font-medium">Name:</span> ${entry.file_name || '-'}</div>
-                            <div><span class="font-medium">Plot:</span> ${entry.plotNo || 'N/A'}</div>
-                            <div><span class="font-medium">TP:</span> ${entry.tpNo || 'N/A'}</div>
-                            <div><span class="font-medium">Location:</span> ${entry.location || 'N/A'}</div>
-                            <div><span class="font-medium">LGA:</span> ${entry.lga || 'N/A'}</div>
-                        </div>
-                    </div>
-                    <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">#${index + 1}</span>
-                </div>
-            `;
+            entryDiv.innerHTML = summaryLocationRow(fileNo, index + 1, entry);
             locationList.appendChild(entryDiv);
         });
 
@@ -2710,9 +2784,25 @@
 
     function closeBatchSummaryModal() {
         document.getElementById('batchSummaryModal').classList.add('hidden');
+        pendingSingleSubmitEvent = null;
+        summaryModalMode = 'batch';
     }
 
     function confirmBatchGeneration() {
+        // Single mode: close the summary and replay the original submit, which now
+        // skips the confirmation gate and proceeds straight to generation.
+        if (summaryModalMode === 'single') {
+            const event = pendingSingleSubmitEvent;
+            document.getElementById('batchSummaryModal').classList.add('hidden');
+            pendingSingleSubmitEvent = null;
+            summaryModalMode = 'batch';
+            if (event) {
+                singleSummaryConfirmed = true;
+                submitForm(event);
+            }
+            return;
+        }
+
         const confirmBtn = document.getElementById('confirmBatchButton');
         const originalText = confirmBtn.innerHTML;
 
@@ -2776,7 +2866,9 @@
             phone_no: document.getElementById('generatePhoneNo')?.value || '',
             address: document.getElementById('generateAddress')?.value || '',
             rep_phone_no: document.getElementById('generateRepPhoneNo')?.value || '',
-            rep_address: document.getElementById('generateRepAddress')?.value || ''
+            rep_address: document.getElementById('generateRepAddress')?.value || '',
+            // Typed related files apply to every file in the batch
+            related_files: JSON.stringify(alpineData.relatedFilesPayload ? alpineData.relatedFilesPayload() : [])
         };
 
         // Send batch generation request
@@ -2833,6 +2925,9 @@
                             console.warn('OP linking failed', e);
                         }
                         window.pendingOpBatch = null;
+                        // Batch is now commissioned — retire the "Back to OP Batch" button, since
+                        // its records are no longer editable.
+                        if (alpineData) alpineData.pendingOpBatchId = '';
                     }
 
                     let batchSuccessTitle = 'Batch Generated!';
@@ -2937,7 +3032,9 @@
                                         ` : ''}
                                         <li class="flex items-start gap-2.5">
                                             <div class="mt-1 w-1 h-1 rounded-full bg-${summaryColor}-400"></div>
-                                            <span>Lineage established via Parent Property ID linkage.</span>
+                                            <span>${data.data.parent_prop_id
+                                                ? 'Lineage established via Parent Property ID linkage.'
+                                                : `New Property ID generated for each of the <b>${data.files.length}</b> files.`}</span>
                                         </li>
                                     </ul>
                                 </div>
@@ -2980,7 +3077,7 @@
                             </div>` : ''}
                         </div>`,
                         confirmButtonColor: '#10b981',
-                        confirmButtonText: 'Great, Continue',
+                        confirmButtonText: 'OK',
                         customClass: {
                             popup: 'rounded-[2.5rem] border-none shadow-2xl p-7',
                             confirmButton: 'rounded-xl px-8 py-3 font-bold text-sm tracking-wide shadow-lg shadow-emerald-200'
@@ -4072,6 +4169,25 @@
             relatedFileNo: '',
             relatedFileTitle: '',
             relatedFileIndexingId: '',
+            // Relationship kind for the primary related file; one of relatedFileTypes.
+            relatedFileType: '',
+            // Free text shown only when the type is 'Other'; becomes the stored type.
+            relatedFileTypeOther: '',
+            // Related files beyond the first. Same shape as the primary row:
+            // {file_no, title, type, indexing_id}. A file can relate to several others
+            // (e.g. a merger drawing on multiple mother files).
+            extraRelatedFiles: [],
+            relatedFileTypes: [
+                'Re-grant',
+                'Resettlement',
+                'Subdivision',
+                'Merger',
+                'Change of Purpose',
+                'Mother File',
+                'Temporary File',
+                'Dummy File',
+                'Other'
+            ],
             isRecertificationPrefix: false,
             
             // Subdivision / Merger / Separation Properties
@@ -4094,6 +4210,9 @@
             hideBatchMode: window.commissionModalHideBatchMode === true,
             batchMode: false,
             batchQuantity: 2,
+            // Set by the Batch Capture OP hand-off while an uncommissioned batch is awaiting
+            // commissioning; drives the "Back to OP Batch" button. Empty outside that flow.
+            pendingOpBatchId: '',
             locationEntries: [],
             currentEntryIndex: 0,
             serialRangePreview: '-',
@@ -4514,7 +4633,7 @@
 
             get isSerialReadonly() {
                 // Readonly for normal (auto-generated), temporary, extension, and SIT types
-                return (this.fileOption === 'normal' || this.fileOption === 'regrant' || this.fileOption === 'temporary' || this.fileOption === 'extension' || this.fileOption === 'sit') && !isOverrideMode;
+                return (this.fileOption === 'normal' || this.fileOption === 'regrant' || this.fileOption === 'resettlement' || this.fileOption === 'temporary' || this.fileOption === 'extension' || this.fileOption === 'sit') && !isOverrideMode;
             },
 
             get isSerialDisabled() {
@@ -4523,7 +4642,7 @@
             },
 
             get serialFieldType() {
-                return (this.fileOption === 'normal' || this.fileOption === 'regrant') && !isOverrideMode ? 'number' : 'text';
+                return (this.fileOption === 'normal' || this.fileOption === 'regrant' || this.fileOption === 'resettlement') && !isOverrideMode ? 'number' : 'text';
             },
 
             get yearFieldClass() {
@@ -4711,7 +4830,10 @@
             },
 
             // Open GlobalFileNoModal to select related file (recertification)
-            openRelatedFileModal() {
+            // index === null targets the primary related file (relatedFileNo/Title, which
+            // the -RC validation and PRA lineage still read); an integer targets that slot
+            // in extraRelatedFiles.
+            openRelatedFileModal(index = null) {
                 if (typeof GlobalFileNoModal === 'undefined' || typeof GlobalFileNoModal.open !== 'function') {
                     alert('File number selector is not available. Please refresh the page.');
                     return;
@@ -4720,6 +4842,21 @@
                 GlobalFileNoModal.open({
                     callback: function(data) {
                         if (!data || !data.fileNumber) return;
+
+                        if (index !== null) {
+                            const row = self.extraRelatedFiles[index];
+                            if (!row) return;
+                            row.file_no = (data.fileNumber || '').toString().replace(/[\s-]+$/, '').trim();
+                            row.title = (
+                                data.file_name
+                                || data.file_title
+                                || (data.record && (data.record.file_name || data.record.FileName || data.record.file_title))
+                                || ''
+                            ).toString().trim();
+                            row.indexing_id = (data.record && data.record.id) || '';
+                            return;
+                        }
+
                         // Legacy KN/KANGIS records store the file number with a trailing dash
                         // (e.g. "KN 3456-"); strip any trailing dash/whitespace so the related
                         // file number is clean for any selected file.
@@ -4771,6 +4908,40 @@
                 this.relatedFileNo = '';
                 this.relatedFileTitle = '';
                 this.relatedFileIndexingId = '';
+                this.relatedFileType = '';
+                this.relatedFileTypeOther = '';
+                this.extraRelatedFiles = [];
+            },
+
+            addRelatedFile() {
+                this.extraRelatedFiles.push({ file_no: '', title: '', type: '', type_other: '', indexing_id: '' });
+            },
+
+            removeRelatedFile(index) {
+                this.extraRelatedFiles.splice(index, 1);
+            },
+
+            // Every related file the officer entered, primary row first, as
+            // {file_no, title, type, indexing_id}. Rows without a file number are dropped
+            // so a half-filled "Add more" row can't reach the backend.
+            relatedFilesPayload() {
+                const rows = [{
+                    file_no: this.relatedFileNo,
+                    title: this.relatedFileTitle,
+                    type: this.relatedFileType,
+                    type_other: this.relatedFileTypeOther,
+                    indexing_id: this.relatedFileIndexingId
+                }].concat(this.extraRelatedFiles || []);
+
+                return rows
+                    .map(r => ({
+                        file_no: (r.file_no || '').toString().trim(),
+                        title: (r.title || '').toString().trim(),
+                        type: (r.type || '').toString().trim(),
+                        type_other: (r.type_other || '').toString().trim(),
+                        indexing_id: r.indexing_id || ''
+                    }))
+                    .filter(r => r.file_no !== '');
             },
 
             // Modified to only fetch Purposes (and potentially Prefixes but we have them already)
@@ -4838,6 +5009,13 @@
                 // Reset file option to normal if SIT is selected but conversion type is chosen
                 if (this.fileOption === 'sit' && this.applicationType === 'conversion') {
                     this.fileOption = 'normal';
+                }
+
+                // Conversion links to exactly one existing file. Drop any extra related-file
+                // rows carried over from another type so they don't post silently while the
+                // "Add Another Related File" button is hidden.
+                if (this.applicationType === 'conversion') {
+                    this.extraRelatedFiles = [];
                 }
 
                 // Enforce OP rule after app type change.
@@ -5357,7 +5535,7 @@
                         // Reset category until the user explicitly picks one in the popup.
                         this.extensionType = '';
                     }
-                } else if (this.fileOption === 'normal' || this.fileOption === 'regrant') {
+                } else if (this.fileOption === 'normal' || this.fileOption === 'regrant' || this.fileOption === 'resettlement') {
                     this.isInherited = false;
                     // Reset SIT-specific overrides if switching from SIT
                     if (this.landUse === 'SIT') {
@@ -5402,7 +5580,7 @@
 
             updatePreview() {
                 // Auto-update serial number when land use changes for normal, subdivision, merger, and temporary files
-                if (['normal', 'regrant', 'subdivision', 'merger', 'separation', 'temporary'].includes(this.fileOption) && (this.landUse || this.prefix) && !isOverrideMode) {
+                if (['normal', 'regrant', 'resettlement', 'subdivision', 'merger', 'separation', 'temporary'].includes(this.fileOption) && (this.landUse || this.prefix) && !isOverrideMode) {
                     if (this.fileOption === 'temporary' && this.existingFileNo) {
                         // Keep extracted serial from existing file for temporary files
                     } else {
@@ -5447,7 +5625,7 @@
                     previewText = `SLTR-${this.serialNo}`;
                 } else if (this.fileOption === 'sit' && this.serialNo) {
                     previewText = `SIT-${this.year}-${this.serialNo}`;
-                } else if (['normal', 'regrant', 'subdivision', 'merger'].includes(this.fileOption) && this.serialNo && this.year) {
+                } else if (['normal', 'regrant', 'resettlement', 'subdivision', 'merger'].includes(this.fileOption) && this.serialNo && this.year) {
                     const code = this.prefix || this.landUse;
                     if (code) {
                          previewText = `${code}-${this.year}-${this.serialNo}`;
@@ -5517,7 +5695,7 @@
 
             // Method to refresh serial number from external call
             refreshSerialNumber() {
-                if ((this.fileOption === 'normal' || this.fileOption === 'regrant' || this.fileOption === '') && !isOverrideMode) {
+                if ((this.fileOption === 'normal' || this.fileOption === 'regrant' || this.fileOption === 'resettlement' || this.fileOption === '') && !isOverrideMode) {
                     const code = this.prefix || this.landUse;
                     if (code) {
                         this.serialNo = getNextSerialForLandUse(code);
@@ -7616,9 +7794,7 @@
                     }
 
                 } else {
-                    // Hide
-                    dropdown.classList.add('hidden');
-                    dropdown.classList.remove('show');
+                    closeActionDropdown(dropdown);
                 }
             }
             return;
@@ -7626,20 +7802,33 @@
 
         // Close when clicking outside
         if (!e.target.closest('.action-dropdown-menu')) {
-            document.querySelectorAll('.action-dropdown-menu').forEach(d => {
-                d.classList.add('hidden');
-                d.classList.remove('show');
-            });
+            document.querySelectorAll('.action-dropdown-menu').forEach(closeActionDropdown);
         }
+    });
+
+    // Hide and clear the inline fixed-position styles, so the menu falls back to its
+    // stylesheet position instead of reopening at stale coordinates.
+    function closeActionDropdown(dropdown) {
+        dropdown.classList.add('hidden');
+        dropdown.classList.remove('show');
+        dropdown.style.position = '';
+        dropdown.style.left = '';
+        dropdown.style.right = '';
+        dropdown.style.top = '';
+        dropdown.style.bottom = '';
+        dropdown.style.zIndex = '';
+    }
+
+    // Inline coordinates are computed for one viewport size; close on resize/orientation
+    // change rather than leaving the menu stranded.
+    window.addEventListener('resize', function () {
+        document.querySelectorAll('.action-dropdown-menu.show').forEach(closeActionDropdown);
     });
 
 
     // Close dropdowns on scroll to keep fixed position valid
     window.addEventListener('scroll', function () {
-        document.querySelectorAll('.action-dropdown-menu.show').forEach(d => {
-            d.classList.add('hidden');
-            d.classList.remove('show');
-        });
+        document.querySelectorAll('.action-dropdown-menu.show').forEach(closeActionDropdown);
     }, true);
 
     // Printer Manager Logic
@@ -8201,8 +8390,19 @@
         // of the single-record registration dialog. Otherwise fall through to single capture.
         const alpineRoot = document.querySelector('[x-data="fileNumberGenerator()"]');
         const alpineData = (alpineRoot && alpineRoot._x_dataStack) ? alpineRoot._x_dataStack[0] : null;
+        // Batch Mode already on (the OSS toggle): still offer to resume an uncommissioned batch
+        // rather than always starting a fresh one. The quantity already entered is the default.
         if (alpineData && alpineData.batchMode && parseInt(alpineData.batchQuantity) > 1
             && typeof window.openBatchCaptureOp === 'function') {
+            if (typeof window.copPromptBatchStart === 'function' && typeof Swal !== 'undefined') {
+                window.copPromptBatchStart(opType, (qty, resume) => {
+                    if (!qty) { alpineData.defaultAllocationType = ''; return; }
+                    alpineData.batchQuantity = qty;
+                    if (typeof alpineData.toggleBatchMode === 'function') alpineData.toggleBatchMode();
+                    window.openBatchCaptureOp(qty, opType, resume);
+                });
+                return;
+            }
             window.openBatchCaptureOp(parseInt(alpineData.batchQuantity), opType);
             return;
         }
@@ -8226,10 +8426,7 @@
     function promptOpBatchOrSingle(alpineData, normalized, opType) {
         Swal.fire({
             title: 'Occupancy Permit (OP)',
-            html: `<p class="text-sm text-gray-600 mb-3">Are you capturing a <strong>single</strong> OP, or a <strong>batch</strong> of OPs for ${opType}?</p>
-                   <input id="opBatchQtyInput" type="number" min="2" max="100" value="2"
-                          class="swal2-input" style="width:8rem;margin:0 auto;" placeholder="Qty">
-                   <p class="text-xs text-gray-500">Number of OPs (used only for Batch)</p>`,
+            html: `<p class="text-sm text-gray-600">Are you capturing a <strong>single</strong> OP, or a <strong>batch</strong> of OPs for ${opType}?</p>`,
             icon: 'question',
             showCancelButton: true,
             showDenyButton: true,
@@ -8238,22 +8435,22 @@
             cancelButtonText: 'Cancel',
             confirmButtonColor: '#2563eb',
             denyButtonColor: '#059669',
-            focusConfirm: false,
-            preConfirm: () => {
-                const qty = parseInt(document.getElementById('opBatchQtyInput')?.value, 10);
-                if (!qty || qty < 2 || qty > 100) {
-                    Swal.showValidationMessage('Enter a batch quantity between 2 and 100.');
-                    return false;
-                }
-                return qty;
-            }
         }).then((result) => {
             if (result.isConfirmed) {
-                const qty = result.value;
-                alpineData.batchMode = true;
-                alpineData.batchQuantity = qty;
-                if (typeof alpineData.toggleBatchMode === 'function') alpineData.toggleBatchMode();
-                window.openBatchCaptureOp(qty, opType);
+                // Batch: offer a new batch or resuming an uncommissioned one. The quantity is
+                // asked for inside that flow (a resumed batch brings its own count).
+                if (typeof window.copPromptBatchStart !== 'function') {
+                    Swal.fire({ icon: 'warning', title: 'Batch capture unavailable', text: 'The OP batch card is not loaded on this page.' });
+                    alpineData.defaultAllocationType = '';
+                    return;
+                }
+                window.copPromptBatchStart(opType, (qty, resume) => {
+                    if (!qty) { alpineData.defaultAllocationType = ''; return; }   // cancelled
+                    alpineData.batchMode = true;
+                    alpineData.batchQuantity = qty;
+                    if (typeof alpineData.toggleBatchMode === 'function') alpineData.toggleBatchMode();
+                    window.openBatchCaptureOp(qty, opType, resume);
+                });
                 return;
             }
 
@@ -8394,6 +8591,116 @@
         if (printBtn) printBtn.disabled = true;
     }
 
+    // Application for Conversion step: show the CON- files for this date with their
+    // recipient LGA (READONLY — for review, not editing) and pick the acquisition
+    // method, then open the generated documents. Returns true if it ran (or there was
+    // nothing to do), false if the operator cancelled.
+    async function reviewConversionForBatch(selectedDate, csrfToken) {
+        const escHtml = (s) => (s || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+        // Load the CON- files for this date (unprinted set — same as the count boxes).
+        let conFiles = [];
+        try {
+            const resp = await fetch('{{ route("mls-fileno.batch-records") }}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken },
+                body: JSON.stringify({ scope: 'date', date: selectedDate })
+            });
+            const payload = await resp.json();
+            const records = Array.isArray(payload.data) ? payload.data : [];
+            conFiles = records.filter(r => (r.full_file_number || '').toString().trim().toUpperCase().startsWith('CON-'));
+        } catch (e) {
+            console.warn('Could not load conversion files', e);
+        }
+
+        if (conFiles.length === 0) {
+            await Swal.fire({
+                icon: 'info',
+                title: 'No Conversion Files',
+                text: 'There are no Conversion (CON-) files for this date, so no Application for Conversion was generated.',
+                confirmButtonColor: '#10b981'
+            });
+            return true; // nothing to do, but not a cancellation
+        }
+
+        const rowsHtml = conFiles.map(r => {
+            const fno = (r.full_file_number || '').toString();
+            const lga = (r.lga && r.lga !== 'N/A') ? r.lga : '—';
+            const name = r.file_name ? ` — ${escHtml(r.file_name)}` : '';
+            return `
+                <div class="border border-gray-200 rounded-lg p-2.5 mb-2">
+                    <div class="text-xs font-semibold text-gray-800">${escHtml(fno)}${name}</div>
+                    <div class="text-xs text-gray-500 mt-1">Recipient LGA:
+                        <span class="font-semibold text-gray-700">${escHtml(lga)}</span>
+                        <span class="text-gray-400">(read-only)</span>
+                    </div>
+                </div>`;
+        }).join('');
+
+        const methodOptions = [
+            ['a', 'By Purchase'],
+            ['b', 'By Inheritance'],
+            ['c', 'By Gift'],
+            ['d', 'Direct Local Government Allocation'],
+            ['e', 'Any other (Specify)'],
+        ].map(([v, label], i) => `
+            <label class="flex items-center space-x-2 p-1.5 hover:bg-gray-50 rounded cursor-pointer">
+                <input type="radio" name="bp_acq_method" value="${v}" class="w-4 h-4 text-emerald-600" ${i === 0 ? 'checked' : ''}>
+                <span class="text-sm text-gray-700">${label}</span>
+            </label>`).join('');
+
+        const result = await Swal.fire({
+            title: 'Application for Conversion',
+            html: `
+                <p class="text-sm text-gray-600 text-left mb-2">
+                    ${conFiles.length} conversion file(s). Review the recipient
+                    (<strong>The Chairman, [LGA] Local Government</strong>), then choose the acquisition method.
+                </p>
+                <div class="text-left mb-3" style="max-height: 12rem; overflow-y: auto; padding-right: 4px;">${rowsHtml}</div>
+                <div class="text-left border-t border-gray-100 pt-2">
+                    <p class="text-sm font-semibold text-gray-700 mb-1">Acquisition method</p>
+                    ${methodOptions}
+                    <input type="text" id="bp_acq_other" placeholder="Please specify other method..."
+                           class="hidden w-full mt-2 px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-emerald-500 outline-none">
+                </div>
+            `,
+            width: 540,
+            showCancelButton: true,
+            confirmButtonColor: '#10b981',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: 'Generate Applications',
+            cancelButtonText: 'Cancel',
+            focusConfirm: false,
+            didOpen: () => {
+                const other = document.getElementById('bp_acq_other');
+                document.querySelectorAll('input[name="bp_acq_method"]').forEach(radio => {
+                    radio.addEventListener('change', (e) => {
+                        if (e.target.value === 'e') { other.classList.remove('hidden'); other.focus(); }
+                        else { other.classList.add('hidden'); }
+                    });
+                });
+            },
+            preConfirm: () => {
+                const method = document.querySelector('input[name="bp_acq_method"]:checked').value;
+                const other = (document.getElementById('bp_acq_other').value || '').trim();
+                if (method === 'e' && !other) {
+                    Swal.showValidationMessage('Please specify the other acquisition method');
+                    return false;
+                }
+                return { method, other };
+            }
+        });
+
+        if (!result.isConfirmed) return false; // operator cancelled
+
+        // Open the server-rendered Application for Conversion document(s) for this date.
+        const { method, other } = result.value;
+        let url = `{{ route('file-numbers.date-conversion-application') }}?date=${encodeURIComponent(selectedDate)}&method=${encodeURIComponent(method)}`;
+        if (method === 'e' && other) url += `&other=${encodeURIComponent(other)}`;
+        window.open(url, '_blank');
+        return true;
+    }
+
     async function executeBatchPrint() {
         const dateInput = document.getElementById("bpDateSelect");
         const selectedDate = dateInput ? dateInput.value : "";
@@ -8403,27 +8710,47 @@
             return;
         }
 
+        const wantCommissioning = document.getElementById("bpDocCommissioning")?.checked;
+        const wantConversion = document.getElementById("bpDocConversion")?.checked;
+
+        if (!wantCommissioning && !wantConversion) {
+            Swal.fire({ icon: "warning", title: "Nothing Selected", text: "Please tick at least one document to generate." });
+            return;
+        }
+
         const printBtn = document.getElementById("bpPrintBtn");
         if (printBtn) printBtn.disabled = true;
 
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
-            closeBatchPrintModal();
-            
-            // Generate the PDF first
-            await generateBatchPDF(selectedDate, "Original", "date");
 
-            // ONLY record the print AFTER the PDF has been successfully generated
-            const recordResponse = await fetch("{{ route('file-numbers.record-print') }}", {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrfToken },
-                body: JSON.stringify({ reference: selectedDate, type: "Date", doc_type: "Commissioning Sheet" })
-            });
-            const recordData = await recordResponse.json();
-
-            if (!recordData.success) {
-                console.warn("Record print warning:", recordData.message);
+            // Application for Conversion: review readonly recipient LGA + pick method first,
+            // so a cancellation here stops before anything is generated.
+            if (wantConversion) {
+                const proceed = await reviewConversionForBatch(selectedDate, csrfToken);
+                if (!proceed) {
+                    if (printBtn) printBtn.disabled = false;
+                    return; // operator cancelled
+                }
             }
+
+            // Commissioning Sheets: the normal batch commissioning-sheet print.
+            if (wantCommissioning) {
+                await generateBatchPDF(selectedDate, "Original", "date");
+
+                // ONLY record the print AFTER the PDF has been successfully generated
+                const recordResponse = await fetch("{{ route('file-numbers.record-print') }}", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrfToken },
+                    body: JSON.stringify({ reference: selectedDate, type: "Date", doc_type: "Commissioning Sheet" })
+                });
+                const recordData = await recordResponse.json();
+                if (!recordData.success) {
+                    console.warn("Record print warning:", recordData.message);
+                }
+            }
+
+            closeBatchPrintModal();
 
         } catch (err) {
             console.error("executeBatchPrint error:", err);

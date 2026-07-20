@@ -93,6 +93,10 @@ class PropertyRecordController extends Controller
 
             $matches = (clone $baseQuery)->orderByDesc('id')->limit(10)->get();
 
+            // Attach the capturing user's name (captured_by / created_by hold a user id)
+            // so the duplicate card can show who captured the existing CofO.
+            $this->attachCapturedByName($matches);
+
             // Decide whether to lock the form
             $lockForm = false;
             $lockingRecord = null;
@@ -295,6 +299,39 @@ class PropertyRecordController extends Controller
                 ? 'A ' . $transactionType . ' with matching details already exists for file number ' . $fileNumber . '.'
                 : null,
         ]);
+    }
+
+    /**
+     * Enrich a collection of CofO/PRA rows with a `captured_by_name` attribute by
+     * resolving the `captured_by` (falling back to `created_by`) user id to a name.
+     */
+    private function attachCapturedByName($rows): void
+    {
+        if ($rows === null || $rows->isEmpty()) {
+            return;
+        }
+
+        $ids = $rows->map(function ($r) {
+            return $r->captured_by ?? $r->created_by ?? null;
+        })->filter()->unique()->values();
+
+        $names = [];
+        if ($ids->isNotEmpty()) {
+            // The `users` table has no `name` column (name is a first_name + last_name
+            // accessor on the model), so resolve via Eloquent to get the display name.
+            $names = \App\Models\User::whereIn('id', $ids->all())
+                ->get(['id', 'first_name', 'last_name'])
+                ->mapWithKeys(function ($u) {
+                    return [$u->id => trim($u->name ?? trim(($u->first_name ?? '') . ' ' . ($u->last_name ?? '')))];
+                })
+                ->toArray();
+        }
+
+        $rows->transform(function ($r) use ($names) {
+            $id = $r->captured_by ?? $r->created_by ?? null;
+            $r->captured_by_name = ($id !== null && isset($names[$id])) ? $names[$id] : null;
+            return $r;
+        });
     }
 
     /**

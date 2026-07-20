@@ -182,6 +182,7 @@ class FileTrackerApiController extends Controller
                 'department' => 'required|string|max:100',
                 'description' => 'nullable|string',
                 'deadline' => 'nullable|date',
+                'timeline_days' => 'nullable|integer|min:0|max:365',
                 'request_purpose_id' => 'nullable|integer|exists:sqlsrv.request_purposes,id',
                 'request_purpose_other' => 'nullable|string|max:255',
                 'movement_log' => 'required|array',
@@ -335,6 +336,17 @@ class FileTrackerApiController extends Controller
             $requestPurposeOther = trim((string) $request->input('request_purpose_other', ''));
             $requestPurposeName = $requestPurpose?->name ?: ($requestPurposeOther !== '' ? $requestPurposeOther : null);
 
+            // A date-only Expected Return Date means "by the end of that day": stored
+            // literally it's midnight, which reads as overdue from the first second of
+            // the due date. setTime(23,59,59), NOT endOfDay() — the latter's .999999
+            // microseconds round UP to the next midnight in SQL Server's `datetime`
+            // (~3.33ms precision), silently granting an extra day. Mirrors
+            // CreateFileTrackerController::store().
+            $timelineDays = $request->filled('timeline_days') ? (int) $request->input('timeline_days') : null;
+            $deadline = $request->deadline
+                ? \Carbon\Carbon::parse($request->deadline)->setTime(23, 59, 59)
+                : ($timelineDays !== null ? now()->addDays($timelineDays)->setTime(23, 59, 59) : null);
+
             // Create file tracker
             $tracker = FileTracker::create([
                 'tracking_id' => $trackingId,
@@ -348,7 +360,8 @@ class FileTrackerApiController extends Controller
                 'description' => $request->description,
                 'status' => $workflowStatus,
                 'date_created' => now(),
-                'deadline' => $request->deadline,
+                'deadline' => $deadline,
+                'timeline_days' => $timelineDays,
                 'request_purpose_id' => $requestPurpose?->id,
                 'request_purpose_name' => $requestPurposeName,
                 'total_offices' => count($request->movement_log),
@@ -1312,7 +1325,23 @@ class FileTrackerApiController extends Controller
     public function dashboard(): JsonResponse
     {
         try {
+            // Weekly Activity: files logged per day over the last 7 days, oldest first
+            // and ending today. Seven cheap indexed counts rather than a GROUP BY, so
+            // the day bucketing behaves identically on SQL Server and MySQL.
+            $weeklyLabels = [];
+            $weeklyActivity = [];
+            for ($i = 6; $i >= 0; $i--) {
+                $day = now()->subDays($i);
+                $weeklyLabels[] = $day->format('D');
+                $weeklyActivity[] = FileTracker::whereBetween('created_at', [
+                    $day->copy()->startOfDay(),
+                    $day->copy()->endOfDay(),
+                ])->count();
+            }
+
             $stats = [
+                'weekly_labels' => $weeklyLabels,
+                'weekly_activity' => $weeklyActivity,
                 'total_trackers' => FileTracker::count(),
                 'active_trackers' => FileTracker::active()->count(),
                 'completed_trackers' => FileTracker::completed()->count(),

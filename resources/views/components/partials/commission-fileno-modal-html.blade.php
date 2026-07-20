@@ -233,6 +233,21 @@
                         Batch Mode is disabled when Occupancy Permit (OP) is selected.
                     </p>
 
+                    <!-- Uncommissioned OP batch awaiting commissioning: offer a way back to the
+                         OP Batch card to correct a mistake before generating. -->
+                    <div x-show="pendingOpBatchId" x-transition x-cloak
+                         class="mt-3 flex flex-wrap items-center justify-between gap-3 px-3 py-2 bg-violet-50 border border-violet-200 rounded-lg">
+                        <div class="text-xs text-violet-800">
+                            Commissioning OP batch
+                            <span class="font-mono font-semibold" x-text="pendingOpBatchId"></span>
+                            <span class="text-violet-500">— not yet commissioned, so it can still be edited.</span>
+                        </div>
+                        <button type="button" onclick="copBackToBatchCard()"
+                                class="px-3 py-1.5 bg-white border border-violet-300 rounded-lg text-xs font-semibold text-violet-700 hover:bg-violet-100 transition">
+                            &lt; Back to OP Batch
+                        </button>
+                    </div>
+
                     <!-- Batch Quantity Input (shown when batch mode is active) -->
                     <div x-show="batchMode" x-transition class="mt-3">
                         <label for="batchQuantity" class="block text-xs font-medium text-gray-600 mb-1">
@@ -250,7 +265,7 @@
                         </div>
                         <p class="text-xs text-gray-500 mt-2">
                             <i data-lucide="info" class="w-3 h-3 inline"></i>
-                            All files will share the same File Name and Prefix. You'll add unique location details for each.
+                           All files will share the same File Name (File Title) and Prefix. You can only add unique location details for each file (if need be)
                         </p>
                     </div>
                 </div>

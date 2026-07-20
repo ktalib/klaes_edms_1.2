@@ -99,46 +99,28 @@ class FileSearchRequest extends Model
     }
 
     /**
-     * Days until the Expected Return Date (signed — negative once overdue).
-     * Null when no Request Purpose/Timeline was captured for this request.
+     * A file search request has no countdown. The return clock starts when the file is
+     * logged OUT (file_tracker.created_at → file_tracker.deadline) — not when the request
+     * was raised. Counting from created_at meant a request sitting unanswered burned days
+     * off a window the requesting office had not yet received the file for.
+     *
+     * Always null, so nothing renders a "N days left" badge against a request.
      */
     public function getDaysUntilDeadlineAttribute()
     {
-        if (!$this->expected_return_date) {
-            return null;
-        }
-
-        return Carbon::now()->diffInDays(Carbon::parse($this->expected_return_date), false);
+        return null;
     }
 
     /**
-     * Green/Amber/Red timeline status, mirroring FileTracker::getTimelineStatusAttribute()
-     * — 'red' once the Expected Return Date has passed, 'amber' once less than 20% of the
-     * window (created_at → expected_return_date) remains, otherwise 'green'.
+     * Timeline state for a request is always 'pending' — the clock has not started and
+     * there is no return window yet. Both the countdown and the Expected Return Date are
+     * withheld until the file is logged out, at which point the FileTracker owns the
+     * timeline. Legacy rows still carrying an expected_return_date are treated the same,
+     * so the queue reads consistently whether or not a date was captured back then.
      */
     public function getTimelineStatusAttribute()
     {
-        if (!$this->expected_return_date || !$this->created_at) {
-            return null;
-        }
-
-        $start = Carbon::parse($this->created_at);
-        $deadline = Carbon::parse($this->expected_return_date)->endOfDay();
-        $now = Carbon::now();
-
-        if ($now->greaterThan($deadline)) {
-            return 'red';
-        }
-
-        $totalWindow = $start->diffInSeconds($deadline);
-        if ($totalWindow <= 0) {
-            return $now->greaterThanOrEqualTo($deadline) ? 'red' : 'green';
-        }
-
-        $elapsed = $start->diffInSeconds($now);
-        $remainingRatio = 1 - ($elapsed / $totalWindow);
-
-        return $remainingRatio <= 0.2 ? 'amber' : 'green';
+        return 'pending';
     }
 
     public function scopePending($q)   { return $q->where('status', self::STATUS_PENDING); }

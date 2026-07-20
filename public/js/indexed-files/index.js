@@ -248,6 +248,9 @@ function renderRows(rows) {
             ${col('indexed_by', `<td class="${standardCellClass}">${escapeHtml(row.indexed_by)}</td>`)}
             ${col('indexed_date', `<td class="${standardCellClass}">${escapeHtml(row.indexed_at ?? '')}</td>`)}
             ${col('dciv_reason', `<td class="p-3 text-gray-600 max-w-xs whitespace-normal break-words">${Number(row.dciv_status) === 1 && row.dciv_reason ? escapeHtml(row.dciv_reason) : '<span class="text-gray-400">-</span>'}</td>`)}
+            ${col('lon_value', buildLonCell(row))}
+            ${col('lat_value', buildLatCell(row))}
+            ${col('latlon', buildLatLonCell(row))}
             ${col('status', `<td class="p-3 whitespace-nowrap">${statusBadge}</td>`)}
           `;
       })()

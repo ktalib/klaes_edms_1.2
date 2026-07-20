@@ -565,6 +565,11 @@
     #timeline-table tr.row-tint-cofo:hover { background-color: #ede9fe; }
     #timeline-table tr.row-tint-related:hover { background-color: #ffedd5; }
 
+    /* Lifecycle-file group divider: thin green line above the first row of each file block. */
+    #timeline-table tr.ls-group-divider td {
+      border-top: 2px solid #16a34a !important;
+    }
+
     /* Timeline & detail tables – prevent cramped columns */
     #timeline-table-wrapper,
     #property-record-tab table,

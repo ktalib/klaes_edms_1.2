@@ -45,27 +45,57 @@
             <div class="bg-white rounded-lg shadow-lg p-8 md:col-span-1 md:row-span-2">
                 <div class="h-full flex flex-col">
                     <h2 class="text-2xl font-bold text-gray-800 mb-4">Archive Search</h2>
+
+                    <!-- Search Mode Toggle -->
+                    <div class="inline-flex rounded-md border border-gray-300 overflow-hidden mb-4 self-start">
+                        <button type="button" id="archive-mode-fileno"
+                                class="archive-mode-btn px-4 py-2 text-sm font-medium bg-blue-600 text-white"
+                                data-mode="fileno">
+                            <i data-lucide="hash" class="h-4 w-4 inline mr-1"></i>
+                            File Number
+                        </button>
+                        <button type="button" id="archive-mode-qr"
+                                class="archive-mode-btn px-4 py-2 text-sm font-medium bg-white text-gray-700 hover:bg-gray-50 border-l border-gray-300"
+                                data-mode="qr">
+                            <i data-lucide="qr-code" class="h-4 w-4 inline mr-1"></i>
+                            QR Scan
+                        </button>
+                    </div>
+
+                    <!-- QR Scan Panel (hardware scanner input) -->
+                    <div id="archive-qr-panel" class="hidden mb-4">
+                        <label for="archive-qr-input" class="block text-sm font-medium text-gray-700 mb-2">Scan QR Code</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                                <i data-lucide="scan-line" class="h-5 w-5"></i>
+                            </span>
+                            <input type="text"
+                                   id="archive-qr-input"
+                                   autocomplete="off"
+                                   placeholder="Scan a file QR code..."
+                                   class="block w-full pl-10 pr-3 py-3 border-2 border-dashed border-blue-400 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-bold text-blue-700 bg-blue-50">
+                        </div>
+                        <div id="archive-qr-status" class="mt-3 text-sm text-gray-600 text-center px-3 py-2 bg-gray-50 border border-gray-200 rounded-md">
+                            Waiting for scan — keep this box focused
+                        </div>
+                    </div>
+
                     <div class="flex-1">
                         <div class="space-y-4">
                             <div class="relative">
                                 <label for="archive-file-no" class="block text-sm font-medium text-gray-700 mb-2">File Number</label>
-                                <input type="text" 
-                                       id="archive-file-no" 
-                                       name="file_number" 
-                                       placeholder="e.g. RES-2015-4859" 
-                                       class="block w-full px-3 py-2 pr-12 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-bold">
-                                <button type="button" 
-                                        id="archive-fileno-selector-btn" 
-                                        class="absolute bottom-0 right-0 flex items-center px-3 py-2 border-l border-gray-300 text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors rounded-r-md" 
+                                <input type="text"
+                                       id="archive-file-no"
+                                       name="file_number"
+                                       placeholder="e.g. RES-2015-4859"
+                                       readonly
+                                       class="block w-full px-3 py-2 pr-12 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-bold bg-gray-50">
+                                <button type="button"
+                                        id="archive-fileno-selector-btn"
+                                        class="absolute bottom-0 right-0 flex items-center px-3 py-2 border-l border-gray-300 text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors rounded-r-md"
                                         title="Select from existing file numbers">
                                     <i data-lucide="search" class="h-4 w-4"></i>
                                 </button>
-                                <!-- File Number Badge Display -->
-                                <div id="file-number-badge-container" class="mt-2 hidden">
-                                    <span id="file-number-badge" class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-green-600 text-white border border-green-700 shadow-sm">
-                                        <!-- File number will be displayed here -->
-                                    </span>
-                                </div>
                             </div>
                             <div>
                                 <label for="archive-file-name" class="block text-sm font-medium text-gray-700 mb-2">File Name</label>
@@ -77,7 +107,7 @@
                                        class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 text-gray-500 cursor-not-allowed">
                                 <p class="text-xs text-gray-500 mt-1">Auto-filled when a file number is selected</p>
                             </div>
-                            <button type="button" class="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+                            <button type="button" onclick="searchArchive()" class="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
                                 <i data-lucide="search" class="h-4 w-4 inline mr-2"></i>
                                 Search Archive
                             </button>

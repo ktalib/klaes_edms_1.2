@@ -31,6 +31,7 @@ class FileTracker extends Model
         'date_created',
         'date_requested',
         'deadline',
+        'timeline_days',
         'movement_log',
         'current_office_code',
         'current_office_name',
@@ -314,18 +315,30 @@ class FileTracker extends Model
     }
 
     /**
-     * Timeline status derived from date_created/deadline: 'red' once the deadline
-     * has passed, 'amber' once less than 20% of the allotted turnaround remains,
-     * otherwise 'green'. Null when no deadline has been set (e.g. no Request
-     * Purpose turnaround configured).
+     * The moment the return clock starts: when the file was logged out. created_at is
+     * NOT NULL and framework-maintained, so it is authoritative; date_created is a
+     * nullable hand-set mirror of it, kept only as a fallback for legacy rows.
+     */
+    public function getTimelineStartAttribute()
+    {
+        return $this->created_at
+            ? Carbon::parse($this->created_at)
+            : ($this->date_created ? Carbon::parse($this->date_created) : null);
+    }
+
+    /**
+     * Timeline status derived from the log-out time and the deadline: 'red' once the
+     * deadline has passed, 'amber' once less than 20% of the allotted window remains,
+     * otherwise 'green'. Null when no deadline has been set (no Timeline (Days) was
+     * entered for this file).
      */
     public function getTimelineStatusAttribute()
     {
-        if (!$this->deadline || !$this->date_created) {
+        $start = $this->timeline_start;
+        if (!$this->deadline || !$start) {
             return null;
         }
 
-        $start = Carbon::parse($this->date_created);
         $deadline = Carbon::parse($this->deadline);
         $now = Carbon::now();
 

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\PlotExtensionApplication;
 use App\Models\StreetName;
 use App\Services\ParcelUpdateNotificationService;
+use App\Services\TitleStatusParcelRouter;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -27,6 +28,10 @@ class PlotExtensionController extends Controller
         $records = PlotExtensionApplication::query()
             ->where(function($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
+            // Hide rows routed in from Title Status / File Indexing until processed.
+            ->where(function($q) {
+                $q->whereNull('status')->orWhere('status', '!=', TitleStatusParcelRouter::HIDDEN_STATUS);
             })
             ->when($search, function ($q) use ($search) {
                 $q->where(function ($sub) use ($search) {

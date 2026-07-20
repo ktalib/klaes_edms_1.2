@@ -2758,6 +2758,111 @@ class FileNumberController extends Controller
             return abort(500, 'Error generating documents: ' . $e->getMessage());
         }
     }
+
+    /**
+     * Generate "Application for Conversion" documents for every Conversion (CON-)
+     * file commissioned on a given date. Mirrors the batch generator but is scoped
+     * by date, so it pairs with the "Application for Conversion" option on the
+     * Batch Print — Commissioning Sheets card (which works by date, not batch_no).
+     */
+    public function generateDateConversionApplication(Request $request)
+    {
+        try {
+            $date = $request->query('date');
+            if (!$date) {
+                return abort(400, 'A date is required');
+            }
+
+            $records = DB::connection('sqlsrv')
+                ->table('fileNumber')
+                ->select([
+                    'fileNumber.*',
+                    DB::raw("(SELECT TOP 1 land_use FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as land_use_derived"),
+                    DB::raw("(SELECT TOP 1 lga FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as lga_derived"),
+                    DB::raw("(SELECT TOP 1 created_by FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as created_by_derived"),
+                    'mls_file_no.batch_no'
+                ])
+                ->join('mls_file_no', 'fileNumber.mlsfNo', '=', 'mls_file_no.full_file_number')
+                // Conversion files only.
+                ->where('fileNumber.mlsfNo', 'like', 'CON-%')
+                // Same date window the batch-print card uses.
+                ->where(function ($q) use ($date) {
+                    $q->whereDate('mls_file_no.commissioning_date', $date)
+                        ->orWhereDate('mls_file_no.created_at', $date);
+                })
+                ->where(function ($q) {
+                    $q->whereNull('fileNumber.is_deleted')->orWhere('fileNumber.is_deleted', 0);
+                })
+                ->orderBy('fileNumber.mlsfNo')
+                ->get();
+
+            if ($records->isEmpty()) {
+                return abort(404, 'No conversion files found for ' . $date);
+            }
+
+            $acquisitionMethod = $request->query('method');
+            $specifyOther = $request->query('other');
+
+            $generateBy = (Auth::user()->first_name . ' ' . Auth::user()->last_name) ?: Auth::user()->name ?: Auth::user()->email ?: 'System';
+
+            // Assign / reuse serial numbers (bulk), same approach as the batch generator.
+            $currentMax = DB::connection('sqlsrv')->table('conversion_applications')->max('serial_no') ?? 0;
+            $nextSerial = $currentMax + 1;
+
+            $fileNumberIds = $records->pluck('id')->toArray();
+            $existingApps = DB::connection('sqlsrv')
+                ->table('conversion_applications')
+                ->whereIn('mls_file_no_id', $fileNumberIds)
+                ->get()
+                ->keyBy('mls_file_no_id');
+
+            $mlsfNumbers = $records->pluck('mlsfNo')->toArray();
+            $printCounts = DB::connection('sqlsrv')->table('print_logs')
+                ->whereIn('reference_number', $mlsfNumbers)
+                ->where('document_type', 'Application for Conversion')
+                ->select('reference_number', DB::raw('count(*) as total'))
+                ->groupBy('reference_number')
+                ->get()
+                ->keyBy('reference_number');
+
+            $conversionData = [];
+            foreach ($records as $record) {
+                $existingApp = $existingApps->get($record->id);
+
+                if ($existingApp && $existingApp->serial_no) {
+                    $record->serial_no = $existingApp->serial_no;
+                } else {
+                    $record->serial_no = $nextSerial;
+                    $conversionData[] = [
+                        'mls_file_no_id' => $record->id,
+                        'tracking_id' => $record->tracking_id,
+                        'full_file_number' => $record->mlsfNo,
+                        'serial_no' => $record->serial_no,
+                        'generated_by' => $generateBy,
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ];
+                    $nextSerial++;
+                }
+
+                $count = isset($printCounts[$record->mlsfNo]) ? $printCounts[$record->mlsfNo]->total : 0;
+                $record->watermarkText = ($count > 900) ? 'CERTIFIED TRUE COPY' : 'ORIGINAL';
+            }
+
+            if (!empty($conversionData)) {
+                DB::connection('sqlsrv')->table('conversion_applications')->insert($conversionData);
+            }
+
+            $watermarkText = 'ORIGINAL';
+
+            return view('generate_fileno.application_for_conversion', compact('records', 'acquisitionMethod', 'specifyOther', 'watermarkText'));
+
+        } catch (\Exception $e) {
+            \Log::error('Error generating Date Conversion Application: ' . $e->getMessage());
+            return abort(500, 'Error generating documents: ' . $e->getMessage());
+        }
+    }
+
     /**
      * Get the current print status for a document
      */

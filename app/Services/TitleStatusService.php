@@ -329,14 +329,74 @@ class TitleStatusService
             Log::warning("TitleStatus: Re-grant application insert failed for {$newFileNo}: " . $e->getMessage());
         }
 
-        $this->recordRegrantLink($newFileNo, $oldFileNo, $regrantedTo, $context);
+        $this->recordFileLink($newFileNo, $oldFileNo, $regrantedTo, $context, TitleStatusApplication::TYPE_REGRANT);
     }
 
     /**
-     * Upsert the related_file_number row for a Re-grant. Keyed on (source_table, source_id),
-     * which carries a unique constraint, so an existing row for the indexing record is updated.
+     * Flag a Resettlement and record its title-status application + linkage. This mirrors
+     * recordRegrant() exactly — the new file numbers like a normal file and keeps its own
+     * "Resettlement" tag — but stamps the Resettlement title type and remarks instead.
+     *
+     * $oldFileNo is optional: a Resettlement may be commissioned without ticking "This file
+     * has a Related File Number". The new file is then still flagged, with the shorter remark,
+     * and the old-file flags / linkage row are skipped since there is no file to point at.
+     *
+     * @param array $context file_indexing_id, prop_id, file_title, applicant_name, plot_no,
+     *                       district, lga, location, land_use, url — all optional.
      */
-    private function recordRegrantLink(string $newFileNo, string $oldFileNo, string $comment, array $context): void
+    public function recordResettlement(string $newFileNo, string $oldFileNo = '', array $context = []): void
+    {
+        $newFileNo = trim($newFileNo);
+        $oldFileNo = trim($oldFileNo);
+        if ($newFileNo === '') {
+            return;
+        }
+
+        $resettledFrom = $oldFileNo !== ''
+            ? "This File has been Resettled from {$oldFileNo}"
+            : 'This File has been Resettled';
+        $resettledTo   = "This File has been Resettled to {$newFileNo}";
+
+        $this->applyFlags($newFileNo, TitleStatusApplication::TYPE_RESETTLEMENT, $resettledFrom);
+
+        if ($oldFileNo !== '') {
+            $this->applyFlags($oldFileNo, TitleStatusApplication::TYPE_RESETTLEMENT, $resettledTo);
+        }
+
+        try {
+            TitleStatusApplication::create([
+                'url'            => $context['url'] ?? 'land',
+                'title_type'     => TitleStatusApplication::TYPE_RESETTLEMENT,
+                'source_table'   => 'file_indexings',
+                'source_id'      => $context['file_indexing_id'] ?? null,
+                'file_no'        => $newFileNo,
+                'see_fileno'     => $oldFileNo !== '' ? $oldFileNo : null,
+                'file_title'     => $context['file_title'] ?? null,
+                'applicant_name' => $context['applicant_name'] ?? null,
+                'plot_no'        => $context['plot_no'] ?? null,
+                'district'       => $context['district'] ?? null,
+                'lga'            => $context['lga'] ?? null,
+                'location'       => $context['location'] ?? null,
+                'land_use'       => $context['land_use'] ?? null,
+                'initiated_by'   => 'Ministry',
+                'reason'         => $resettledTo,
+                'remark'         => $resettledTo,
+                'status'         => TitleStatusApplication::STATUS_PENDING,
+                'captured_by'    => Auth::id(),
+            ]);
+        } catch (\Exception $e) {
+            Log::warning("TitleStatus: Resettlement application insert failed for {$newFileNo}: " . $e->getMessage());
+        }
+
+        $this->recordFileLink($newFileNo, $oldFileNo, $resettledTo, $context, TitleStatusApplication::TYPE_RESETTLEMENT);
+    }
+
+    /**
+     * Upsert the related_file_number row for a Re-grant or Resettlement. Keyed on
+     * (source_table, source_id), which carries a unique constraint, so an existing row for the
+     * indexing record is updated. $transactionType tags the link with the workflow that made it.
+     */
+    private function recordFileLink(string $newFileNo, string $oldFileNo, string $comment, array $context, string $transactionType): void
     {
         $indexingId = $context['file_indexing_id'] ?? null;
         if (empty($indexingId) || $oldFileNo === '') {
@@ -358,7 +418,7 @@ class TitleStatusService
             ];
 
             $optional = [
-                'transaction_type' => TitleStatusApplication::TYPE_REGRANT,
+                'transaction_type' => $transactionType,
                 'comment'          => $comment,
                 'file_title'       => $context['file_title'] ?? null,
             ];

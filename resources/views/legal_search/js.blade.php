@@ -933,6 +933,9 @@ const executeSearchAjax = (filters, searchData) => {
         // Lineage (previous/successor files + their commissioning info) — used by the
         // timeline to render the full commissioning chain (mother → split/CoP → child).
         window._lsLineage = data.lineage || null;
+        // Per-file lifecycle metadata (commissioning/decommissioning/temp flags) for
+        // every lifecycle owner surfaced in the result set.
+        window._lsLifecycleMeta = data.lifecycle_meta || {};
         // Whether the searched file is actually indexed (has its own file_indexings row).
         // When false, the synthetic "File Commissioning" timeline row is suppressed.
         const _apiIsIndexed = (data.is_indexed === true);
@@ -2448,6 +2451,7 @@ const executeSearchAjax = (filters, searchData) => {
         const _fnd = data.file_number_display || null;
         window._lsFileTempNumber = _tf;
         window._lsLineage = data.lineage || null;
+        window._lsLifecycleMeta = data.lifecycle_meta || {};
         const _isIndexed = (data.is_indexed === true);
         searchResults.forEach(function (r) {
           r._file_is_indexed = _isIndexed;
@@ -3327,27 +3331,64 @@ const executeSearchAjax = (filters, searchData) => {
     return result;
   };
 
-  // Business rule mirrored from LegalSearchService::placeKangisRecertBeforeCofo(). The
-  // recertification is what admits a legacy file into KANGIS and the KANGIS C of O is issued
-  // off the back of it, so it must render directly ABOVE the certificate. The backend already
-  // orders it that way, but sortTimelineChronologically() re-sorts by weight/date on the
-  // client, and a recert row carries an empty (or current-year) date that would otherwise
-  // strand it at the end of the list — so the rule is re-applied here after that sort.
+  // Lifecycle-transaction rule mirrored from LegalSearchService::placeKangisRecertBeforeCofo().
+  // Within one lifecycle's transaction phase, each KANGIS Recertification sits immediately
+  // above its matching KANGIS C of O, and duplicate recerts for the same KANGIS key are
+  // suppressed.
   const placeKangisRecertBeforeCofo = (rows) => {
     const typeOf = (r) => String(r?.transaction_type || r?.instrument_type || '').toLowerCase();
     const isCofo = (r) => typeOf(r).includes('certificate of occupanc');
     const isRecert = (r) => typeOf(r).includes('recertification');
 
-    const recertRows = rows.filter(isRecert);
-    if (!recertRows.length) return rows;
+    const cofoKeys = new Set();
+    rows.forEach((r) => {
+      if (!isCofo(r)) return;
+      const k = extractKangisLifecycleKey(r);
+      if (k) cofoKeys.add(k);
+    });
 
-    const rest = rows.filter(r => !isRecert(r));
-    // Before the FIRST C of O, so the recertification sits above every certificate on record.
-    const cofoIdx = rest.findIndex(isCofo);
-    if (cofoIdx < 0) return rows; // No C of O — leave the recert where it naturally sorted.
+    const seenRecert = new Set();
+    const pendingRecertByKey = new Map();
+    const pendingOrder = [];
+    const out = [];
 
-    rest.splice(cofoIdx, 0, ...recertRows);
-    return rest;
+    rows.forEach((r) => {
+      if (isRecert(r)) {
+        const key = extractKangisLifecycleKey(r);
+        const own = normalizeLifecycleFileNo(extractLifecycleFileNo(r) || '');
+        const dedupeKey = key || `ROW:${own}`;
+        if (seenRecert.has(dedupeKey)) return;
+        seenRecert.add(dedupeKey);
+
+        if (key && cofoKeys.has(key)) {
+          pendingRecertByKey.set(key, r);
+          pendingOrder.push(key);
+          return;
+        }
+
+        out.push(r);
+        return;
+      }
+
+      if (isCofo(r)) {
+        const key = extractKangisLifecycleKey(r);
+        if (key && pendingRecertByKey.has(key)) {
+          out.push(pendingRecertByKey.get(key));
+          pendingRecertByKey.delete(key);
+        }
+      }
+
+      out.push(r);
+    });
+
+    pendingOrder.forEach((key) => {
+      if (pendingRecertByKey.has(key)) {
+        out.push(pendingRecertByKey.get(key));
+        pendingRecertByKey.delete(key);
+      }
+    });
+
+    return out;
   };
 
   // Business rule: a Mortgage (Deed of Mortgage / Tripartite Mortgage) is later discharged by a
@@ -3488,6 +3529,7 @@ const executeSearchAjax = (filters, searchData) => {
       fileno: fileNo,
       file_number: fileNo,
       mlsFNo: fileNo,
+      lifecycle_file_no: fileNo,
       transaction_type: 'File Commissioning',
       instrument_type: 'File Commissioning',
       party_1: 'Kano State Ministry of Land and Physical Planning', party_2: ownerName, party_3: '-', party_4: '-',
@@ -3528,6 +3570,7 @@ const executeSearchAjax = (filters, searchData) => {
       fileno: no,
       file_number: no,
       mlsFNo: no,
+      lifecycle_file_no: no,
       transaction_type: 'File Commissioning',
       instrument_type: 'File Commissioning',
       party_1: 'Kano State Ministry of Land and Physical Planning',
@@ -3558,6 +3601,7 @@ const executeSearchAjax = (filters, searchData) => {
       fileno: no,
       file_number: no,
       mlsFNo: no,
+      lifecycle_file_no: no,
       transaction_type: 'File Decommissioning',
       instrument_type: 'File Decommissioning',
       party_1: 'Kano State Ministry of Land and Physical Planning',
@@ -3628,6 +3672,7 @@ const executeSearchAjax = (filters, searchData) => {
       fileno: fileNo,
       file_number: fileNo,
       mlsFNo: fileNo,
+      lifecycle_file_no: fileNo,
       transaction_type: 'File Decommissioning',
       instrument_type: 'File Decommissioning',
       party_1: 'Kano State Ministry of Land and Physical Planning',
@@ -3686,6 +3731,7 @@ const executeSearchAjax = (filters, searchData) => {
       fileno: tempFileNo,
       file_number: tempFileNo,
       mlsFNo: tempFileNo,
+      lifecycle_file_no: tempFileNo,
       transaction_type: 'Temporary File',
       instrument_type: 'Temporary File',
       party_1: 'Kano State Ministry of Land and Physical Planning', party_2: ownerName, party_3: '-', party_4: '-',
@@ -3698,77 +3744,568 @@ const executeSearchAjax = (filters, searchData) => {
     };
   };
 
+  // ---------------------------------------------------------------------------
+  // Lifecycle-file grouping: each file's complete lifecycle (commissioning →
+  // transactions → decommissioning) is rendered as a block, then the next file.
+  // ---------------------------------------------------------------------------
+
+  const normalizeLifecycleFileNo = (v) => {
+    let s = String(v || '').trim().toUpperCase();
+    s = s.replace(/\s+/g, ' ');
+    s = s.replace(/\s*\(\s*T\s*\)\s*$/i, '(T)');
+    return s;
+  };
+
+  const extractLifecycleFileNo = (item) => {
+    if (item?.lifecycle_file_no) return normalizeLifecycleFileNo(item.lifecycle_file_no);
+    const candidates = [
+      item?.file_no,
+      item?.fileno,
+      item?.file_number,
+      item?.mlsFNo,
+      item?.kangisFileNo,
+      item?.NewKANGISFileno,
+    ];
+    for (const c of candidates) {
+      const s = String(c || '').trim();
+      if (s && s !== '-') return normalizeLifecycleFileNo(s);
+    }
+    return null;
+  };
+
+  const isKangisFileNo = (v) => {
+    const t = identifyFileNumberType(v);
+    return t === 'kangis' || t === 'new_kangis';
+  };
+
+  const extractKangisLifecycleKey = (r) => {
+    const candidates = [
+      r?.kangisFileNo,
+      r?.NewKANGISFileno,
+      r?.file_no,
+      r?.fileno,
+      r?.file_number,
+      r?.mlsFNo,
+      r?.parent_file_number,
+    ];
+    for (const c of candidates) {
+      const s = String(c || '').trim();
+      if (s && s !== '-' && isKangisFileNo(s)) return normalizeLifecycleFileNo(s);
+    }
+    return '';
+  };
+
+  // A KANGIS number (e.g. "KNML 6992") is only an alias of a permanent land file;
+  // it has no lifecycle of its own. Build a KANGIS -> main-land map so KANGIS rows
+  // (Recertification, KANGIS C of O, …) roll into their owning file's lifecycle
+  // group instead of forming a phantom group of their own.
+  const buildKangisAliasMap = (rows) => {
+    const map = {};
+    const addPair = (kangis, main) => {
+      if (!kangis || !main) return;
+      const k = normalizeLifecycleFileNo(kangis);
+      const m = normalizeLifecycleFileNo(main);
+      if (k && m && k !== m && isKangisFileNo(k) && !isKangisFileNo(m)) map[k] = m;
+    };
+    // Pair the two numbers inside a "MAIN (ALIAS)" display string, e.g.
+    // "CON-COM-2023-197 (KNML 6992)" — order-independent: the KANGIS side becomes
+    // the alias, the land side its owning lifecycle file.
+    const addFromDisplay = (display) => {
+      const s = String(display || '').trim();
+      if (!s) return;
+      const m = s.match(/^(.+?)\s*\(\s*([^()]+?)\s*\)\s*$/);
+      const parts = m ? [m[1].trim(), m[2].trim()] : [s];
+      const kangisSide = parts.find(p => isKangisFileNo(p));
+      const mainSide = parts.find(p => p && p !== '-' && !isKangisFileNo(p));
+      if (kangisSide && mainSide) addPair(kangisSide, mainSide);
+    };
+
+    // Seed from the searched/selected file — the authoritative main <-> KANGIS pairing.
+    try {
+      if (selectedFile) {
+        addFromDisplay(selectedFile._file_number_display);
+        const fn = extractFileNumbers(selectedFile);
+        const mainNo = [fn.mls, fn.parent, fn.st].find(v => v && v !== '-');
+        [fn.kangis, fn.new_kangis].forEach(k => { if (k && k !== '-') addPair(k, mainNo); });
+      }
+    } catch (e) { /* best-effort */ }
+    // Seed from the raw searched/display strings too (covers "MAIN (KANGIS)" and the
+    // reverse "KANGIS (MAIN)" when the user searched by the KANGIS number).
+    addFromDisplay(window.__lsLastSearchedFileNumber);
+    addFromDisplay(userSelectedFileNumber);
+    // Seed from any row that carries both a land number and a KANGIS number, or a
+    // "MAIN (ALIAS)" display string of its own.
+    for (const r of (rows || [])) {
+      addFromDisplay(r?._file_number_display);
+      const nums = [r?.file_no, r?.fileno, r?.file_number, r?.mlsFNo, r?.kangisFileNo, r?.NewKANGISFileno, r?.parent_file_number]
+        .map(v => String(v || '').trim())
+        .filter(v => v && v !== '-');
+      const mainNo = nums.find(v => !isKangisFileNo(v));
+      if (!mainNo) continue;
+      nums.filter(v => isKangisFileNo(v)).forEach(k => addPair(k, mainNo));
+    }
+    return map;
+  };
+
+  const extractSerialFromFileNumber = (v) => {
+    const s = String(v || '').trim().replace(/\s*\(\s*T\s*\)\s*$/i, '');
+    const m = s.match(/(\d+)$/);
+    return m ? parseInt(m[1], 10) : null;
+  };
+
+  const isTempFileNo = (v) => /\(\s*T\s*\)\s*$/i.test(String(v || ''));
+
+  const baseFileNo = (v) => String(v || '').replace(/\s*\(\s*T\s*\)\s*$/i, '').trim();
+
+  const lifecycleMetaFor = (fileNo) => {
+    const meta = window._lsLifecycleMeta || {};
+    return meta[normalizeLifecycleFileNo(fileNo)] || meta[baseFileNo(fileNo)] || null;
+  };
+
+  const getHolderForFile = (fileNo, rowsForFile) => {
+    const meta = lifecycleMetaFor(fileNo);
+    if (meta?.commissioning_holder && String(meta.commissioning_holder).trim() !== '') {
+      return String(meta.commissioning_holder).trim();
+    }
+    const ordered = [...rowsForFile].sort((a, b) => (getTransactionTimestamp(a) ?? Infinity) - (getTransactionTimestamp(b) ?? Infinity));
+    for (const r of ordered) {
+      const p2 = String(r?.party_2 || '').trim();
+      if (p2 && p2 !== '-') return p2;
+      const p1 = String(r?.party_1 || '').trim();
+      if (p1 && p1 !== '-') return p1;
+    }
+    return selectedFile?._file_commissioning_holder || selectedFile?._file_title || selectedFile?.file_title || '-';
+  };
+
+  const buildLifecycleCommissioningRow = (fileNo, rowsForFile) => {
+    const no = baseFileNo(fileNo);
+    if (!no || no === '-') return null;
+
+    const meta = lifecycleMetaFor(fileNo);
+    // A genuine KLAES commissioning date (resolved server-side from mls_file_no) is
+    // the only real date shown here. A file NOT commissioned through KLAES (absent
+    // from mls_file_no, so meta.commissioning_date is '-') must show only the bare
+    // year embedded in its file number — never the date of its earliest transaction.
+    let date = '-';
+    if (meta?.commissioning_date && String(meta.commissioning_date).trim() !== '' && String(meta.commissioning_date).trim() !== '-') {
+      date = String(meta.commissioning_date).trim();
+    } else {
+      const year = extractYearFromFileNumber(no);
+      if (year) date = year;
+    }
+
+    const holder = getHolderForFile(fileNo, rowsForFile);
+
+    return {
+      _is_commissioning: true,
+      id: 'commissioning-' + no,
+      source_table: 'File Commissioning',
+      fileno: no,
+      file_number: no,
+      mlsFNo: no,
+      lifecycle_file_no: normalizeLifecycleFileNo(no),
+      transaction_type: 'File Commissioning',
+      instrument_type: 'File Commissioning',
+      party_1: 'Kano State Ministry of Land and Physical Planning',
+      party_2: holder,
+      party_3: '-',
+      party_4: '-',
+      serial_no: '', page_no: '', volume_no: '',
+      transaction_date: date,
+      reg_date: '',
+      caveat: 'No',
+      is_caveated: 0,
+      prop_id: '',
+    };
+  };
+
+  const buildLifecycleDecommissioningRow = (fileNo, rowsForFile) => {
+    const no = baseFileNo(fileNo);
+    if (!no || no === '-') return null;
+    const meta = lifecycleMetaFor(fileNo);
+    const date = (meta?.decommission_date && String(meta.decommission_date).trim() !== '' && String(meta.decommission_date).trim() !== '-')
+      ? String(meta.decommission_date).trim()
+      : '-';
+    const holder = getHolderForFile(fileNo, rowsForFile);
+    return {
+      _is_decommissioning: true,
+      id: 'decommissioning-' + no,
+      source_table: 'File Decommissioning',
+      fileno: no,
+      file_number: no,
+      mlsFNo: no,
+      lifecycle_file_no: normalizeLifecycleFileNo(no),
+      transaction_type: 'File Decommissioning',
+      instrument_type: 'File Decommissioning',
+      party_1: 'Kano State Ministry of Land and Physical Planning',
+      party_2: holder,
+      party_3: '-',
+      party_4: '-',
+      serial_no: '', page_no: '', volume_no: '',
+      transaction_date: date,
+      reg_date: '',
+      caveat: 'No',
+      is_caveated: 0,
+      prop_id: '',
+      comments: '-',
+    };
+  };
+
+  const classifyLifecycleEventType = (row) => {
+    const source = String(row?.source_table || '');
+    const instrument = String(row?.instrument_type || '');
+    const type = String(row?.transaction_type || '');
+    const synth = row?._synthesized === true;
+
+    if (source === 'File Commissioning' || source === 'DCIV File Commissioning'
+        || instrument === 'File Commissioning' || instrument === 'DCIV File Commissioning'
+        || type === 'File Commissioning' || type === 'DCIV File Commissioning'
+        || (synth && (instrument.includes('Commissioning') || type.includes('Commissioning')))) {
+      return 'File Commissioning';
+    }
+    if (source === 'Temporary File' || instrument === 'Temporary File' || type === 'Temporary File' || (synth && instrument.includes('Temporary File'))) {
+      return 'Temporary File';
+    }
+    if (source === 'File Decommissioning' || instrument === 'File Decommissioning' || type === 'File Decommissioning' || (synth && instrument.includes('Decommissioning'))) {
+      return 'File Decommissioning';
+    }
+    if (/kangis/i.test(type) && /recertification/i.test(type)) {
+      return 'Kangis Recertification';
+    }
+    return null;
+  };
+
+  const scoreLifecycleRow = (row, eventType) => {
+    const source = String(row?.source_table || '');
+    const instrument = String(row?.instrument_type || '');
+    const type = String(row?.transaction_type || '');
+    const date = String(row?.transaction_date || '').trim();
+
+    let score = 0;
+    // Prefer rows whose source_table matches the lifecycle event type.
+    if (source === eventType) score += 100;
+    // Prefer non-synthesized rows.
+    if (!row?._is_commissioning && !row?._is_decommissioning && !row?._is_temporary_file) score += 50;
+    // Prefer rows with a real transaction date.
+    if (date && date !== '-') score += 25;
+    // Prefer rows with a matching instrument type.
+    if (instrument === eventType) score += 10;
+    // Prefer rows with a matching transaction type.
+    if (type === eventType) score += 10;
+    return score;
+  };
+
+  const dedupeLifecycleRows = (groupedRows) => {
+    const result = {};
+    const lifecycleEventDedupeKey = (r) => {
+      const eventType = classifyLifecycleEventType(r);
+      if (!eventType) return null;
+      if (eventType === 'Kangis Recertification') {
+        const k = extractKangisLifecycleKey(r) || normalizeLifecycleFileNo(extractLifecycleFileNo(r) || '');
+        return `${eventType}|${k}`;
+      }
+      return eventType;
+    };
+
+    for (const fno of Object.keys(groupedRows)) {
+      const rows = groupedRows[fno];
+
+      // Pick the best-scored row per lifecycle-event key for the whole group.
+      // KANGIS recertification rows are keyed by KANGIS number so distinct KANGIS
+      // recerts can coexist while duplicates collapse.
+      const bestByKey = {};
+      for (const r of rows) {
+        const dedupeKey = lifecycleEventDedupeKey(r);
+        const eventType = classifyLifecycleEventType(r);
+        if (!dedupeKey || !eventType) continue;
+        if (!bestByKey[dedupeKey]
+            || scoreLifecycleRow(r, eventType) > scoreLifecycleRow(bestByKey[dedupeKey], eventType)) {
+          bestByKey[dedupeKey] = r;
+        }
+      }
+
+      // Rebuild preserving original order: emit each event key's winner at the
+      // position of its FIRST occurrence (so a Kangis Recertification stays directly
+      // above its C of O), and drop any subsequent duplicates.
+      const emitted = {};
+      const deduped = [];
+      for (const r of rows) {
+        const dedupeKey = lifecycleEventDedupeKey(r);
+        if (!dedupeKey) { deduped.push(r); continue; }
+        if (emitted[dedupeKey]) continue;
+        emitted[dedupeKey] = true;
+        deduped.push(bestByKey[dedupeKey]);
+      }
+
+      result[fno] = deduped;
+    }
+    return result;
+  };
+
+  const ensureLifecycleSyntheticRows = (groupedRows) => {
+    const result = {};
+    // The searched file's own lineage flag (window._lsLineage) describes ONLY that
+    // file — it must never decommission related/child files, whose decommission
+    // state comes from their own per-file metadata.
+    const searchedNo = normalizeLifecycleFileNo(userSelectedFileNumber || window._currentFileNumber || '');
+    const primaryMainNo = normalizeLifecycleFileNo(baseFileNo(searchedNo));
+    for (const fno of Object.keys(groupedRows)) {
+      const rows = groupedRows[fno];
+      const meta = lifecycleMetaFor(fno);
+      const hasCommissioning = rows.some(r =>
+        String(r?.source_table || '') === 'File Commissioning'
+        || String(r?.source_table || '') === 'DCIV File Commissioning'
+        || String(r?.instrument_type || '') === 'File Commissioning'
+        || String(r?.instrument_type || '') === 'DCIV File Commissioning'
+        || String(r?.transaction_type || '') === 'File Commissioning'
+        || String(r?.transaction_type || '') === 'DCIV File Commissioning'
+      );
+      const hasTemp = rows.some(r =>
+        String(r?.source_table || '') === 'Temporary File'
+        || String(r?.instrument_type || '') === 'Temporary File'
+        || String(r?.transaction_type || '') === 'Temporary File'
+      );
+      const hasDecommissioning = rows.some(r =>
+        String(r?.source_table || '') === 'File Decommissioning'
+        || String(r?.instrument_type || '') === 'File Decommissioning'
+        || String(r?.transaction_type || '') === 'File Decommissioning'
+      );
+
+      if (!hasCommissioning) {
+        const row = buildLifecycleCommissioningRow(fno, rows);
+        if (row) rows.push(row);
+      }
+      const shouldHaveTemp = (meta?.is_temp === true) || isTempFileNo(fno);
+      if (shouldHaveTemp && !hasTemp) {
+        const holder = getHolderForFile(fno, rows);
+        rows.push({
+          _is_temporary_file: true,
+          id: 'temporary-file-' + fno,
+          source_table: 'Temporary File',
+          fileno: fno,
+          file_number: fno,
+          mlsFNo: fno,
+          lifecycle_file_no: normalizeLifecycleFileNo(fno),
+          transaction_type: 'Temporary File',
+          instrument_type: 'Temporary File',
+          party_1: 'Kano State Ministry of Land and Physical Planning',
+          party_2: holder,
+          party_3: '-',
+          party_4: '-',
+          serial_no: '', page_no: '', volume_no: '',
+          transaction_date: '-',
+          reg_date: '',
+          caveat: 'No',
+          is_caveated: 0,
+          prop_id: '',
+          _synthesized: true
+        });
+      }
+      const metaDecommissioned = (meta?.is_decommissioned === true) || (meta?.is_decommissioned === 1);
+      const isSearchedFileGroup = (fno === searchedNo) || (fno === primaryMainNo);
+      const isDecommissioned = metaDecommissioned
+        || (isSearchedFileGroup && !!window._lsLineage?.is_superseded);
+      if (!hasDecommissioning && isDecommissioned) {
+        const dec = buildLifecycleDecommissioningRow(fno, rows);
+        if (dec) rows.push(dec);
+      }
+      result[fno] = rows;
+    }
+    return result;
+  };
+
+  const arrangeLifecycleFileRows = (rows) => {
+    const commissioning = [];
+    const temp = [];
+    const decommissioning = [];
+    const transactions = [];
+
+    // Classify by lifecycle event type — which also inspects transaction_type, so
+    // real related-file "File Commissioning"/"File Decommissioning" rows (whose label
+    // lives in transaction_type, not instrument_type) land in the right phase instead
+    // of falling through to the transactions bucket and sinking to the bottom.
+    for (const r of rows) {
+      const evt = classifyLifecycleEventType(r);
+      if (evt === 'File Commissioning') {
+        commissioning.push(r);
+      } else if (evt === 'Temporary File') {
+        temp.push(r);
+      } else if (evt === 'File Decommissioning') {
+        decommissioning.push(r);
+      } else {
+        // 'Kangis Recertification' and null both stay as associated transactions,
+        // preserving the weight/chronological order established before grouping.
+        transactions.push(r);
+      }
+    }
+
+    // Recertification/CoFO pairing executes strictly inside the current
+    // lifecycle's transaction phase so rows never leave their group.
+    const arrangedTransactions = placeKangisRecertBeforeCofo(transactions);
+
+    return [...commissioning, ...temp, ...arrangedTransactions, ...decommissioning];
+  };
+
+  const groupAndSortTimeline = (transactions) => {
+    // KANGIS aliases belong to their owning main land file's lifecycle.
+    const kangisToMain = buildKangisAliasMap(transactions);
+    // Anchor each KANGIS key to the lifecycle owner of its CofO row so matching
+    // recertifications can never drift into a different lifecycle group.
+    const cofoOwnerByKangis = {};
+    transactions.forEach((r) => {
+      const type = String(r?.transaction_type || r?.instrument_type || '').toLowerCase();
+      if (!type.includes('certificate of occupanc')) return;
+
+      const kangisKey = extractKangisLifecycleKey(r);
+      if (!kangisKey) return;
+
+      let owner = extractLifecycleFileNo(r);
+      if (owner && kangisToMain[owner]) owner = kangisToMain[owner];
+      if (!owner) return;
+
+      if (!cofoOwnerByKangis[kangisKey]) {
+        cofoOwnerByKangis[kangisKey] = owner;
+      }
+    });
+
+    const resolveLifecycleOwner = (r) => {
+      const type = String(r?.transaction_type || r?.instrument_type || '').toLowerCase();
+      const isRecert = type.includes('recertification');
+
+      if (isRecert) {
+        const kangisKey = extractKangisLifecycleKey(r);
+        if (kangisKey && cofoOwnerByKangis[kangisKey]) {
+          return cofoOwnerByKangis[kangisKey];
+        }
+      }
+
+      let fno = extractLifecycleFileNo(r);
+      if (fno && kangisToMain[fno]) fno = kangisToMain[fno];
+      return fno;
+    };
+
+    // Ensure every row carries a normalized lifecycle owner (KANGIS rows remapped).
+    let tagged = transactions.map(r => ({
+      ...r,
+      lifecycle_file_no: resolveLifecycleOwner(r),
+    }));
+
+    // The primary file is the one the user actually searched. When a temp file
+    // number is searched, its main/base file is treated as the primary group.
+    const searchedNo = normalizeLifecycleFileNo(
+      userSelectedFileNumber || window._currentFileNumber || ''
+    );
+    const searchedIsTemp = isTempFileNo(searchedNo);
+    const primaryFileNo = searchedIsTemp ? normalizeLifecycleFileNo(baseFileNo(searchedNo)) : searchedNo;
+    const mainFileNo = normalizeLifecycleFileNo(baseFileNo(searchedNo));
+
+    // Group rows by lifecycle owner. For temp-file searches, merge the temp file's
+    // rows into the main file's group so the lifecycle reads:
+    //   main commissioning → temp commissioning → temp transactions → ...
+    const grouped = {};
+    for (const r of tagged) {
+      let fno = r.lifecycle_file_no;
+      if (!fno) continue;
+      if (searchedIsTemp && fno === searchedNo) {
+        fno = mainFileNo;
+      }
+      if (!grouped[fno]) grouped[fno] = [];
+      grouped[fno].push(r);
+    }
+
+    // Ensure the primary/main file exists as a group even if it has no transaction rows.
+    if (primaryFileNo && !grouped[primaryFileNo]) grouped[primaryFileNo] = [];
+
+    // Add missing commissioning/temp/decommissioning rows, then dedupe so each
+    // lifecycle event type appears at most once per file.
+    const enriched = ensureLifecycleSyntheticRows(grouped);
+    const deduped = dedupeLifecycleRows(enriched);
+
+    // Effective lifecycle start for each file: prefer server-side metadata,
+    // then fall back to the earliest dated row in the group.
+    const fileEffectiveStart = {};
+    for (const fno of Object.keys(deduped)) {
+      const meta = lifecycleMetaFor(fno);
+      let metaTs = null;
+      if (meta?.effective_start_timestamp) {
+        metaTs = parseInt(meta.effective_start_timestamp, 10) * 1000;
+      } else if (meta?.commissioning_timestamp) {
+        metaTs = parseInt(meta.commissioning_timestamp, 10) * 1000;
+      }
+      if (metaTs && !isNaN(metaTs)) {
+        fileEffectiveStart[fno] = metaTs;
+        continue;
+      }
+      let minTs = Infinity;
+      for (const r of deduped[fno]) {
+        const ts = getTransactionTimestamp(r);
+        if (ts !== null && ts < minTs) minTs = ts;
+      }
+      fileEffectiveStart[fno] = minTs === Infinity ? Infinity : minTs;
+    }
+
+    const files = Object.keys(deduped);
+    files.sort((a, b) => {
+      const aPrimary = (a === primaryFileNo);
+      const bPrimary = (b === primaryFileNo);
+      if (aPrimary && !bPrimary) return -1;
+      if (bPrimary && !aPrimary) return 1;
+
+      // Main file always precedes the temp variant when both exist.
+      if (searchedIsTemp) {
+        if (a === mainFileNo) return -1;
+        if (b === mainFileNo) return 1;
+      }
+
+      const ta = fileEffectiveStart[a] ?? Infinity;
+      const tb = fileEffectiveStart[b] ?? Infinity;
+      if (ta !== tb) return ta - tb;
+
+      const sa = extractSerialFromFileNumber(a);
+      const sb = extractSerialFromFileNumber(b);
+      if (sa !== null && sb !== null && sa !== sb) return sa - sb;
+
+      return a.localeCompare(b);
+    });
+
+    let result = [];
+    for (const fno of files) {
+      result = result.concat(arrangeLifecycleFileRows(deduped[fno]));
+    }
+    return result;
+  };
+
   const renderTimeline = async () => {
     let transactions = window._preferredRelatedTransactions || window._allRelatedTransactions || [];
     const timelineTable = document.getElementById('timeline-table');
     if (!timelineTable) return;
     timelineTable.innerHTML = '';
 
-    // Timeline view must be chronological by Transaction Date.
+    // First sort chronologically by weight/date across the whole result set, then
+    // group by lifecycle owner so each file's commissioning → transactions →
+    // decommissioning is displayed as a continuous block.
     transactions = sortTimelineChronologically(transactions);
-    // …except a KANGIS Recertification, which always sits directly above the KANGIS C of O.
-    transactions = placeKangisRecertBeforeCofo(transactions);
+    // KANGIS Recertification/CoFO pairing is applied per lifecycle transaction
+    // phase inside arrangeLifecycleFileRows().
     // A Mortgage always sits directly above the Surrender & Release that discharges it,
     // regardless of transaction date.
     transactions = placeMortgageAboveSurrender(transactions);
 
-    // Synthetic "File Commissioning" rows. Only the SEARCHED file gets a
-    // commissioning row (weight 12) at the top — predecessor "mother" files show
-    // through their real transactions (CofO, recertification, parcel-update rows)
-    // but never as a synthetic commissioning row. Successor commissioning rows
-    // follow the parcel-update row that retired the searched file.
-    const commissioningRow = buildCommissioningTimelineRow(); // null when the file is not yet indexed
-    // "Temporary File" row sits directly below File Commissioning when present.
+    // Synthetic lifecycle rows for the searched file and its successors.
+    const commissioningRow = buildCommissioningTimelineRow(); // null when not indexed
     const temporaryFileRow = buildTemporaryFileTimelineRow();
-    const searchedPair = [commissioningRow, temporaryFileRow].filter(Boolean);
-
-    const normalizeNo = (v) => String(v || '').toUpperCase().replace(/\s+/g, '').replace(/\(T\)$/, '');
-    // Fall back to the searched/indexed number when there's no commissioning row so
-    // successor-row de-duplication still keys off the searched file.
-    const searchedNoKey = normalizeNo(
-      (commissioningRow && commissioningRow.fileno)
-      || (selectedFile && (selectedFile._file_index_number || selectedFile.mlsFNo || selectedFile.fileno || selectedFile.file_number))
-      || window._currentFileNumber
-      || ''
-    );
-
-    transactions = [...searchedPair, ...transactions];
-
-    // "File Decommissioning" row — when the searched file has itself been decommissioned,
-    // its own history ends at the decommission. Insert the row immediately BEFORE the first
-    // parcel-update row (the Subdivision / CoP / Merger event that retired it), i.e. right
-    // after the file's last own transaction. The successor commissioning rows below then land
-    // after that parcel-update row, giving: history → File Decommissioning → parcel-update →
-    // child File Commissioning(s).
     const decommissioningRow = buildDecommissioningTimelineRow();
-    if (decommissioningRow) {
-      let firstParcelIdx = -1;
-      for (let i = 0; i < transactions.length; i++) {
-        if (isParcelUpdateRow(transactions[i])) { firstParcelIdx = i; break; }
-      }
-      if (firstParcelIdx >= 0) {
-        transactions.splice(firstParcelIdx, 0, decommissioningRow);
-      } else {
-        transactions.push(decommissioningRow);
-      }
-    }
+    const successorRows = buildSuccessorCommissioningRows();
 
-    // Successor commissioning rows — the searched file was superseded, so each
-    // successor's commissioning appears after the parcel-update transaction that
-    // retired the searched file (the last one on the timeline), else at the end.
-    const successorRows = buildSuccessorCommissioningRows()
-      .filter(r => normalizeNo(r.fileno) !== searchedNoKey);
-    if (successorRows.length) {
-      let retiredIdx = -1;
-      for (let i = transactions.length - 1; i >= 0; i--) {
-        if (isParcelUpdateRow(transactions[i])) { retiredIdx = i; break; }
-      }
-      if (retiredIdx >= 0) {
-        transactions.splice(retiredIdx + 1, 0, ...successorRows);
-      } else {
-        transactions.push(...successorRows);
-      }
-    }
+    transactions = [
+      ...transactions,
+      ...(commissioningRow ? [commissioningRow] : []),
+      ...(temporaryFileRow ? [temporaryFileRow] : []),
+      ...(decommissioningRow ? [decommissioningRow] : []),
+      ...successorRows,
+    ];
+
+    transactions = groupAndSortTimeline(transactions);
 
     const timelineTotalCount = document.getElementById('timeline-total-count');
     if (timelineTotalCount) {
@@ -3811,7 +4348,11 @@ const executeSearchAjax = (filters, searchData) => {
     // Expose for the one-time bound click handlers below.
     window._isSurrenderOrRelease = isSurrenderOrRelease;
 
+    let previousLifecycleFileNo = null;
     transactions.forEach((item, idx) => {
+      const currentLifecycleFileNo = item.lifecycle_file_no || extractLifecycleFileNo(item);
+      const isFirstRowOfGroup = currentLifecycleFileNo && currentLifecycleFileNo !== previousLifecycleFileNo;
+      previousLifecycleFileNo = currentLifecycleFileNo;
       const date = getMappedValue(item, 'date');
       const transType = toProperCase(getMappedValue(item, 'transactionType'));
       const party1 = toProperCase(item.party_1 || '-');
@@ -3835,6 +4376,9 @@ const executeSearchAjax = (filters, searchData) => {
       row.dataset.originalIndex = idx;
       const tintClass = sourceRowTintClass(item.source_table);
       if (tintClass) row.classList.add(tintClass);
+      if (isFirstRowOfGroup && idx > 0) {
+        row.classList.add('ls-group-divider');
+      }
       // Rule B: the Weight column reports the key this row was actually sorted on.
       // Floating events (parcel updates, decommissionings) and lineage rows placed by
       // splice have no weight, and must not claim one — a number here next to a row that

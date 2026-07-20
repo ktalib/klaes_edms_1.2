@@ -1,12 +1,208 @@
 <?php
 namespace App\Http\Controllers;
 
+use App\Models\FileTracker;
+use App\Services\FileLocationResolver;
+use App\Services\ShelfRackLocator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class TrackFileArchiveController extends Controller
 {
+    /**
+     * Full archive detail for one file number — everything the Track File
+     * (Archive) card renders, assembled server-side from the same sources
+     * Quick Search uses (FileLocationResolver for status/location/registry,
+     * ShelfRackLocator for the derived rack/shelf, the file tracker for
+     * movement history) plus the print label for the tracking ID / land use.
+     *
+     * Accepts a file number OR a tracking ID, so a QR scan of either resolves.
+     */
+    public function details(Request $request, FileLocationResolver $resolver, ShelfRackLocator $locator)
+    {
+        $query = trim((string) $request->get('file_number', $request->get('query', '')));
+
+        if ($query === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'File number is required.',
+            ], 422);
+        }
+
+        try {
+            // A scanned tracking ID has to become a file number before the
+            // resolver (which only understands file numbers) can place it.
+            $fileNumber = $this->fileNumberForIdentifier($query);
+
+            $result   = $resolver->resolve($fileNumber);
+            $indexing = $result['indexing'] ?? null;
+            $tracker  = $result['tracker'] ?? null;
+
+            $label = $this->findLabelRecord($fileNumber);
+
+            // Recorded shelf wins; fall back to the shelf_rack_ranges map and
+            // flag it so the UI can show that it was inferred, not recorded.
+            $rackShelf  = $result['rack_shelf'] ?? null;
+            $isDerived  = false;
+
+            if (!$rackShelf) {
+                $rackShelf = $locator->resolve($fileNumber, $indexing->registry ?? null);
+                $isDerived = $rackShelf !== null;
+            }
+
+            $rackShelf = $this->normalizeShelfLocation($rackShelf);
+
+            // "A11" => rack "A", shelf "11".
+            $rack  = $rackShelf ? (substr($rackShelf, 0, 1) ?: null) : null;
+            $shelf = ($rackShelf && strlen($rackShelf) > 1) ? substr($rackShelf, 1) : null;
+
+            $qrPayload = $label ? $this->decodeQrCodeData($label->qr_code_data) : [];
+
+            $trackingId = ($tracker instanceof FileTracker ? $tracker->tracking_id : null)
+                ?: ($indexing->tracking_id ?? null)
+                ?: ($qrPayload['tracking_id'] ?? $qrPayload['trackingId'] ?? null);
+
+            $landUse = ($indexing->land_use_type ?? null)
+                ?: ($qrPayload['land_use_type'] ?? $qrPayload['landUseType'] ?? null)
+                ?: ($label->land_use_type ?? null);
+
+            $registryId   = $indexing->registry ?? null;
+            $registryName = $result['registry'] ?? null;
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'file_number'      => $result['file_number'] ?? $fileNumber,
+                    'searched_for'     => $query,
+                    'file_title'       => $indexing->file_title ?? ($tracker instanceof FileTracker ? $tracker->file_title : null),
+                    'tracking_id'      => $trackingId,
+                    'land_use_type'    => $landUse,
+                    'registry'         => $registryName ?: $registryId,
+                    'registry_id'      => $registryId,
+                    'registry_name'    => $registryName,
+                    'status'           => $result['status'] ?? null,
+                    'current_location' => $result['current_location'] ?? null,
+                    'holder'           => $result['tracker'] instanceof FileTracker
+                        ? ($result['tracker']->receiving_officer_name ?: null)
+                        : null,
+                    'held_since'           => $result['held_since'] ?? null,
+                    'duration_with_holder' => $result['duration_with_holder'] ?? null,
+                    // "Last updated" on the movement panel reports when the
+                    // file's indexing record last changed, not the tracker.
+                    'indexing_updated_at' => $indexing->updated_at ?? null,
+                    'indexing_updated_by' => $indexing->updated_by ?? null,
+                    'rack'             => $rack,
+                    'shelf'            => $shelf,
+                    'rack_shelf'       => $rackShelf,
+                    'shelf_is_derived' => $isDerived,
+                    'tracker'          => $tracker instanceof FileTracker ? [
+                        'id'                  => $tracker->id,
+                        'tracking_id'         => $tracker->tracking_id,
+                        'status'              => $tracker->status,
+                        'current_office_name' => $tracker->current_office_name,
+                        'department'          => $tracker->department,
+                        'deadline'            => $tracker->deadline,
+                        'is_overdue'          => $tracker->is_overdue,
+                        'timeline_status'     => $tracker->timeline_status,
+                        'days_until_deadline' => $tracker->days_until_deadline,
+                        'request_purpose_name' => $tracker->request_purpose_name,
+                        'updated_at'          => $tracker->updated_at,
+                    ] : null,
+                    'movement_history' => $tracker instanceof FileTracker ? $this->movementLogOf($tracker) : [],
+                    'prior_movements'  => $tracker instanceof FileTracker ? $this->priorMovementsFor($tracker) : [],
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('TrackFileArchiveController::details failed', [
+                'query'   => $query,
+                'message' => $e->getMessage(),
+                'exception' => $e,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to load archive details for this file.',
+            ], 500);
+        }
+    }
+
+    /**
+     * Treat the scanned/typed value as a tracking ID first (that is what the
+     * printed QR carries) and swap in the tracker's file number when it hits;
+     * otherwise the value is already a file number.
+     */
+    protected function fileNumberForIdentifier(string $identifier): string
+    {
+        $tracker = FileTracker::where('tracking_id', $identifier)
+            ->orderByDesc('id')
+            ->first(['file_number']);
+
+        $fileNumber = trim((string) ($tracker->file_number ?? ''));
+
+        return $fileNumber !== '' ? $fileNumber : $identifier;
+    }
+
+    /**
+     * The most recent print label row for a file number, matched on the same
+     * variants labelMetadata() builds. Keyed lookup rather than a table scan.
+     */
+    protected function findLabelRecord(string $fileNumber)
+    {
+        $variants = array_map(
+            static fn ($v) => strtoupper(trim($v)),
+            $this->buildFileNumberVariants($fileNumber)
+        );
+
+        return DB::connection('sqlsrv')
+            ->table('print_label_batch_items')
+            ->whereIn(DB::raw('UPPER(LTRIM(RTRIM(file_number)))'), $variants)
+            ->orderByDesc('id')
+            ->first(['id', 'file_number', 'land_use_type', 'shelf_location', 'qr_code_data']);
+    }
+
+    /**
+     * Movement log entries of a tracker as an array.
+     */
+    protected function movementLogOf(FileTracker $tracker): array
+    {
+        $log = is_array($tracker->movement_log)
+            ? $tracker->movement_log
+            : (json_decode((string) $tracker->movement_log, true) ?? []);
+
+        return is_array($log) ? $log : [];
+    }
+
+    /**
+     * Movement entries from this file's earlier tracking cycles, so the
+     * timeline shows the file's whole history and not just the current cycle.
+     */
+    protected function priorMovementsFor(FileTracker $tracker): array
+    {
+        $fileNumber = trim((string) $tracker->file_number);
+
+        if ($fileNumber === '') {
+            return [];
+        }
+
+        $rows = FileTracker::query()
+            ->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = ?', [mb_strtoupper($fileNumber)])
+            ->where('id', '<', $tracker->id)
+            ->orderBy('id')
+            ->get(['id', 'movement_log']);
+
+        $entries = [];
+        foreach ($rows as $row) {
+            foreach ($this->movementLogOf($row) as $entry) {
+                if (is_array($entry)) {
+                    $entries[] = $entry;
+                }
+            }
+        }
+
+        return $entries;
+    }
+
     /**
      * Display the Track File (Archive) page.
      */

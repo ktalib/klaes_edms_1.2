@@ -1430,6 +1430,7 @@ class OpResettlementApplicationController extends Controller
     public function opBatchCapture(Request $request): JsonResponse
     {
         $validated = $request->validate([
+            'op_batch' => 'nullable|string|max:50',   // resume an existing uncommissioned batch
             'ops' => 'required|array|min:1',
             'ops.*.op_type' => 'required|string|in:OP Resettlement,OP Direct Allocation',
             'ops.*.status' => 'required|string|in:Normal',
@@ -1452,8 +1453,21 @@ class OpResettlementApplicationController extends Controller
             'ops.*.deeds_time' => 'nullable|string|max:100',
         ]);
 
-        // One shared Batch ID for every OP created in this save.
-        $opBatch = 'OPB-' . date('Ymd') . '-' . time();
+        // One shared Batch ID for every OP created in this save. When resuming an existing
+        // batch, keep its id so added records join the same group — but only while that batch
+        // is still uncommissioned.
+        $resume = trim((string) ($validated['op_batch'] ?? ''));
+        if ($resume !== '') {
+            if ($this->opBatchIsCommissioned($resume)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Batch ' . $resume . ' has already been commissioned and can no longer be changed.',
+                ], 422);
+            }
+            $opBatch = $resume;
+        } else {
+            $opBatch = 'OPB-' . date('Ymd') . '-' . time();
+        }
         $allocator = app(\App\Services\PropertyIdAllocationService::class);
         $now = now();
         $created = [];
@@ -1492,6 +1506,8 @@ class OpResettlementApplicationController extends Controller
                                 'plot_no' => ($op['plot_no'] ?? null) ?: null,
                                 'lgsaOrCity' => ($op['lga'] ?? null) ?: null,
                                 'land_use' => ($op['land_use'] ?? null) ?: null,
+                                'purpose' => ($op['purpose'] ?? null) ?: null,
+                                'purpose_id' => ($op['purpose_id'] ?? null) ?: null,
                                 'Grantee' => $allottee,
                                 'party_2' => $allottee,
                                 'updated_at' => $now->toDateTimeString(),
@@ -1543,8 +1559,11 @@ class OpResettlementApplicationController extends Controller
                         'plot_no' => ($op['plot_no'] ?? null) ?: null,
                         'lgsaOrCity' => ($op['lga'] ?? null) ?: null,
                         'land_use' => ($op['land_use'] ?? null) ?: null,
-                        // NB: pra has no `purpose` column in this DB — Purpose is carried through the
-                        // UI backfill into the commission record (which stores purpose_id), not on pra.
+                        // Purpose is persisted here (2026_07_19_140000) so a saved batch can be
+                        // reopened for editing with its Purpose intact. It is still ALSO carried
+                        // through the UI backfill into the commission record's purpose_id.
+                        'purpose' => ($op['purpose'] ?? null) ?: null,
+                        'purpose_id' => ($op['purpose_id'] ?? null) ?: null,
                         // Shared batch group id; capture order (pra.id asc) is the batch sequence.
                         'op_batch' => $opBatch,
                         'source' => 'OP Batch Commissioning',
@@ -1598,6 +1617,234 @@ class OpResettlementApplicationController extends Controller
             'updated_count' => $updatedCount,
             'new_count' => $newCount,
             'ops' => $created,
+        ]);
+    }
+
+    /**
+     * Base query for the OP rows of a batch: captured by Batch Capture, still unlinked.
+     */
+    private function opBatchRowsQuery(string $opBatch)
+    {
+        return DB::connection('sqlsrv')->table('pra')
+            ->where('op_batch', $opBatch)
+            ->where('instrument_type', 'Occupancy Permit (OP)')
+            ->whereNull('mlsFNo')
+            ->whereNull('source_op_id')
+            ->where(function ($w) {
+                $w->where('is_deleted', 0)->orWhereNull('is_deleted');
+            });
+    }
+
+    /**
+     * A batch is "commissioned" once file numbers have been generated against it — either a
+     * mls_file_no row carries the batch id, or one of its pra rows has picked up an mlsFNo.
+     * Editing and deleting are only permitted while a batch is still uncommissioned.
+     */
+    private function opBatchIsCommissioned(string $opBatch): bool
+    {
+        $inMls = DB::connection('sqlsrv')->table('mls_file_no')
+            ->where('op_batch', $opBatch)->exists();
+        if ($inMls) return true;
+
+        return DB::connection('sqlsrv')->table('pra')
+            ->where('op_batch', $opBatch)
+            ->whereNotNull('mlsFNo')
+            ->exists();
+    }
+
+    /**
+     * List every uncommissioned OP batch, so the user can resume one instead of starting over.
+     *
+     * Each entry carries enough to identify the batch on sight: its id, when it was captured,
+     * how many records it currently holds, and a preview of the first few allottee names.
+     */
+    public function opUncommissionedBatches(): JsonResponse
+    {
+        try {
+            // Candidate batches: captured by Batch Capture OP and not yet commissioned.
+            $groups = DB::connection('sqlsrv')->table('pra')
+                ->whereNotNull('op_batch')
+                ->where('source', 'OP Batch Commissioning')
+                ->where('instrument_type', 'Occupancy Permit (OP)')
+                ->whereNull('mlsFNo')
+                ->whereNull('source_op_id')
+                ->where(function ($w) {
+                    $w->where('is_deleted', 0)->orWhereNull('is_deleted');
+                })
+                ->groupBy('op_batch')
+                ->select(
+                    'op_batch',
+                    DB::raw('COUNT(*) as cnt'),
+                    DB::raw('MIN(created_at) as created_at'),
+                    // Whoever captured the batch — the first OP's creator (pra.created_by
+                    // holds the user id as a string).
+                    DB::raw('MIN(created_by) as created_by')
+                )
+                ->orderByRaw('MIN(created_at) DESC')
+                ->get();
+
+            // Resolve capturer names in one query rather than per batch.
+            $userIds = $groups->pluck('created_by')
+                ->filter(fn ($v) => is_numeric($v))->map(fn ($v) => (int) $v)->unique()->values();
+            $userNames = $userIds->isEmpty()
+                ? collect()
+                : DB::connection('sqlsrv')->table('users')
+                    ->whereIn('id', $userIds)
+                    ->get(['id', 'first_name', 'last_name', 'username'])
+                    ->mapWithKeys(function ($u) {
+                        $name = trim(trim((string) $u->first_name) . ' ' . trim((string) $u->last_name));
+                        return [(int) $u->id => ($name !== '' ? $name : (string) $u->username)];
+                    });
+
+            $batches = [];
+            foreach ($groups as $g) {
+                $opBatch = trim((string) $g->op_batch);
+                if ($opBatch === '' || $this->opBatchIsCommissioned($opBatch)) continue;
+
+                $names = $this->opBatchRowsQuery($opBatch)
+                    ->orderBy('id')->limit(5)->pluck('party_2')
+                    ->map(fn ($n) => trim((string) $n))->filter()->values();
+
+                $byId = is_numeric($g->created_by) ? (int) $g->created_by : null;
+
+                $batches[] = [
+                    'op_batch'    => $opBatch,
+                    'count'       => (int) $g->cnt,
+                    'created_at'  => $g->created_at,
+                    'captured_by' => ($byId !== null ? ($userNames[$byId] ?? null) : null),
+                    'allottees'   => $names,
+                    'more'        => max(0, (int) $g->cnt - $names->count()),
+                ];
+            }
+
+            return response()->json(['success' => true, 'batches' => $batches]);
+        } catch (\Throwable $e) {
+            Log::channel('op_batch')->error('Listing uncommissioned batches failed', [
+                'user' => Auth::id(), 'error' => $e->getMessage(),
+            ]);
+            return response()->json(['success' => false, 'message' => 'Could not load batches.'], 500);
+        }
+    }
+
+    /**
+     * Full records of one uncommissioned batch, shaped like the stepper's in-memory forms so
+     * they can be loaded straight back into the Batch Capture OP card for editing.
+     */
+    public function opUncommissionedBatchRecords(Request $request): JsonResponse
+    {
+        $validated = $request->validate(['op_batch' => 'required|string|max:50']);
+        $opBatch = trim($validated['op_batch']);
+
+        if ($this->opBatchIsCommissioned($opBatch)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Batch ' . $opBatch . ' has already been commissioned and can no longer be edited.',
+            ], 422);
+        }
+
+        $rows = $this->opBatchRowsQuery($opBatch)->orderBy('id')->get();
+
+        $forms = $rows->map(fn ($r) => [
+            'op_id'            => (int) $r->id,
+            'op_type'          => $r->op_type ?: '',
+            'status'           => $r->status ?: 'Normal',
+            'system_fileno'    => $r->temp_fileno ?: ($r->fileno ?: ''),
+            'op_serial_number' => (string) ($r->op_serial_number ?? ''),
+            'transaction_date' => $r->transaction_date ? substr((string) $r->transaction_date, 0, 10) : '',
+            'land_use'         => $r->land_use ?: '',
+            'land_use_id'      => '',   // resolved client-side from the code, against the loaded options
+            'grantee'          => $r->party_2 ?: ($r->Grantee ?: ''),
+            'purpose_id'       => $r->purpose_id ? (string) $r->purpose_id : '',
+            'purpose_name'     => (string) ($r->purpose ?? ''),
+            'lga'              => $r->lgsaOrCity ?: '',
+            'plot'             => (string) ($r->plot_no ?? ''),
+            'street'           => '',
+            'district'         => '',
+            'district_other'   => '',
+            'location'         => $r->location ?: '',
+            'serial_no'        => (string) ($r->serialNo ?? ''),
+            'page_no'          => (string) ($r->pageNo ?? ''),
+            'volume_no'        => (string) ($r->volumeNo ?? ''),
+            'deeds_date'       => (string) ($r->deeds_date ?? ''),
+            'deeds_time'       => (string) ($r->deeds_time ?? ''),
+        ])->values();
+
+        return response()->json([
+            'success'  => true,
+            'op_batch' => $opBatch,
+            'count'    => $forms->count(),
+            'forms'    => $forms,
+        ]);
+    }
+
+    /**
+     * Permanently remove one record from an uncommissioned batch.
+     *
+     * These file numbers were never commissioned, so the row is HARD deleted rather than
+     * flagged — along with the parcel identity minted for it, provided nothing else claims
+     * that prop_id. The consumed temp_fileno_sequence id is intentionally left burned: TEMP
+     * numbers are never reissued.
+     */
+    public function opBatchDeleteRecord(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'op_batch' => 'required|string|max:50',
+            'op_id'    => 'required|integer',
+        ]);
+        $opBatch = trim($validated['op_batch']);
+        $opId = (int) $validated['op_id'];
+
+        if ($this->opBatchIsCommissioned($opBatch)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Batch ' . $opBatch . ' has been commissioned — its records can no longer be deleted.',
+            ], 422);
+        }
+
+        $row = $this->opBatchRowsQuery($opBatch)->where('id', $opId)->first();
+        if (!$row) {
+            return response()->json([
+                'success' => false,
+                'message' => 'That record is not part of uncommissioned batch ' . $opBatch . '.',
+            ], 404);
+        }
+
+        try {
+            DB::connection('sqlsrv')->transaction(function () use ($row, $opId) {
+                DB::connection('sqlsrv')->table('pra')->where('id', $opId)->delete();
+
+                // Drop the parcel identity too, but only if this OP was its sole claimant.
+                $propId = $row->prop_id;
+                if ($propId) {
+                    $stillUsed = DB::connection('sqlsrv')->table('pra')
+                            ->where('prop_id', $propId)->exists()
+                        || DB::connection('sqlsrv')->table('file_indexings')
+                            ->where('prop_id', $propId)->exists();
+                    if (!$stillUsed) {
+                        DB::connection('sqlsrv')->table('PropID_Master')
+                            ->where('prop_id', $propId)->delete();
+                    }
+                }
+            });
+        } catch (\Throwable $e) {
+            Log::channel('op_batch')->error('Batch record delete failed', [
+                'user' => Auth::id(), 'op_batch' => $opBatch, 'op_id' => $opId, 'error' => $e->getMessage(),
+            ]);
+            return response()->json(['success' => false, 'message' => 'Delete failed: ' . $e->getMessage()], 500);
+        }
+
+        $remaining = $this->opBatchRowsQuery($opBatch)->count();
+
+        Log::channel('op_batch')->info('Hard-deleted record from uncommissioned batch', [
+            'user' => Auth::id(), 'op_batch' => $opBatch, 'op_id' => $opId,
+            'temp_fileno' => $row->temp_fileno, 'prop_id' => $row->prop_id, 'remaining' => $remaining,
+        ]);
+
+        return response()->json([
+            'success'   => true,
+            'message'   => 'Record removed from batch ' . $opBatch . '.',
+            'op_batch'  => $opBatch,
+            'remaining' => $remaining,
         ]);
     }
 

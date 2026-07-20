@@ -254,6 +254,14 @@ class IndexedFileTableController extends Controller
             return is_numeric($value) ? (int) $value : null;
         })->filter()->values();
 
+        // For KANGIS / SLTR registries the physical Shelf/Rack label lives in the
+        // print-label batch tables (KANGIS never syncs it back to file_indexings).
+        // Build a fallback lookup so the indexed table can show the shelf location.
+        $registryUpperForShelf = strtoupper(trim((string) $registry));
+        $shelfLookup = in_array($registryUpperForShelf, ['KANGIS', 'SLTR'], true)
+            ? $this->buildBatchShelfLookup($items, $indexedIds)
+            : ['byId' => [], 'byFileNo' => []];
+
         $scanningCounts = $indexedIds->isEmpty()
             ? collect()
             : DB::connection('sqlsrv')
@@ -337,7 +345,7 @@ class IndexedFileTableController extends Controller
         // Since created_by now contains names directly, no need for user lookup
         $creators = collect();
 
-        $data = $items->map(function ($item) use ($scanningCounts, $pageTypingCounts, $creators, $groupingFallbacks, $relatedFileCounts, $edmsFolderMap, $duplicateSet) {
+        $data = $items->map(function ($item) use ($scanningCounts, $pageTypingCounts, $creators, $groupingFallbacks, $relatedFileCounts, $edmsFolderMap, $duplicateSet, $shelfLookup) {
             $scanned = (int) ($scanningCounts->get($item->id) ?? 0);
             $typed = (int) ($pageTypingCounts->get($item->id) ?? 0);
             $hasRelatedFilesFromLinks = (int) ($relatedFileCounts->get($item->id) ?? 0) > 0;
@@ -387,10 +395,38 @@ class IndexedFileTableController extends Controller
             // Use pre-fetched fallback
             $fallback = $groupingFallbacks->get($displayFileNo);
 
+            // Resolve Shelf/Rack: prefer the value stored on the indexed file, then
+            // fall back to the print-label batch tables (KANGIS/SLTR) keyed by
+            // file_indexing_id first, then by any of the file's number variants.
+            $shelfLocation = $item->shelf_location;
+            if (empty($shelfLocation) || in_array(trim((string) $shelfLocation), ['', '-'], true)) {
+                $resolvedShelf = $shelfLookup['byId'][(int) $item->id] ?? null;
+                if ($resolvedShelf === null) {
+                    $shelfCandidates = [
+                        $item->file_number,
+                        $item->kangis_fileno_placeholder ?? null,
+                        $item->new_kangis_file_no ?? null,
+                        $item->kangis_file_no ?? null,
+                        $item->mls_file_no ?? null,
+                        $item->temp_file_no ?? null,
+                    ];
+                    foreach ($shelfCandidates as $candidate) {
+                        $candidateKey = $this->normalizeFileNoKey($candidate);
+                        if ($candidateKey !== '' && isset($shelfLookup['byFileNo'][$candidateKey])) {
+                            $resolvedShelf = $shelfLookup['byFileNo'][$candidateKey];
+                            break;
+                        }
+                    }
+                }
+                if (!empty($resolvedShelf)) {
+                    $shelfLocation = $resolvedShelf;
+                }
+            }
+
             $rowData = [
                 'id' => (int) $item->id,
                 'tracking_id' => $item->tracking_id ?? '-',
-                'shelf_location' => $item->shelf_location ?? '-',
+                'shelf_location' => (!empty($shelfLocation) && trim((string) $shelfLocation) !== '') ? $shelfLocation : '-',
                 'registry' => $item->registry ?: 1,
                 'registry_batch_no' => $item->registry_batch_no ?: '-',
                 'sys_batch_no' => $item->sys_batch_no ?: '-',
@@ -667,6 +703,94 @@ class IndexedFileTableController extends Controller
     private function escapeLikePattern(string $value): string
     {
         return addcslashes($value, '%_[]');
+    }
+
+    /**
+     * Normalise a file number for cross-table matching (strip separators/case).
+     */
+    private function normalizeFileNoKey($value): string
+    {
+        $normalized = strtoupper(trim((string) $value));
+        if ($normalized === '' || $normalized === '-' || $normalized === 'NONE') {
+            return '';
+        }
+
+        return preg_replace('/[\s\-\/\.]+/', '', $normalized);
+    }
+
+    /**
+     * Build a Shelf/Rack lookup from the KANGIS & SLTR print-label batch tables.
+     * The batch items carry the assigned shelf label (e.g. "A1"); we key the
+     * result by file_indexing_id and by normalised file number so the indexed
+     * table can display the shelf even when file_indexings.shelf_location is blank.
+     *
+     * @return array{byId: array<int,string>, byFileNo: array<string,string>}
+     */
+    private function buildBatchShelfLookup(Collection $items, Collection $indexedIds): array
+    {
+        $byId = [];
+        $byFileNo = [];
+
+        // Gather candidate file numbers across the columns that may hold the
+        // number that was used when the label batch was generated.
+        $candidateNumbers = collect();
+        foreach ($items as $item) {
+            $candidates = [
+                $item->file_number,
+                $item->kangis_fileno_placeholder ?? null,
+                $item->new_kangis_file_no ?? null,
+                $item->kangis_file_no ?? null,
+                $item->mls_file_no ?? null,
+                $item->temp_file_no ?? null,
+            ];
+            foreach ($candidates as $candidate) {
+                if ($this->normalizeFileNoKey($candidate) !== '') {
+                    $candidateNumbers->push(trim((string) $candidate));
+                }
+            }
+        }
+        $candidateNumbers = $candidateNumbers->unique()->values();
+
+        if ($indexedIds->isEmpty() && $candidateNumbers->isEmpty()) {
+            return ['byId' => $byId, 'byFileNo' => $byFileNo];
+        }
+
+        foreach (['kangis_print_label_batch_items', 'sltr_print_label_batch_items'] as $table) {
+            try {
+                $rows = DB::connection('sqlsrv')->table($table)
+                    ->select('id', 'file_indexing_id', 'file_number', 'shelf_location')
+                    ->where(function ($q) use ($indexedIds, $candidateNumbers) {
+                        if ($indexedIds->isNotEmpty()) {
+                            $q->whereIn('file_indexing_id', $indexedIds->all());
+                        }
+                        if ($candidateNumbers->isNotEmpty()) {
+                            $q->orWhereIn('file_number', $candidateNumbers->all());
+                        }
+                    })
+                    ->whereNotNull('shelf_location')
+                    ->where('shelf_location', '<>', '')
+                    ->orderBy('id', 'asc') // later rows overwrite earlier ones → latest label wins
+                    ->get();
+
+                foreach ($rows as $row) {
+                    $shelf = trim((string) $row->shelf_location);
+                    if ($shelf === '' || stripos($shelf, 'N/A') !== false) {
+                        continue;
+                    }
+                    if (!empty($row->file_indexing_id)) {
+                        $byId[(int) $row->file_indexing_id] = $shelf;
+                    }
+                    $key = $this->normalizeFileNoKey($row->file_number);
+                    if ($key !== '') {
+                        $byFileNo[$key] = $shelf;
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Table may not exist in some environments — skip silently.
+            }
+        }
+
+        return ['byId' => $byId, 'byFileNo' => $byFileNo];
     }
 
     private function resolveCreatorName($rawCreatedBy, Collection $creators): string

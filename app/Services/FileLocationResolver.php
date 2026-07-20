@@ -285,6 +285,57 @@ class FileLocationResolver
         return $this->getRackShelf($fileNumber, $indexing);
     }
 
+    /**
+     * The related counterpart file number stored on the indexing row.
+     *
+     * KANGIS files carry their land file number in related_fileno (and the
+     * backfilled land files carry their KANGIS number), so this reads back the
+     * "other" number in the pair. Shared by web Quick Search and mobile File
+     * Search so both can render "KANGIS FileNo (Land FileNo)" when a KANGIS
+     * number is searched — and "Land FileNo (KANGIS FileNo)" when the land
+     * number is searched (the same pairing shown from either direction).
+     *
+     * Returns null when there is no indexing row or no distinct related number,
+     * so callers fall back to the plain file number.
+     */
+    public function linkedFileNumber(string $fileNumber, ?FileIndexing $indexing): ?string
+    {
+        return $this->firstRelatedFileno($indexing, $fileNumber);
+    }
+
+    /**
+     * First distinct related file number on the indexing row's related_fileno
+     * column — a JSON array string like ["RES-1982-1302"], or a plain file
+     * number. Skips any entry equal to the searched number. Null when none.
+     */
+    protected function firstRelatedFileno(?FileIndexing $indexing, string $exclude = ''): ?string
+    {
+        if (!$indexing) {
+            return null;
+        }
+
+        $raw = trim((string) ($indexing->related_fileno ?? ''));
+        if ($raw === '') {
+            return null;
+        }
+
+        $items = json_decode($raw, true);
+        if (!is_array($items)) {
+            $items = [$raw];
+        }
+
+        $excludeKey = strtoupper(trim($exclude));
+        foreach ($items as $item) {
+            $item = trim((string) $item);
+            if ($item === '' || strtoupper($item) === $excludeKey) {
+                continue;
+            }
+            return $item;
+        }
+
+        return null;
+    }
+
     // ───────────────────────────── helpers ─────────────────────────────
 
     protected function result(string $fileNumber, string $status, array $extra): array

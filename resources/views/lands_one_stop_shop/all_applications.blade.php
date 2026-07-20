@@ -331,7 +331,16 @@
                                         @endif
                                     </td>
                                     <td class="px-4 py-2.5 font-mono text-xs font-semibold text-blue-600">{{ $record->file_no ?? $record->temp_fileno ?? '—' }}</td>
-                                    <td class="px-4 py-2.5 text-red-600 text-xs font-semibold">{{ $record->ic_original_holder ?: ($record->pra_original_holder ?: '—') }}</td>
+                                    @php
+                                        // ic_original_holder (source_capture.party_1_name) is always the OP
+                                        // issuer "Kano State Government" and must NOT be shown here. Prefer
+                                        // pra_original_holder — the actual holder name entered on the
+                                        // Transfer of Title (Grantor). Fall back to ic only if pra is absent.
+                                        $displayOriginalHolder = ($record->pra_original_holder && $record->pra_original_holder !== '—')
+                                            ? $record->pra_original_holder
+                                            : ($record->ic_original_holder ?: '—');
+                                    @endphp
+                                    <td class="px-4 py-2.5 text-red-600 text-xs font-semibold">{{ $displayOriginalHolder }}</td>
                                     <td class="px-4 py-2.5 text-center">
                                         @if($record->passport_photo_url)
                                             <img src="{{ $record->passport_photo_url }}" alt="Photo"

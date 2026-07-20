@@ -554,7 +554,7 @@
                             File Number <span class="text-red-500">*</span>
                         </label>
                         <div class="flex gap-2">
-                            <input type="text" readonly
+                            <input type="text" readonly id="ptm-file-number"
                                 :value="fileIndexingData.file_number || fileIndexingData.temp_file_no || ''"
                                 placeholder="No file number selected — click Select"
                                 class="flex-grow px-3 py-2 text-sm border border-gray-300 rounded-md bg-gray-50 text-gray-700 font-mono">
@@ -668,6 +668,9 @@
                                 rows="2" placeholder="Description will be built from LGA and District..."></textarea>
                         </div>
                     </div>
+
+                    {{-- CofO duplicate pre-check card (populated by window.CofoDuplicateGuard) --}}
+                    <div id="ptm-cofo-dup-card" class="hidden mb-4"></div>
 
                     <!-- Transactions Container -->
                     <template x-for="(transaction, index) in transactions" :key="transaction.id">
@@ -1771,7 +1774,110 @@
             });
         }
 
-        
+
 
     });
+</script>
+
+{{-- CofO duplicate check (inline card + save lock) --}}
+@include('fileindexing.partials.cofo_duplicate_check')
+<script>
+(function () {
+    function initPtmCofoDupGuard() {
+        const form = document.getElementById('property-transaction-form');
+        const card = document.getElementById('ptm-cofo-dup-card');
+        const saveBtn = document.getElementById('save-transaction-btn');
+        if (!form || !card || !window.CofoDuplicateGuard) return;
+        if (form.dataset.cofoDupBound === '1') return;
+        form.dataset.cofoDupBound = '1';
+
+        // Return the fields for the first CofO-type transaction row that has a
+        // file number, or null if none. (File-indexing CofO captures are usually
+        // single-transaction; the first matching row drives the pre-check.)
+        function getFirstCofoTxn() {
+            const fileNumber = (document.getElementById('ptm-file-number')?.value || '').trim();
+            if (!fileNumber) return null;
+
+            const typeEls = form.querySelectorAll('[name^="transactions["][name$="[transaction_type]"]');
+            for (const typeEl of typeEls) {
+                const type = (typeEl.value || '').trim();
+                if (!window.CofoDuplicateGuard.isCofoType(type)) continue;
+                const m = typeEl.name.match(/transactions\[(\d+)\]/);
+                if (!m) continue;
+                const i = m[1];
+                const g = (suffix) => {
+                    const el = form.querySelector(`[name="transactions[${i}][${suffix}]"]`);
+                    return el && el.value ? String(el.value).trim() : '';
+                };
+                return {
+                    file_number: fileNumber,
+                    transaction_type: type,
+                    cofo_type: g('cofo_type'),
+                    party_2: g('second_party'),
+                    transaction_date: g('transaction_date'),
+                    vol: g('volume_no'),
+                    page: g('page_no'),
+                    serial: g('serial_no'),
+                };
+            }
+            return null;
+        }
+
+        const guard = window.CofoDuplicateGuard.create({
+            card: card,
+            lockOnAnyMatch: true,
+            getFields: getFirstCofoTxn,
+            setLocked: function (locked, message) {
+                if (locked) {
+                    form.dataset.cofoDupLocked = '1';
+                    form.dataset.cofoDupMessage = message || 'A Certificate of Occupancy with matching details already exists for this file number.';
+                    if (saveBtn) { saveBtn.disabled = true; saveBtn.classList.add('opacity-50', 'cursor-not-allowed'); }
+                } else {
+                    delete form.dataset.cofoDupLocked;
+                    delete form.dataset.cofoDupMessage;
+                    if (saveBtn) { saveBtn.disabled = false; saveBtn.classList.remove('opacity-50', 'cursor-not-allowed'); }
+                }
+            },
+        });
+
+        // Debounced runner shared across the various triggers.
+        let t = null;
+        const schedule = (opts) => {
+            clearTimeout(t);
+            t = setTimeout(() => guard.run(opts), 250);
+        };
+
+        // Delegated field changes inside the (Alpine-rendered) transactions.
+        form.addEventListener('input', () => schedule());
+        form.addEventListener('change', () => schedule());
+
+        // The file number is set programmatically by the global file selector
+        // (no input/change event fires). Re-check shortly after any click in the
+        // dialog; the guard dedupes by field values, so unchanged clicks are no-ops.
+        const dialog = document.getElementById('property-transaction-dialog');
+        if (dialog) {
+            dialog.addEventListener('click', () => schedule());
+        }
+
+        // Block submitting a locked (duplicate) CofO.
+        form.addEventListener('submit', function (e) {
+            if (form.dataset.cofoDupLocked === '1') {
+                e.preventDefault();
+                e.stopPropagation();
+                const msg = form.dataset.cofoDupMessage || 'A Certificate of Occupancy with matching details already exists for this file number.';
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({ icon: 'error', title: 'Duplicate CofO', text: msg, confirmButtonText: 'OK' });
+                } else {
+                    alert(msg);
+                }
+            }
+        }, true);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initPtmCofoDupGuard);
+    } else {
+        initPtmCofoDupGuard();
+    }
+})();
 </script>

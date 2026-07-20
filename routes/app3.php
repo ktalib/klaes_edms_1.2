@@ -250,6 +250,9 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/applications/op-resettlement/op-capture-and-link', [OpResettlementApplicationController::class, 'opCaptureAndLink'])->name('applications.op-capture-and-link');
         Route::post('/applications/op-resettlement/op-check-duplicates', [OpResettlementApplicationController::class, 'opCheckDuplicates'])->name('applications.op-check-duplicates');
         Route::post('/applications/op-resettlement/op-batch-capture', [OpResettlementApplicationController::class, 'opBatchCapture'])->name('applications.op-batch-capture');
+        Route::get('/applications/op-resettlement/op-uncommissioned-batches', [OpResettlementApplicationController::class, 'opUncommissionedBatches'])->name('applications.op-uncommissioned-batches');
+        Route::get('/applications/op-resettlement/op-uncommissioned-batch-records', [OpResettlementApplicationController::class, 'opUncommissionedBatchRecords'])->name('applications.op-uncommissioned-batch-records');
+        Route::post('/applications/op-resettlement/op-batch-delete-record', [OpResettlementApplicationController::class, 'opBatchDeleteRecord'])->name('applications.op-batch-delete-record');
         Route::post('/applications/op-resettlement/op-match-tot-batch', [OpResettlementApplicationController::class, 'matchTotBatchToOps'])->name('applications.op-match-tot-batch');
         Route::post('/applications/op-resettlement/op-link-commissioned', [OpResettlementApplicationController::class, 'linkOpBatchToCommissioned'])->name('applications.op-link-commissioned');
         Route::get('/applications/op-resettlement/op-next-temp-fileno', [OpResettlementApplicationController::class, 'opNextTempFileno'])->name('applications.op-next-temp-fileno');

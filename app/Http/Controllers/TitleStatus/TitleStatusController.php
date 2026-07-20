@@ -4,6 +4,7 @@ namespace App\Http\Controllers\TitleStatus;
 
 use App\Http\Controllers\Controller;
 use App\Models\TitleStatusApplication;
+use App\Services\TitleStatusParcelRouter;
 use App\Services\TitleStatusService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
@@ -15,7 +16,8 @@ use Illuminate\Support\Facades\Validator;
 class TitleStatusController extends Controller
 {
     public function __construct(
-        protected TitleStatusService $titleStatusService
+        protected TitleStatusService $titleStatusService,
+        protected TitleStatusParcelRouter $parcelRouter
     ) {}
 
     public function index(Request $request): View
@@ -94,24 +96,40 @@ class TitleStatusController extends Controller
         }
 
         $records = [];
+        $routed  = 0;
         foreach (array_values($types) as $i => $type) {
             $rowData                = $data;
             $rowData['title_type']  = $type;
             if (is_array($remarks) && array_key_exists($i, $remarks)) {
                 $rowData['remark'] = $remarks[$i];
             }
+
+            // Parcel-update actions (Subdivision, Merger, Change of Purpose, Extension,
+            // Separation) belong in the dedicated Parcel Update tables, not here. Route them
+            // there as hidden rows so they stay off the Parcel Update frontend until processed,
+            // and never create a title_status_applications row for them.
+            if ($this->parcelRouter->isParcelType($type)) {
+                $this->parcelRouter->route($type, $rowData);
+                $routed++;
+                continue;
+            }
+
             $records[] = TitleStatusApplication::create($rowData);
         }
 
         // Flag source files and push to archive tables. A Title Status update raised from
         // File Indexing is a "false decommissioning" — the file is not actually decommissioned.
-        $falseDecommissioning = $request->boolean('false_decommissioning');
-        $this->titleStatusService->flagAndDecommission($records, $falseDecommissioning);
+        // Parcel-update types are routed elsewhere and are not part of $records.
+        if (!empty($records)) {
+            $falseDecommissioning = $request->boolean('false_decommissioning');
+            $this->titleStatusService->flagAndDecommission($records, $falseDecommissioning);
+        }
 
         return response()->json([
             'success' => true,
             'message' => 'Title Status application created successfully.',
             'data'    => count($records) === 1 ? $records[0] : $records,
+            'routed_to_parcel_update' => $routed,
         ]);
     }
 

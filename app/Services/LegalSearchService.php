@@ -193,24 +193,24 @@ class LegalSearchService
                 }
                 return false;
             };
-            
+
             // Helper to check if file numbers are truly distinct (not just prefix matches)
             $isDistinctFile = function (string $rowFileNo) use ($fileNo): bool {
                 $rowFileNo = trim(strtoupper($rowFileNo));
                 $searchFileNo = trim(strtoupper($fileNo));
-                
+
                 // Exact match is not distinct
                 if ($rowFileNo === $searchFileNo) {
                     return false;
                 }
-                
+
                 // Check if rowFileNo contains searchFileNo as a substring but is a completely different file
                 // Example: searching "RES-1992-2508" should exclude "CON-RES-2018-487"
                 // They share "RES" but have different years and numbers
                 if (strpos($rowFileNo, $searchFileNo) === false && strpos($searchFileNo, $rowFileNo) === false) {
                     return true; // Completely different strings
                 }
-                
+
                 // Extract the core pattern (PREFIX-YEAR-NUMBER)
                 $extractCore = function($fn) {
                     // Match patterns like COM-2025-123 or CON-RES-2018-487 or RES-1992-2508
@@ -219,10 +219,10 @@ class LegalSearchService
                     }
                     return $fn;
                 };
-                
+
                 $rowCore = $extractCore($rowFileNo);
                 $searchCore = $extractCore($searchFileNo);
-                
+
                 // If cores are different, they're distinct files
                 return $rowCore !== $searchCore;
             };
@@ -399,11 +399,8 @@ class LegalSearchService
         // Apply saved arrangement order if one exists for the common prop_id
         $all = $this->applyArrangementOrder($all);
 
-        // KANGIS Recertification rows carry an empty/unreliable transaction date (or a
-        // current-processing-year date), so the plain date sort above can strand them at
-        // either end of the timeline. Business rule: when a C of O is present, the
-        // Recertification must sit directly before it, not wherever its own date lands it.
-        $all = $this->placeKangisRecertBeforeCofo($all);
+        // KANGIS Recertification placement is lifecycle-phase-specific. It is applied
+        // during per-lifecycle arrangement, never as a global pre-group shuffle.
 
         // Change of Purpose and Subdivision are Ministry-initiated actions, so Party 1 (the
         // grantor/authority) is always the Ministry — not the file owner. Normalize it here so
@@ -572,8 +569,39 @@ class LegalSearchService
             $all[0]['kangisFileNo'] ?? null
         );
 
+        // Stamp every returned transaction with its lifecycle owner so the UI can
+        // group the timeline by file lifecycle. Seed the KANGIS-alias map from the
+        // "MAIN (KANGIS)" display so the searched file's KANGIS rows roll into it.
+        $all = $this->tagRowsWithLifecycleFileNo($all, $this->aliasHintsFromDisplay($fileNumberDisplay));
+
+        // Build lifecycle metadata for every distinct lifecycle file surfaced in the
+        // result set. The frontend uses this to synthesize commissioning/temp/
+        // decommissioning rows for related files without a second round-trip.
+        $lifecycleMeta = [];
+        $lifecycleFiles = [];
+        foreach ($all as $row) {
+            $fno = $row['lifecycle_file_no'] ?? null;
+            if ($fno && $fno !== '') {
+                $lifecycleFiles[$fno] = true;
+            }
+        }
+        // Always include the searched file (and its main/base number for temp searches).
+        $normSearched = $this->normalizeLifecycleFileNo($fileNo);
+        if ($normSearched !== '') {
+            $lifecycleFiles[$normSearched] = true;
+        }
+        $mainSearchedNo = preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $normSearched);
+        $mainSearchedNo = trim($mainSearchedNo) !== '' ? trim($mainSearchedNo) : $normSearched;
+        if ($mainSearchedNo !== '' && $mainSearchedNo !== $normSearched) {
+            $lifecycleFiles[$mainSearchedNo] = true;
+        }
+        foreach (array_keys($lifecycleFiles) as $fno) {
+            $lifecycleMeta[$fno] = $this->resolveLifecycleFileMeta($conn, $fno);
+        }
+
         return [
             'transactions' => $all,
+            'lifecycle_meta' => $lifecycleMeta,
             'file_number_display' => $fileNumberDisplay,
             'under_investigation' => $investigation !== null,
             'is_wrc' => $isWrcFile,
@@ -1963,9 +1991,18 @@ class LegalSearchService
             ->orderByDesc('id')
             ->first(['full_file_number', 'commissioning_date']);
 
-        $number = $mlsRecord ? (trim((string) $mlsRecord->full_file_number) ?: null) : null;
+        // Presence in mls_file_no is THE authoritative signal that a file was
+        // commissioned through KLAES. A file absent from mls_file_no was NOT
+        // KLAES-commissioned — its File Commissioning row must show only the bare
+        // year embedded in the file number (the caller's fallback), never a legacy
+        // fileNumber or file_indexings date. So bail out to year-only here.
+        if (!$mlsRecord) {
+            return $default;
+        }
 
-        if ($mlsRecord && $mlsRecord->commissioning_date) {
+        $number = trim((string) $mlsRecord->full_file_number) ?: null;
+
+        if ($mlsRecord->commissioning_date) {
             $date = rescue(fn () => \Carbon\Carbon::parse($mlsRecord->commissioning_date), null, false);
             if ($date) {
                 return ['date' => $date->format('M j, Y'), 'number' => $number];
@@ -3834,16 +3871,10 @@ class LegalSearchService
     }
 
     /**
-     * Business rule shared by the on-screen LS Timeline and the printable report: when both a
-     * Certificate of Occupancy and a KANGIS Recertification appear in a file's transaction
-     * history, the Recertification must be displayed directly BEFORE the C of O. The
-     * recertification is what admits the legacy file into KANGIS; the KANGIS C of O is issued
-     * off the back of it, so the recertification always precedes it — never at the end of the
-     * list, which is where a missing/current-year recertification date would otherwise strand
-     * it. Every other transaction keeps its existing relative order.
-     *
-     * Works against either row shape produced by this service: the normalized search() rows
-     * (keyed by 'transaction_type') and the printable-report rows (keyed by 'instrument_type').
+     * Lifecycle-transaction rule: keep each KANGIS Recertification immediately before its
+     * corresponding KANGIS Certificate of Occupancy, and suppress duplicate recert rows for the
+     * same KANGIS file key. This method is intentionally called only on the current lifecycle
+     * group's transaction phase, never on the global mixed-row list.
      *
      * @param array<int, array<string, mixed>> $rows
      * @return array<int, array<string, mixed>>
@@ -3856,38 +3887,62 @@ class LegalSearchService
         $isCofo = fn(array $row): bool => str_contains($typeOf($row), 'certificate of occupanc');
         $isRecert = fn(array $row): bool => str_contains($typeOf($row), 'recertification');
 
-        $recertRows = [];
-        $rest = [];
+        $cofoKeys = [];
+        foreach ($rows as $row) {
+            if ($isCofo($row)) {
+                $k = $this->extractKangisLifecycleKey($row);
+                if ($k !== '') {
+                    $cofoKeys[$k] = true;
+                }
+            }
+        }
+
+        $seenRecert = [];
+        $pendingRecertByKey = [];
+        $pendingOrder = [];
+        $result = [];
+
         foreach ($rows as $row) {
             if ($isRecert($row)) {
-                $recertRows[] = $row;
-            } else {
-                $rest[] = $row;
+                $key = $this->extractKangisLifecycleKey($row);
+                $dedupeKey = $key !== ''
+                    ? $key
+                    : ('ROW:' . $this->normalizeLifecycleFileNo($this->extractOwnFileNo($row)));
+
+                if (isset($seenRecert[$dedupeKey])) {
+                    continue;
+                }
+                $seenRecert[$dedupeKey] = true;
+
+                if ($key !== '' && isset($cofoKeys[$key])) {
+                    $pendingRecertByKey[$key] = $row;
+                    $pendingOrder[] = $key;
+                    continue;
+                }
+
+                $result[] = $row;
+                continue;
             }
-        }
 
-        if (empty($recertRows)) {
-            return $rows;
-        }
-
-        // Insert before the FIRST C of O row, so the recertification sits above every
-        // certificate on record when a file has more than one.
-        $cofoIdx = null;
-        foreach ($rest as $i => $row) {
             if ($isCofo($row)) {
-                $cofoIdx = $i;
-                break;
+                $key = $this->extractKangisLifecycleKey($row);
+                if ($key !== '' && isset($pendingRecertByKey[$key])) {
+                    $result[] = $pendingRecertByKey[$key];
+                    unset($pendingRecertByKey[$key]);
+                }
+            }
+
+            $result[] = $row;
+        }
+
+        foreach ($pendingOrder as $key) {
+            if (isset($pendingRecertByKey[$key])) {
+                $result[] = $pendingRecertByKey[$key];
+                unset($pendingRecertByKey[$key]);
             }
         }
 
-        if ($cofoIdx === null) {
-            // No C of O on this file — leave the recertification wherever it naturally sorted.
-            return $rows;
-        }
-
-        array_splice($rest, $cofoIdx, 0, $recertRows);
-
-        return $rest;
+        return $result;
     }
 
     /**
@@ -4752,6 +4807,7 @@ class LegalSearchService
             $rows[] = [
                 'sn' => $idx + 1,
                 'file_no' => $rowFileNo,
+                'lifecycle_file_no' => $this->extractLifecycleFileNo($t),
                 'grantor' => $tc($t['party_1'] ?: '-'),
                 'grantee' => $tc($t['party_2'] ?: '-'),
                 'party_3' => $tc($t['party_3'] ?: '-'),
@@ -4772,11 +4828,8 @@ class LegalSearchService
             ];
         }
 
-        // Same rule as the on-screen timeline: keep KANGIS Recertification directly before
-        // the C of O in the printed transaction history, regardless of where the
-        // weight/date sort above placed it. ('sn' is recomputed below once the
-        // commissioning/temporary-file rows are unshifted onto the front.)
-        $rows = $this->placeKangisRecertBeforeCofo($rows);
+        // KANGIS Recertification placement is applied per lifecycle transaction phase
+        // inside groupTimelineByLifecycle().
 
         // ── Default "File Commissioning" record (always the first timeline row) ──
         // Highest priority (weight 12), so it precedes every other transaction.
@@ -4838,7 +4891,7 @@ class LegalSearchService
         // Legacy files digitized into KLAES (no genuine commissioning_date, so
         // $commissioningDate is '-') have no real commissioning date on record, but
         // their file number itself encodes the year they were originally commissioned
-        // (e.g. RES-2001-3874 → 2001, CON-RES-1993-387 → 1993). Surface that year as
+        // (e.g. RES-2001-3874 -> 2001, CON-RES-1993-387 -> 1993). Surface that year as
         // the Transaction Date on the row instead of leaving it blank.
         $commissioningTxnDate = '-';
         if ($commissioningDate === '-') {
@@ -4848,6 +4901,7 @@ class LegalSearchService
         $commissioningRow = [
             'sn' => 0, // renumbered below
             'file_no' => $commissioningFileNo ?: '-',
+            'lifecycle_file_no' => $this->normalizeLifecycleFileNo($commissioningFileNo),
             // Party 1 is the commissioning authority; Party 2 is the file owner/title
             // (the Ministry commissioned the file for them).
             'grantor' => 'Kano State Ministry of Land and Physical Planning',
@@ -4866,20 +4920,20 @@ class LegalSearchService
             'location' => '',
         ];
 
-        // ── Lineage commissioning chain ──
-        // The searched file's commissioning row always opens the report; only
-        // successor files add further synthetic commissioning rows (after the
-        // parcel-update row that retired the searched file). Predecessors show
-        // through their real transactions, never as a commissioning row.
-        $rows = $this->placeCommissioningRows(
+        if ($tempRow) {
+            $tempRow['lifecycle_file_no'] = $this->normalizeLifecycleFileNo($tempFileNumber);
+            $rows[] = $tempRow;
+        }
+        $rows[] = $commissioningRow;
+
+        // Group the entire timeline by lifecycle owner: each file's complete
+        // lifecycle (commissioning -> transactions -> decommissioning) is rendered
+        // before the next related file begins.
+        $rows = $this->groupTimelineByLifecycle(
             $rows,
-            $commissioningRow,
-            $tempRow,
-            $this->enrichLineageWithCommissioning(
-                DB::connection('sqlsrv'),
-                $this->resolveFileLineage(DB::connection('sqlsrv'), trim((string) $fileNo)),
-                trim((string) $fileNo)
-            )
+            $commissioningFileNo,
+            $fileNo,
+            $this->aliasHintsFromDisplay($fileNumberDisplay ?? null)
         );
 
         // Renumber serial numbers so the first commissioning row is #1.
@@ -5946,5 +6000,921 @@ class LegalSearchService
         }
 
         return [];
+    }
+
+    /**
+     * Normalize a file number so it can be used as a lifecycle-group key.
+     * Uppercases, trims, collapses whitespace and normalises the "(T)" temp suffix.
+     */
+    private function normalizeLifecycleFileNo(?string $fileNo): string
+    {
+        $fileNo = trim((string) $fileNo);
+        if ($fileNo === '') {
+            return '';
+        }
+        $fileNo = strtoupper($fileNo);
+        $fileNo = preg_replace('/\s+/', ' ', $fileNo);
+        $fileNo = preg_replace('/\s*\(\s*T\s*\)\s*$/i', '(T)', $fileNo);
+        return $fileNo;
+    }
+
+    /**
+     * Extract the lifecycle-owner file number from a search or print row.
+     * Prefers the explicit lifecycle_file_no when present, then the canonical
+     * file_no used by print rows, then the various file-number columns.
+     */
+    private function extractLifecycleFileNo(array $row): ?string
+    {
+        if (!empty($row['lifecycle_file_no'])) {
+            return $this->normalizeLifecycleFileNo($row['lifecycle_file_no']);
+        }
+
+        $candidates = [
+            $row['file_no'] ?? null,
+            $row['fileno'] ?? null,
+            $row['file_number'] ?? null,
+            $row['mlsFNo'] ?? null,
+            $row['kangisFileNo'] ?? null,
+            $row['NewKANGISFileno'] ?? null,
+        ];
+
+        foreach ($candidates as $c) {
+            $c = trim((string) $c);
+            if ($c !== '' && $c !== '-') {
+                return $this->normalizeLifecycleFileNo($c);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Stamp every row with a normalized lifecycle_file_no.
+     *
+     * KANGIS Recertification rows (and any CofO rows tied to a KANGIS alias) are
+     * assigned to the MAIN MLS/ST file's lifecycle, because the recertification
+     * event conceptually belongs to that main file — not to the KANGIS alias.
+     */
+    /**
+     * Parse the two numbers inside a "MAIN (ALIAS)" display string (e.g.
+     * "CON-COM-2023-197 (KNML 6992)") into a [normalizedKangis => normalizedMain]
+     * pair, order-independent. Returns [] when it isn't a KANGIS/land pairing.
+     */
+    private function aliasHintsFromDisplay(?string $display): array
+    {
+        $s = trim((string) $display);
+        if ($s === '') {
+            return [];
+        }
+        $parts = [$s];
+        if (preg_match('/^(.+?)\s*\(\s*([^()]+?)\s*\)\s*$/', $s, $m)) {
+            $parts = [trim($m[1]), trim($m[2])];
+        }
+        $kangisSide = null;
+        $mainSide = null;
+        foreach ($parts as $p) {
+            if ($p === '' || $p === '-') {
+                continue;
+            }
+            if ($this->isKangisFormat($p)) {
+                $kangisSide = $p;
+            } else {
+                $mainSide = $p;
+            }
+        }
+        if ($kangisSide === null || $mainSide === null) {
+            return [];
+        }
+        $k = $this->normalizeLifecycleFileNo($kangisSide);
+        $mn = $this->normalizeLifecycleFileNo($mainSide);
+        return ($k !== '' && $mn !== '' && $k !== $mn) ? [$k => $mn] : [];
+    }
+
+    private function tagRowsWithLifecycleFileNo(array $rows, array $aliasHints = []): array
+    {
+        // Build a KANGIS-alias -> main-file map. Recertification link rows are the
+        // strongest signal, but any row that carries both a KANGIS number and a main
+        // land number pairs them too (e.g. a KANGIS C of O row that also holds the
+        // land file number), so KANGIS rows roll into their owning file's lifecycle.
+        // Caller-supplied hints (e.g. from the "MAIN (KANGIS)" display) seed the map
+        // for the searched file whose KANGIS rows may not carry the land number.
+        $kangisToMain = $aliasHints;
+        // Caller hints (the searched file's own "MAIN (KANGIS)" pairing) are
+        // authoritative and locked: a KANGIS number can be recertified against several
+        // files, so a stray recert row must never repoint the searched alias away from
+        // the file the user actually searched.
+        $lockedKeys = array_fill_keys(array_keys($aliasHints), true);
+        foreach ($rows as $row) {
+            $kangis = $this->extractKangisEndpoint($row);
+            $main = $this->extractMainEndpoint($row);
+            if ($kangis === '' || $main === '') {
+                continue;
+            }
+            $normKangis = $this->normalizeLifecycleFileNo($kangis);
+            $normMain = $this->normalizeLifecycleFileNo($main);
+            if ($normKangis === $normMain || isset($lockedKeys[$normKangis])) {
+                continue;
+            }
+            // Recertification rows may overwrite a weaker pairing; otherwise keep the
+            // first pairing seen for a given KANGIS alias.
+            if ($this->isKangisRecertificationRow($row) || !isset($kangisToMain[$normKangis])) {
+                $kangisToMain[$normKangis] = $normMain;
+            }
+        }
+
+        // Anchor each KANGIS key to the lifecycle owner of its CofO row. Recertification
+        // rows for that same key must inherit this owner so they never split groups.
+        $cofoLifecycleByKangis = [];
+        foreach ($rows as $row) {
+            $type = strtolower((string) ($row['transaction_type'] ?? ($row['instrument_type'] ?? '')));
+            if (!str_contains($type, 'certificate of occupanc')) {
+                continue;
+            }
+
+            $kangisKey = $this->extractKangisLifecycleKey($row);
+            if ($kangisKey === '') {
+                continue;
+            }
+
+            $owner = $this->extractLifecycleFileNo($row);
+            if ($owner === null || $owner === '') {
+                $main = $this->extractMainEndpoint($row);
+                $owner = $main !== '' ? $this->normalizeLifecycleFileNo($main) : '';
+            }
+
+            if ($owner !== '' && isset($kangisToMain[$owner])) {
+                $owner = $kangisToMain[$owner];
+            }
+
+            if ($owner !== '' && !isset($cofoLifecycleByKangis[$kangisKey])) {
+                $cofoLifecycleByKangis[$kangisKey] = $owner;
+            }
+        }
+
+        foreach ($rows as $i => $row) {
+            $lifecycle = $this->extractLifecycleFileNo($row);
+            $kangisKey = $this->extractKangisLifecycleKey($row);
+
+            if ($kangisKey !== '' && isset($kangisToMain[$kangisKey])) {
+                // The row is keyed by a KANGIS alias with a known owning land file
+                // (hint-locked or recert-derived) — every KANGIS-keyed row for that
+                // alias (C of O, Recertification, deed history) rolls into that file.
+                $lifecycle = $kangisToMain[$kangisKey];
+            } elseif ($this->isKangisRecertificationRow($row)) {
+                // No mapped owner: anchor to the alias's C of O row when present,
+                // otherwise fall back to the recert's own linked main file.
+                if ($kangisKey !== '' && isset($cofoLifecycleByKangis[$kangisKey])) {
+                    $lifecycle = $cofoLifecycleByKangis[$kangisKey];
+                } else {
+                    $main = $this->extractMainEndpoint($row);
+                    if ($main !== '') {
+                        $lifecycle = $this->normalizeLifecycleFileNo($main);
+                    }
+                }
+            }
+
+            $rows[$i]['lifecycle_file_no'] = $lifecycle;
+        }
+        return $rows;
+    }
+
+    private function isKangisRecertificationRow(array $row): bool
+    {
+        $source = (string) ($row['source_table'] ?? '');
+        $type = (string) ($row['transaction_type'] ?? '');
+        if ($source !== 'Related Fileno') {
+            return false;
+        }
+        return stripos($type, 'KANGIS') !== false && stripos($type, 'Recertification') !== false;
+    }
+
+    private function isKangisFormat(?string $fileNo): bool
+    {
+        $type = $this->identifyFileNumberType($fileNo);
+        return $type === 'kangis' || $type === 'new_kangis';
+    }
+
+    private function extractKangisEndpoint(array $row): string
+    {
+        foreach ([$row['fileno'] ?? null, $row['file_number'] ?? null, $row['mlsFNo'] ?? null] as $c) {
+            $c = trim((string) $c);
+            if ($c !== '' && $c !== '-' && $this->isKangisFormat($c)) {
+                return $c;
+            }
+        }
+        return '';
+    }
+
+    private function extractMainEndpoint(array $row): string
+    {
+        // Explicit parent_file_number is the linked counterpart; prefer the non-KANGIS side.
+        $parent = trim((string) ($row['parent_file_number'] ?? ''));
+        if ($parent !== '' && $parent !== '-' && !$this->isKangisFormat($parent)) {
+            return $parent;
+        }
+        // Otherwise scan the row's file-number columns for the non-KANGIS endpoint.
+        foreach ([$row['fileno'] ?? null, $row['file_number'] ?? null, $row['mlsFNo'] ?? null] as $c) {
+            $c = trim((string) $c);
+            if ($c !== '' && $c !== '-' && !$this->isKangisFormat($c)) {
+                return $c;
+            }
+        }
+        return '';
+    }
+
+    private function extractOwnFileNo(array $row): string
+    {
+        foreach (['file_no', 'fileno', 'file_number', 'mlsFNo', 'kangisFileNo', 'NewKANGISFileno'] as $col) {
+            $c = trim((string) ($row[$col] ?? ''));
+            if ($c !== '' && $c !== '-') {
+                return $c;
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Metadata used to order lifecycle-file groups and build synthetic rows.
+     */
+    private function resolveLifecycleFileMeta($conn, string $fileNo): array
+    {
+        $baseNo = preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $fileNo);
+        $baseNo = trim($baseNo) !== '' ? trim($baseNo) : $fileNo;
+
+        $commInfo = $this->resolveCommissioningInfo($baseNo);
+        $commDate = $commInfo['date'] ?? '-';
+        $commTimestamp = null;
+        if ($commDate !== '-' && $commDate !== '') {
+            $commTimestamp = rescue(fn () => Carbon::parse($commDate)->timestamp, null, false);
+        }
+        if ($commTimestamp === null) {
+            $year = $this->extractYearFromFileNumber($baseNo);
+            if ($year) {
+                $commTimestamp = rescue(fn () => Carbon::create((int) $year, 1, 1)->timestamp, null, false);
+            }
+        }
+
+        $lineage = $this->resolveFileLineage($conn, $fileNo);
+
+        // If there is no genuine commissioning date, the file's lifecycle effectively
+        // starts on its earliest real transaction (e.g. a subdivision child's creation
+        // date). Use that as a fallback so related files order chronologically.
+        $effectiveStartTimestamp = $commTimestamp;
+        if ($effectiveStartTimestamp === null) {
+            $effectiveStartTimestamp = $this->resolveEarliestTransactionTimestamp($conn, $baseNo);
+        }
+
+        return [
+            'file_no' => $fileNo,
+            'base_file_no' => $baseNo,
+            'commissioning_date' => $commDate,
+            'commissioning_timestamp' => $commTimestamp,
+            'effective_start_timestamp' => $effectiveStartTimestamp,
+            'commissioning_holder' => $this->resolveCommissioningHolder($conn, $baseNo),
+            'file_title' => $this->resolveFileTitleForNumber($conn, $baseNo),
+            'is_decommissioned' => $lineage['is_superseded'] ?? false,
+            'decommission_date' => $lineage['decommission_date'] ?? null,
+            'decommission_reason' => $lineage['decommission_reason'] ?? null,
+            'decommission_holder' => $lineage['decommission_holder'] ?? null,
+            'is_temp' => (bool) preg_match('/\(\s*T\s*\)\s*$/i', $fileNo),
+        ];
+    }
+
+    /**
+     * Find the earliest real transaction timestamp for a file number, used as a
+     * lifecycle-start fallback when no commissioning date is on record.
+     */
+    private function resolveEarliestTransactionTimestamp($conn, string $fileNo): ?int
+    {
+        if ($fileNo === '') {
+            return null;
+        }
+
+        $variants = $this->fileNumberVariants($fileNo);
+        if (empty($variants)) {
+            return null;
+        }
+
+        $columnsByTable = [
+            'pra' => ['mlsFNo', 'fileno'],
+            'file_history_staging' => ['mlsFNo', 'fileno', 'file_number'],
+            'CofO_staging' => ['file_number'],
+            'deed_registrations' => ['file_number'],
+        ];
+
+        $earliest = null;
+        $schema = Schema::connection($conn->getName());
+
+        foreach ($columnsByTable as $table => $columns) {
+            if (!$schema->hasTable($table)) {
+                continue;
+            }
+            try {
+                $query = $conn->table($table)
+                    ->where(function ($q) use ($columns, $variants) {
+                        foreach ($columns as $col) {
+                            $q->orWhereIn($col, $variants);
+                        }
+                    });
+                $this->applySoftDeleteFilter($query, $table);
+
+                $dateCols = [];
+                foreach (['transaction_date', 'reg_date', 'deeds_date'] as $c) {
+                    if ($schema->hasColumn($table, $c)) {
+                        $dateCols[] = $c;
+                    }
+                }
+                if (empty($dateCols)) {
+                    continue;
+                }
+
+                foreach ($dateCols as $dateCol) {
+                    $minDate = $query->clone()
+                        ->whereNotNull($dateCol)
+                        ->where($dateCol, '<>', '')
+                        ->where($dateCol, '<>', '-')
+                        ->orderBy($dateCol)
+                        ->value($dateCol);
+
+                    if ($minDate) {
+                        $ts = rescue(fn () => Carbon::parse($minDate)->timestamp, null, false);
+                        if ($ts !== null && ($earliest === null || $ts < $earliest)) {
+                            $earliest = $ts;
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Best-effort: skip tables that fail.
+            }
+        }
+
+        return $earliest;
+    }
+
+    /**
+     * Build a print-format "File Commissioning" synthetic row for any lifecycle file.
+     */
+    private function makePrintCommissioningRow(string $fileNo, array $meta): array
+    {
+        $date = $meta['commissioning_date'] ?? '-';
+        $txnDate = '-';
+        if ($date === '-') {
+            $txnDate = $this->extractYearFromFileNumber($fileNo) ?? '-';
+        }
+        $holder = $meta['commissioning_holder'] ?: $meta['file_title'] ?: '-';
+
+        return [
+            'sn' => 0,
+            'file_no' => $fileNo,
+            'lifecycle_file_no' => $fileNo,
+            'grantor' => 'Kano State Ministry of Land and Physical Planning',
+            'grantee' => $holder,
+            'party_3' => '-',
+            'party_4' => '-',
+            'instrument_type' => 'File Commissioning',
+            'transaction_date' => $txnDate,
+            'reg_time' => '-',
+            'reg_date' => $date,
+            'reg_no' => '0/0/0',
+            'size' => '-',
+            'caveat' => 'No',
+            'comments' => '-',
+            'source_table' => 'File Commissioning',
+            'location' => '',
+            '_synthesized' => true,
+        ];
+    }
+
+    /**
+     * Build a print-format "Temporary File" synthetic row.
+     */
+    private function makePrintTemporaryFileRow(string $fileNo, array $meta): array
+    {
+        $holder = $meta['commissioning_holder'] ?: $meta['file_title'] ?: '-';
+
+        return [
+            'sn' => 0,
+            'file_no' => $fileNo,
+            'lifecycle_file_no' => $fileNo,
+            'grantor' => 'Kano State Ministry of Land and Physical Planning',
+            'grantee' => $holder,
+            'party_3' => '-',
+            'party_4' => '-',
+            'instrument_type' => 'Temporary File',
+            'transaction_date' => '-',
+            'reg_time' => '-',
+            'reg_date' => '-',
+            'reg_no' => '0/0/0',
+            'size' => '-',
+            'caveat' => 'No',
+            'comments' => '-',
+            'source_table' => 'Temporary File',
+            'location' => '',
+            '_synthesized' => true,
+        ];
+    }
+
+    /**
+     * Build a print-format "File Decommissioning" synthetic row.
+     */
+    private function makePrintDecommissioningRow(string $fileNo, array $meta): array
+    {
+        $date = $meta['decommission_date'] ?? '-';
+        $holder = $meta['decommission_holder'] ?: $meta['file_title'] ?: '-';
+        $reason = $meta['decommission_reason'] ?? '-';
+
+        return [
+            'sn' => 0,
+            'file_no' => $fileNo,
+            'lifecycle_file_no' => $fileNo,
+            'grantor' => 'Kano State Ministry of Land and Physical Planning',
+            'grantee' => $holder,
+            'party_3' => '-',
+            'party_4' => '-',
+            'instrument_type' => 'File Decommissioning',
+            'transaction_date' => $date,
+            'reg_time' => '-',
+            'reg_date' => $date,
+            'reg_no' => '0/0/0',
+            'size' => '-',
+            'caveat' => 'No',
+            'comments' => $reason,
+            'source_table' => 'File Decommissioning',
+            'location' => '',
+            '_synthesized' => true,
+        ];
+    }
+
+    /**
+     * Ensure every lifecycle file has its commissioning row, and its decommissioning /
+     * temporary-file rows where applicable. Existing synthetic rows are preserved and
+     * only missing ones are added.
+     */
+    private function ensureLifecycleSyntheticRows($conn, array $rows, array $lifecycleFiles, string $searchedFileNo): array
+    {
+        $metaCache = [];
+        $hasCommissioning = [];
+        $hasDecommissioning = [];
+        $hasTemp = [];
+
+        foreach ($rows as $row) {
+            $fno = $row['lifecycle_file_no'] ?? null;
+            if (!$fno) {
+                continue;
+            }
+            $source = (string) ($row['source_table'] ?? '');
+            $instrument = (string) ($row['instrument_type'] ?? '');
+
+            if ($source === 'File Commissioning' || $source === 'DCIV File Commissioning'
+                || $instrument === 'File Commissioning' || $instrument === 'DCIV File Commissioning') {
+                $hasCommissioning[$fno] = true;
+            }
+            if ($source === 'File Decommissioning' || $instrument === 'File Decommissioning') {
+                $hasDecommissioning[$fno] = true;
+            }
+            if ($source === 'Temporary File' || $instrument === 'Temporary File') {
+                $hasTemp[$fno] = true;
+            }
+        }
+
+        foreach ($lifecycleFiles as $fno => $_) {
+            if (!isset($metaCache[$fno])) {
+                $metaCache[$fno] = $this->resolveLifecycleFileMeta($conn, $fno);
+            }
+            $meta = $metaCache[$fno];
+
+            if (empty($hasCommissioning[$fno])) {
+                $rows[] = $this->makePrintCommissioningRow($fno, $meta);
+            }
+
+            if ($meta['is_temp'] && empty($hasTemp[$fno])) {
+                $rows[] = $this->makePrintTemporaryFileRow($fno, $meta);
+            }
+
+            if ($meta['is_decommissioned'] && empty($hasDecommissioning[$fno])) {
+                $rows[] = $this->makePrintDecommissioningRow($fno, $meta);
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Deduplicate lifecycle event rows within each lifecycle file group. Each file
+     * should display at most one File Commissioning, Temporary File, File
+     * Decommissioning and KANGIS Recertification row. Keeps the most authoritative
+     * row (explicit source_table match, real date, non-synthesized) when duplicates
+     * exist.
+     */
+    private function dedupeLifecycleRows(array $rows): array
+    {
+        $grouped = [];
+        foreach ($rows as $row) {
+            $fno = $row['lifecycle_file_no'] ?? null;
+            if (!$fno) {
+                $grouped[''][] = $row;
+                continue;
+            }
+            $grouped[$fno][] = $row;
+        }
+
+        $result = [];
+        foreach ($grouped as $fno => $groupRows) {
+            // Pick the best-scored row per lifecycle-event key for the whole group.
+            // KANGIS recertifications are keyed by KANGIS file number so distinct
+            // KANGIS recerts can coexist while duplicates collapse.
+            $bestByKey = [];
+            foreach ($groupRows as $r) {
+                $eventKey = $this->lifecycleEventDedupeKey($r);
+                $type = $this->classifyLifecycleEventType($r);
+                if ($eventKey === null || $type === null) {
+                    continue;
+                }
+                if (!isset($bestByKey[$eventKey])
+                    || $this->scoreLifecycleRow($r, $type) > $this->scoreLifecycleRow($bestByKey[$eventKey], $type)) {
+                    $bestByKey[$eventKey] = $r;
+                }
+            }
+
+            // Rebuild preserving original order: emit each event key's winner at the
+            // position of its FIRST occurrence (so a Kangis Recertification stays
+            // directly above its C of O), dropping subsequent duplicates.
+            $emitted = [];
+            foreach ($groupRows as $r) {
+                $eventKey = $this->lifecycleEventDedupeKey($r);
+                if ($eventKey === null) {
+                    $result[] = $r;
+                    continue;
+                }
+                if (isset($emitted[$eventKey])) {
+                    continue;
+                }
+                $emitted[$eventKey] = true;
+                $result[] = $bestByKey[$eventKey];
+            }
+        }
+        return $result;
+    }
+
+    private function lifecycleEventDedupeKey(array $row): ?string
+    {
+        $type = $this->classifyLifecycleEventType($row);
+        if ($type === null) {
+            return null;
+        }
+
+        if ($type === 'Kangis Recertification') {
+            $kangis = $this->extractKangisLifecycleKey($row);
+            if ($kangis === '') {
+                $kangis = $this->normalizeLifecycleFileNo($this->extractOwnFileNo($row));
+            }
+            return $type . '|' . $kangis;
+        }
+
+        return $type;
+    }
+
+    private function extractKangisLifecycleKey(array $row): string
+    {
+        $candidates = [
+            $row['kangisFileNo'] ?? null,
+            $row['NewKANGISFileno'] ?? null,
+            $row['file_no'] ?? null,
+            $row['fileno'] ?? null,
+            $row['file_number'] ?? null,
+            $row['mlsFNo'] ?? null,
+            $row['parent_file_number'] ?? null,
+        ];
+
+        foreach ($candidates as $c) {
+            $c = trim((string) $c);
+            if ($c !== '' && $c !== '-' && $this->isKangisFormat($c)) {
+                return $this->normalizeLifecycleFileNo($c);
+            }
+        }
+
+        return '';
+    }
+
+    private function classifyLifecycleEventType(array $row): ?string
+    {
+        $source = (string) ($row['source_table'] ?? '');
+        $instrument = (string) ($row['instrument_type'] ?? '');
+        $type = (string) ($row['transaction_type'] ?? '');
+        $synth = $row['_synthesized'] ?? false;
+
+        if ($source === 'File Commissioning' || $source === 'DCIV File Commissioning'
+            || $instrument === 'File Commissioning' || $instrument === 'DCIV File Commissioning'
+            || $type === 'File Commissioning' || $type === 'DCIV File Commissioning'
+            || ($synth && (str_contains($instrument, 'Commissioning') || str_contains($type, 'Commissioning')))) {
+            return 'File Commissioning';
+        }
+        if ($source === 'Temporary File' || $instrument === 'Temporary File' || $type === 'Temporary File' || ($synth && str_contains($instrument, 'Temporary File'))) {
+            return 'Temporary File';
+        }
+        if ($source === 'File Decommissioning' || $instrument === 'File Decommissioning' || $type === 'File Decommissioning' || ($synth && str_contains($instrument, 'Decommissioning'))) {
+            return 'File Decommissioning';
+        }
+        if (stripos($type, 'KANGIS') !== false && stripos($type, 'Recertification') !== false) {
+            return 'Kangis Recertification';
+        }
+        
+        return null;
+    }
+
+    private function scoreLifecycleRow(array $row, string $eventType): int
+    {
+        $source = (string) ($row['source_table'] ?? '');
+        $instrument = (string) ($row['instrument_type'] ?? '');
+        $type = (string) ($row['transaction_type'] ?? '');
+        $date = trim((string) ($row['transaction_date'] ?? ''));
+
+        $score = 0;
+        if ($source === $eventType) {
+            $score += 100;
+        }
+        if (empty($row['_synthesized'])) {
+            $score += 50;
+        }
+        if ($date !== '' && $date !== '-') {
+            $score += 25;
+        }
+        if ($instrument === $eventType) {
+            $score += 10;
+        }
+        if ($type === $eventType) {
+            $score += 10;
+        }
+        return $score;
+    }
+
+    /**
+     * Order lifecycle-file groups. The primary (searched) file is always first.
+     * Remaining files are sorted by commissioning timestamp ascending, then by the
+     * predecessor/successor relationship (predecessors before siblings before
+     * successors), then by normalized file number for determinism.
+     */
+    private function orderLifecycleFiles(array $files, string $primaryFileNo, array $fileMeta): array
+    {
+        $conn = DB::connection('sqlsrv');
+        $relationships = [];
+        foreach ($files as $fno) {
+            if ($fno === $primaryFileNo) {
+                continue;
+            }
+            $relationships[$fno] = $this->classifyLifecycleRelationship($conn, $fno, $primaryFileNo);
+        }
+
+        usort($files, function ($a, $b) use ($primaryFileNo, $fileMeta, $relationships) {
+            $aPrimary = ($a === $primaryFileNo);
+            $bPrimary = ($b === $primaryFileNo);
+            if ($aPrimary && !$bPrimary) {
+                return -1;
+            }
+            if ($bPrimary && !$aPrimary) {
+                return 1;
+            }
+
+            $ta = $fileMeta[$a]['effective_start_timestamp'] ?? ($fileMeta[$a]['commissioning_timestamp'] ?? PHP_INT_MAX);
+            $tb = $fileMeta[$b]['effective_start_timestamp'] ?? ($fileMeta[$b]['commissioning_timestamp'] ?? PHP_INT_MAX);
+            if ($ta !== $tb) {
+                return $ta <=> $tb;
+            }
+
+            $ra = $relationships[$a] ?? 1;
+            $rb = $relationships[$b] ?? 1;
+            if ($ra !== $rb) {
+                return $ra <=> $rb;
+            }
+
+            // Same effective start / relationship: fall back to the numeric serial in
+            // the file number (e.g. RES-2026-123 → 123). Serials are generally assigned
+            // sequentially within a year, so this gives a chronological, deterministic
+            // order when commissioning/transaction dates cannot distinguish files.
+            $sa = $this->extractSerialFromFileNumber($a);
+            $sb = $this->extractSerialFromFileNumber($b);
+            if ($sa !== null && $sb !== null && $sa !== $sb) {
+                return $sa <=> $sb;
+            }
+
+            return strcmp($a, $b);
+        });
+
+        return $files;
+    }
+
+    /**
+     * Extract the trailing numeric serial from a file number for deterministic ordering.
+     */
+    private function extractSerialFromFileNumber(?string $fileNo): ?int
+    {
+        $fileNo = trim((string) $fileNo);
+        if ($fileNo === '') {
+            return null;
+        }
+        // Strip temp suffix so CON-AG-2026-108(T) → CON-AG-2026-108.
+        $fileNo = preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $fileNo);
+        if (preg_match('/(\d+)$/', $fileNo, $m)) {
+            return (int) $m[1];
+        }
+        return null;
+    }
+
+    /**
+     * Classify how a related file relates to the primary file for ordering:
+     *   -1 = predecessor (direct or indirect ancestor)
+     *    0 = sibling / other
+     *    1 = successor (direct or indirect descendant)
+     *
+     * The classification walks decommissioned_files successor_file_no chains up to
+     * a hard depth limit so indirect descendants (e.g. grandchildren) are still
+     * grouped with direct descendants rather than siblings.
+     */
+    private function classifyLifecycleRelationship($conn, string $fileNo, string $primaryFileNo): int
+    {
+        $primaryNorm = strtoupper(trim($primaryFileNo));
+        $fileNorm = strtoupper(trim($fileNo));
+        if ($primaryNorm === '' || $fileNorm === '') {
+            return 0;
+        }
+
+        try {
+            $schema = Schema::connection($conn->getName());
+            if ($schema->hasTable('decommissioned_files')
+                && $schema->hasColumn('decommissioned_files', 'successor_file_no')) {
+                // Forward walk: primary → successors → ... → fileNo?
+                $forward = $this->walkLifecycleChain($conn, $primaryNorm, $fileNorm, 'forward');
+                if ($forward !== null) {
+                    return 1;
+                }
+
+                // Backward walk: primary ← predecessors ← ... ← fileNo?
+                $backward = $this->walkLifecycleChain($conn, $fileNorm, $primaryNorm, 'forward');
+                if ($backward !== null) {
+                    return -1;
+                }
+            }
+
+            // Is $fileNo recorded as a parent/predecessor of primary?
+            $parentRel = $conn->table('file_indexings')
+                ->whereNull('deleted_at')
+                ->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = ?', [$primaryNorm])
+                ->value('related_fileno');
+            if ($parentRel) {
+                $parents = $this->parseRelatedFileno($parentRel);
+                foreach ($parents as $p) {
+                    if (strtoupper(trim($p)) === $fileNorm) {
+                        return -1;
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // fall through to sibling/other
+        }
+
+        return 0;
+    }
+
+    /**
+     * Walk the decommissioned_files successor chain to see if $target is reachable
+     * from $start. Returns the hop count or null when not reachable.
+     */
+    private function walkLifecycleChain($conn, string $start, string $target, string $direction, int $maxDepth = 10): ?int
+    {
+        $start = strtoupper(trim($start));
+        $target = strtoupper(trim($target));
+        if ($start === $target) {
+            return 0;
+        }
+
+        $visited = [$start => true];
+        $queue = [['file' => $start, 'depth' => 0]];
+
+        while (!empty($queue)) {
+            $current = array_shift($queue);
+            if ($current['depth'] >= $maxDepth) {
+                continue;
+            }
+
+            $nextFiles = [];
+            if ($direction === 'forward') {
+                $successors = $conn->table('decommissioned_files')
+                    ->whereRaw('UPPER(LTRIM(RTRIM(file_no))) = ?', [$current['file']])
+                    ->pluck('successor_file_no');
+                foreach ($successors as $succCsv) {
+                    foreach (array_map('trim', explode(',', (string) $succCsv)) as $s) {
+                        $s = strtoupper($s);
+                        if ($s !== '') {
+                            $nextFiles[] = $s;
+                        }
+                    }
+                }
+            }
+
+            foreach ($nextFiles as $next) {
+                if ($next === $target) {
+                    return $current['depth'] + 1;
+                }
+                if (!isset($visited[$next])) {
+                    $visited[$next] = true;
+                    $queue[] = ['file' => $next, 'depth' => $current['depth'] + 1];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Arrange the rows for a single lifecycle file into phases:
+     *   1. Commissioning (File / DCIV)
+     *   2. Temporary File
+     *   3. Transactions (preserving their existing order)
+     *   4. File Decommissioning
+     */
+    private function arrangeLifecycleFileRows(array $rows): array
+    {
+        $commissioning = [];
+        $temp = [];
+        $decommissioning = [];
+        $transactions = [];
+
+        // Classify by lifecycle event type (which also inspects transaction_type) so
+        // related-file commissioning/decommissioning rows whose label lives in
+        // transaction_type land in the correct phase instead of the transactions bucket.
+        foreach ($rows as $row) {
+            $event = $this->classifyLifecycleEventType($row);
+            if ($event === 'File Commissioning') {
+                $commissioning[] = $row;
+            } elseif ($event === 'Temporary File') {
+                $temp[] = $row;
+            } elseif ($event === 'File Decommissioning') {
+                $decommissioning[] = $row;
+            } else {
+                // 'Kangis Recertification' and null stay as associated transactions.
+                $transactions[] = $row;
+            }
+        }
+
+        // Recertification/CoFO pairing executes strictly inside this lifecycle's
+        // transaction phase so rows never leave their lifecycle group.
+        $transactions = $this->placeKangisRecertBeforeCofo($transactions);
+
+        return array_merge($commissioning, $temp, $transactions, $decommissioning);
+    }
+
+    /**
+     * Group a print-ready timeline by lifecycle owner.
+     *
+     * @param array  $rows           Print-format rows (already weighted/floating sorted).
+     * @param string $primaryFileNo  The searched file number (lifecycle owner).
+     * @param string $searchedFileNo The original user-typed file number.
+     * @return array Rows ordered by lifecycle file, then commissioning → transactions → decommissioning.
+     */
+    private function groupTimelineByLifecycle(array $rows, string $primaryFileNo, string $searchedFileNo, array $aliasHints = []): array
+    {
+        $conn = DB::connection('sqlsrv');
+        $rows = $this->tagRowsWithLifecycleFileNo($rows, $aliasHints);
+
+        $normPrimary = $this->normalizeLifecycleFileNo($primaryFileNo);
+        $normSearched = $this->normalizeLifecycleFileNo($searchedFileNo);
+
+        // Always include the main/base searched file even if it has no transaction rows.
+        $mainFileNo = preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $normSearched);
+        $mainFileNo = trim($mainFileNo) !== '' ? trim($mainFileNo) : $normSearched;
+
+        $lifecycleFiles = [];
+        foreach ($rows as $row) {
+            $fno = $row['lifecycle_file_no'] ?? null;
+            if ($fno && $fno !== '') {
+                $lifecycleFiles[$fno] = true;
+            }
+        }
+        if ($normPrimary !== '') {
+            $lifecycleFiles[$normPrimary] = true;
+        }
+        if ($mainFileNo !== '' && $mainFileNo !== $normPrimary) {
+            $lifecycleFiles[$mainFileNo] = true;
+        }
+
+        $fileMeta = [];
+        foreach (array_keys($lifecycleFiles) as $fno) {
+            $fileMeta[$fno] = $this->resolveLifecycleFileMeta($conn, $fno);
+        }
+
+        $rows = $this->ensureLifecycleSyntheticRows($conn, $rows, $lifecycleFiles, $searchedFileNo);
+        $rows = $this->tagRowsWithLifecycleFileNo($rows, $aliasHints);
+        $rows = $this->dedupeLifecycleRows($rows);
+
+        $orderedFiles = $this->orderLifecycleFiles(array_keys($lifecycleFiles), $normPrimary, $fileMeta);
+
+        $result = [];
+        foreach ($orderedFiles as $fno) {
+            $fileRows = array_values(array_filter($rows, fn ($r) => ($r['lifecycle_file_no'] ?? '') === $fno));
+            $fileRows = $this->arrangeLifecycleFileRows($fileRows);
+            $result = array_merge($result, $fileRows);
+        }
+
+        return $result;
     }
 }
