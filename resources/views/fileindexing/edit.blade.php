@@ -1675,6 +1675,12 @@
             const changeFileNumberBtn = document.getElementById('change-file-number-btn');
             const fileNumberInput = document.getElementById('file_number');
             let applyTrackingIdFromFileData = async function () {};
+            // Tracks whether the *main* file-number modal is the one currently open.
+            // The related-file selector reuses the same GlobalFileNoModal, which fires a
+            // global `fileno-modal:applied` event on every apply. Without this guard the
+            // backup listener below would clobber the main file number (and tracking id)
+            // with the related file's values, causing a duplicate-key rename on save.
+            let mainFileNoModalActive = false;
 
             if (fileNumberInput) {
                 // Keep the field read-only: users must use the Change button + file number selector.
@@ -1858,6 +1864,7 @@
                     try {
                         const currentValue = fileNumberInput ? fileNumberInput.value : '';
 
+                        mainFileNoModalActive = true;
                         GlobalFileNoModal.open({
                             initialValue: isChange ? currentValue : null, // Pre-populate if changing
                             callback: async function (fileData) {
@@ -1938,13 +1945,25 @@
                 }, 100);
             }
 
-            // Also listen for the global modal events as backup
+            // Also listen for the global modal events as backup.
+            // IMPORTANT: only honor this when the *main* file-number modal is active.
+            // The related-file selector shares the same GlobalFileNoModal and also fires
+            // `fileno-modal:applied`; applying it here would overwrite the main file number.
             $(document).on('fileno-modal:applied', function (event, data) {
                 console.log('Global modal applied event received:', data);
+                if (!mainFileNoModalActive) {
+                    return;
+                }
                 if (data && data.fileNumber && fileNumberInput) {
                     fileNumberInput.value = data.fileNumber;
                     applyTrackingIdFromFileData(data, { delayMs: 1200 });
                 }
+            });
+
+            // The main modal is no longer the active one once it closes (apply or cancel),
+            // so drop the guard to avoid a later related-file apply leaking into the main field.
+            $(document).on('fileno-modal:closed', function () {
+                mainFileNoModalActive = false;
             });
 
             // Tracking sheet state management

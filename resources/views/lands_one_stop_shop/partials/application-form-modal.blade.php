@@ -3,6 +3,34 @@
      3 Types: Residential, Commercial, Industrial
      Each type has its OWN form section matching the official paper forms.
      ═══════════════════════════════════════════════════════════════════════ --}}
+{{-- Select2 look-and-feel for the OP TP No. / Location dropdowns.
+     Kept scoped to .oss-searchable-select so it never affects other pages. --}}
+<style>
+    .oss-searchable-select + .select2-container .select2-selection--single {
+        height: 42px !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 0.5rem !important;
+        padding: 6px 8px !important;
+        font-size: 0.875rem !important;
+        background: #fff;
+    }
+    .oss-searchable-select + .select2-container .select2-selection--single .select2-selection__rendered {
+        line-height: 28px !important;
+        color: #0f172a;
+        padding-left: 2px;
+    }
+    .oss-searchable-select + .select2-container .select2-selection--single .select2-selection__arrow {
+        height: 40px !important;
+    }
+    /* Dropdown must sit above the z-[9999] modal overlay. */
+    .select2-container { z-index: 10050 !important; }
+    .select2-dropdown { border: 1px solid #cbd5e1 !important; }
+    .select2-results__option { font-size: 0.8rem; padding: 8px 12px; }
+    .select2-container--default .select2-results__option--highlighted.select2-results__option--selectable {
+        background-color: #d97706;
+    }
+</style>
+
 <div id="ossApplicationModal"
      class="fixed inset-0 z-[9999] hidden"
      aria-modal="true" role="dialog">
@@ -162,7 +190,18 @@
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
                                     <label class="block text-xs font-bold text-slate-700 mb-1">TP No.</label>
-                                    <input type="text" id="oss_opd_tp_no" placeholder="Enter TP number"
+                                    <select id="oss_opd_tp_no"
+                                            class="oss-searchable-select w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500">
+                                        <option value="">Select TP No.</option>
+                                        @foreach(($tpNumbers ?? []) as $tp)
+                                            <option value="{{ $tp }}">{{ $tp }}</option>
+                                        @endforeach
+                                        <option value="Other">Other (specify)</option>
+                                    </select>
+                                </div>
+                                <div id="oss-opd-tp-no-other-wrapper" class="hidden">
+                                    <label class="block text-xs font-bold text-slate-700 mb-1">Specify TP No.</label>
+                                    <input type="text" id="oss_opd_tp_no_other" placeholder="Enter TP number"
                                            class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500">
                                 </div>
                             </div>
@@ -226,41 +265,41 @@
                                            class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500">
                                 </div>
                             </div>
-                        </div>
-                    </div>
 
-                    {{-- ── Location Builder ── --}}
-                    <div class="mb-5 border border-slate-200 rounded-xl" id="oss_location_builder_section">
-                        <div class="px-4 py-3 bg-slate-50 border-b border-slate-200">
-                            <h3 class="text-xs font-bold text-slate-700 uppercase tracking-wider">Location Builder</h3>
-                        </div>
-                        <div class="px-4 py-4 space-y-4">
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div>
-                                    <label class="block text-xs font-bold text-slate-700 mb-1">Plot No</label>
-                                    <input type="text" id="oss_lb_plot_no" placeholder="e.g. 486A"
-                                           class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                            {{-- ── Location (moved from the standalone Location Builder — belongs to the OP) ── --}}
+                            <div class="border-t border-slate-200 pt-4">
+                                <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">Location</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 mb-1">Plot No</label>
+                                        <input type="text" id="oss_lb_plot_no" placeholder="e.g. 486A"
+                                               class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 mb-1">District</label>
+                                        <select id="oss_lb_district" class="oss-searchable-select w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500">
+                                            <option value="">Select district</option>
+                                            @foreach($districts as $district)
+                                                <option value="{{ $district->name }}">{{ \Illuminate\Support\Str::upper((string) $district->name) }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 mb-1">LGA</label>
+                                        <select id="oss_lb_lga" class="oss-searchable-select w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500">
+                                            <option value="">Select LGA</option>
+                                            @foreach($lgas as $lga)
+                                                <option value="{{ $lga->name }}">{{ \Illuminate\Support\Str::upper((string) $lga->name) }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
                                 </div>
-                                <div>
-                                    <label class="block text-xs font-bold text-slate-700 mb-1">District</label>
-                                    <select id="oss_lb_district" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
-                                        <option value="">Select district</option>
-                                        {{-- @todo: Populate with districts from controller --}}
-                                    </select>
+                                <div class="mt-4">
+                                    <label class="block text-xs font-bold text-slate-700 mb-1">Full Location</label>
+                                    <input type="text" id="oss_lb_full_location" placeholder="Composed location"
+                                           class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500">
+                                    <p class="text-[11px] text-slate-500 mt-1">Built from the fields above; you can also edit it directly.</p>
                                 </div>
-                                <div>
-                                    <label class="block text-xs font-bold text-slate-700 mb-1">LGA</label>
-                                    <select id="oss_lb_lga" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
-                                        <option value="">Select LGA</option>
-                                        {{-- @todo: Populate with LGAs from controller --}}
-                                    </select>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-700 mb-1">Full Location</label>
-                                <input type="text" id="oss_lb_full_location" placeholder="Composed location"
-                                       class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
-                                <p class="text-[11px] text-slate-500 mt-1">Built from the fields above; you can also edit it directly.</p>
                             </div>
                         </div>
                     </div>

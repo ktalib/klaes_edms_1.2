@@ -17,8 +17,10 @@ use App\Models\Grouping;
 use App\Models\Entity;
 use App\Models\Customer;
 use App\Models\FileTracker;
+use App\Models\FileSearchRequest;
 use App\Services\CommissioningMirrorService;
 use App\Services\KangisFileNoPlaceholderService;
+use App\Services\FileLocationResolver;
 use Illuminate\Validation\Rule;
 use App\Services\PropertyIdAllocationService;
 use App\Services\FileIndexingBillService;
@@ -2400,6 +2402,51 @@ class FileIndexingController extends Controller
                 ->first();
 
             if (!$record) {
+                $blindReadyRequest = FileSearchRequest::query()
+                    ->where(function ($where) use ($variants, $normalizedVariants) {
+                        $applied = false;
+
+                        if (!empty($variants)) {
+                            $where->whereIn('file_number', $variants);
+                            $applied = true;
+                        }
+
+                        if (!empty($normalizedVariants)) {
+                            foreach ($normalizedVariants as $variant) {
+                                $clause = "REPLACE(REPLACE(REPLACE(UPPER(file_number), '-', ''), '/', ''), ' ', '') = ?";
+                                if ($applied) {
+                                    $where->orWhereRaw($clause, [$variant]);
+                                } else {
+                                    $where->whereRaw($clause, [$variant]);
+                                    $applied = true;
+                                }
+                            }
+                        }
+
+                        if (!$applied) {
+                            $where->whereRaw('1 = 0');
+                        }
+                    })
+                    ->where('status', FileSearchRequest::STATUS_FOUND)
+                    ->where('resolved_status', FileLocationResolver::STATUS_BLIND_FOUND_FOR_INDEXING)
+                    ->orderByDesc('responded_at')
+                    ->orderByDesc('id')
+                    ->first(['id', 'request_no', 'file_number', 'responded_at']);
+
+                $blindNotice = null;
+                if ($blindReadyRequest) {
+                    $blindNotice = [
+                        'request_id' => $blindReadyRequest->id,
+                        'request_no' => $blindReadyRequest->request_no,
+                        'file_number' => $blindReadyRequest->file_number,
+                        'responded_at' => optional($blindReadyRequest->responded_at)->format('Y-m-d g:i A'),
+                        'message' => sprintf(
+                            'A blind request was sent for %s. Once indexing is completed, this file will be ready for logout.',
+                            strtoupper(trim((string) $blindReadyRequest->file_number))
+                        ),
+                    ];
+                }
+
                 // If not found in index, check grouping for autofill data
                 $registryContext = trim((string) $request->query('registry', 'Lands Registry'));
 
@@ -2423,11 +2470,17 @@ class FileIndexingController extends Controller
                     return response()->json([
                         'exists' => false,
                         'grouping_found' => true,
-                        'grouping_record' => (array) $groupingResult['record']
+                        'grouping_record' => (array) $groupingResult['record'],
+                        'blind_request_ready_for_indexing' => (bool) $blindNotice,
+                        'blind_request_notice' => $blindNotice,
                     ]);
                 }
 
-                return response()->json(['exists' => false]);
+                return response()->json([
+                    'exists' => false,
+                    'blind_request_ready_for_indexing' => (bool) $blindNotice,
+                    'blind_request_notice' => $blindNotice,
+                ]);
             }
 
             $responseRecord = [

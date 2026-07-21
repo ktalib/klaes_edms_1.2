@@ -158,7 +158,7 @@
       border-collapse: collapse;
       font-size: 10px;
       table-layout: fixed;
-      margin-bottom: 2px;
+      margin-bottom: 6px;
     }
 
     .transaction-table th,
@@ -167,18 +167,6 @@
       vertical-align: top;
       border-bottom: 0.5px solid #eee;
       word-wrap: break-word;
-      line-height: 1.2;
-    }
-
-    /* DYNAMIC FONT REDUCTION CLASSES FOR WRAPPING ROWS */
-    .transaction-table tr.row-compact td {
-      font-size: 8.5px !important;
-      line-height: 1.15 !important;
-    }
-
-    .transaction-table tr.row-tight td {
-      font-size: 7.5px !important;
-      line-height: 1.1 !important;
     }
 
     /* File No column: never break/wrap file numbers */
@@ -193,12 +181,6 @@
       font-weight: bold;
       border-bottom: 1.5px solid #000;
       text-align: left;
-    }
-
-    /* CONTINUATION & END NOTICES (Screen/Default Rules) */
-    .table-continuation-foot,
-    .table-end-notice {
-      display: none;
     }
 
     /* FOOTER WRAPPER STYLING */
@@ -388,44 +370,7 @@
         display: table-header-group;
       }
 
-      /* CONTINUATION NOTICES PRINT RULES */
-      .table-continuation-foot {
-        display: table-footer-group; /* Automatically repeats on intermediate page breaks */
-      }
-
-      .continuation-cell {
-        text-align: center;
-        padding: 4px 0 !important;
-        border: none !important;
-        border-top: 1px dashed #000 !important;
-      }
-
-      .continuation-msg {
-        font-size: 9px;
-        font-weight: bold;
-        font-style: italic;
-        color: #444;
-        letter-spacing: 0.5px;
-      }
-
-      .table-end-notice {
-        display: block;
-        text-align: center;
-        font-size: 9px;
-        font-weight: bold;
-        font-style: italic;
-        margin: 4px 0 6px 0;
-        color: #000;
-        page-break-inside: avoid;
-        break-inside: avoid;
-      }
-
-      /* Single page reports suppress the bottom continuation repeater */
-      body.single-page-report .table-continuation-foot {
-        display: none !important;
-      }
-
-      /* "Orphan" Prevention: Avoid breaking AFTER the very last row only */
+      /* 3. "Orphan" Prevention: Avoid breaking AFTER the very last row only */
       .transaction-table tr:last-child {
         break-after: avoid;
         page-break-after: avoid;
@@ -457,6 +402,7 @@
         transform: translate(-50%, -50%) rotate(-30deg);
       }
 
+      /* Disable page numbers display logic if any was added previously */
       .page-number-display {
         display: none;
       }
@@ -482,7 +428,7 @@
           <div class="title-block">
             <h1>KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING</h1>
             <h2>LEGAL SEARCH REPORT</h2>
-            <h3>On-Premise Pay-per-Search</h3>
+            <h3>On-Premise  Pay-per-Search</h3>
           </div>
           <div id="qr-code" style="margin-right:8px;"></div>
           <div class="logo-box"><img src="http://app.klaes.ng/assets/logo/ministry2.png" alt="Logo" /></div>
@@ -490,52 +436,52 @@
       </header>
 
       <div class="section-label">Property Details</div>
-      <!-- Property Details grid -->
+      <!-- Property Details grid: 4 sections per row (label + value each),
+           separated by equal-width spacer cells (.sp). 11 cells per row. -->
       <div class="prop-details">
         <!-- Row 1 -->
         <div class="lbl">File Number:</div>
-        <div class="val"><strong id="report-file-number">KN/RES/2018/1042</strong></div>
+        <div class="val"><strong id="report-file-number">-</strong></div>
         <div class="sp"></div>
         <div class="lbl">Lon/Lat:</div>
-        <div class="val"><strong id="report-district-lga">8.5321° E / 11.9964° N</strong></div>
+        <div class="val"><strong id="report-district-lga">-</strong></div>
         <div class="sp"></div>
         <div class="lbl">Term:</div>
-        <div class="val"><strong id="report-term">99 Years</strong></div>
+        <div class="val"><strong id="report-term">-</strong></div>
         <div class="sp"></div>
         <div class="lbl" id="report-client-name-lbl">Client Name:</div>
-        <div class="val"><strong id="report-client-name">Alhaji Usman Bello</strong></div>
-        
+        <div class="val"><strong id="report-client-name">-</strong></div>
         <!-- Row 2 -->
+       
         <div class="lbl">File Title (Current Holder):</div>
-        <div class="val"><strong id="report-file-title">ABDULLAHI MUKHTAR &amp; SONS LTD</strong></div>
+        <div class="val"><strong id="report-file-title">-</strong></div>
         <div class="sp"></div>
         <div class="lbl">Plot No:</div>
-        <div class="val"><strong id="report-plot-no">Plot 142B</strong></div>
+        <div class="val"><strong id="report-plot-no">-</strong></div>
         <div class="sp"></div>
         <div class="lbl">Commencement <br>Date:</div>
-        <div class="val"><strong id="report-commencement-date">12/01/1998 (CofO)</strong></div>
+        <div class="val"><strong id="report-commencement-date">-</strong></div>
         <div class="sp"></div>
         <div class="lbl" id="report-client-address-lbl">Client Address:</div>
-        <div class="val"><strong id="report-client-address">No. 15 Zoo Road, Kano</strong></div>
-        
+        <div class="val"><strong id="report-client-address">-</strong></div>
         <!-- Row 3 -->
         <div class="lbl">Land Use:</div>
-        <div class="val"><strong id="report-land-use">Residential</strong></div>
+        <div class="val"><strong id="report-land-use">-</strong></div>
         <div class="sp"></div>
         <div class="lbl">Size:</div>
-        <div class="val"><strong id="report-size">1,250.00 Sq.M</strong></div>
+        <div class="val"><strong id="report-size">-</strong></div>
         <div class="sp"></div>
         <div class="lbl">Residual Term:</div>
-        <div class="val"><strong id="report-rent">71 Years</strong></div>
+        <div class="val"><strong id="report-rent">-</strong></div>
         <div class="sp"></div>
+        <!-- Date sits directly below Client Address; spans the far-right label+value columns -->
         <div id="report-date-line" style="grid-column: span 2; font-weight: bold; font-size: 12px;">Date: March 19, 2026</div>
-        
         <!-- Row 4 -->
         <div class="lbl">Plot Description:</div>
-        <div class="val"><strong id="report-plot-description">Baddarawa Commercial Layout</strong></div>
+        <div class="val"><strong id="report-plot-description">-</strong></div>
         <div class="sp"></div>
         <div class="lbl">TP No:</div>
-        <div class="val"><strong id="report-tpno">TP/KN/98/204</strong></div>
+        <div class="val"><strong id="report-tpno">-</strong></div>
         <div class="sp"></div>
         <div class="lbl"></div>
         <div class="val"></div>
@@ -546,42 +492,27 @@
 
       <div class="section-label">File History</div>
       <div class="table-wrap">
-        <table class="transaction-table">
-          <thead>
-            <tr class="header-row">
-              <th style="width: 3%">S/N</th>
-              <th style="width: 11%">File No</th>
-              <th style="width: 10%; white-space: nowrap;">Instrument/<br>Transaction Type</th>
-              <th style="width: 11%">Party 1</th>
-              <th style="width: 11%">Party 2</th>
-              <th style="width: 6%" class="party-3-col">Party 3</th>
-              <th style="width: 6%" class="party-4-col">Party 4</th>
-              <th style="width: 9%">Transaction Date</th>
-              <th style="width: 9%">Reg. Time/Date</th>
-              <th style="width: 9%">Particulars</th>
-              <th style="width: 5%">Caveat</th>
-              <th style="width: 10%">Comments</th>
-            </tr>
-          </thead>
-
-          <!-- Table Continuation Footer Repeater -->
-          <tfoot class="table-continuation-foot">
-            <tr>
-              <td colspan="12" class="continuation-cell">
-                <span class="continuation-msg">*** CONTINUED ON NEXT PAGE ***</span>
-              </td>
-            </tr>
-          </tfoot>
-
-          <tbody id="report-transactions-body">
-            <!-- Populated via transactionsData JSON -->
-          </tbody>
-        </table>
-
-        <!-- End of Transaction History Notice -->
-        <div id="table-end-marker" class="table-end-notice">
-          *** END OF TRANSACTION HISTORY ***
-        </div>
+      <table class="transaction-table">
+        <thead>
+          <tr class="header-row">
+            <th style="width: 3%">S/N</th>
+            <th style="width: 11%">File No</th>
+            <th style="width: 10%; white-space: nowrap;">Instrument/<br>Transaction Type</th>
+            <th style="width: 11%">Party 1</th>
+            <th style="width: 11%">Party 2</th>
+            <th style="width: 6%" class="party-3-col">Party 3</th>
+            <th style="width: 6%" class="party-4-col">Party 4</th>
+            <th style="width: 9%">Transaction Date</th>
+            <th style="width: 9%">Reg. Time/Date</th>
+            <th style="width: 9%">Particulars</th>
+            <th style="width: 5%">Caveat</th>
+            <th style="width: 10%">Comments</th>
+          </tr>
+        </thead>
+        <tbody id="report-transactions-body">
+          <!-- Data will be populated here -->
+        </tbody>
+      </table>
       </div>
     </div>
 
@@ -599,7 +530,6 @@
 
             <span id="report-caveat-note" class="dynamic-comment"
               style="display:none; margin-bottom:8px; font-size:13px; font-weight:bold;"></span>
-          </p>
           <p id="report-general-comment" class="dynamic-comment"
             style="display:none; margin:0 0 8px 0; font-size:13px; font-weight:bold; color:#1f2937;"></p>
         </div>
@@ -608,15 +538,15 @@
       <div class="signature-section">
         <div class="sig-row">
           <div class="sig-box">
+             <br>
+            <div>Name: <span id="report-full-name" style="border-bottom: 1px dotted #000; min-width: 200px; display: inline-block; padding: 0 4px;"></span></div>
+             <br>
+            <div>Rank: <span id="report-rank" style="border-bottom: 1px dotted #000; min-width: 200px; display: inline-block; padding: 0 4px;"></span></div>
             <br>
-            <div>Name: <span id="report-full-name" style="border-bottom: 1px dotted #000; min-width: 200px; display: inline-block; padding: 0 4px;">M. A. Haruna</span></div>
-            <br>
-            <div>Rank: <span id="report-rank" style="border-bottom: 1px dotted #000; min-width: 200px; display: inline-block; padding: 0 4px;">Higher Executive Officer</span></div>
-            <br>
-            <div>Sign:............................ Date: <span id="report-sign-date" style="border-bottom: 1px dotted #000; min-width: 90px; display: inline-block; padding: 0 4px;">19/03/2026</span></div>
+            <div>Sign:............................ Date: <span id="report-sign-date" style="border-bottom: 1px dotted #000; min-width: 90px; display: inline-block; padding: 0 4px;"></span></div>
           </div>
           <div class="sig-box">
-            <br>
+             <br>
             <div>Verified by:.......................................</div>
             <br>
             <div>Rank:...............................................</div>
@@ -624,7 +554,7 @@
             <div>Sign:............................ Date:................</div>
           </div>
           <div class="sig-box">
-            <br>
+             <br>
             <div>Sign:............................ Date:................</div>
             <div style="font-weight:bold">Director Deeds</div>
             <div style="font-size:9px">(for Permanent Secretary/Hon. Commissioner)</div>
@@ -650,186 +580,37 @@
     </div>
   </div> <!-- End of page -->
 
+  <!-- Integrate JS data fetch from original backup -->
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script>
-    // JSON Dataset for transactions
-    const transactionsData = [
-      {
-        sn: 1,
-        file_no: "KN/RES/2018/1042",
-        instrument_type: "Certificate of Occupancy",
-        grantor: "Kano State Government",
-        grantee: "Ibrahim Ahmad Suleiman",
-        party_3: "-",
-        party_4: "-",
-        transaction_date: "12/01/1998",
-        reg_time: "10:15 AM",
-        reg_date: "15/01/1998",
-        reg_no: "14/14/1998 A",
-        caveat: "Nil",
-        comments: "Initial Allocation granted."
-      } ,
-      {
-        sn: 2,
-        file_no: "KN/RES/2018/1042",
-        instrument_type: "Deed of Assignment",
-        grantor: "Ibrahim Ahmad Suleiman",
-        grantee: "Kabiru Salisu & Co.",
-        party_3: "-",
-        party_4: "-",
-        transaction_date: "04/05/2005",
-        reg_time: "02:30 PM",
-        reg_date: "10/05/2005",
-        reg_no: "45/45/2005 B",
-        caveat: "Nil",
-        comments: "Duly stamped and registered."
-      },
-      {
-        sn: 3,
-        file_no: "KN/RES/2018/1042",
-        instrument_type: "Tripartite Mortgage",
-        grantor: "Kabiru Salisu & Co.",
-        grantee: "First Bank Nigeria PLC",
-        party_3: "Kano Land Bureau",
-        party_4: "-",
-        transaction_date: "18/11/2012",
-        reg_time: "11:00 AM",
-        reg_date: "22/11/2012",
-        reg_no: "88/88/2012 C",
-        caveat: "Active",
-        comments: "Mortgage facility registered."
-      },
-      {
-        sn: 4,
-        file_no: "KN/RES/2018/1042",
-        instrument_type: "Deed of Release",
-        grantor: "First Bank Nigeria PLC",
-        grantee: "Kabiru Salisu & Co.",
-        party_3: "-",
-        party_4: "-",
-        transaction_date: "14/02/2019",
-        reg_time: "09:45 AM",
-        reg_date: "20/02/2019",
-        reg_no: "12/12/2019 D",
-        caveat: "Cleared",
-        comments: "Mortgage fully discharged."
-      },
-      {
-        sn: 5,
-        file_no: "KN/RES/2018/1042",
-        instrument_type: "Deed of Assignment",
-        grantor: "Kabiru Salisu & Co.",
-        grantee: "Abdullahi Mukhtar & Sons Ltd",
-        party_3: "-",
-        party_4: "-",
-        transaction_date: "10/10/2023",
-        reg_time: "03:15 PM",
-        reg_date: "18/10/2023",
-        reg_no: "101/101/2023 E",
-        caveat: "Nil",
-        comments: "Current registered holder."
-      },
-      {
-        sn: 6,
-        file_no: "KN/RES/2018/1042",
-        instrument_type: "Deed of Release",
-        grantor: "First Bank Nigeria PLC",
-        grantee: "Kabiru Salisu & Co.",
-        party_3: "-",
-        party_4: "-",
-        transaction_date: "14/02/2019",
-        reg_time: "09:45 AM",
-        reg_date: "20/02/2019",
-        reg_no: "12/12/2019 D",
-        caveat: "Cleared",
-        comments: "Mortgage fully discharged."
-      } ,
-       
-
-
-      
-   
-    ];
-
-    function renderTransactions(rows) {
-      const tbody = document.getElementById('report-transactions-body');
-      if (!tbody || !Array.isArray(rows)) return;
-
-      const rowHtml = (row) => `
-        <tr>
-          <td>${row.sn}</td>
-          <td>${row.file_no || '-'}</td>
-          <td>${row.instrument_type}</td>
-          <td>${row.grantor}</td>
-          <td>${row.grantee}</td>
-          <td class="party-3-col">${row.party_3 || '-'}</td>
-          <td class="party-4-col">${row.party_4 || '-'}</td>
-          <td>${row.transaction_date || '-'}</td>
-          <td><strong>${row.reg_time}</strong><br>${row.reg_date}</td>
-          <td>${row.reg_no}</td>
-          <td>${row.caveat}</td>
-          <td>${row.comments}</td>
-        </tr>`;
-        
-      tbody.innerHTML = rows.map(rowHtml).join('');
-
-      const hasP3 = rows.some(r => r.party_3 && r.party_3 !== '-' && String(r.party_3).trim() !== '');
-      const hasP4 = rows.some(r => r.party_4 && r.party_4 !== '-' && String(r.party_4).trim() !== '');
-      if (!hasP3) document.querySelectorAll('.party-3-col').forEach(el => el.style.display = 'none');
-      if (!hasP4) document.querySelectorAll('.party-4-col').forEach(el => el.style.display = 'none');
-    }
-
+    // Auto-print coordination. The Print Manager only OPENS this tab — it does not
+    // trigger a browser print — so without this the page is never printed and the
+    // print (and therefore the reprint / FILE COPY status) is never logged. We fire
+    // window.print() exactly once, and only after BOTH the report data has rendered
+    // AND the watermark (Original vs FILE COPY) has been decided, so the printed page
+    // is complete and correctly stamped.
     let __pprDataReady = false, __pprWmReady = false, __pprPrinted = false;
+    // Only auto-print when opened as a PRINT action. The Print Manager appends a
+    // `status` param (Original/Copy/Batch) when the user clicks Print; the same
+    // template opened for "View Detailed Records" has no `status` and must NOT print.
     const __pprShouldPrint = new URLSearchParams(window.location.search).has('status');
-
     function __pprMaybePrint() {
       if (__pprShouldPrint && __pprDataReady && __pprWmReady && !__pprPrinted) {
         __pprPrinted = true;
+        // Small delay lets the QR canvas and table layout paint before printing.
         setTimeout(function () { try { window.print(); } catch (_e) { } }, 350);
       }
     }
 
-    // 1. DYNAMIC FONT REDUCTION LOGIC
-    function autoFitTableRows() {
-      const rows = document.querySelectorAll('#report-transactions-body tr');
-      const MAX_TARGET_HEIGHT = 28; // Threshold in pixels before downsizing font (~2 lines + padding)
-
-      rows.forEach(row => {
-        row.classList.remove('row-compact', 'row-tight');
-        let currentHeight = row.getBoundingClientRect().height;
-
-        // Apply 8.5px font reduction if height exceeds target
-        if (currentHeight > MAX_TARGET_HEIGHT) {
-          row.classList.add('row-compact');
-          currentHeight = row.getBoundingClientRect().height;
-        }
-
-        // Apply 7.5px font reduction if it still exceeds target
-        if (currentHeight > MAX_TARGET_HEIGHT) {
-          row.classList.remove('row-compact');
-          row.classList.add('row-tight');
-        }
-      });
-    }
-
-    // 2. MULTI-PAGE PAGE COUNT DETECTOR
-    function checkMultiPageStatus() {
-      const pageElement = document.querySelector('.page');
-      if (!pageElement) return;
-
-      // Check if rendered height exceeds 1 sheet printable height (~730px or ~7.6in)
-      const isMultiPage = pageElement.scrollHeight > (pageElement.clientHeight + 5);
-
-      if (isMultiPage) {
-        document.body.classList.remove('single-page-report');
-        document.body.classList.add('multi-page-report');
-      } else {
-        document.body.classList.remove('multi-page-report');
-        document.body.classList.add('single-page-report');
-      }
-    }
-
-    // 3. ROW STRETCHING LOGIC
+    // Stretch the File History rows so they cover the sheet instead of leaving a
+    // blank gap below a short table. The flex page pins the bottom logos
+    // (.footer-bottom) to the sheet bottom, so any slack appears as a gap between
+    // the signatures block (.footer-wrapper) and those logos. We measure that gap
+    // and add it evenly to the row heights, which pushes the signatures down to
+    // meet the logos and fills the sheet. A report whose rows already fill (or
+    // overflow) a sheet has no gap, so nothing stretches — long reports paginate
+    // normally. Screen and print use the identical page box, so the heights
+    // measured here are correct for the printed sheet too.
     function fillSheetRows() {
       const tbody = document.getElementById('report-transactions-body');
       const footerWrap = document.querySelector('.footer-wrapper');
@@ -838,6 +619,7 @@
       const rows = Array.prototype.slice.call(tbody.rows);
       if (!rows.length) return;
 
+      // Clear any previous stretch so we always measure the natural gap.
       rows.forEach(function (r) { r.style.height = ''; });
 
       const gap = footerBottom.getBoundingClientRect().top - footerWrap.getBoundingClientRect().bottom;
@@ -849,16 +631,7 @@
       }
     }
 
-    function runLayoutAdjustments() {
-      autoFitTableRows();
-      checkMultiPageStatus();
-      requestAnimationFrame(() => { fillSheetRows(); });
-    }
-
     (function () {
-      // Default initial render using local JSON dataset
-      renderTransactions(transactionsData);
-
       const params = new URLSearchParams(window.location.search);
       const fileNo = params.get('file_number') || '';
       const propId = params.get('prop_id') || '';
@@ -876,16 +649,7 @@
       const clientAddress = params.get('client_address') || '';
       const timelineOrder = params.get('timeline_order') || '';
       const excludedKeys = params.get('excluded_keys') || '';
-
-      runLayoutAdjustments();
-      window.addEventListener('load', runLayoutAdjustments);
-      window.addEventListener('beforeprint', runLayoutAdjustments);
-
-      if (!fileNo && !propId) {
-        __pprDataReady = true;
-        __pprMaybePrint();
-        return;
-      }
+      if (!fileNo && !propId) return;
 
       const url = '/legal-search/report-template-data?' + new URLSearchParams({
         file_number: fileNo,
@@ -917,14 +681,20 @@
             if (el) el.textContent = (v != null && String(v).trim() !== '') ? v : '-';
           };
 
+          // Convert ALL-CAPS values to Title Case for display (keeps stored data intact).
           const titleCase = (v) => (v || '').toString().toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase());
 
+          // Term of the Right of Occupancy, derived from land use:
+          // Residential / Agricultural = 99 years; Commercial / Industrial = 40 years.
           const termFromLandUse = (landUse) => {
             const lu = String(landUse || '').toUpperCase();
             if (lu.includes('RESIDENT') || lu.startsWith('RES') || lu.includes('AGRIC') || lu.startsWith('AG')) return '99 Years';
             if (lu.includes('COMMERC') || lu.startsWith('COM') || lu.includes('INDUSTR') || lu.startsWith('IND')) return '40 Years';
             return '';
           };
+
+          // Remarks Data — suppressed ("These details are as at" line removed)
+          // if (d.remarks) { ... }
 
           setText('report-date-line', d.date_line);
           setText('report-file-number', d.file_number);
@@ -941,11 +711,15 @@
           setText('report-plot-no', d.plot_no);
           setText('report-plot-description', d.plot_description);
           setText('report-tpno', d.tpno);
+          // Client details (Pay-Per-Search): show in the far-right column. Always
+          // keep the labels visible; setText falls back to "-" when the value is
+          // missing so the row reads e.g. "Client Name:  -".
           setText('report-client-name', titleCase(d.client_name));
           setText('report-client-address', titleCase(d.client_address));
           setText('report-generated-by', d.generated_by);
           setText('report-full-name', d.full_name);
           setText('report-rank', d.rank);
+          // Auto-fill the signing Date with the report generation date.
           setText('report-sign-date', d.generated_date || (d.date_line || '').replace(/^Date:\s*/i, ''));
 
           const tsEl = document.getElementById('report-timestamp');
@@ -956,7 +730,9 @@
             tsEl.style.display = 'inline';
           }
 
-          // Caveat note
+          // Caveat note — flows inline after the ground-rent text (continues on
+          // the same line and only wraps when it runs out of room) instead of
+          // dropping onto its own line.
           const caveatEl = document.getElementById('report-caveat-note');
           if (caveatEl && d.caveat_note) {
             caveatEl.textContent = ' ' + d.caveat_note;
@@ -984,7 +760,7 @@
             ltEl.style.display = 'inline';
           }
 
-          // General comment
+          // General comment — its own line under the remarks, not appended inline.
           const genEl = document.getElementById('report-general-comment');
           if (genEl && d.general_comment) {
             const genText = d.general_comment.trim();
@@ -1008,7 +784,7 @@
             ecEl.style.display = 'inline';
           }
 
-          // W/R/C notice
+          // W/R/C (Withdrawn / Revoked / Cancelled) notice from duplicate_fileno
           const wrcEl = document.getElementById('report-wrc-comment');
           if (wrcEl && d.wrc_comment) {
             const wrcText = d.wrc_comment.trim();
@@ -1016,7 +792,7 @@
             wrcEl.style.display = 'inline';
           }
 
-          // CoFO ready / collected notice
+          // CoFO ready / collected notice from duplicate_fileno
           const cofoEl = document.getElementById('report-cofo-comment');
           if (cofoEl && d.cofo_comment) {
             const cofoText = d.cofo_comment.trim();
@@ -1024,15 +800,41 @@
             cofoEl.style.display = 'inline';
           }
 
-          if (Array.isArray(d.rows) && d.rows.length > 0) {
-            renderTransactions(d.rows);
+          const tbody = document.getElementById('report-transactions-body');
+          if (tbody && Array.isArray(d.rows) && d.rows.length > 0) {
+            // Render every transaction row into the single table. Rows fill each
+            // printed sheet top-to-bottom and the browser breaks to a new sheet only
+            // when the current one is full (see @media print: the table header
+            // repeats on each page and rows never split). Filling the sheet this way
+            // avoids leaving a blank gap below a short first sheet.
+            const rowHtml = (row) => `
+                <tr>
+                  <td>${row.sn}</td>
+                  <td>${row.file_no || '-'}</td>
+                  <td>${row.instrument_type}</td>
+                  <td>${row.grantor}</td>
+                  <td>${row.grantee}</td>
+                  <td class="party-3-col">${row.party_3 || '-'}</td>
+                  <td class="party-4-col">${row.party_4 || '-'}</td>
+                  <td>${row.transaction_date || '-'}</td>
+                  <td><strong>${row.reg_time}</strong><br>${row.reg_date}</td>
+                  <td>${row.reg_no}</td>
+                  <td>${row.caveat}</td>
+                  <td>${row.comments}</td>
+                </tr>`;
+            tbody.innerHTML = d.rows.map(rowHtml).join('');
+
+            // Hide Party 3/4 columns if no data.
+            const hasP3 = d.rows.some(r => r.party_3 && r.party_3 !== '-' && String(r.party_3).trim() !== '');
+            const hasP4 = d.rows.some(r => r.party_4 && r.party_4 !== '-' && String(r.party_4).trim() !== '');
+            if (!hasP3) document.querySelectorAll('.party-3-col').forEach(el => el.style.display = 'none');
+            if (!hasP4) document.querySelectorAll('.party-4-col').forEach(el => el.style.display = 'none');
           }
 
-          // QR Code rendering
+          // Generate QR code with encrypted data
           if (d.qr_data && typeof QRCode !== 'undefined') {
             const qrContainer = document.getElementById('qr-code');
             if (qrContainer) {
-              qrContainer.innerHTML = '';
               new QRCode(qrContainer, {
                 text: d.qr_data,
                 width: 44,
@@ -1044,15 +846,120 @@
             }
           }
 
-          runLayoutAdjustments();
+          // Stretch the File History rows to cover the sheet (no blank gap below a
+          // short table). Deferred so the QR/logos have painted and the header
+          // height is final before we measure. Re-run before printing as a safety
+          // net in case fonts/images shifted the layout.
+          requestAnimationFrame(() => { fillSheetRows(); });
+          // Recompute once images (logos/QR) finish loading and right before print,
+          // since header height affects the measured gap.
+          window.addEventListener('load', fillSheetRows);
+          window.addEventListener('beforeprint', fillSheetRows);
 
+          // Report is fully rendered — clear this half of the auto-print gate.
           __pprDataReady = true;
           __pprMaybePrint();
         })
-        .catch(() => {
-          __pprDataReady = true;
-          __pprMaybePrint();
+        .catch(() => { });
+    })();
+
+    // Watermark: first print = coat of arms, subsequent prints = FILE COPY
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      const fileNo = params.get('file_number') || '';
+      const docType = 'Legal Search Pay-Per-Search';
+      const wmImg = document.getElementById('watermark-img');
+      const wmCopy = document.getElementById('wm-copy');
+      let isFileCopy = false;
+
+      function showOriginal() {
+        if (wmImg) wmImg.style.display = 'block';
+        if (wmCopy) wmCopy.style.display = 'none';
+      }
+
+      function showFileCopy() {
+        if (wmImg) wmImg.style.display = 'none';
+        if (wmCopy) wmCopy.style.display = 'block';
+      }
+
+      // Watermark decided — clear the other half of the auto-print gate.
+      const wmDone = () => { __pprWmReady = true; __pprMaybePrint(); };
+
+      // Explicit choice from the Print Manager ("Print Original" / "Print File
+      // Copy") forces the watermark; otherwise fall back to auto-detect from
+      // the print history (first print = Original, reprints = FILE COPY).
+      const forcedType = (params.get('status') || '').toLowerCase();
+
+      if (forcedType === 'copy' || forcedType === 'original') {
+        isFileCopy = (forcedType === 'copy');
+        if (isFileCopy) { showFileCopy(); } else { showOriginal(); }
+        wmDone();
+      } else if (fileNo) {
+        // Check print status
+        fetch('/print-manager/status?' + new URLSearchParams({
+          reference_number: fileNo,
+          document_type: docType
+        }), { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+          .then(r => r.json())
+          .then(data => {
+            if (data && data.success && data.status && data.status.original > 0) {
+              isFileCopy = true;
+              showFileCopy();
+            } else {
+              showOriginal();
+            }
+          })
+          .catch(() => showOriginal())
+          .finally(wmDone);
+      } else {
+        showOriginal();
+        wmDone();
+      }
+
+      window.addEventListener('afterprint', function () {
+        if (!fileNo) return;
+        // Log the print. keepalive:true lets the request complete even if the
+        // user closes/navigates this tab immediately after printing — the exact
+        // reprint workflow (print -> close -> reopen). Without it the browser
+        // aborts the in-flight request, the original is never recorded, and the
+        // next open keeps showing the "Original" watermark instead of FILE COPY.
+        const payload = JSON.stringify({
+          reference_number: fileNo,
+          document_type: docType,
+          status: isFileCopy ? 'Copy' : 'Original',
+          print_type: 'Individual'
         });
+        try {
+          fetch('/print-manager/log', {
+            method: 'POST',
+            credentials: 'same-origin',
+            keepalive: true,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: payload
+          }).catch(() => {
+            // Last-resort fallback if fetch is rejected outright.
+            if (navigator.sendBeacon) {
+              navigator.sendBeacon('/print-manager/log', new Blob([payload], { type: 'application/json' }));
+            }
+          });
+        } catch (_e) {
+          if (navigator.sendBeacon) {
+            navigator.sendBeacon('/print-manager/log', new Blob([payload], { type: 'application/json' }));
+          }
+        }
+
+        // When the operator explicitly chose "Print Original" / "Print File Copy",
+        // the watermark must stay exactly as chosen — never auto-flip based on a
+        // previous print. Only the auto-detect flow (no forced type) switches to
+        // FILE COPY after the first print.
+        if (!forcedType) {
+          isFileCopy = true;
+          showFileCopy();
+        }
+      });
     })();
   </script>
 </body>

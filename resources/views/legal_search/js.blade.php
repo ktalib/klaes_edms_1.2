@@ -1571,6 +1571,9 @@ const executeSearchAjax = (filters, searchData) => {
   const renderFileNumberSpan = (item, fieldType = 'fileNumber') => {
     const rawVal = getMappedValue(item, fieldType);
     const itemFileNo = String(rawVal || '').trim();
+    // A SYSTEM temporary number ("TEMP-91950") is an internal placeholder — never shown in the
+    // File No field (mirrors PHP: the file_no is blanked server-side for the print report).
+    if (isSystemTempFileNo(itemFileNo)) return '-';
     const searchedFileNo = (window.__lsLastSearchedFileNumber || '').trim();
 
     // Related-Fileno (recertification) rows always render in orange, irrespective of search match
@@ -3539,6 +3542,8 @@ const executeSearchAjax = (filters, searchData) => {
     // (e.g. "MLKN 1934"), suppress the row entirely — a KANGIS file is never shown as
     // a File Commissioning event.
     if (!_notKangisNo(fileNo)) return null;
+    // A SYSTEM temporary number ("TEMP-xxx") is an internal placeholder, never a commissioning event.
+    if (isSystemTempFileNo(fileNo)) return null;
     // The commissioning date belongs to whichever file number was actually
     // commissioned (fileNumber.mlsfNo, resolved server-side). It carries a "(T)"
     // suffix when the temporary file was the commissioned one. Show the date on
@@ -3599,6 +3604,7 @@ const executeSearchAjax = (filters, searchData) => {
     // lifecycle — it shows no File Commissioning row (only its Recertification appears).
     const _kt = identifyFileNumberType(no);
     if (_kt === 'kangis' || _kt === 'new_kangis') return null;
+    if (isSystemTempFileNo(no)) return null;
     let date = (commissioningDate && commissioningDate !== '-') ? commissioningDate : '-';
     if (date === '-') date = extractYearFromFileNumber(no) || '-';
     return {
@@ -3646,6 +3652,7 @@ const executeSearchAjax = (filters, searchData) => {
     // A KANGIS-format file is an alias of a land file — it shows no File Decommissioning row.
     const _kt = identifyFileNumberType(no);
     if (_kt === 'kangis' || _kt === 'new_kangis') return null;
+    if (isSystemTempFileNo(no)) return null;
     return {
       _is_decommissioning: true,
       _is_lineage_decommissioning: true,
@@ -3713,6 +3720,7 @@ const executeSearchAjax = (filters, searchData) => {
     // A KANGIS-format file is an alias of a land file — it shows no File Decommissioning row.
     const _kt = identifyFileNumberType(fileNo);
     if (_kt === 'kangis' || _kt === 'new_kangis') return null;
+    if (isSystemTempFileNo(fileNo)) return null;
     const date = decommissionDisplayDate(lineage.decommission_event_type, lineage.decommission_date);
     // Holder resolved server-side from the decommission archive; fall back to the
     // searched file's title.
@@ -3834,6 +3842,12 @@ const executeSearchAjax = (filters, searchData) => {
     return t === 'kangis' || t === 'new_kangis';
   };
 
+  // A SYSTEM temporary file number ("TEMP-91950") is an internal deed-registration placeholder,
+  // not a real file: no File Commissioning/Decommissioning row and never shown in the File No
+  // field. Mirrors PHP LegalSearchService::isSystemTempFileNo(). Distinct from a genuine "(T)"
+  // temporary file (isTempFileNo), which keeps its own "Temporary File" row.
+  const isSystemTempFileNo = (v) => /^TEMP[-_ ]?\d+/i.test(String(v || '').trim());
+
   const extractKangisLifecycleKey = (r) => {
     const candidates = [
       r?.kangisFileNo,
@@ -3940,6 +3954,7 @@ const executeSearchAjax = (filters, searchData) => {
     // lifecycle — it shows no File Commissioning row (only its Recertification appears).
     const _kt = identifyFileNumberType(no);
     if (_kt === 'kangis' || _kt === 'new_kangis') return null;
+    if (isSystemTempFileNo(no)) return null;
 
     const meta = lifecycleMetaFor(fileNo);
     // A genuine KLAES commissioning date (resolved server-side from mls_file_no) is
@@ -3985,6 +4000,7 @@ const executeSearchAjax = (filters, searchData) => {
     // A KANGIS-format file is an alias of a land file — it shows no File Decommissioning row.
     const _kt = identifyFileNumberType(no);
     if (_kt === 'kangis' || _kt === 'new_kangis') return null;
+    if (isSystemTempFileNo(no)) return null;
     const meta = lifecycleMetaFor(fileNo);
     const date = decommissionDisplayDate(meta?.decommission_event_type, meta?.decommission_date);
     const holder = getHolderForFile(fileNo, rowsForFile);

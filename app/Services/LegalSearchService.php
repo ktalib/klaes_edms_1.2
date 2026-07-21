@@ -4871,6 +4871,11 @@ class LegalSearchService
             }
 
             $rowFileNo = (string) ($t['fileno'] ?: ($t['file_number'] ?: ($t['mlsFNo'] ?: '-')));
+            // A SYSTEM temporary number ("TEMP-xxx") is an internal placeholder — never
+            // shown in the File No field.
+            if ($this->isSystemTempFileNo($rowFileNo)) {
+                $rowFileNo = '-';
+            }
             $rows[] = [
                 'sn' => $idx + 1,
                 'file_no' => $rowFileNo,
@@ -4997,8 +5002,9 @@ class LegalSearchService
         }
         // A KANGIS-format file (KNML/MLKN/KNGP/KN…) is an alias of a permanent land file,
         // not a lifecycle of its own — it is never shown as a File Commissioning event
-        // (only its Recertification appears). Suppress the synthetic commissioning row.
-        if (!$this->isKangisFormat($commissioningFileNo)) {
+        // (only its Recertification appears). A SYSTEM temporary number ("TEMP-xxx") is an
+        // internal placeholder and is suppressed the same way.
+        if (!$this->isKangisFormat($commissioningFileNo) && !$this->isSystemTempFileNo($commissioningFileNo)) {
             $rows[] = $commissioningRow;
         }
 
@@ -6453,6 +6459,18 @@ class LegalSearchService
     }
 
     /**
+     * A SYSTEM temporary file number (e.g. "TEMP-91950") is an internal placeholder from the
+     * deed-registration pipeline — not a real land file. Per the client: it never gets a File
+     * Commissioning or File Decommissioning row, and it never displays in the File No field.
+     * (Distinct from a "(T)" temporary file, which is a genuine temporary file with its own
+     * "Temporary File" timeline row.)
+     */
+    private function isSystemTempFileNo(?string $fileNo): bool
+    {
+        return (bool) preg_match('/^TEMP[-_ ]?\d+/i', trim((string) $fileNo));
+    }
+
+    /**
      * Display label for a recertification timeline row, per the client spec:
      *   - OLD KANGIS file (KNML/MLKN/KNGP)   -> "First KANGIS Recertification"  (the 2014–2024 exercise)
      *   - NEW KANGIS file (KN + digits)      -> "Second KANGIS Recertification" (the 2025–present exercise)
@@ -6896,8 +6914,10 @@ class LegalSearchService
 
             // A KANGIS-format file (KNML/MLKN/KNGP/KN…) is an alias of a land file, never
             // its own lifecycle — suppress its synthetic Commissioning/Decommissioning
-            // rows (its Recertification, classified separately, still appears).
-            $isKangisLifecycle = $this->isKangisFormat($fno);
+            // rows (its Recertification, classified separately, still appears). A SYSTEM
+            // temporary number ("TEMP-xxx") is an internal placeholder and is suppressed
+            // the same way.
+            $isKangisLifecycle = $this->isKangisFormat($fno) || $this->isSystemTempFileNo($fno);
 
             if (empty($hasCommissioning[$fno]) && !$isKangisLifecycle) {
                 $rows[] = $this->makePrintCommissioningRow($fno, $meta);

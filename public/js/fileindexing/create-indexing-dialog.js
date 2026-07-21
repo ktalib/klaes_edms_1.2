@@ -353,6 +353,10 @@
         lastDecision: null,
     };
 
+    const blindRequestNoticeState = {
+        shownFor: null,
+    };
+
     const editModeState = {
         isEditing: false,
         recordId: null,
@@ -1482,6 +1486,35 @@
 
             if (indexedFeedbackState.lastRequestId !== requestId) {
                 return null;
+            }
+
+            const blindNotice = payload?.blind_request_notice || null;
+            const blindReady = !!payload?.blind_request_ready_for_indexing;
+            const selectedFile = indexedFeedbackState.currentFileNumber || trimmed;
+
+            if (blindReady && blindNotice && selectedFile
+                && blindRequestNoticeState.shownFor !== selectedFile
+                && !window.isEditMode) {
+                const promptMessage = blindNotice.message
+                    || `A blind request was sent for ${selectedFile}. Once indexing is completed, this file will be ready for logout.`;
+
+                if (typeof Swal !== 'undefined') {
+                    await Swal.fire({
+                        title: 'Blind Request Update',
+                        text: promptMessage,
+                        icon: 'info',
+                        confirmButtonText: 'Continue Indexing',
+                        confirmButtonColor: '#2563eb',
+                    });
+                } else {
+                    alert(promptMessage);
+                }
+
+                blindRequestNoticeState.shownFor = selectedFile;
+            }
+
+            if (!blindReady && selectedFile && blindRequestNoticeState.shownFor === selectedFile) {
+                blindRequestNoticeState.shownFor = null;
             }
 
             // Handle Grouping Autofill if found but not indexed

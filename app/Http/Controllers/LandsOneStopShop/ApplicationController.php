@@ -313,6 +313,7 @@ class ApplicationController extends Controller
             'lgas' => $lgas,
             'districts' => $districts,
             'streetNames' => $streetNames,
+            'tpNumbers' => $this->ossDistinctTpNumbers(),
             'typeOptions' => LandsOneStopShopApplication::typeOptions(),
             'statusOptions' => LandsOneStopShopApplication::statusOptions(),
             'cardCounts' => $cardCounts,
@@ -642,6 +643,7 @@ class ApplicationController extends Controller
             'lgas' => $lgas,
             'districts' => $districts,
             'streetNames' => $streetNames,
+            'tpNumbers' => $this->ossDistinctTpNumbers(),
             'typeOptions' => LandsOneStopShopApplication::typeOptions(),
             'statusOptions' => LandsOneStopShopApplication::statusOptions(),
             'cardCounts' => $cardCounts,
@@ -3760,6 +3762,24 @@ class ApplicationController extends Controller
         ];
     }
 
+    /**
+     * Distinct, non-empty TP numbers from the file registry — used to populate
+     * the OP "TP No." dropdown on the application form. Ordered for the picker.
+     */
+    private function ossDistinctTpNumbers(): \Illuminate\Support\Collection
+    {
+        try {
+            return DB::connection('sqlsrv')->table('fileNumber')
+                ->whereNotNull('tp_no')
+                ->where('tp_no', '!=', '')
+                ->distinct()
+                ->orderBy('tp_no')
+                ->pluck('tp_no');
+        } catch (\Throwable $e) {
+            return collect();
+        }
+    }
+
     private function validationRules(): array
     {
         return [
@@ -3777,6 +3797,7 @@ class ApplicationController extends Controller
             'plot_no' => 'nullable|string|max:100',
             'plan_no' => 'nullable|string|max:100',
             'location' => 'nullable|string|max:500',
+            'district' => 'nullable|string|max:255',
             'prev_allocated' => 'nullable|string|max:10',
             'prev_allocation_details' => 'nullable|string',
             'remarks' => 'nullable|string',

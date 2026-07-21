@@ -2197,6 +2197,8 @@
         const LOG_BADGE = {
             'Awaiting':  'bg-amber-100 text-amber-800',
             'Found':     'bg-green-100 text-green-800',
+            'Found (Indexed)': 'bg-green-100 text-green-800',
+            'Found for Indexing': 'bg-amber-100 text-amber-800',
             'Not Found': 'bg-red-100 text-red-800',
         };
 
@@ -2314,18 +2316,24 @@
                             const nft       = (r.not_found && r.not_found_type)
                                 ? (String(r.not_found_type).toUpperCase() === 'MISSING' ? 'Missing' : 'Pending') : '';
                             const respLabel = nft ? `${r.scb_response} (${nft})` : r.scb_response;
-                            const badge  = nft === 'Missing' ? 'bg-red-100 text-red-800'
+                            const isReadyIndexing = !!r.ready_indexing;
+                            const badge  = isReadyIndexing ? 'bg-amber-100 text-amber-800'
+                                : nft === 'Missing' ? 'bg-red-100 text-red-800'
                                 : nft === 'Pending' ? 'bg-amber-100 text-amber-800'
                                 : (LOG_BADGE[r.scb_response] || 'bg-gray-100 text-gray-700');
-                            const icon   = r.found ? 'check' : (r.not_found ? (nft === 'Pending' ? 'hourglass' : 'x') : 'clock');
+                            const icon   = isReadyIndexing
+                                ? 'hourglass'
+                                : (r.found ? 'check' : (r.not_found ? (nft === 'Pending' ? 'hourglass' : 'x') : 'clock'));
                             const sn     = start + i + 1;
                             const sentDt = splitDT(r.requested_at);
                             const dt     = splitDT(r.responded_at);
-                            const action = r.found
+                            const action = (r.found && r.can_log)
                                 ? `<button type="button" data-fb-act="log" data-id="${r.id}" data-fno="${esc(r.file_number)}" data-title="${esc(r.file_title || '')}" data-officer="${esc(r.receiving_officer || '')}" data-office="${esc(r.requester_office || '')}" data-dept="${esc(r.requester_department || '')}" data-registry="${esc(r.registry || '')}" data-purpose-id="${esc(r.request_purpose_id || '')}" data-purpose-name="${esc(r.request_purpose_name || '')}" data-deadline="${esc(r.expected_return_date || '')}" class="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"><i data-lucide="file-plus" class="h-3.5 w-3.5"></i> Log File</button>`
+                                : (r.found
+                                    ? `<button type="button" disabled class="inline-flex items-center gap-1 rounded-lg bg-amber-300 px-3 py-1.5 text-xs font-semibold text-white cursor-not-allowed opacity-80" title="File has been found but is pending indexing"><i data-lucide="hourglass" class="h-3.5 w-3.5"></i>Pending Indexing</button>`
                                 : (r.not_found
                                     ? `<button type="button" data-fb-act="refer" data-id="${r.id}" data-fno="${esc(r.file_number)}" class="inline-flex items-center gap-1 rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"><i data-lucide="printer" class="h-3.5 w-3.5"></i> Print</button>`
-                                    : `<span class="text-[11px] text-gray-400 italic">Awaiting SCB…</span>`);
+                                    : `<span class="text-[11px] text-gray-400 italic">Awaiting SCB…</span>`));
                             const delBtn = IS_SUPER_ADMIN
                                 ? `<button type="button" data-fb-del data-id="${r.id}" title="Delete request" class="inline-flex items-center gap-1 rounded-lg bg-red-100 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-200"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>`
                                 : '';

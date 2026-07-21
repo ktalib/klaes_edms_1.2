@@ -263,10 +263,10 @@
                                 Serial Range: <span x-text="serialRangePreview"></span>
                             </div>
                         </div>
-                        <p class="text-xs text-gray-500 mt-2">
-                            <i data-lucide="info" class="w-3 h-3 inline"></i>
-                           All files will share the same File Name (File Title) and Prefix. You can only add unique location details for each file (if need be)
-                        </p>
+                        <p class="text-xs text-gray-500 mt-2 font-bold">
+                                        <i data-lucide="info" class="w-3 h-3 inline"></i>
+                                       All files will share the same File Name (File Title) and Prefix. You can only add unique location details for each file (if need be)
+                                    </p>
                     </div>
                 </div>
 

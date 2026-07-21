@@ -515,9 +515,9 @@
                                         <td class="px-4 py-2.5">{!! $batchCell($group['lga']) !!}</td>
                                         <td class="px-4 py-2.5">{!! $batchCell($group['location']) !!}</td>
                                         <td class="px-4 py-2.5">{!! $batchCell($group['commissioned_by']) !!}</td>
-                                        <td class="px-4 py-2.5">{!! $batchCell($group['time_commissioned']) !!}</td>
-                                        <td class="px-4 py-2.5">{!! $batchCell($group['date_commissioned']) !!}</td>
-                                        <td class="px-4 py-2.5">{!! $batchCell($group['date_created']) !!}</td>
+                                        <td class="px-4 py-2.5" data-order="{{ $group['con_commissioned_sort'] ?? 0 }}">{!! $batchCell($group['time_commissioned']) !!}</td>
+                                        <td class="px-4 py-2.5" data-order="{{ $group['con_commissioned_sort'] ?? 0 }}">{!! $batchCell($group['date_commissioned']) !!}</td>
+                                        <td class="px-4 py-2.5" data-order="{{ $group['date_created_sort'] ?? 0 }}">{!! $batchCell($group['date_created']) !!}</td>
                                         <td class="px-4 py-2.5 text-center">
                                             <button type="button" onclick="openOpBatchModal('{{ $group['batch_no'] }}')"
                                                     class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold text-blue-700 hover:bg-blue-50 transition">

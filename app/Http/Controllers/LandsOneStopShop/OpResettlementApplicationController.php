@@ -714,9 +714,16 @@ class OpResettlementApplicationController extends Controller
                     $first = $sorted->first();
                     $last = $sorted->last();
 
+                    // Sortable timestamps for the batch as a whole, so the table can order
+                    // batches by date the same way the non-batch view orders files.
+                    $conCommissionedSort = (int) $sorted->max('con_commissioned_sort');
+                    $dateCreatedSort = (int) $sorted->max('date_created_sort');
+
                     return [
                         'batch_no' => $batchNo,
                         'count' => $sorted->count(),
+                        'con_commissioned_sort' => $conCommissionedSort,
+                        'date_created_sort' => $dateCreatedSort,
                         'first_file' => $first['mls_file_no'] ?? '—',
                         'last_file' => $last['mls_file_no'] ?? '—',
                         'range_label' => $this->buildBatchRangeLabel(
@@ -737,7 +744,7 @@ class OpResettlementApplicationController extends Controller
                         'records' => $sorted->all(),
                     ];
                 })
-                ->sortByDesc(fn($g) => $g['batch_no'])
+                ->sortByDesc(fn($g) => $g['con_commissioned_sort'])
                 ->values();
 
             Log::channel('op_batch')->info('OP Batch view built', [

@@ -420,7 +420,7 @@
            Quick Search shortcut is replaced by one into their File Requests View. --}}
       @if($isScbMonitor && !auth()->user()->isSuperAdmin())
       <div class="quick-action-btn" onclick="setActiveTab('requests')">
-        <div class="qa-ic"><i class="fas fa-inbox"></i></div><span>SCB-V</span>
+        <div class="qa-ic"><i class="fas fa-inbox"></i></div><span>SCB View</span>
       </div>
       @else
       <div class="quick-action-btn" onclick="setActiveTab('files')">
@@ -643,7 +643,7 @@
   <!-- ═══ SCB MONITOR — FILE REQUESTS SCREEN ═══ -->
   <div id="requests-screen" class="screen">
     <div class="page-header" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-end;">
-      <div><h1>File Requests View</h1><p>Physical searches & FSR History</p></div>
+      <div><h1>File Request-SCB View</h1><p>Physical searches & FSR History</p></div>
       <button class="icon-circle" id="frRefreshBtn" title="Refresh"><i class="fas fa-rotate-right"></i></button>
     </div>
 
@@ -732,9 +732,9 @@
          screen exactly as an SCB Monitor sees it. --}}
     @if(auth()->user()->isSuperAdmin())
     <button class="tab-item" data-tab="requests"><i class="fas fa-clipboard-list"></i><span>FSR</span></button>
-    <button class="tab-item" data-tab="requests-scb"><i class="fas fa-eye"></i><span>SCB-V</span></button>
+    <button class="tab-item" data-tab="requests-scb"><i class="fas fa-eye"></i><span>SCB View</span></button>
     @else
-    <button class="tab-item" data-tab="requests"><i class="fas fa-inbox"></i><span>SCB-V</span></button>
+    <button class="tab-item" data-tab="requests"><i class="fas fa-inbox"></i><span>SCB View</span></button>
     @endif
     @endif
     <button class="tab-item" data-tab="scanner"><i class="fas fa-qrcode"></i><span>Scan</span></button>
@@ -1518,7 +1518,7 @@ async function searchFile() {
             <div style="margin-top:12px;background:var(--primary-soft);border-radius:12px;padding:10px 12px;" data-fr="${fr.id}">
               <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--primary);">Open File Request · ${esc(fr.request_no)}</div>
               <div style="display:flex;gap:8px;margin-top:10px;align-items:stretch;">
-                <button class="btn" style="flex:1;width:auto;padding:11px;font-size:13px;box-shadow:none;background:linear-gradient(135deg,#10b981,#059669);" onclick="respondFrFromSearch(${fr.id}, 'found', this)"><i class="fas fa-check"></i> Found</button>
+                <button class="btn" style="flex:1;width:auto;padding:11px;font-size:13px;box-shadow:none;background:linear-gradient(135deg,#10b981,#059669);" onclick="respondFrFromSearch(${fr.id}, 'found', this, ${fr.is_blind ? 'true' : 'false'})"><i class="fas fa-check"></i> Found</button>
                 <button class="btn ghost-btn" style="flex:1;width:auto;padding:11px;font-size:13px;box-shadow:none;" onclick="respondFrFromSearch(${fr.id}, 'not_found', this)"><i class="fas fa-xmark"></i> Not&nbsp;Found</button>
               </div>
             </div>`;
@@ -2899,7 +2899,7 @@ function frListRow(fr, histIds) {
         </div>
         ${frDetailsBody(fr)}
         <div style="display:flex;gap:6px;margin-top:8px;">
-          <button class="btn" style="flex:1;width:auto;min-width:0;padding:9px;font-size:12px;box-shadow:none;background:linear-gradient(135deg,#10b981,#059669);" onclick="respondFr(${fr.id}, 'found', this)"><i class="fas fa-check"></i> Found</button>
+          <button class="btn" style="flex:1;width:auto;min-width:0;padding:9px;font-size:12px;box-shadow:none;background:linear-gradient(135deg,#10b981,#059669);" onclick="respondFr(${fr.id}, 'found', this, ${fr.is_blind ? 'true' : 'false'})"><i class="fas fa-check"></i> Found</button>
           <button class="btn ghost-btn" style="flex:1;width:auto;min-width:0;padding:9px;font-size:12px;box-shadow:none;" onclick="respondFr(${fr.id}, 'not_found', this)"><i class="fas fa-xmark"></i> Not&nbsp;Found</button>
           ${IS_SUPER_ADMIN ? `<button class="btn" style="flex:0 0 auto;width:auto;padding:9px 12px;font-size:12px;box-shadow:none;background:#fee2e2;color:#991b1b;" onclick="deleteFr(${fr.id}, this)" title="Delete request"><i class="fas fa-trash"></i></button>` : ''}
         </div>
@@ -2969,8 +2969,38 @@ function pickNotFoundType() {
   });
 }
 
-async function respondFr(id, result, btn) {
+// Blind-request Found picker: either the file is already indexed (can be logged),
+// or physically found and queued for indexing first.
+function pickBlindFoundType() {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,0.55);display:flex;align-items:flex-end;justify-content:center;';
+    overlay.innerHTML = `
+      <div style="background:var(--card,#1b1b22);width:100%;max-width:480px;border-radius:18px 18px 0 0;padding:20px 18px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -8px 30px rgba(0,0,0,0.4);">
+        <div style="width:42px;height:4px;border-radius:4px;background:var(--faint,#555);opacity:.5;margin:0 auto 16px;"></div>
+        <div style="font-size:16px;font-weight:800;color:var(--text);margin-bottom:4px;"><i class="fas fa-circle-check" style="color:#10b981;margin-right:6px;"></i> Found — select type</div>
+        <div style="font-size:12px;color:var(--faint);margin-bottom:16px;">Choose whether the file is already indexed or should wait in the indexing queue.</div>
+        <button class="btn" data-pick="indexed" style="width:100%;padding:14px;font-size:14px;box-shadow:none;background:linear-gradient(135deg,#10b981,#059669);color:#fff;margin-bottom:10px;text-align:left;"><i class="fas fa-check-double" style="margin-right:8px;"></i> Found (Indexed)</button>
+        <button class="btn" data-pick="indexing" style="width:100%;padding:14px;font-size:14px;box-shadow:none;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;margin-bottom:14px;text-align:left;"><i class="fas fa-layer-group" style="margin-right:8px;"></i> Found for Indexing</button>
+        <button class="btn ghost-btn" data-pick="" style="width:100%;padding:12px;font-size:13px;box-shadow:none;">Cancel</button>
+      </div>`;
+    function close(val) { overlay.remove(); resolve(val || null); }
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) return close(null);
+      const b = e.target.closest('[data-pick]');
+      if (b) close(b.getAttribute('data-pick'));
+    });
+    document.body.appendChild(overlay);
+  });
+}
+
+async function respondFr(id, result, btn, isBlindRequest = false) {
   let note = '';
+  let foundType = null;
+  if (result === 'found' && isBlindRequest) {
+    foundType = await pickBlindFoundType();
+    if (!foundType) return;
+  }
   // A Not Found response requires the monitor to choose missing / pending first.
   let notFoundType = null;
   if (result === 'not_found') {
@@ -2983,11 +3013,13 @@ async function respondFr(id, result, btn) {
   try {
     const res = await api(`${MOB_BASE}/file-requests/${id}/respond`, {
       method:'POST',
-      body: JSON.stringify({ result, note, not_found_type: notFoundType }),
+      body: JSON.stringify({ result, note, found_type: foundType, not_found_type: notFoundType }),
     });
     if (res && res.success) {
       const sc = res.data?.second_check;
-      if (result === 'found') toast('Marked as Found ✅');
+      if (result === 'found') {
+        toast(foundType === 'indexing' ? 'Marked as Found for Indexing ✅' : 'Marked as Found (Indexed) ✅');
+      }
       else if (notFoundType) toast(`Marked as Not Found — ${notFoundType === 'missing' ? 'Missing' : 'Pending'}`, 'error');
       else if (sc === 'print_missing_slip') toast('Not found — print Missing File slip', 'error');
       else if (sc === 'do_second_physical_search') toast('Not found — file is scanned; do a 2nd physical search', 'error');
@@ -3007,7 +3039,12 @@ async function respondFr(id, result, btn) {
 }
 
 // Respond to an open File Request straight from the File Search result.
-async function respondFrFromSearch(id, result, btn) {
+async function respondFrFromSearch(id, result, btn, isBlindRequest = false) {
+  let foundType = null;
+  if (result === 'found' && isBlindRequest) {
+    foundType = await pickBlindFoundType();
+    if (!foundType) return;
+  }
   // A Not Found response requires the monitor to choose missing / pending first.
   let notFoundType = null;
   if (result === 'not_found') {
@@ -3020,16 +3057,17 @@ async function respondFrFromSearch(id, result, btn) {
   try {
     const res = await api(`${MOB_BASE}/file-requests/${id}/respond`, {
       method:'POST',
-      body: JSON.stringify({ result, note:'', not_found_type: notFoundType }),
+      body: JSON.stringify({ result, note:'', found_type: foundType, not_found_type: notFoundType }),
     });
     if (res && res.success) {
       openFileRequests = null;  // invalidate cache; this FR is no longer open
       const found = result === 'found';
       const nftLabel = notFoundType ? ` — ${notFoundType === 'missing' ? 'Missing' : 'Pending'}` : '';
-      toast(found ? 'Marked as Found ✅' : 'Marked as Not Found' + nftLabel);
+      const foundLabel = foundType === 'indexing' ? 'Found for Indexing' : 'Found (Indexed)';
+      toast(found ? `Marked as ${foundLabel} ✅` : 'Marked as Not Found' + nftLabel);
       if (wrap) {
         wrap.innerHTML = `<div style="font-size:12px;font-weight:700;color:${found ? '#10b981' : '#ef4444'};">
-          <i class="fas fa-${found ? 'check-circle' : 'times-circle'}"></i> Response recorded: ${found ? 'Found' : 'Not Found' + nftLabel}</div>`;
+          <i class="fas fa-${found ? 'check-circle' : 'times-circle'}"></i> Response recorded: ${found ? foundLabel : 'Not Found' + nftLabel}</div>`;
       }
     } else {
       toast(res.message || 'Could not record feedback', 'error');

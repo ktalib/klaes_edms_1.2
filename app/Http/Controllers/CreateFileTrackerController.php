@@ -1858,18 +1858,30 @@ HTML;
             ->limit(50)
             ->get();
 
+        // Blind request marked "Found for Indexing" should automatically flip to
+        // "Found (Indexed)" once a matching indexing row exists.
+        $this->promoteBlindFoundIndexingRows($rows);
+
         $locType = fn ($rs) => match ($rs) {
             FileLocationResolver::STATUS_IN_POOL       => 'Pool Office',
             FileLocationResolver::STATUS_PENDING_FILE  => 'Blind / Not Indexed',
+            FileLocationResolver::STATUS_BLIND_REQUEST_SENT => 'Blind / Not Indexed',
+            FileLocationResolver::STATUS_BLIND_FOUND_FOR_INDEXING => 'Ready Indexing',
+            FileLocationResolver::STATUS_BLIND_FOUND_INDEXED => 'Blind / Indexed',
             default                                    => 'Archive',
         };
 
+        $blindStatuses = $this->blindResolvedStatuses();
+
         return response()->json([
             'success' => true,
-            'data' => $rows->map(function ($r) use ($locType) {
+            'data' => $rows->map(function ($r) use ($locType, $blindStatuses) {
                 $found = $r->status === FileSearchRequest::STATUS_FOUND;
                 $isDfr = ($r->source ?? null) === FileSearchRequest::SOURCE_DFR;
-                $isBlind = ! $isDfr && in_array($r->resolved_status, [FileLocationResolver::STATUS_PENDING_FILE, FileLocationResolver::STATUS_BLIND_REQUEST_SENT], true);
+                $isBlind = ! $isDfr && in_array($r->resolved_status, $blindStatuses, true);
+                $isReadyIndexing = $found && $r->resolved_status === FileLocationResolver::STATUS_BLIND_FOUND_FOR_INDEXING;
+                $isFoundIndexed = $found && $r->resolved_status === FileLocationResolver::STATUS_BLIND_FOUND_INDEXED;
+                $canLog = $found && ! $isReadyIndexing;
 
                 return [
                     'id'               => $r->id,
@@ -1878,9 +1890,13 @@ HTML;
                     'file_title'       => $r->file_title,
                     'location_type'    => $locType($r->resolved_status),
                     'current_location' => $r->current_location,
-                    'scb_response'     => $found ? 'Found' : 'Not Found',
+                    'scb_response'     => $found
+                        ? ($isReadyIndexing ? 'Found for Indexing' : ($isFoundIndexed ? 'Found (Indexed)' : 'Found'))
+                        : 'Not Found',
                     'not_found_type'   => $found ? null : $r->not_found_type,
                     'found'            => $found,
+                    'can_log'          => $canLog,
+                    'ready_indexing'   => $isReadyIndexing,
                     'not_found'        => ! $found,
                     'request_type'     => $isDfr ? 'DFR' : ($isBlind ? 'Blind Request' : 'Open Request'),
                     'is_dfr'           => $isDfr,
@@ -2031,10 +2047,7 @@ HTML;
         // "Missing" = a NOT_FOUND on a blind / not-indexed file (the file has no
         // archive record, so it is genuinely unaccounted for). "Not Found" = a
         // NOT_FOUND on an indexed file (SCB searched a known location and it wasn't there).
-        $blindStatuses = [
-            FileLocationResolver::STATUS_PENDING_FILE,
-            FileLocationResolver::STATUS_BLIND_REQUEST_SENT,
-        ];
+        $blindStatuses = $this->blindResolvedStatuses();
 
         // Indexed (non-blind) resolved_status filter — NULL counts as indexed.
         $indexedScope = function ($q) use ($blindStatuses) {
@@ -2081,10 +2094,14 @@ HTML;
         }
 
         $rows = $query->orderByDesc('id')->limit(100)->get();
+        $this->promoteBlindFoundIndexingRows($rows);
 
         $locType = fn ($rs) => match ($rs) {
             FileLocationResolver::STATUS_IN_POOL       => 'Pool Office',
             FileLocationResolver::STATUS_PENDING_FILE  => 'Blind / Not Indexed',
+            FileLocationResolver::STATUS_BLIND_REQUEST_SENT => 'Blind / Not Indexed',
+            FileLocationResolver::STATUS_BLIND_FOUND_FOR_INDEXING => 'Ready Indexing',
+            FileLocationResolver::STATUS_BLIND_FOUND_INDEXED => 'Blind / Indexed',
             default                                    => 'Archive',
         };
 
@@ -2165,12 +2182,12 @@ HTML;
                 'missing'    => $missingCount,
                 'blind_open' => $blindOpenCount,
             ],
-            'data' => $rows->map(function ($r) use ($locType) {
+            'data' => $rows->map(function ($r) use ($locType, $blindStatuses) {
                 $resp      = $r->responder;
                 $reqUser   = $r->requester;
                 $isPending = in_array($r->status, [FileSearchRequest::STATUS_PENDING, FileSearchRequest::STATUS_SEARCHING], true);
                 $isDfr     = ($r->source ?? null) === FileSearchRequest::SOURCE_DFR;
-                $isBlind   = ! $isDfr && in_array($r->resolved_status, [FileLocationResolver::STATUS_PENDING_FILE, FileLocationResolver::STATUS_BLIND_REQUEST_SENT], true);
+                $isBlind   = ! $isDfr && in_array($r->resolved_status, $blindStatuses, true);
 
                 return [
                     'id'               => $r->id,
@@ -2186,7 +2203,13 @@ HTML;
                     'is_pending'       => $isPending,
                     'found'            => $r->status === FileSearchRequest::STATUS_FOUND,
                     'not_found'        => $r->status === FileSearchRequest::STATUS_NOT_FOUND,
-                    'scb_response'     => $isPending ? 'Awaiting' : ($r->status === FileSearchRequest::STATUS_FOUND ? 'Found' : 'Not Found'),
+                    'scb_response'     => $isPending
+                        ? 'Awaiting'
+                        : ($r->status === FileSearchRequest::STATUS_FOUND
+                            ? ($r->resolved_status === FileLocationResolver::STATUS_BLIND_FOUND_FOR_INDEXING
+                                ? 'Found for Indexing'
+                                : ($r->resolved_status === FileLocationResolver::STATUS_BLIND_FOUND_INDEXED ? 'Found (Indexed)' : 'Found'))
+                            : 'Not Found'),
                     'not_found_type'   => $r->status === FileSearchRequest::STATUS_NOT_FOUND ? $r->not_found_type : null,
                     'front_desk_acted' => ! is_null($r->front_desk_acted_at),
                     'note'             => $r->feedback_note,
@@ -2205,6 +2228,54 @@ HTML;
                 ];
             }),
         ]);
+    }
+
+    /**
+     * Resolved-status values considered part of the blind request workflow.
+     */
+    protected function blindResolvedStatuses(): array
+    {
+        return [
+            FileLocationResolver::STATUS_PENDING_FILE,
+            FileLocationResolver::STATUS_BLIND_REQUEST_SENT,
+            FileLocationResolver::STATUS_BLIND_FOUND_INDEXED,
+            FileLocationResolver::STATUS_BLIND_FOUND_FOR_INDEXING,
+        ];
+    }
+
+    /**
+     * Auto-promote blind "Found for Indexing" rows once indexing exists.
+     */
+    protected function promoteBlindFoundIndexingRows($rows): void
+    {
+        foreach ($rows as $row) {
+            if (! $row instanceof FileSearchRequest) {
+                continue;
+            }
+
+            if ($row->status !== FileSearchRequest::STATUS_FOUND
+                || $row->resolved_status !== FileLocationResolver::STATUS_BLIND_FOUND_FOR_INDEXING) {
+                continue;
+            }
+
+            $exists = FileIndexing::on('sqlsrv')
+                ->where(function ($q) use ($row) {
+                    $q->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = UPPER(LTRIM(RTRIM(?)))', [$row->file_number])
+                      ->orWhereRaw('UPPER(LTRIM(RTRIM(temp_file_no))) = UPPER(LTRIM(RTRIM(?)))', [$row->file_number]);
+                })
+                ->exists();
+
+            if (! $exists) {
+                continue;
+            }
+
+            $row->forceFill([
+                'resolved_status' => FileLocationResolver::STATUS_BLIND_FOUND_INDEXED,
+            ])->save();
+
+            // Keep this in-memory row aligned with the DB update for immediate payload use.
+            $row->resolved_status = FileLocationResolver::STATUS_BLIND_FOUND_INDEXED;
+        }
     }
 
     /**

@@ -381,7 +381,11 @@ class MobileFileSearchController extends Controller
             });
         }
 
-        $rows = $query->orderByDesc('is_ofs')->orderByDesc('priority')->orderByDesc('id')->limit(200)->get();
+        $rows = $query
+            ->orderByDesc('responded_at')
+            ->orderByDesc('id')
+            ->limit(200)
+            ->get();
 
         $data = $rows->map(function (FileSearchRequest $fr) {
             $req  = $fr->requester;
@@ -516,6 +520,8 @@ class MobileFileSearchController extends Controller
         $isBlind = in_array($fr->resolved_status, [
             FileLocationResolver::STATUS_PENDING_FILE,
             FileLocationResolver::STATUS_BLIND_REQUEST_SENT,
+            FileLocationResolver::STATUS_BLIND_FOUND_INDEXED,
+            FileLocationResolver::STATUS_BLIND_FOUND_FOR_INDEXING,
         ], true);
 
         return [
@@ -551,6 +557,9 @@ class MobileFileSearchController extends Controller
         $validated = $request->validate([
             'result'         => 'required|in:found,not_found',
             'note'           => 'nullable|string|max:1000',
+            // Blind requests split FOUND into two outcomes:
+            // indexed (can log) vs for indexing (wait for indexing).
+            'found_type'     => 'nullable|in:indexed,indexing',
             // When marking Not Found, the SCB Monitor must say which kind it is.
             'not_found_type' => 'required_if:result,not_found|nullable|in:missing,pending',
         ]);
@@ -565,6 +574,11 @@ class MobileFileSearchController extends Controller
         $notFoundType = (!$found && !empty($validated['not_found_type']))
             ? strtoupper($validated['not_found_type'])
             : null;
+        $isBlindRequest = $resolver->isBlindRequestStatus($fr->resolved_status);
+        $foundType = ($found && $isBlindRequest)
+            ? ($validated['found_type'] ?? 'indexed')
+            : null;
+
         $fr->forceFill([
             'status'              => $found ? FileSearchRequest::STATUS_FOUND : FileSearchRequest::STATUS_NOT_FOUND,
             'not_found_type'      => $notFoundType,
@@ -572,13 +586,24 @@ class MobileFileSearchController extends Controller
             'assigned_monitor_id' => $fr->assigned_monitor_id ?: $request->user()->id,
             'responded_by'        => $request->user()->id,
             'responded_at'        => now(),
-        ])->save();
+            'resolved_status'     => $found && $isBlindRequest
+                ? ($foundType === 'indexing'
+                    ? FileLocationResolver::STATUS_BLIND_FOUND_FOR_INDEXING
+                    : FileLocationResolver::STATUS_BLIND_FOUND_INDEXED)
+                : $fr->resolved_status,
+        ]);
+        $fr->save();
 
         // Combine the originating location with the SCB result into the outcome
         // status (IN_ARCHIVE_FOUND / IN_POOL_OFFICE_NOT_FOUND, …) and store it on
         // the matching file_indexings row so the Front Desk Quick Search reflects it.
         $resolved      = $resolver->resolve($fr->file_number);
         $outcomeStatus = $resolver->combineScbOutcome($fr->resolved_status, $found);
+        if ($found && $isBlindRequest) {
+            $outcomeStatus = $foundType === 'indexing'
+                ? FileLocationResolver::STATUS_BLIND_FOUND_FOR_INDEXING
+                : FileLocationResolver::STATUS_BLIND_FOUND_INDEXED;
+        }
 
         if ($indexing = $resolved['indexing']) {
             $indexing->forceFill([
@@ -660,9 +685,12 @@ class MobileFileSearchController extends Controller
             'success' => true,
             'data' => [
                 'status'         => $fr->status,
+                'found_type'     => $foundType,
                 'not_found_type' => $notFoundType,
                 'outcome_status' => $outcomeStatus,
-                'next_action'    => $found ? 'Front Desk can now Log the file' : 'Refer to Original Registry',
+                'next_action'    => $found
+                    ? (($foundType === 'indexing') ? 'Ready for Indexing' : 'Front Desk can now Log the file')
+                    : 'Refer to Original Registry',
                 'slip_variant'   => $slipVariant,
             ],
             'message' => 'Feedback recorded.',

@@ -112,6 +112,7 @@ document.addEventListener('DOMContentLoaded', function () {
     try {
         _ossInitAddressBuilders();
         _ossInitResidentialAddressMirroring();
+        _ossInitLocationAndTp();
         console.log('[OSS] Address builders initialised successfully.');
     } catch (e) {
         console.error('[OSS] Address builder init failed:', e);
@@ -296,6 +297,129 @@ function _ossInitAddressBuilders() {
             });
         }
     });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Occupancy Permit – TP No. dropdown + Location sub-section
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/** Show/hide the "Specify TP No." input when the TP No. select is set to Other. */
+function _ossToggleTpNoOther() {
+    var sel = document.getElementById('oss_opd_tp_no');
+    var wrapper = document.getElementById('oss-opd-tp-no-other-wrapper');
+    var other = document.getElementById('oss_opd_tp_no_other');
+    if (!sel || !wrapper) return;
+    var show = _ossIsOtherValue(sel.value);
+    wrapper.classList.toggle('hidden', !show);
+    if (other) {
+        other.required = show;
+        if (!show) other.value = '';
+    }
+}
+
+/** The effective TP No. value (the typed value when "Other" is selected). */
+function _ossTpNoValue() {
+    var sel = document.getElementById('oss_opd_tp_no');
+    var other = document.getElementById('oss_opd_tp_no_other');
+    return _ossSelectedOrOther(sel, other);
+}
+
+/** Compose the Full Location from Plot No / District / LGA. */
+function _ossBuildOpLocation() {
+    var out = document.getElementById('oss_lb_full_location');
+    if (!out) return;
+    var plot = (document.getElementById('oss_lb_plot_no')?.value || '').trim();
+    var dist = (document.getElementById('oss_lb_district')?.value || '').trim();
+    var lga = (document.getElementById('oss_lb_lga')?.value || '').trim();
+    out.value = [plot ? ('PLOT ' + plot) : '', dist, lga].filter(Boolean).join(', ').toUpperCase();
+}
+
+/**
+ * Enhance the OP TP No. / District / LGA selects with Select2 (loaded on this
+ * page) and wire the "Other → specify" toggle + Full Location compose.
+ * Safe to call repeatedly.
+ */
+function _ossInitLocationAndTp() {
+    var hasS2 = typeof window.$ !== 'undefined' && typeof window.$.fn !== 'undefined' && typeof window.$.fn.select2 !== 'undefined';
+    if (hasS2) {
+        var $modal = window.$('#ossApplicationModal');
+        window.$('.oss-searchable-select').each(function () {
+            var $el = window.$(this);
+            if ($el.hasClass('select2-hidden-accessible')) return; // already enhanced
+            $el.select2({
+                width: '100%',
+                dropdownParent: $modal.length ? $modal : window.$(document.body),
+                placeholder: (($el.find('option:first').text() || 'Select...').trim()),
+                allowClear: true
+            });
+            // Select2 fires jQuery events only — re-dispatch a native change so
+            // the vanilla listeners below (Other toggle / location compose) run.
+            $el.off('select2:select.oss select2:clear.oss')
+               .on('select2:select.oss select2:clear.oss', function () {
+                   this.dispatchEvent(new Event('change', { bubbles: true }));
+               });
+        });
+    }
+
+    var tpSel = document.getElementById('oss_opd_tp_no');
+    if (tpSel && !tpSel._ossTpWired) {
+        tpSel._ossTpWired = true;
+        tpSel.addEventListener('change', _ossToggleTpNoOther);
+    }
+
+    ['oss_lb_plot_no', 'oss_lb_district', 'oss_lb_lga'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!el || el._ossLocWired) return;
+        el._ossLocWired = true;
+        el.addEventListener('input', _ossBuildOpLocation);
+        el.addEventListener('change', _ossBuildOpLocation);
+    });
+}
+
+/** Push a value into a Select2-enhanced select (re-rendering the widget). */
+function _ossSetSelectValue(id, value) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.value = value || '';
+    if (typeof window.$ !== 'undefined' && window.$(el).hasClass('select2-hidden-accessible')) {
+        window.$(el).trigger('change.select2');
+    }
+}
+
+/**
+ * Preselect the TP No. dropdown. If the value isn't an existing option, add it
+ * so the record's TP No. is preserved without forcing the user onto "Other".
+ */
+function _ossSetTpNo(value) {
+    var val = (value || '').toString().trim();
+    var sel = document.getElementById('oss_opd_tp_no');
+    if (!sel) return;
+    if (!val) { _ossSetSelectValue('oss_opd_tp_no', ''); _ossToggleTpNoOther(); return; }
+    var exists = Array.prototype.some.call(sel.options, function (o) { return o.value === val; });
+    if (!exists) {
+        var opt = document.createElement('option');
+        opt.value = val;
+        opt.textContent = val;
+        // Insert before the trailing "Other" option so it stays last.
+        var otherOpt = Array.prototype.filter.call(sel.options, function (o) { return _ossIsOtherValue(o.value); })[0];
+        if (otherOpt) sel.insertBefore(opt, otherOpt); else sel.appendChild(opt);
+    }
+    _ossSetSelectValue('oss_opd_tp_no', val);
+    _ossToggleTpNoOther();
+}
+
+/** Reset the TP No. + Location fields (used on modal open / clear). */
+function _ossResetLocationAndTp() {
+    _ossSetSelectValue('oss_opd_tp_no', '');
+    var tpOther = document.getElementById('oss_opd_tp_no_other');
+    if (tpOther) tpOther.value = '';
+    _ossToggleTpNoOther();
+    ['oss_lb_plot_no', 'oss_lb_full_location'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    _ossSetSelectValue('oss_lb_district', '');
+    _ossSetSelectValue('oss_lb_lga', '');
 }
 
 function _ossMirrorAddressBuilder(sourcePrefix, targetPrefix, targetOutputId) {
@@ -696,6 +820,18 @@ function _ossCollectPayload() {
         if (!payload.plan_no) payload.plan_no = (_ossLinkedPraData.plan_no || _ossLinkedPraData.tp_no || '').toString().trim();
         if (!payload.location) payload.location = (_ossLinkedPraData.location || _ossLinkedPraData.property_description || '').toString().trim();
     }
+
+    // ── TP No. + Location (OP-scoped; shared across all application types) ──
+    // These live in the Occupancy Permit Details card and override any values
+    // inherited from the linked PRA record above.
+    var tpNo = _ossTpNoValue();
+    if (tpNo) payload.plan_no = tpNo;
+    var lbPlot = (document.getElementById('oss_lb_plot_no')?.value || '').trim();
+    if (lbPlot) payload.plot_no = lbPlot;
+    var lbDistrict = (document.getElementById('oss_lb_district')?.value || '').trim();
+    if (lbDistrict) payload.district = lbDistrict;
+    var lbLocation = (document.getElementById('oss_lb_full_location')?.value || '').trim();
+    if (lbLocation) payload.location = lbLocation;
 
     // ── Occupancy Permit Details ──
     // The OPD section is now the single source of the OP serial (the old manual
@@ -1273,6 +1409,19 @@ function _ossPrefillFromPra(d) {
     _ossSetIfEmpty('oss_ind_purpose', purposeWithPlan);
     _ossSetIfEmpty('oss_agr_purpose', purposeWithPlan);
 
+    // TP No. + Location (OP card) — prefill from the linked record.
+    _ossSetTpNo((d.tp_no || d.plan_no || planNo || '').toString().trim());
+    _ossSetIfEmpty('oss_lb_plot_no', (d.plot_no || '').toString().trim());
+    _ossSelectIfFound('oss_lb_district', (d.district || '').toString().trim());
+    _ossSetSelectValue('oss_lb_district', (document.getElementById('oss_lb_district')?.value || ''));
+    var recLocation = (d.location || d.property_description || '').toString().trim();
+    if (recLocation) {
+        var locEl = document.getElementById('oss_lb_full_location');
+        if (locEl && !locEl.value.trim()) locEl.value = recLocation.toUpperCase();
+    } else {
+        _ossBuildOpLocation();
+    }
+
     // Backfill the Occupancy Permit Details from the record (locks it if an OP exists).
     _ossApplyOccupancyPermitFromPra(d);
 }
@@ -1315,6 +1464,9 @@ function _ossClearAllFields() {
 
     // Reset residential passport photo
     if (typeof ossResRemovePassport === 'function') ossResRemovePassport();
+
+    // Reset TP No. + Location (OP card)
+    _ossResetLocationAndTp();
 
     _ossResetOccupancyPermit();
 }
@@ -1408,6 +1560,15 @@ function ossEditRecord(btn) {
     // Populate address builder output fields from stored data
     // (The builder sub-fields stay empty; the stored assembled address shows in the output)
     _ossPopulateAddressOnEdit(type, data);
+
+    // TP No. + Location (OP card) from the stored record.
+    _ossSetTpNo((data.plan_no || '').toString().trim());
+    var lbPlotEl = document.getElementById('oss_lb_plot_no');
+    if (lbPlotEl) lbPlotEl.value = (data.plot_no || '').toString().trim();
+    _ossSelectIfFound('oss_lb_district', (data.district || '').toString().trim());
+    _ossSetSelectValue('oss_lb_district', (document.getElementById('oss_lb_district')?.value || ''));
+    var lbLocEl = document.getElementById('oss_lb_full_location');
+    if (lbLocEl) lbLocEl.value = (data.location || '').toString().trim();
 
     // Load existing passport photo if available
     if (data.passport_photo_url) {

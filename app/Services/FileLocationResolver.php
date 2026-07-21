@@ -47,6 +47,9 @@ class FileLocationResolver
     // Non-indexed files: cannot be located by normal search → blind request to SCB.
     public const STATUS_PENDING_FILE       = 'PENDING_FILE';
     public const STATUS_BLIND_REQUEST_SENT = 'BLIND_REQUEST_SENT';
+    // Blind-request outcomes after SCB responds Found.
+    public const STATUS_BLIND_FOUND_INDEXED      = 'BLIND_FOUND_INDEXED';
+    public const STATUS_BLIND_FOUND_FOR_INDEXING = 'BLIND_FOUND_FOR_INDEXING';
 
     // Generic holding office a KANGIS approval-workflow file parks in after DG
     // approval. It is not the file's real destination — that is stored on the
@@ -669,6 +672,10 @@ class FileLocationResolver
                 ['next_action' => "Send Blind Request to {$searcher}", 'can_send_fr' => true, 'is_blind' => true],
             self::STATUS_BLIND_REQUEST_SENT =>
                 ['next_action' => 'Awaiting SCB feedback', 'is_blind' => true],
+            self::STATUS_BLIND_FOUND_INDEXED =>
+                ['next_action' => 'Log the file', 'can_log' => true, 'is_blind' => true],
+            self::STATUS_BLIND_FOUND_FOR_INDEXING =>
+                ['next_action' => 'Ready for Indexing', 'is_blind' => true],
 
             self::STATUS_NOT_FOUND =>
                 ['next_action' => 'Print Missing File Confirmation Slip', 'slip_variant' => 'missing'],
@@ -699,6 +706,19 @@ class FileLocationResolver
             return $isPool ? self::STATUS_IN_POOL_FOUND : self::STATUS_IN_ARCHIVE_FOUND;
         }
         return $isPool ? self::STATUS_IN_POOL_NOT_FOUND : self::STATUS_IN_ARCHIVE_NOT_FOUND;
+    }
+
+    /**
+     * True when a file-search request originated from the blind/not-indexed path.
+     */
+    public function isBlindRequestStatus(?string $resolvedStatus): bool
+    {
+        return in_array($resolvedStatus, [
+            self::STATUS_PENDING_FILE,
+            self::STATUS_BLIND_REQUEST_SENT,
+            self::STATUS_BLIND_FOUND_INDEXED,
+            self::STATUS_BLIND_FOUND_FOR_INDEXING,
+        ], true);
     }
 
     protected function archiveLocation(?string $registry, ?string $rackShelf): string
