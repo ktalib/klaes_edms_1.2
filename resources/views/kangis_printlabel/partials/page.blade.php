@@ -223,6 +223,33 @@
                                 </label>
                             </div>
 
+                            <div id="registryOverrideCard" class="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 text-xs text-amber-800">
+                                <label for="registryOverrideToggle" class="flex cursor-pointer items-start gap-3">
+                                    <input
+                                        type="checkbox"
+                                        id="registryOverrideToggle"
+                                        class="mt-1 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                                    />
+                                    <span class="space-y-1">
+                                        <span class="block text-[11px] font-semibold uppercase tracking-wide text-amber-900">Manual Registry Override</span>
+                                        <span>Skip grouping batches and type file numbers directly. The rack and shelf above remain active.</span>
+                                    </span>
+                                </label>
+                                <div id="registryOverrideFields" class="mt-3 hidden space-y-2">
+                                    <label for="registryOverrideInput" class="text-[11px] font-semibold uppercase tracking-wide text-amber-900">File Numbers</label>
+                                    <textarea
+                                        id="registryOverrideInput"
+                                        rows="3"
+                                        placeholder="Paste or enter file numbers. Separate using commas, spaces, or new lines."
+                                        class="w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+                                    ></textarea>
+                                    <div class="flex items-center justify-between text-[11px] text-amber-700">
+                                        <span id="registryOverrideSummary">0 file numbers captured.</span>
+                                        <span>Maximum of 100 per load.</span>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <div class="text-xs text-slate-500 sm:text-left">
                                     Select a prefix and click <strong>Load Records</strong> to fetch files.
@@ -460,6 +487,36 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <label for="shelfLabelModeToggle" class="flex cursor-pointer items-start gap-3 rounded-lg border border-dashed border-blue-200 bg-blue-50 px-3 py-3 text-xs text-blue-700">
+                                    <input
+                                        type="checkbox"
+                                        id="shelfLabelModeToggle"
+                                        class="mt-1 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span>
+                                        <span class="block font-semibold uppercase tracking-wide text-[11px] text-blue-800">Shelf Label Mode</span>
+                                        <span>Print sequential shelf labels (e.g. A1-A100) without fetching records, validation, QR codes, or file numbers. Enter how many labels to generate below (max 100).</span>
+                                    </span>
+                                </label>
+                                <div id="shelfLabelCountWrapper" class="hidden rounded-lg border border-dashed border-blue-100 bg-white px-3 py-3 text-xs text-blue-700">
+                                    <div class="flex flex-col gap-2 w-full">
+                                        <label for="shelfLabelCountInput" id="shelfLabelCountTitle" class="font-semibold uppercase tracking-wide text-[11px] text-blue-800">Sequence length</label>
+                                        <div class="flex items-center gap-2">
+                                            <input
+                                                type="number"
+                                                id="shelfLabelCountInput"
+                                                min="1"
+                                                max="100"
+                                                value="100"
+                                                class="w-28 rounded-md border border-blue-200 px-3 py-2 text-sm text-blue-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                                            />
+                                            <span class="text-[11px] uppercase tracking-wide text-blue-500">labels</span>
+                                        </div>
+                                        <p id="shelfLabelCountHelp" class="text-[11px] leading-relaxed text-blue-600">Example: entering 40 prints A1-A40 based on the active rack and shelf.</p>
+                                    </div>
+                                </div>
+                            </div>
                             <div id="advancedOptions" class="space-y-4" style="display: none">
                                 <div>
                                     <label for="margin" class="block text-sm font-medium text-gray-700">Margin (inches)</label>
@@ -502,9 +559,8 @@
                         </button>
                         <button
                             id="continueToPreviewBtn"
-                            class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 gap-2 inline-flex items-center"
+                            class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
                         >
-                            <i data-lucide="download" class="h-4 w-4"></i>
                             Continue to Preview
                         </button>
                     </div>
@@ -512,7 +568,41 @@
             </div>
 
             {{-- ====== PREVIEW & PRINT TAB ====== --}}
-            @include('kangis_printlabel.partials.preview')
+            <div id="preview-tab" class="tab-content mt-6">
+                <div class="bg-white rounded-lg border">
+                    <div class="p-6 border-b">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <h3 class="text-lg font-semibold">Preview Generated Labels</h3>
+                                <p class="text-sm text-gray-600">
+                                    Preview generated labels before printing
+                                </p>
+                            </div>
+                            <div class="flex gap-2">
+                                <button
+                                    id="backToSettingsBtn"
+                                    class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+                                >
+                                    Back to Settings
+                                </button>
+                                <button
+                                    id="printFromPreviewBtn"
+                                    class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
+                                >
+                                    Print Labels
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="p-6">
+                        <div class="bg-gray-100 p-4 rounded-lg">
+                            <div id="labelPreview" class="grid grid-cols-3 gap-4">
+                                {{-- Preview will be rendered here --}}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>

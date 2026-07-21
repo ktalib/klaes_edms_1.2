@@ -307,8 +307,11 @@
     async function queuePraPrefillForFileNumber(fileNumberCandidates, source = 'unknown') {
         const state = PraStore.state;
         const candidates = collectFileNumberCandidatesFromSource(fileNumberCandidates);
+        const lookupRequestId = Date.now() + Math.random();
 
         state.source = source;
+        state.recordSource = null;
+        state.lookupRequestId = lookupRequestId;
         state.pendingApplyAttempts = 0;
         state.lastStatus = null;
 
@@ -331,12 +334,19 @@
 
         for (const candidate of candidates) {
             const { record, status } = await fetchPraRecordByFileNumber(candidate);
+
+            // Ignore stale async responses from older lookups.
+            if (state.lookupRequestId !== lookupRequestId) {
+                return null;
+            }
+
             state.lastStatus = status;
             state.lastFileNumber = candidate;
 
             if (record) {
                 state.isLoading = false;
                 state.record = record;
+                state.recordSource = source;
                 state.appliedToken = null;
                 state.error = null;
                 updatePraUiIndicators(record);
@@ -559,7 +569,7 @@
 
         state.pendingApplyAttempts = 0;
 
-        populatePropertyFormFromPra(component, state.record);
+        populatePropertyFormFromPra(component, state.record, state.recordSource || state.source || 'unknown');
         state.appliedToken = token;
 
         const container = window.PraFormController ? window.PraFormController.container : null;
@@ -605,7 +615,7 @@
         }
     }
 
-    function populatePropertyFormFromPra(component, record) {
+    function populatePropertyFormFromPra(component, record, prefillSource = 'unknown') {
         if (!component || !record) {
             return;
         }
@@ -970,27 +980,34 @@
 
         const primaryNumber = numbers.mls || numbers.kangis || numbers.newKangis || numbers.temp || PraStore.state.lastFileNumber || '';
 
-        if (primaryNumber) {
-            component.fileNumber = primaryNumber;
-        }
+        // When this prefill was triggered by the Related File Number picker, only
+        // property/address details should be pulled in. The primary file number the
+        // user already selected must NOT be overwritten with the related file's number.
+        const isRelatedLookup = (prefillSource === 'related-file-number');
 
-        setFieldValueIfPresent('mlsFNo', numbers.mls || '');
-        setFieldValueIfPresent('kangisFileNo', numbers.kangis || '');
-        setFieldValueIfPresent('NewKANGISFileno', numbers.newKangis || '');
-        setFieldValueIfPresent('fileno', primaryNumber);
-
-        const activeTab = numbers.mls ? 'mls' : numbers.kangis ? 'kangis' : numbers.newKangis ? 'newkangis' : '';
-        setFieldValueIfPresent('activeFileTab', activeTab);
-
-        const displayContainer = document.getElementById('selected-fileno-display');
-        const displayText = document.getElementById('selected-fileno-text');
-        if (displayText && primaryNumber) {
-            displayText.textContent = primaryNumber;
-            if (displayContainer) {
-                displayContainer.classList.remove('hidden');
+        if (!isRelatedLookup) {
+            if (primaryNumber) {
+                component.fileNumber = primaryNumber;
             }
-        } else if (displayContainer) {
-            displayContainer.classList.add('hidden');
+
+            setFieldValueIfPresent('mlsFNo', numbers.mls || '');
+            setFieldValueIfPresent('kangisFileNo', numbers.kangis || '');
+            setFieldValueIfPresent('NewKANGISFileno', numbers.newKangis || '');
+            setFieldValueIfPresent('fileno', primaryNumber);
+
+            const activeTab = numbers.mls ? 'mls' : numbers.kangis ? 'kangis' : numbers.newKangis ? 'newkangis' : '';
+            setFieldValueIfPresent('activeFileTab', activeTab);
+
+            const displayContainer = document.getElementById('selected-fileno-display');
+            const displayText = document.getElementById('selected-fileno-text');
+            if (displayText && primaryNumber) {
+                displayText.textContent = primaryNumber;
+                if (displayContainer) {
+                    displayContainer.classList.remove('hidden');
+                }
+            } else if (displayContainer) {
+                displayContainer.classList.add('hidden');
+            }
         }
 
         component.hasOfficialFileNumber = true;
@@ -1552,7 +1569,9 @@
                 if (typeof window.queuePraPrefillForFileNumber === 'function') {
                     const candidates = collectFileNumberCandidatesFromSource(fileData);
                     const payload = candidates.length ? candidates : (selectedNumber ? [selectedNumber] : []);
-                    window.queuePraPrefillForFileNumber(payload, 'global-fileno-modal');
+                    // Use a dedicated source so the prefill pulls property/address details
+                    // WITHOUT overwriting the primary file number the user already picked.
+                    window.queuePraPrefillForFileNumber(payload, 'related-file-number');
                 }
 
                 if (typeof GlobalFileNoModal.close === 'function') {

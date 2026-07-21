@@ -1099,6 +1099,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/api/rack-label/status', [KangisPrintLabelController::class, 'getRackLabelStatus'])->name('api.rack-label.status');
         Route::post('/api/batch', [KangisPrintLabelController::class, 'createBatch'])->name('api.batch.store');
         Route::get('/api/batches', [KangisPrintLabelController::class, 'getBatches'])->name('api.batches');
+        Route::post('/api/manual-fetch', [KangisPrintLabelController::class, 'fetchManualFiles'])->name('api.manual_fetch');
         Route::post('/api/batches/backfill-sys-batch-no', [KangisPrintLabelController::class, 'backfillSysBatchNo'])->name('api.batches.backfill');
         Route::get('/api/batch/{id}/print', [KangisPrintLabelController::class, 'getBatchForPrinting'])->name('api.batch.print');
         Route::patch('/api/batch/{id}/print', [KangisPrintLabelController::class, 'markBatchAsPrinted'])->name('api.batch.mark-printed');

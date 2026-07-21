@@ -572,7 +572,15 @@ class LegalSearchService
         // Stamp every returned transaction with its lifecycle owner so the UI can
         // group the timeline by file lifecycle. Seed the KANGIS-alias map from the
         // "MAIN (KANGIS)" display so the searched file's KANGIS rows roll into it.
-        $all = $this->tagRowsWithLifecycleFileNo($all, $this->aliasHintsFromDisplay($fileNumberDisplay));
+        // A neutral "Related File" link row is redundant when the related file number already
+        // displays with real transactions of its own; keep it (with a blank type) only when the
+        // related file has no transactions at all.
+        $all = $this->suppressRedundantRelatedFileRows($all);
+
+        $all = $this->tagRowsWithLifecycleFileNo(
+            $all,
+            $this->resolveAliasHintOwners($all, $this->aliasHintsFromDisplay($fileNumberDisplay))
+        );
 
         // Build lifecycle metadata for every distinct lifecycle file surfaced in the
         // result set. The frontend uses this to synthesize commissioning/temp/
@@ -599,9 +607,16 @@ class LegalSearchService
             $lifecycleMeta[$fno] = $this->resolveLifecycleFileMeta($conn, $fno);
         }
 
+        // Authoritative block order (Rule 11): ancestors first — including TRANSITIVE grandparents,
+        // which orderLifecycleFiles resolves by walking the whole successor chain. Handed to the JS so
+        // the on-screen timeline matches the print report instead of re-deriving from the searched
+        // file's DIRECT predecessors only (which missed the grandmother).
+        $lifecycleOrder = $this->orderLifecycleFiles(array_keys($lifecycleFiles), $mainSearchedNo, $lifecycleMeta);
+
         return [
             'transactions' => $all,
             'lifecycle_meta' => $lifecycleMeta,
+            'lifecycle_order' => $lifecycleOrder,
             'file_number_display' => $fileNumberDisplay,
             'under_investigation' => $investigation !== null,
             'is_wrc' => $isWrcFile,
@@ -724,6 +739,7 @@ class LegalSearchService
                     'decommission_date' => $succLineage['decommission_date'] ?? null,
                     'decommission_reason' => $succLineage['decommission_reason'] ?? null,
                     'decommission_holder' => $succLineage['decommission_holder'] ?? null,
+                    'decommission_event_type' => $succLineage['decommission_event_type'] ?? null,
                 ];
 
                 foreach ($splitFileNos($succLineage['successor_file_no'] ?? '') as $grandChild) {
@@ -822,6 +838,7 @@ class LegalSearchService
             'decommission_date'    => null,
             'decommission_holder'  => null,
             'decommission_file_no' => null,
+            'decommission_event_type' => null,
             'previous_file_nos'    => [],
         ];
 
@@ -852,6 +869,9 @@ class LegalSearchService
                 if ($decRow) {
                     $lineage['is_superseded'] = true;
                     $lineage['decommission_reason'] = $decRow->decommissioning_reason ?? null;
+                    // Provenance (added 2026_07_21): 'parcel_update_new'/'title_status_update' show the
+                    // real Date Decommissioned; 'backfill' (reconstructed lineage) shows a blank date.
+                    $lineage['decommission_event_type'] = $decRow->event_type ?? null;
                     if ($hasSuccessor) {
                         $lineage['successor_file_no'] = $decRow->successor_file_no ?: null;
                     }
@@ -1319,8 +1339,14 @@ class LegalSearchService
                 'NewKANGISFileno'   => null,
                 // Untyped related_file_number rows (e.g. Change-of-Purpose rename aliases with a
                 // blank transaction_type) must NOT be relabelled "Recertification" — that made
-                // rename/merger links masquerade as KANGIS recerts. Fall back to a neutral label.
-                'transaction_type'  => $row->transaction_type ?: 'Related File',
+                // rename/merger links masquerade as KANGIS recerts. recertDisplayLabel() keeps the
+                // neutral label for those and only relabels genuine recert types: a KANGIS recert
+                // becomes First (old KNML/MLKN/KNGP) or Second (new KN) by the linked KANGIS file's
+                // format; a Ministry/Physical-Planning recert becomes the Ministry label.
+                'transaction_type'  => $this->recertDisplayLabel(
+                    $this->isKangisFormat($relNo) ? $relNo : $otherSide,
+                    $row->transaction_type
+                ),
                 'transaction_date'  => $relIsManualLinkage ? '-' : $displayDate,
                 'sort_date'         => $sortDate,
                 // Title/holder of the endpoint shown in the orange cell (see $displayTitle above).
@@ -2180,8 +2206,10 @@ class LegalSearchService
                 ?: trim((string) ($commissioningRow['file_no'] ?? ''));
             $decNo = trim((string) preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $decNo));
             if ($decNo !== '') {
-                $decDate = (!empty($lineage['decommission_date']) && $lineage['decommission_date'] !== '-')
-                    ? $lineage['decommission_date'] : '-';
+                $decDate = $this->decommissionDisplayDate(
+                    $lineage['decommission_event_type'] ?? null,
+                    $lineage['decommission_date'] ?? '-'
+                );
                 $decHolder = trim((string) ($lineage['decommission_holder'] ?? ''));
                 if ($decHolder === '') {
                     $decHolder = trim((string) ($commissioningRow['grantee'] ?? ''));
@@ -2197,6 +2225,7 @@ class LegalSearchService
                     'transaction_date' => $decDate,
                     'reg_time' => '-',
                     'reg_date' => $decDate,
+                    '_decommission_event_type' => $lineage['decommission_event_type'] ?? null,
                     'reg_no' => '0/0/0',
                     'size' => '-',
                     'caveat' => 'No',
@@ -4103,8 +4132,46 @@ class LegalSearchService
             }
         }
 
+        // Rows the on-screen timeline dropped as duplicates (its "Excluded /
+        // Duplicate Records" panel, `window._excludedRelatedTransactions`) are passed
+        // here as `db:id` keys so the printed report hides exactly the same rows. The
+        // heavy weighting/dedup lives in the JS (dedupeTransactionsForTimelineAndReport);
+        // rather than maintain a second copy in PHP, we honour its verdict directly.
+        $excludedRaw = trim((string) ($q['excluded_keys'] ?? ''));
+        $excludedKeys = [];
+        if ($excludedRaw !== '') {
+            foreach (array_filter(array_map('trim', explode(',', $excludedRaw))) as $tok) {
+                $excludedKeys[$tok] = true;
+            }
+        }
+
         $results = $this->search(['query' => $fileNo]);
         $transactions = $results['transactions'] ?? [];
+
+        $labelToDbKey = [
+            'PRA' => 'pra',
+            'File History' => 'file_history_staging',
+            'CofO' => 'CofO_staging',
+            'Deed Registration' => 'deed_registrations',
+        ];
+        // Drop the rows the timeline excluded as duplicates (matched by their
+        // source-table + id key), so the report never prints a record the operator
+        // sees crossed out on screen.
+        $dropExcluded = function (array $rows) use ($excludedKeys, $labelToDbKey): array {
+            if (empty($excludedKeys)) {
+                return $rows;
+            }
+            return array_values(array_filter($rows, function ($row) use ($excludedKeys, $labelToDbKey) {
+                $id = (string) ($row['id'] ?? '');
+                if ($id === '') {
+                    return true; // synthetic rows have no db id — never excluded here
+                }
+                $label = (string) ($row['source_table'] ?? '');
+                $db = $labelToDbKey[$label] ?? $label;
+                return !isset($excludedKeys[$db . ':' . $id]);
+            }));
+        };
+        $transactions = $dropExcluded($transactions);
 
         $allowedPropIds = $propId !== '' ? [$propId] : [];
         foreach ($transactions as $tx) {
@@ -4154,7 +4221,7 @@ class LegalSearchService
             if ($fallback) {
                 $fileNo = (string) ($fallback->fileno ?? $fallback->mlsFNo ?? '');
                 $results = $this->search(['query' => $fileNo]);
-                $transactions = $results['transactions'] ?? [];
+                $transactions = $dropExcluded($results['transactions'] ?? []);
             }
         }
 
@@ -4825,6 +4892,10 @@ class LegalSearchService
                 // can show source badges and location identically to the slip.
                 'source_table' => $labelToDb[$t['source_table'] ?? ''] ?? ($t['source_table'] ?? ''),
                 'location' => $t['location'] ?? '',
+                // Linked counterpart of a Related Fileno row (e.g. a KANGIS recert's land file).
+                // Needed by resolveAliasHintOwners()/extractMainEndpoint() so a KANGIS alias that
+                // belongs to an ANCESTOR folds into the ancestor's block, not the searched child's.
+                'parent_file_number' => $t['parent_file_number'] ?? null,
             ];
         }
 
@@ -4924,7 +4995,12 @@ class LegalSearchService
             $tempRow['lifecycle_file_no'] = $this->normalizeLifecycleFileNo($tempFileNumber);
             $rows[] = $tempRow;
         }
-        $rows[] = $commissioningRow;
+        // A KANGIS-format file (KNML/MLKN/KNGP/KN…) is an alias of a permanent land file,
+        // not a lifecycle of its own — it is never shown as a File Commissioning event
+        // (only its Recertification appears). Suppress the synthetic commissioning row.
+        if (!$this->isKangisFormat($commissioningFileNo)) {
+            $rows[] = $commissioningRow;
+        }
 
         // Group the entire timeline by lifecycle owner: each file's complete
         // lifecycle (commissioning -> transactions -> decommissioning) is rendered
@@ -4933,7 +5009,7 @@ class LegalSearchService
             $rows,
             $commissioningFileNo,
             $fileNo,
-            $this->aliasHintsFromDisplay($fileNumberDisplay ?? null)
+            $this->resolveAliasHintOwners($rows, $this->aliasHintsFromDisplay($fileNumberDisplay ?? null))
         );
 
         // Renumber serial numbers so the first commissioning row is #1.
@@ -4975,24 +5051,40 @@ class LegalSearchService
         $mortgageCaveat = false;
         $parseDate = fn($d) => $d && $d !== '-' ? (rescue(fn() => \Carbon\Carbon::parse($d), null, false)) : null;
 
-        $latestMortgage = collect($transactions)
-            ->filter(fn($t) => stripos($t['transaction_type'] ?? '', 'deed of mortgage') !== false
-                || stripos($t['transaction_type'] ?? '', 'tripartite mortgage') !== false
-                || stripos($t['transaction_type'] ?? '', 'legal mortgage') !== false
-                || stripos($t['transaction_type'] ?? '', 'equitable mortgage') !== false)
-            ->map(fn($t) => $parseDate($t['reg_date'] ?? null))
-            ->filter()
-            ->max();
+        // Match the instrument FAMILY, not one exact label. The digitised records
+        // store mortgages as "MORTGAGE", "Deed of Mortgage", "Tripartite/Legal/
+        // Equitable Mortgage" and discharges as "SURRENDER AND RELEASE" or "Deed of
+        // Surrender and Release" — so detection keys on the family word(s), never a
+        // fixed "deed of …" prefix (which silently missed the release rows and left
+        // a discharged mortgage flagged as active).
+        $isMortgageType = fn($t) => stripos($t['transaction_type'] ?? '', 'mortgage') !== false;
+        $isReleaseType = fn($t) => stripos($t['transaction_type'] ?? '', 'surrender') !== false
+            && stripos($t['transaction_type'] ?? '', 'release') !== false;
 
-        if ($latestMortgage) {
-            $latestRelease = collect($transactions)
-                ->filter(fn($t) => stripos($t['transaction_type'] ?? '', 'deed of surrender and release') !== false)
-                ->map(fn($t) => $parseDate($t['reg_date'] ?? null))
-                ->filter()
-                ->max();
+        // A mortgage keeps the title encumbered until it is discharged by a Surrender
+        // & Release. Presence is detected INDEPENDENTLY OF DATES: a mortgage recorded
+        // only by registration particulars (no reg_date) is common in the digitised
+        // records (e.g. CON-AG-2014-35's Deed of Mortgage, reg 56/21/21) and must
+        // still raise the "Under an Active Mortgage" remark automatically — the
+        // searcher should NOT have to save the Title Encumbrance Remark by hand for
+        // it to reach the report. Mirrors the frontend rule in showCommentSections()
+        // (js.blade.php): mortgageCaveat = hasMortgage && !hasRelease.
+        $hasMortgage = collect($transactions)->contains($isMortgageType);
+        if ($hasMortgage) {
+            $hasRelease = collect($transactions)->contains($isReleaseType);
+            $latestMortgage = collect($transactions)->filter($isMortgageType)
+                ->map(fn($t) => $parseDate($t['reg_date'] ?? null))->filter()->max();
 
-            if (!$latestRelease || $latestRelease->lt($latestMortgage)) {
-                $mortgageCaveat = true;
+            if ($latestMortgage) {
+                // Dated mortgage: it stands unless a release registered on or after it
+                // discharges it.
+                $latestRelease = collect($transactions)->filter($isReleaseType)
+                    ->map(fn($t) => $parseDate($t['reg_date'] ?? null))->filter()->max();
+                $mortgageCaveat = !$latestRelease || $latestRelease->lt($latestMortgage);
+            } else {
+                // Undated mortgage: nothing to compare against, so treat it as active
+                // unless any Surrender & Release exists on the file.
+                $mortgageCaveat = !$hasRelease;
             }
         }
 
@@ -5495,10 +5587,10 @@ class LegalSearchService
         ?string $indexedRelatedFileno = null,
         ?string $firstRowKangisFileNo = null
     ): string {
-        $isKangis = function ($value): bool {
-            $v = trim((string) $value);
-            return $v !== '' && (bool) preg_match('/^[A-Z]{4}\s?\d{3,6}$/i', $v);
-        };
+        // KANGIS-format detection: legacy KNML/MLKN/KNGP + digits AND new-KANGIS "KN"+digits.
+        // Delegates to identifyFileNumberType so a "KN3754" alias is recognised too (the old
+        // local regex only matched the 4-letter legacy form).
+        $isKangis = fn ($value): bool => $this->isKangisFormat($value);
 
         $kangisNumber = trim((string) $firstRowKangisFileNo);
         if ($kangisNumber === '' || $kangisNumber === '-') {
@@ -5550,6 +5642,15 @@ class LegalSearchService
             $relatedMls = $this->resolveKangisCanonical($conn, $searchedFileNo);
         }
 
+        // Land-format search: the KANGIS alias is NOT on the searched file's own rows and
+        // no "KANGIS Recertification" timeline row exists to seed $relatedMls. Resolve it
+        // authoritatively (file_indexings related_fileno back-link, own rows, recert links)
+        // so e.g. "RES-1991-772" displays "RES-1991-772 (KNML 9213)". Fail-open: null → land-only.
+        if (($relatedMls === null || $relatedMls === '') && $kangisNumber === null
+            && $searchedFileNo !== '' && !$isKangis($searchedFileNo)) {
+            $kangisNumber = $this->resolveKangisAliasForLandFile($conn, $resolvedFileNo, $transactions);
+        }
+
         $display = $resolvedFileNo;
 
         // When the user searched the temporary "(T)" number, lead the display with the number
@@ -5586,9 +5687,15 @@ class LegalSearchService
                 $display = $resolvedFileNo . ' (' . $relatedMls . ')';
             }
         } else {
-            if ($relatedMls && strcasecmp(trim($relatedMls), trim($searchedFileNo)) !== 0) {
+            // Never append a parenthetical equal to the lead itself — guards against
+            // "MLKN 139 (MLKN 139)" when an upstream canonicalization has already resolved
+            // the display lead ($resolvedFileNo) to the same KANGIS number.
+            $lead = trim($display);
+            if ($relatedMls && strcasecmp(trim($relatedMls), trim($searchedFileNo)) !== 0
+                && strcasecmp(trim($relatedMls), $lead) !== 0) {
                 $display .= ' (' . $relatedMls . ')';
-            } elseif ($kangisNumber && strcasecmp(trim($kangisNumber), trim($searchedFileNo)) !== 0) {
+            } elseif ($kangisNumber && strcasecmp(trim($kangisNumber), trim($searchedFileNo)) !== 0
+                && strcasecmp(trim($kangisNumber), $lead) !== 0) {
                 $display .= ' (' . $kangisNumber . ')';
             }
         }
@@ -5662,6 +5769,96 @@ class LegalSearchService
         } catch (\Throwable $e) { /* fail-open */ }
 
         return null;
+    }
+
+    /**
+     * Resolve the KANGIS alias to DISPLAY alongside a LAND-format searched file, from the
+     * authoritative sources (per project decision): the KANGIS file's own file_indexings
+     * row that back-links to this land file via related_fileno; the KANGIS / New-KANGIS
+     * columns carried on the file's own transaction rows; and related_file_number
+     * "KANGIS Recertification" links. PropID_Master is deliberately NOT used as a value
+     * source here — its kangisFileNo is not reliably a KANGIS number (it can hold an MLS
+     * successor, e.g. RES-1991-772 -> "RES-2021-4444").
+     *
+     * A KANGIS file is stored in its OWN file_indexings row (registry='KANGIS') whose
+     * related_fileno JSON lists the land file(s) it was recertified from — e.g.
+     * KNML 9213 -> ["RES-2021-4444","RES-1991-772","KN3754"]. A search by the land file
+     * must therefore reverse-look that row up. Prefers a legacy KANGIS number
+     * (KNML/MLKN/KNGP) and falls back to a new-KANGIS ("KN…") number. Returns null when
+     * nothing confidently maps (fail-open: the display simply stays land-only).
+     *
+     * @param  array  $transactions  the assembled timeline rows for the searched file
+     */
+    private function resolveKangisAliasForLandFile($conn, string $landFileNo, array $transactions): ?string
+    {
+        $landFileNo = trim($landFileNo);
+        if ($landFileNo === '' || $this->isKangisFormat($landFileNo)) {
+            return null;
+        }
+
+        $variants = $this->fileNumberVariants($landFileNo);
+        $legacy = null;
+        $newk = null;
+        $take = function ($value) use (&$legacy, &$newk): void {
+            $v = trim((string) $value);
+            if ($v === '' || $v === '-') {
+                return;
+            }
+            $t = $this->identifyFileNumberType($v);
+            if ($t === 'kangis' && $legacy === null) {
+                $legacy = $v;
+            } elseif ($t === 'new_kangis' && $newk === null) {
+                $newk = $v;
+            }
+        };
+
+        // 1) file_indexings reverse lookup — the KANGIS row that lists this land file in
+        //    its related_fileno JSON. Match the QUOTED token so "RES-1991-772" cannot
+        //    partial-match "RES-1991-7720".
+        try {
+            $rows = $conn->table('file_indexings')
+                ->where(function ($q) use ($variants) {
+                    foreach ($variants as $v) {
+                        $q->orWhere('related_fileno', 'like', '%"' . $v . '"%');
+                    }
+                })
+                ->whereNull('deleted_at')
+                ->get(['file_number', 'kangis_fileno_resolved', 'kangis_file_no', 'new_kangis_file_no']);
+            foreach ($rows as $r) {
+                $take($r->kangis_fileno_resolved ?? null);
+                $take($r->kangis_file_no ?? null);
+                $take($r->file_number ?? null);
+                $take($r->new_kangis_file_no ?? null);
+            }
+        } catch (\Throwable $e) { /* fail-open */ }
+
+        // 2) The searched file's own transaction rows may carry the KANGIS number directly.
+        if ($legacy === null && $newk === null) {
+            foreach ($transactions as $tx) {
+                $take($tx['kangisFileNo'] ?? null);
+                $take($tx['NewKANGISFileno'] ?? null);
+            }
+        }
+
+        // 3) related_file_number "KANGIS Recertification" link — either endpoint.
+        if ($legacy === null && $newk === null) {
+            try {
+                $links = $conn->table('related_file_number')
+                    ->where('transaction_type', 'like', '%Recertification%')
+                    ->where(function ($q) use ($variants) {
+                        foreach ($variants as $v) {
+                            $q->orWhere('file_number', $v)->orWhere('related_fileno', $v);
+                        }
+                    })
+                    ->get(['file_number', 'related_fileno']);
+                foreach ($links as $l) {
+                    $take($l->file_number ?? null);
+                    $take($l->related_fileno ?? null);
+                }
+            } catch (\Throwable $e) { /* fail-open */ }
+        }
+
+        return $legacy ?? $newk;
     }
 
     /**
@@ -5897,16 +6094,23 @@ class LegalSearchService
         // 2. If the file is a child or decommissioned parent of an SME group,
         //    find the active parent record and include its related file numbers.
         if (!$isSme) {
-            $activeParent = $conn->table('file_indexings')
+            // Rule 9 (bidirectional): match the file number as a WHOLE JSON token — the related_fileno
+            // column stores a JSON array (e.g. ["RES-1991-772"]), so bound the match with quotes to
+            // avoid the substring false positive where "CON-AG-2014-3" matched "CON-AG-2014-35". A file
+            // may be referenced by SEVERAL parents, so union them all rather than taking only the first.
+            $activeParents = $conn->table('file_indexings')
                 ->whereNull('deleted_at')
-                ->whereRaw("UPPER(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(related_fileno, ''))), '/', '-'), '=', '-'), '_', '-')) LIKE ?", ['%' . $normalizedFileNo . '%'])
-                ->first(['file_number', 'related_fileno']);
-            
-            if ($activeParent && !str_starts_with(strtoupper($activeParent->file_number), 'ST-')) {
+                ->whereRaw("UPPER(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(related_fileno, ''))), '/', '-'), '=', '-'), '_', '-')) LIKE ?", ['%"' . $normalizedFileNo . '"%'])
+                ->get(['file_number', 'related_fileno']);
+
+            foreach ($activeParents as $activeParent) {
+                if (str_starts_with(strtoupper((string) $activeParent->file_number), 'ST-')) {
+                    continue;
+                }
                 $decoded = $parseRelatedFilenos($activeParent->related_fileno);
                 if (!empty($decoded)) {
                     $isSme = true;
-                    $allowed[] = trim($activeParent->file_number);
+                    $allowed[] = trim((string) $activeParent->file_number);
                     foreach ($decoded as $fn) {
                         if ($fn !== '') {
                             $allowed[] = trim($fn);
@@ -6090,6 +6294,60 @@ class LegalSearchService
         return ($k !== '' && $mn !== '' && $k !== $mn) ? [$k => $mn] : [];
     }
 
+    /**
+     * Resolve display-derived alias hints to their TRUE owning land file before they are locked.
+     *
+     * The "MAIN (KANGIS)" display can now surface an ANCESTOR's KANGIS number on a child search
+     * (e.g. searching CON-COM-2026-431 displays "(MLKN 2455)" although MLKN 2455 belongs to the
+     * grandmother CON-AG-2014-35). Blindly locking {MLKN 2455 => searched child} would fold the
+     * KANGIS rows into the wrong block. Rule, per hint {kangis => searchedMain}:
+     *   1. some row pairs the alias WITH the searched main  -> keep the searched main (this is the
+     *      original R1 lock — protects the KNML 6992 multi-recert case);
+     *   2. otherwise rows pair the alias with ANOTHER land file (recert row preferred) -> repoint
+     *      the hint to that owner (the parent);
+     *   3. no row pairs the alias at all -> keep the display hint (reverse-lookup-only aliases).
+     */
+    private function resolveAliasHintOwners(array $rows, array $hints): array
+    {
+        if (empty($hints)) {
+            return $hints;
+        }
+        foreach ($hints as $kangisKey => $searchedMain) {
+            $pairedWithSearched = false;
+            $recertOwner = null;
+            $anyOwner = null;
+            foreach ($rows as $row) {
+                if ($this->extractKangisLifecycleKey($row) !== $kangisKey) {
+                    continue;
+                }
+                $main = $this->extractMainEndpoint($row);
+                if ($main === '') {
+                    continue;
+                }
+                $normMain = $this->normalizeLifecycleFileNo($main);
+                if ($normMain === '' || $normMain === $kangisKey) {
+                    continue;
+                }
+                if ($normMain === $searchedMain) {
+                    $pairedWithSearched = true;
+                    break;
+                }
+                if ($this->isKangisRecertificationRow($row)) {
+                    $recertOwner = $recertOwner ?? $normMain;
+                } else {
+                    $anyOwner = $anyOwner ?? $normMain;
+                }
+            }
+            if (!$pairedWithSearched) {
+                $owner = $recertOwner ?? $anyOwner;
+                if ($owner !== null) {
+                    $hints[$kangisKey] = $owner;
+                }
+            }
+        }
+        return $hints;
+    }
+
     private function tagRowsWithLifecycleFileNo(array $rows, array $aliasHints = []): array
     {
         // Build a KANGIS-alias -> main-file map. Recertification link rows are the
@@ -6194,6 +6452,147 @@ class LegalSearchService
         return $type === 'kangis' || $type === 'new_kangis';
     }
 
+    /**
+     * Display label for a recertification timeline row, per the client spec:
+     *   - OLD KANGIS file (KNML/MLKN/KNGP)   -> "First KANGIS Recertification"  (the 2014–2024 exercise)
+     *   - NEW KANGIS file (KN + digits)      -> "Second KANGIS Recertification" (the 2025–present exercise)
+     *   - Ministry / Physical Planning recert -> "Ministry of Land and Physical Planning Recertification"
+     *
+     * First-vs-Second is decided by the LINKED KANGIS file's own number format ($kangisNo), not by the
+     * searched file. Only a stored type that already denotes a recertification is relabelled — an untyped
+     * or non-recert related row keeps its stored/neutral label (never masquerades as a recert).
+     */
+    private function recertDisplayLabel(?string $kangisNo, ?string $storedType): string
+    {
+        $stored = trim((string) $storedType);
+        if ($stored === '') {
+            return 'Related File';
+        }
+        if (stripos($stored, 'physical planning') !== false || stripos($stored, 'ministry') !== false) {
+            return 'Ministry of Land and Physical Planning Recertification';
+        }
+        if (stripos($stored, 'recertification') !== false) {
+            return $this->identifyFileNumberType($kangisNo) === 'new_kangis'
+                ? 'Second KANGIS Recertification'
+                : 'First KANGIS Recertification';
+        }
+        return $stored;
+    }
+
+    /**
+     * Suppress redundant neutral "Related File" link rows (source 'Related Fileno' with no real
+     * transaction type). Per the client: when the related file number ALREADY displays with its
+     * own transactions in the timeline, the bare link row adds nothing — drop it. Only when the
+     * related file has NO transactions of its own does the link row remain, and then its
+     * Instrument/Transaction Type displays blank instead of the "Related File" placeholder.
+     */
+    private function suppressRedundantRelatedFileRows(array $rows): array
+    {
+        $isNeutralLink = function (array $row): bool {
+            if ((string) ($row['source_table'] ?? '') !== 'Related Fileno') {
+                return false;
+            }
+            $type = trim((string) ($row['transaction_type'] ?? ''));
+            return $type === '' || $type === '-' || strcasecmp($type, 'Related File') === 0;
+        };
+
+        // File numbers that appear on REAL rows (anything that isn't a neutral link row).
+        $realNos = [];
+        foreach ($rows as $row) {
+            if ($isNeutralLink($row)) {
+                continue;
+            }
+            foreach (['fileno', 'file_number', 'mlsFNo'] as $col) {
+                $v = $this->normalizeLifecycleFileNo((string) ($row[$col] ?? ''));
+                if ($v !== '' && $v !== '-') {
+                    $realNos[$v] = true;
+                }
+            }
+        }
+
+        $out = [];
+        foreach ($rows as $row) {
+            if ($isNeutralLink($row)) {
+                $no = $this->normalizeLifecycleFileNo(
+                    (string) ($row['file_number'] ?? ($row['fileno'] ?? ($row['mlsFNo'] ?? '')))
+                );
+                if ($no !== '' && isset($realNos[$no])) {
+                    continue; // the related file already displays with its own transactions
+                }
+                $row['transaction_type'] = '-'; // keep the link row, but blank the type label
+            }
+            $out[] = $row;
+        }
+        return $out;
+    }
+
+    /**
+     * A recertified LAND file carries an "-RC-" token in its number (e.g. RES-RC-1982-200,
+     * CON-RES-RC-2005-1). Per the client spec such files show a synthetic "Ministry of Land
+     * and Physical Planning Recertification" line under their File Commissioning. Excludes
+     * KANGIS-format numbers (those carry a KANGIS Recertification instead).
+     */
+    private function isRecertLandFile(?string $fileNo): bool
+    {
+        $v = strtoupper(trim((string) $fileNo));
+        if ($v === '' || $this->isKangisFormat($v)) {
+            return false;
+        }
+        return (bool) preg_match('~(?:^|[-_/ ])RC(?:[-_/ ]|$)~', $v);
+    }
+
+    /**
+     * Transaction Date to show on a File Decommissioning row (client Rule 2): the real
+     * "Date Decommissioned" only for a genuine KLAES decommission ('parcel_update_new' or
+     * 'title_status_update'); a "back linkage" / backfilled decommission ('backfill' or an
+     * unclassified/null event_type) shows a blank ('-') Transaction Date.
+     */
+    private function decommissionDisplayDate(?string $eventType, $rawDate): string
+    {
+        $date = trim((string) $rawDate);
+        if ($date === '' || $date === '-') {
+            return '-';
+        }
+        return in_array($eventType, ['parcel_update_new', 'title_status_update'], true) ? $date : '-';
+    }
+
+    /** A title-status decommission whose File Decommissioning row must be the LAST timeline line (Rule 3). */
+    private function isTitleStatusDecommission(array $row): bool
+    {
+        return ($row['_decommission_event_type'] ?? null) === 'title_status_update';
+    }
+
+    /**
+     * Build a print-format "Ministry of Land and Physical Planning Recertification" row for an
+     * "-RC-" land file (client Rule 4). Classified into the recertification band (weight 8) so it
+     * sits under the File Commissioning line and above the C of O.
+     */
+    private function makePrintMinistryRecertRow(string $fileNo, array $meta): array
+    {
+        $holder = $meta['commissioning_holder'] ?: $meta['file_title'] ?: '-';
+        return [
+            'sn' => 0,
+            'file_no' => $fileNo,
+            'lifecycle_file_no' => $fileNo,
+            'grantor' => 'Kano State Ministry of Land and Physical Planning',
+            'grantee' => $holder,
+            'party_3' => '-',
+            'party_4' => '-',
+            'instrument_type' => 'Ministry of Land and Physical Planning Recertification',
+            'transaction_type' => 'Ministry of Land and Physical Planning Recertification',
+            'transaction_date' => '-',
+            'reg_time' => '-',
+            'reg_date' => '-',
+            'reg_no' => '0/0/0',
+            'size' => '-',
+            'caveat' => 'No',
+            'comments' => '-',
+            'source_table' => 'Related Fileno',
+            'location' => '',
+            '_synthesized' => true,
+        ];
+    }
+
     private function extractKangisEndpoint(array $row): string
     {
         foreach ([$row['fileno'] ?? null, $row['file_number'] ?? null, $row['mlsFNo'] ?? null] as $c) {
@@ -6276,6 +6675,7 @@ class LegalSearchService
             'decommission_date' => $lineage['decommission_date'] ?? null,
             'decommission_reason' => $lineage['decommission_reason'] ?? null,
             'decommission_holder' => $lineage['decommission_holder'] ?? null,
+            'decommission_event_type' => $lineage['decommission_event_type'] ?? null,
             'is_temp' => (bool) preg_match('/\(\s*T\s*\)\s*$/i', $fileNo),
         ];
     }
@@ -6419,7 +6819,10 @@ class LegalSearchService
      */
     private function makePrintDecommissioningRow(string $fileNo, array $meta): array
     {
-        $date = $meta['decommission_date'] ?? '-';
+        $displayDate = $this->decommissionDisplayDate(
+            $meta['decommission_event_type'] ?? null,
+            $meta['decommission_date'] ?? '-'
+        );
         $holder = $meta['decommission_holder'] ?: $meta['file_title'] ?: '-';
         $reason = $meta['decommission_reason'] ?? '-';
 
@@ -6432,9 +6835,10 @@ class LegalSearchService
             'party_3' => '-',
             'party_4' => '-',
             'instrument_type' => 'File Decommissioning',
-            'transaction_date' => $date,
+            'transaction_date' => $displayDate,
             'reg_time' => '-',
-            'reg_date' => $date,
+            'reg_date' => $displayDate,
+            '_decommission_event_type' => $meta['decommission_event_type'] ?? null,
             'reg_no' => '0/0/0',
             'size' => '-',
             'caveat' => 'No',
@@ -6456,6 +6860,7 @@ class LegalSearchService
         $hasCommissioning = [];
         $hasDecommissioning = [];
         $hasTemp = [];
+        $hasMinistryRecert = [];
 
         foreach ($rows as $row) {
             $fno = $row['lifecycle_file_no'] ?? null;
@@ -6464,6 +6869,7 @@ class LegalSearchService
             }
             $source = (string) ($row['source_table'] ?? '');
             $instrument = (string) ($row['instrument_type'] ?? '');
+            $type = (string) ($row['transaction_type'] ?? '');
 
             if ($source === 'File Commissioning' || $source === 'DCIV File Commissioning'
                 || $instrument === 'File Commissioning' || $instrument === 'DCIV File Commissioning') {
@@ -6475,6 +6881,11 @@ class LegalSearchService
             if ($source === 'Temporary File' || $instrument === 'Temporary File') {
                 $hasTemp[$fno] = true;
             }
+            // A Ministry recert may already be present as a real "Related Fileno" link row —
+            // don't synthesize a second one for the same file (Rule 4, dedup).
+            if (stripos($type, 'physical planning') !== false && stripos($type, 'recertification') !== false) {
+                $hasMinistryRecert[$fno] = true;
+            }
         }
 
         foreach ($lifecycleFiles as $fno => $_) {
@@ -6483,15 +6894,26 @@ class LegalSearchService
             }
             $meta = $metaCache[$fno];
 
-            if (empty($hasCommissioning[$fno])) {
+            // A KANGIS-format file (KNML/MLKN/KNGP/KN…) is an alias of a land file, never
+            // its own lifecycle — suppress its synthetic Commissioning/Decommissioning
+            // rows (its Recertification, classified separately, still appears).
+            $isKangisLifecycle = $this->isKangisFormat($fno);
+
+            if (empty($hasCommissioning[$fno]) && !$isKangisLifecycle) {
                 $rows[] = $this->makePrintCommissioningRow($fno, $meta);
+            }
+
+            // Rule 4: an "-RC-" land file gets a Ministry of Land and Physical Planning
+            // Recertification line (unless one already arrived as a real link row).
+            if (empty($hasMinistryRecert[$fno]) && $this->isRecertLandFile($fno)) {
+                $rows[] = $this->makePrintMinistryRecertRow($fno, $meta);
             }
 
             if ($meta['is_temp'] && empty($hasTemp[$fno])) {
                 $rows[] = $this->makePrintTemporaryFileRow($fno, $meta);
             }
 
-            if ($meta['is_decommissioned'] && empty($hasDecommissioning[$fno])) {
+            if ($meta['is_decommissioned'] && empty($hasDecommissioning[$fno]) && !$isKangisLifecycle) {
                 $rows[] = $this->makePrintDecommissioningRow($fno, $meta);
             }
         }
@@ -6665,14 +7087,22 @@ class LegalSearchService
             $relationships[$fno] = $this->classifyLifecycleRelationship($conn, $fno, $primaryFileNo);
         }
 
-        usort($files, function ($a, $b) use ($primaryFileNo, $fileMeta, $relationships) {
-            $aPrimary = ($a === $primaryFileNo);
-            $bPrimary = ($b === $primaryFileNo);
-            if ($aPrimary && !$bPrimary) {
-                return -1;
-            }
-            if ($bPrimary && !$aPrimary) {
+        // Rule 11: when a CHILD is searched, its PARENT (a predecessor) block renders FIRST, then the
+        // searched child, then siblings/successors. Rank: predecessor = 0, searched = 1, other = 2.
+        // A parent/mother search has no predecessors, so the searched file naturally stays first.
+        // (This changes block ORDER only; the "Last Transaction" field stays scoped to the searched
+        // file's own group, so it still reports the searched child's last dealing.)
+        $rankOf = function ($f) use ($primaryFileNo, $relationships) {
+            if ($f === $primaryFileNo) {
                 return 1;
+            }
+            return (($relationships[$f] ?? 0) === -1) ? 0 : 2;
+        };
+        usort($files, function ($a, $b) use ($fileMeta, $relationships, $rankOf) {
+            $rankA = $rankOf($a);
+            $rankB = $rankOf($b);
+            if ($rankA !== $rankB) {
+                return $rankA <=> $rankB;
             }
 
             $ta = $fileMeta[$a]['effective_start_timestamp'] ?? ($fileMeta[$a]['commissioning_timestamp'] ?? PHP_INT_MAX);

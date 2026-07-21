@@ -4352,14 +4352,15 @@
                 // In batch mode the per-entry values are the source of truth (the plot
                 // input only updates the entry, not the top-level this.plotNo), so read
                 // from the current entry to avoid building the string from stale data.
-                let plot = this.plotNo, dist = this.district, lga = this.lga;
+                let dist = this.district, lga = this.lga;
                 if (this.batchMode && this.locationEntries[this.currentEntryIndex]) {
                     const entry = this.locationEntries[this.currentEntryIndex];
-                    plot = entry.plotNo;
                     dist = entry.district;
                     lga = entry.lga;
                 }
-                const parts = [plot, dist, lga].filter(v => v && v.toString().trim());
+                // Plot number is captured in its own field; don't repeat it inside the
+                // auto-filled Location string (it read e.g. "463, ABBA ABDULLAHI AV, FAGGE").
+                const parts = [dist, lga].filter(v => v && v.toString().trim());
                 const loc = parts.join(', ').toUpperCase();
                 this.location = loc;
                 if (this.batchMode) {

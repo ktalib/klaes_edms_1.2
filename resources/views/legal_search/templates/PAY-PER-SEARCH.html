@@ -19,17 +19,18 @@
     .page {
       background-color: #fff;
       width: 11in;
-      min-height: 8.5in;
-      /* Ensures at least one full page height */
+      /* Fixed landscape sheet height (border-box), safe for Letter/A4 usable area.
+         Screen and print use the SAME value so JS row-fill measured on screen
+         matches the printed sheet. */
+      min-height: 7.6in;
       padding: 0.2in 0.4in;
       position: relative;
       box-sizing: border-box;
       display: flex;
       flex-direction: column;
-      /* This allows flex-grow to work vertically */
     }
 
-    /* No flex-grow: footer sits directly after content (page keeps min-height for print) */
+    /* Footer sits directly after content (page keeps min-height for the sheet). */
     .main-content {}
 
     .watermark-img {
@@ -162,7 +163,7 @@
 
     .transaction-table th,
     .transaction-table td {
-      padding: 4px 4px;
+      padding: 2px 4px;
       vertical-align: top;
       border-bottom: 0.5px solid #eee;
       word-wrap: break-word;
@@ -184,15 +185,15 @@
 
     /* FOOTER WRAPPER STYLING */
     .footer-wrapper {
-      margin-top: 16px;
+      margin-top: 8px;
       width: 100%;
     }
 
     .remarks-container {
       border-top: 1px solid #000;
       width: 100%;
-      padding-top: 8px;
-      margin-top: 10px;
+      padding-top: 6px;
+      margin-top: 6px;
       display: flex;
       align-items: flex-start;
     }
@@ -231,7 +232,7 @@
     .signature-section {
       display: table;
       width: 100%;
-      margin-top: 8px;
+      margin-top: 4px;
       page-break-inside: avoid;
     }
 
@@ -243,7 +244,7 @@
       display: table-cell;
       width: 33.33%;
       font-size: 10.5px;
-      line-height: 1.5;
+      line-height: 1.35;
       padding-right: 20px;
       vertical-align: top;
     }
@@ -257,7 +258,7 @@
       font-style: italic;
       font-weight: bold;
       text-align: center;
-      margin: 8px 0 4px 0;
+      margin: 4px 0 2px 0;
       color: #333;
     }
 
@@ -341,15 +342,15 @@
       .page {
         box-shadow: none;
         width: 100%;
-        padding: 0.1in 0.2in;
+        /* Same padding + min-height as the on-screen sheet so the JS row-fill
+           (measured on screen) matches the printed layout exactly. Fixed inches,
+           not vh — vh is unreliable in print and was spilling content to page 2. */
+        padding: 0.2in 0.4in;
         display: flex;
         flex-direction: column;
-        min-height: 95vh;
+        min-height: 7.6in;
       }
 
-      /* 
-         * Footer sits directly below content; no flex-grow so empty space falls below footer.
-         */
       .main-content {
         display: block;
       }
@@ -369,11 +370,6 @@
         display: table-header-group;
       }
 
-      /* Let the browser handle page breaks naturally to fill the page, removing forced empty space */
-      .transaction-table tbody tr:nth-child(10n):not(:last-child) {
-        /* Removed forced break so rows fill the page naturally */
-      }
-
       /* 3. "Orphan" Prevention: Avoid breaking AFTER the very last row only */
       .transaction-table tr:last-child {
         break-after: avoid;
@@ -383,7 +379,7 @@
       /* Ensures the footer content doesn't split across pages, and sticks close to the table */
       .footer-wrapper {
         page-break-inside: avoid;
-        margin-top: 10px;
+        margin-top: 6px;
       }
 
       .watermark-img,
@@ -437,7 +433,6 @@
           <div id="qr-code" style="margin-right:8px;"></div>
           <div class="logo-box"><img src="http://app.klaes.ng/assets/logo/ministry2.png" alt="Logo" /></div>
         </div>
-        <div class="date-line" id="report-date-line">Date: March 19, 2026</div>
       </header>
 
       <div class="section-label">Property Details</div>
@@ -479,8 +474,8 @@
         <div class="lbl">Residual Term:</div>
         <div class="val"><strong id="report-rent">-</strong></div>
         <div class="sp"></div>
-        <div class="lbl"></div>
-        <div class="val"></div>
+        <!-- Date sits directly below Client Address; spans the far-right label+value columns -->
+        <div id="report-date-line" style="grid-column: span 2; font-weight: bold; font-size: 12px;">Date: March 19, 2026</div>
         <!-- Row 4 -->
         <div class="lbl">Plot Description:</div>
         <div class="val"><strong id="report-plot-description">-</strong></div>
@@ -496,6 +491,7 @@
       </div>
 
       <div class="section-label">File History</div>
+      <div class="table-wrap">
       <table class="transaction-table">
         <thead>
           <tr class="header-row">
@@ -517,6 +513,7 @@
           <!-- Data will be populated here -->
         </tbody>
       </table>
+      </div>
     </div>
 
     <div class="footer-wrapper">
@@ -605,6 +602,35 @@
       }
     }
 
+    // Stretch the File History rows so they cover the sheet instead of leaving a
+    // blank gap below a short table. The flex page pins the bottom logos
+    // (.footer-bottom) to the sheet bottom, so any slack appears as a gap between
+    // the signatures block (.footer-wrapper) and those logos. We measure that gap
+    // and add it evenly to the row heights, which pushes the signatures down to
+    // meet the logos and fills the sheet. A report whose rows already fill (or
+    // overflow) a sheet has no gap, so nothing stretches — long reports paginate
+    // normally. Screen and print use the identical page box, so the heights
+    // measured here are correct for the printed sheet too.
+    function fillSheetRows() {
+      const tbody = document.getElementById('report-transactions-body');
+      const footerWrap = document.querySelector('.footer-wrapper');
+      const footerBottom = document.querySelector('.footer-bottom');
+      if (!tbody || !footerWrap || !footerBottom) return;
+      const rows = Array.prototype.slice.call(tbody.rows);
+      if (!rows.length) return;
+
+      // Clear any previous stretch so we always measure the natural gap.
+      rows.forEach(function (r) { r.style.height = ''; });
+
+      const gap = footerBottom.getBoundingClientRect().top - footerWrap.getBoundingClientRect().bottom;
+      if (gap > 10) {
+        const add = gap / rows.length;
+        rows.forEach(function (r) {
+          r.style.height = (r.getBoundingClientRect().height + add) + 'px';
+        });
+      }
+    }
+
     (function () {
       const params = new URLSearchParams(window.location.search);
       const fileNo = params.get('file_number') || '';
@@ -622,6 +648,7 @@
       const clientName = params.get('client_name') || '';
       const clientAddress = params.get('client_address') || '';
       const timelineOrder = params.get('timeline_order') || '';
+      const excludedKeys = params.get('excluded_keys') || '';
       if (!fileNo && !propId) return;
 
       const url = '/legal-search/report-template-data?' + new URLSearchParams({
@@ -640,6 +667,7 @@
         client_name: clientName,
         client_address: clientAddress,
         timeline_order: timelineOrder,
+        excluded_keys: excludedKeys,
       }).toString();
 
       fetch(url, { headers: { 'Accept': 'application/json' } })
@@ -702,11 +730,13 @@
             tsEl.style.display = 'inline';
           }
 
-          // Caveat note
+          // Caveat note — flows inline after the ground-rent text (continues on
+          // the same line and only wraps when it runs out of room) instead of
+          // dropping onto its own line.
           const caveatEl = document.getElementById('report-caveat-note');
           if (caveatEl && d.caveat_note) {
-            caveatEl.textContent = d.caveat_note;
-            caveatEl.style.display = 'block';
+            caveatEl.textContent = ' ' + d.caveat_note;
+            caveatEl.style.display = 'inline';
             if (d.under_investigation || d.is_caveated || d.is_flagged) {
               caveatEl.style.color = '#dc2626';
             } else {
@@ -772,8 +802,12 @@
 
           const tbody = document.getElementById('report-transactions-body');
           if (tbody && Array.isArray(d.rows) && d.rows.length > 0) {
-            const header = tbody.querySelector('.header-row')?.outerHTML || '';
-            const rows = d.rows.map(row => `
+            // Render every transaction row into the single table. Rows fill each
+            // printed sheet top-to-bottom and the browser breaks to a new sheet only
+            // when the current one is full (see @media print: the table header
+            // repeats on each page and rows never split). Filling the sheet this way
+            // avoids leaving a blank gap below a short first sheet.
+            const rowHtml = (row) => `
                 <tr>
                   <td>${row.sn}</td>
                   <td>${row.file_no || '-'}</td>
@@ -787,13 +821,12 @@
                   <td>${row.reg_no}</td>
                   <td>${row.caveat}</td>
                   <td>${row.comments}</td>
-                </tr>
-              `).join('');
-            tbody.innerHTML = header + rows;
+                </tr>`;
+            tbody.innerHTML = d.rows.map(rowHtml).join('');
 
-            // Hide Party 3/4 columns if no data
-            const hasP3 = d.rows.some(r => r.party_3 && r.party_3 !== '-' && r.party_3.trim() !== '');
-            const hasP4 = d.rows.some(r => r.party_4 && r.party_4 !== '-' && r.party_4.trim() !== '');
+            // Hide Party 3/4 columns if no data.
+            const hasP3 = d.rows.some(r => r.party_3 && r.party_3 !== '-' && String(r.party_3).trim() !== '');
+            const hasP4 = d.rows.some(r => r.party_4 && r.party_4 !== '-' && String(r.party_4).trim() !== '');
             if (!hasP3) document.querySelectorAll('.party-3-col').forEach(el => el.style.display = 'none');
             if (!hasP4) document.querySelectorAll('.party-4-col').forEach(el => el.style.display = 'none');
           }
@@ -812,6 +845,16 @@
               });
             }
           }
+
+          // Stretch the File History rows to cover the sheet (no blank gap below a
+          // short table). Deferred so the QR/logos have painted and the header
+          // height is final before we measure. Re-run before printing as a safety
+          // net in case fonts/images shifted the layout.
+          requestAnimationFrame(() => { fillSheetRows(); });
+          // Recompute once images (logos/QR) finish loading and right before print,
+          // since header height affects the measured gap.
+          window.addEventListener('load', fillSheetRows);
+          window.addEventListener('beforeprint', fillSheetRows);
 
           // Report is fully rendered — clear this half of the auto-print gate.
           __pprDataReady = true;

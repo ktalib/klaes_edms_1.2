@@ -936,6 +936,8 @@ const executeSearchAjax = (filters, searchData) => {
         // Per-file lifecycle metadata (commissioning/decommissioning/temp flags) for
         // every lifecycle owner surfaced in the result set.
         window._lsLifecycleMeta = data.lifecycle_meta || {};
+        // Authoritative block order (Rule 11: transitive ancestors first) from the backend.
+        window._lsLifecycleOrder = Array.isArray(data.lifecycle_order) ? data.lifecycle_order : [];
         // Whether the searched file is actually indexed (has its own file_indexings row).
         // When false, the synthetic "File Commissioning" timeline row is suppressed.
         const _apiIsIndexed = (data.is_indexed === true);
@@ -2356,14 +2358,6 @@ const executeSearchAjax = (filters, searchData) => {
         return k;
       };
 
-      const pickDate = (item) => {
-        for (const c of [item?.transaction_date, item?.reg_date]) {
-          const ts = parseTimelineDateValue(c);
-          if (ts !== null) return ts;
-        }
-        return null;
-      };
-
       // Only real dealings on the main file are eligible.
       const eligible = relatedForLast.filter((item) => {
         if (mainKey && ownerKey(item) !== mainKey) return false;
@@ -2371,14 +2365,16 @@ const executeSearchAjax = (filters, searchData) => {
         return t && !isParcelUpdateType(t) && !isCertOrAdminType(t) && !isLifecycleSyntheticType(t);
       });
 
-      let latestItem = null;
-      let latestTs = -Infinity;
-      for (const item of eligible) {
-        const ts = pickDate(item);
-        if (ts !== null && ts >= latestTs) { latestTs = ts; latestItem = item; }
-      }
-      // If none carried a usable date, still prefer any eligible main-file row.
-      if (!latestItem && eligible.length) latestItem = eligible[eligible.length - 1];
+      // Order the eligible dealings with the SAME chronological sort the timeline table
+      // uses, then take the LAST one — so the status matches what the user sees. A plain
+      // date-max fails here: an instrument with no transaction date (e.g. a Deed of
+      // Mortgage recorded only by registration particulars) would be skipped, yet the
+      // timeline parks such undated rows at the very end as floaters, making them the
+      // most recent dealing. Sorting the same way keeps the two in agreement.
+      let orderedEligible = eligible;
+      try { orderedEligible = sortTimelineChronologically(eligible.slice()); }
+      catch (_) { /* keep filter order on failure */ }
+      const latestItem = orderedEligible.length ? orderedEligible[orderedEligible.length - 1] : null;
 
       if (latestItem) {
         lastTransactionValue = typeOf(latestItem) || lastTransactionValue;
@@ -2492,6 +2488,7 @@ const executeSearchAjax = (filters, searchData) => {
         window._lsFileTempNumber = _tf;
         window._lsLineage = data.lineage || null;
         window._lsLifecycleMeta = data.lifecycle_meta || {};
+        window._lsLifecycleOrder = Array.isArray(data.lifecycle_order) ? data.lifecycle_order : [];
         const _isIndexed = (data.is_indexed === true);
         searchResults.forEach(function (r) {
           r._file_is_indexed = _isIndexed;
@@ -3598,6 +3595,10 @@ const executeSearchAjax = (filters, searchData) => {
   const buildLineageCommissioningRow = (fileNo, commissioningDate, fileTitle, idSuffix) => {
     const no = String(fileNo || '').replace(/\s*\(\s*T\s*\)\s*$/i, '').trim();
     if (!no) return null;
+    // A KANGIS-format file (KNML/MLKN/KNGP/KN…) is an alias of a land file, never its own
+    // lifecycle — it shows no File Commissioning row (only its Recertification appears).
+    const _kt = identifyFileNumberType(no);
+    if (_kt === 'kangis' || _kt === 'new_kangis') return null;
     let date = (commissioningDate && commissioningDate !== '-') ? commissioningDate : '-';
     if (date === '-') date = extractYearFromFileNumber(no) || '-';
     return {
@@ -3624,6 +3625,16 @@ const executeSearchAjax = (filters, searchData) => {
     };
   };
 
+  // Rule 2: a File Decommissioning row shows the real Date Decommissioned only for a genuine
+  // KLAES decommission ('parcel_update_new' / 'title_status_update'); a backfilled / "back
+  // linkage" decommission ('backfill' or an unset event_type) shows a blank Transaction Date.
+  // Mirrors PHP LegalSearchService::decommissionDisplayDate().
+  const decommissionDisplayDate = (eventType, rawDate) => {
+    const d = String(rawDate == null ? '' : rawDate).trim();
+    if (d === '' || d === '-') return '-';
+    return (eventType === 'parcel_update_new' || eventType === 'title_status_update') ? d : '-';
+  };
+
   // Build a "File Decommissioning" row for a successor lineage file that was ITSELF
   // later retired — e.g. the Subdivision child CON-AG-2026-108 retired by a Change of
   // Purpose into CON-COM-2026-430. Mirrors buildDecommissioningTimelineRow but for a
@@ -3632,6 +3643,9 @@ const executeSearchAjax = (filters, searchData) => {
     const no = String(succ?.decommission_file_no || succ?.file_no || '')
       .replace(/\s*\(\s*T\s*\)\s*$/i, '').trim();
     if (!no) return null;
+    // A KANGIS-format file is an alias of a land file — it shows no File Decommissioning row.
+    const _kt = identifyFileNumberType(no);
+    if (_kt === 'kangis' || _kt === 'new_kangis') return null;
     return {
       _is_decommissioning: true,
       _is_lineage_decommissioning: true,
@@ -3647,8 +3661,7 @@ const executeSearchAjax = (filters, searchData) => {
       party_1: 'Kano State Ministry of Land and Physical Planning',
       party_2: succ?.decommission_holder || succ?.file_title || '-', party_3: '-', party_4: '-',
       serial_no: '', page_no: '', volume_no: '',
-      transaction_date: (succ?.decommission_date && succ.decommission_date !== '-')
-        ? succ.decommission_date : '-',
+      transaction_date: decommissionDisplayDate(succ?.decommission_event_type, succ?.decommission_date),
       reg_date: '',
       caveat: 'No',
       is_caveated: 0,
@@ -3697,8 +3710,10 @@ const executeSearchAjax = (filters, searchData) => {
       || (selectedFile && (selectedFile.mlsFNo || selectedFile.fileno || selectedFile.fileNo))
       || '-';
     const fileNo = String(rawFileNo).replace(/\s*\(\s*T\s*\)\s*$/i, '').trim() || rawFileNo;
-    const date = (lineage.decommission_date && lineage.decommission_date !== '-')
-      ? lineage.decommission_date : '-';
+    // A KANGIS-format file is an alias of a land file — it shows no File Decommissioning row.
+    const _kt = identifyFileNumberType(fileNo);
+    if (_kt === 'kangis' || _kt === 'new_kangis') return null;
+    const date = decommissionDisplayDate(lineage.decommission_event_type, lineage.decommission_date);
     // Holder resolved server-side from the decommission archive; fall back to the
     // searched file's title.
     const ownerName = (lineage.decommission_holder && String(lineage.decommission_holder).trim())
@@ -3728,7 +3743,8 @@ const executeSearchAjax = (filters, searchData) => {
   };
 
   // Build the synthetic "Temporary File" timeline record. It appears directly
-  // below File Commissioning (weight 11) only when the searched file has a
+  // below File Commissioning (both weight 12; the temp row is ordered right after
+  // the main commissioning by the group merge) only when the searched file has a
   // temporary "(T)" sibling. Its File No is the "(T)" number.
   const buildTemporaryFileTimelineRow = () => {
     let tempFileNo = String(
@@ -3920,6 +3936,10 @@ const executeSearchAjax = (filters, searchData) => {
   const buildLifecycleCommissioningRow = (fileNo, rowsForFile) => {
     const no = baseFileNo(fileNo);
     if (!no || no === '-') return null;
+    // A KANGIS-format file (KNML/MLKN/KNGP/KN…) is an alias of a land file, never its own
+    // lifecycle — it shows no File Commissioning row (only its Recertification appears).
+    const _kt = identifyFileNumberType(no);
+    if (_kt === 'kangis' || _kt === 'new_kangis') return null;
 
     const meta = lifecycleMetaFor(fileNo);
     // A genuine KLAES commissioning date (resolved server-side from mls_file_no) is
@@ -3962,10 +3982,11 @@ const executeSearchAjax = (filters, searchData) => {
   const buildLifecycleDecommissioningRow = (fileNo, rowsForFile) => {
     const no = baseFileNo(fileNo);
     if (!no || no === '-') return null;
+    // A KANGIS-format file is an alias of a land file — it shows no File Decommissioning row.
+    const _kt = identifyFileNumberType(no);
+    if (_kt === 'kangis' || _kt === 'new_kangis') return null;
     const meta = lifecycleMetaFor(fileNo);
-    const date = (meta?.decommission_date && String(meta.decommission_date).trim() !== '' && String(meta.decommission_date).trim() !== '-')
-      ? String(meta.decommission_date).trim()
-      : '-';
+    const date = decommissionDisplayDate(meta?.decommission_event_type, meta?.decommission_date);
     const holder = getHolderForFile(fileNo, rowsForFile);
     return {
       _is_decommissioning: true,
@@ -4082,6 +4103,15 @@ const executeSearchAjax = (filters, searchData) => {
     return result;
   };
 
+  // Rule 4: a recertified LAND file carries an "-RC-" token (RES-RC-1982-200,
+  // CON-RES-RC-2005-1). Mirrors PHP LegalSearchService::isRecertLandFile(). KANGIS-format
+  // numbers are excluded (they carry a KANGIS Recertification instead).
+  const isRecertLandFileNo = (v) => {
+    const s = String(v || '').toUpperCase().trim();
+    if (!s || isKangisFileNo(s)) return false;
+    return /(?:^|[-_/ ])RC(?:[-_/ ]|$)/.test(s);
+  };
+
   const ensureLifecycleSyntheticRows = (groupedRows) => {
     const result = {};
     // The searched file's own lineage flag (window._lsLineage) describes ONLY that
@@ -4114,6 +4144,29 @@ const executeSearchAjax = (filters, searchData) => {
       if (!hasCommissioning) {
         const row = buildLifecycleCommissioningRow(fno, rows);
         if (row) rows.push(row);
+      }
+      // Rule 4: an "-RC-" land file shows a Ministry of Land and Physical Planning
+      // Recertification line under its File Commissioning, unless one already arrived as a
+      // real link row. Classified into the recert band (weight 8) → under commissioning, above CofO.
+      const hasMinistryRecert = rows.some(r => {
+        const t = String(r?.transaction_type || r?.instrument_type || '');
+        return /physical planning/i.test(t) && /recertification/i.test(t);
+      });
+      if (!hasMinistryRecert && isRecertLandFileNo(fno)) {
+        rows.push({
+          _is_recertification: true,
+          id: 'ministry-recert-' + fno,
+          source_table: 'Related Fileno',
+          fileno: fno, file_number: fno, mlsFNo: fno,
+          lifecycle_file_no: normalizeLifecycleFileNo(fno),
+          transaction_type: 'Ministry of Land and Physical Planning Recertification',
+          instrument_type: 'Ministry of Land and Physical Planning Recertification',
+          party_1: 'Kano State Ministry of Land and Physical Planning',
+          party_2: getHolderForFile(fno, rows), party_3: '-', party_4: '-',
+          serial_no: '', page_no: '', volume_no: '',
+          transaction_date: '-', reg_date: '',
+          caveat: 'No', is_caveated: 0, prop_id: '', _synthesized: true
+        });
       }
       const shouldHaveTemp = (meta?.is_temp === true) || isTempFileNo(fno);
       if (shouldHaveTemp && !hasTemp) {
@@ -4284,12 +4337,35 @@ const executeSearchAjax = (filters, searchData) => {
       fileEffectiveStart[fno] = minTs === Infinity ? Infinity : minTs;
     }
 
+    // Rule 11 (mirror of PHP orderLifecycleFiles): when a CHILD is searched, its PARENT (a
+    // predecessor, from window._lsLineage) block renders FIRST, then the searched child, then
+    // siblings/successors. Rank: predecessor = 0, searched = 1, other = 2. A parent/mother search
+    // has no predecessors, so the searched file stays first. Block order only — the "Last
+    // Transaction" field stays scoped to the searched file's own group.
+    const predecessorSet = new Set(
+      [].concat(window._lsLineage?.previous_file_nos || [],
+                (window._lsLineage?.previous_files || []).map(p => p?.file_no))
+        .map(n => normalizeLifecycleFileNo(n || ''))
+        .filter(Boolean)
+    );
+    const lifecycleRankOf = (f) => {
+      if (f === primaryFileNo) return 1;
+      return predecessorSet.has(f) ? 0 : 2;
+    };
+    // Authoritative block order from the backend (Rule 11: transitive ancestors first). When
+    // present it wins; the predecessorSet rank below is only the fallback for files it omits.
+    const serverOrder = (window._lsLifecycleOrder || []).map(n => normalizeLifecycleFileNo(n || '')).filter(Boolean);
+    const serverIndexOf = (f) => { const i = serverOrder.indexOf(f); return i === -1 ? Number.MAX_SAFE_INTEGER : i; };
+
     const files = Object.keys(deduped);
     files.sort((a, b) => {
-      const aPrimary = (a === primaryFileNo);
-      const bPrimary = (b === primaryFileNo);
-      if (aPrimary && !bPrimary) return -1;
-      if (bPrimary && !aPrimary) return 1;
+      const ia = serverIndexOf(a);
+      const ib = serverIndexOf(b);
+      if (ia !== ib) return ia - ib;
+
+      const ra = lifecycleRankOf(a);
+      const rb = lifecycleRankOf(b);
+      if (ra !== rb) return ra - rb;
 
       // Main file always precedes the temp variant when both exist.
       if (searchedIsTemp) {
@@ -5351,8 +5427,13 @@ const executeSearchAjax = (filters, searchData) => {
       t.includes('cofo') || t.includes('c.of.o') || t.includes('c/o/o')
     );
     const hasCaveat = transactions.some(t => t.is_caveated == 1);
-    const hasMortgage = types.some(t => t.includes('deed of mortgage'));
-    const hasRelease = types.some(t => t.includes('deed of surrender and release'));
+    // Match the instrument family, not one exact label: "MORTGAGE" / "Deed of
+    // Mortgage" / "Tripartite Mortgage" and "SURRENDER AND RELEASE" / "Deed of
+    // Surrender and Release" all count. Keying on a fixed "deed of …" prefix
+    // silently missed the release rows, so a discharged mortgage still showed the
+    // "Under an Active Mortgage" remark. Mirrors LegalSearchService::buildPrintReport().
+    const hasMortgage = types.some(t => t.includes('mortgage'));
+    const hasRelease = types.some(t => t.includes('surrender') && t.includes('release'));
     const mortgageCaveat = hasMortgage && !hasRelease;
     const isClear = hasCofo && !hasCaveat && !mortgageCaveat;
 
@@ -6933,6 +7014,16 @@ const executeSearchAjax = (filters, searchData) => {
             if (orderSpec) q.set('timeline_order', orderSpec);
           }
         } catch (_e) { /* non-fatal: server falls back to default order */ }
+        // Pass the dedupe-excluded rows (the "Excluded / Duplicate Records" panel)
+        // so the printed report hides exactly what the on-screen timeline hides.
+        try {
+          const exSet = Array.isArray(window._excludedRelatedTransactions) ? window._excludedRelatedTransactions : [];
+          const exSpec = exSet.map(t => {
+            const tbl = (typeof timelineSourceToDbTable === 'function') ? timelineSourceToDbTable(t.source_table || '') : (t.source_table || '');
+            return `${tbl}:${t.id != null ? t.id : ''}`;
+          }).filter(k => !k.endsWith(':')).join(',');
+          if (exSpec) q.set('excluded_keys', exSpec);
+        } catch (_e) { /* non-fatal */ }
         // Include any active File Information overrides
         const _ov = window._fileInfoOverrides || {};
         if (_ov.fileTitle)            q.set('display_file_title',    _ov.fileTitle);
@@ -7028,6 +7119,15 @@ const executeSearchAjax = (filters, searchData) => {
             }).join(',');
             if (orderSpec2) q.set('timeline_order', orderSpec2);
           }
+        } catch (_e) { /* non-fatal */ }
+        // Mirror the print-report handler: hide the dedupe-excluded duplicates.
+        try {
+          const exSet2 = Array.isArray(window._excludedRelatedTransactions) ? window._excludedRelatedTransactions : [];
+          const exSpec2 = exSet2.map(t => {
+            const tbl = (typeof timelineSourceToDbTable === 'function') ? timelineSourceToDbTable(t.source_table || '') : (t.source_table || '');
+            return `${tbl}:${t.id != null ? t.id : ''}`;
+          }).filter(k => !k.endsWith(':')).join(',');
+          if (exSpec2) q.set('excluded_keys', exSpec2);
         } catch (_e) { /* non-fatal */ }
         // Include any active File Information overrides
         const _ov2 = window._fileInfoOverrides || {};

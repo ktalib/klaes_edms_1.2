@@ -2375,6 +2375,26 @@ class OpResettlementApplicationController extends Controller
     }
 
     /**
+     * Return the first non-empty (trimmed) value from the given candidates.
+     *
+     * PHP's `??` only falls through on null, so a role column that holds an
+     * empty string (e.g. Grantee = '') would short-circuit the chain and hide
+     * a populated generic party_1/party_2. OP rows store the allottee in
+     * party_2 while leaving Grantee/Assignee blank, so we must skip empties.
+     */
+    private function firstFilledParty(...$values): ?string
+    {
+        foreach ($values as $value) {
+            $trimmed = trim((string) ($value ?? ''));
+            if ($trimmed !== '') {
+                return $trimmed;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Return all PRA transactions for a given prop_id, ordered chronologically.
      */
     public function praTransactions(Request $request): JsonResponse
@@ -2451,8 +2471,8 @@ class OpResettlementApplicationController extends Controller
                     'op_type' => $row->op_type ?? null,
                     'op_serial_number' => $row->op_serial_number ?? null,
                     'registration_number' => $this->composeRegNo($row),
-                    'party_1_name' => $row->Grantor ?? $row->Assignor ?? $row->Mortgagor ?? null,
-                    'party_2_name' => $row->Grantee ?? $row->Assignee ?? $row->Mortgagee ?? null,
+                    'party_1_name' => $this->firstFilledParty($row->Grantor ?? null, $row->Assignor ?? null, $row->Mortgagor ?? null, $row->party_1 ?? null),
+                    'party_2_name' => $this->firstFilledParty($row->Grantee ?? null, $row->Assignee ?? null, $row->Mortgagee ?? null, $row->party_2 ?? null),
                     'property_description' => $row->property_description ?? null,
                     'land_use' => $row->land_use ?? null,
                     'lga' => $row->lgsaOrCity ?? null,
@@ -2500,8 +2520,8 @@ class OpResettlementApplicationController extends Controller
                         'op_type' => $row->op_type ?? null,
                         'op_serial_number' => $row->op_serial_number ?? null,
                         'registration_number' => $this->composeRegNo($row),
-                        'party_1_name' => $row->Grantor ?? $row->Assignor ?? $row->Mortgagor ?? null,
-                        'party_2_name' => $row->Grantee ?? $row->Assignee ?? $row->Mortgagee ?? null,
+                        'party_1_name' => $this->firstFilledParty($row->Grantor ?? null, $row->Assignor ?? null, $row->Mortgagor ?? null, $row->party_1 ?? null),
+                        'party_2_name' => $this->firstFilledParty($row->Grantee ?? null, $row->Assignee ?? null, $row->Mortgagee ?? null, $row->party_2 ?? null),
                         'property_description' => $row->property_description ?? null,
                         'land_use' => $row->land_use ?? null,
                         'lga' => $row->lgsaOrCity ?? null,

@@ -6,6 +6,7 @@ use App\Models\TitleStatusApplication;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class TitleStatusService
 {
@@ -165,7 +166,7 @@ class TitleStatusService
                 ->exists();
 
             if (!$alreadyArchived) {
-                DB::connection('sqlsrv')->table('decommissioned_files')->insert([
+                $titleStatusRow = [
                     'file_number_id'       => (int) ($fileRecord->id ?? ($indexRecord->id ?? 0)),
                     'file_no'              => $fileNo,
                     'mls_file_no'          => $fileNo,
@@ -179,7 +180,14 @@ class TitleStatusService
                     'false_decommissioning' => $falseDecommissioning ? 1 : 0,
                     'created_at'           => now(),
                     'updated_at'           => now(),
-                ]);
+                ];
+                // A genuine title-status decommission (fd=0) shows the real Date Decommissioned and
+                // is forced to the LAST line of the timeline; a fd=1 row is only a flag (the file is
+                // NOT actually decommissioned) and stays suppressed. event_type added 2026_07_21.
+                if (Schema::connection('sqlsrv')->hasColumn('decommissioned_files', 'event_type')) {
+                    $titleStatusRow['event_type'] = $falseDecommissioning ? 'title_status_flag' : 'title_status_update';
+                }
+                DB::connection('sqlsrv')->table('decommissioned_files')->insert($titleStatusRow);
             }
         } catch (\Exception $e) {
             Log::warning("TitleStatus: decommissioned_files insert failed for {$fileNo}: " . $e->getMessage());

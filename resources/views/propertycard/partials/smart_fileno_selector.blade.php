@@ -5,6 +5,8 @@
 <div class="smart-fileno-selector">
     <!-- Hidden input for the main fileno field that gets submitted -->
     <input type="hidden" id="fileno" name="fileno" value="">
+    <!-- Authoritative main selection; related-file picker never writes to this -->
+    <input type="hidden" id="primary_selected_fileno" name="primary_selected_fileno" value="">
     <!-- Hidden inputs to mirror manual entry names so both modes are identical -->
     <input type="hidden" id="mlsFNo" name="mlsFNo" value="">
     <input type="hidden" id="kangisFileNo" name="kangisFileNo" value="">
@@ -109,6 +111,7 @@
         const newKangisFileno = (payload.newKangisFileno || '').trim();
 
         document.getElementById('fileno').value = fileno;
+        document.getElementById('primary_selected_fileno').value = fileno;
         document.getElementById('mlsFNo').value = '';
         document.getElementById('kangisFileNo').value = '';
         document.getElementById('NewKANGISFileno').value = '';
@@ -162,6 +165,7 @@
 
         // Clear all hidden fields
         document.getElementById('fileno').value = '';
+        document.getElementById('primary_selected_fileno').value = '';
         document.getElementById('mlsFNo').value = '';
         document.getElementById('kangisFileNo').value = '';
         window.applyPrimaryFileSelection = applyPrimaryFileSelection;

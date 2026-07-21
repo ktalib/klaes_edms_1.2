@@ -161,6 +161,14 @@
 
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
+                                    <label class="block text-xs font-bold text-slate-700 mb-1">TP No.</label>
+                                    <input type="text" id="oss_opd_tp_no" placeholder="Enter TP number"
+                                           class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500">
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
                                     <label class="block text-xs font-bold text-slate-700 mb-1">Land Use</label>
                                     <select id="oss_opd_land_use"
                                             class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500">
@@ -217,6 +225,42 @@
                                     <input type="date" id="oss_opd_deeds_date"
                                            class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500">
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- ── Location Builder ── --}}
+                    <div class="mb-5 border border-slate-200 rounded-xl" id="oss_location_builder_section">
+                        <div class="px-4 py-3 bg-slate-50 border-b border-slate-200">
+                            <h3 class="text-xs font-bold text-slate-700 uppercase tracking-wider">Location Builder</h3>
+                        </div>
+                        <div class="px-4 py-4 space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-700 mb-1">Plot No</label>
+                                    <input type="text" id="oss_lb_plot_no" placeholder="e.g. 486A"
+                                           class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-700 mb-1">District</label>
+                                    <select id="oss_lb_district" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                                        <option value="">Select district</option>
+                                        {{-- @todo: Populate with districts from controller --}}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-700 mb-1">LGA</label>
+                                    <select id="oss_lb_lga" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                                        <option value="">Select LGA</option>
+                                        {{-- @todo: Populate with LGAs from controller --}}
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Full Location</label>
+                                <input type="text" id="oss_lb_full_location" placeholder="Composed location"
+                                       class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                                <p class="text-[11px] text-slate-500 mt-1">Built from the fields above; you can also edit it directly.</p>
                             </div>
                         </div>
                     </div>

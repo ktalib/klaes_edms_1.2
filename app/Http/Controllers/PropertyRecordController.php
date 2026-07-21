@@ -849,6 +849,12 @@ class PropertyRecordController extends Controller
             $kangis = trim((string) $request->input('kangisFileNo', ''));
             $newKangis = trim((string) $request->input('NewKANGISFileno', ''));
             $singleFileno = trim((string) $request->input('fileno', ''));
+            $primarySelectedFileno = trim((string) $request->input('primary_selected_fileno', ''));
+
+            // Prefer the authoritative main-file selection captured by the primary picker.
+            if ($primarySelectedFileno !== '' && $singleFileno === '') {
+                $singleFileno = $primarySelectedFileno;
+            }
 
             // If only a single fileno is provided via smart selector, map it to MLS by default
             if ($mls === '' && $kangis === '' && $newKangis === '' && $singleFileno !== '') {
@@ -882,6 +888,27 @@ class PropertyRecordController extends Controller
 
             $relatedFileNumber = trim((string) ($request->input('related_file_number', $request->input('related_fileno', ''))));
             $relatedFileNumber = $relatedFileNumber !== '' ? $relatedFileNumber : null;
+
+            // Guard against accidental takeover: when related_file_number is selected,
+            // it must not replace the main file number fields.
+            if ($primarySelectedFileno !== '' && $relatedFileNumber !== null) {
+                $normPrimary = strtoupper(trim($primarySelectedFileno));
+                $normRelated = strtoupper(trim($relatedFileNumber));
+                $normSingle = strtoupper(trim($singleFileno));
+                $normMls = strtoupper(trim($mls));
+                $normKangis = strtoupper(trim($kangis));
+                $normNewKangis = strtoupper(trim($newKangis));
+
+                if ($normPrimary !== $normRelated) {
+                    // If fileno or mls was overwritten to the related value, restore main.
+                    if ($normSingle === '' || $normSingle === $normRelated) {
+                        $singleFileno = $primarySelectedFileno;
+                    }
+                    if (($normMls === '' || $normMls === $normRelated) && $normKangis === '' && $normNewKangis === '') {
+                        $mls = $primarySelectedFileno;
+                    }
+                }
+            }
 
             $primaryFileIdentifier = $mls ?: $kangis ?: $newKangis ?: $singleFileno ?: $tempFileno;
 

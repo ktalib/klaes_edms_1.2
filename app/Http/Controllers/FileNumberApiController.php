@@ -304,14 +304,15 @@ class FileNumberApiController extends Controller
                         // tables — otherwise a stale kn_grouping / kangis_grouping row will
                         // backfill a tracking_id and the UI will skip the "File Not Yet
                         // Indexed" prompt even though the file was never indexed.
-                        $indexingTrackingId = $this->findTrackingIdFromFileIndexings($selectedFileNumber);
-                        if (!empty($indexingTrackingId)) {
+                        $indexingData = $this->getFileIndexingData($selectedFileNumber);
+                        if (!empty($indexingData) && !empty($indexingData['tracking_id'])) {
                             return response()->json([
                                 'success' => true,
                                 'message' => 'File number retrieved from file indexing tracking source.',
                                 'data' => [
                                     'file_number' => $selectedFileNumber,
-                                    'tracking_id' => $indexingTrackingId,
+                                    'tracking_id' => $indexingData['tracking_id'],
+                                    'file_name'   => $indexingData['file_name'] ?? null,
                                 ],
                             ]);
                         }

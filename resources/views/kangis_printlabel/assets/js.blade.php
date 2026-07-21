@@ -52,7 +52,28 @@ document.addEventListener('DOMContentLoaded', function() {
         createBatch:     "{{ route('kangis-printlabel.api.batch.store') }}",
         batches:         "{{ route('kangis-printlabel.api.batches') }}",
         batchBase:       "{{ url('/kangis-printlabel/api/batch') }}/",
+        manualFetch:     "{{ route('kangis-printlabel.api.manual_fetch') }}",
     };
+
+    // Manual override UI elements
+    var registryOverrideToggle = document.getElementById('registryOverrideToggle');
+    var registryOverrideFields = document.getElementById('registryOverrideFields');
+    var registryOverrideInput = document.getElementById('registryOverrideInput');
+    var registryOverrideSummary = document.getElementById('registryOverrideSummary');
+
+    if (registryOverrideToggle) {
+        registryOverrideToggle.addEventListener('change', function() {
+            if (registryOverrideFields) registryOverrideFields.style.display = this.checked ? 'block' : 'none';
+        });
+    }
+    if (registryOverrideInput && registryOverrideSummary) {
+        registryOverrideInput.addEventListener('input', function() {
+            var txt = (this.value||'').trim();
+            if (!txt) { registryOverrideSummary.textContent = '0 file numbers captured.'; return; }
+            var parts = txt.split(/[\s,]+/).map(function(s){ return s.trim(); }).filter(Boolean);
+            registryOverrideSummary.textContent = parts.length + ' file number' + (parts.length===1?'':'s') + ' captured.';
+        });
+    }
 
     // ─── Utility helpers ───
     function coalesce() {
@@ -337,6 +358,52 @@ document.addEventListener('DOMContentLoaded', function() {
         var prefix  = state.kangisPrefix;
         if (!prefix) { showError('Please select a KANGIS prefix.'); return; }
 
+        // If manual override is enabled, post the entered file numbers to the manualFetch API
+        var useManual = registryOverrideToggle && registryOverrideToggle.checked;
+
+        if (useManual) {
+            var text = (registryOverrideInput && registryOverrideInput.value) ? registryOverrideInput.value : '';
+            if (!text || !text.trim()) { showError('Please enter file numbers for Manual Registry Override.'); return; }
+
+            showLoading('Resolving manual file numbers...');
+            try {
+                var ctrl = new AbortController();
+                var tid  = setTimeout(function(){ ctrl.abort(); }, 60000);
+                var r = await fetch(API.manualFetch, {
+                    method: 'POST',
+                    headers: { 'Content-Type':'application/json', 'X-CSRF-TOKEN': csrfToken() },
+                    body: JSON.stringify({ file_numbers: text }),
+                    signal: ctrl.signal,
+                });
+                clearTimeout(tid);
+                if (!r.ok) { var t = await r.text(); throw new Error('Server responded with ' + r.status + '. ' + t.substring(0,120)); }
+                var data = await r.json();
+                if (!data.success) throw new Error(data.message||'Unable to fetch manual files.');
+
+                resetPreparedState();
+                state.loadedFromBatch = false;
+
+                var files = (data.data&&Array.isArray(data.data.files)) ? data.data.files : [];
+                state.availableFiles = files;
+                state.selectedFiles  = files.map(function(f){ return f.id; });
+
+                renderFileList();
+                updateCounts();
+                updateSelectAllCheckbox();
+
+                if (registryOverrideSummary) registryOverrideSummary.textContent = (files.length) + ' file(s) matched. ' + ((data.data.missing && data.data.missing.length) ? data.data.missing.length + ' missing.' : '');
+
+                hideLoading();
+                if (!files.length) showError('No matching files found for the entered file numbers.');
+                else showSuccess('Loaded ' + files.length + ' file(s) from manual input.');
+
+                if (state.activeTab === 'preview') refreshPreview(true);
+            } catch(err) { hideLoading(); showError('Failed to resolve manual files: ' + (err.message||err)); }
+
+            return;
+        }
+
+        // Default behaviour: load by prefix/batch
         showLoading('Loading KANGIS files...');
         try {
             var params = new URLSearchParams({ 

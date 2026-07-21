@@ -70,6 +70,11 @@ class PlotWorkflowService
                 if ($successorFileNo && Schema::connection('sqlsrv')->hasColumn('decommissioned_files', 'successor_file_no')) {
                     $decommissionRow['successor_file_no'] = $successorFileNo;
                 }
+                // Genuine KLAES parcel-update decommission — its File Decommissioning row shows the
+                // real Date Decommissioned (event_type column added 2026_07_21).
+                if (Schema::connection('sqlsrv')->hasColumn('decommissioned_files', 'event_type')) {
+                    $decommissionRow['event_type'] = 'parcel_update_new';
+                }
                 DB::connection('sqlsrv')->table('decommissioned_files')->insert($decommissionRow);
 
                 // 2.5 Archive detailed indexing record to deprecated_records before deletion

@@ -264,6 +264,8 @@ The LS UI exposes editing actions that map to service methods (all table-name-va
 
 ## 13. Related documents
 
+- [`reports/LEGAL_SEARCH_LIFECYCLE_GROUPING_REPORT.md`](reports/LEGAL_SEARCH_LIFECYCLE_GROUPING_REPORT.md) — how sorted rows are grouped into per-file lifecycle blocks (Commissioning → Transactions → Decommissioning) + the five grouping invariants.
+- [`guides/LEGAL_SEARCH_LIFECYCLE_GROUPING_AGENT_GUIDE.md`](guides/LEGAL_SEARCH_LIFECYCLE_GROUPING_AGENT_GUIDE.md) — maintenance guide for the grouping layer (function map, checklist, verification recipes).
 - [`reports/LEGAL_SEARCH_RECERTIFICATION_UPDATE.md`](reports/LEGAL_SEARCH_RECERTIFICATION_UPDATE.md) — recertification display fixes + worked lineage example.
 - [`LS-WEIGHTING METHOD.md`](LS-WEIGHTING%20METHOD.md) — the source-weighting method for aggregate values.
 - [`database/migrations/manual/create_related_file_number_table.sql`](../database/migrations/manual/create_related_file_number_table.sql) — staging-table rebuild + classification.

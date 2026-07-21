@@ -223,6 +223,77 @@ class KangisPrintLabelController extends Controller
     }
 
     /**
+     * Fetch kangis_grouping rows by manually entered file numbers (comma/space/newline separated).
+     * Returns found records and a list of missing file numbers.
+     */
+    public function fetchManualFiles(Request $request)
+    {
+        try {
+            $raw = (string) $request->input('file_numbers', '');
+            if (empty(trim($raw))) {
+                return response()->json(['success' => true, 'data' => ['files' => [], 'missing' => []]]);
+            }
+
+            // Split by commas, newlines or whitespace
+            $parts = preg_split('/[\s,]+/', $raw);
+            $parts = array_filter(array_map('trim', $parts));
+            $parts = array_values(array_unique($parts));
+            $parts = array_slice($parts, 0, 100); // limit to 100
+
+            if (empty($parts)) {
+                return response()->json(['success' => true, 'data' => ['files' => [], 'missing' => []]]);
+            }
+
+            $rows = DB::connection('sqlsrv')
+                ->table('kangis_grouping')
+                ->whereIn('kangis_awaiting_fileno', $parts)
+                ->where('is_indexed', 1)
+                ->select(['id', 'tracking_id', 'kangis_awaiting_fileno', 'registry_batch_no', 'kangis_fileno_placeholder'])
+                ->get();
+
+            $foundFileNumbers = $rows->pluck('kangis_awaiting_fileno')->filter()->unique()->values()->all();
+            $missing = array_values(array_diff($parts, $foundFileNumbers));
+
+            // Fill placeholders from file_indexings where available
+            $fileNumbers = $rows->pluck('kangis_awaiting_fileno')->filter()->unique()->values();
+            if ($fileNumbers->isNotEmpty()) {
+                $indexings = DB::connection('sqlsrv')
+                    ->table('file_indexings')
+                    ->whereIn('file_number', $fileNumbers)
+                    ->where(function ($q) {
+                        $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                    })
+                    ->whereNotNull('kangis_fileno_placeholder')
+                    ->where('kangis_fileno_placeholder', '!=', '')
+                    ->pluck('kangis_fileno_placeholder', 'file_number')
+                    ->all();
+
+                foreach ($rows as $r) {
+                    $fn = $r->kangis_awaiting_fileno;
+                    if (isset($indexings[$fn])) {
+                        $r->kangis_fileno_placeholder = $indexings[$fn];
+                    }
+                }
+            }
+
+            $mapped = $rows->map(function ($r) {
+                return [
+                    'id' => $r->id,
+                    'file_number' => $r->kangis_awaiting_fileno,
+                    'secondary_file_number' => $r->kangis_fileno_placeholder,
+                    'tracking_id' => $r->tracking_id,
+                    'registry_batch_no' => $r->registry_batch_no,
+                ];
+            })->values();
+
+            return response()->json(['success' => true, 'data' => ['files' => $mapped, 'missing' => $missing]]);
+        } catch (\Throwable $e) {
+            Log::error('kangis-printlabel.fetchManualFiles', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * Get rack/shelf label capacity status.
      */
     public function getRackLabelStatus(Request $request)

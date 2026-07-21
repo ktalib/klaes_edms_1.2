@@ -457,6 +457,7 @@
         const displayPlotNo      = params.get('display_plot_no') || '';
         const displayTpno        = params.get('display_tpno') || '';
         const timelineOrder      = params.get('timeline_order') || '';
+        const excludedKeys       = params.get('excluded_keys') || '';
         if (!fileNo && !propId) return;
 
         const url = '/legal-search/report-template-data?' + new URLSearchParams({
@@ -470,6 +471,7 @@
           display_plot_no: displayPlotNo,
           display_tpno: displayTpno,
           timeline_order: timelineOrder,
+          excluded_keys: excludedKeys,
         }).toString();
         fetch(url, { headers: { 'Accept': 'application/json' } })
           .then(r => r.json())

@@ -180,12 +180,20 @@ class FileNumberController extends Controller
 
             // ── Source WHERE fragment (no bindings needed — string literals only) ──
             if ($source === 'New') {
+                // Hide OP/TOT files commissioned from the OSS. Two markers are needed:
+                //   1. sub_source = 'OP Change of Name' — single OP commissions.
+                //   2. op_batch IS NOT NULL — OSS OP batch commissions. These carry
+                //      source = 'Direct Allocation' with a NULL sub_source, so marker 1
+                //      alone let them leak back into the land/MLS file list.
                 $sourceWhere = "fn.SOURCE IN ('MLS_Commissioned','MLS_Commissioned_Batch')
                                 AND fn.type = 'MlsFileNO'
                                 AND NOT EXISTS (
                                     SELECT 1 FROM mls_file_no ms
                                     WHERE ms.full_file_number = fn.mlsfNo
-                                      AND ms.sub_source = 'OP Change of Name'
+                                      AND (
+                                          ms.sub_source = 'OP Change of Name'
+                                          OR (ms.op_batch IS NOT NULL AND LTRIM(RTRIM(ms.op_batch)) <> '')
+                                      )
                                 )";
             } elseif ($source === 'All') {
                 // Global view – no type/source filter, show everything
