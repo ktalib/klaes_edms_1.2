@@ -356,13 +356,13 @@
         $fileNumberNormalized = strtoupper(trim((string) ($report->file_number ?? '')));
         
         // Robust detection: if it has a sub_application_id, it is definitely ST.
-        // Otherwise, check source and file number prefixes.
+        // Otherwise, rely on the persisted source. Note: a "CON-" file number
+        // prefix means "Consent" in this system's numbering scheme (see
+        // FILE_NUMBERS_EXAMPLES_AND_REGISTRIES.md), NOT "Conversion" — so it
+        // must never be used to infer a Conversion report (e.g. ST OSS files
+        // like CON-RES-1985-114 would otherwise be misclassified).
         $hasSubApplication = !empty($report->sub_application_id);
-        $isConversionReport = !$hasSubApplication && (
-            $sourceNormalized === 'conversion applications'
-            || str_starts_with($fileNumberNormalized, 'CON-')
-            || (str_starts_with($fileNumberNormalized, 'RES-') && $sourceNormalized === 'conversion applications')
-        );
+        $isConversionReport = !$hasSubApplication && $sourceNormalized === 'conversion applications';
 
         $sharedAreasFromReport = $report->shared_utilities ?? [];
         if (is_string($sharedAreasFromReport)) {
@@ -734,7 +734,7 @@
             @if($isConversionReport)
                 <p class="text-sm font-semibold text-gray-700">THE DIRECTOR,</p>
             @else
-                <p class="text-sm font-semibold text-gray-700">THE COORDINATOR OSS,</p>
+                <p class="text-sm font-semibold text-gray-700">THE DIRECTOR,</p>
             @endif
         </div>
 

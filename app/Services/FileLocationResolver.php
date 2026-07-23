@@ -584,7 +584,7 @@ class FileLocationResolver
      * that the file is flagged as CofO-collected/ready, a duplicate, a temporary
      * file, or withdrawn/cancelled/revoked.
      *
-     * @return array{category:string,label:string,color:string,comment:?string,registry:?string}|null
+     * @return array{category:string,label:string,color:string,comment:?string,registry:?string,file_title:?string,entries:array}|null
      */
     protected function duplicateFlagFor(array $variants): ?array
     {
@@ -592,13 +592,23 @@ class FileLocationResolver
             return null;
         }
 
-        $row = DB::connection('sqlsrv')
+        $rows = DB::connection('sqlsrv')
             ->table('duplicate_fileno')
             ->whereIn('file_number', $variants)
             ->orderByDesc('id')
-            ->first(['category', 'comment', 'registry']);
+            ->get(['file_number', 'file_title', 'category', 'comment', 'registry']);
 
-        if (!$row || empty($row->category)) {
+        if ($rows->isEmpty()) {
+            return null;
+        }
+
+        // Prefer the latest row that actually carries a category for the badge — but
+        // still surface every matching row below so a genuinely duplicated file number
+        // (multiple holders/titles registered under the same number) isn't collapsed
+        // down to just one of them.
+        $row = $rows->first(fn ($r) => !empty($r->category)) ?? $rows->first();
+
+        if (empty($row->category)) {
             return null;
         }
 
@@ -609,9 +619,25 @@ class FileLocationResolver
             $comment = null;
         }
 
+        // All distinct (file_number, file_title) pairs registered under this file number —
+        // lets the front end list every duplicate entry, not just the latest one.
+        $entries = $rows
+            ->map(fn ($r) => [
+                'file_number' => trim((string) $r->file_number),
+                'file_title'  => trim((string) ($r->file_title ?? '')) ?: null,
+            ])
+            ->unique(fn ($e) => strtoupper($e['file_number']) . '|' . strtoupper((string) $e['file_title']))
+            ->values()
+            ->toArray();
+
         return array_merge(
             $this->duplicateCategoryMeta($row->category),
-            ['comment' => $comment, 'registry' => $row->registry ?: null]
+            [
+                'comment'    => $comment,
+                'registry'   => $row->registry ?: null,
+                'file_title' => trim((string) ($row->file_title ?? '')) ?: null,
+                'entries'    => $entries,
+            ]
         );
     }
 

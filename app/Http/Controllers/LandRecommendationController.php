@@ -123,6 +123,218 @@ class LandRecommendationController extends Controller
         return view('land_recommendations.index', compact('recommendations', 'PageTitle', 'stats', 'isOssView'));
     }
 
+    /**
+     * Column metadata shared by the JSON preview, the client-side CSV/PDF and the
+     * streamed server CSV, so all three stay in step.
+     * `pdfWidth` is in mm — A4 landscape gives ~277mm of usable width.
+     */
+    private function exportColumns(): array
+    {
+        return [
+            ['key' => 'sn',             'label' => 'S/N',              'pdfWidth' => 9,  'wrap' => false],
+            ['key' => 'file_number',    'label' => 'File Number',      'pdfWidth' => 26, 'wrap' => false],
+            ['key' => 'applicant_name', 'label' => 'Applicant Name',   'pdfWidth' => 34],
+            ['key' => 'purpose',        'label' => 'Purpose Clause',   'pdfWidth' => 22],
+            // No pdfWidth: Location is the flexible column and absorbs the
+            // remaining page width (see buildColumnStyles in records_export.js).
+            ['key' => 'location',       'label' => 'Location'],
+            ['key' => 'address',        'label' => 'Applicant Address','pdfWidth' => 32],
+            ['key' => 'plot_number',    'label' => 'Plot No',          'pdfWidth' => 12],
+            ['key' => 'layout_plan_no', 'label' => 'Layout Plan',      'pdfWidth' => 14],
+            ['key' => 'term',           'label' => 'Term',             'pdfWidth' => 10],
+            ['key' => 'ground_rent',    'label' => 'Ground Rent',      'pdfWidth' => 18, 'align' => 'right'],
+            ['key' => 'dev_period',     'label' => 'Dev. Period',      'pdfWidth' => 12],
+            ['key' => 'prep_fees',      'label' => 'Prep. Fees',       'pdfWidth' => 18, 'align' => 'right'],
+            ['key' => 'dev_value',      'label' => 'Dev. Value',       'pdfWidth' => 18, 'align' => 'right'],
+            ['key' => 'status',         'label' => 'Status',           'pdfWidth' => 14],
+            ['key' => 'created_by',     'label' => 'Created By',       'pdfWidth' => 18],
+            ['key' => 'date_generated', 'label' => 'Date Generated',   'pdfWidth' => 18],
+            ['key' => 'application_date','label' => 'Application Date','pdfWidth' => 18],
+        ];
+    }
+
+    /**
+     * Flatten one record into the export column keys.
+     */
+    private function exportRow(LandRecommendation $rec, int $sn, bool $isOssView): array
+    {
+        return [
+            'sn'               => $sn,
+            'file_number'      => $rec->file_number,
+            'applicant_name'   => $rec->applicant_name,
+            'purpose'          => $rec->purpose_of_clause,
+            'location'         => $rec->display_location,
+            'address'          => $rec->resolved_applicant_address ?? $rec->applicant_address ?? 'N/A',
+            'plot_number'      => $rec->plot_number,
+            'layout_plan_no'   => $rec->layout_plan_no,
+            'term'             => $rec->term,
+            'ground_rent'      => number_format((float) $rec->ground_rent, 2),
+            'dev_period'       => $rec->development_period,
+            'prep_fees'        => number_format((float) $rec->preparation_fees, 2),
+            'dev_value'        => number_format((float) $rec->development_value, 2),
+            'status'           => $isOssView
+                ? 'GENERATED'
+                : ($rec->status === LandRecommendation::STATUS_APPROVED ? 'APPROVED' : 'PENDING'),
+            'created_by'       => $rec->creator->name ?? 'System',
+            'date_generated'   => $rec->created_at ? $rec->created_at->format('Y-m-d h:i A') : 'N/A',
+            'application_date' => $rec->application_date
+                ? $rec->application_date->format('Y-m-d')
+                : ($rec->created_at ? $rec->created_at->format('Y-m-d') : 'N/A'),
+        ];
+    }
+
+    /**
+     * Export the Land / OSS recommendation register.
+     * `format=json` feeds the preview modal (client-side CSV + PDF);
+     * otherwise a UTF-8 CSV is streamed straight to the browser.
+     */
+    public function export(Request $request)
+    {
+        $viewType = strtoupper(trim((string) $request->query('type', '')));
+        if (!in_array($viewType, ['OSS', 'ROFO'], true)) {
+            return redirect()->route('home');
+        }
+
+        $isOssView = $viewType === 'OSS';
+
+        $ossHasIsDeleted = false;
+        try {
+            $ossHasIsDeleted = Schema::connection('sqlsrv')->hasColumn('oss_applications', 'is_deleted');
+        } catch (\Throwable $e) {
+            $ossHasIsDeleted = false;
+        }
+
+        $query = LandRecommendation::with('creator');
+
+        if ($isOssView) {
+            // Same resolved-address join the index page uses, so the exported
+            // address column matches what is on screen.
+            $ossAddressSubSql = "(
+                SELECT
+                    file_no,
+                    address,
+                    residential_address,
+                    correspondence_address,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY UPPER(LTRIM(RTRIM(ISNULL(file_no, ''))))
+                        ORDER BY id DESC
+                    ) as rn
+                FROM oss_applications
+                WHERE system_source = 'OSSOPCHANGEOFNAME'";
+
+            if ($ossHasIsDeleted) {
+                $ossAddressSubSql .= " AND (is_deleted IS NULL OR is_deleted = 0)";
+            }
+
+            $ossAddressSubSql .= "
+            ) as oa_addr";
+
+            $query->leftJoin(DB::raw($ossAddressSubSql), function ($join) {
+                $join->whereRaw("oa_addr.rn = 1")
+                    ->whereRaw("UPPER(LTRIM(RTRIM(ISNULL(oa_addr.file_no, '')))) = UPPER(LTRIM(RTRIM(ISNULL(land_recommendations.file_number, ''))))");
+            });
+
+            $query->select('land_recommendations.*')
+                ->selectRaw("COALESCE(
+                    NULLIF(LTRIM(RTRIM(ISNULL(land_recommendations.applicant_address, ''))), ''),
+                    NULLIF(LTRIM(RTRIM(ISNULL(oa_addr.address, ''))), ''),
+                    NULLIF(LTRIM(RTRIM(ISNULL(oa_addr.residential_address, ''))), ''),
+                    NULLIF(LTRIM(RTRIM(ISNULL(oa_addr.correspondence_address, ''))), '')
+                ) as resolved_applicant_address");
+
+            $query->whereRaw("UPPER(ISNULL(land_recommendations.type, '')) = ?", ['OSS']);
+            $query->whereExists(function ($subQuery) use ($ossHasIsDeleted) {
+                $subQuery->select(DB::raw('1'))
+                    ->from('oss_applications as oa')
+                    ->whereRaw("UPPER(LTRIM(RTRIM(ISNULL(oa.file_no, '')))) = UPPER(LTRIM(RTRIM(ISNULL(land_recommendations.file_number, ''))))")
+                    ->where('oa.system_source', 'OSSOPCHANGEOFNAME');
+
+                if ($ossHasIsDeleted) {
+                    $subQuery->where(function ($q) {
+                        $q->whereNull('oa.is_deleted')
+                          ->orWhere('oa.is_deleted', 0);
+                    });
+                }
+            });
+        } else {
+            $query->where(function ($q) {
+                $q->whereNull('type')
+                  ->orWhereRaw("UPPER(ISNULL(type, '')) <> ?", ['OSS']);
+            });
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('file_number', 'LIKE', "%{$search}%")
+                  ->orWhere('applicant_name', 'LIKE', "%{$search}%")
+                  ->orWhere('location', 'LIKE', "%{$search}%");
+            });
+        }
+
+        $status = strtolower(trim((string) $request->query('status', '')));
+        if (in_array($status, [LandRecommendation::STATUS_PENDING, LandRecommendation::STATUS_APPROVED], true)) {
+            $query->where('land_recommendations.status', $status);
+        }
+
+        if ($request->filled('start_date')) {
+            $query->whereDate('land_recommendations.created_at', '>=', $request->query('start_date'));
+        }
+        if ($request->filled('end_date')) {
+            $query->whereDate('land_recommendations.created_at', '<=', $request->query('end_date'));
+        }
+
+        $query->orderByDesc('land_recommendations.created_at');
+
+        $columns = $this->exportColumns();
+
+        if ($request->query('format') === 'json') {
+            $rows = [];
+            $sn = 0;
+            $query->chunk(500, function ($chunk) use (&$rows, &$sn, $isOssView) {
+                foreach ($chunk as $rec) {
+                    $rows[] = $this->exportRow($rec, ++$sn, $isOssView);
+                }
+            });
+
+            return response()->json([
+                'success' => true,
+                'columns' => $columns,
+                'data'    => $rows,
+                'count'   => count($rows),
+            ]);
+        }
+
+        $filename = ($isOssView ? 'oss-recommendation' : 'land-recommendation')
+            . '-export-' . now()->format('Y-m-d_His') . '.csv';
+
+        $headers = [
+            'Content-Type'        => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Pragma'              => 'no-cache',
+            'Cache-Control'       => 'no-store, no-cache, must-revalidate',
+        ];
+
+        $callback = function () use ($query, $columns, $isOssView) {
+            $out = fopen('php://output', 'w');
+            // UTF-8 BOM so Excel renders the ₦ sign and other characters correctly
+            fwrite($out, "\xEF\xBB\xBF");
+            fputcsv($out, array_column($columns, 'label'));
+
+            $sn = 0;
+            $query->chunk(500, function ($chunk) use ($out, $columns, $isOssView, &$sn) {
+                foreach ($chunk as $rec) {
+                    $row = $this->exportRow($rec, ++$sn, $isOssView);
+                    fputcsv($out, array_map(fn ($column) => $row[$column['key']] ?? '', $columns));
+                }
+            });
+
+            fclose($out);
+        };
+
+        return response()->streamDownload($callback, $filename, $headers);
+    }
+
     public function create()
     {
         $PageTitle ='Recommendation For Grant Of Statutory Right Of Occupancy';

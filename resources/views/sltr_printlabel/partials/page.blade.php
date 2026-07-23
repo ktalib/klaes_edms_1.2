@@ -225,6 +225,40 @@
                                 </label>
                             </div>
 
+                            {{-- Sub group division --}}
+                            <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50/40 p-4">
+                                <label for="subGroupToggle" class="flex cursor-pointer items-start gap-3">
+                                    <input
+                                        type="checkbox"
+                                        id="subGroupToggle"
+                                        class="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span class="text-xs text-slate-600">
+                                        <span class="block font-semibold uppercase tracking-wide text-[11px] text-slate-500">Sub Group</span>
+                                        <span>Divide the files indexed under this group serially into sub groups, then assign a shelf/rack to each one.</span>
+                                    </span>
+                                </label>
+                                <div id="subGroupControls" class="mt-3 hidden">
+                                    <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+                                        <div class="flex flex-col">
+                                            <span class="text-xs font-semibold uppercase tracking-wide text-slate-600">Number of Sub Groups</span>
+                                            <input
+                                                type="number"
+                                                id="subGroupCountInput"
+                                                min="2"
+                                                step="1"
+                                                value="2"
+                                                class="mt-1 w-40 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                                            />
+                                            <span class="mt-1 text-xs text-slate-500">Minimum of 2.</span>
+                                        </div>
+                                        <p id="subGroupSummary" class="text-xs text-slate-600 pb-1">
+                                            Click <strong>Load Records</strong> to count the files and divide them.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <div class="text-xs text-slate-500 sm:text-left">
                                     Select a sub prefix, choose a digit rank if needed, then click <strong>Load Records</strong>.
@@ -236,6 +270,18 @@
                                     Load Records
                                 </button>
                             </div>
+                        </div>
+
+                        {{-- Sub group shelf/rack assignment --}}
+                        <div id="subGroupPanel" class="hidden mb-6 rounded-md border border-amber-200">
+                            <div class="flex flex-col gap-1 border-b border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <h4 class="text-sm font-semibold text-slate-800">Sub Group Shelf/Rack Assignment</h4>
+                                    <p class="text-xs text-slate-600">Each sub group holds a serial slice of the loaded files. Assign its shelf/rack below.</p>
+                                </div>
+                                <span id="subGroupPanelMeta" class="text-xs font-medium text-slate-600"></span>
+                            </div>
+                            <div id="subGroupList" class="divide-y"></div>
                         </div>
 
                         {{-- File list --}}

@@ -534,22 +534,22 @@
                                     <div class="flex items-center gap-8 shrink-0">
                                         <label class="flex items-center group cursor-pointer">
                                             <div class="relative flex items-center justify-center">
-                                                <input type="radio" name="application_type" value="new" class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500" 
-                                                       x-model="applicationType" @change="updateApplicationType()" checked required>
+                                                <input type="radio" name="application_type" value="new" class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                                                       x-model="appTypeRadio" @change="updateApplicationType()" checked required>
                                             </div>
                                             <span class="ml-2 text-sm font-medium text-gray-700 group-hover:text-blue-600 transition-colors">Direct Allocation</span>
                                         </label>
                                         <label class="flex items-center group cursor-pointer">
                                             <div class="relative flex items-center justify-center">
-                                                <input type="radio" name="application_type" value="conversion" class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500" 
-                                                       x-model="applicationType" @change="updateApplicationType()" required>
+                                                <input type="radio" name="application_type" value="conversion" class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                                                       x-model="appTypeRadio" @change="updateApplicationType()" required>
                                             </div>
                                             <span class="ml-2 text-sm font-medium text-gray-700 group-hover:text-blue-600 transition-colors">Conversion</span>
                                         </label>
                                         <label class="hidden items-center group cursor-pointer">
                                             <div class="relative flex items-center justify-center">
-                                                <input type="radio" name="application_type" value="change_of_purpose" class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500" 
-                                                       x-model="applicationType" @change="updateApplicationType()" required>
+                                                <input type="radio" name="application_type" value="change_of_purpose" class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                                                       x-model="appTypeRadio" @change="updateApplicationType()" required>
                                             </div>
                                             <span class="ml-2 text-sm font-medium text-gray-700 group-hover:text-blue-600 transition-colors">
                                                 <i data-lucide="repeat" class="w-4 h-4 inline mr-1"></i>Change of Purpose

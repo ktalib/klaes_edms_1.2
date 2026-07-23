@@ -16,7 +16,10 @@ document.addEventListener('DOMContentLoaded', function() {
         excludeAssignedFromBatch: false, reprintMode: false, batchSearchQuery: '',
         batchPagination: { current_page:1, last_page:1, per_page:20, total:0 },
         sltrPrefix: SLTR_PREFIX, sltrSubPrefix: '', digitRank: '',
+        subGroupEnabled: false, subGroupCount: 2, subGroups: [], currentBatchIds: [],
     };
+
+    const MIN_SUB_GROUPS = 2;
 
     const PRINT_TEMPLATE_URL = '/sltr-printlabel/print-template';
     const API = {
@@ -47,7 +50,7 @@ document.addEventListener('DOMContentLoaded', function() {
         state.previewPrepared = false; state.preparedBatchResponse = null; state.previewPromise = null;
         state.previewInFlight = false; state.labelStatistics = null;
         updateRackStatisticsDisplay(null);
-        if (!o.preserveBatchId) state.currentBatchId = null;
+        if (!o.preserveBatchId) { state.currentBatchId = null; state.currentBatchIds = []; }
         if (!o.preserveReprint) state.reprintMode = false;
     }
     function showError(m) { Swal.fire({icon:'error',title:'Error',text:m,confirmButtonColor:'#3b82f6'}); console.error(m); }
@@ -125,9 +128,148 @@ document.addEventListener('DOMContentLoaded', function() {
         var fn=(file&&file.file_number)?String(file.file_number).trim():'';return{primaryNumber:fn||null,secondaryNumber:null,isSTContext:false};
     }
 
+    // ---- Sub groups ----
+    function isSubGroupMode() {
+        return state.subGroupEnabled && Array.isArray(state.subGroups) && state.subGroups.length >= MIN_SUB_GROUPS;
+    }
+    function buildSubGroupLabel(g) {
+        return ((g.rackPrimary||'').toUpperCase().trim()+(g.rackSecondary||'').toUpperCase().trim()+(g.shelfNumber||'').toString().trim());
+    }
+    function labelForFileId(id) {
+        if(isSubGroupMode()){
+            var key=String(id);
+            for(var i=0;i<state.subGroups.length;i++){if(state.subGroups[i].fileIdSet.has(key))return state.subGroups[i].fullLabel;}
+        }
+        return state.fullLabel||'';
+    }
+    function setPrimaryRackControlsDisabled(disabled) {
+        ['rackPrimarySelect','rackSecondarySelect','shelfNumberSelect'].forEach(function(id){
+            var el=document.getElementById(id);if(!el)return;
+            el.disabled=!!disabled;
+            el.classList.toggle('opacity-50',!!disabled);
+            el.classList.toggle('cursor-not-allowed',!!disabled);
+        });
+    }
+    function updateSubGroupSummary(message) {
+        var el=document.getElementById('subGroupSummary');if(!el)return;
+        if(message){el.innerHTML=message;return;}
+        if(!state.availableFiles.length){el.innerHTML='Click <strong>Load Records</strong> to count the files and divide them.';return;}
+        if(!isSubGroupMode()){el.textContent='';return;}
+        var sizes=state.subGroups.map(function(g){return g.count;});
+        el.textContent=state.availableFiles.length+' file'+(state.availableFiles.length===1?'':'s')+' divided into '+state.subGroups.length+' sub groups ('+sizes.join(' / ')+').';
+    }
+    // Slice the loaded files serially into N sub groups, preserving any shelf/rack
+    // the user already assigned to a sub group of the same index.
+    function computeSubGroups() {
+        var panel=document.getElementById('subGroupPanel');
+        var hide=function(msg){
+            state.subGroups=[];
+            if(panel)panel.classList.add('hidden');
+            setPrimaryRackControlsDisabled(false);
+            updateSubGroupSummary(msg);
+        };
+        if(!state.subGroupEnabled){hide();return;}
+
+        var files=state.availableFiles.slice();
+        var n=files.length;
+        if(n===0){hide();return;}
+
+        var k=parseInt(state.subGroupCount,10);
+        if(isNaN(k)||k<MIN_SUB_GROUPS)k=MIN_SUB_GROUPS;
+        var capped=false;
+        if(k>n){k=Math.max(MIN_SUB_GROUPS,n);capped=true;}
+        if(n<MIN_SUB_GROUPS){hide('Only '+n+' file loaded — at least '+MIN_SUB_GROUPS+' are needed to divide into sub groups.');return;}
+
+        var prev=state.subGroups||[];
+        var base=Math.floor(n/k),rem=n%k,cursor=0,groups=[];
+        for(var i=0;i<k;i++){
+            var size=base+(i<rem?1:0);
+            var slice=files.slice(cursor,cursor+size);cursor+=size;
+            var p=prev[i]||{};
+            var g={
+                index:i+1,
+                count:slice.length,
+                fileIds:slice.map(function(f){return f.id;}),
+                firstFile:slice.length?slice[0].file_number:'',
+                lastFile:slice.length?slice[slice.length-1].file_number:'',
+                rackPrimary:p.rackPrimary||(state.rackPrimary||'A'),
+                rackSecondary:p.rackSecondary||'',
+                shelfNumber:p.shelfNumber||String(i+1)
+            };
+            g.fullLabel=buildSubGroupLabel(g);
+            g.fileIdSet=new Set(g.fileIds.map(String));
+            groups.push(g);
+        }
+        state.subGroups=groups;
+        if(panel)panel.classList.remove('hidden');
+        setPrimaryRackControlsDisabled(true);
+        renderSubGroupPanel();
+        updateSubGroupSummary(capped?('Only '+n+' files loaded — divided into '+k+' sub groups (one file each).'):null);
+    }
+    function subGroupDuplicateLabels() {
+        var seen={},dups=[];
+        state.subGroups.forEach(function(g){
+            if(seen[g.fullLabel])dups.push(seen[g.fullLabel]+' & '+g.index+' (“'+g.fullLabel+'”)');
+            else seen[g.fullLabel]=g.index;
+        });
+        return dups;
+    }
+    function renderSubGroupPanel() {
+        var list=document.getElementById('subGroupList');if(!list)return;
+        var rackOptions=function(sel,includeNone){
+            var h=includeNone?'<option value=""'+(sel?'':' selected')+'>None</option>':'';
+            for(var c=65;c<=90;c++){var L=String.fromCharCode(c);h+='<option value="'+L+'"'+(sel===L?' selected':'')+'>'+L+'</option>';}
+            return h;
+        };
+        var shelfOptions=function(sel){
+            var h='';for(var i=1;i<=100;i++){h+='<option value="'+i+'"'+(String(sel)===String(i)?' selected':'')+'>'+i+'</option>';}
+            return h;
+        };
+        var cls='mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200';
+        list.innerHTML=state.subGroups.map(function(g){
+            var range=g.firstFile?(g.firstFile+(g.lastFile&&g.lastFile!==g.firstFile?' → '+g.lastFile:'')):'—';
+            return '<div class="p-4 grid grid-cols-1 gap-3 md:grid-cols-12 md:items-end">'
+                +'<div class="md:col-span-5">'
+                +'<span class="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">Sub Group '+g.index+'</span>'
+                +'<p class="mt-1 text-sm font-medium text-slate-800">'+range+'</p>'
+                +'<p class="text-xs text-slate-500">'+g.count+' file'+(g.count===1?'':'s')+'</p>'
+                +'</div>'
+                +'<div class="md:col-span-2"><span class="text-xs font-semibold uppercase tracking-wide text-slate-600">Rack</span>'
+                +'<select data-sg-index="'+g.index+'" data-sg-field="rackPrimary" class="'+cls+'">'+rackOptions(g.rackPrimary,false)+'</select></div>'
+                +'<div class="md:col-span-2"><span class="text-xs font-semibold uppercase tracking-wide text-slate-600">Backup Rack</span>'
+                +'<select data-sg-index="'+g.index+'" data-sg-field="rackSecondary" class="'+cls+'">'+rackOptions(g.rackSecondary,true)+'</select></div>'
+                +'<div class="md:col-span-2"><span class="text-xs font-semibold uppercase tracking-wide text-slate-600">Shelf</span>'
+                +'<select data-sg-index="'+g.index+'" data-sg-field="shelfNumber" class="'+cls+'">'+shelfOptions(g.shelfNumber)+'</select></div>'
+                +'<div class="md:col-span-1"><span class="text-xs font-semibold uppercase tracking-wide text-slate-600">Label</span>'
+                +'<div class="mt-1 rounded-md border border-gray-300 bg-slate-50 px-2 py-1.5 text-sm font-semibold text-slate-700" data-sg-label="'+g.index+'">'+g.fullLabel+'</div></div>'
+                +'</div>';
+        }).join('');
+
+        var meta=document.getElementById('subGroupPanelMeta');
+        if(meta){
+            var dups=subGroupDuplicateLabels();
+            meta.textContent=dups.length?('Duplicate shelf/rack on sub groups '+dups.join(', ')):(state.subGroups.length+' sub groups');
+            meta.className='text-xs font-medium '+(dups.length?'text-red-600':'text-slate-600');
+        }
+
+        list.querySelectorAll('select[data-sg-index]').forEach(function(sel){
+            sel.addEventListener('change',function(){
+                var g=state.subGroups[parseInt(this.dataset.sgIndex,10)-1];if(!g)return;
+                var v=this.value||'';
+                g[this.dataset.sgField]=(this.dataset.sgField==='shelfNumber')?v:v.toUpperCase();
+                g.fullLabel=buildSubGroupLabel(g);
+                var le=list.querySelector('[data-sg-label="'+g.index+'"]');if(le)le.textContent=g.fullLabel;
+                var meta2=document.getElementById('subGroupPanelMeta');
+                if(meta2){var d=subGroupDuplicateLabels();meta2.textContent=d.length?('Duplicate shelf/rack on sub groups '+d.join(', ')):(state.subGroups.length+' sub groups');meta2.className='text-xs font-medium '+(d.length?'text-red-600':'text-slate-600');}
+                resetPreparedState();renderFileList();updateCounts();
+            });
+        });
+    }
+
     function computePreparationSignature() {
         var ids=state.selectedFiles.map(function(v){return v!=null?v.toString():'';}).filter(Boolean).sort();
-        return JSON.stringify({selectedIds:ids,fullLabel:state.fullLabel,selectedTemplate:state.selectedTemplate,orientation:state.orientation,sltrPrefix:state.sltrPrefix,sltrSubPrefix:state.sltrSubPrefix,digitRank:state.digitRank});
+        var sg=isSubGroupMode()?state.subGroups.map(function(g){return g.index+':'+g.fullLabel+':'+g.fileIds.join(',');}):null;
+        return JSON.stringify({selectedIds:ids,fullLabel:state.fullLabel,selectedTemplate:state.selectedTemplate,orientation:state.orientation,sltrPrefix:state.sltrPrefix,sltrSubPrefix:state.sltrSubPrefix,digitRank:state.digitRank,subGroups:sg});
     }
 
     function buildPreparedEntriesFromItems(items) {
@@ -175,6 +317,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if(rd&&rd.rack_label_status){state.rackLabelStatus=rd.rack_label_status;updateRackLabelStatusDisplay();}
             state.previewInFlight=false;state.previewPromise=null;
             if(rd&&rd.batch_id)state.currentBatchId=rd.batch_id;
+            state.currentBatchIds=(rd&&Array.isArray(rd.batch_ids)&&rd.batch_ids.length)?rd.batch_ids.slice():(rd&&rd.batch_id?[rd.batch_id]:[]);
             if(rd&&rd.source!=='existing')state.reprintMode=false;
             return result;
         }).catch(function(err){state.previewInFlight=false;state.previewPromise=null;resetPreparedState();throw err;});
@@ -201,6 +344,7 @@ document.addEventListener('DOMContentLoaded', function() {
             resetPreparedState();state.loadedFromBatch=true;
             var files=(data.data&&Array.isArray(data.data.files))?data.data.files:[];
             state.availableFiles=files;state.selectedFiles=files.map(function(f){return f.id;});
+            computeSubGroups();
             renderFileList();updateCounts();updateSelectAllCheckbox();
             hideLoading();
             if(files.length===0)showError('No indexed records found for SLTR sub prefix '+subPrefix+'.');
@@ -217,6 +361,21 @@ document.addEventListener('DOMContentLoaded', function() {
             full_label:state.fullLabel||updateFullLabelDisplay(),rack_primary:state.rackPrimary,
             rack_secondary:state.rackSecondary||null,shelf_number:parseInt(state.shelfNumber,10),
             label_format:state.selectedTemplate,orientation:state.orientation};
+
+        if(isSubGroupMode()){
+            var dups=subGroupDuplicateLabels();
+            if(dups.length)throw new Error('Sub groups '+dups.join(', ')+' share the same shelf/rack. Give each sub group its own shelf.');
+            var selSet=new Set(state.selectedFiles.map(String));
+            var groups=state.subGroups.map(function(g){
+                return {file_ids:g.fileIds.filter(function(id){return selSet.has(String(id));}).map(Number),
+                    full_label:g.fullLabel,rack_primary:g.rackPrimary,
+                    rack_secondary:g.rackSecondary||null,shelf_number:parseInt(g.shelfNumber,10)};
+            }).filter(function(g){return g.file_ids.length;});
+            if(groups.length<MIN_SUB_GROUPS)throw new Error('At least '+MIN_SUB_GROUPS+' sub groups must have selected files.');
+            payload.sub_groups=groups;
+            payload.file_ids=groups.reduce(function(acc,g){return acc.concat(g.file_ids);},[]);
+        }
+
         showLoading('Saving batch details...');
         try{
             var ctrl=new AbortController();var tid=setTimeout(function(){ctrl.abort();},60000);
@@ -231,8 +390,10 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     function collectBaseLabelEntries() {
         if(Array.isArray(state.preparedBaseEntries)&&state.preparedBaseEntries.length)return sortByFileNumber(state.preparedBaseEntries.map(function(e){return Object.assign({},e);}));
-        var entries=[],files=getSelectedFilesData(),fl=(state.fullLabel||updateFullLabelDisplay()||'').toString().trim(),fnS=fl?normalizeLocationValue(fl):'';
+        var entries=[],files=getSelectedFilesData(),defaultLabel=(state.fullLabel||updateFullLabelDisplay()||'').toString().trim();
         files.forEach(function(file){
+            var fl=(labelForFileId(file.id)||defaultLabel).toString().trim();
+            var fnS=fl?normalizeLocationValue(fl):'';
             var sL=fnS||normalizeLocationValue(file.shelf_location||'')||'Shelf/Rack-N/A';
             var sV=fl||getDisplayShelfValue(sL,file.shelf_location)||'N/A';
             var tid=coalesce(file.tracking_id,'').toString();if(!tid)tid=file.id?('IDX-'+file.id):('IDX-'+Math.random().toString(36).slice(2,8));
@@ -318,8 +479,12 @@ document.addEventListener('DOMContentLoaded', function() {
             var dr=getDigitRankSortKey(file);var rb=dr!==999?'<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">Digit Rank: '+dr+'</span>':'';
             var bb=file.batch_no?'<span class="text-xs text-gray-500">Batch: '+file.batch_no+'</span>':'';
             var det=[tb,rb,bb].filter(Boolean).join(' ');
-            var sd=state.fullLabel||buildShelfDisplayLabel(file.shelf_location)||'';
+            var sd=labelForFileId(file.id)||buildShelfDisplayLabel(file.shelf_location)||'';
             var sb=sd?'<span class="text-xs text-gray-500">Shelf: '+sd+'</span>':'';
+            if(isSubGroupMode()){
+                var sgi=state.subGroups.findIndex(function(g){return g.fileIdSet.has(String(file.id));});
+                if(sgi>=0)det+=' <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Sub Group '+(sgi+1)+'</span>';
+            }
             return'<div class="flex items-center p-4"><input type="checkbox" id="'+file.id+'" class="file-checkbox mr-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" '+(state.selectedFiles.includes(file.id)?'checked':'')+'><div class="flex flex-1 items-center gap-3"><i data-lucide="file-text" class="h-8 w-8 text-blue-500"></i><div class="flex-1"><div class="flex items-center gap-2"><p class="font-medium text-blue-600">'+(file.file_number||'No file number')+'</p>'+lb+'</div><div class="flex flex-wrap items-center gap-2 mt-1">'+det+' '+sb+'</div></div></div></div>';
         }).join('');
         lucide.createIcons();
@@ -422,7 +587,8 @@ document.addEventListener('DOMContentLoaded', function() {
             state.preparedRecords=built.records;state.preparedBaseEntries=built.baseEntries;
             state.previewPrepared=true;state.preparedSignature=sig;
             state.preparedBatchResponse={success:true,data:{batch_id:batchId,batch_number:batch.batch_number,file_count:files.length,source:'existing',label_items:files}};
-            state.currentBatchId=batchId;state.reprintMode=true;
+            state.currentBatchId=batchId;state.currentBatchIds=[batchId];state.reprintMode=true;
+            state.subGroups=[];
             switchTab('preview');showSuccess('Loaded batch '+batch.batch_number+' with '+files.length+' files for printing');hideLoading();
         }).catch(function(e){showError('Failed: '+e.message);hideLoading();});
     }
@@ -498,7 +664,13 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     window.addEventListener('message',function(event){
         if(event.origin!==window.location.origin)return;if(!event.data||typeof event.data!=='object')return;
-        if(event.data.type==='print-labels:afterprint'){if(state.currentBatchId){setTimeout(function(){if(confirm('Have you successfully printed the labels? This will mark the batch as printed.')){markBatchAsPrinted(state.currentBatchId);}state.currentBatchId=null;},250);}}
+        if(event.data.type==='print-labels:afterprint'){
+            var ids=(state.currentBatchIds&&state.currentBatchIds.length)?state.currentBatchIds.slice():(state.currentBatchId?[state.currentBatchId]:[]);
+            if(ids.length){setTimeout(function(){
+                if(confirm('Have you successfully printed the labels? This will mark the batch'+(ids.length>1?'es':'')+' as printed.')){ids.forEach(markBatchAsPrinted);}
+                state.currentBatchId=null;state.currentBatchIds=[];
+            },250);}
+        }
     });
 
     // ---- Event listeners ----
@@ -545,6 +717,31 @@ document.addEventListener('DOMContentLoaded', function() {
     if(digitRankSelect){digitRankSelect.addEventListener('change',function(){state.digitRank=this.value||'';resetPreparedState();});}
     var excludeToggle=document.getElementById('excludeAssignedToggle');
     if(excludeToggle){excludeToggle.addEventListener('change',function(){state.excludeAssignedFromBatch=this.checked;});}
+
+    var subGroupToggle=document.getElementById('subGroupToggle');
+    var subGroupCountInput=document.getElementById('subGroupCountInput');
+    if(subGroupToggle){
+        subGroupToggle.addEventListener('change',function(){
+            state.subGroupEnabled=this.checked;
+            var ctrls=document.getElementById('subGroupControls');
+            if(ctrls)ctrls.classList.toggle('hidden',!this.checked);
+            resetPreparedState();computeSubGroups();renderFileList();updateCounts();
+            if(state.activeTab==='preview')refreshPreview(true);
+        });
+    }
+    if(subGroupCountInput){
+        var sgTimer;
+        subGroupCountInput.addEventListener('input',function(){
+            var self=this;clearTimeout(sgTimer);
+            sgTimer=setTimeout(function(){
+                var v=parseInt(self.value,10);
+                if(isNaN(v)||v<MIN_SUB_GROUPS){v=MIN_SUB_GROUPS;self.value=MIN_SUB_GROUPS;}
+                state.subGroupCount=v;
+                resetPreparedState();computeSubGroups();renderFileList();updateCounts();
+                if(state.activeTab==='preview')refreshPreview(true);
+            },350);
+        });
+    }
     var rackSelect=document.getElementById('rackPrimarySelect');
     if(rackSelect){rackSelect.addEventListener('change',function(){state.rackPrimary=(this.value||'A').toUpperCase();var l=updateFullLabelDisplay();fetchRackLabelStatus(l);if(state.activeTab==='preview')refreshPreview(true);});}
     var rackSecSelect=document.getElementById('rackSecondarySelect');
@@ -572,6 +769,11 @@ document.addEventListener('DOMContentLoaded', function() {
         if(digitRankSelect)digitRankSelect.value='';
         if(rackSelect)rackSelect.value='A';if(shelfSelect)shelfSelect.value='1';
         if(excludeToggle)excludeToggle.checked=false;
+        state.subGroupEnabled=false;state.subGroupCount=MIN_SUB_GROUPS;state.subGroups=[];
+        if(subGroupToggle)subGroupToggle.checked=false;
+        if(subGroupCountInput)subGroupCountInput.value=MIN_SUB_GROUPS;
+        var sgCtrls=document.getElementById('subGroupControls');if(sgCtrls)sgCtrls.classList.add('hidden');
+        computeSubGroups();
         updateFullLabelDisplay();updateRackLabelStatusDisplay();fetchRackLabelStatus(state.fullLabel);
         renderFileList();updateCounts();updateSelectAllCheckbox();
         if(state.activeTab==='preview')refreshPreview(true);

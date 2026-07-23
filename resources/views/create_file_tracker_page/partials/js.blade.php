@@ -4063,6 +4063,35 @@
         }
     }
 
+    // "Director Land" is an OFFICE; "Land" is the DEPARTMENT. Different modules store
+    // these two in different columns (KANGIS puts the office in `department` and the
+    // department in workflow_config, Land repeats the office in both), which made the
+    // printed sheets show the same value twice or show them swapped. Given every
+    // candidate string we have, pick the titled one as the office and the untitled one
+    // as the department — deriving the department by stripping the title when only the
+    // office is known.
+    const OFFICE_TITLE_RE = /^\s*(ag\.?\s+|actg\.?\s+)?(deputy\s+|dep\.?\s+|asst\.?\s+|assistant\s+)?(director(\s+general)?|dg|permanent\s+secretary|ps|hod|head\s+of\s+department|head|controller|registrar|surveyor(\s+general)?|manager)\b[\s,:.-]*/i;
+
+    function departmentFromOffice(name) {
+        const raw = (name || '').trim();
+        if (!raw) return '';
+        const stripped = raw.replace(OFFICE_TITLE_RE, '').trim();
+        return stripped || raw;
+    }
+
+    function resolveOfficeAndDepartment(candidates) {
+        const list = (candidates || [])
+            .map(v => (v === null || v === undefined ? '' : String(v).trim()))
+            .filter(v => v && v !== '-');
+        if (!list.length) return { office: '-', department: '-' };
+
+        const titled   = list.find(v => OFFICE_TITLE_RE.test(v));
+        const untitled = list.find(v => !OFFICE_TITLE_RE.test(v));
+        const office   = titled || list[0];
+        const department = untitled || departmentFromOffice(office);
+        return { office: office || '-', department: department || '-' };
+    }
+
     // Green/Amber/Red timeline badge for a tracker's Request Purpose deadline.
     // The colour itself is computed server-side (FileTracker::getTimelineStatusAttribute,
     // exposed as tracker.timelineStatus) — this just maps that value to display bits so
@@ -8009,12 +8038,22 @@
         const originOfficeName = originOffice.name || tracker.originOfficeName || tracker.originRegistry || '-';
         const originOfficeDepartment = originOffice.department || tracker.originOfficeDepartment || tracker.originRegistryDepartment || '-';
         const trackingQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(tracker.trackingId || '')}`;
-        const officeNameForPrint = escapeHtml(tracker.currentOffice || tracker.office?.name || tracker.currentOfficeId || '-');
         const fileNameValue = escapeHtml(tracker.fileName || '-');
         const fileNoValue = escapeHtml(tracker.fileNo || '-');
         const priorityValue = escapeHtml(tracker.priority || '-');
         const createdValue = tracker.createdAt ? escapeHtml(new Date(tracker.createdAt).toLocaleString()) : '-';
-        const currentOfficeValue = escapeHtml(tracker.currentOffice || '-');
+        // Current Destination Office = the titled office ("Director Land");
+        // Department = the plain department ("Land"). Previously both rows printed the
+        // same string.
+        const officeSplit = resolveOfficeAndDepartment([
+            tracker.currentOffice,
+            tracker.office?.name,
+            tracker.department,
+            tracker.office?.department,
+            tracker.currentOfficeId
+        ]);
+        const currentOfficeValue = escapeHtml(officeSplit.office);
+        const officeNameForPrint = escapeHtml(officeSplit.department);
         const receivingOfficerValue = escapeHtml(tracker.receivingOfficerName || tracker.receiving_officer_name || tracker.receivingOfficer?.name || tracker.handler || '-');
         const originRegistryValue = escapeHtml(originOfficeName || '-');
         const rackShelfValue = escapeHtml(tracker.rackShelfLocation || tracker.rackShelf || tracker.shelf_location || '-');
@@ -8210,7 +8249,7 @@
                                         <span class="info-value ${rackShelfValue === '-' ? 'placeholder' : 'data-value'}">${rackShelfValue}</span>
                                     </div>
                                     <div class="info-row">
-                                        <span class="info-label">CURRENT OFFICE:</span>
+                                        <span class="info-label">CURRENT DESTINATION OFFICE:</span>
                                         <span class="info-value ${currentOfficeValue === '-' ? 'placeholder' : 'data-value'}">${currentOfficeValue}</span>
                                     </div>
                                     <div class="info-row">
@@ -8445,22 +8484,69 @@
         const originOfficeName = originOffice.name || tracker.originOfficeName || tracker.originRegistry || '-';
         const originOfficeDepartment = originOffice.department || tracker.originOfficeDepartment || tracker.originRegistryDepartment || '-';
         const trackingQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(tracker.trackingId || '')}`;
-        const officeNameForPrint = escapeHtml(tracker.department || '-');
         const fileNameValue = escapeHtml(tracker.fileName || '-');
         const fileNoValue = escapeHtml(tracker.fileNo || '-');
         const priorityValue = escapeHtml(tracker.priority || '-');
         const createdValue = tracker.createdAt ? escapeHtml(new Date(tracker.createdAt).toLocaleString()) : '-';
         const wfCfgKangis = tracker.workflowConfig || tracker.workflow_config || {};
         const QUEUE_LABEL = 'Department Queue';
-        const resolvedCurrentOffice = wfCfgKangis.original_destination_office_name
-            || (wfCfgKangis.destination_office_name && wfCfgKangis.destination_office_name !== QUEUE_LABEL ? wfCfgKangis.destination_office_name : '')
-            || (tracker.currentOffice && tracker.currentOffice !== QUEUE_LABEL ? tracker.currentOffice : '')
-            || (tracker.department && tracker.department !== QUEUE_LABEL ? tracker.department : '')
-            || '-';
-        const currentOfficeValue = escapeHtml(resolvedCurrentOffice);
-        const receivingOfficerValue = escapeHtml(tracker.receivingOfficerName || tracker.receiving_officer_name || tracker.receivingOfficer?.name || tracker.handler || '-');
+        const notQueue = (v) => (v && v !== QUEUE_LABEL ? v : '');
+        // Current Office = the titled destination office ("Director Deeds");
+        // Destination Dept = the department that office belongs to ("Deeds"). KANGIS
+        // stores these across workflow_config and `department`, and they were printing
+        // the wrong way round.
+        const kangisOfficeSplit = resolveOfficeAndDepartment([
+            notQueue(wfCfgKangis.original_destination_office_name),
+            notQueue(wfCfgKangis.destination_office_name),
+            notQueue(tracker.department),
+            notQueue(tracker.currentOffice)
+        ]);
+        const currentOfficeValue = escapeHtml(kangisOfficeSplit.office);
+        const officeNameForPrint = escapeHtml(kangisOfficeSplit.department);
+        // Current holder: prefer the officer recorded on the latest movement entry, then
+        // the tracker-level fields — so the header matches the Movement History row.
+        const kangisLatestEntry = (Array.isArray(tracker.logEntries) ? tracker.logEntries : [])
+            .filter(e => e && e.receivingOfficerName)
+            .slice(-1)[0] || null;
+        const receivingOfficerValue = escapeHtml(
+            tracker.receivingOfficerName
+            || tracker.receiving_officer_name
+            || tracker.receivingOfficer?.name
+            || kangisLatestEntry?.receivingOfficerName
+            || tracker.handler
+            || '-'
+        );
         const originRegistryValue = escapeHtml(originOfficeName || '-');
         const rackShelfValue = escapeHtml(tracker.rackShelfLocation || tracker.rackShelf || tracker.shelf_location || '-');
+
+        // Request Purpose / Timeline / Expected Return Date — same tracker-level fields
+        // (one per out-cycle) used by the standard tracking sheet. The timeline freezes to
+        // "Returned" once the file is logged back in, so a completed file never keeps
+        // counting down.
+        const kangisRequestPurposeValue = escapeHtml(tracker.requestPurposeName || '-');
+        const kangisTimelineBadge = getTimelineBadge(tracker);
+        const kangisDaysUntilDeadline = tracker.daysUntilDeadline;
+        const kangisTimelineDaysLabel = (kangisDaysUntilDeadline === null || kangisDaysUntilDeadline === undefined)
+            ? null
+            : (kangisDaysUntilDeadline > 0
+                ? `${kangisDaysUntilDeadline} day${kangisDaysUntilDeadline === 1 ? '' : 's'} left`
+                : (kangisDaysUntilDeadline === 0 ? 'Due today' : `${Math.abs(kangisDaysUntilDeadline)} day${Math.abs(kangisDaysUntilDeadline) === 1 ? '' : 's'} overdue`));
+        const kangisTimelineCell = kangisTimelineBadge
+            ? `<span style="color:${kangisTimelineBadge.dot};font-weight:700;">${escapeHtml(kangisTimelineDaysLabel || kangisTimelineBadge.label)}</span>`
+            : '-';
+        const kangisLoggedBackIn = (Array.isArray(tracker.logEntries) ? tracker.logEntries : []).some(e => {
+            const lbl = (resolveStatusDisplay(e, (e.status || '')).label || '').toLowerCase();
+            return lbl === 'log-in' || lbl === 'completed';
+        });
+        const kangisTimelineCellFrozen = kangisLoggedBackIn
+            ? (tracker.deadline ? 'Returned' : '-')
+            : kangisTimelineCell;
+        const kangisExpectedReturnValue = tracker.deadline
+            ? escapeHtml((() => {
+                const d = new Date(tracker.deadline);
+                return Number.isNaN(d.getTime()) ? String(tracker.deadline).slice(0, 10) : d.toLocaleDateString();
+            })())
+            : '-';
 
         const printContent = `
                 <!DOCTYPE html>
@@ -8561,32 +8647,44 @@
                                 <span class="info-value ${fileNameValue === '-' ? 'muted' : ''}">${fileNameValue}</span>
                             </div>
                             <div class="info-row">
-                                <span class="info-label">Origin Registry</span>
-                                <span class="info-value ${originRegistryValue === '-' ? 'muted' : ''}">${originRegistryValue}</span>
+                                <span class="info-label">Shelf/Rack</span>
+                                <span class="info-value ${rackShelfValue === '-' ? 'muted' : ''}">${rackShelfValue}</span>
                             </div>
                             <div class="info-row">
                                 <span class="info-label">File No</span>
                                 <span class="info-value ${fileNoValue === '-' ? 'muted' : ''}">${fileNoValue}</span>
                             </div>
                             <div class="info-row">
-                                <span class="info-label">Current Office</span>
-                                <span class="info-value ${currentOfficeValue === '-' ? 'muted' : ''}">${currentOfficeValue}</span>
+                                <span class="info-label">Origin Registry</span>
+                                <span class="info-value ${originRegistryValue === '-' ? 'muted' : ''}">${originRegistryValue}</span>
                             </div>
                             <div class="info-row">
                                 <span class="info-label">Date Created</span>
                                 <span class="info-value ${createdValue === '-' ? 'muted' : ''}">${createdValue}</span>
                             </div>
                             <div class="info-row">
+                                <span class="info-label">Current Office</span>
+                                <span class="info-value ${currentOfficeValue === '-' ? 'muted' : ''}">${currentOfficeValue}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Request Purpose</span>
+                                <span class="info-value ${kangisRequestPurposeValue === '-' ? 'muted' : ''}">${kangisRequestPurposeValue}</span>
+                            </div>
+                            <div class="info-row">
                                 <span class="info-label">Destination Dept</span>
                                 <span class="info-value ${officeNameForPrint === '-' ? 'muted' : ''}">${officeNameForPrint}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Timeline</span>
+                                <span class="info-value ${kangisTimelineCellFrozen === '-' ? 'muted' : ''}">${kangisTimelineCellFrozen}</span>
                             </div>
                             <div class="info-row">
                                 <span class="info-label">Receiving Officer</span>
                                 <span class="info-value ${receivingOfficerValue === '-' ? 'muted' : ''}">${receivingOfficerValue}</span>
                             </div>
                             <div class="info-row">
-                                <span class="info-label">Shelf/Rack</span>
-                                <span class="info-value ${rackShelfValue === '-' ? 'muted' : ''}">${rackShelfValue}</span>
+                                <span class="info-label">Expected Return</span>
+                                <span class="info-value ${kangisExpectedReturnValue === '-' ? 'muted' : ''}">${kangisExpectedReturnValue}</span>
                             </div>
                         </div>
 
@@ -8621,6 +8719,8 @@
                                     <th>Director General</th>
                                     <th>Destination</th>
                                     <th>Receiving Officer</th>
+                                    <th>Purpose</th>
+                                    <th>Timeline</th>
                                     <th>Status</th>
                                 </tr>
                             </thead>
@@ -8630,11 +8730,12 @@
                                     const approvalPurposes = ['recommendation', 'approval'];
                                     const physE = allE.filter(e => !approvalPurposes.includes((e.purpose || '').toLowerCase()));
                                     const appE  = allE.filter(e => approvalPurposes.includes((e.purpose || '').toLowerCase()));
-                                    if (!physE.length) return '<tr><td colspan="7" style="text-align:center;color:#9ca3af;">No movement history available</td></tr>';
+                                    if (!physE.length) return '<tr><td colspan="9" style="text-align:center;color:#9ca3af;">No movement history available</td></tr>';
 
                                     const first = physE[0];
-                                    const wfCfgFRS = tracker.workflowConfig || {};
-                                    const destFRS = escapeHtml(tracker.department || wfCfgFRS.destination_office_name || '-');
+                                    // Destination = the titled office, matching the
+                                    // "Current Office" header row.
+                                    const destFRS = currentOfficeValue;
 
                                     const recE = appE.find(e => (e.purpose || '').toLowerCase() === 'recommendation');
                                     const appAE = appE.find(e => (e.purpose || '').toLowerCase() === 'approval');
@@ -8654,6 +8755,8 @@
                                         <td>${directorGis}</td>
                                         <td><strong>${destFRS}</strong>${logIn ? `<br><span style="font-size:0.72rem;color:#6b7280;">${logIn}</span>` : ''}</td>
                                         <td>${escapeHtml(tracker.receivingOfficerName || tracker.receiving_officer_name || tracker.receivingOfficer?.name || '-')}</td>
+                                        <td>${kangisRequestPurposeValue}${kangisExpectedReturnValue !== '-' ? `<br><span style="font-size:0.72rem;color:#6b7280;">Due ${kangisExpectedReturnValue}</span>` : ''}</td>
+                                        <td>${kangisTimelineCellFrozen}</td>
                                         <td><span style="font-weight:700;color:#16a34a;">Log-out</span></td>
                                     </tr>`;
                                 })()}

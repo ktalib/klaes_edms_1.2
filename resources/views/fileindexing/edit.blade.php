@@ -533,6 +533,16 @@
                                         </div>
                                     </div>
 
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div>
+                                            <label for="plot_size" class="form-label-clean">Plot Size <span class="text-red-500">*</span></label>
+                                            <input type="number" step="any" min="0" id="plot_size" name="plot_size"
+                                                value="{{ old('plot_size', $fileIndexing->plot_size) }}"
+                                                required aria-required="true"
+                                                class="w-full form-input-clean" placeholder="e.g. 3.4">
+                                        </div>
+                                    </div>
+
                                     <div>
                                         <label for="location" class="form-label-clean">
                                             Property Description / Address <span class="text-xs text-gray-400 font-normal">(Auto-built)</span>

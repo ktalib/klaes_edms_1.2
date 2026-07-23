@@ -997,10 +997,21 @@
                             </div>` : ''}
                         </div>` : ''}
                         ${d.duplicate_flag ? `
-                        <div class="mb-3 rounded-lg px-4 py-3 flex items-center gap-2" style="background:${d.duplicate_flag.color}14;border:1px solid ${d.duplicate_flag.color}55;">
-                            <i data-lucide="copy" class="h-4 w-4 shrink-0" style="color:${d.duplicate_flag.color};"></i>
-                            <span class="text-sm font-bold" style="color:${d.duplicate_flag.color};">${esc(d.duplicate_flag.label)}</span>
-                            ${d.duplicate_flag.comment ? `<span class="text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" style="color:${d.duplicate_flag.color};background:${d.duplicate_flag.color}1a;">${esc(d.duplicate_flag.comment)}</span>` : ''}
+                        <div class="mb-3 rounded-lg px-4 py-3" style="background:${d.duplicate_flag.color}14;border:1px solid ${d.duplicate_flag.color}55;">
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="copy" class="h-4 w-4 shrink-0" style="color:${d.duplicate_flag.color};"></i>
+                                <span class="text-sm font-bold" style="color:${d.duplicate_flag.color};">${esc(d.duplicate_flag.label)}</span>
+                                ${d.duplicate_flag.comment ? `<span class="text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" style="color:${d.duplicate_flag.color};background:${d.duplicate_flag.color}1a;">${esc(d.duplicate_flag.comment)}</span>` : ''}
+                            </div>
+                            ${(d.duplicate_flag.entries && d.duplicate_flag.entries.length > 1) ? `
+                            <div class="mt-2 pl-6 space-y-1">
+                                ${d.duplicate_flag.entries.map(e => `
+                                <div class="flex items-baseline gap-2 text-xs">
+                                    <span class="font-semibold" style="color:${d.duplicate_flag.color};">${esc(e.file_number)}</span>
+                                    <span class="text-gray-600">${esc(e.file_title || '—')}</span>
+                                </div>`).join('')}
+                            </div>` : (d.duplicate_flag.file_title ? `
+                            <div class="mt-1 pl-6 text-xs text-gray-600">${esc(d.duplicate_flag.file_title)}</div>` : '')}
                         </div>` : ''}
                         ${d.is_temp_file && !(d.duplicate_flag && /temp/i.test(d.duplicate_flag.label || '')) ? `
                         <div class="mb-3 rounded-lg px-4 py-3 flex items-center gap-2" style="background:#7c3aed14;border:1px solid #7c3aed55;">

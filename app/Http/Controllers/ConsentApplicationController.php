@@ -8,6 +8,7 @@ use App\Models\FileNumber;
 use App\Models\StreetName;
 use App\Models\LandUseType;
 use App\Models\Purpose;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -30,6 +31,72 @@ class ConsentApplicationController extends Controller
         $purposes = Purpose::query()->orderBy('name')->get(['id', 'landuseid', 'name']);
 
         return view('consent_applications.index', compact('applications', 'states', 'lgas', 'districts', 'streetNames', 'landUseTypes', 'purposes'));
+    }
+
+    /**
+     * Next tracking number for the current year, e.g. CONS-2026-0004.
+     *
+     * A filtered unique index backs the column, so a racing duplicate fails
+     * loudly rather than silently reusing a number — see the retry in store().
+     *
+     * @return string
+     */
+    private function generateTrackingNo()
+    {
+        $prefix = 'CONS-' . date('Y') . '-';
+        $offset = strlen($prefix) + 1; // SQL SUBSTRING is 1-based
+
+        $lastSeq = (int) ConsentApplication::where('application_tracking_no', 'like', $prefix . '%')
+            ->selectRaw("MAX(CAST(SUBSTRING(application_tracking_no, {$offset}, 10) AS INT)) as seq")
+            ->value('seq');
+
+        return $prefix . str_pad((string) ($lastSeq + 1), 4, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Collect the extra file numbers attached to an application, each with the
+     * property description captured for it.
+     *
+     * Rows without a file number are dropped, as are duplicates and any row
+     * repeating the primary file number, so a file is never stored twice.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return array
+     */
+    private function additionalProperties(Request $request)
+    {
+        $primary = strtoupper(trim((string) $request->file_number));
+        $seen = [];
+        $properties = [];
+
+        foreach ((array) $request->input('additional_file_number', []) as $index => $fileNumber) {
+            $fileNumber = trim((string) $fileNumber);
+            $key = strtoupper($fileNumber);
+
+            if ($fileNumber === '' || $key === $primary || in_array($key, $seen, true)) {
+                continue;
+            }
+            $seen[] = $key;
+
+            $field = fn($name) => trim((string) ($request->input($name, [])[$index] ?? ''));
+
+            $district = $field('additional_property_district') === 'Other'
+                ? $field('additional_property_district_other')
+                : $field('additional_property_district');
+
+            $properties[] = [
+                'file_number' => $fileNumber,
+                'applicant_name' => $field('additional_property_applicant'),
+                'house_no' => $field('additional_property_house_no'),
+                'street' => $field('additional_property_street'),
+                'district' => $district,
+                'lga' => $field('additional_property_lga'),
+                'state' => $field('additional_property_state'),
+                'description' => $field('additional_property_description'),
+            ];
+        }
+
+        return $properties;
     }
 
     /**
@@ -68,6 +135,16 @@ class ConsentApplicationController extends Controller
             'date_of_grant' => 'nullable|date',
             'date_of_grant_purpose' => 'nullable|string|max:150',
             'special_mortgage_terms' => 'nullable|string',
+            'additional_file_number' => 'nullable|array',
+            'additional_file_number.*' => 'nullable|string|max:120',
+            'additional_property_applicant' => 'nullable|array',
+            'additional_property_house_no' => 'nullable|array',
+            'additional_property_street' => 'nullable|array',
+            'additional_property_district' => 'nullable|array',
+            'additional_property_district_other' => 'nullable|array',
+            'additional_property_lga' => 'nullable|array',
+            'additional_property_state' => 'nullable|array',
+            'additional_property_description' => 'nullable|array',
             'additional_party_name' => 'nullable|array',
             'additional_party_house_no' => 'nullable|array',
             'additional_party_street' => 'nullable|array',
@@ -165,16 +242,32 @@ class ConsentApplicationController extends Controller
         }
         $data['additional_applicants'] = $additionalApplicants;
 
+        $data['additional_properties'] = $this->additionalProperties($request);
+
         $data['c_of_o_no'] = $request->file_number;
         $data['user_id'] = Auth::id();
         $data['created_by'] = Auth::user()->first_name . ' ' . Auth::user()->last_name;
 
-        $application = ConsentApplication::create($data);
+        // Two users saving at once can generate the same number; the unique index
+        // rejects the loser, so re-read the sequence and try again.
+        $application = null;
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $data['application_tracking_no'] = $this->generateTrackingNo();
+            try {
+                $application = ConsentApplication::create($data);
+                break;
+            } catch (QueryException $e) {
+                if ($attempt === 4) {
+                    throw $e;
+                }
+            }
+        }
 
         return response()->json([
             'success' => true,
             'message' => 'Application generated successfully.',
-            'id' => $application->id
+            'id' => $application->id,
+            'application_tracking_no' => $application->application_tracking_no
         ]);
     }
 
@@ -224,6 +317,16 @@ class ConsentApplicationController extends Controller
             'date_of_grant' => 'nullable|date',
             'date_of_grant_purpose' => 'nullable|string|max:150',
             'special_mortgage_terms' => 'nullable|string',
+            'additional_file_number' => 'nullable|array',
+            'additional_file_number.*' => 'nullable|string|max:120',
+            'additional_property_applicant' => 'nullable|array',
+            'additional_property_house_no' => 'nullable|array',
+            'additional_property_street' => 'nullable|array',
+            'additional_property_district' => 'nullable|array',
+            'additional_property_district_other' => 'nullable|array',
+            'additional_property_lga' => 'nullable|array',
+            'additional_property_state' => 'nullable|array',
+            'additional_property_description' => 'nullable|array',
             'additional_party_name' => 'nullable|array',
             'additional_party_house_no' => 'nullable|array',
             'additional_party_street' => 'nullable|array',
@@ -312,13 +415,18 @@ class ConsentApplicationController extends Controller
         }
         $data['additional_applicants'] = $additionalApplicants;
 
+        $data['additional_properties'] = $this->additionalProperties($request);
+
         $data['c_of_o_no'] = $request->file_number;
         
         // Preserve application_type if not provided or empty (don't clear existing value)
         if (empty($data['application_type']) && $application->application_type) {
             $data['application_type'] = $application->application_type;
         }
-        
+
+        // The tracking number is issued once at creation and never reassigned.
+        unset($data['application_tracking_no']);
+
         $application->update($data);
 
         return response()->json([

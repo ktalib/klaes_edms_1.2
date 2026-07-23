@@ -131,17 +131,17 @@ class MlsFileNoController extends Controller
                     'fileNumber.id as id',
                     'fileNumber.mlsfNo as mlsfNo',
                     'fileNumber.FileName as FileName',
-                    DB::raw('COALESCE(fileNumber.created_at, mls_file_no.created_at) as created_at'),
-                    DB::raw('COALESCE(fileNumber.updated_at, mls_file_no.updated_at) as updated_at'),
+                    DB::raw('COALESCE(mls_file_no.created_at, fileNumber.created_at) as created_at'),
+                    DB::raw('COALESCE(mls_file_no.updated_at, fileNumber.updated_at) as updated_at'),
                     'fileNumber.location as location',
                     'fileNumber.lga as lga',
                     'fileNumber.created_by as created_by',
                     'fileNumber.is_deleted as is_deleted',
-                    'fileNumber.SOURCE as SOURCE',
+                    DB::raw('COALESCE(mls_file_no.source, fileNumber.SOURCE) as SOURCE'),
                     'fileNumber.plot_no as plot_no',
                     'fileNumber.tp_no as tp_no',
                     'fileNumber.tracking_id as tracking_id',
-                    'fileNumber.commissioning_date as commissioning_date',
+                    DB::raw('COALESCE(mls_file_no.commissioning_date, mls_file_no.created_at, fileNumber.commissioning_date) as commissioning_date'),
                     'fileNumber.kangisFileNo as kangisFileNo',
                     'fileNumber.NewKANGISFileNo as NewKANGISFileNo',
                     'fileNumber.st_file_no as st_file_no',
@@ -192,7 +192,17 @@ class MlsFileNoController extends Controller
                     DB::raw('COALESCE(source_capture.prop_id, source_pra.prop_id) as source_prop_id'),
                     'purposes.name as purpose_name'
                 ])
-                ->where('mls_file_no.file_option', 'temporary');
+                ->where(function ($q) {
+                    $q->where('mls_file_no.file_option', 'temporary')
+                        ->orWhereNotExists(function ($exists) {
+                            $exists->select(DB::raw(1))
+                                ->from('fileNumber')
+                                ->where(function ($match) {
+                                    $match->whereColumn('fileNumber.mlsfNo', 'mls_file_no.full_file_number')
+                                        ->orWhereColumn('fileNumber.tracking_id', 'mls_file_no.tracking_id');
+                                });
+                        });
+                });
 
             // Plot Extension transactions: retain the original file number and are
             // stored in the isolated plot_extensions table. Surface them in the
@@ -535,6 +545,26 @@ class MlsFileNoController extends Controller
                         'purposes.name as purpose_name'
                     ])
                     ->first();
+            }
+
+            // A file already indexed/commissioned in fileNumber or mls_file_no has no
+            // "source" of its own — but if it was later run through the Plot Extension
+            // flow, that's the real reason it was (re-)commissioned. Surface it instead
+            // of leaving source empty (which makes callers fall back to guessing the
+            // type from the file-number prefix, e.g. mislabeling CON- files "Conversion").
+            if ($fileNumber && empty($fileNumber->source)) {
+                $plotExtensionSource = DB::connection('sqlsrv')
+                    ->table('plot_extensions')
+                    ->where('original_file_no', $fileNumber->mlsfNo ?? $identifier)
+                    ->where(function ($query) {
+                        $query->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                    })
+                    ->orderByDesc('id')
+                    ->exists();
+
+                if ($plotExtensionSource) {
+                    $fileNumber->source = 'Plot Extension';
+                }
             }
 
             if (!$fileNumber) {
@@ -1795,7 +1825,7 @@ class MlsFileNoController extends Controller
                     // so its commissioning date is the CoP date — leaving the old file's
                     // commissioning_date on the renamed row would make the successor's
                     // "File Commissioning" timeline entry predate the Change of Purpose itself.
-                    \App\Models\MlsFileNo::where('full_file_number', $originalFileNo)->update([
+                    $mlsFileNoUpdated = \App\Models\MlsFileNo::where('full_file_number', $originalFileNo)->update([
                         'full_file_number' => $fullFileNumber,
                         'land_use' => $landUse,
                         'year' => $year,
@@ -1803,6 +1833,28 @@ class MlsFileNoController extends Controller
                         'tracking_id' => $trackingId ?? $oldFileNoRecord->tracking_id,
                         'commissioning_date' => now(),
                     ]);
+
+                    if (!$mlsFileNoUpdated) {
+                        \App\Models\MlsFileNo::create([
+                            'land_use' => $landUse,
+                            'year' => $year,
+                            'serial_number' => $serial,
+                            'full_file_number' => $fullFileNumber,
+                            'file_name' => $validated['file_name'] ?? $oldFileNoRecord->FileName ?? null,
+                            'plot_no' => $validated['plot_no'] ?? $oldFileNoRecord->plot_no ?? null,
+                            'tp_no' => $validated['tp_no'] ?? $oldFileNoRecord->tp_no ?? null,
+                            'location' => $validated['location'] ?? $oldFileNoRecord->location ?? null,
+                            'lga' => $validated['lga'] ?? $oldFileNoRecord->lga ?? null,
+                            'district' => $validated['district'] ?? $oldFileNoRecord->district ?? null,
+                            'tracking_id' => $trackingId ?? $oldFileNoRecord->tracking_id,
+                            'customer_type' => $validated['customer_type'] ?? 'Individual',
+                            'file_option' => $validated['file_option'] ?? 'normal',
+                            'created_by' => $commissionedBy,
+                            'commissioning_date' => now(),
+                            'source' => 'Change of Purpose',
+                            'purpose_id' => $validated['purpose_id'] ?? null,
+                        ]);
+                    }
 
                     // 5. Resolve or Allocate Property ID across staging tables to ensure historical linkage
                     $propId = null;
@@ -1859,23 +1911,81 @@ class MlsFileNoController extends Controller
                                 'prop_id' => $propId,
                                 'updated_at' => now()
                             ]);
+                    } else {
+                        // Some legacy files only ever lived in the `fileNumber` table with no
+                        // file_indexings counterpart (pre-dates indexing, or was migrated
+                        // straight into fileNumber). Renaming mlsfNo alone then leaves the new
+                        // file invisible everywhere that reads file_indexings — e.g. the main
+                        // "MLS File Number Generator" grid — even though fileNumber shows it as
+                        // commissioned. Backfill a fresh row from what's actually available.
+                        $correspondingMatch = DB::connection('sqlsrv')
+                            ->table('corresponding_fileno')
+                            ->whereRaw('UPPER(LTRIM(RTRIM(fileno))) = UPPER(?)', [trim((string) $fullFileNumber)])
+                            ->value('fileno');
+
+                        DB::connection('sqlsrv')->table('file_indexings')->insert([
+                            'file_number' => $fullFileNumber,
+                            'file_title' => $validated['file_name'] ?? $oldFileNoRecord->FileName ?? null,
+                            'land_use_type' => $landUse,
+                            'plot_number' => $validated['plot_no'] ?? $oldFileNoRecord->plot_no ?? null,
+                            'tp_no' => $oldFileNoRecord->tp_no ?? null,
+                            'location' => $validated['location'] ?? $oldFileNoRecord->location ?? null,
+                            'lga' => $validated['lga'] ?? $oldFileNoRecord->lga ?? null,
+                            'district' => $oldFileNoRecord->district ?? null,
+                            'related_fileno' => json_encode([$originalFileNo]),
+                            'is_corresponding_file' => ($correspondingMatch !== null) ? 1 : 0,
+                            'corresponding_fileno' => $correspondingMatch,
+                            'tracking_id' => $trackingId ?? $oldFileNoRecord->tracking_id,
+                            'prop_id' => $propId,
+                            'current_holder' => $validated['file_name'] ?? $oldFileNoRecord->FileName ?? null,
+                            'original_holder' => $oldFileNoRecord->FileName ?? null,
+                            'created_by' => $commissionedBy,
+                            'workflow_status' => 'indexed',
+                            'is_updated' => 0,
+                            'is_deleted' => 0,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
                     }
 
-                    // 7. Update Entities and Customers staging
-                    DB::connection('sqlsrv')->table('entities_staging')
+                    // 7. Update Entities and Customers staging — same legacy gap as above: if
+                    // the old file never had staging rows either, updating by original file
+                    // number silently affects zero rows, so insert fresh ones instead.
+                    $entityUpdated = DB::connection('sqlsrv')->table('entities_staging')
                         ->where('file_number', $originalFileNo)
                         ->update([
                             'file_number' => $fullFileNumber,
                             'updated_at' => now()
                         ]);
+                    if (!$entityUpdated) {
+                        DB::connection('sqlsrv')->table('entities_staging')->insert([
+                            'entity_type' => $validated['customer_type'] ?? 'Individual',
+                            'entity_name' => $validated['file_name'] ?? $oldFileNoRecord->FileName ?? 'N/A',
+                            'file_number' => $fullFileNumber,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    }
 
-                    DB::connection('sqlsrv')->table('customers_staging')
+                    $customerUpdated = DB::connection('sqlsrv')->table('customers_staging')
                         ->where('file_number', $originalFileNo)
                         ->update([
                             'file_number' => $fullFileNumber,
                             'account_no' => $fullFileNumber,
                             'updated_at' => now()
                         ]);
+                    if (!$customerUpdated) {
+                        DB::connection('sqlsrv')->table('customers_staging')->insert([
+                            'customer_type' => $validated['customer_type'] ?? 'Individual',
+                            'file_number' => $fullFileNumber,
+                            'customer_name' => $validated['file_name'] ?? $oldFileNoRecord->FileName ?? 'N/A',
+                            'account_no' => $fullFileNumber,
+                            'status' => 'Active',
+                            'created_by' => Auth::id(),
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    }
 
                     // 8. Write the Change of Purpose transaction into PRA via the shared
                     //    PraRecordService so the correct columns, prop_id allocation and
@@ -1924,6 +2034,48 @@ class MlsFileNoController extends Controller
                         ]);
                     }
 
+                    // 9. Sync the source Change of Purpose application to 'commissioned' so
+                    //    it stops showing as pending on the applications list. Falls back to
+                    //    looking the application up by its original file number when the
+                    //    caller didn't pass change_of_purpose_app_id explicitly.
+                    try {
+                        $copApp = !empty($validated['change_of_purpose_app_id'])
+                            ? ChangeOfPurposeApplication::find($validated['change_of_purpose_app_id'])
+                            : ChangeOfPurposeApplication::where('file_no', $originalFileNo)
+                                ->whereIn('status', ['approved', 'processing'])
+                                ->orderByDesc('id')
+                                ->first();
+
+                        if ($copApp) {
+                            $copApp->update([
+                                'status' => ChangeOfPurposeApplication::STATUS_COMMISSIONED,
+                                'remarks' => trim(($copApp->remarks ?? '') . "\nCommissioned: {$originalFileNo} -> {$fullFileNumber} on " . now()->toDateTimeString()),
+                                'updated_by' => Auth::id(),
+                            ]);
+
+                            try {
+                                app(ParcelUpdateNotificationService::class)->notifyCommissioned(
+                                    'change_of_purpose',
+                                    $copApp->id,
+                                    $originalFileNo,
+                                    $fullFileNumber,
+                                    $commissionedBy
+                                );
+                            } catch (\Throwable $notifyError) {
+                                \Illuminate\Support\Facades\Log::warning('Change of Purpose commissioned notification failed (non-critical)', [
+                                    'error' => $notifyError->getMessage(),
+                                    'app_id' => $copApp->id,
+                                ]);
+                            }
+                        }
+                    } catch (\Throwable $copSyncError) {
+                        \Illuminate\Support\Facades\Log::error('Failed to sync change_of_purpose_applications status after commissioning (non-critical)', [
+                            'error' => $copSyncError->getMessage(),
+                            'old_file' => $originalFileNo,
+                            'new_file' => $fullFileNumber,
+                        ]);
+                    }
+
                     $this->logPlotsWorkflow('info', 'Change of Purpose completed seamlessly', [
                         'old_file' => $originalFileNo,
                         'new_file' => $fullFileNumber,
@@ -1935,11 +2087,23 @@ class MlsFileNoController extends Controller
                     return response()->json([
                         'success' => true,
                         'message' => 'Change of Purpose generated successfully.',
+                        'decommission_summary' => [
+                            'archived' => [$originalFileNo],
+                        ],
                         'data' => [
+                            // 'file_number' is the key the success modal and other callers
+                            // read (see MlsFileNoController's generic response below);
+                            // 'file_no' is kept for any older caller still reading that name.
+                            'file_number' => $fullFileNumber,
                             'file_no' => $fullFileNumber,
                             'old_file' => $originalFileNo,
+                            'land_use' => $landUse,
+                            'year' => $year,
                             'serial' => str_pad($serial, 4, '0', STR_PAD_LEFT),
                             'tracking_id' => $trackingId ?? $oldFileNoRecord->tracking_id,
+                            'application_type' => 'change_of_purpose',
+                            'prop_id' => $propId,
+                            'parent_prop_id' => null,
                         ],
                     ]);
                 }

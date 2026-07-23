@@ -301,6 +301,9 @@ class SltrPrintLabelController extends Controller
 
     /**
      * Create a label batch for the selected SLTR files on a given shelf.
+     *
+     * When `sub_groups` is supplied the selection is split into serial sub groups,
+     * each with its own rack/shelf label, and one batch is created per sub group.
      */
     public function createBatch(Request $request)
     {
@@ -314,162 +317,81 @@ class SltrPrintLabelController extends Controller
                 'rack_primary' => 'required|string|max:5',
                 'shelf_number' => 'required|integer|min:1|max:9999',
                 'rack_secondary' => 'nullable|string|max:5',
+
+                'sub_groups'                    => 'nullable|array|min:2',
+                'sub_groups.*.file_ids'         => 'required|array|min:1',
+                'sub_groups.*.file_ids.*'       => 'integer|min:1',
+                'sub_groups.*.full_label'       => 'required|string|max:20',
+                'sub_groups.*.rack_primary'     => 'required|string|max:5',
+                'sub_groups.*.rack_secondary'   => 'nullable|string|max:5',
+                'sub_groups.*.shelf_number'     => 'required|integer|min:1|max:9999',
             ]);
 
-            $prefix       = self::PREFIX;
-            $subPrefix    = $validated['sub_prefix'] ?? null;
-            $fileIds      = array_unique(array_map('intval', $validated['file_ids']));
-            $fullLabel    = strtoupper(trim($validated['full_label']));
-            $rackPrimary  = strtoupper(trim($validated['rack_primary']));
-            $rackSecondary = isset($validated['rack_secondary']) ? strtoupper(trim($validated['rack_secondary'])) : null;
-            $shelfNumber  = (int) $validated['shelf_number'];
+            $prefix    = self::PREFIX;
+            $subPrefix = $validated['sub_prefix'] ?? null;
 
-            $result = DB::connection('sqlsrv')->transaction(function () use (
-                $prefix, $subPrefix, $fileIds, $fullLabel, $rackPrimary, $rackSecondary, $shelfNumber
-            ) {
-                $now = Carbon::now();
+            $groups = $this->normalizeBatchGroups($validated);
 
-                $batchNumber = 'SLTR-' . $now->format('YmdHis');
+            $result = DB::connection('sqlsrv')->transaction(function () use ($prefix, $subPrefix, $groups) {
+                $now        = Carbon::now();
+                $multiGroup = count($groups) > 1;
+                $baseNumber = 'SLTR-' . $now->format('YmdHis');
 
-                $batch = SltrPrintLabelBatch::create([
-                    'batch_number'  => $batchNumber,
-                    'prefix'        => $prefix,
-                    'sub_prefix'    => $subPrefix, // "Group" — distinct sub_prefix from grouping
-                    'sys_batch_no'  => 0, // No longer using sys_batch_no as primary grouping
-                    'status'        => SltrPrintLabelBatch::STATUS_PENDING,
-                    'full_label'    => $fullLabel,
-                    'rack_primary'  => $rackPrimary,
-                    'rack_secondary'=> $rackSecondary,
-                    'shelf_number'  => $shelfNumber,
-                    'created_by'    => auth()->id(),
-                    'updated_by'    => auth()->id(),
-                    'created_at'    => $now,
-                    'updated_at'    => $now,
-                ]);
+                $batches     = [];
+                $labelItems  = [];
+                $fileCount   = 0;
 
-                // Fetch files from file_indexings instead of sltr_grouping
-                $files = FileIndexing::on('sqlsrv')
-                    ->whereIn('id', $fileIds)
-                    ->orderByRaw('CASE WHEN digit_rank IS NULL THEN 999 ELSE digit_rank END')
-                    ->orderBy('file_number')
-                    ->get();
+                foreach ($groups as $index => $group) {
+                    $batchNumber = $multiGroup ? $baseNumber . '-G' . ($index + 1) : $baseNumber;
 
-                if ($files->isEmpty()) {
-                    throw ValidationException::withMessages(['file_ids' => 'No matching files found in indexed files.']);
-                }
+                    $created = $this->createBatchForGroup(
+                        $batchNumber,
+                        $prefix,
+                        $subPrefix,
+                        $group['file_ids'],
+                        $group['full_label'],
+                        $group['rack_primary'],
+                        $group['rack_secondary'],
+                        $group['shelf_number'],
+                        $now
+                    );
 
-                $this->syncFileIndexingDigitRanks($files);
-                $files = $files
-                    ->sort(function ($a, $b) {
-                        $rankCompare = ($a->digit_rank ?? 999) <=> ($b->digit_rank ?? 999);
+                    $subGroupIndex = $multiGroup ? $index + 1 : null;
+                    foreach ($created['label_items'] as $item) {
+                        $item['sub_group']       = $subGroupIndex;
+                        $item['sub_group_total'] = $multiGroup ? count($groups) : null;
+                        $labelItems[] = $item;
+                    }
 
-                        return $rankCompare !== 0
-                            ? $rankCompare
-                            : strnatcasecmp((string) $a->file_number, (string) $b->file_number);
-                    })
-                    ->values();
-
-                // Resolve / create rack label record
-                $shelfLabelRecord = $this->resolveRackLabelRecord($fullLabel, $rackPrimary, $rackSecondary, $shelfNumber, false, true);
-
-                $items = $files->values()->map(function ($file, $index) use ($batch, $fullLabel, $prefix, $now) {
-                    $fileNumber = $file->file_number;
-                    $qrPayload = [
-                        'file_number'  => $fileNumber,
-                        'tracking_id'  => $file->tracking_id ?? $fileNumber,
-                        'prefix'       => $prefix,
-                        'digit_rank'   => $file->digit_rank,
-                        'shelf_label'  => $fullLabel,
-                        'generated_at' => $now->toIso8601String(),
+                    $fileCount += $created['file_count'];
+                    $batches[] = [
+                        'batch_id'     => $created['batch']->id,
+                        'batch_number' => $created['batch']->batch_number,
+                        'full_label'   => $group['full_label'],
+                        'file_count'   => $created['file_count'],
+                        'sub_group'    => $subGroupIndex,
                     ];
-
-                    return [
-                        'batch_id'        => $batch->id,
-                        'file_indexing_id'=> $file->id,
-                        'file_number'     => $fileNumber,
-                        'prefix'          => $prefix,
-                        'file_title'      => null,
-                        'plot_number'     => null,
-                        'district'        => null,
-                        'lga'             => null,
-                        'land_use_type'   => $file->land_use_type,
-                        'shelf_location'  => $fullLabel,
-                        'label_position'  => $index + 1,
-                        'qr_code_data'    => json_encode($qrPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                        'barcode_data'    => $fileNumber,
-                        'is_printed'      => false,
-                        'created_at'      => $now,
-                        'updated_at'      => $now,
-                    ];
-                })->all();
-
-                // Insert batch items in chunks
-                $this->insertBatchItemsInChunks($items);
-
-                // Update file_indexings.shelf_location with the assigned label
-                $ids = $files->pluck('id')->all();
-                foreach (array_chunk($ids, 100) as $chunk) {
-                    FileIndexing::on('sqlsrv')
-                        ->whereIn('id', $chunk)
-                        ->update([
-                            'shelf_location' => $fullLabel,
-                            'updated_at' => $now,
-                        ]);
                 }
-
-                // Bump the rack label counter
-                if ($shelfLabelRecord) {
-                    $count = count($ids);
-                    $shelfLabelRecord->update([
-                        'assigned'  => 'SLTR',
-                        'counter'   => DB::raw("CAST(CAST(ISNULL(NULLIF(counter, ''), '0') AS INT) + {$count} AS NVARCHAR(MAX))"),
-                        'status'    => 'Occupied',
-                        'updated_at'=> $now,
-                    ]);
-                }
-
-                // Finalize batch
-                $batch->update([
-                    'status'          => SltrPrintLabelBatch::STATUS_GENERATED,
-                    'generated_count' => count($ids),
-                    'updated_by'      => auth()->id(),
-                ]);
-
-                // Return label items for immediate print preview
-                $labelItems = $files->values()->map(function ($file, $index) use ($fullLabel, $prefix) {
-                    $fileNumber = $file->file_number;
-                    return [
-                        'file_indexing_id' => $file->id,
-                        'file_number'      => $fileNumber,
-                        'digit_rank'       => $file->digit_rank,
-                        'file_title'       => $file->file_title,
-                        'plot_number'      => $file->plot_number,
-                        'district'         => $file->location,
-                        'lga'              => null,
-                        'land_use_type'    => $file->land_use_type,
-                        'shelf_location'   => $fullLabel,
-                        'shelf_value'      => $fullLabel,
-                        'shelf_label'      => $fullLabel,
-                        'tracking_id'      => $file->tracking_id ?? $fileNumber,
-                        'qr_value'         => $file->tracking_id ?? $fileNumber,
-                        'label_position'   => $index + 1,
-                        'prefix'           => $prefix,
-                    ];
-                })->values()->toArray();
 
                 return [
-                    'batch'       => $batch->fresh(),
+                    'batches'     => $batches,
                     'label_items' => $labelItems,
-                    'file_count'  => count($ids),
+                    'file_count'  => $fileCount,
                 ];
             });
 
+            $first = $result['batches'][0];
+
             return response()->json([
                 'success' => true,
-                'message' => 'Label batch created successfully.',
+                'message' => count($result['batches']) > 1
+                    ? count($result['batches']) . ' sub group label batches created successfully.'
+                    : 'Label batch created successfully.',
                 'data' => [
-                    'batch_id'     => $result['batch']->id,
-                    'batch_number' => $result['batch']->batch_number,
+                    'batch_id'     => $first['batch_id'],
+                    'batch_number' => $first['batch_number'],
+                    'batch_ids'    => array_column($result['batches'], 'batch_id'),
+                    'batches'      => $result['batches'],
                     'file_count'   => $result['file_count'],
                     'label_items'  => $result['label_items'],
                 ],
@@ -481,6 +403,213 @@ class SltrPrintLabelController extends Controller
             Log::error('sltr-printlabel.createBatch', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             return response()->json(['success' => false, 'message' => 'Error creating batch: ' . $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Turn the validated request into a list of {file_ids, label, rack, shelf} specs.
+     * Without sub_groups this is a single spec built from the top-level fields.
+     */
+    private function normalizeBatchGroups(array $validated): array
+    {
+        $raw = $validated['sub_groups'] ?? null;
+
+        if (empty($raw)) {
+            return [[
+                'file_ids'       => array_values(array_unique(array_map('intval', $validated['file_ids']))),
+                'full_label'     => strtoupper(trim($validated['full_label'])),
+                'rack_primary'   => strtoupper(trim($validated['rack_primary'])),
+                'rack_secondary' => isset($validated['rack_secondary']) ? strtoupper(trim($validated['rack_secondary'])) : null,
+                'shelf_number'   => (int) $validated['shelf_number'],
+            ]];
+        }
+
+        $groups = [];
+        $seen   = [];
+        $labels = [];
+
+        foreach ($raw as $index => $group) {
+            $ids = array_values(array_unique(array_map('intval', $group['file_ids'])));
+
+            foreach ($ids as $id) {
+                if (isset($seen[$id])) {
+                    throw ValidationException::withMessages([
+                        'sub_groups' => "File #{$id} appears in more than one sub group.",
+                    ]);
+                }
+                $seen[$id] = true;
+            }
+
+            $label = strtoupper(trim($group['full_label']));
+            if (isset($labels[$label])) {
+                throw ValidationException::withMessages([
+                    'sub_groups' => "Sub groups " . $labels[$label] . " and " . ($index + 1) . " share the shelf/rack {$label}. Give each sub group its own shelf.",
+                ]);
+            }
+            $labels[$label] = $index + 1;
+
+            $groups[] = [
+                'file_ids'       => $ids,
+                'full_label'     => $label,
+                'rack_primary'   => strtoupper(trim($group['rack_primary'])),
+                'rack_secondary' => isset($group['rack_secondary']) ? (strtoupper(trim((string) $group['rack_secondary'])) ?: null) : null,
+                'shelf_number'   => (int) $group['shelf_number'],
+            ];
+        }
+
+        if (count($seen) > self::MAX_BATCH_SELECTION) {
+            throw ValidationException::withMessages([
+                'sub_groups' => 'Too many files selected. Maximum is ' . self::MAX_BATCH_SELECTION . '.',
+            ]);
+        }
+
+        return $groups;
+    }
+
+    /**
+     * Create one batch (and its items) for a single rack/shelf label.
+     */
+    private function createBatchForGroup(
+        string $batchNumber,
+        string $prefix,
+        ?string $subPrefix,
+        array $fileIds,
+        string $fullLabel,
+        string $rackPrimary,
+        ?string $rackSecondary,
+        int $shelfNumber,
+        Carbon $now
+    ): array {
+        $batch = SltrPrintLabelBatch::create([
+            'batch_number'  => $batchNumber,
+            'prefix'        => $prefix,
+            'sub_prefix'    => $subPrefix, // "Group" — distinct sub_prefix from grouping
+            'sys_batch_no'  => 0, // No longer using sys_batch_no as primary grouping
+            'status'        => SltrPrintLabelBatch::STATUS_PENDING,
+            'full_label'    => $fullLabel,
+            'rack_primary'  => $rackPrimary,
+            'rack_secondary'=> $rackSecondary,
+            'shelf_number'  => $shelfNumber,
+            'created_by'    => auth()->id(),
+            'updated_by'    => auth()->id(),
+            'created_at'    => $now,
+            'updated_at'    => $now,
+        ]);
+
+        // Fetch files from file_indexings instead of sltr_grouping
+        $files = FileIndexing::on('sqlsrv')
+            ->whereIn('id', $fileIds)
+            ->orderByRaw('CASE WHEN digit_rank IS NULL THEN 999 ELSE digit_rank END')
+            ->orderBy('file_number')
+            ->get();
+
+        if ($files->isEmpty()) {
+            throw ValidationException::withMessages(['file_ids' => 'No matching files found in indexed files.']);
+        }
+
+        $this->syncFileIndexingDigitRanks($files);
+        $files = $files
+            ->sort(function ($a, $b) {
+                $rankCompare = ($a->digit_rank ?? 999) <=> ($b->digit_rank ?? 999);
+
+                return $rankCompare !== 0
+                    ? $rankCompare
+                    : strnatcasecmp((string) $a->file_number, (string) $b->file_number);
+            })
+            ->values();
+
+        // Resolve / create rack label record
+        $shelfLabelRecord = $this->resolveRackLabelRecord($fullLabel, $rackPrimary, $rackSecondary, $shelfNumber, false, true);
+
+        $items = $files->values()->map(function ($file, $index) use ($batch, $fullLabel, $prefix, $now) {
+            $fileNumber = $file->file_number;
+            $qrPayload = [
+                'file_number'  => $fileNumber,
+                'tracking_id'  => $file->tracking_id ?? $fileNumber,
+                'prefix'       => $prefix,
+                'digit_rank'   => $file->digit_rank,
+                'shelf_label'  => $fullLabel,
+                'generated_at' => $now->toIso8601String(),
+            ];
+
+            return [
+                'batch_id'        => $batch->id,
+                'file_indexing_id'=> $file->id,
+                'file_number'     => $fileNumber,
+                'prefix'          => $prefix,
+                'file_title'      => null,
+                'plot_number'     => null,
+                'district'        => null,
+                'lga'             => null,
+                'land_use_type'   => $file->land_use_type,
+                'shelf_location'  => $fullLabel,
+                'label_position'  => $index + 1,
+                'qr_code_data'    => json_encode($qrPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'barcode_data'    => $fileNumber,
+                'is_printed'      => false,
+                'created_at'      => $now,
+                'updated_at'      => $now,
+            ];
+        })->all();
+
+        // Insert batch items in chunks
+        $this->insertBatchItemsInChunks($items);
+
+        // Update file_indexings.shelf_location with the assigned label
+        $ids = $files->pluck('id')->all();
+        foreach (array_chunk($ids, 100) as $chunk) {
+            FileIndexing::on('sqlsrv')
+                ->whereIn('id', $chunk)
+                ->update([
+                    'shelf_location' => $fullLabel,
+                    'updated_at' => $now,
+                ]);
+        }
+
+        // Bump the rack label counter
+        if ($shelfLabelRecord) {
+            $count = count($ids);
+            $shelfLabelRecord->update([
+                'assigned'  => 'SLTR',
+                'counter'   => DB::raw("CAST(CAST(ISNULL(NULLIF(counter, ''), '0') AS INT) + {$count} AS NVARCHAR(MAX))"),
+                'status'    => 'Occupied',
+                'updated_at'=> $now,
+            ]);
+        }
+
+        // Finalize batch
+        $batch->update([
+            'status'          => SltrPrintLabelBatch::STATUS_GENERATED,
+            'generated_count' => count($ids),
+            'updated_by'      => auth()->id(),
+        ]);
+
+        // Return label items for immediate print preview
+        $labelItems = $files->values()->map(function ($file, $index) use ($fullLabel, $prefix) {
+            $fileNumber = $file->file_number;
+            return [
+                'file_indexing_id' => $file->id,
+                'file_number'      => $fileNumber,
+                'digit_rank'       => $file->digit_rank,
+                'file_title'       => $file->file_title,
+                'plot_number'      => $file->plot_number,
+                'district'         => $file->location,
+                'lga'              => null,
+                'land_use_type'    => $file->land_use_type,
+                'shelf_location'   => $fullLabel,
+                'shelf_value'      => $fullLabel,
+                'shelf_label'      => $fullLabel,
+                'tracking_id'      => $file->tracking_id ?? $fileNumber,
+                'qr_value'         => $file->tracking_id ?? $fileNumber,
+                'label_position'   => $index + 1,
+                'prefix'           => $prefix,
+            ];
+        })->values()->toArray();
+
+        return [
+            'batch'       => $batch->fresh(),
+            'label_items' => $labelItems,
+            'file_count'  => count($ids),
+        ];
     }
 
     /**

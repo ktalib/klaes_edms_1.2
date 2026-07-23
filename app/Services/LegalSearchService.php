@@ -7691,6 +7691,20 @@ class LegalSearchService
             // fall through to sibling/other
         }
 
+        // RC-prefix files (e.g. COM-RC-1982-233) carry the "-RC-" token because they are the
+        // OLDER Ministry/Physical-Planning file that was later recertified INTO a newer MLS
+        // number — by definition a predecessor of that land file, regardless of embedded year
+        // or whether a decommissioned_files/related_fileno chain links them (per user: an RC
+        // file must render before the land file it was recertified into).
+        $fileIsRc = $this->isRecertLandFile($fileNo);
+        $primaryIsRc = $this->isRecertLandFile($primaryFileNo);
+        if ($fileIsRc && !$primaryIsRc) {
+            return -1;
+        }
+        if (!$fileIsRc && $primaryIsRc) {
+            return 1;
+        }
+
         return 0;
     }
 

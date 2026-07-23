@@ -44,6 +44,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const wizardNextBtn = document.getElementById('wizard-next-btn');
     let currentEditingAppType = null; // Track original application_type when editing
     let currentWizardStep = 1;
+    let formIsInteractive = true; // false in view mode — keeps dynamically added rows read-only
 
     function applyVariantSettings() {
         const isApplication = consentVariant === 'application';
@@ -177,6 +178,14 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function setInteractiveFormState(isInteractive) {
+        formIsInteractive = isInteractive;
+
+        document.querySelectorAll('#add-fileno-btn, #select-fileno-btn, .additional-fileno-search-btn, .remove-fileno-btn').forEach(btn => {
+            btn.disabled = !isInteractive;
+            btn.classList.toggle('opacity-50', !isInteractive);
+            btn.classList.toggle('cursor-not-allowed', !isInteractive);
+        });
+
         form.querySelectorAll('input, select, textarea').forEach(el => {
             // Skip applicant address fields — they stay permanently disabled (auto-filled from correspondence)
             if (el.classList.contains('address-component-applicant')) return;
@@ -198,6 +207,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 el.classList.add('bg-slate-200', 'cursor-not-allowed');
             }
         });
+    }
+
+    // Read-only: issued by the server on create and never reassigned.
+    function setTrackingNo(value) {
+        const el = document.getElementById('application_tracking_no_value');
+        if (el) el.textContent = (value || '').trim() || 'Assigned on save';
     }
 
     function setRightOfOccupancyNumber(value) {
@@ -257,6 +272,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const isMortgage = type === 'Mortgage';
 
         if (rightOfOccupancyNumberWrapper) {
+            // The additional rows live inside this wrapper, so they hide with it.
             rightOfOccupancyNumberWrapper.classList.toggle('hidden', isMortgage);
         }
 
@@ -531,6 +547,20 @@ document.addEventListener('DOMContentLoaded', function () {
         if (propertyPreview) propertyPreview.textContent = appData.property_description || 'No description built yet...';
         if (correspondencePreview) correspondencePreview.textContent = document.getElementById('correspondence_address_hidden')?.value || 'No address built yet...';
 
+        populateAdditionalProperties(appData.additional_properties);
+
+        // These were previously restored only by the Edit button, so loading an
+        // existing application by file number silently dropped them on save.
+        setTrackingNo(appData.application_tracking_no);
+        populateAdditionalParties(appData.additional_parties);
+        if (typeof populateAdditionalApplicants === 'function') {
+            populateAdditionalApplicants(appData.additional_applicants);
+        }
+        if (applicationTypeInput && appData.application_type) {
+            applicationTypeInput.value = appData.application_type;
+            currentEditingAppType = appData.application_type;
+        }
+
         setInteractiveFormState(true);
 
         if (selectionIndicator) selectionIndicator.classList.remove('hidden');
@@ -556,6 +586,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     submitBtn.querySelector('span').textContent = 'Generate Letter';
                 }
                 applicationIdInput.value = '';
+                setTrackingNo('');
                 // Default to Kano for new applications
                 document.getElementById('applicant_state').value = 'Kano';
                 document.getElementById('party_state').value = 'Kano';
@@ -629,6 +660,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (selectionIndicator) selectionIndicator.classList.add('hidden');
             clearAdditionalParties();
             if (typeof clearAdditionalApplicants === 'function') clearAdditionalApplicants();
+            clearAdditionalFileNumbers();
             resetWizard();
         }
     }
@@ -705,6 +737,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // Populate basic fields
             applicationIdInput.value = appId;
+            setTrackingNo(appData.application_tracking_no);
             filenoInput.value = appData.file_number;
             setRightOfOccupancyNumber(appData.right_of_occupancy_number || appData.file_number || '');
             document.querySelector('input[name="applicant_name"]').value = appData.applicant_name;
@@ -793,6 +826,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             }
 
+            // Populate additional file numbers and their property descriptions
+            populateAdditionalProperties(appData.additional_properties);
+
             // Set select value
             if (consentTypeSelect) {
                 consentTypeSelect.value = appData.consent_type;
@@ -819,6 +855,8 @@ document.addEventListener('DOMContentLoaded', function () {
                             filenoInput.value = result.fileNumber;
                             setRightOfOccupancyNumber(result.fileNumber);
                             if (selectionIndicator) selectionIndicator.classList.remove('hidden');
+                            // The primary file counts toward the property total.
+                            updateMultiPropertyNotice();
 
                             // No longer populating C of O separately as per request
 
@@ -890,6 +928,357 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             }
         });
+    }
+
+    // Additional File Numbers Management
+    //
+    // Each additional file number owns a Property Description block: the two
+    // containers are added to and removed from together and paired by position.
+    const addFilenoBtn = document.getElementById('add-fileno-btn');
+    const additionalFilenosContainer = document.getElementById('additional-file-numbers-container');
+    const filenoTemplate = document.getElementById('additional-fileno-template');
+    const additionalPropertiesContainer = document.getElementById('additional-properties-container');
+    const additionalPropertyTemplate = document.getElementById('additional-property-template');
+    const additionalRofoContainer = document.getElementById('additional-rofo-container');
+    const additionalRofoTemplate = document.getElementById('additional-rofo-template');
+
+    function filenoRows() {
+        return additionalFilenosContainer
+            ? [...additionalFilenosContainer.querySelectorAll('.additional-fileno-block')]
+            : [];
+    }
+
+    function propertyBlocks() {
+        return additionalPropertiesContainer
+            ? [...additionalPropertiesContainer.querySelectorAll('.additional-property-block')]
+            : [];
+    }
+
+    function rofoRows() {
+        return additionalRofoContainer
+            ? [...additionalRofoContainer.querySelectorAll('.additional-rofo-block')]
+            : [];
+    }
+
+    // Mirror a file number and its applicant into the paired Step 2 Right of Occupancy row.
+    function setRofoRowValues(row, fileNumber, applicantName) {
+        if (!row) return;
+
+        const display = row.querySelector('.additional-rofo-display');
+        if (display) display.value = fileNumber || '';
+
+        const hidden = row.querySelector('.additional-rofo-applicant');
+        if (hidden && applicantName !== undefined) hidden.value = applicantName || '';
+
+        const name = hidden ? hidden.value : '';
+        const nameLabel = row.querySelector('.additional-rofo-applicant-name');
+        if (nameLabel) nameLabel.textContent = name;
+
+        // Mirrors the primary badge: only shown once both file and applicant are known.
+        const wrapper = row.querySelector('.additional-rofo-applicant-wrapper');
+        if (wrapper) {
+            const show = !!(fileNumber && name);
+            wrapper.classList.toggle('hidden', !show);
+            wrapper.classList.toggle('flex', show);
+        }
+    }
+
+    function fieldValue(block, name) {
+        const el = block.querySelector(`[name="${name}"]`);
+        return el ? el.value.trim() : '';
+    }
+
+    function updateAdditionalPropertyAddress(block) {
+        const districtSelect = block.querySelector('select[name="additional_property_district[]"]');
+        const district = districtSelect && districtSelect.value === 'Other'
+            ? fieldValue(block, 'additional_property_district_other[]')
+            : fieldValue(block, 'additional_property_district[]');
+
+        const fullAddress = composeAddress({
+            houseNo: fieldValue(block, 'additional_property_house_no[]'),
+            street: getSelectOrManualValue(block.querySelector('select[name="additional_property_street[]"]')),
+            district: district,
+            lga: fieldValue(block, 'additional_property_lga[]'),
+            state: fieldValue(block, 'additional_property_state[]')
+        });
+
+        const hidden = block.querySelector('.additional-property-hidden');
+        if (hidden) hidden.value = fullAddress;
+
+        const preview = block.querySelector('.additional-property-preview');
+        if (preview) {
+            preview.textContent = fullAddress || 'No description built yet...';
+            preview.classList.toggle('text-slate-400', !fullAddress);
+            preview.classList.toggle('text-slate-700', !!fullAddress);
+            preview.classList.toggle('not-italic', !!fullAddress);
+        }
+    }
+
+    // Flag a consent that spans several plots, so it is not mistaken for a single-property one.
+    function updateMultiPropertyNotice() {
+        const propertyCount = getSelectedFileNumbers().length;
+        const isMulti = propertyCount > 1;
+
+        document.querySelectorAll('.multi-property-notice').forEach(notice => {
+            notice.classList.toggle('hidden', !isMulti);
+            notice.classList.toggle('flex', isMulti);
+        });
+        document.querySelectorAll('.multi-property-count').forEach(el => {
+            el.textContent = propertyCount;
+        });
+
+        // Only number the main blocks once there is something to distinguish them from.
+        const mainIndex = document.getElementById('main-property-index');
+        if (mainIndex) mainIndex.textContent = isMulti ? ' 1' : '';
+        const mainRofoIndex = document.getElementById('main-rofo-index');
+        if (mainRofoIndex) mainRofoIndex.textContent = isMulti ? ' 1' : '';
+    }
+
+    // Keep each property block numbered and labelled with the file number it describes.
+    // The main Property Description section is #1, so additional blocks start at #2.
+    function syncPropertyBlockHeaders() {
+        updateMultiPropertyNotice();
+        const rows = filenoRows();
+
+        rofoRows().forEach((row, index) => {
+            const label = row.querySelector('.rofo-block-index');
+            if (label) label.textContent = index + 2;
+
+            const input = rows[index] ? rows[index].querySelector('.additional-fileno-input') : null;
+            setRofoRowValues(row, input ? input.value.trim() : '');
+        });
+
+        propertyBlocks().forEach((block, index) => {
+            const header = block.querySelector('.property-block-header');
+            if (header) header.textContent = `Property Description ${index + 2}`;
+
+            const filenoLabel = block.querySelector('.property-block-fileno');
+            if (filenoLabel) {
+                const input = rows[index] ? rows[index].querySelector('.additional-fileno-input') : null;
+                const fileNumber = input ? input.value.trim() : '';
+                filenoLabel.textContent = fileNumber || 'no file selected';
+                filenoLabel.classList.toggle('text-indigo-600', !!fileNumber);
+                filenoLabel.classList.toggle('text-slate-400', !fileNumber);
+            }
+        });
+    }
+
+    function warn(title, message) {
+        if (typeof Swal !== 'undefined') {
+            Swal.fire(title, message, 'warning');
+        } else {
+            alert(message);
+        }
+    }
+
+    // All file numbers currently on the form (main + additional), upper-cased for comparison.
+    function getSelectedFileNumbers() {
+        const values = [];
+        if (filenoInput && filenoInput.value.trim()) {
+            values.push(filenoInput.value.trim().toUpperCase());
+        }
+        if (additionalFilenosContainer) {
+            additionalFilenosContainer.querySelectorAll('.additional-fileno-input').forEach(input => {
+                if (input.value.trim()) values.push(input.value.trim().toUpperCase());
+            });
+        }
+        return values;
+    }
+
+    function clearAdditionalFileNumbers() {
+        if (additionalFilenosContainer) additionalFilenosContainer.innerHTML = '';
+        if (additionalPropertiesContainer) additionalPropertiesContainer.innerHTML = '';
+        if (additionalRofoContainer) additionalRofoContainer.innerHTML = '';
+        updateMultiPropertyNotice();
+    }
+
+    function addFileNumberRow(value) {
+        if (!additionalFilenosContainer || !filenoTemplate) return null;
+
+        additionalFilenosContainer.appendChild(filenoTemplate.content.cloneNode(true));
+        const block = additionalFilenosContainer.lastElementChild;
+
+        if (value) {
+            block.querySelector('.additional-fileno-input').value = value;
+            block.querySelector('.additional-fileno-indicator').classList.remove('hidden');
+        }
+
+        // New rows inherit the form's current interactive state (view mode stays read-only).
+        if (!formIsInteractive) {
+            block.querySelectorAll('button').forEach(btn => {
+                btn.disabled = true;
+                btn.classList.add('opacity-50', 'cursor-not-allowed');
+            });
+        }
+
+        addPropertyBlock();
+        if (additionalRofoContainer && additionalRofoTemplate) {
+            additionalRofoContainer.appendChild(additionalRofoTemplate.content.cloneNode(true));
+        }
+        syncPropertyBlockHeaders();
+
+        if (window.lucide) window.lucide.createIcons();
+        return block;
+    }
+
+    function addPropertyBlock(property) {
+        if (!additionalPropertiesContainer || !additionalPropertyTemplate) return null;
+
+        additionalPropertiesContainer.appendChild(additionalPropertyTemplate.content.cloneNode(true));
+        const block = additionalPropertiesContainer.lastElementChild;
+
+        if (property) {
+            const setValue = (name, value) => {
+                const el = block.querySelector(`[name="${name}"]`);
+                if (el) el.value = value || '';
+            };
+            setValue('additional_property_house_no[]', property.house_no);
+            setStreetSelectValue(block.querySelector('select[name="additional_property_street[]"]'), property.street || '');
+            setDistrictValue(
+                block.querySelector('select[name="additional_property_district[]"]'),
+                block.querySelector('input[name="additional_property_district_other[]"]'),
+                property.district || ''
+            );
+            setSelectValueWithFallback(block.querySelector('select[name="additional_property_lga[]"]'), property.lga);
+            setSelectValueWithFallback(block.querySelector('select[name="additional_property_state[]"]'), property.state);
+        }
+
+        updateAdditionalPropertyAddress(block);
+        return block;
+    }
+
+    function populateAdditionalProperties(properties) {
+        clearAdditionalFileNumbers();
+        if (!Array.isArray(properties)) return;
+
+        properties.forEach(property => {
+            if (!property) return;
+
+            // addFileNumberRow appends an empty property block; replace it with the saved one.
+            addFileNumberRow(property.file_number || '');
+            const block = additionalPropertiesContainer && additionalPropertiesContainer.lastElementChild;
+            if (block) block.remove();
+            addPropertyBlock(property);
+
+            const rows = rofoRows();
+            setRofoRowValues(rows[rows.length - 1], property.file_number || '', property.applicant_name || '');
+        });
+
+        syncPropertyBlockHeaders();
+        if (window.lucide) window.lucide.createIcons();
+    }
+
+    if (addFilenoBtn) {
+        addFilenoBtn.addEventListener('click', function () {
+            if (!filenoInput.value.trim()) {
+                warn('Required', 'Please select the primary File Number first.');
+                return;
+            }
+            addFileNumberRow('');
+        });
+    }
+
+    if (additionalFilenosContainer) {
+        additionalFilenosContainer.addEventListener('click', function (e) {
+            const removeBtn = e.target.closest('.remove-fileno-btn');
+            if (removeBtn) {
+                const row = removeBtn.closest('.additional-fileno-block');
+                const removedIndex = filenoRows().indexOf(row);
+                const pairedProperty = propertyBlocks()[removedIndex];
+                if (pairedProperty) pairedProperty.remove();
+                const pairedRofo = rofoRows()[removedIndex];
+                if (pairedRofo) pairedRofo.remove();
+                row.remove();
+                syncPropertyBlockHeaders();
+                return;
+            }
+
+            const searchBtn = e.target.closest('.additional-fileno-search-btn');
+            if (!searchBtn) return;
+
+            if (typeof GlobalFileNoModal === 'undefined') {
+                console.error('GlobalFileNoModal is not defined.');
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire('Error', 'File selector component missing.', 'error');
+                }
+                return;
+            }
+
+            const block = searchBtn.closest('.additional-fileno-block');
+            const input = block.querySelector('.additional-fileno-input');
+
+            GlobalFileNoModal.open({
+                // Without this the picker writes every selection straight into
+                // [name="file_number"] — the primary input — clobbering it.
+                autoPopulateGenericFields: false,
+                callback: function (result) {
+                    if (!result || !result.fileNumber) return;
+
+                    const picked = result.fileNumber.trim();
+                    const taken = getSelectedFileNumbers();
+
+                    // Re-picking into a row that already holds a value must not clash with itself.
+                    const own = input.value.trim().toUpperCase();
+                    const ownIndex = own ? taken.indexOf(own) : -1;
+                    if (ownIndex > -1) taken.splice(ownIndex, 1);
+
+                    if (taken.includes(picked.toUpperCase())) {
+                        warn('Duplicate', `File number ${picked} is already on this application.`);
+                        return;
+                    }
+
+                    input.value = picked;
+                    block.querySelector('.additional-fileno-indicator').classList.remove('hidden');
+
+                    const pairedIndex = filenoRows().indexOf(block);
+
+                    // Backfill the paired Step 2 Right of Occupancy row's applicant.
+                    // Same precedence the primary file number uses.
+                    const record = result.record || {};
+                    setRofoRowValues(
+                        rofoRows()[pairedIndex],
+                        picked,
+                        record.applicant_name || record.owner_name || record.file_name || result.file_name || ''
+                    );
+
+                    // Seed the paired Property Description from the selected file's record.
+                    const pairedProperty = propertyBlocks()[pairedIndex];
+                    if (pairedProperty && result.record) {
+                        const houseNo = pairedProperty.querySelector('input[name="additional_property_house_no[]"]');
+                        if (houseNo) houseNo.value = record.plot_no || record.house_no || '';
+                        setStreetSelectValue(
+                            pairedProperty.querySelector('select[name="additional_property_street[]"]'),
+                            record.street || record.street_name || ''
+                        );
+                        setDistrictValue(
+                            pairedProperty.querySelector('select[name="additional_property_district[]"]'),
+                            pairedProperty.querySelector('input[name="additional_property_district_other[]"]'),
+                            record.district || ''
+                        );
+                        setSelectValueWithFallback(
+                            pairedProperty.querySelector('select[name="additional_property_lga[]"]'),
+                            record.lga || record.lga_name || ''
+                        );
+                        setSelectValueWithFallback(
+                            pairedProperty.querySelector('select[name="additional_property_state[]"]'),
+                            record.state || 'Kano'
+                        );
+                        updateAdditionalPropertyAddress(pairedProperty);
+                    }
+
+                    syncPropertyBlockHeaders();
+                }
+            });
+        });
+    }
+
+    if (additionalPropertiesContainer) {
+        const rebuildPropertyAddress = e => {
+            const block = e.target.closest('.additional-property-block');
+            if (block) updateAdditionalPropertyAddress(block);
+        };
+        additionalPropertiesContainer.addEventListener('input', rebuildPropertyAddress);
+        additionalPropertiesContainer.addEventListener('change', rebuildPropertyAddress);
     }
 
     // Dynamic Form Labels based on Consent Type
@@ -1106,6 +1495,30 @@ document.addEventListener('DOMContentLoaded', function () {
         updateBuiltAddress('applicant');
     }
 
+    // Title-case helper: "12TH AV" → "12th Av", "BICHI" → "Bichi"
+    function addrTitleCase(str) {
+        if (!str) return str;
+        return str.replace(/\S+/g, function (word) {
+            return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+        });
+    }
+
+    function composeAddress({ houseNo, street, district, lga, state }) {
+        const parts = [];
+        // Only one of house/plot no OR street joins the address:
+        // if house/plot no has a value, use it; otherwise fall back to street.
+        if (houseNo) {
+            parts.push(addrTitleCase(houseNo));
+        } else if (street) {
+            parts.push(addrTitleCase(street));
+        }
+        if (district) parts.push(addrTitleCase(district));
+        if (lga) parts.push(addrTitleCase(lga));
+        if (state) parts.push(addrTitleCase(state) + ' State');
+
+        return parts.join(', ') + (parts.length > 0 ? '.' : '');
+    }
+
     function updateBuiltAddress(type) {
         let houseNo, street, district, lga, state, hiddenInput, previewSpan;
 
@@ -1145,27 +1558,7 @@ document.addEventListener('DOMContentLoaded', function () {
             previewSpan = document.getElementById('correspondence_address_preview');
         }
 
-        // Title-case helper: "12TH AV" → "12th Av", "BICHI" → "Bichi"
-        function _addrTitleCase(str) {
-            if (!str) return str;
-            return str.replace(/\S+/g, function (word) {
-                return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-            });
-        }
-
-        let parts = [];
-        // Only one of house/plot no OR street joins the address:
-        // if house/plot no has a value, use it; otherwise fall back to street.
-        if (houseNo) {
-            parts.push(_addrTitleCase(houseNo));
-        } else if (street) {
-            parts.push(_addrTitleCase(street));
-        }
-        if (district) parts.push(_addrTitleCase(district));
-        if (lga) parts.push(_addrTitleCase(lga));
-        if (state) parts.push(_addrTitleCase(state) + ' State');
-
-        const fullAddress = parts.join(', ') + (parts.length > 0 ? '.' : '');
+        const fullAddress = composeAddress({ houseNo, street, district, lga, state });
         if (hiddenInput) hiddenInput.value = fullAddress;
         if (previewSpan) {
             previewSpan.textContent = fullAddress || 'No address built yet...';
@@ -1472,7 +1865,8 @@ document.addEventListener('DOMContentLoaded', function () {
     function normalizeStreetFieldValues(formEl, formData) {
         const mappings = [
             { selector: 'select[name="additional_party_street[]"]', name: 'additional_party_street[]' },
-            { selector: 'select[name="additional_applicant_street[]"]', name: 'additional_applicant_street[]' }
+            { selector: 'select[name="additional_applicant_street[]"]', name: 'additional_applicant_street[]' },
+            { selector: 'select[name="additional_property_street[]"]', name: 'additional_property_street[]' }
         ];
 
         mappings.forEach(({ selector, name }) => {
@@ -1486,6 +1880,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         formData.delete('additional_party_street_manual[]');
         formData.delete('additional_applicant_street_manual[]');
+        formData.delete('additional_property_street_manual[]');
     }
 
     // Handle Form Submission

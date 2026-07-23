@@ -93,14 +93,48 @@ class LandRofoController extends Controller
         return view('land_rofos.index', compact('recommendations', 'PageTitle', 'landUses', 'stats', 'availableSerials', 'ossViewOnly'));
     }
 
-    public function export(Request $request)
+    /**
+     * Column metadata shared by the JSON preview, the client-side CSV/PDF and the
+     * streamed server CSV, so all three stay in step.
+     * `pdfWidth` is in mm — A4 landscape gives ~277mm of usable width.
+     */
+    private function exportColumns(): array
     {
-        $ossViewOnly = $request->query('view') === 'only';
+        return [
+            ['key' => 'sn',             'label' => 'S/N',               'pdfWidth' => 9,  'wrap' => false],
+            ['key' => 'file_number',    'label' => 'File Number',       'pdfWidth' => 26, 'wrap' => false],
+            ['key' => 'source',         'label' => 'Source',            'pdfWidth' => 11],
+            ['key' => 'applicant_name', 'label' => 'Applicant Name',    'pdfWidth' => 34],
+            ['key' => 'purpose',        'label' => 'Land Use / Purpose','pdfWidth' => 22],
+            // No pdfWidth: Location is the flexible column and absorbs the
+            // remaining page width (see buildColumnStyles in records_export.js).
+            ['key' => 'location',       'label' => 'Location'],
+            ['key' => 'plot_number',    'label' => 'Plot No',           'pdfWidth' => 12],
+            ['key' => 'layout_plan_no', 'label' => 'Layout Plan',       'pdfWidth' => 14],
+            ['key' => 'term',           'label' => 'Term',              'pdfWidth' => 10],
+            ['key' => 'ground_rent',    'label' => 'Ground Rent',       'pdfWidth' => 18, 'align' => 'right'],
+            ['key' => 'dev_period',     'label' => 'Dev. Period',       'pdfWidth' => 12],
+            ['key' => 'survey_fees',    'label' => 'Survey Fees',       'pdfWidth' => 18, 'align' => 'right'],
+            ['key' => 'dev_value',      'label' => 'Dev. Value',        'pdfWidth' => 18, 'align' => 'right'],
+            ['key' => 'dev_charge',     'label' => 'Dev. Charge',       'pdfWidth' => 18, 'align' => 'right'],
+            ['key' => 'status',         'label' => 'Status',            'pdfWidth' => 14],
+            ['key' => 'approved_on',    'label' => 'Approved On',       'pdfWidth' => 18],
+            ['key' => 'created_by',     'label' => 'Created By',        'pdfWidth' => 18],
+            ['key' => 'paper_code',     'label' => 'Security Paper Code','pdfWidth' => 18],
+            ['key' => 'date_generated', 'label' => 'Date Generated',    'pdfWidth' => 18],
+        ];
+    }
 
+    /**
+     * Build the filtered export query. Mirrors index() plus the export-only
+     * status and created_at date-range filters.
+     */
+    private function buildExportQuery(Request $request, bool $ossViewOnly)
+    {
         $query = LandRecommendation::with('creator')
             ->select([
                 'id', 'file_number', 'applicant_name', 'purpose_of_clause', 'location',
-                'plot_number', 'layout_plan_no', 'term', 'ground_rent', 'development_period',
+                'plot_number', 'house_no', 'layout_plan_no', 'term', 'ground_rent', 'development_period',
                 'survey_fees', 'development_value', 'development_charge', 'type',
                 'rofo_status', 'status', 'approved_at', 'land_rofo_serial_no',
                 'created_at', 'created_by', 'land_use', 'land_use_id', 'purpose_id',
@@ -124,12 +158,83 @@ class LandRofoController extends Controller
             });
         }
 
-        $columns = [
-            'S/N', 'File Number', 'Source', 'Applicant Name', 'Land Use / Purpose',
-            'Location', 'Plot No', 'Layout Plan', 'Term', 'Ground Rent', 'Dev. Period',
-            'Survey Fees', 'Dev. Value', 'Dev. Charge', 'Status', 'Approved On',
-            'Created By', 'Security Paper Code', 'Date Generated',
+        // Status here means RofO generation state, matching the on-screen badge.
+        $status = strtolower(trim((string) $request->query('status', '')));
+        if ($status === 'generated') {
+            $query->whereRaw("ISNULL(rofo_status, '') = ?", [LandRecommendation::ROFO_GENERATED])
+                  ->whereRaw("UPPER(ISNULL(type, '')) <> 'OSS'");
+        } elseif ($status === 'pending') {
+            $query->whereRaw("ISNULL(rofo_status, '') <> ?", [LandRecommendation::ROFO_GENERATED])
+                  ->whereRaw("UPPER(ISNULL(type, '')) <> 'OSS'");
+        } elseif ($status === 'oss') {
+            $query->whereRaw("UPPER(ISNULL(type, '')) = 'OSS'");
+        }
+
+        if ($request->filled('start_date')) {
+            $query->whereDate('created_at', '>=', $request->query('start_date'));
+        }
+        if ($request->filled('end_date')) {
+            $query->whereDate('created_at', '<=', $request->query('end_date'));
+        }
+
+        return $query->orderByDesc('created_at');
+    }
+
+    /**
+     * Flatten one record into the export column keys.
+     */
+    private function exportRow(LandRecommendation $rec, int $sn): array
+    {
+        $isOss = strtoupper($rec->type ?? '') === 'OSS';
+
+        return [
+            'sn'             => $sn,
+            'file_number'    => $rec->file_number,
+            'source'         => $isOss ? 'OSS' : 'Land',
+            'applicant_name' => $rec->applicant_name,
+            'purpose'        => $rec->purpose_of_clause,
+            'location'       => $rec->display_location,
+            'plot_number'    => $rec->plot_number,
+            'layout_plan_no' => $rec->layout_plan_no,
+            'term'           => $rec->term,
+            'ground_rent'    => number_format((float) $rec->ground_rent, 2),
+            'dev_period'     => $rec->development_period,
+            'survey_fees'    => number_format((float) $rec->survey_fees, 2),
+            'dev_value'      => number_format((float) $rec->development_value, 2),
+            'dev_charge'     => number_format((float) $rec->development_charge, 2),
+            'status'         => $isOss
+                ? 'PRINT READY'
+                : ($rec->rofo_status === LandRecommendation::ROFO_GENERATED ? 'APPROVED' : 'PENDING'),
+            'approved_on'    => $isOss ? '' : ($rec->approved_at ? $rec->approved_at->format('Y-m-d h:i A') : 'N/A'),
+            'created_by'     => $rec->creator->name ?? 'System',
+            'paper_code'     => $isOss ? 'N/A' : ($rec->land_rofo_serial_no ?: 'Unassigned'),
+            'date_generated' => $rec->created_at ? $rec->created_at->format('Y-m-d h:i A') : 'N/A',
         ];
+    }
+
+    public function export(Request $request)
+    {
+        $ossViewOnly = $request->query('view') === 'only';
+        $columns = $this->exportColumns();
+        $query = $this->buildExportQuery($request, $ossViewOnly);
+
+        // JSON feed for the export preview modal (client-side CSV + PDF).
+        if ($request->query('format') === 'json') {
+            $rows = [];
+            $sn = 0;
+            $query->chunk(500, function ($chunk) use (&$rows, &$sn) {
+                foreach ($chunk as $rec) {
+                    $rows[] = $this->exportRow($rec, ++$sn);
+                }
+            });
+
+            return response()->json([
+                'success' => true,
+                'columns' => $columns,
+                'data'    => $rows,
+                'count'   => count($rows),
+            ]);
+        }
 
         $filename = ($ossViewOnly ? 'oss-rofo' : 'land-rofo') . '-export-' . now()->format('Y-m-d_His') . '.csv';
 
@@ -140,43 +245,17 @@ class LandRofoController extends Controller
             'Cache-Control'       => 'no-store, no-cache, must-revalidate',
         ];
 
-        $callback = function () use ($query, $columns, $ossViewOnly) {
+        $callback = function () use ($query, $columns) {
             $out = fopen('php://output', 'w');
             // UTF-8 BOM so Excel renders the ₦ sign and other characters correctly
             fwrite($out, "\xEF\xBB\xBF");
-            fputcsv($out, $columns);
+            fputcsv($out, array_column($columns, 'label'));
 
             $sn = 0;
-            $query->orderByDesc('created_at')->chunk(500, function ($rows) use ($out, &$sn) {
+            $query->chunk(500, function ($rows) use ($out, $columns, &$sn) {
                 foreach ($rows as $rec) {
-                    $isOss = strtoupper($rec->type ?? '') === 'OSS';
-                    $sn++;
-
-                    $status = $isOss
-                        ? 'PRINT READY'
-                        : ($rec->rofo_status === LandRecommendation::ROFO_GENERATED ? 'APPROVED' : 'PENDING');
-
-                    fputcsv($out, [
-                        $sn,
-                        $rec->file_number,
-                        $isOss ? 'OSS' : 'Land',
-                        $rec->applicant_name,
-                        $rec->purpose_of_clause,
-                        $rec->location,
-                        $rec->plot_number,
-                        $rec->layout_plan_no,
-                        $rec->term,
-                        number_format((float) $rec->ground_rent, 2),
-                        $rec->development_period,
-                        number_format((float) $rec->survey_fees, 2),
-                        number_format((float) $rec->development_value, 2),
-                        number_format((float) $rec->development_charge, 2),
-                        $status,
-                        $isOss ? '' : ($rec->approved_at ? $rec->approved_at->format('Y-m-d h:i A') : 'N/A'),
-                        $rec->creator->name ?? 'System',
-                        $isOss ? 'N/A' : ($rec->land_rofo_serial_no ?: 'Unassigned'),
-                        $rec->created_at ? $rec->created_at->format('Y-m-d h:i A') : 'N/A',
-                    ]);
+                    $row = $this->exportRow($rec, ++$sn);
+                    fputcsv($out, array_map(fn ($column) => $row[$column['key']] ?? '', $columns));
                 }
             });
 

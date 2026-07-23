@@ -44,7 +44,12 @@ class LegalSearchController extends Controller
         $moduleConfig = $this->moduleConfig();
         $landUseOptions = DB::connection('sqlsrv')->table('land_uses')->pluck('landuse')->toArray();
         $districtOptions = DB::connection('sqlsrv')->table('districts')->pluck('name')->toArray();
-        return view($this->viewPrefix . '.index', compact('PageTitle', 'PageDescription', 'moduleConfig', 'landUseOptions', 'districtOptions'));
+        $instrumentTypeOptions = DB::connection('sqlsrv')->table('InstrumentTypes')
+            ->where('IsActive', 1)
+            ->orderBy('InstrumentName')
+            ->pluck('InstrumentName')
+            ->toArray();
+        return view($this->viewPrefix . '.index', compact('PageTitle', 'PageDescription', 'moduleConfig', 'landUseOptions', 'districtOptions', 'instrumentTypeOptions'));
     }
 
     /**
@@ -55,13 +60,13 @@ class LegalSearchController extends Controller
         $now = now();
         $startOfMonth = $now->copy()->startOfMonth();
 
-        $monthlyTrend = [];
+        $weeklyTrend = [];
         for ($i = 11; $i >= 0; $i--) {
-            $monthStart = $now->copy()->subMonths($i)->startOfMonth();
-            $monthEnd = $monthStart->copy()->endOfMonth();
-            $count = \App\Models\LegalSearchLog::whereBetween('created_at', [$monthStart, $monthEnd])->count();
-            $monthlyTrend[] = [
-                'month' => $monthStart->format('M'),
+            $weekStart = $now->copy()->subWeeks($i)->startOfWeek();
+            $weekEnd = $weekStart->copy()->endOfWeek();
+            $count = \App\Models\LegalSearchLog::whereBetween('created_at', [$weekStart, $weekEnd])->count();
+            $weeklyTrend[] = [
+                'week' => $weekStart->format('M j'),
                 'searches' => $count,
             ];
         }
@@ -92,7 +97,7 @@ class LegalSearchController extends Controller
             });
 
         return response()->json([
-            'monthly_trend' => $monthlyTrend,
+            'weekly_trend' => $weeklyTrend,
             'stats' => [
                 'total_this_month' => $totalThisMonth,
                 'success_rate' => $successRate,

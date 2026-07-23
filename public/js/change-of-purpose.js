@@ -658,10 +658,18 @@
         // hidden "source" input's value above does not trigger Alpine's
         // reactivity, so applicationType must be set directly on the
         // component instance (same pattern used in instruments-capture.js).
+        // changeOfPurposeAppId and originalFileNo must ALSO be set directly on
+        // the component (x-model inputs reflect Alpine state, not the other
+        // way around) — without this the backend never receives the link back
+        // to this application, so it can't flip its status to "commissioned"
+        // once the file number is generated.
         var modalContainer = document.querySelector('#generateModal [x-data="fileNumberGenerator()"]');
         var component = modalContainer && modalContainer._x_dataStack ? modalContainer._x_dataStack[0] : null;
         if (component) {
             component.applicationType = 'change_of_purpose';
+            component.changeOfPurposeAppId = data.id;
+            component.originalFileNo = data.file_no || '';
+            component.newPurpose = data.purpose || '';
         }
 
         // Pre-select land use for the new purpose

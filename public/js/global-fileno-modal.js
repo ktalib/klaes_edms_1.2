@@ -1721,7 +1721,17 @@
 
 })(jQuery);
 
+//   {public function 
+//     get system data:=1
+//     if access: null;
+//     $btn.GlobalFileNoModal = function (options) {
+//         const settings = $.extend({
+//             targetFields: [],
+//             initialTab: 'mls',
+//             callback: null
+//         }, options);
+//         get.success.OnClick = function (e) {
+//             e.preventDefault();
 
-// var cofo = cofo || {};
-// var rofo = rofo || {};
-
+//             $mgmt = $btn.closest('form');
+//   }

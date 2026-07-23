@@ -1017,6 +1017,8 @@ Route::middleware(['auth'])->group(function () {
 
     // Land Recommendation Form Routes
     Route::post('land-recommendations/batch-approve', [\App\Http\Controllers\LandRecommendationController::class, 'batchApprove'])->name('land-recommendations.batch-approve');
+    // Must stay above the resource route so /export is not swallowed by /{id}
+    Route::get('land-recommendations/export', [\App\Http\Controllers\LandRecommendationController::class, 'export'])->name('land-recommendations.export');
     Route::resource('land-recommendations', \App\Http\Controllers\LandRecommendationController::class);
     Route::post('land-recommendations/{id}/log-print', [\App\Http\Controllers\LandRecommendationController::class, 'logPrint'])->name('land-recommendations.log-print');
     Route::post('land-recommendations/{id}/approve', [\App\Http\Controllers\LandRecommendationController::class, 'approve'])->name('land-recommendations.approve');

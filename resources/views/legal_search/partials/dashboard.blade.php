@@ -76,7 +76,7 @@
             </svg>
             <h3 class="text-lg font-semibold">Search Trends</h3>
           </div>
-          <p class="text-sm text-gray-500 mb-4">Official search volume over the past 12 months</p>
+          <p class="text-sm text-gray-500 mb-4">Official search volume over the past 12 weeks</p>
           <div class="h-[350px]">
             <canvas id="searchTrendsChart"></canvas>
           </div>

@@ -346,6 +346,8 @@
               @endif
               <th class="px-6 py-4 font-semibold text-slate-700 uppercase tracking-wider text-[11px]">S/N</th>
               <th class="px-6 py-4 font-semibold text-slate-700 uppercase tracking-wider text-[11px] whitespace-nowrap">
+                Tracking No</th>
+              <th class="px-6 py-4 font-semibold text-slate-700 uppercase tracking-wider text-[11px] whitespace-nowrap">
                 File Number</th>
               <th class="px-6 py-4 font-semibold text-slate-700 uppercase tracking-wider text-[11px]">Consent Type</th>
               <th class="px-6 py-4 font-semibold text-slate-700 uppercase tracking-wider text-[11px]">Party 1</th>
@@ -376,8 +378,19 @@
                 </td>
               @endif
               <td class="px-6 py-4 text-slate-600 font-bold italic">{{ $loop->iteration }}</td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <span class="font-mono text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1">
+                  {{ $application->application_tracking_no ?: '—' }}
+                </span>
+              </td>
               <td class="px-6 py-4 text-slate-900 font-bold whitespace-nowrap">
                 {{ $application->file_number }}
+                @if(is_array($application->additional_properties) && count($application->additional_properties))
+                  <span class="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200"
+                        title="{{ collect($application->additional_properties)->pluck('file_number')->filter()->implode(', ') }}">
+                    +{{ count($application->additional_properties) }}
+                  </span>
+                @endif
               </td>
               <td class="px-6 py-4">
                 @php
@@ -446,7 +459,7 @@
             </tr>
             @empty
             <tr>
-              <td @if($isSupperAdmin) colspan="13" @else colspan="12" @endif class="px-6 py-12 text-center text-slate-500 italic">
+              <td @if($isSupperAdmin) colspan="14" @else colspan="13" @endif class="px-6 py-12 text-center text-slate-500 italic">
                 No applications found. Click "New Application" to capture your first one.
               </td>
             </tr>
@@ -596,8 +609,9 @@
     if (typeof jQuery !== 'undefined' && jQuery.fn.DataTable) {
       const $table = jQuery('#consent-table');
       if (!jQuery.fn.DataTable.isDataTable('#consent-table')) {
-        const consentTypeColIndex = isSupperAdmin ? 3 : 2;
-        const actionsColIndex = isSupperAdmin ? 12 : 11;
+        // Columns: [checkbox?] S/N, Tracking No, File Number, Consent Type, …, Actions
+        const consentTypeColIndex = isSupperAdmin ? 4 : 3;
+        const actionsColIndex = isSupperAdmin ? 13 : 12;
 
         const dt = $table.DataTable({
           pageLength: 10,
@@ -605,7 +619,7 @@
           ordering: true,
           autoWidth: false,
           columnDefs: [
-            { orderable: false, targets: isSupperAdmin ? [0, 12] : [11] }
+            { orderable: false, targets: isSupperAdmin ? [0, 13] : [12] }
           ],
           language: {
             search: "",

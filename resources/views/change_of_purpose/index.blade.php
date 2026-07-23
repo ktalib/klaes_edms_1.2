@@ -197,7 +197,7 @@
                                             }; @endphp
                                             <span class="px-2 py-1 text-[11px] font-bold rounded {{ $sc }}">{{ ucfirst((string) $record->status) }}</span>
                                         </td>
-                                        <td class="px-4 py-2.5 font-mono text-xs text-slate-500">
+                                        <td class="px-4 py-2.5 font-mono text-xs text-slate-500" data-order="{{ $record->created_at ? \Carbon\Carbon::parse($record->created_at)->format('Y-m-d H:i:s') : '' }}">
                                             {{ $record->created_at ? \Carbon\Carbon::parse($record->created_at)->format('M d, Y') : '-' }}
                                         </td>
                                         @if(request('mode') !== 'land')
@@ -363,36 +363,116 @@
                                             }; @endphp
                                             <span class="px-2 py-1 text-[11px] font-bold rounded {{ $sc }}">{{ ucfirst((string) $record->status) }}</span>
                                         </td>
-                                        <td class="px-4 py-2.5 font-mono text-xs text-slate-500">
+                                        <td class="px-4 py-2.5 font-mono text-xs text-slate-500" data-order="{{ $record->created_at ? \Carbon\Carbon::parse($record->created_at)->format('Y-m-d H:i:s') : '' }}">
                                             {{ $record->created_at ? \Carbon\Carbon::parse($record->created_at)->format('M d, Y') : '-' }}
                                         </td>
                                         @if(request('mode') !== 'land')
                                         <td class="px-4 py-2.5 text-center">
-                                                <div class="relative dropdown-container">
-                                                    <button type="button" class="p-2 hover:bg-slate-100 text-slate-600 rounded-full transition" onclick="copToggleDropdown(this, event)">
-                                                        <i data-lucide="more-vertical" class="w-5 h-5"></i>
-                                                    </button>
-                                                    <ul class="fixed cop-action-menu z-50 bg-white border rounded-lg shadow-lg hidden w-48">
-                                                        <li>
-                                                            <button class="block w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center space-x-2 text-sm" onclick="copViewApplication(this)">
-                                                                <i data-lucide="eye" class="w-4 h-4 text-blue-500"></i>
-                                                                <span>View</span>
+                                                <div class="relative inline-block text-left" id="cop-dropdown-{{ $record->id }}">
+                                                <button type="button" onclick="copToggleActionMenu({{ $record->id }})" class="p-2 hover:bg-slate-100 text-slate-600 rounded-full transition">
+                                                    <i data-lucide="more-vertical" class="w-5 h-5"></i>
+                                                </button>
+
+                                                <div id="cop-menu-{{ $record->id }}" class="hidden fixed z-[999] mt-2 w-max origin-top-right rounded-xl bg-white shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none divide-y divide-slate-100 whitespace-nowrap">
+                                                    <div class="py-1">
+                                                        <button onclick="copViewApplication(this)" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                            <i data-lucide="eye" class="w-4 h-4 text-blue-500"></i> View Details
+                                                        </button>
+                                                        @if($record->knupda_status === 'Approved' || $record->knupda_status === 'Declined')
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="KNUPDA evaluation completed">
+                                                                <i data-lucide="handshake" class="w-4 h-4 text-slate-300"></i> KNUPDA Handshake
                                                             </button>
-                                                        </li>
-                                                        <li>
-                                                            <button class="block w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center space-x-2 text-sm" onclick="copViewAcknowledgement(this)">
-                                                                <i data-lucide="file-text" class="w-4 h-4 text-slate-500"></i>
-                                                                <span>Acknowledgement</span>
+                                                        @else
+                                                            <button onclick="copOpenKnupdaModal({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                                <i data-lucide="handshake" class="w-4 h-4 text-purple-500"></i> KNUPDA Handshake
                                                             </button>
-                                                        </li>
-                                                        {{-- <li>
-                                                            <button class="block w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center space-x-2 text-sm text-emerald-600 font-semibold" onclick="copOpenCommission(this)">
-                                                                <i data-lucide="check-square" class="w-4 h-4 text-emerald-500"></i>
-                                                                <span>Commission</span>
-                                                            </button>
-                                                        </li> --}}
-                                                    </ul>
+                                                        @endif
+                                                        <div class="py-1">
+                                                            @if($record->knupda_status === 'Approved')
+                                                                @if(!$record->application_generated_at)
+                                                                    <button onclick="copGenerateApplication({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                                        <i data-lucide="file-plus" class="w-4 h-4 text-orange-500"></i> Generate Application
+                                                                    </button>
+                                                                @else
+                                                                    <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Application already generated">
+                                                                        <i data-lucide="check-circle-2" class="w-4 h-4 text-slate-300"></i> Generate Application
+                                                                    </button>
+                                                                @endif
+
+                                                                @if($record->application_generated_at)
+                                                                    <a href="{{ route('change-of-purpose.print-application', $record->id) }}" target="_blank" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                                        <i data-lucide="printer" class="w-4 h-4 text-slate-500"></i> Print Application
+                                                                    </a>
+                                                                @else
+                                                                    <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Generate application first">
+                                                                        <i data-lucide="printer" class="w-4 h-4 text-slate-300"></i> Print Application
+                                                                    </button>
+                                                                @endif
+                                                            @else
+                                                                <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
+                                                                    <i data-lucide="file-plus" class="w-4 h-4 text-slate-300"></i> Generate Application
+                                                                </button>
+                                                                <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
+                                                                    <i data-lucide="printer" class="w-4 h-4 text-slate-300"></i> Print Application
+                                                                </button>
+                                                            @endif
+                                                        </div>
+                                                        <div class="py-1">
+                                                            @if($record->knupda_status === 'Approved')
+                                                                @if(!$record->recommendation_generated_at)
+                                                                    <button onclick="copGenerateRecommendation({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                                        <i data-lucide="file-check" class="w-4 h-4 text-emerald-500"></i> Generate Recommendation
+                                                                    </button>
+                                                                @else
+                                                                    <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Recommendation already generated">
+                                                                        <i data-lucide="check-circle-2" class="w-4 h-4 text-slate-300"></i> Generate Recommendation
+                                                                    </button>
+                                                                @endif
+
+                                                                @if($record->recommendation_generated_at)
+                                                                    <a href="{{ route('change-of-purpose.print-recommendation', $record->id) }}" target="_blank" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                                        <i data-lucide="file-text" class="w-4 h-4 text-indigo-500"></i> Print Recommendation
+                                                                    </a>
+                                                                @else
+                                                                    <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Generate recommendation first">
+                                                                        <i data-lucide="file-text" class="w-4 h-4 text-slate-300"></i> Print Recommendation
+                                                                    </button>
+                                                                @endif
+                                                            @else
+                                                                <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
+                                                                    <i data-lucide="file-check" class="w-4 h-4 text-slate-300"></i> Generate Recommendation
+                                                                </button>
+                                                                <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
+                                                                    <i data-lucide="file-text" class="w-4 h-4 text-slate-300"></i> Print Recommendation
+                                                                </button>
+                                                            @endif
+                                                        </div>
+                                                    </div>
+                                                    <div class="py-1">
+                                                    </div>
+                                                     @if($record->status !== 'approved' && $record->status !== 'commissioned')
+                                                     <div class="py-1 border-t border-slate-100">
+                                                         <button onclick="copApproveRecord(this)" class="flex items-center w-full px-4 py-2.5 text-sm text-emerald-600 hover:bg-emerald-50 gap-2 font-medium">
+                                                             <i data-lucide="check-circle" class="w-4 h-4 text-emerald-500"></i> Approve Application
+                                                         </button>
+                                                         <button onclick="copRejectRecord(this)" class="flex items-center w-full px-4 py-2.5 text-sm text-rose-600 hover:bg-rose-50 gap-2 font-medium">
+                                                             <i data-lucide="x-circle" class="w-4 h-4 text-rose-500"></i> Reject Application
+                                                         </button>
+                                                     </div>
+                                                     @endif
+                                                     <div class="py-1 border-t border-slate-100">
+                                                    @if($record->status === 'approved' || $record->status === 'commissioned')
+                                                        <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Approved or commissioned applications cannot be deleted">
+                                                            <i data-lucide="trash-2" class="w-4 h-4 text-slate-300"></i> Delete
+                                                        </button>
+                                                    @else
+                                                        <button onclick="copDelete(this)" class="flex items-center w-full px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 gap-2">
+                                                            <i data-lucide="trash-2" class="w-4 h-4"></i> Delete
+                                                        </button>
+                                                    @endif
+                                                    </div>
                                                 </div>
+                                            </div>
                                         </td>
                                         @endif
                                     </tr>

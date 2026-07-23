@@ -31,10 +31,10 @@
                                placeholder="Search file, applicant, or location..."
                                class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all shadow-sm">
                     </form>
-                    <a href="{{ route('land-rofos.export', array_filter(['view' => $ossViewOnly ? 'only' : null, 'search' => request('search')])) }}"
+                    <button type="button" onclick="openRecordsExportModal()"
                         class="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 transition shadow-lg shadow-emerald-200 whitespace-nowrap text-sm">
-                        <i data-lucide="download" class="h-4 w-4"></i> Export CSV
-                    </a>
+                        <i data-lucide="download" class="h-4 w-4"></i> Export Records
+                    </button>
                     @if(!$ossViewOnly)
                     <button type="button" onclick="openBatchPrintModal()"
                         class="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 whitespace-nowrap text-sm">
@@ -1078,7 +1078,22 @@ function bpmCancelConfirm() {
         });
     }
 
-    
+
 </script>
- 
+
+{{-- Export (preview + date range + CSV + PDF) --}}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.7.1/jspdf.plugin.autotable.min.js"></script>
+@include('exports.records_export_modal', ['exportConfig' => [
+    'title'         => $ossViewOnly ? 'Export OSS RofO' : 'Export Land RofO',
+    'subtitle'      => 'Consolidated report generation & export filter',
+    'endpoint'      => route('land-rofos.export'),
+    'params'        => array_filter(['view' => $ossViewOnly ? 'only' : null]),
+    'filename'      => $ossViewOnly ? 'OSS_RofO' : 'Land_RofO',
+    'reportTitle'   => $ossViewOnly ? 'OSS RofO Register' : 'Land RofO Register',
+    'search'        => request('search'),
+    'statusOptions' => $ossViewOnly
+        ? ['' => 'All Records']
+        : ['' => 'All Statuses', 'generated' => 'RofO Generated', 'pending' => 'Awaiting Generation', 'oss' => 'OSS Only'],
+]])
+
 @endsection

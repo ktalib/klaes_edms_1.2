@@ -2,6 +2,7 @@
   // Lookup data from DB
   const dbLandUseOptions = @json($landUseOptions ?? []);
   const dbDistrictOptions = @json($districtOptions ?? []);
+  const dbInstrumentTypeOptions = @json($instrumentTypeOptions ?? []);
 
 
   // Helper to generate registration numbers in XX/XX/YYY format
@@ -167,18 +168,18 @@
   // card clicks so the search header always reflects what the user picked.
   let userSelectedFileNumber = '';
 
-  // Initialize the search trends chart with real monthly search volume
-  const initializeChart = (monthlyData) => {
+  // Initialize the search trends chart with real weekly search volume
+  const initializeChart = (weeklyData) => {
     const canvas = document.getElementById('searchTrendsChart');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     new Chart(ctx, {
       type: 'line',
       data: {
-        labels: monthlyData.map(d => d.month),
+        labels: weeklyData.map(d => d.week),
         datasets: [{
           label: 'Searches',
-          data: monthlyData.map(d => d.searches),
+          data: weeklyData.map(d => d.searches),
           borderColor: '#3B82F6',
           backgroundColor: 'rgba(59, 130, 246, 0.1)',
           tension: 0.4,
@@ -194,7 +195,7 @@
           },
           title: {
             display: true,
-            text: 'Monthly Search Volume'
+            text: 'Weekly Search Volume'
           }
         },
         scales: {
@@ -208,7 +209,7 @@
           x: {
             title: {
               display: true,
-              text: 'Month'
+              text: 'Week'
             }
           }
         }
@@ -257,7 +258,7 @@
     fetch(statsUrl, { headers: { 'Accept': 'application/json' } })
       .then(response => response.json())
       .then(data => {
-        initializeChart(data.monthly_trend || []);
+        initializeChart(data.weekly_trend || []);
         renderDashboardStats(data.stats || {});
         renderRecentActivity(data.recent_activity || []);
       })
@@ -6308,23 +6309,7 @@ const executeSearchAjax = (filters, searchData) => {
     }
 
     if (source === 'transaction_type') {
-      [
-        'Certificate of Occupancy',
-        'Customary Right of Occupancy',
-        'Occupancy Permit (OP)',
-        'Deed of Assignment',
-        'ST Assignment',
-        'Deed of Mortgage',
-        'Tripartite Mortgage',
-        'Deed of Lease',
-        'Deed of Transfer',
-        'Deed of Surrender',
-        'Power of Attorney',
-        'Release of Mortgage',
-        'Fragmentation',
-        'ST Fragmentation',
-        'Other'
-      ].forEach(add);
+      dbInstrumentTypeOptions.forEach(add);
 
       add(record?.transaction_type);
       add(record?.instrument_type);

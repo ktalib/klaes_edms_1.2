@@ -1417,6 +1417,7 @@
 
             // Reset all form fields to initial values
             component.applicationType = 'new';
+            component.appTypeRadio = 'new';
             component.allocatedByFilter = null;
             component.defaultAllocationType = '';
             component._currentAllocationSourceType = 'default';
@@ -2151,6 +2152,16 @@
         showGlobalLoading('Generating file number...');
 
         const formData = new FormData(document.getElementById('generateForm'));
+
+        // The Direct Allocation / Conversion radios are bound to appTypeRadio (a
+        // separate, purely visual property) so picking "Conversion" doesn't knock
+        // the form out of Change of Purpose mode — see updateApplicationType().
+        // That means the native radio's checked value in the DOM (what FormData
+        // reads by default) no longer matches the real applicationType Alpine is
+        // tracking, so it must be set explicitly here.
+        if (alpineData) {
+            formData.set('application_type', alpineData.applicationType);
+        }
 
         // These two drive resolveSourceValue() on the backend (e.g. "OP Direct
         // Allocation" / "OP Resettlement" vs plain "Direct Allocation"), but
@@ -4101,6 +4112,11 @@
         return {
             // Data properties
             applicationType: 'new',
+            // Backing value for the visible "Direct Allocation / Conversion" radios.
+            // Kept separate from applicationType so that picking "Conversion" while
+            // the File Type dropdown is on Change of Purpose doesn't detach the form
+            // from CoP mode — see updateApplicationType().
+            appTypeRadio: 'new',
             allocatedByFilter: null,
             defaultAllocationType: '',
             _currentAllocationSourceType: 'default', // Track current allocation source type
@@ -4495,9 +4511,13 @@
                 const lgaSel = document.getElementById('generator_lga');
                 if (lgaSel) {
                     const lgaVal = this.lga || '';
-                    const hasOption = Array.from(lgaSel.options).some(o => o.value === lgaVal);
-                    lgaSel.value = hasOption ? lgaVal : '';
-                    if (!hasOption) this.lga = '';
+                    const normalizedLga = this.normalizeLocationToken(lgaVal);
+                    const matchedOption = Array.from(lgaSel.options).find(o =>
+                        this.normalizeLocationToken(o.value) === normalizedLga
+                        || this.normalizeLocationToken(o.text) === normalizedLga
+                    );
+                    lgaSel.value = matchedOption ? matchedOption.value : '';
+                    this.lga = matchedOption ? matchedOption.value : '';
                     if (window.jQuery && $(lgaSel).hasClass('select2-hidden-accessible')) {
                         $(lgaSel).trigger('change.select2');
                     }
@@ -4760,7 +4780,13 @@
                 // Note: We use 'allAllPrefixes' which is the raw list from controller
                 if (!this.allAllPrefixes) return [];
 
-                if (this.applicationType === 'conversion') {
+                const useConversionPrefixes = this.applicationType === 'conversion'
+                    || (
+                        this.applicationType === 'change_of_purpose'
+                        && this.appTypeRadio === 'conversion'
+                    );
+
+                if (useConversionPrefixes) {
                     return this.allAllPrefixes.filter(p => p.prefix.includes('CON-'));
                 } else {
                     return this.allAllPrefixes.filter(p => !p.prefix.includes('CON-'));
@@ -4768,6 +4794,75 @@
             },
 
             // Methods
+            normalizeLandUseCode(value) {
+                let text = (value || '').toString().trim().toUpperCase();
+                if (!text) return '';
+                text = text.replace(/^CON-/, '').replace(/-RC$/, '');
+                if (text === 'RES' || text.includes('RESIDENTIAL')) return 'RES';
+                if (text === 'COM' || text.includes('COMMERCIAL')) return 'COM';
+                if (text === 'IND' || text.includes('INDUSTRIAL')) return 'IND';
+                if (['AG', 'AGR', 'AGRIC'].includes(text) || text.includes('AGRICULTURAL')) return 'AG';
+                return text.split(/[\s(-]+/)[0];
+            },
+
+            findLandUseByCode(code) {
+                const normalizedCode = this.normalizeLandUseCode(code);
+                if (!normalizedCode || !Array.isArray(this.landUses)) return null;
+
+                return this.landUses.find(l => this.normalizeLandUseCode(l.landuse) === normalizedCode)
+                    || null;
+            },
+
+            normalizeLocationToken(value) {
+                return (value || '').toString().trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+            },
+
+            stripPlotFromLocation(location, plotNo = '') {
+                const raw = (location || '').toString().trim();
+                if (!raw) return '';
+
+                const parts = raw.split(',').map(part => part.trim()).filter(Boolean);
+                if (parts.length <= 1) return raw.toUpperCase();
+
+                const first = parts[0];
+                const normalizedFirst = this.normalizeLocationToken(first.replace(/^PLOT\s+/i, ''));
+                const normalizedPlot = this.normalizeLocationToken(plotNo);
+
+                if (
+                    (normalizedPlot && normalizedFirst === normalizedPlot)
+                    || /^PLOT\s+/i.test(first)
+                    || /^[A-Z]?\d+[A-Z]?$/i.test(first)
+                    || /^[A-Z]+-\d+[A-Z]?$/i.test(first)
+                ) {
+                    parts.shift();
+                }
+
+                return parts.join(', ').toUpperCase();
+            },
+
+            findPrefixForLandUseCode(code) {
+                const normalizedCode = this.normalizeLandUseCode(code);
+                if (!normalizedCode || !Array.isArray(this.allAllPrefixes)) return null;
+
+                const candidates = this.filteredPrefixes.length ? this.filteredPrefixes : this.allAllPrefixes;
+                const preferredPrefix = (
+                    this.applicationType === 'conversion'
+                    || (this.applicationType === 'change_of_purpose' && this.appTypeRadio === 'conversion')
+                )
+                    ? `CON-${normalizedCode}`
+                    : normalizedCode;
+
+                return candidates.find(p => (p.prefix || '').toString().toUpperCase() === preferredPrefix)
+                    || candidates.find(p => (p.prefix || '').toString().toUpperCase() === normalizedCode)
+                    || candidates.find(p => (p.prefix || '').toString().toUpperCase().startsWith(`${normalizedCode}-`))
+                    || candidates.find(p => (p.prefix || '').toString().toUpperCase().startsWith(`${preferredPrefix}-`))
+                    || candidates.find(p => {
+                        const lu = this.landUses.find(l => l.id == p.land_use_id);
+                        return lu && this.normalizeLandUseCode(lu.landuse) === normalizedCode;
+                    })
+                    || null;
+            },
+
             handlePrefixChange(event) {
                 if (event) {
                     console.log('handlePrefixChange called via event', event.target.value);
@@ -4783,26 +4878,21 @@
                 }
 
                 const prefixObj = this.allAllPrefixes.find(p => p.prefix === selectedPrefixStr);
+                const mappedLandUseCode = this.normalizeLandUseCode(selectedPrefixStr);
+                const mappedLandUse = this.findLandUseByCode(mappedLandUseCode);
                 
                 if (prefixObj && prefixObj.land_use_id) {
-                     // 1. Find the Land Use Code based on ID (to set the model)
+                      // 1. Find the Land Use Code based on ID (to set the model)
                      // We need to iterate our select options or look up in landUses array
                      // The landUses array from PHP has 'id', 'landuse' (name).
                      // But our model 'this.landUse' expects the CODE (e.g., 'RES', 'COM').
                      // We need a way to map ID -> CODE. 
                      // Let's use the HTML select options logic to be consistent or just map it here.
                      
-                     const lu = this.landUses.find(l => l.id == prefixObj.land_use_id);
+                     const lu = mappedLandUse || this.landUses.find(l => l.id == prefixObj.land_use_id);
                      if (lu) {
-                         let code = '';
-                         const name = lu.landuse.toUpperCase();
+                        const code = mappedLandUseCode || this.normalizeLandUseCode(lu.landuse);
                          
-                        if (name.includes('RESIDENTIAL')) code = 'RES';
-                        else if (name.includes('COMMERCIAL')) code = 'COM';
-                        else if (name.includes('INDUSTRIAL')) code = 'IND';
-                        else if (name.includes('AGRICULTURAL')) code = 'AG';
-                        else code = name.substring(0, 3);
-                        
                         this.landUse = code;
                         
                         // Auto-set Customer Type based on Land Use
@@ -4813,12 +4903,17 @@
                         }
                         
                         // 2. Fetch Purposes for this Land Use ID
-                        if (this.landUseId == prefixObj.land_use_id && this.purposes.length === 0) {
-                            this.fetchDependentData(prefixObj.land_use_id);
+                        const resolvedLandUseId = mappedLandUse ? mappedLandUse.id : prefixObj.land_use_id;
+                        if (this.landUseId == resolvedLandUseId && this.purposes.length === 0) {
+                            this.fetchDependentData(resolvedLandUseId);
                         }
-                        this.landUseId = prefixObj.land_use_id;
+                        this.landUseId = resolvedLandUseId;
                         // fetchDependentData will be triggered by watcher on landUseId if it changes
-                     }
+                      }
+                } else if (mappedLandUse) {
+                    this.landUse = mappedLandUseCode;
+                    this.customerType = (mappedLandUseCode === 'COM' || mappedLandUseCode === 'IND') ? 'Corporate' : 'Individual';
+                    this.landUseId = mappedLandUse.id;
                 }
                 
                 this.updatePreview();
@@ -4993,6 +5088,21 @@
 
 
             updateApplicationType() {
+                // While File Type is Change of Purpose, the Direct Allocation /
+                // Conversion radios (bound to appTypeRadio, not applicationType)
+                // are informational only — some CoP files are also conversions,
+                // but applicationType (and the "source" the backend receives)
+                // must stay 'change_of_purpose' so the CoP application picker
+                // stays visible and the file still commissions through the CoP
+                // branch instead of falling into generic Conversion handling.
+                if (this.fileTypeWorkflow === 'change_of_purpose') {
+                    this.applicationType = 'change_of_purpose';
+                    this.updatePreview();
+                    return;
+                }
+
+                this.applicationType = this.appTypeRadio;
+
                 this.landUse = '';
                 this.prefix = ''; // Reset prefix when application type changes
 
@@ -5428,22 +5538,17 @@
                     this.copCurrentLandUse = data.land_use;
                     this.copNewPurpose = data.purpose;
                     
-                    // Set New Land Use based on the "purpose" field in CoP app (which is the NEW land use code)
-                    const newLuCode = (data.purpose || '').toUpperCase();
+                    // Set prefix/land use from the CoP application's new purpose.
+                    const newLuCode = this.normalizeLandUseCode(data.purpose || data.new_purpose || '');
+                    this.newPurpose = newLuCode;
                     this.landUse = newLuCode;
-                    
-                    // Find the land use ID to fetch purposes
-                    if (this.landUses) {
-                        const luEntity = this.landUses.find(l => {
-                            const name = l.landuse.toUpperCase();
-                            if (newLuCode === 'RES' && name.includes('RESIDENTIAL')) return true;
-                            if (newLuCode === 'COM' && name.includes('COMMERCIAL')) return true;
-                            if (newLuCode === 'IND' && name.includes('INDUSTRIAL')) return true;
-                            if (newLuCode === 'AG' && name.includes('AGRICULTURAL')) return true;
-                            if (newLuCode === 'AGR' && name.includes('AGRICULTURAL')) return true;
-                            return false;
-                        });
-                        
+
+                    const matchedPrefix = this.findPrefixForLandUseCode(newLuCode);
+                    if (matchedPrefix) {
+                        this.prefix = matchedPrefix.prefix;
+                        this.handlePrefixChange({ target: { value: this.prefix } });
+                    } else if (this.landUses) {
+                        const luEntity = this.landUses.find(l => this.normalizeLandUseCode(l.landuse) === newLuCode);
                         if (luEntity) {
                             this.landUseId = luEntity.id;
                         }
@@ -5454,11 +5559,15 @@
                     this.plotNo = data.plot_no || '';
                     this.lga = data.lga || '';
                     this.district = data.district || '';
-                    this.location = (data.location || '').toUpperCase();
+                    this.location = this.stripPlotFromLocation(data.location || '', this.plotNo);
                     this.isInherited = true;
-                    this.$nextTick(() => this.syncLocationSelects());
-
-                    this.updatePreview();
+                    this.$nextTick(() => {
+                        this.syncLocationSelects();
+                        this.updatePreview();
+                        if (typeof getNextSerialNumber === 'function') {
+                            getNextSerialNumber();
+                        }
+                    });
                     
                     Swal.fire({
                         icon: 'success',
@@ -5489,10 +5598,10 @@
                     return;
                 }
 
-                // Preserve Conversion; only fall back to Direct Allocation otherwise.
-                if (this.applicationType !== 'conversion') {
-                    this.applicationType = 'new';
-                }
+                // Restore applicationType from the Direct Allocation / Conversion radio
+                // (appTypeRadio is the source of truth for that choice — applicationType
+                // may still be 'change_of_purpose' left over from CoP mode here).
+                this.applicationType = this.appTypeRadio || 'new';
 
                 // Re-grant numbers like a normal file but keeps its own tag so the backend
                 // records Source as "Re-grant" instead of "Direct Allocation".
@@ -5672,14 +5781,27 @@
                      }
                 }
 
-                // Trigger grouping lookup to enable/disable Generate button
-                if (typeof deriveGroupingLookupCandidate === 'function' && typeof queueGroupingLookup === 'function') {
-                    const candidate = this.existingFileNo || this.subdivisionFileNo || this.mergerFileNo || this.originalFileNo;
+                // Trigger grouping lookup to enable/disable Generate button.
+                // Change of Purpose looks up the grouping table by the NEW (target)
+                // file number, e.g. IND-2026-242 — that's what gets pre-registered
+                // there, and it's exactly what MlsFileNoController's own
+                // tryFetchTrackingIdFromGrouping($fullFileNumber) reads server-side
+                // during commissioning. originalFileNo (the OLD file) was never in
+                // that table, which is why looking it up under the old number
+                // always came back "Not Found".
+                if (this.applicationType === 'change_of_purpose') {
+                    if (previewText && previewText !== '-' && typeof queueGroupingLookup === 'function') {
+                        queueGroupingLookup(previewText);
+                    } else if (typeof resetTrackingIdDisplay === 'function') {
+                        resetTrackingIdDisplay('--');
+                    }
+                } else if (typeof deriveGroupingLookupCandidate === 'function' && typeof queueGroupingLookup === 'function') {
+                    const candidate = this.existingFileNo || this.subdivisionFileNo || this.mergerFileNo;
                     const lookupCandidate = deriveGroupingLookupCandidate(this.fileOption, previewText, candidate);
                     if (lookupCandidate) {
                         queueGroupingLookup(lookupCandidate);
                     } else {
-                        // If no candidate, we might need to reset. 
+                        // If no candidate, we might need to reset.
                         // But rely on global functions to handle reset if needed.
                         // Actually, global updatePreview calls resetTrackingIdDisplay('--') if no candidate.
                         if (typeof resetTrackingIdDisplay === 'function') {

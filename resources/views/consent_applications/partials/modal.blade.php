@@ -103,6 +103,23 @@
                                     title="Select File">
                                     <i data-lucide="search" class="h-5 w-5"></i>
                                 </button>
+                                <button type="button" id="add-fileno-btn"
+                                    class="p-3 rounded-xl bg-emerald-50 text-emerald-600 font-bold border border-emerald-100 hover:bg-emerald-100 transition flex items-center justify-center shrink-0"
+                                    title="Add Another File Number">
+                                    <i data-lucide="plus" class="h-5 w-5"></i>
+                                </button>
+                            </div>
+
+                            <div id="additional-file-numbers-container" class="space-y-2 mt-2">
+                                <!-- Additional file numbers cloned here -->
+                            </div>
+
+                            <div class="multi-property-notice hidden mt-3 flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 border border-amber-200">
+                                <i data-lucide="info" class="h-4 w-4 text-amber-600 mt-0.5 shrink-0"></i>
+                                <p class="text-xs font-semibold text-amber-800 leading-relaxed">
+                                    This consent involves <span class="multi-property-count">2</span> properties.
+                                    Each file number carries its own property description.
+                                </p>
                             </div>
                         </div>
 
@@ -124,7 +141,8 @@
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div id="right-of-occupancy-number-wrapper">
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Right of Occupancy Number</label>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Right of
+                                Occupancy Number<span id="main-rofo-index"></span></label>
                             <input type="hidden" name="right_of_occupancy_number" id="right_of_occupancy_number">
                             <input type="text" id="right_of_occupancy_number_display" disabled
                                 class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed text-sm font-medium"
@@ -133,6 +151,10 @@
                                 <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Applicant:</span>
                                 <span id="applicant_name_preview"
                                     class="inline-flex items-center px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100 text-xs font-semibold"></span>
+                            </div>
+
+                            <div id="additional-rofo-container">
+                                <!-- One row per additional file number, cloned here -->
                             </div>
                         </div>
                         <div class="hidden">
@@ -292,10 +314,20 @@
                             <i data-lucide="map-pin" class="h-5 w-5"></i>
                         </div>
                         <div>
-                            <h4 class="text-sm font-black text-slate-800 uppercase tracking-widest">Property Description</h4>
+                            <h4 class="text-sm font-black text-slate-800 uppercase tracking-widest">Property
+                                Description<span id="main-property-index"></span></h4>
                             <p class="text-[10px] text-slate-500 font-bold uppercase">Location of the subject plot</p>
                         </div>
                     </div>
+
+                    <div class="multi-property-notice hidden mb-6 flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 border border-amber-200">
+                        <i data-lucide="info" class="h-4 w-4 text-amber-600 mt-0.5 shrink-0"></i>
+                        <p class="text-xs font-semibold text-amber-800 leading-relaxed">
+                            This consent involves <span class="multi-property-count">2</span> properties.
+                            Each file number carries its own property description.
+                        </p>
+                    </div>
+
                     <div>
                         <div class="space-y-3 p-4 bg-slate-50/50 rounded-2xl border border-slate-100">
                             <div class="grid grid-cols-2 gap-3">
@@ -354,6 +386,10 @@
                             <span class="font-bold text-slate-400 uppercase text-[10px] block mb-1">Full Description Preview:</span>
                             <span id="property_address_preview" class="italic">No description built yet...</span>
                         </div>
+                    </div>
+
+                    <div id="additional-properties-container" class="space-y-6">
+                        <!-- One block per additional file number, cloned here -->
                     </div>
                 </div>
                 </div>
@@ -652,6 +688,16 @@
                             </div>
                         </div>
 
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Application
+                                Tracking No</label>
+                            <div id="application-tracking-no-display"
+                                class="w-full px-4 py-3 rounded-xl border border-emerald-100 bg-emerald-50 text-emerald-700 text-sm font-bold font-mono flex items-center gap-2">
+                                <i data-lucide="hash" class="h-4 w-4 text-emerald-500"></i>
+                                <span id="application_tracking_no_value">Assigned on save</span>
+                            </div>
+                        </div>
+
                         <div class="grid grid-cols-3 gap-4">
                             <div>
                                 <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Time
@@ -711,6 +757,133 @@
         </div>
     </div>
 </div>
+
+<!-- Template for Additional Right of Occupancy rows (Hidden) -->
+<template id="additional-rofo-template">
+    <div class="additional-rofo-block mt-4 pt-4 border-t border-slate-100">
+        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
+            Right of Occupancy Number <span class="rofo-block-index"></span>
+        </label>
+        {{-- readonly (not disabled) so the variant/interactive toggles leave it alone;
+             it carries no name, so the value is submitted via additional_file_number[] --}}
+        <input type="text" readonly
+            class="additional-rofo-display w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed text-sm font-medium"
+            placeholder="Auto-filled from selected file number">
+        <input type="hidden" name="additional_property_applicant[]" class="additional-rofo-applicant">
+        <div class="additional-rofo-applicant-wrapper mt-2 hidden items-center gap-2">
+            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Applicant:</span>
+            <span class="additional-rofo-applicant-name inline-flex items-center px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100 text-xs font-semibold"></span>
+        </div>
+    </div>
+</template>
+
+<!-- Template for Additional File Numbers (Hidden) -->
+<template id="additional-fileno-template">
+    <div class="additional-fileno-block flex items-center gap-2">
+        <div class="relative flex-1">
+            <input type="text" name="additional_file_number[]" readonly
+                class="additional-fileno-input w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold font-mono text-slate-700"
+                placeholder="Select file...">
+            <div class="additional-fileno-indicator hidden absolute right-3 top-1/2 -translate-y-1/2">
+                <i data-lucide="check-circle" class="h-5 w-5 text-emerald-500"></i>
+            </div>
+        </div>
+        <button type="button"
+            class="additional-fileno-search-btn p-3 rounded-xl bg-blue-50 text-blue-600 font-bold border border-blue-100 hover:bg-blue-100 transition flex items-center justify-center shrink-0"
+            title="Select File">
+            <i data-lucide="search" class="h-5 w-5"></i>
+        </button>
+        <button type="button"
+            class="remove-fileno-btn p-3 rounded-xl bg-red-50 text-red-500 font-bold border border-red-100 hover:bg-red-100 transition flex items-center justify-center shrink-0"
+            title="Remove">
+            <i data-lucide="trash-2" class="h-5 w-5"></i>
+        </button>
+    </div>
+</template>
+
+<!-- Template for Additional Property Descriptions (Hidden) -->
+<template id="additional-property-template">
+    <div class="additional-property-block pt-8 border-t-2 border-indigo-100">
+        <div class="flex items-center gap-3 mb-6">
+            <div class="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                <i data-lucide="map-pin" class="h-5 w-5"></i>
+            </div>
+            <div>
+                <h4 class="text-sm font-black text-slate-800 uppercase tracking-widest property-block-header">Property Description</h4>
+                <p class="text-[10px] text-slate-500 font-bold uppercase">
+                    Location of the subject plot &mdash;
+                    <span class="property-block-fileno font-mono text-indigo-600">no file selected</span>
+                </p>
+            </div>
+        </div>
+        <div>
+            <div class="space-y-3 p-4 bg-slate-50/50 rounded-2xl border border-slate-100">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">House/Plot No</label>
+                        <input type="text" name="additional_property_house_no[]"
+                            class="address-component-additional-property w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition"
+                            placeholder="e.g. 12">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Street</label>
+                        <select name="additional_property_street[]" data-manual-input="next"
+                            class="address-component-additional-property street-dropdown w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                            <option value="">Select Street</option>
+                            @foreach($streetOptions as $street)
+                                <option value="{{ $street->name }}">{{ $street->name }}</option>
+                            @endforeach
+                        </select>
+                        <input type="text" name="additional_property_street_manual[]"
+                            class="manual-street-input hidden address-component-additional-property w-full mt-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition"
+                            placeholder="Specify street...">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">District</label>
+                        <select name="additional_property_district[]"
+                            class="address-component-additional-property dist-select w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                            <option value="">Select District</option>
+                            @foreach($districts as $district)
+                                <option value="{{ $district->name }}">{{ $district->name }}</option>
+                            @endforeach
+                            <option value="Other">Other</option>
+                        </select>
+                        <input type="text" name="additional_property_district_other[]"
+                            class="hidden address-component-additional-property dist-other w-full mt-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition"
+                            placeholder="Specify district...">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">LGA <span class="text-red-500">*</span></label>
+                        <select name="additional_property_lga[]" required
+                            class="address-component-additional-property w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                            <option value="">Select LGA</option>
+                            @foreach($lgas as $lga)
+                                <option value="{{ $lga->LGAName }}">{{ $lga->LGAName }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">State <span class="text-red-500">*</span></label>
+                    <select name="additional_property_state[]" required
+                        class="address-component-additional-property w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:border-blue-500 transition">
+                        <option value="">Select State</option>
+                        @foreach($states as $state)
+                            <option value="{{ $state->StateName }}" {{ $state->StateName == 'Kano' ? 'selected' : '' }}>{{ $state->StateName }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            </div>
+            <input type="hidden" name="additional_property_description[]" class="additional-property-hidden">
+            <div class="mt-3 p-3 bg-white rounded-xl border border-dashed border-slate-200 text-xs text-slate-500">
+                <span class="font-bold text-slate-400 uppercase text-[10px] block mb-1">Full Description Preview:</span>
+                <span class="additional-property-preview italic">No description built yet...</span>
+            </div>
+        </div>
+    </div>
+</template>
 
 <!-- Template for Additional Parties (Hidden) -->
 <template id="additional-party-template">

@@ -25,6 +25,11 @@
                                placeholder="Search file, applicant, or location..." 
                                class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all shadow-sm">
                     </form>
+                    <button type="button" onclick="openRecordsExportModal()"
+                        class="inline-flex items-center gap-2 px-5 py-3 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 whitespace-nowrap">
+                        <i data-lucide="download" class="h-5 w-5"></i>
+                        <span>Export Records</span>
+                    </button>
                     @if(empty($isOssView))
                         <a href="{{ route('land-recommendations.create') }}" class="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 whitespace-nowrap">
                             <i data-lucide="plus-circle" class="h-5 w-5"></i>
@@ -475,6 +480,23 @@
     }
     @endif
 </script>
+
+{{-- Export (preview + date range + CSV + PDF) --}}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.7.1/jspdf.plugin.autotable.min.js"></script>
+@include('exports.records_export_modal', ['exportConfig' => [
+    'title'         => !empty($isOssView) ? 'Export OSS Recommendations' : 'Export Land Recommendations',
+    'subtitle'      => 'Consolidated report generation & export filter',
+    'endpoint'      => route('land-recommendations.export'),
+    'params'        => ['type' => !empty($isOssView) ? 'OSS' : 'ROFO'],
+    'filename'      => !empty($isOssView) ? 'OSS_Recommendations' : 'Land_Recommendations',
+    'reportTitle'   => !empty($isOssView)
+        ? 'OSS Recommendation Register'
+        : 'Recommendation For Grant Of Statutory Right Of Occupancy',
+    'search'        => request('search'),
+    'statusOptions' => !empty($isOssView)
+        ? ['' => 'All Records']
+        : ['' => 'All Statuses', 'approved' => 'Approved', 'pending' => 'Pending Approval'],
+]])
 @endpush
 
 @push('styles')

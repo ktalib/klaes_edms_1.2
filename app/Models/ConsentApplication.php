@@ -10,6 +10,7 @@ class ConsentApplication extends Model
     protected $table = 'consent_applications';
 
     protected $fillable = [
+        'application_tracking_no',
         'file_number',
         'c_of_o_no',
         'consent_type',
@@ -18,6 +19,7 @@ class ConsentApplication extends Model
         'party_name',
         'party_address',
         'additional_parties',
+        'additional_properties',
         'consideration',
         'consideration_words',
         'application_date',
@@ -51,7 +53,8 @@ class ConsentApplication extends Model
         'date_of_grant' => 'date',
         'print_count' => 'integer',
         'additional_parties' => 'array',
-        'additional_applicants' => 'array'
+        'additional_applicants' => 'array',
+        'additional_properties' => 'array'
     ];
 
     /**

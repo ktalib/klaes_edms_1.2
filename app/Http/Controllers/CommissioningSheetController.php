@@ -127,6 +127,23 @@ class CommissioningSheetController extends Controller
                 }
             }
 
+            // A Plot Extension keeps the original file number, so a file already
+            // indexed/commissioned under that number has no mls_file_no.source of its
+            // own. Prefer the Plot Extension reason over a blank/guessed label.
+            if (empty($data['related_file_title'])) {
+                $hasPlotExtension = DB::connection('sqlsrv')
+                    ->table('plot_extensions')
+                    ->where('original_file_no', $fileNo)
+                    ->where(function ($q) {
+                        $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                    })
+                    ->exists();
+
+                if ($hasPlotExtension) {
+                    $data['related_file_title'] = 'Plot Extension';
+                }
+            }
+
             // 2. Get related file number from fileNumber.related_fileno
             if (empty($data['related_file_number'])) {
                 $fnRow = DB::connection('sqlsrv')
@@ -388,6 +405,23 @@ class CommissioningSheetController extends Controller
                     // Source values are already human-readable labels
                     // (Conversion, Change of Purpose, Subdivision, Merger, ...)
                     $data['related_file_title'] = trim($mlsRow->source);
+                }
+            }
+
+            // A Plot Extension keeps the original file number, so a file already
+            // indexed/commissioned under that number has no mls_file_no.source of its
+            // own. Prefer the Plot Extension reason over a blank/guessed label.
+            if (empty($data['related_file_title'])) {
+                $hasPlotExtension = DB::connection('sqlsrv')
+                    ->table('plot_extensions')
+                    ->where('original_file_no', $fileNo)
+                    ->where(function ($q) {
+                        $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                    })
+                    ->exists();
+
+                if ($hasPlotExtension) {
+                    $data['related_file_title'] = 'Plot Extension';
                 }
             }
 

@@ -185,8 +185,19 @@ class FileNumberController extends Controller
                 //   2. op_batch IS NOT NULL — OSS OP batch commissions. These carry
                 //      source = 'Direct Allocation' with a NULL sub_source, so marker 1
                 //      alone let them leak back into the land/MLS file list.
-                $sourceWhere = "fn.SOURCE IN ('MLS_Commissioned','MLS_Commissioned_Batch')
-                                AND fn.type = 'MlsFileNO'
+                $sourceWhere = "(
+                                    (fn.SOURCE IN ('MLS_Commissioned','MLS_Commissioned_Batch') AND fn.type = 'MlsFileNO')
+                                    OR EXISTS (
+                                        SELECT 1 FROM mls_file_no ms_new
+                                        WHERE ms_new.full_file_number = fn.mlsfNo
+                                          AND (ms_new.is_deleted IS NULL OR ms_new.is_deleted = 0)
+                                          AND (
+                                              ms_new.file_option IS NULL
+                                              OR LTRIM(RTRIM(ms_new.file_option)) = ''
+                                              OR LOWER(LTRIM(RTRIM(ms_new.file_option))) <> 'temporary'
+                                          )
+                                    )
+                                )
                                 AND NOT EXISTS (
                                     SELECT 1 FROM mls_file_no ms
                                     WHERE ms.full_file_number = fn.mlsfNo
@@ -342,10 +353,10 @@ class FileNumberController extends Controller
                             ORDER BY fn.id ASC
                             ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
                         ) AS batch_first_file,
-                        fn.created_at AS sort_date
+                        COALESCE(mls.created_at, mls.commissioning_date, fn.created_at) AS sort_date
                     FROM fileNumber fn
                     OUTER APPLY (
-                        SELECT TOP 1 m.batch_no
+                        SELECT TOP 1 m.batch_no, m.created_at, m.commissioning_date
                         FROM mls_file_no m
                         WHERE m.full_file_number = fn.mlsfNo
                         ORDER BY m.id DESC
@@ -465,6 +476,7 @@ class FileNumberController extends Controller
                     mls.land_use                              AS derived_land_use,
                     mls.customer_type                         AS derived_customer_type,
                     mls.commissioning_date                    AS derived_commissioning_date,
+                    mls.created_at                            AS derived_created_at,
                     mls.source                                AS derived_source,
                     mls.source_instrument_capture_id          AS derived_source_instrument_capture_id,
                     COALESCE(fn.lga,         mls.lga)         AS derived_lga,
@@ -479,7 +491,7 @@ class FileNumberController extends Controller
                 FROM fileNumber fn
                 OUTER APPLY (
                     SELECT TOP 1
-                        m.batch_no, m.land_use, m.customer_type, m.commissioning_date,
+                        m.batch_no, m.land_use, m.customer_type, m.commissioning_date, m.created_at,
                         m.source, m.source_instrument_capture_id, m.lga, m.created_by, m.purpose_id
                     FROM mls_file_no m
                     WHERE m.full_file_number = fn.mlsfNo
@@ -600,7 +612,9 @@ class FileNumberController extends Controller
                     'batch_first_file' => trim($row->batch_first_file ?? ''),
                     'commissioning_date' => $row->derived_commissioning_date ? date('Y-m-d', strtotime($row->derived_commissioning_date)) : 'N/A',
                     'has_commissioning_sheet' => (bool) $row->has_commissioning_sheet,
-                    'created_at' => $row->created_at ? date('Y-m-d H:i:s', strtotime($row->created_at)) : 'N/A',
+                    'created_at' => ($row->derived_created_at ?? null)
+                        ? date('Y-m-d H:i:s', strtotime($row->derived_created_at))
+                        : ($row->created_at ? date('Y-m-d H:i:s', strtotime($row->created_at)) : 'N/A'),
                     'action' => $this->buildCaptureActionColumn($row, $row->SOURCE),
                 ];
             })->all();
@@ -2566,6 +2580,25 @@ class FileNumberController extends Controller
                 })
                 ->first();
 
+            // A file already present in fileNumber (e.g. legacy indexed files) has no
+            // mls_file_no.source of its own — but if it was later run through the Plot
+            // Extension flow, that's the real reason this document is being generated.
+            // Without this, source_derived stays empty and the "(Conversion)" label is
+            // wrongly displayed just because the file number happens to start with CON-.
+            if ($record && empty($record->source_derived)) {
+                $hasPlotExtension = DB::connection('sqlsrv')
+                    ->table('plot_extensions')
+                    ->where('original_file_no', $record->mlsfNo)
+                    ->where(function ($q) {
+                        $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                    })
+                    ->exists();
+
+                if ($hasPlotExtension) {
+                    $record->source_derived = 'Plot Extension';
+                }
+            }
+
             // Plot Extension fallback: retains the original file number but lives only in
             // the isolated plot_extensions table. Resolve the conversion document from it
             // when the original file row is absent from fileNumber (e.g. on production).
@@ -3097,4 +3130,3 @@ class FileNumberController extends Controller
     }
 
 }
-

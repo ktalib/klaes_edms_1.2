@@ -1684,8 +1684,16 @@ async function searchFile() {
               </div>` : ''}
             </div>` : ''}
             ${d.duplicate_flag ? `
-            <div style="margin-bottom:12px;background:${d.duplicate_flag.color}14;border:1px solid ${d.duplicate_flag.color}55;border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-              <span style="font-size:13px;font-weight:800;color:${d.duplicate_flag.color};"><i class="fas fa-copy" style="margin-right:5px;"></i>${esc(d.duplicate_flag.label)}</span>
+            <div style="margin-bottom:12px;background:${d.duplicate_flag.color}14;border:1px solid ${d.duplicate_flag.color}55;border-radius:12px;padding:10px 12px;">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="font-size:13px;font-weight:800;color:${d.duplicate_flag.color};"><i class="fas fa-copy" style="margin-right:5px;"></i>${esc(d.duplicate_flag.label)}</span>
+              </div>
+              ${(d.duplicate_flag.entries && d.duplicate_flag.entries.length > 1) ? `
+              <div style="margin-top:6px;padding-left:22px;display:flex;flex-direction:column;gap:2px;">
+                ${d.duplicate_flag.entries.map(e => `
+                <div style="font-size:11px;"><span style="font-weight:700;color:${d.duplicate_flag.color};">${esc(e.file_number)}</span> <span style="color:var(--muted);">${esc(e.file_title || '—')}</span></div>`).join('')}
+              </div>` : (d.duplicate_flag.file_title ? `
+              <div style="margin-top:4px;padding-left:22px;font-size:11px;color:var(--muted);">${esc(d.duplicate_flag.file_title)}</div>` : '')}
             </div>` : ''}
             ${holderBill}
             ${movementDetails}
