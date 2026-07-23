@@ -93,6 +93,99 @@ class LandRofoController extends Controller
         return view('land_rofos.index', compact('recommendations', 'PageTitle', 'landUses', 'stats', 'availableSerials', 'ossViewOnly'));
     }
 
+    public function export(Request $request)
+    {
+        $ossViewOnly = $request->query('view') === 'only';
+
+        $query = LandRecommendation::with('creator')
+            ->select([
+                'id', 'file_number', 'applicant_name', 'purpose_of_clause', 'location',
+                'plot_number', 'layout_plan_no', 'term', 'ground_rent', 'development_period',
+                'survey_fees', 'development_value', 'development_charge', 'type',
+                'rofo_status', 'status', 'approved_at', 'land_rofo_serial_no',
+                'created_at', 'created_by', 'land_use', 'land_use_id', 'purpose_id',
+            ]);
+
+        if ($ossViewOnly) {
+            $query->whereRaw("UPPER(ISNULL(type, '')) = 'OSS'");
+        } else {
+            $query->where(function ($q) {
+                $q->where('status', LandRecommendation::STATUS_APPROVED)
+                  ->orWhereRaw("UPPER(ISNULL(type, '')) = 'OSS'");
+            });
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('file_number', 'LIKE', "%{$search}%")
+                  ->orWhere('applicant_name', 'LIKE', "%{$search}%")
+                  ->orWhere('location', 'LIKE', "%{$search}%");
+            });
+        }
+
+        $columns = [
+            'S/N', 'File Number', 'Source', 'Applicant Name', 'Land Use / Purpose',
+            'Location', 'Plot No', 'Layout Plan', 'Term', 'Ground Rent', 'Dev. Period',
+            'Survey Fees', 'Dev. Value', 'Dev. Charge', 'Status', 'Approved On',
+            'Created By', 'Security Paper Code', 'Date Generated',
+        ];
+
+        $filename = ($ossViewOnly ? 'oss-rofo' : 'land-rofo') . '-export-' . now()->format('Y-m-d_His') . '.csv';
+
+        $headers = [
+            'Content-Type'        => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Pragma'              => 'no-cache',
+            'Cache-Control'       => 'no-store, no-cache, must-revalidate',
+        ];
+
+        $callback = function () use ($query, $columns, $ossViewOnly) {
+            $out = fopen('php://output', 'w');
+            // UTF-8 BOM so Excel renders the ₦ sign and other characters correctly
+            fwrite($out, "\xEF\xBB\xBF");
+            fputcsv($out, $columns);
+
+            $sn = 0;
+            $query->orderByDesc('created_at')->chunk(500, function ($rows) use ($out, &$sn) {
+                foreach ($rows as $rec) {
+                    $isOss = strtoupper($rec->type ?? '') === 'OSS';
+                    $sn++;
+
+                    $status = $isOss
+                        ? 'PRINT READY'
+                        : ($rec->rofo_status === LandRecommendation::ROFO_GENERATED ? 'APPROVED' : 'PENDING');
+
+                    fputcsv($out, [
+                        $sn,
+                        $rec->file_number,
+                        $isOss ? 'OSS' : 'Land',
+                        $rec->applicant_name,
+                        $rec->purpose_of_clause,
+                        $rec->location,
+                        $rec->plot_number,
+                        $rec->layout_plan_no,
+                        $rec->term,
+                        number_format((float) $rec->ground_rent, 2),
+                        $rec->development_period,
+                        number_format((float) $rec->survey_fees, 2),
+                        number_format((float) $rec->development_value, 2),
+                        number_format((float) $rec->development_charge, 2),
+                        $status,
+                        $isOss ? '' : ($rec->approved_at ? $rec->approved_at->format('Y-m-d h:i A') : 'N/A'),
+                        $rec->creator->name ?? 'System',
+                        $isOss ? 'N/A' : ($rec->land_rofo_serial_no ?: 'Unassigned'),
+                        $rec->created_at ? $rec->created_at->format('Y-m-d h:i A') : 'N/A',
+                    ]);
+                }
+            });
+
+            fclose($out);
+        };
+
+        return response()->streamDownload($callback, $filename, $headers);
+    }
+
     public function assignSecurityPaperCode(Request $request, $id)
     {
         $request->validate([

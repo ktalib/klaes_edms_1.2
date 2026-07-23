@@ -415,7 +415,14 @@ class FileLocationResolver
         // Override status when the file is confirmed missing — SCB already searched and
         // could not find it. This takes precedence over the resolver's inferred status
         // (IN_ARCHIVE, FILE_NOT_FOUND, etc.) so the UI shows "Missing File" consistently.
-        if ($merged['is_missing_file']) {
+        //
+        // EXCEPTION: a physically logged-out file (IN_TRANSIT) is ground truth — its
+        // location is known via the File Tracker, so it is NOT actually missing even if a
+        // stale missing_files record exists (e.g. it was reported missing, then found and
+        // logged out, or logged out first and reported missing by mistake). Keep the
+        // IN_TRANSIT outcome so Quick Search displays where the file is and the action
+        // routes the requester to that location, not the SCB/blind-request flow.
+        if ($merged['is_missing_file'] && $merged['status'] !== self::STATUS_IN_TRANSIT) {
             $merged['status'] = self::STATUS_MISSING_FILE;
             // Merge in the action meta for MISSING_FILE so next_action etc. are correct.
             $meta = $this->actionMetaFor(self::STATUS_MISSING_FILE);

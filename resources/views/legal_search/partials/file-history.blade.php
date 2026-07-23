@@ -319,6 +319,56 @@
                       clearSelectionBtn.classList.toggle('hidden', !searchedDisplay);
                     }
 
+                    // Prefill Land Use and backfill Grantee for the searched file.
+                    (function () {
+                      // Land Use → file number prefix mapping (direct, CON- conversion,
+                      // and -RC recertification forms all collapse to a base land use).
+                      function deriveLandUseFromFileNo(fno) {
+                        var map = { RES: 'RESIDENTIAL', COM: 'COMMERCIAL', IND: 'INDUSTRIAL', AG: 'AGRICULTURAL' };
+                        // Split on non-letters so years/serials drop out; skip CON/ST/RC etc.
+                        var tokens = String(fno || '').toUpperCase().split(/[^A-Z]+/).filter(Boolean);
+                        for (var i = 0; i < tokens.length; i++) {
+                          if (map[tokens[i]]) return map[tokens[i]];
+                        }
+                        return '';
+                      }
+                      function setSelectValue(sel, val) {
+                        if (!sel || !val) return false;
+                        var target = String(val).trim().toUpperCase();
+                        for (var i = 0; i < sel.options.length; i++) {
+                          var opt = sel.options[i];
+                          if (String(opt.value).toUpperCase() === target || String(opt.text).toUpperCase() === target) {
+                            sel.value = opt.value;
+                            sel.dispatchEvent(new Event('change', { bubbles: true }));
+                            sel.dispatchEvent(new Event('input', { bubbles: true }));
+                            return true;
+                          }
+                        }
+                        return false;
+                      }
+
+                      // Land Use: prefer the searched file's indexed land use; when null,
+                      // fall back to the value derived from the file number prefix.
+                      var landUseSelect = form.querySelector('#landUse');
+                      if (landUseSelect) {
+                        var lu = (window.__lsSelectedFileLandUse || '').trim();
+                        if (!lu || lu === '-') lu = deriveLandUseFromFileNo(searchedDisplay);
+                        setSelectValue(landUseSelect, lu);
+                      }
+
+                      // Grantee (second party) ← file title. Only when empty so an
+                      // operator edit is never clobbered on re-open.
+                      var fileTitle = (window.__lsSelectedFileTitle || '').trim();
+                      if (fileTitle) {
+                        var secondPartyInput = form.querySelector('[data-model="secondParty"]');
+                        if (secondPartyInput && !String(secondPartyInput.value || '').trim()) {
+                          secondPartyInput.value = fileTitle;
+                          secondPartyInput.dispatchEvent(new Event('input', { bubbles: true }));
+                          secondPartyInput.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                      }
+                    })();
+
                     // Keep LS modal fields minimal
                     var relatedSection = form.querySelector('[data-role="related-file-number-section"]') || form.querySelector('#related_file_number')?.closest('.mt-4');
                     if (relatedSection) relatedSection.classList.add('hidden');
@@ -652,7 +702,7 @@
                   <th class="cleanup-col hidden w-8"><input type="checkbox" class="select-all-checkbox" data-table="timeline-table"></th>
                   <th class="arrange-col hidden w-8">#</th>
                   <th style="min-width:40px;">S/N</th>
-                  <th style="min-width:140px;white-space:nowrap;">File No</th>
+                  <th class="file-no-col" style="min-width:140px;white-space:nowrap;">File No</th>
                   <th style="min-width:60px;">Source</th>
                   <th style="min-width:70px;">Weight</th>
                   <th style="min-width:120px;">Instrument/<br>Transaction Type</th>

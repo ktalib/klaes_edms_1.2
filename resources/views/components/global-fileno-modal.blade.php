@@ -667,7 +667,14 @@
                             <h4 class="font-medium text-sm">DCIV</h4>
                         </div>
                     </div>
-                    <div class="grid grid-cols-3 gap-3 mb-4">
+                    <div class="grid grid-cols-4 gap-3 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">File Type</label>
+                            <select id="mls-dciv-file-type" class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-teal-500">
+                                <option value="regular">Regular</option>
+                                <option value="temporary">Temporary File (T)</option>
+                            </select>
+                        </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Prefix</label>
                             <select id="mls-dciv-lpcc-prefix" class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-teal-500">

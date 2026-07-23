@@ -124,8 +124,15 @@ class InstrumentCaptureService
 
             $allocationPrimary = $mls ?: $kangis ?: $newKangis ?: $derivedOfficialFileno ?: $tempFileno;
 
-            // If caller already supplied prop_id (e.g. sourced record), honor it.
-            $propId = !empty($data['prop_id']) ? $data['prop_id'] : null;
+            // PropID_Master (via PropertyIdAllocationService) is authoritative for prop_id.
+            // A client-supplied prop_id (a sourced OP record, an OP->ToT mint) is honored
+            // ONLY when it is a real REGISTERED parcel id (exists in PropID_Master); an
+            // unvalidated/legacy value is discarded and re-resolved below. Honouring the raw
+            // client value unconditionally is what let divergent 8-10 digit prop_ids reach
+            // deed_registrations during Feb-May 2026.
+            $propId = (!empty($data['prop_id']) && $this->isRegisteredPropId($data['prop_id']))
+                ? $data['prop_id']
+                : null;
             try {
                 // Determine if we have enough info for PropID
                 if (empty($propId) && $allocationPrimary) {
@@ -857,5 +864,26 @@ class InstrumentCaptureService
         }
 
         return $this->instrumentCaptureHasRegTime;
+    }
+
+    /**
+     * Is the given value a REAL, registered canonical parcel id (a PropID_Master.prop_id)?
+     * Canonical prop_ids are small positive ints (PropID_Master.prop_id is a 32-bit int).
+     * A non-numeric or over-long value (e.g. the Feb-May 2026 divergent 8-10 digit ids that
+     * are not in PropID_Master) is rejected without querying, avoiding int-overflow on the
+     * comparison. Used to decide whether a client-supplied prop_id may be trusted.
+     */
+    private function isRegisteredPropId($propId): bool
+    {
+        $pid = trim((string) $propId);
+        // >9 digits cannot be a canonical id and would overflow the int column comparison.
+        if ($pid === '' || !ctype_digit($pid) || strlen($pid) > 9 || (int) $pid <= 0) {
+            return false;
+        }
+
+        return DB::connection('sqlsrv')
+            ->table('PropID_Master')
+            ->where('prop_id', (int) $pid)
+            ->exists();
     }
 }

@@ -1410,6 +1410,9 @@ Route::middleware(['auth', 'XSS'])->group(function () {
 
 Route::middleware(['auth', 'XSS'])->group(function () {
     Route::get('/propid-master', [PropIdMasterController::class, 'index'])->name('propid-master.index');
+    // Legal Search "Drop": detach records from their prop_id group and allocate a
+    // brand-new prop_id to each (replaces the old orphan/null behaviour).
+    Route::post('/propid-master/drop-reallocate', [PropIdMasterController::class, 'dropReallocate'])->name('propid-master.drop-reallocate');
 });
 
 // PropertyRecord routes (for new property record management)

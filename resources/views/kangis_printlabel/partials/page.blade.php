@@ -129,6 +129,7 @@
                                         class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
                                     >
                                         <option value="">Select Prefix</option>
+                                        <option value="KN">KN</option>
                                         <option value="KNML">KNML</option>
                                         <option value="MLKN">MLKN</option>
                                         <option value="KNGP">KNGP</option>
@@ -568,41 +569,12 @@
             </div>
 
             {{-- ====== PREVIEW & PRINT TAB ====== --}}
-            <div id="preview-tab" class="tab-content mt-6">
-                <div class="bg-white rounded-lg border">
-                    <div class="p-6 border-b">
-                        <div class="flex justify-between items-center">
-                            <div>
-                                <h3 class="text-lg font-semibold">Preview Generated Labels</h3>
-                                <p class="text-sm text-gray-600">
-                                    Preview generated labels before printing
-                                </p>
-                            </div>
-                            <div class="flex gap-2">
-                                <button
-                                    id="backToSettingsBtn"
-                                    class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
-                                >
-                                    Back to Settings
-                                </button>
-                                <button
-                                    id="printFromPreviewBtn"
-                                    class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
-                                >
-                                    Print Labels
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="p-6">
-                        <div class="bg-gray-100 p-4 rounded-lg">
-                            <div id="labelPreview" class="grid grid-cols-3 gap-4">
-                                {{-- Preview will be rendered here --}}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            {{-- Preview & Print tab. The markup lives in partials/preview.blade.php
+                 because the print-label JS drives its element ids (previewContent,
+                 previewDescription, printSummary, rackStatsContent, finalPrintBtn).
+                 The previous inline version used mismatched ids (labelPreview,
+                 printFromPreviewBtn), so the preview never rendered. --}}
+            @include('kangis_printlabel.partials.preview')
         </div>
     </div>
 </div>

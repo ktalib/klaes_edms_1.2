@@ -62,10 +62,15 @@ class ConversionPlanningRecommendationController extends Controller
         $landUseTypes = Cache::remember('land_use_types_all', 3600, function () {
             return LandUseType::orderBy('name')->get(['id', 'name']);
         });
-        $inspectors = Cache::remember('pp_inspectors_all', 1800, function () {
+        $inspectorColumns = ['id', 'name', 'rank'];
+        if (Schema::connection('sqlsrv')->hasColumn('pp_inspectors', 'in_sectional_titling')) {
+            $inspectorColumns[] = 'in_physical_planning';
+            $inspectorColumns[] = 'in_sectional_titling';
+        }
+        $inspectors = Cache::remember('pp_inspectors_all', 1800, function () use ($inspectorColumns) {
             return DB::connection('sqlsrv')
                 ->table('pp_inspectors')
-                ->select('id', 'name', 'rank')
+                ->select($inspectorColumns)
                 ->orderBy('name')
                 ->get();
         });

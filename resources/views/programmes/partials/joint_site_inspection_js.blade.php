@@ -106,6 +106,44 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         toggleConversionUi(jsiContext.isConversion);
+        filterInspectorOptionsByDepartment(jsiContext.isConversion);
+    }
+
+    // Restrict the Inspection Officer dropdown to the department that matches the
+    // active JSI context: Sectional Titling for ST Unit, Physical Planning for Conversion.
+    function filterInspectorOptionsByDepartment(isConversion) {
+        const officerSelect = document.getElementById('jointInspectionOfficerSelect');
+        if (!officerSelect) {
+            return;
+        }
+
+        const wantAttr = isConversion ? 'deptPp' : 'deptSt';
+        let selectedHidden = false;
+
+        Array.from(officerSelect.options).forEach(option => {
+            // Always keep the empty "Select inspector" placeholder available.
+            if (!option.value) {
+                option.hidden = false;
+                option.disabled = false;
+                return;
+            }
+
+            const belongs = String(option.dataset[wantAttr] || '') === '1';
+            option.hidden = !belongs;
+            option.disabled = !belongs;
+
+            if (!belongs && option.selected) {
+                selectedHidden = true;
+            }
+        });
+
+        if (selectedHidden) {
+            officerSelect.value = '';
+        }
+
+        if (typeof syncInspectorRankDisplay === 'function') {
+            syncInspectorRankDisplay();
+        }
     }
 
     function applyModalHeaderStyle(isConversion) {

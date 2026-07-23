@@ -435,7 +435,7 @@
     </div>
 
     <div class="card panel">
-      <div class="panel-title"><i class="fas fa-chart-line"></i> Weekly Activity</div>
+      <div class="panel-title"><i class="fas fa-chart-line"></i> Daily Activity</div>
       <canvas id="weeklyChart"></canvas>
     </div>
 
@@ -643,7 +643,7 @@
   <!-- ═══ SCB MONITOR — FILE REQUESTS SCREEN ═══ -->
   <div id="requests-screen" class="screen">
     <div class="page-header" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-end;">
-      <div><h1>File Request-SCB View</h1><p>Physical searches & FSR History</p></div>
+      <div><h1 id="frScreenTitle">{{ (($user->fr_permissions ?? '') === 'SCB') ? 'File Request-SCB View' : 'File Request' }}</h1><p>Physical searches & FSR History</p></div>
       <button class="icon-circle" id="frRefreshBtn" title="Refresh"><i class="fas fa-rotate-right"></i></button>
     </div>
 
@@ -952,8 +952,8 @@ async function renderDashboard() {
     // Recent Activity: SCB Monitors see their 5 most recent File Search Requests;
     // everyone else gets an empty placeholder (file-tracker activity is not shown here).
     renderRecentActivity();
-    const wl = s.weekly_labels||['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-    const wd = s.weekly_activity||[0,0,0,0,0,0,0];
+    const wl = s.daily_labels || s.weekly_labels || ['12am','3am','6am','9am','12pm','3pm','6pm','9pm'];
+    const wd = s.daily_activity || s.weekly_activity || [0,0,0,0,0,0,0,0];
     const cc = chartColors();
     if (weeklyChart) weeklyChart.destroy();
     weeklyChart = new Chart(document.getElementById('weeklyChart').getContext('2d'), { type:'line', data:{ labels:wl, datasets:[{ label:'Files', data:wd, borderColor:'#8b5cf6', backgroundColor:'rgba(139,92,246,0.12)', borderWidth:2.5, fill:true, tension:0.4, pointBackgroundColor:'#8b5cf6', pointRadius:4 }]}, options:{ responsive:true, maintainAspectRatio:true, plugins:{ legend:{ display:false }}, scales:{ y:{ beginAtZero:true, grid:{ color:cc.grid }, ticks:{ color:cc.tick, font:{ size:9 }}}, x:{ grid:{ display:false }, ticks:{ color:cc.tick, font:{ size:9 }}}}}});
@@ -1270,7 +1270,13 @@ function setActiveTab(tabId) {
   if (tabId==='files')     $('#fileSearchSelect').select2('open');
   if (tabId==='scanner')   updateScanStatus('Click Start to begin scanning','info');
   if (tabId==='create')    initCreateForm();
-  if (tabId==='requests' || tabId==='requests-scb') { setFrView(frView); frView === 'open' ? loadFsrLog() : loadFileRequests(); }
+  if (tabId==='requests' || tabId==='requests-scb') {
+    // Compact/SCB view (all SCB Monitors, plus super admins on the "SCB View" tab)
+    // reads as "File Request-SCB View"; the full FSR card view reads "File Request".
+    const frTitle = document.getElementById('frScreenTitle');
+    if (frTitle) frTitle.textContent = frCompact ? 'File Request-SCB View' : 'File Request';
+    setFrView(frView); frView === 'open' ? loadFsrLog() : loadFileRequests();
+  }
   if (tabId==='myreq')     loadMyRequests();
 }
 

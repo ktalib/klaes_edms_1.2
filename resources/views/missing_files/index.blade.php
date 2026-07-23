@@ -102,6 +102,11 @@
                                         <i data-lucide="alert-circle" class="h-3.5 w-3.5 shrink-0 mt-px"></i>
                                         <span id="mf-file-no-error-text">This file has already been recorded as missing.</span>
                                     </p>
+                                    {{-- In-transit notice (file is logged out in the File Tracker, not truly lost) --}}
+                                    <div id="mf-transit-notice" class="mt-2 hidden items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                        <i data-lucide="truck" class="h-4 w-4 shrink-0 mt-px text-amber-600"></i>
+                                        <span><span class="font-semibold">Currently in-transit.</span> <span id="mf-transit-notice-text">This file is logged out in the File Tracker.</span></span>
+                                    </div>
                                 </div>
                                 {{-- Archive / Registry --}}
                                 <div class="flex flex-col">

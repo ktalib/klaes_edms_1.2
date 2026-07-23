@@ -170,6 +170,12 @@
       line-height: 1.2;
     }
 
+    /* Data cells center vertically so single-line values (S/N, dates) sit on the row's
+       midline instead of floating at the top of a taller wrapped row. Headers stay top. */
+    .transaction-table td {
+      vertical-align: middle;
+    }
+
     /* DYNAMIC FONT REDUCTION CLASSES FOR WRAPPING ROWS */
     .transaction-table tr.row-compact td {
       font-size: 8.5px !important;
@@ -317,7 +323,7 @@
       top: 50%;
       transform: translate(-50%, -50%) rotate(-30deg);
       font-size: 110px;
-      color: rgba(220, 38, 38, 0.28);
+      color: rgba(220, 38, 38, 0.14);
       letter-spacing: 4px;
       text-transform: uppercase;
       font-weight: 900;
@@ -325,6 +331,12 @@
       pointer-events: none;
       z-index: 0;
       display: none;
+    }
+
+    /* "ORIGINAL" and "FILE COPY" text watermarks are both red (base .watermark-copy
+       color); the .is-original class is kept for the JS toggle but adds no color change. */
+    .watermark-copy.is-original {
+      color: rgba(220, 38, 38, 0.14);
     }
 
     .dynamic-comment-inline {
@@ -550,7 +562,7 @@
           <thead>
             <tr class="header-row">
               <th style="width: 3%">S/N</th>
-              <th style="width: 11%">File No</th>
+              <th style="width: 11%" class="file-no-col">File No</th>
               <th style="width: 10%; white-space: nowrap;">Instrument/<br>Transaction Type</th>
               <th style="width: 11%">Party 1</th>
               <th style="width: 11%">Party 2</th>
@@ -669,82 +681,7 @@
         caveat: "Nil",
         comments: "Initial Allocation granted."
       } ,
-      {
-        sn: 2,
-        file_no: "KN/RES/2018/1042",
-        instrument_type: "Deed of Assignment",
-        grantor: "Ibrahim Ahmad Suleiman",
-        grantee: "Kabiru Salisu & Co.",
-        party_3: "-",
-        party_4: "-",
-        transaction_date: "04/05/2005",
-        reg_time: "02:30 PM",
-        reg_date: "10/05/2005",
-        reg_no: "45/45/2005 B",
-        caveat: "Nil",
-        comments: "Duly stamped and registered."
-      },
-      {
-        sn: 3,
-        file_no: "KN/RES/2018/1042",
-        instrument_type: "Tripartite Mortgage",
-        grantor: "Kabiru Salisu & Co.",
-        grantee: "First Bank Nigeria PLC",
-        party_3: "Kano Land Bureau",
-        party_4: "-",
-        transaction_date: "18/11/2012",
-        reg_time: "11:00 AM",
-        reg_date: "22/11/2012",
-        reg_no: "88/88/2012 C",
-        caveat: "Active",
-        comments: "Mortgage facility registered."
-      },
-      {
-        sn: 4,
-        file_no: "KN/RES/2018/1042",
-        instrument_type: "Deed of Release",
-        grantor: "First Bank Nigeria PLC",
-        grantee: "Kabiru Salisu & Co.",
-        party_3: "-",
-        party_4: "-",
-        transaction_date: "14/02/2019",
-        reg_time: "09:45 AM",
-        reg_date: "20/02/2019",
-        reg_no: "12/12/2019 D",
-        caveat: "Cleared",
-        comments: "Mortgage fully discharged."
-      },
-      {
-        sn: 5,
-        file_no: "KN/RES/2018/1042",
-        instrument_type: "Deed of Assignment",
-        grantor: "Kabiru Salisu & Co.",
-        grantee: "Abdullahi Mukhtar & Sons Ltd",
-        party_3: "-",
-        party_4: "-",
-        transaction_date: "10/10/2023",
-        reg_time: "03:15 PM",
-        reg_date: "18/10/2023",
-        reg_no: "101/101/2023 E",
-        caveat: "Nil",
-        comments: "Current registered holder."
-      },
-      {
-        sn: 6,
-        file_no: "KN/RES/2018/1042",
-        instrument_type: "Deed of Release",
-        grantor: "First Bank Nigeria PLC",
-        grantee: "Kabiru Salisu & Co.",
-        party_3: "-",
-        party_4: "-",
-        transaction_date: "14/02/2019",
-        reg_time: "09:45 AM",
-        reg_date: "20/02/2019",
-        reg_no: "12/12/2019 D",
-        caveat: "Cleared",
-        comments: "Mortgage fully discharged."
-      } ,
-       
+   
 
 
       
@@ -758,7 +695,7 @@
       const rowHtml = (row) => `
         <tr>
           <td>${row.sn}</td>
-          <td>${row.file_no || '-'}</td>
+          <td class="file-no-col">${row.file_no || '-'}</td>
           <td>${row.instrument_type}</td>
           <td>${row.grantor}</td>
           <td>${row.grantee}</td>
@@ -777,6 +714,16 @@
       const hasP4 = rows.some(r => r.party_4 && r.party_4 !== '-' && String(r.party_4).trim() !== '');
       if (!hasP3) document.querySelectorAll('.party-3-col').forEach(el => el.style.display = 'none');
       if (!hasP4) document.querySelectorAll('.party-4-col').forEach(el => el.style.display = 'none');
+
+      // When every row belongs to the same (searched) file — no related/associated
+      // file numbers — the File No column is pure repetition, so hide it. It returns
+      // the moment any row carries a distinct file number.
+      const _normFN = (s) => String(s || '').toUpperCase().replace(/[\s\-_=\/]+/g, '');
+      const _distinctFileNos = new Set();
+      rows.forEach(r => { const v = _normFN(r.file_no); if (v) _distinctFileNos.add(v); });
+      if (_distinctFileNos.size <= 1) {
+        document.querySelectorAll('.file-no-col').forEach(el => el.style.display = 'none');
+      }
     }
 
     let __pprDataReady = false, __pprWmReady = false, __pprPrinted = false;
@@ -852,7 +799,9 @@
     function runLayoutAdjustments() {
       autoFitTableRows();
       checkMultiPageStatus();
-      requestAnimationFrame(() => { fillSheetRows(); });
+      // NOTE: fillSheetRows() row-stretching intentionally disabled — with only a few
+      // transactions it inflated each row to fill the whole sheet, leaving oversized rows.
+      // Rows now keep their natural (compact) height, matching PAY-PER-SEARCH.htm.backup.
     }
 
     (function () {
@@ -1053,6 +1002,117 @@
           __pprDataReady = true;
           __pprMaybePrint();
         });
+    })();
+
+    // Watermark: first print = coat of arms, subsequent prints = FILE COPY.
+    // (Restored from PAY-PER-SEARCH.htm.backup — the rewrite dropped it, so the
+    // watermark was never resolved AND __pprWmReady never flipped, stalling auto-print.)
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      const fileNo = params.get('file_number') || '';
+      const docType = 'Legal Search Pay-Per-Search';
+      const wmImg = document.getElementById('watermark-img');
+      const wmCopy = document.getElementById('wm-copy');
+      let isFileCopy = false;
+
+      function showOriginal() {
+        // Coat-of-arms backdrop + an "ORIGINAL" text watermark, so the Print Manager
+        // choice is always visible even if the external emblem image fails to load.
+        if (wmImg) wmImg.style.display = 'block';
+        if (wmCopy) {
+          wmCopy.textContent = 'ORIGINAL';
+          wmCopy.classList.add('is-original');
+          wmCopy.style.display = 'block';
+        }
+      }
+
+      function showFileCopy() {
+        if (wmImg) wmImg.style.display = 'none';
+        if (wmCopy) {
+          wmCopy.textContent = 'FILE COPY';
+          wmCopy.classList.remove('is-original');
+          wmCopy.style.display = 'block';
+        }
+      }
+
+      // Watermark decided — clear the other half of the auto-print gate.
+      const wmDone = () => { __pprWmReady = true; __pprMaybePrint(); };
+
+      // Explicit choice from the Print Manager ("Print Original" / "Print File
+      // Copy") forces the watermark; otherwise fall back to auto-detect from
+      // the print history (first print = Original, reprints = FILE COPY).
+      const forcedType = (params.get('status') || '').toLowerCase();
+
+      if (forcedType === 'copy' || forcedType === 'original') {
+        isFileCopy = (forcedType === 'copy');
+        if (isFileCopy) { showFileCopy(); } else { showOriginal(); }
+        wmDone();
+      } else if (fileNo) {
+        // Check print status
+        fetch('/print-manager/status?' + new URLSearchParams({
+          reference_number: fileNo,
+          document_type: docType
+        }), { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+          .then(r => r.json())
+          .then(data => {
+            if (data && data.success && data.status && data.status.original > 0) {
+              isFileCopy = true;
+              showFileCopy();
+            } else {
+              showOriginal();
+            }
+          })
+          .catch(() => showOriginal())
+          .finally(wmDone);
+      } else {
+        showOriginal();
+        wmDone();
+      }
+
+      window.addEventListener('afterprint', function () {
+        if (!fileNo) return;
+        // Log the print. keepalive:true lets the request complete even if the
+        // user closes/navigates this tab immediately after printing — the exact
+        // reprint workflow (print -> close -> reopen). Without it the browser
+        // aborts the in-flight request, the original is never recorded, and the
+        // next open keeps showing the "Original" watermark instead of FILE COPY.
+        const payload = JSON.stringify({
+          reference_number: fileNo,
+          document_type: docType,
+          status: isFileCopy ? 'Copy' : 'Original',
+          print_type: 'Individual'
+        });
+        try {
+          fetch('/print-manager/log', {
+            method: 'POST',
+            credentials: 'same-origin',
+            keepalive: true,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: payload
+          }).catch(() => {
+            // Last-resort fallback if fetch is rejected outright.
+            if (navigator.sendBeacon) {
+              navigator.sendBeacon('/print-manager/log', new Blob([payload], { type: 'application/json' }));
+            }
+          });
+        } catch (_e) {
+          if (navigator.sendBeacon) {
+            navigator.sendBeacon('/print-manager/log', new Blob([payload], { type: 'application/json' }));
+          }
+        }
+
+        // When the operator explicitly chose "Print Original" / "Print File Copy",
+        // the watermark must stay exactly as chosen — never auto-flip based on a
+        // previous print. Only the auto-detect flow (no forced type) switches to
+        // FILE COPY after the first print.
+        if (!forcedType) {
+          isFileCopy = true;
+          showFileCopy();
+        }
+      });
     })();
   </script>
 </body>

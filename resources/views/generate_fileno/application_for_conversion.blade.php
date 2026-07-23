@@ -447,7 +447,7 @@
             <!-- 3. Ref & Date Row -->
             <div class="meta-line">
                 <div>
-                    Our Ref: <span class="underline-box" style="min-width: 320px;">{{ $record->mlsfNo ?? '' }}</span>
+                    Our Ref: <span class="underline-box" style="min-width: 320px;">{{ $record->mlsfNo ?? '' }}@if(!empty($record->source_derived)) ({{ $record->source_derived }})@endif</span>
                 </div>
                 <div>
                     Date: <span class="underline-box" style="min-width: 150px;">{{ date('d/m/Y') }}</span>
@@ -476,7 +476,7 @@
                 has applied to the Ministry for Statutory Right of Occupancy over Plot No.
                 <span class="data-field" style="min-width: 80px;">{{ $record->plot_no ?? '..............' }}</span>
                 at <span class="data-field"
-                    style="min-width: 250px;">{{ $record->location ?? '................................' }}</span>
+                    style="min-width: 250px;">{{ $record->lga_derived ?? $record->lga ?? '................................' }}</span>
                 You are accordingly requested to verify the genuineness of this customary claim and further confirms on how
                 the property was acquired:
                 <ul class="checklist">

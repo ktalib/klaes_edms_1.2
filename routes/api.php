@@ -114,6 +114,7 @@ Route::get('/file-records', [FileIndexingController::class, 'getAllRecords']);
 Route::get('/file-records/{id}', [FileIndexingController::class, 'getRecord']);
 Route::post('/file-records/search', [FileIndexingController::class, 'searchRecords']);
 Route::get('/file-indexings/lookup-by-number', [FileIndexingController::class, 'lookupByFileNumber']);
+Route::get('/file-indexings/related-indexed-details', [FileIndexingController::class, 'relatedIndexedDetails']);
 Route::get('/file-indexings/scan-count', [FileIndexingController::class, 'scanCountByFileNumber']);
 Route::get('/track-file-archive/label-metadata', [TrackFileArchiveController::class, 'labelMetadata'])
     ->name('api.track-file-archive.label-metadata');

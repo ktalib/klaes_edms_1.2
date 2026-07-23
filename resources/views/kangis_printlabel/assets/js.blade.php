@@ -40,6 +40,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // KANGIS-specific
         kangisPrefix: '',
         kangisBatchNo: '',
+        // Manual Registry Override: files loaded by typed file numbers (no prefix).
+        manualOverrideMode: false,
     };
 
     // ─── Dynamic API endpoints ───
@@ -355,10 +357,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ─── KANGIS file loading ───
     async function loadKangisFiles() {
-        var prefix  = state.kangisPrefix;
-        if (!prefix) { showError('Please select a KANGIS prefix.'); return; }
-
-        // If manual override is enabled, post the entered file numbers to the manualFetch API
+        // Manual Registry Override bypasses the prefix requirement entirely — it
+        // resolves the entered KANGIS file numbers directly against kangis_grouping
+        // (pulling each file's tracking_id), so no prefix/batch selection is needed.
         var useManual = registryOverrideToggle && registryOverrideToggle.checked;
 
         if (useManual) {
@@ -382,6 +383,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 resetPreparedState();
                 state.loadedFromBatch = false;
+                state.manualOverrideMode = true;
 
                 var files = (data.data&&Array.isArray(data.data.files)) ? data.data.files : [];
                 state.availableFiles = files;
@@ -404,10 +406,13 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // Default behaviour: load by prefix/batch
+        var prefix = state.kangisPrefix;
+        if (!prefix) { showError('Please select a KANGIS prefix.'); return; }
+
         showLoading('Loading KANGIS files...');
         try {
-            var params = new URLSearchParams({ 
-                prefix: prefix, 
+            var params = new URLSearchParams({
+                prefix: prefix,
                 registry_batch_no: state.kangisBatchNo || '', 
                 search: state.searchTerm || '' 
             });
@@ -420,6 +425,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             resetPreparedState();
             state.loadedFromBatch = true;
+            state.manualOverrideMode = false;
 
             var files = (data.data&&Array.isArray(data.data.files)) ? data.data.files : [];
             state.availableFiles = files;
@@ -449,7 +455,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!selected.length) throw new Error('Please select at least one file before printing.');
 
         var payload = {
-            prefix: state.kangisPrefix,
+            prefix: state.kangisPrefix || null,
+            manual_override: !!state.manualOverrideMode,
             registry_batch_no: state.kangisBatchNo || null,
             file_ids: selected.map(function(r){ return Number(r.id); }),
             full_label: state.fullLabel || updateFullLabelDisplay(),

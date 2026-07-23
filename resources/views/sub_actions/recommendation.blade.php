@@ -1229,9 +1229,10 @@
                                                     if ($mainAppId > 0) {
                                                         $buyerListData = DB::connection('sqlsrv')
                                                             ->table('buyer_list as bl')
-                                                            ->leftJoin('st_unit_measurements as sum', function($join) use ($mainAppId) {
-                                                                $join->on('bl.application_id', '=', 'sum.application_id')
-                                                                     ->on('bl.unit_no', '=', 'sum.unit_no');
+                                                            ->leftJoin('st_unit_measurements as sum', function($join) {
+                                                                // Join on buyer FK, not unit_no (unit numbers repeat and fan out).
+                                                                $join->on('bl.id', '=', 'sum.buyer_id')
+                                                                     ->on('bl.application_id', '=', 'sum.application_id');
                                                             })
                                                             ->where('bl.application_id', $mainAppId)
                                                             ->where('bl.unit_no', $application->unit_number)

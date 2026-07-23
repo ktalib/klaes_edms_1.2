@@ -167,15 +167,16 @@
                                 try {
                                     $jsiUnitMeasurements = DB::connection('sqlsrv')
                                         ->table('buyer_list as bl')
-                                        ->leftJoin('st_unit_measurements as sum', function($join) use ($application) {
-                                            $join->on('bl.application_id', '=', 'sum.application_id')
-                                                 ->on('bl.unit_no', '=', 'sum.unit_no');
+                                        ->leftJoin('st_unit_measurements as sum', function($join) {
+                                            // Join on buyer FK, not unit_no — unit numbers repeat and fan out the rows.
+                                            $join->on('bl.id', '=', 'sum.buyer_id')
+                                                 ->on('bl.application_id', '=', 'sum.application_id');
                                         })
                                         ->where('bl.application_id', $application->id)
                                         ->select(
                                             'bl.unit_no',
                                             'bl.buyer_name',
-                                            'bl.buyer_title', 
+                                            'bl.buyer_title',
                                             'sum.measurement as measurement',
                                             'sum.dimension as measurement_dimension'
                                         )

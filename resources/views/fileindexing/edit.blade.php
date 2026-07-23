@@ -768,6 +768,57 @@
                                 </div>
                             </div>
 
+                            <!-- Has New KANGIS FileNo (KN Series) -->
+                            @php
+                                $existingNewKangis = old('new_kangis_file_no', $fileIndexing->new_kangis_file_no ?? '');
+                                $hasNewKangisChecked = trim((string) $existingNewKangis) !== '';
+                            @endphp
+                            <div class="form-section-clean">
+                                <div class="form-section-header">
+                                    <i data-lucide="file-badge" class="h-5 w-5 text-gray-500"></i>
+                                    New KANGIS FileNo
+                                </div>
+
+                                <div class="flex items-center gap-2">
+                                    <input type="checkbox" id="has-new-kangis-fileno" name="has_new_kangis_fileno" value="1"
+                                        {{ $hasNewKangisChecked ? 'checked' : '' }}
+                                        class="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500">
+                                    <label for="has-new-kangis-fileno" class="text-sm font-medium text-gray-700 cursor-pointer">
+                                        Has New KANGIS FileNo <span class="text-gray-400 font-normal">(KN Series)</span>
+                                    </label>
+                                </div>
+
+                                <div id="has-new-kangis-fields" class="{{ $hasNewKangisChecked ? '' : 'hidden' }} mt-3">
+                                    <label class="form-label-clean">
+                                        New KANGIS File No <span class="text-red-500">*</span>
+                                    </label>
+                                    <div class="flex gap-2">
+                                        <input type="text" id="new_kangis_file_no_display" readonly
+                                            value="{{ $existingNewKangis }}"
+                                            class="flex-grow form-input-clean font-mono font-bold text-purple-900 bg-purple-50 uppercase cursor-pointer"
+                                            placeholder="Click Select to choose a New KANGIS file">
+                                        <button type="button" id="new_kangis_file_no_select_btn"
+                                            class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700"
+                                            style="white-space: nowrap;">
+                                            Select
+                                        </button>
+                                        <button type="button" id="new_kangis_file_no_clear_btn"
+                                            class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md text-gray-700 bg-white border border-gray-200 hover:bg-gray-50"
+                                            style="white-space: nowrap;">
+                                            Clear
+                                        </button>
+                                    </div>
+                                    <input type="hidden" name="new_kangis_file_no" id="new_kangis_file_no_hidden" value="{{ $existingNewKangis }}">
+                                    <p id="has-new-kangis-error" class="hidden mt-1.5 text-xs text-red-600">
+                                        Please select the New KANGIS File No.
+                                    </p>
+                                    <p id="kn-fileno-status" class="mt-1 text-xs {{ $hasNewKangisChecked ? 'text-purple-700 font-semibold' : 'text-gray-500' }}">{{ $hasNewKangisChecked ? '✓ Selected: ' . $existingNewKangis : '' }}</p>
+                                    <p class="mt-1 text-xs text-gray-400">
+                                        On update this KN file is indexed on the fly — a KANGIS Registry record is created if it doesn't exist yet, or updated in place if it does (never a duplicate).
+                                    </p>
+                                </div>
+                            </div>
+
                             <!-- Location & Administrative Section -->
                             <div class="form-section-clean">
                                 <div class="form-section-header">
@@ -1461,6 +1512,61 @@
                 hasRofoCheckbox.addEventListener('change', toggleRofoFields);
             }
 
+            // Has New KANGIS FileNo (KN Series) — pick via the global file-number modal.
+            // On update the controller indexes the KN file on the fly: it creates the
+            // KANGIS Registry record if missing, or updates the existing one (never a dup).
+            (function initEditNewKangis() {
+                const chk = document.getElementById('has-new-kangis-fileno');
+                const fields = document.getElementById('has-new-kangis-fields');
+                const knDisplay = document.getElementById('new_kangis_file_no_display');
+                const knHidden = document.getElementById('new_kangis_file_no_hidden');
+                const knStatus = document.getElementById('kn-fileno-status');
+                const errorEl = document.getElementById('has-new-kangis-error');
+                const selectBtn = document.getElementById('new_kangis_file_no_select_btn');
+                const clearBtn = document.getElementById('new_kangis_file_no_clear_btn');
+                if (!chk || !fields || !knDisplay || !knHidden) return;
+
+                function clearKn() {
+                    knDisplay.value = '';
+                    knHidden.value = '';
+                    if (knStatus) { knStatus.textContent = ''; knStatus.className = 'mt-1 text-xs text-gray-500'; }
+                    if (errorEl) errorEl.classList.add('hidden');
+                    knDisplay.classList.remove('border-red-300');
+                }
+
+                chk.addEventListener('change', function () {
+                    if (this.checked) {
+                        fields.classList.remove('hidden');
+                        if (window.lucide && lucide.createIcons) lucide.createIcons();
+                    } else {
+                        fields.classList.add('hidden');
+                        clearKn();
+                    }
+                });
+
+                function openPicker() {
+                    if (!window.GlobalFileNoModal) { console.warn('GlobalFileNoModal not available'); return; }
+                    GlobalFileNoModal.open({
+                        initialTab: 'newkangis',
+                        // Do NOT overwrite the main file_number — this is a separate KN reference.
+                        autoPopulateGenericFields: false,
+                        callback: function (data) {
+                            if (!data || !data.fileNumber) return;
+                            const val = String(data.fileNumber).trim();
+                            knDisplay.value = val;
+                            knHidden.value = val;
+                            knDisplay.classList.remove('border-red-300');
+                            if (errorEl) errorEl.classList.add('hidden');
+                            if (knStatus) { knStatus.textContent = '✓ Selected: ' + val; knStatus.className = 'mt-1 text-xs text-purple-700 font-semibold'; }
+                        }
+                    });
+                }
+
+                if (selectBtn) selectBtn.addEventListener('click', openPicker);
+                knDisplay.addEventListener('click', openPicker);
+                if (clearBtn) clearBtn.addEventListener('click', clearKn);
+            })();
+
             // Form validation
             function validateForm() {
                 if (!form) {
@@ -1518,6 +1624,16 @@
                 // Validate form
                 if (!validateForm()) {
                     showAlert('Please fill in all required fields.', 'error');
+                    return;
+                }
+
+                // Has New KANGIS FileNo ticked but no KN file chosen → block submit.
+                const nkChk = document.getElementById('has-new-kangis-fileno');
+                const nkHidden = document.getElementById('new_kangis_file_no_hidden');
+                if (nkChk && nkChk.checked && !(nkHidden && nkHidden.value.trim())) {
+                    showAlert('Please select the New KANGIS File No.', 'error');
+                    document.getElementById('has-new-kangis-error')?.classList.remove('hidden');
+                    document.getElementById('new_kangis_file_no_display')?.classList.add('border-red-300');
                     return;
                 }
 
@@ -2472,6 +2588,32 @@
                 updateOpenBtnVisibility();
             }
 
+            // When a related file number is selected, if that file is indexed, pull its
+            // property details (title, location, plot, TP, LPKN) into the cache so the
+            // Related Details modal prefills. Only fills blanks — never clobbers edits.
+            function backfillIndexedDetails(fileNo) {
+                const key = String(fileNo || '').trim();
+                if (!key) return;
+                fetch('/api/file-indexings/related-indexed-details?file_number=' + encodeURIComponent(key), {
+                    headers: { 'Accept': 'application/json' }
+                })
+                    .then(function (res) { return res.ok ? res.json() : null; })
+                    .then(function (payload) {
+                        if (!payload || !payload.indexed || !payload.data) return;
+                        const entry = detailsCache.get(key) || {};
+                        EDITABLE_FIELDS.forEach(function (field) {
+                            const incoming = payload.data[field];
+                            if ((entry[field] == null || String(entry[field]).trim() === '') &&
+                                incoming != null && String(incoming).trim() !== '') {
+                                entry[field] = String(incoming);
+                            }
+                        });
+                        detailsCache.set(key, entry);
+                        syncHiddenDetails();
+                    })
+                    .catch(function () { /* non-indexed / lookup failure: leave blank for manual entry */ });
+            }
+
             hasRelatedCheckbox.addEventListener('change', function () {
                 wrapper.classList.toggle('hidden', !this.checked);
                 if (addBtn) addBtn.classList.toggle('hidden', !this.checked);
@@ -2514,6 +2656,7 @@
                                 if (data && data.fileNumber && input) {
                                     input.value = data.fileNumber;
                                     refresh();
+                                    backfillIndexedDetails(data.fileNumber);
                                 }
                             }
                         });
@@ -2601,6 +2744,43 @@
 
                     if (window.lucide) window.lucide.createIcons();
                     modal.classList.remove('hidden');
+
+                    // Backfill any related file whose detail fields are still empty from
+                    // its indexed record — covers files just selected in the picker whose
+                    // details were not yet cached (e.g. lookup still in flight).
+                    container.querySelectorAll('[data-file-no]').forEach(function (section) {
+                        const fileNo = (section.dataset.fileNo || '').trim();
+                        if (!fileNo) return;
+
+                        const inputs = {};
+                        EDITABLE_FIELDS.forEach(function (field) {
+                            inputs[field] = section.querySelector('input[data-detail-field="' + field + '"]');
+                        });
+                        const allBlank = EDITABLE_FIELDS.every(function (field) {
+                            return !inputs[field] || inputs[field].value.trim() === '';
+                        });
+                        if (!allBlank) return; // user/cache already has data — don't clobber
+
+                        fetch('/api/file-indexings/related-indexed-details?file_number=' + encodeURIComponent(fileNo), {
+                            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+                        })
+                            .then(function (res) { return res.ok ? res.json() : null; })
+                            .then(function (payload) {
+                                if (!payload || !payload.indexed || !payload.data) return;
+                                const entry = detailsCache.get(fileNo) || {};
+                                EDITABLE_FIELDS.forEach(function (field) {
+                                    const incoming = payload.data[field];
+                                    if (inputs[field] && inputs[field].value.trim() === '' &&
+                                        incoming != null && String(incoming).trim() !== '') {
+                                        inputs[field].value = String(incoming);
+                                        entry[field] = String(incoming);
+                                    }
+                                });
+                                detailsCache.set(fileNo, entry);
+                                syncHiddenDetails();
+                            })
+                            .catch(function () { /* leave blank for manual entry */ });
+                    });
                 });
 
                 saveBtn.addEventListener('click', function () {

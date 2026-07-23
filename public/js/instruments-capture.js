@@ -1725,7 +1725,12 @@ document.addEventListener('DOMContentLoaded', function () {
      * @returns {Promise<boolean>} true = gate passed (can proceed), false = blocked.
      */
     async function runConsentGateCheck({ silent = false } = {}) {
-        const consentGatedTypes = { 'deed-of-assignment': 'Assignment', 'deed-of-gift': 'Gift' };
+        const consentGatedTypes = {
+            'deed-of-assignment': 'Assignment',
+            'deed-of-gift': 'Gift',
+            'deed-of-mortgage': 'Mortgage',
+            'tripartite-mortgage': 'Tripartite Mortgage'
+        };
         if (!consentGatedTypes.hasOwnProperty(currentInstrumentType)) return true;
         if (duplicateCheckState.isUpdateMode) return true;
 
@@ -1988,7 +1993,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                 }
 
-                showDuplicateModal(data.instrument, data.pra);
+                showDuplicateModal(data.instrument, data.pra, fileNo);
             } else {
                 console.log('checkDuplicate: No duplicate exists.');
 
@@ -2089,7 +2094,19 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    function showDuplicateModal(instrument, pra) {
+    function showDuplicateModal(instrument, pra, fileNo) {
+        const duplicateFileNo = (
+            fileNo ||
+            instrument?.mlsFNo ||
+            instrument?.kangisFileNo ||
+            instrument?.NewKANGISFileno ||
+            instrument?.np_fileno ||
+            instrument?.temp_fileno ||
+            instrument?.fileno ||
+            instrument?.file_number ||
+            (typeof elements !== 'undefined' && elements.displayFileno?.value) ||
+            'N/A'
+        );
         console.log('showDuplicateModal: Starting with', { instrument, pra });
         const modal = document.getElementById('duplicate-modal');
         const detailsContainer = document.getElementById('duplicate-details');
@@ -2123,6 +2140,8 @@ document.addEventListener('DOMContentLoaded', function () {
             </div>
         </div>
         <div class="grid grid-cols-2 gap-2">
+            <span class="font-semibold">File Number:</span>
+            <span class="break-all">${duplicateFileNo}</span>
             <span class="font-semibold">Instrument:</span>
             <span>${instrument.instrument_type || 'N/A'}</span>
             <span class="font-semibold">Reg No:</span>

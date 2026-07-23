@@ -948,6 +948,11 @@ class IndexedFileTableController extends Controller
                 }
             }
 
+            // Backfill blank detail fields from each related file's own indexed record,
+            // so the modal shows real File Title / Location / Plot / TP / LPKN on open
+            // instead of dashes (covers link rows and temp files via temp_file_no).
+            $this->backfillRelatedFromIndex($finalResults);
+
             return response()->json([
                 'success' => true,
                 'data' => $finalResults,
@@ -959,6 +964,75 @@ class IndexedFileTableController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Fill blank detail fields (file_title, location, plot_number, tp_no, lpkn_no) on
+     * each related-file result from its own latest file_indexings row, matched on
+     * file_number OR temp_file_no. Batched (single query) to avoid N+1.
+     *
+     * @param array<int, array<string, mixed>> $results
+     */
+    private function backfillRelatedFromIndex(array &$results): void
+    {
+        // Collect the distinct, normalized file numbers present in the results.
+        $numbers = [];
+        foreach ($results as $r) {
+            $fn = is_object($r) ? ($r->file_number ?? '') : ($r['file_number'] ?? '');
+            $fn = strtoupper(trim((string) $fn));
+            if ($fn !== '' && $fn !== '-') {
+                $numbers[$fn] = true;
+            }
+        }
+        if (empty($numbers)) {
+            return;
+        }
+        $keys = array_keys($numbers);
+
+        // One query for every candidate, matched on either file_number or temp_file_no.
+        // Ordered by id so the latest row wins when the map is built.
+        $rows = DB::connection('sqlsrv')->table('file_indexings')
+            ->where(function ($query) use ($keys) {
+                $query->whereIn(DB::raw('UPPER(LTRIM(RTRIM(file_number)))'), $keys)
+                    ->orWhereIn(DB::raw('UPPER(LTRIM(RTRIM(temp_file_no)))'), $keys);
+            })
+            ->orderBy('id')
+            ->get(['file_number', 'temp_file_no', 'file_title', 'location', 'plot_number', 'tp_no', 'lpkn_no']);
+
+        $map = [];
+        foreach ($rows as $row) {
+            foreach (['file_number', 'temp_file_no'] as $col) {
+                $key = strtoupper(trim((string) ($row->$col ?? '')));
+                if ($key !== '') {
+                    $map[$key] = $row; // later id overwrites -> latest indexed record wins
+                }
+            }
+        }
+
+        $isBlank = static function ($value): bool {
+            $value = trim((string) $value);
+            return $value === '' || $value === '-';
+        };
+
+        foreach ($results as &$r) {
+            $isObj = is_object($r);
+            $fn = strtoupper(trim((string) ($isObj ? ($r->file_number ?? '') : ($r['file_number'] ?? ''))));
+            if ($fn === '' || !isset($map[$fn])) {
+                continue;
+            }
+            $src = $map[$fn];
+            foreach (['file_title', 'location', 'plot_number', 'tp_no', 'lpkn_no'] as $field) {
+                $current = $isObj ? ($r->$field ?? null) : ($r[$field] ?? null);
+                if ($isBlank($current) && !$isBlank($src->$field ?? null)) {
+                    if ($isObj) {
+                        $r->$field = $src->$field;
+                    } else {
+                        $r[$field] = $src->$field;
+                    }
+                }
+            }
+        }
+        unset($r);
     }
 
     public function updateRelatedFile(Request $request, $id): JsonResponse

@@ -185,7 +185,7 @@
             {{-- ── Title row ── --}}
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
-                    <p class="text-[11px] font-black uppercase tracking-[0.4em] text-slate-400">Land One Stop Shop</p>
+                    <p class="text-[11px] font-black uppercase tracking-[0.4em] text-slate-400">OSS Management</p>
                     <h1 class="text-3xl font-extrabold text-slate-900 mt-1">{{ $dynamicPageTitle }}</h1>
                     @php
                         $headerTotal = $cardTotal ?? (is_array($cardCounts ?? null) ? array_sum($cardCounts) : 0);

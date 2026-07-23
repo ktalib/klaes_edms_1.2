@@ -663,8 +663,9 @@ class FileIndexingController extends Controller
                 ->where('file_indexing_id', $id)
                 ->get();
 
-            // Attach related details as an array for the JS
-            $record->related_details = $relatedLinks->map(function ($link) {
+            // Base related details from the link table, keyed by file number so the
+            // DCIV / indexed backfills below can extend or enrich them without dupes.
+            $relatedDetails = $relatedLinks->map(function ($link) {
                 return [
                     'file_number' => $link->file_number,
                     'related_fileno' => $link->file_number,
@@ -681,7 +682,69 @@ class FileIndexingController extends Controller
                     'lga' => $link->lga ?? null,
                     'mfile' => $link->mfile ?? null
                 ];
-            })->toArray();
+            })->keyBy(function ($d) {
+                return strtoupper(trim((string) $d['file_number']));
+            })->all();
+
+            // DCIV backfill: a DCIV's related files are also recorded in master_dciv_links,
+            // keyed by the DCIV number. For temp DCIVs the number lives in temp_file_no
+            // (e.g. "DCIV-2025-545(T)"), so fall back to it when file_number is null.
+            $dcivKey = trim((string) ($record->file_number ?? '')) !== ''
+                ? trim((string) $record->file_number)
+                : trim((string) ($record->temp_file_no ?? ''));
+
+            if ($dcivKey !== '') {
+                $masterLinks = DB::connection('sqlsrv')->table('master_dciv_links')
+                    ->whereRaw('UPPER(LTRIM(RTRIM(dciv_file_number))) = ?', [strtoupper($dcivKey)])
+                    ->whereNotNull('related_file_number')
+                    ->get();
+
+                foreach ($masterLinks as $ml) {
+                    $relNo = trim((string) $ml->related_file_number);
+                    if ($relNo === '') {
+                        continue;
+                    }
+                    $key = strtoupper($relNo);
+
+                    if (!isset($relatedDetails[$key])) {
+                        $relatedDetails[$key] = [
+                            'file_number' => $relNo,
+                            'related_fileno' => $relNo,
+                            'file_title' => $ml->related_file_title,
+                            'plot_number' => null,
+                            'tp_no' => null,
+                            'lpkn_no' => null,
+                            'location' => null,
+                            'entity_type' => null,
+                            'entity_name' => null,
+                            'customer_name' => null,
+                            'land_use_type' => null,
+                            'district' => null,
+                            'lga' => null,
+                            'mfile' => null,
+                        ];
+                    } elseif (empty($relatedDetails[$key]['file_title']) && !empty($ml->related_file_title)) {
+                        $relatedDetails[$key]['file_title'] = $ml->related_file_title;
+                    }
+                }
+            }
+
+            // For every related file that is itself indexed, backfill the detail fields
+            // the link row left blank from its own file_indexings record.
+            foreach ($relatedDetails as $key => $detail) {
+                $indexed = $this->indexedRelatedDetails((string) $detail['file_number']);
+                if (!$indexed) {
+                    continue;
+                }
+                foreach (['file_title', 'location', 'plot_number', 'tp_no', 'lpkn_no'] as $field) {
+                    if (trim((string) ($detail[$field] ?? '')) === '' && !empty($indexed[$field])) {
+                        $relatedDetails[$key][$field] = $indexed[$field];
+                    }
+                }
+            }
+
+            // Attach related details as an array for the JS
+            $record->related_details = array_values($relatedDetails);
 
             // Prepare CofO Details
             $cofoDetails = $this->prepareCofODetailsForEdit($record);
@@ -1045,6 +1108,7 @@ class FileIndexingController extends Controller
                 'suffix' => 'nullable|string|max:50',
                 'property_address' => 'nullable|string',
                 'plot_size' => 'nullable',
+                'plot_size.*' => 'nullable',
                 'email' => 'nullable|string|max:255',
                 // RoFO fields
                 'has_rofo' => 'nullable|boolean',
@@ -1340,6 +1404,30 @@ class FileIndexingController extends Controller
                 }
 
                 $relatedDetails = $request->input('related_details', []);
+
+                // "Has New KANGIS FileNo": index the KN-series file on the fly. Create the
+                // standalone KANGIS Registry record when it doesn't exist yet, otherwise
+                // update the existing one in place (never a duplicate). Also link it to this
+                // file and store the pointer on the main row so the KANGIS tracking sheet shows.
+                $hasNewKangisFileno = $request->boolean('has_new_kangis_fileno');
+                $newKangisFileNoRaw = trim((string) ($validated['new_kangis_file_no'] ?? ''));
+                if ($hasNewKangisFileno && $newKangisFileNoRaw !== '') {
+                    if (!in_array($newKangisFileNoRaw, $relatedFileNos, true)) {
+                        $relatedFileNos[] = $newKangisFileNoRaw;
+                    }
+                    $hasKnDetail = collect($relatedDetails)
+                        ->contains(fn($d) => is_array($d) && ($d['file_number'] ?? null) === $newKangisFileNoRaw);
+                    if (!$hasKnDetail) {
+                        $relatedDetails[] = ['file_number' => $newKangisFileNoRaw];
+                    }
+
+                    DB::connection('sqlsrv')->table('file_indexings')
+                        ->where('id', $id)
+                        ->update(['new_kangis_file_no' => $newKangisFileNoRaw]);
+
+                    $this->upsertStandaloneNewKangisRecord($newKangisFileNoRaw, $validated);
+                }
+
                 $fileIndexingModel = FileIndexing::on('sqlsrv')->find($id);
                 if ($fileIndexingModel) {
                     $this->syncRelatedFileLinks($fileIndexingModel, $relatedFileNos, $relatedDetails);
@@ -2567,6 +2655,65 @@ class FileIndexingController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Return the property detail fields of an indexed file (its latest file_indexings
+     * row), matched on file_number OR temp_file_no. Null when the file isn't indexed.
+     * Used to backfill related-file details on the edit form.
+     *
+     * @return array{file_title: ?string, location: ?string, plot_number: ?string, tp_no: ?string, lpkn_no: ?string}|null
+     */
+    private function indexedRelatedDetails(string $fileNumber): ?array
+    {
+        $fileNumber = trim($fileNumber);
+        if ($fileNumber === '') {
+            return null;
+        }
+
+        $row = DB::connection('sqlsrv')->table('file_indexings')
+            ->where(function ($query) use ($fileNumber) {
+                $query->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = ?', [strtoupper($fileNumber)])
+                    ->orWhereRaw('UPPER(LTRIM(RTRIM(temp_file_no))) = ?', [strtoupper($fileNumber)]);
+            })
+            ->orderByDesc('id')
+            ->first(['file_title', 'location', 'plot_number', 'tp_no', 'lpkn_no']);
+
+        if (!$row) {
+            return null;
+        }
+
+        return [
+            'file_title' => $row->file_title,
+            'location' => $row->location,
+            'plot_number' => $row->plot_number,
+            'tp_no' => $row->tp_no,
+            'lpkn_no' => $row->lpkn_no,
+        ];
+    }
+
+    /**
+     * AJAX endpoint: fetch an indexed file's detail fields so the Related File Number
+     * details modal can prefill when a related file number is selected in the picker.
+     */
+    public function relatedIndexedDetails(Request $request)
+    {
+        $fileNumber = trim((string) $request->get('file_number', ''));
+
+        if ($fileNumber === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'File number is required.'
+            ], 422);
+        }
+
+        $details = $this->indexedRelatedDetails($fileNumber);
+
+        return response()->json([
+            'success' => (bool) $details,
+            'indexed' => (bool) $details,
+            'data' => $details,
+        ]);
     }
 
     public function lookupByFileNumber(Request $request)
@@ -4801,6 +4948,68 @@ class FileIndexingController extends Controller
         }
 
         return $kangisFileIndexing;
+    }
+
+    /**
+     * Edit-page counterpart to createStandaloneNewKangisRecord(): index the KN-series file
+     * on the fly during update(). If a file_indexings row already exists for this KN number
+     * it is UPDATED in place (descriptive fields refreshed from the source form, but empty
+     * source values never overwrite existing data); otherwise a new standalone KANGIS
+     * Registry record is created. Idempotent — re-saving the same edit never adds a duplicate.
+     */
+    protected function upsertStandaloneNewKangisRecord(string $newKangisFileNo, array $sourceData): void
+    {
+        $newKangisFileNo = trim($newKangisFileNo);
+        if ($newKangisFileNo === '') {
+            return;
+        }
+
+        $currentUserName = $this->resolveCurrentUserName();
+
+        $copyKeys = [
+            'file_title', 'land_use_type', 'plot_number', 'plot_size',
+            'latitude', 'longitude', 'district', 'lga', 'street_name',
+            'current_holder', 'original_holder', 'physical_registry',
+            'tp_no', 'lpkn_no', 'location',
+        ];
+
+        $payload = Arr::only($sourceData, $copyKeys);
+        foreach (['current_holder', 'original_holder'] as $holderKey) {
+            if (isset($payload[$holderKey]) && is_array($payload[$holderKey])) {
+                $payload[$holderKey] = json_encode(array_values(array_filter($payload[$holderKey])));
+            }
+        }
+
+        $existing = DB::connection('sqlsrv')->table('file_indexings')
+            ->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = UPPER(?)', [$newKangisFileNo])
+            ->first();
+
+        if ($existing) {
+            // Update in place — do not create a second row. Only overwrite with
+            // non-empty source values so existing good data on the KN record is kept.
+            $update = array_filter($payload, fn($v) => $v !== null && $v !== '' && $v !== []);
+            if (empty($existing->general_registry)) {
+                $update['general_registry'] = 'KANGIS Registry';
+            }
+            $update['updated_by'] = $currentUserName;
+            $update['updated_at'] = now();
+
+            DB::connection('sqlsrv')->table('file_indexings')
+                ->where('id', $existing->id)
+                ->update($update);
+
+            return;
+        }
+
+        // No existing row — create the standalone KANGIS Registry record.
+        $payload['file_number'] = $newKangisFileNo;
+        $payload['general_registry'] = 'KANGIS Registry';
+        $payload['indexing_type'] = 'Regular';
+        $payload['workflow_status'] = 'indexed';
+        $payload['created_by'] = $currentUserName;
+        $payload['updated_by'] = $currentUserName;
+
+        FileIndexing::on('sqlsrv')->create($payload);
     }
 
     /**

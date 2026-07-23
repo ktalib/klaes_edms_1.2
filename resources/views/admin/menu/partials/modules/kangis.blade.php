@@ -13,7 +13,7 @@
   <div class="sidebar-module-header flex items-center justify-between py-2 px-3 mb-0.5 cursor-pointer hover:bg-slate-50 rounded-md" data-module="sside">
     <div class="flex items-center gap-2">
       <i data-lucide="map" class="h-5 w-5 text-yellow-600"></i>
-      <span class="text-sm font-bold uppercase tracking-wider">KANGIS</span>
+      <span class="text-sm font-bold uppercase tracking-wider">KANGIS LIS</span>
     </div>
     <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200" data-chevron="sside"></i>
   </div>

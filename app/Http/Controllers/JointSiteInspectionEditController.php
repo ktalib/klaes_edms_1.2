@@ -602,6 +602,14 @@ class JointSiteInspectionEditController extends Controller
                         return null;
                     }
 
+                    // Skip internal meta-sentinel rows (conversion-only storage:
+                    // __existing_structure__, __need_for_eia__, __conversion_reservation_meta__,
+                    // __conversion_purpose_lut__). These are never real measurements and must
+                    // not surface in the Existing Site Measurements table (esp. for ST One Stop Shop).
+                    if (preg_match('/^__.+__$/', $description) === 1) {
+                        return null;
+                    }
+
                     return [
                         'sn' => data_get($entry, 'sn', $index + 1),
                         'description' => $description,
@@ -743,10 +751,15 @@ class JointSiteInspectionEditController extends Controller
             return LandUseType::orderBy('name')->get(['id', 'name']);
         });
 
-        $inspectors = Cache::remember('pp_inspectors_all', 1800, function () {
+        $inspectorColumns = ['id', 'name', 'rank'];
+        if (Schema::connection('sqlsrv')->hasColumn('pp_inspectors', 'in_sectional_titling')) {
+            $inspectorColumns[] = 'in_physical_planning';
+            $inspectorColumns[] = 'in_sectional_titling';
+        }
+        $inspectors = Cache::remember('pp_inspectors_all', 1800, function () use ($inspectorColumns) {
             return DB::connection('sqlsrv')
                 ->table('pp_inspectors')
-                ->select('id', 'name', 'rank')
+                ->select($inspectorColumns)
                 ->orderBy('name')
                 ->get();
         });

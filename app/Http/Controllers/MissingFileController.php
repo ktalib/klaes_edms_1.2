@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\MissingFile;
+use App\Models\FileTracker;
+use App\Services\FileLocationResolver;
 use Illuminate\Http\Request;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Auth;
@@ -19,9 +21,14 @@ class MissingFileController extends Controller
         $module = $request->get('url', '');
 
         $perPage = 25;
-        $paginator = MissingFile::orderByDesc('id')->paginate($perPage);
+        // Found files drop out of the working list automatically — they are kept in the
+        // table only for the audit trail (found_at / found_by), not shown here.
+        $paginator = MissingFile::where('status', '!=', MissingFile::STATUS_FOUND)
+            ->orderByDesc('id')
+            ->paginate($perPage);
 
         $missingFiles = $paginator->items();
+        $this->annotateTransit($missingFiles);
         $pagination = [
             'current_page' => $paginator->currentPage(),
             'last_page'    => $paginator->lastPage(),
@@ -41,6 +48,9 @@ class MissingFileController extends Controller
 
         if ($status = trim((string) $request->get('status', ''))) {
             $query->where('status', $status);
+        } else {
+            // Default view hides Found files — once located they auto-drop from the list.
+            $query->where('status', '!=', MissingFile::STATUS_FOUND);
         }
 
         if ($search = trim((string) $request->get('search', ''))) {
@@ -56,9 +66,12 @@ class MissingFileController extends Controller
 
         $paginator = $query->orderByDesc('id')->paginate($perPage);
 
+        $items = $paginator->items();
+        $this->annotateTransit($items);
+
         return response()->json([
             'success' => true,
-            'data'    => $paginator->items(),
+            'data'    => $items,
             'pagination' => [
                 'current_page' => $paginator->currentPage(),
                 'last_page'    => $paginator->lastPage(),
@@ -80,12 +93,16 @@ class MissingFileController extends Controller
         }
 
         $existing = MissingFile::where('file_number', $fileNumber)->first();
+        $transit  = $this->transitInfo($fileNumber);
 
         return response()->json([
-            'success' => true,
-            'exists'  => (bool) $existing,
-            'message' => $existing ? $this->duplicateMessage($existing) : null,
-            'data'    => $existing,
+            'success'         => true,
+            'exists'          => (bool) $existing,
+            'message'         => $existing ? $this->duplicateMessage($existing) : null,
+            'data'            => $existing,
+            'in_transit'      => $transit['in_transit'],
+            'transit_location'=> $transit['location'],
+            'transit_tracking_id' => $transit['tracking_id'],
         ]);
     }
 
@@ -174,6 +191,111 @@ class MissingFileController extends Controller
                 'message' => 'Failed to record the missing file.',
             ], 500);
         }
+    }
+
+    /**
+     * Flag each missing-file record with its live file_tracker state. A file that is
+     * logged out (has a non-terminal tracker) is In-Transit — physically checked out to
+     * another office, not truly lost — so the list can distinguish it from a real
+     * missing file. Batched to a single tracker query to avoid an N+1 over the page.
+     *
+     * @param  array|\Illuminate\Support\Collection  $records
+     */
+    private function annotateTransit($records): void
+    {
+        $records = collect($records);
+        $fileNumbers = $records->pluck('file_number')
+            ->filter(fn ($n) => trim((string) $n) !== '')
+            ->unique()
+            ->values();
+
+        if ($fileNumbers->isEmpty()) {
+            return;
+        }
+
+        $resolver = app(FileLocationResolver::class);
+
+        // Latest tracker per file number (mirrors FileLocationResolver::findTracker).
+        $latest = FileTracker::whereIn('file_number', $fileNumbers->all())
+            ->orderByDesc('id')
+            ->get()
+            ->groupBy('file_number')
+            ->map(fn ($group) => $group->first());
+
+        foreach ($records as $rec) {
+            $tracker   = $latest->get($rec->file_number);
+            $inTransit = $tracker
+                && !$resolver->isTerminalTrackerStatus($tracker->status)
+                && !empty($tracker->movement_log);
+
+            $rec->in_transit          = (bool) $inTransit;
+            $rec->transit_location    = $inTransit ? $this->transitHolderLabel($tracker) : null;
+            $rec->transit_tracking_id = $inTransit ? $tracker->tracking_id : null;
+        }
+    }
+
+    /**
+     * "Department - Officer" label for the office currently holding a logged-out file.
+     * Falls back gracefully when either side is missing.
+     */
+    private function transitHolderLabel(FileTracker $tracker): ?string
+    {
+        // The current holder / office is most reliably read off the active movement,
+        // falling back to the tracker columns when the log doesn't carry it.
+        $movement = method_exists($tracker, 'getCurrentMovement') ? $tracker->getCurrentMovement() : null;
+        $movement = is_array($movement) ? $movement : [];
+
+        $office = trim((string) (
+            ($movement['receiving_office_name'] ?? null)
+            ?: $tracker->current_office_name
+            ?: $tracker->receiving_office_name
+            ?: $tracker->destination
+        ));
+
+        $officer = trim((string) (
+            ($movement['receiving_officer_name'] ?? null)
+            ?: $tracker->receiving_officer_name
+        ));
+
+        if ($office !== '' && $officer !== '') {
+            return $office . ' - ' . $officer;
+        }
+
+        return $office !== '' ? $office : ($officer !== '' ? $officer : null);
+    }
+
+    /**
+     * Resolve the live in-transit state for a single file number.
+     *
+     * @return array{in_transit: bool, location: ?string, tracking_id: ?string}
+     */
+    private function transitInfo(string $fileNumber): array
+    {
+        $none = ['in_transit' => false, 'location' => null, 'tracking_id' => null];
+
+        $fileNumber = trim($fileNumber);
+        if ($fileNumber === '') {
+            return $none;
+        }
+
+        $tracker = FileTracker::where('file_number', $fileNumber)
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $tracker) {
+            return $none;
+        }
+
+        $resolver = app(FileLocationResolver::class);
+        if ($resolver->isTerminalTrackerStatus($tracker->status) || empty($tracker->movement_log)) {
+            return $none;
+        }
+
+        return [
+            'in_transit'  => true,
+            'location'    => $this->transitHolderLabel($tracker),
+            'tracking_id' => $tracker->tracking_id,
+        ];
     }
 
     /**

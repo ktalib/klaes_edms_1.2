@@ -4759,7 +4759,9 @@
             : currentRackShelfValue;
 
         // Validation
-        if (!fileNo || !fileName || !destinationSelection) {
+        // New KANGIS "Log a File" workflow bypasses the required-fields gate.
+        const _moduleIsNewKangis = {{ strtolower($module ?? '') === 'new_kangis' ? 'true' : 'false' }};
+        if (!_moduleIsNewKangis && (!fileNo || !fileName || !destinationSelection)) {
             Swal.fire({ icon: 'warning', title: 'Required Fields', text: 'Please fill in all required fields.' }); return;
             return;
         }
@@ -4769,13 +4771,13 @@
         const _selectedDfrType  = document.getElementById('dfr-request-type')?.value || 'Physical';
         const _isDigitalRequest = _moduleIsDfr && (_selectedDfrType === 'Digital');
 
-        if (!workflowSubmissionMode && !_crossModuleRequestMode && !_isDigitalRequest && !effectiveReceivingOfficeCode) {
+        if (!_moduleIsNewKangis && !workflowSubmissionMode && !_crossModuleRequestMode && !_isDigitalRequest && !effectiveReceivingOfficeCode) {
             Swal.fire({ icon: 'warning', title: 'Missing Field', text: 'Please select a Receiving Office.' }); return;
             return;
         }
 
         // Registry (Origin) is not required for Digital Access requests
-        if (!_isDigitalRequest && !originOfficeId) {
+        if (!_moduleIsNewKangis && !_isDigitalRequest && !originOfficeId) {
             Swal.fire({ icon: 'warning', title: 'Missing Field', text: 'Select the registry (origin) that dispatched this file.' }); return;
             return;
         }
@@ -4785,7 +4787,7 @@
         // Receiving Officer field is hidden and must not be required here.
         const sltrInternalNoOfficer = sltrInternal && destinationSelection !== 'Other Departments';
 
-        if (!workflowSubmissionMode && !_crossModuleRequestMode && !_isDigitalRequest && !sltrInternalNoOfficer && !receivingOfficerKey) {
+        if (!_moduleIsNewKangis && !workflowSubmissionMode && !_crossModuleRequestMode && !_isDigitalRequest && !sltrInternalNoOfficer && !receivingOfficerKey) {
             Swal.fire({ icon: 'warning', title: 'Missing Field', text: 'Select the receiving officer.' }); return;
             return;
         }
@@ -10387,15 +10389,36 @@
                     tab.classList.remove(...activeTabClasses, ...idleTabClasses);
                     tab.classList.add(...(isActive ? activeTabClasses : idleTabClasses));
                 });
+                // Nested In-transit / Submitted Request sub-tabs only apply to the Active Files view.
+                const reqTypeSubtabs = document.getElementById('request-type-subtabs');
+                if (reqTypeSubtabs) {
+                    reqTypeSubtabs.classList.toggle('hidden', window._fileLogView !== 'active');
+                }
+            };
+            // Reset the nested In-transit / Submitted Request pills back to their idle state.
+            const resetRequestTypeTabs = () => {
+                window._fileRequestTypeFilter = null;
+                document.querySelectorAll('#request-type-subtabs .main-tab').forEach(t => {
+                    t.classList.remove('active', 'border-blue-500', 'text-blue-600', 'bg-blue-50');
+                    t.classList.add('border-gray-200', 'text-gray-600');
+                });
             };
             fileLogViewTabs.forEach(tab => {
                 tab.addEventListener('click', function () {
                     const view = this.getAttribute('data-log-view') || 'active';
-                    if (window._fileLogView === view) return;
+                    // Even when already on this view, a nested request-type filter may be
+                    // active — clicking the view tab should clear it and reload.
+                    const hadReqTypeFilter = !!window._fileRequestTypeFilter;
+                    if (window._fileLogView === view && !hadReqTypeFilter) return;
                     window._fileLogView = view;
+                    resetRequestTypeTabs();
                     paintFileLogTabs();
                     currentPage = 1;
-                    updateFileTrackersTable();
+                    if (hadReqTypeFilter && typeof loadFileTrackers === 'function') {
+                        loadFileTrackers(1);
+                    } else {
+                        updateFileTrackersTable();
+                    }
                 });
             });
             paintFileLogTabs();

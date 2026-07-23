@@ -116,6 +116,12 @@
                     if (is_array($report->existing_site_measurement_entries) && !empty($report->existing_site_measurement_entries)) {
                         $measurementRows = collect($report->existing_site_measurement_entries)
                             ->filter(fn ($entry) => !empty($entry))
+                            ->reject(function ($entry) {
+                                // Drop internal meta-sentinel rows (__need_for_eia__,
+                                // __conversion_reservation_meta__, __existing_structure__, etc.).
+                                $desc = trim((string) ($entry['description'] ?? $entry['utility_type'] ?? ''));
+                                return preg_match('/^__.+__$/', $desc) === 1;
+                            })
                             ->values()
                             ->map(function ($entry, $index) {
                                 $description = trim((string) ($entry['description'] ?? $entry['utility_type'] ?? ''));

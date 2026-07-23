@@ -986,6 +986,7 @@ Route::middleware(['auth'])->group(function () {
     // Land ROFO Routes
     Route::prefix('land-rofos')->name('land-rofos.')->group(function () {
         Route::get('/', [\App\Http\Controllers\LandRofoController::class, 'index'])->name('index');
+        Route::get('/export', [\App\Http\Controllers\LandRofoController::class, 'export'])->name('export');
         Route::get('/unprinted-json', [\App\Http\Controllers\LandRofoController::class, 'unprintedJson'])->name('unprinted-json');
         Route::post('/batch-print', [\App\Http\Controllers\LandRofoController::class, 'batchPrint'])->name('batch-print');
         Route::post('/batch-print-log', [\App\Http\Controllers\LandRofoController::class, 'batchPrintLog'])->name('batch-print-log');

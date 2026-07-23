@@ -15,6 +15,7 @@
         page: (cfg.initialPagination && cfg.initialPagination.current_page) || 1,
         search: '',
         duplicate: false,
+        transit: false,
     };
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -106,6 +107,7 @@
 
     function checkDuplicate(fileNumber) {
         clearDuplicateWarning();
+        clearTransitNotice();
         if (!fileNumber || !routes.check) return;
 
         const url = new URL(routes.check, window.location.origin);
@@ -119,8 +121,41 @@
                 if (res && res.success && res.exists) {
                     showDuplicateWarning(res.message);
                 }
+                if (res && res.success && res.in_transit) {
+                    showTransitNotice(res.transit_location, res.transit_tracking_id);
+                }
             })
             .catch(function () { /* the unique constraint still guards the save */ });
+    }
+
+    function showTransitNotice(location, trackingId) {
+        const box = document.getElementById('mf-transit-notice');
+        const text = document.getElementById('mf-transit-notice-text');
+        if (text) {
+            let msg = 'The file is currently in-transit';
+            if (location) msg += ' at ' + location;
+            msg += '. It may not be truly missing.';
+            text.textContent = msg;
+        }
+        if (box) {
+            box.classList.remove('hidden');
+            box.classList.add('flex');
+        }
+        // Block capturing a file that is simply logged out — it isn't missing.
+        state.transit = true;
+        setBusy(document.getElementById('mf-submit-btn'), true);
+        refreshIcons();
+    }
+
+    function clearTransitNotice() {
+        const box = document.getElementById('mf-transit-notice');
+        if (box) {
+            box.classList.add('hidden');
+            box.classList.remove('flex');
+        }
+        state.transit = false;
+        // Only re-enable the button if a duplicate warning isn't also holding it disabled.
+        setBusy(document.getElementById('mf-submit-btn'), state.duplicate);
     }
 
     function showDuplicateWarning(message) {
@@ -216,6 +251,10 @@
             toast('This file has already been recorded as missing.', 'error');
             return;
         }
+        if (state.transit) {
+            toast('This file is currently in-transit — it is logged out, not missing.', 'error');
+            return;
+        }
 
         const payload = {
             file_number: fileNumber,
@@ -268,7 +307,7 @@
                 toast('Something went wrong while saving.', 'error');
             })
             .finally(function () {
-                setBusy(btn, state.duplicate);
+                setBusy(btn, state.duplicate || state.transit);
             });
     }
 
@@ -282,7 +321,9 @@
             .then(function (res) {
                 if (res && res.success) {
                     toast(res.message || 'File marked as found.', 'success');
-                    reloadTable(state.search, state.page);
+                    // Found files auto-drop from the list: fade the row out, then refresh
+                    // so pagination / counts settle (the server no longer returns Found rows).
+                    fadeOutRow(id, function () { reloadTable(state.search, state.page); });
                 } else {
                     toast((res && res.message) || 'Action failed.', 'error');
                 }
@@ -345,11 +386,19 @@
         refreshIcons();
     }
 
+    function transitFlag(r) {
+        if (!r.in_transit) return '';
+        const loc = r.transit_location ? ' → ' + esc(r.transit_location) : '';
+        const title = r.transit_tracking_id ? ' title="' + esc(r.transit_tracking_id) + '"' : '';
+        return '<div class="mt-1"><span' + title + ' class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 border border-amber-200">' +
+            '<i data-lucide="truck" class="h-3 w-3"></i>In-Transit' + loc + '</span></div>';
+    }
+
     function rowHtml(r) {
         const rack = [r.rack_primary, r.rack_secondary].filter(Boolean).join(' / ') || '—';
         return '' +
-            '<tr class="hover:bg-gray-50">' +
-                '<td class="px-4 py-3 font-semibold text-gray-900">' + esc(r.file_number) + '</td>' +
+            '<tr class="hover:bg-gray-50" data-row-id="' + r.id + '">' +
+                '<td class="px-4 py-3 font-semibold text-gray-900">' + esc(r.file_number) + transitFlag(r) + '</td>' +
                 '<td class="px-4 py-3 text-gray-700">' + esc(r.archive_registry || '—') + '</td>' +
                 '<td class="px-4 py-3 text-gray-700">' + esc(rack) + '</td>' +
                 '<td class="px-4 py-3 text-gray-700">' + esc(r.shelf_number || '—') + '</td>' +
@@ -407,10 +456,20 @@
 
     /* ---------------------------------------------------------------- Helpers */
 
+    function fadeOutRow(id, done) {
+        const row = document.querySelector('[data-row-id="' + id + '"]');
+        if (!row) { if (done) done(); return; }
+        row.style.transition = 'opacity .35s, background-color .35s';
+        row.style.backgroundColor = '#f0fdf4'; // green-50 flash on success
+        row.style.opacity = '0';
+        setTimeout(function () { if (done) done(); }, 380);
+    }
+
     function resetForm() {
         setValue('mf-file-no', '');
         setValue('mf-tracking-id', '');
         clearDuplicateWarning();
+        clearTransitNotice();
         const reg = document.getElementById('mf-archive-registry');
         if (reg) reg.value = 'Registry 1';
         const rp = document.getElementById('mf-rack-primary');

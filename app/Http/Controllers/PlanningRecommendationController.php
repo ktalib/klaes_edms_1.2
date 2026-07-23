@@ -1743,9 +1743,12 @@ class PlanningRecommendationController extends Controller
         // Get unit measurements from buyer_list joined with st_unit_measurements table
         $unitMeasurements = DB::connection('sqlsrv')
             ->table('buyer_list as bl')
-            ->leftJoin('st_unit_measurements as sum', function ($join) use ($resolvedApplicationId) {
-                $join->on('bl.application_id', '=', 'sum.application_id')
-                    ->on('bl.unit_no', '=', 'sum.unit_no');
+            ->leftJoin('st_unit_measurements as sum', function ($join) {
+                // Join on the buyer FK, not unit_no. ST unit numbers repeat
+                // (e.g. "U2", "U MD"), so joining on unit_no fans the rows out
+                // and inflates the count (249 buyers -> 313 rows).
+                $join->on('bl.id', '=', 'sum.buyer_id')
+                    ->on('bl.application_id', '=', 'sum.application_id');
             })
             ->where('bl.application_id', $resolvedApplicationId)
             ->select(
@@ -1948,9 +1951,10 @@ class PlanningRecommendationController extends Controller
         if ($parentApplicationId) {
             $buyerListData = DB::connection('sqlsrv')
                 ->table('buyer_list as bl')
-                ->leftJoin('st_unit_measurements as sum', function ($join) use ($parentApplicationId) {
-                    $join->on('bl.application_id', '=', 'sum.application_id')
-                        ->on('bl.unit_no', '=', 'sum.unit_no');
+                ->leftJoin('st_unit_measurements as sum', function ($join) {
+                    // Join on the buyer FK, not unit_no (unit numbers repeat and fan out).
+                    $join->on('bl.id', '=', 'sum.buyer_id')
+                        ->on('bl.application_id', '=', 'sum.application_id');
                 })
                 ->where('bl.application_id', $parentApplicationId)
                 ->where('bl.unit_no', $subApplication->unit_number)

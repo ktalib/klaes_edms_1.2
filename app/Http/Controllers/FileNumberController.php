@@ -2553,6 +2553,7 @@ class FileNumberController extends Controller
                     DB::raw("(SELECT TOP 1 land_use FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as land_use_derived"),
                     DB::raw("(SELECT TOP 1 lga FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as lga_derived"),
                     DB::raw("(SELECT TOP 1 created_by FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as created_by_derived"),
+                    DB::raw("(SELECT TOP 1 source FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as source_derived"),
                     'mls_file_no.batch_no'
                 ])
                 ->leftJoin('mls_file_no', 'fileNumber.mlsfNo', '=', 'mls_file_no.full_file_number')
@@ -2598,6 +2599,7 @@ class FileNumberController extends Controller
                         'land_use_derived'   => $pe->land_use,
                         'lga_derived'        => $pe->lga,
                         'created_by_derived' => $pe->created_by,
+                        'source_derived'     => 'Plot Extension',
                         'batch_no'           => null,
                     ];
                 }
@@ -2676,6 +2678,7 @@ class FileNumberController extends Controller
                     DB::raw("(SELECT TOP 1 land_use FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as land_use_derived"),
                     DB::raw("(SELECT TOP 1 lga FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as lga_derived"),
                     DB::raw("(SELECT TOP 1 created_by FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as created_by_derived"),
+                    DB::raw("(SELECT TOP 1 source FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as source_derived"),
                     'mls_file_no.batch_no'
                 ])
                 ->leftJoin('mls_file_no', 'fileNumber.mlsfNo', '=', 'mls_file_no.full_file_number')
@@ -2788,6 +2791,7 @@ class FileNumberController extends Controller
                     DB::raw("(SELECT TOP 1 land_use FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as land_use_derived"),
                     DB::raw("(SELECT TOP 1 lga FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as lga_derived"),
                     DB::raw("(SELECT TOP 1 created_by FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as created_by_derived"),
+                    DB::raw("(SELECT TOP 1 source FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as source_derived"),
                     'mls_file_no.batch_no'
                 ])
                 ->join('mls_file_no', 'fileNumber.mlsfNo', '=', 'mls_file_no.full_file_number')

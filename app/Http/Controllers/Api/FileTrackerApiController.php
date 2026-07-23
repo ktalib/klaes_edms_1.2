@@ -173,21 +173,26 @@ class FileTrackerApiController extends Controller
             // is the receiving point, so there is no real officer to select.
             $isSltrInternalNoOfficer = filter_var($request->input('sltr_internal_no_officer'), FILTER_VALIDATE_BOOLEAN);
 
+            // New KANGIS "Log a File" (Digital Archive) simply registers a file into the
+            // registry — there is no receiving office/officer or onward movement to select,
+            // so those routing fields are optional (mirrors the KANGIS-workflow relaxation).
+            $isNewKangisLog = strtolower(trim((string) $request->input('module', ''))) === 'new_kangis';
+
             $validator = Validator::make($request->all(), [
                 'file_number' => 'nullable|string|max:255',
                 'file_title' => 'required|string|max:255',
                 'file_type' => 'nullable|string|max:100',
                 'priority' => 'required|in:LOW,MEDIUM,HIGH',
                 'status' => 'nullable|in:Log-in,Canceled',
-                'department' => 'required|string|max:100',
+                'department' => $isNewKangisLog ? 'nullable|string|max:100' : 'required|string|max:100',
                 'description' => 'nullable|string',
                 'deadline' => 'nullable|date',
                 'timeline_days' => 'nullable|integer|min:0|max:365',
                 'request_purpose_id' => 'nullable|integer|exists:sqlsrv.request_purposes,id',
                 'request_purpose_other' => 'nullable|string|max:255',
                 'movement_log' => 'required|array',
-                'movement_log.*.office_code' => 'required|string',
-                'movement_log.*.office_name' => 'required|string',
+                'movement_log.*.office_code' => $isNewKangisLog ? 'nullable|string' : 'required|string',
+                'movement_log.*.office_name' => $isNewKangisLog ? 'nullable|string' : 'required|string',
                 'movement_log.*.log_in_time' => 'nullable|string',
                 'movement_log.*.log_in_date' => 'nullable|date',
                 'movement_log.*.log_out_time' => 'nullable|string',
@@ -197,12 +202,12 @@ class FileTrackerApiController extends Controller
                 'movement_log.*.origin_office_name' => 'nullable|string|max:255',
                 'movement_log.*.origin_office_department' => 'nullable|string|max:255',
                 'notes' => 'nullable|string',
-                'origin_office_code' => 'required|string|max:100',
-                'origin_office_name' => 'required|string|max:255',
+                'origin_office_code' => $isNewKangisLog ? 'nullable|string|max:100' : 'required|string|max:100',
+                'origin_office_name' => $isNewKangisLog ? 'nullable|string|max:255' : 'required|string|max:255',
                 'origin_office_department' => 'nullable|string|max:255',
-                'receiving_office_code' => $isKangisWorkflowSubmission ? 'nullable|string|max:100' : 'required|string|max:100',
-                'receiving_office_name' => $isKangisWorkflowSubmission ? 'nullable|string|max:255' : 'required|string|max:255',
-                'receiving_officer_id' => ($isKangisWorkflowSubmission || $isSltrInternalNoOfficer) ? 'nullable|string|max:50' : 'required|string|max:50',
+                'receiving_office_code' => ($isKangisWorkflowSubmission || $isNewKangisLog) ? 'nullable|string|max:100' : 'required|string|max:100',
+                'receiving_office_name' => ($isKangisWorkflowSubmission || $isNewKangisLog) ? 'nullable|string|max:255' : 'required|string|max:255',
+                'receiving_officer_id' => ($isKangisWorkflowSubmission || $isSltrInternalNoOfficer || $isNewKangisLog) ? 'nullable|string|max:50' : 'required|string|max:50',
                 'receiving_officer_name' => 'nullable|string|max:255',
             ]);
 
@@ -279,20 +284,22 @@ class FileTrackerApiController extends Controller
                 'is_other' => false,
             ];
 
-            if (!$isKangisWorkflowSubmission && !$isSltrInternalNoOfficer) {
+            if (!$isKangisWorkflowSubmission && !$isSltrInternalNoOfficer && !$isNewKangisLog) {
                 $resolved = $this->resolveReceivingOfficer($request->receiving_officer_id, $request->receiving_officer_name);
             }
 
-            $isOtherOfficer = !$isKangisWorkflowSubmission && !$isSltrInternalNoOfficer && $resolved['is_other'];
-            $receivingOfficerId = ($isKangisWorkflowSubmission || $isSltrInternalNoOfficer)
+            $isOtherOfficer = !$isKangisWorkflowSubmission && !$isSltrInternalNoOfficer && !$isNewKangisLog && $resolved['is_other'];
+            $receivingOfficerId = ($isKangisWorkflowSubmission || $isSltrInternalNoOfficer || $isNewKangisLog)
                 ? null
                 : ($isOtherOfficer ? null : $resolved['numeric_id']);
             $resolvedOfficerName = $isKangisWorkflowSubmission
                 ? ($request->input('receiving_officer_name') ?: $request->input('receiving_office_name') ?: 'Director GIS')
-                : ($isSltrInternalNoOfficer
+                : (($isSltrInternalNoOfficer || $isNewKangisLog)
                     ? ($request->input('receiving_officer_name') ?: $request->input('receiving_office_name'))
                     : $resolved['name']);
-            $requiresReceivingAcceptance = !$isKangisWorkflowSubmission && !$isSltrInternalNoOfficer && !$isOtherOfficer;
+            // New KANGIS "Log a File" registers the file with no onward assignment, so
+            // it does not wait on a receiving officer's acceptance.
+            $requiresReceivingAcceptance = !$isKangisWorkflowSubmission && !$isSltrInternalNoOfficer && !$isNewKangisLog && !$isOtherOfficer;
 
             // Determine if this is a KANGIS approval workflow
             $workflowType = $workflowTypeInput;
@@ -389,8 +396,8 @@ class FileTrackerApiController extends Controller
                 
                 $processedEntry = [
                     'log_id' => $logId,
-                    'office_code' => $logEntry['office_code'],
-                    'office_name' => $logEntry['office_name'],
+                    'office_code' => $logEntry['office_code'] ?? null,
+                    'office_name' => $logEntry['office_name'] ?? null,
                     'log_in_time' => $logEntry['log_in_time'] ?? null,
                     'log_in_date' => $logEntry['log_in_date'] ?? null,
                     'log_out_time' => $logEntry['log_out_time'] ?? null,
@@ -1325,6 +1332,19 @@ class FileTrackerApiController extends Controller
     public function dashboard(): JsonResponse
     {
         try {
+            // Daily Activity: today's logged files in 3-hour buckets (00:00-23:59),
+            // oldest first for left-to-right timeline rendering on mobile.
+            $dayStart = now()->startOfDay();
+            $dailyLabels = [];
+            $dailyActivity = [];
+            for ($slot = 0; $slot < 8; $slot++) {
+                $bucketStart = $dayStart->copy()->addHours($slot * 3);
+                $bucketEnd = $bucketStart->copy()->addHours(3)->subSecond();
+
+                $dailyLabels[] = $bucketStart->format('ga');
+                $dailyActivity[] = FileTracker::whereBetween('created_at', [$bucketStart, $bucketEnd])->count();
+            }
+
             // Weekly Activity: files logged per day over the last 7 days, oldest first
             // and ending today. Seven cheap indexed counts rather than a GROUP BY, so
             // the day bucketing behaves identically on SQL Server and MySQL.
@@ -1340,6 +1360,8 @@ class FileTrackerApiController extends Controller
             }
 
             $stats = [
+                'daily_labels' => $dailyLabels,
+                'daily_activity' => $dailyActivity,
                 'weekly_labels' => $weeklyLabels,
                 'weekly_activity' => $weeklyActivity,
                 'total_trackers' => FileTracker::count(),

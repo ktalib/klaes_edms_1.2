@@ -113,7 +113,7 @@
           data-section="lands-one-stop-shop">
           <div class="flex items-center gap-2">
             <i data-lucide="store" class="h-4 w-4 text-orange-500"></i>
-            <span>Land One Stop Shop</span>
+            <span>OSS Management</span>
           </div>
           <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200"
             data-chevron="lands-one-stop-shop"></i>
@@ -359,7 +359,7 @@
           data-section="otherApplications-lands">
           <div class="flex items-center gap-2">
             <i data-lucide="files" class="h-4 w-4 text-orange-500"></i>
-            <span>Other Applications</span>
+            <span>Parcel/Title Management</span>
           </div>
           <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200"
             data-chevron="otherApplications-lands"></i>
@@ -451,7 +451,7 @@
           data-section="edmsUpdate-lands">
           <div class="flex items-center gap-2">
             <i data-lucide="refresh-cw" class="h-4 w-4 text-orange-500"></i>
-            <span>EDMS Update</span>
+            <span>DMS Update</span>
           </div>
           <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200"
             data-chevron="edmsUpdate-lands"></i>

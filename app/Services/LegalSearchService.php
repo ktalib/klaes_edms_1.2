@@ -70,6 +70,18 @@ class LegalSearchService
         $allowedSmeFileNos = $this->getSmeAllowedFileNos($fileNo, $conn);
         $filters['allowedSmeFileNos'] = $allowedSmeFileNos;
 
+        // Sectional Titling: when the searched file is an ST mother/scheme (searched by its
+        // LAND number, e.g. RES-2025-115, or the ST number, e.g. ST-RES-2026-2), its unit
+        // files' transactions are keyed to the ST number (deed_registrations.parent_fileno)
+        // or the unit numbers, NOT the land number — so a mother search would otherwise miss
+        // them. Resolve the scheme number + unit numbers and (a) add them to the file-number
+        // search set and (b) whitelist them past the cross-property contamination guard. This
+        // is a SEPARATE channel from allowedSmeFileNos so it never triggers the SME-mode
+        // bypass of the mother's own prop_id expansion. A UNIT search returns [] here
+        // (sibling exclusion — the unit's own number already pulls its own transactions).
+        $stRelatedFileNos = $this->resolveStRelatedFileNos($conn, $fileNo);
+        $filters['stRelatedFileNos'] = $stRelatedFileNos;
+
         $fileHistoryRecords = $this->searchFileHistoryStaging($conn, $filters);
         $cofoRecords = $this->searchCofoStaging($conn, $filters);
         $praRecords = $this->searchPra($conn, $filters);
@@ -255,11 +267,51 @@ class LegalSearchService
                     $smeAllowed[strtoupper($s)] = true;
                 }
             }
+            // ST scheme siblings (unit numbers + scheme number) are legitimately linked to the
+            // searched mother — keep their (often prop_id-less) transaction rows past the guard.
+            foreach (($stRelatedFileNos ?? []) as $stFn) {
+                $s = trim((string) $stFn);
+                if ($s !== '') {
+                    $smeAllowed[strtoupper($s)] = true;
+                }
+            }
+
+            // TEMPORARY prop_id-misassignment guard (until the prop_id data is cleaned):
+            // a shared prop_id alone must not pull an UNRELATED file's rows onto the timeline.
+            // Build the sets of LEGITIMATELY-linked files/parcels so only they survive a
+            // prop_id-ONLY match; everything else that collides on a (mis)assigned prop_id is
+            // dropped. This self-disables once no unrelated file shares a prop_id.
+            //   1) OP/TOT parcels — an Occupancy Permit (temp, or temp+land) and its Transfer of
+            //      Title (land) legitimately share ONE prop_id. Keyed by prop_id.
+            $opTotPropIds = [];
+            foreach ($all as $row) {
+                if ($this->isOpTotRow($row)) {
+                    $p = trim((string) ($row['prop_id'] ?? ''));
+                    if ($p !== '') {
+                        $opTotPropIds[$p] = true;
+                    }
+                }
+            }
+            //   2) PropID_Master-registered aliases of the searched parcel(s) — the KANGIS/MLS/temp
+            //      number formats of the SAME file, which must never be treated as "unrelated".
+            $masterAliasFiles = [];
+            if (!empty($searchedPropIds)) {
+                foreach ($conn->table('PropID_Master')
+                    ->whereIn('prop_id', array_keys($searchedPropIds))
+                    ->get(['primary_file_number', 'mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'temp_fileno']) as $mr) {
+                    foreach (['primary_file_number', 'mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'temp_fileno'] as $col) {
+                        $v = strtoupper(trim((string) ($mr->{$col} ?? '')));
+                        if ($v !== '') {
+                            $masterAliasFiles[$v] = true;
+                        }
+                    }
+                }
+            }
 
             // Only filter when the searched file resolves to a definite prop_id; otherwise leave
             // file-number / orphan-only results untouched.
             if (!empty($searchedPropIds)) {
-                $all = array_values(array_filter($all, function ($row) use ($searchedPropIds, $matchesSearchedFile, $isDistinctFile, $fileNo, $smeAllowed) {
+                $all = array_values(array_filter($all, function ($row) use ($searchedPropIds, $matchesSearchedFile, $isDistinctFile, $fileNo, $smeAllowed, $opTotPropIds, $masterAliasFiles) {
                     // Always keep synthetic recertification rows (contextual markers).
                     if (($row['source_table'] ?? '') === 'Related Fileno') {
                         return true;
@@ -284,9 +336,20 @@ class LegalSearchService
 
                     $pid = trim((string) ($row['prop_id'] ?? ''));
                     if ($pid !== '' && isset($searchedPropIds[$pid])) {
+                        // Shared prop_id. Keep it UNLESS it's a distinctly-different file linked
+                        // ONLY by that (possibly mis-assigned) prop_id. Legit shares survive:
+                        // OP/TOT parcels, the row being an OP/TOT instrument, and PropID_Master
+                        // registered aliases (KANGIS/MLS/temp formats of the same file). SME
+                        // lineage was already kept above.
+                        if ($rowFileNo !== '' && $isDistinctFile($rowFileNo)
+                            && !isset($opTotPropIds[$pid])
+                            && !$this->isOpTotRow($row)
+                            && !isset($masterAliasFiles[strtoupper($rowFileNo)])) {
+                            return false; // unrelated file colliding on a (mis)assigned prop_id
+                        }
                         return true;
                     }
-                    
+
                     $ppid = trim((string) ($row['parent_prop_id'] ?? ''));
                     foreach (array_filter(array_map('trim', explode(',', $ppid))) as $pp) {
                         if ($pp !== '' && isset($searchedPropIds[$pp])) {
@@ -320,6 +383,16 @@ class LegalSearchService
         $dcivCommissioningRows = $this->fetchDcivCommissioningRows($conn, $fileNo, $all);
         if (!empty($dcivCommissioningRows)) {
             $all = array_merge($all, $dcivCommissioningRows);
+        }
+
+        // When the searched file is a Sectional Titling (ST) file — a primary ST
+        // file (ST-COM-2025-5) or one of its commissioned unit files
+        // (ST-COM-2025-5-001) — surface the scheme's commissioning lifecycle:
+        // an "ST File Commissioning" row for the primary application and an
+        // "ST File Commissioning – Fragmentation" row for each commissioned unit.
+        $stCommissioningRows = $this->fetchStCommissioningRows($conn, $fileNo, $all);
+        if (!empty($stCommissioningRows)) {
+            $all = array_merge($all, $stCommissioningRows);
         }
 
         // Surface predecessor decommission events (Change of Purpose / Subdivision / Merger /
@@ -442,7 +515,7 @@ class LegalSearchService
                                 ->orWhere('related_fileno', 'like', '%' . $candidate . '%');
                         }
                     })
-                    ->select('file_title', 'district', 'lga', 'land_use_type', 'plot_number', 'tp_no', 'related_fileno', 'file_number', 'location', 'has_temp_file', 'temp_file_no', 'latitude', 'longitude', 'ground_rent_amount', 'ground_rent_receipt_date')
+                    ->select('file_title', 'district', 'lga', 'land_use_type', 'plot_number', 'plot_size', 'tp_no', 'related_fileno', 'file_number', 'location', 'has_temp_file', 'temp_file_no', 'latitude', 'longitude', 'ground_rent_amount', 'ground_rent_receipt_date')
                     ->get();
 
                 $fileIndexingData = $this->pickBestIndexingRow($fileIndexingDataList, $primaryCandidates);
@@ -456,7 +529,14 @@ class LegalSearchService
         // in the File Information display or the commissioning lookup.
         $ownIndexedNumber = null;
         if ($fileIndexingData) {
-            foreach (($primaryCandidates ?? []) as $candidate) {
+            // Treat the picked indexing row as the searched file's OWN record ONLY when it
+            // matches the searched number (or the temp number the user searched) — never a
+            // related/child row that merely sorted to the top of $all. Matching against the
+            // whole $primaryCandidates set (which includes $all[0]) let a subdivision mother
+            // that is not itself indexed borrow a CHILD's number for the File Information
+            // header (e.g. searching RES-1992-7536 showed RES-RC-1991-39).
+            $searchedOwnNumbers = array_filter([$searchedFileNo, $fileNo]);
+            foreach ($searchedOwnNumbers as $candidate) {
                 if (strcasecmp((string) ($fileIndexingData->file_number ?? ''), (string) $candidate) === 0
                     || strcasecmp((string) ($fileIndexingData->temp_file_no ?? ''), (string) $candidate) === 0) {
                     $ownIndexedNumber = (string) $fileIndexingData->file_number;
@@ -465,23 +545,34 @@ class LegalSearchService
             }
         }
 
-        // Compute aggregate file_size using source weighting: CofO(4) > FH(3) > PRA(2) > Deed(1)
+        // Size: the file indexing record is the editable source of truth (the Edit File
+        // Information modal writes to file_indexings.plot_size), so it takes priority —
+        // this mirrors buildPrintReport() so the on-screen "Size" and the printed report
+        // agree, and a manually-entered size actually shows after a refresh.
         $fileSize = null;
-        $bestSizeScore = -1;
-        $sourceScores = [
-            'CofO_staging' => 4,
-            'file_history_staging' => 3,
-            'pra' => 2,
-            'deed_registrations' => 1,
-        ];
-        foreach ($all as $t) {
-            $s = $t['size'] ?? null;
-            if ($s && $s !== '-' && trim($s) !== '') {
-                $src = $t['source_table'] ?? '';
-                $score = $sourceScores[$src] ?? 0;
-                if ($score > $bestSizeScore) {
-                    $bestSizeScore = $score;
-                    $fileSize = trim($s);
+        if ($fileIndexingData && trim((string) ($fileIndexingData->plot_size ?? '')) !== '') {
+            $fileSize = trim((string) $fileIndexingData->plot_size);
+        }
+
+        // Otherwise derive it from the transactions using source weighting:
+        // CofO(4) > FH(3) > PRA(2) > Deed(1).
+        if (!$fileSize) {
+            $bestSizeScore = -1;
+            $sourceScores = [
+                'CofO_staging' => 4,
+                'file_history_staging' => 3,
+                'pra' => 2,
+                'deed_registrations' => 1,
+            ];
+            foreach ($all as $t) {
+                $s = $t['size'] ?? null;
+                if ($s && $s !== '-' && trim($s) !== '') {
+                    $src = $t['source_table'] ?? '';
+                    $score = $sourceScores[$src] ?? 0;
+                    if ($score > $bestSizeScore) {
+                        $bestSizeScore = $score;
+                        $fileSize = trim($s);
+                    }
                 }
             }
         }
@@ -1940,6 +2031,306 @@ class LegalSearchService
         }
     }
 
+    /**
+     * Sectional Titling (ST) commissioning lifecycle rows.
+     *
+     * When the searched file is an ST file — a primary ST file number such as
+     * ST-COM-2025-5, or one of its commissioned unit files ST-COM-2025-5-001 —
+     * surface the scheme's commissioning lifecycle as synthetic timeline rows:
+     *   - one "ST File Commissioning" row for the PRIMARY application, and
+     *   - one "ST File Commissioning – Fragmentation" row per commissioned unit.
+     *
+     * Scope (per client spec):
+     *   - Searching the PRIMARY  → primary commissioning + every commissioned unit.
+     *   - Searching a UNIT       → primary commissioning + THAT unit only (siblings
+     *     excluded, mirroring the standard subdivided-unit rule).
+     *
+     * Authoritative source: st_file_numbers. `np_fileno` groups a scheme;
+     * `file_no_type` distinguishes PRIMARY from PUA/SUA units; `date_commissioned`
+     * is the genuine ST commissioning date. When no date_commissioned is on record
+     * the row falls back to the bare year embedded in the file number.
+     */
+    /**
+     * ST scheme file numbers whose TRANSACTIONS must be pulled into a mother/scheme
+     * search: the ST scheme number (np_fileno) — so deed_registrations.parent_fileno
+     * matches surface unit deeds — plus every commissioned unit file number. Returns []
+     * for a non-ST file OR for a UNIT search (a unit already pulls its own transactions
+     * by its own number; siblings are deliberately excluded).
+     */
+    private function resolveStRelatedFileNos($conn, string $fileNo): array
+    {
+        try {
+            $schema = Schema::connection($conn->getName());
+            if (!$schema->hasTable('st_file_numbers')) {
+                return [];
+            }
+            $searched = strtoupper(trim($fileNo));
+            if ($searched === '') {
+                return [];
+            }
+
+            $match = $conn->table('st_file_numbers')
+                ->where(function ($q) use ($searched) {
+                    $q->whereRaw('UPPER(LTRIM(RTRIM(np_fileno))) = ?', [$searched])
+                      ->orWhereRaw('UPPER(LTRIM(RTRIM(fileno))) = ?', [$searched])
+                      ->orWhereRaw('UPPER(LTRIM(RTRIM(mls_fileno))) = ?', [$searched]);
+                })
+                ->orderByRaw("CASE WHEN UPPER(file_no_type) = 'PRIMARY' THEN 0 ELSE 1 END")
+                ->get();
+            if ($match->isEmpty()) {
+                return [];
+            }
+
+            $primaryNo = trim((string) ($match->first()->np_fileno ?? ''));
+            if ($primaryNo === '') {
+                return [];
+            }
+
+            // A UNIT search (searched number is a non-PRIMARY unit's own fileno) adds
+            // nothing — sibling exclusion; the unit's own number already pulls its rows.
+            foreach ($match as $m) {
+                $type = strtoupper((string) ($m->file_no_type ?? ''));
+                $fn = strtoupper(trim((string) ($m->fileno ?? '')));
+                if ($type !== 'PRIMARY' && $fn === $searched && $fn !== strtoupper($primaryNo)) {
+                    return [];
+                }
+            }
+
+            // Mother/scheme search: scheme number + every commissioned unit number.
+            $related = [$primaryNo];
+            $units = $conn->table('st_file_numbers')
+                ->whereRaw('UPPER(LTRIM(RTRIM(np_fileno))) = ?', [strtoupper($primaryNo)])
+                ->whereIn(DB::raw('UPPER(file_no_type)'), ['PUA', 'SUA'])
+                ->whereIn(DB::raw('UPPER(status)'), ['ACTIVE', 'USED'])
+                ->whereNotNull('fileno')
+                ->pluck('fileno');
+            foreach ($units as $u) {
+                $u = trim((string) $u);
+                if ($u !== '' && strtoupper($u) !== strtoupper($primaryNo)) {
+                    $related[] = $u;
+                }
+            }
+            return array_values(array_unique($related));
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    private function fetchStCommissioningRows($conn, string $fileNo, array $existingRows): array
+    {
+        try {
+            $schema = Schema::connection($conn->getName());
+            if (!$schema->hasTable('st_file_numbers')) {
+                return [];
+            }
+
+            $searched = strtoupper(trim($fileNo));
+            if ($searched === '') {
+                return [];
+            }
+
+            // Locate the searched file in st_file_numbers. An ST scheme file may be
+            // identified by ANY of its numbers — the ST np_fileno (ST-RES-2026-2), the
+            // applied/MLS number (RES-2025-115), or a unit's fileno — so match on all
+            // three. (The old ST- prefix gate missed primaries stored under their MLS
+            // number.) PRIMARY rows sort first so first() yields the scheme's primary.
+            $match = $conn->table('st_file_numbers')
+                ->where(function ($q) use ($searched) {
+                    $q->whereRaw('UPPER(LTRIM(RTRIM(np_fileno))) = ?', [$searched])
+                      ->orWhereRaw('UPPER(LTRIM(RTRIM(fileno))) = ?', [$searched])
+                      ->orWhereRaw('UPPER(LTRIM(RTRIM(mls_fileno))) = ?', [$searched]);
+                })
+                ->orderByRaw("CASE WHEN UPPER(file_no_type) = 'PRIMARY' THEN 0 ELSE 1 END")
+                ->get();
+
+            if ($match->isEmpty()) {
+                return [];
+            }
+
+            // The scheme's primary ST file number.
+            $primaryNo = trim((string) ($match->first()->np_fileno ?? ''));
+            if ($primaryNo === '') {
+                return [];
+            }
+
+            // Classify the searched file: does it resolve to the PRIMARY record itself
+            // (by ANY of its numbers), or to a specific unit? A unit search emits only
+            // that unit's fragmentation row (sibling exclusion).
+            $searchedMatchesPrimary = false;
+            $searchedUnitNo = null;
+            foreach ($match as $m) {
+                $type = strtoupper((string) ($m->file_no_type ?? ''));
+                $np = strtoupper(trim((string) ($m->np_fileno ?? '')));
+                $fn = strtoupper(trim((string) ($m->fileno ?? '')));
+                $mls = strtoupper(trim((string) ($m->mls_fileno ?? '')));
+                if ($type === 'PRIMARY' && ($np === $searched || $fn === $searched || $mls === $searched)) {
+                    $searchedMatchesPrimary = true;
+                } elseif ($type !== 'PRIMARY' && $fn === $searched && $fn !== strtoupper($primaryNo)) {
+                    $searchedUnitNo = trim((string) $m->fileno);
+                }
+            }
+
+            // Avoid duplicating rows already present in the result set.
+            $existing = [];
+            foreach ($existingRows as $r) {
+                $t = strtoupper(trim((string) ($r['transaction_type'] ?? '')));
+                foreach (['fileno', 'file_number', 'mlsFNo'] as $col) {
+                    $v = strtoupper(trim((string) ($r[$col] ?? '')));
+                    if ($v !== '') {
+                        $existing[$t . '|' . $v] = true;
+                    }
+                }
+            }
+
+            $rowId = -900000; // synthetic negative ids, distinct from other synth rows
+
+            $buildRow = function (string $rowFileNo, string $label, $stRow, array $extra = []) use (&$rowId) {
+                $displayDate = '-';
+                $sortDate = null;
+                $commDate = $stRow->date_commissioned ?? null;
+                if (!empty($commDate)) {
+                    $parsed = rescue(fn () => Carbon::parse($commDate), null, false);
+                    if ($parsed) {
+                        $displayDate = $parsed->format('M j, Y');
+                        $sortDate = $parsed->toDateString();
+                    }
+                }
+                if ($displayDate === '-') {
+                    $year = $this->extractYearFromFileNumber($rowFileNo);
+                    if ($year) {
+                        $displayDate = $year;
+                        $sortDate = $year . '-01-01';
+                    }
+                }
+
+                $holder = trim((string) ($stRow->file_name ?? ''));
+                if ($holder === '') {
+                    $holder = trim(implode(' ', array_filter([
+                        $stRow->applicant_title ?? null,
+                        $stRow->surname ?? null,
+                        $stRow->first_name ?? null,
+                        $stRow->middle_name ?? null,
+                        $stRow->corporate_name ?? null,
+                    ], static fn ($v) => trim((string) $v) !== '')));
+                }
+
+                $base = [
+                    'id'                => $rowId--,
+                    'file_number'       => $rowFileNo,
+                    'mlsFNo'            => $rowFileNo,
+                    'fileno'            => $rowFileNo,
+                    'kangisFileNo'      => null,
+                    'NewKANGISFileno'   => null,
+                    'transaction_type'  => $label,
+                    'transaction_date'  => $displayDate,
+                    'sort_date'         => $sortDate,
+                    'party_1'           => 'Kano State Ministry of Land and Physical Planning',
+                    'party_2'           => $holder !== '' ? $holder : '-',
+                    'party_3'           => '-',
+                    'party_4'           => '-',
+                    'land_use'          => trim((string) ($stRow->land_use ?? '')) ?: '-',
+                    'location'          => '-',
+                    'lgsaOrCity'        => '-',
+                    'districtName'      => '-',
+                    'registration'      => '-',
+                    'regNo'             => '-',
+                    'serial_no'         => '-',
+                    'page_no'           => '-',
+                    'volume_no'         => '-',
+                    'size'              => '-',
+                    'caveat'            => '-',
+                    'caveat_id'         => null,
+                    'caveated_comment'  => null,
+                    'is_caveated'       => 0,
+                    'plot_no'           => '-',
+                    'comments'          => '-',
+                    'cofo_comment'      => null,
+                    'prop_id'           => null,
+                    'parent_prop_id'    => null,
+                    'deeds_date'        => null,
+                    'deeds_time'        => null,
+                    'reg_date'          => null,
+                    'reg_time'          => null,
+                    'tp_no'             => null,
+                    'source_table'      => 'ST File Commissioning',
+                    '_synthesized'      => true,
+                    'parent_file_number' => $rowFileNo,
+                ];
+                return array_merge($base, $extra);
+            };
+
+            $out = [];
+
+            // 1. PRIMARY commissioning row. Always resolve the scheme's actual PRIMARY
+            // record so its commissioning date is consistent regardless of whether the
+            // primary or one of its units was searched. SUA schemes carry no PRIMARY
+            // st_file_numbers row, so the orderBy fallback yields the scheme's own record.
+            $primaryRow = $match->firstWhere('file_no_type', 'PRIMARY');
+            if (!$primaryRow) {
+                $primaryRow = $conn->table('st_file_numbers')
+                    ->whereRaw('UPPER(LTRIM(RTRIM(np_fileno))) = ?', [strtoupper($primaryNo)])
+                    ->orderByRaw("CASE WHEN UPPER(file_no_type) = 'PRIMARY' THEN 0 ELSE 1 END")
+                    ->first();
+            }
+            if (!$primaryRow) {
+                $primaryRow = $match->first();
+            }
+
+            // The land ("mother") file number is the primary's applied/MLS number
+            // (e.g. RES-2025-115) — the number a Land File Commissioning row is keyed on.
+            // The mother has TWO commissioning events that must BOTH display, in order:
+            //   Land File Commissioning (mls_fileno) → transactions → ST File Commissioning
+            //   (np_fileno) → transactions. So the ST primary row is DISPLAYED on its ST
+            // number ($primaryNo) but tagged to the land file's lifecycle group
+            // (lifecycle_file_no) so it folds INTO the mother block, and flagged
+            // (_st_primary_commissioning + _pinned) so the frontend places it by DATE among
+            // the transactions instead of hoisting it to the top with the land commissioning.
+            $landFileNo = trim((string) ($primaryRow->mls_fileno ?? '')) ?: trim((string) ($primaryRow->fileno ?? '')) ?: $primaryNo;
+            if (!isset($existing['ST FILE COMMISSIONING|' . strtoupper($primaryNo)])) {
+                $out[] = $buildRow($primaryNo, 'ST File Commissioning', $primaryRow, [
+                    'lifecycle_file_no'         => $landFileNo,
+                    'parent_file_number'        => $landFileNo,
+                    '_st_primary_commissioning' => true,
+                    '_pinned'                   => true,
+                ]);
+            }
+
+            // 2. Fragmentation rows for commissioned units.
+            $unitsQuery = $conn->table('st_file_numbers')
+                ->whereRaw('UPPER(LTRIM(RTRIM(np_fileno))) = ?', [strtoupper($primaryNo)])
+                ->whereIn(DB::raw('UPPER(file_no_type)'), ['PUA', 'SUA'])
+                ->whereIn(DB::raw('UPPER(status)'), ['ACTIVE', 'USED'])
+                ->whereNotNull('fileno');
+
+            if ($searchedUnitNo !== null) {
+                // Unit search → only the searched unit (sibling exclusion).
+                $unitsQuery->whereRaw('UPPER(LTRIM(RTRIM(fileno))) = ?', [strtoupper($searchedUnitNo)]);
+            }
+
+            $units = $unitsQuery->orderBy('unit_sequence')->get();
+            $seenUnits = [];
+            foreach ($units as $u) {
+                $unitNo = trim((string) $u->fileno);
+                if ($unitNo === '' || strtoupper($unitNo) === strtoupper($primaryNo)) {
+                    continue;
+                }
+                $key = strtoupper($unitNo);
+                if (isset($seenUnits[$key])) {
+                    continue;
+                }
+                $seenUnits[$key] = true;
+                if (isset($existing['ST FILE COMMISSIONING – FRAGMENTATION|' . $key])) {
+                    continue;
+                }
+                $out[] = $buildRow($unitNo, 'ST File Commissioning – Fragmentation', $u);
+            }
+
+            return $out;
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
     private function emptyResult(): array
     {
         return [
@@ -2099,6 +2490,12 @@ class LegalSearchService
      */
     private function resolveCommissioningHolder($conn, ?string $fileNo): ?string
     {
+        // TEMPORARILY DISABLED: do not derive the File Commissioning holder from the
+        // grantor of the earliest Deed of Assignment. Returning null makes every call
+        // site fall back to the file title (latest owner) instead. Remove this early
+        // return to restore the assignor-based "original holder" behaviour.
+        return null;
+
         $variants = $this->fileNumberVariants($fileNo);
         if (empty($variants)) {
             return null;
@@ -2855,6 +3252,13 @@ class LegalSearchService
                 if ($this->isSubdividedUnit($searchedFileNo, $motherFileNo)) {
                     $searchFileNos[] = $motherFileNo;
                 }
+            }
+
+            // Sectional Titling scheme expansion (ST mother/scheme search): pull the units'
+            // transactions by also matching the ST scheme number (→ deed_registrations.parent_fileno)
+            // and each unit file number. Additive — never replaces the searched number.
+            if (!empty($f['stRelatedFileNos'])) {
+                $searchFileNos = array_merge($searchFileNos, $f['stRelatedFileNos']);
             }
 
             // Expand to base/"(T)" variants so searching the temp file number (e.g.
@@ -4901,6 +5305,10 @@ class LegalSearchService
                 // Needed by resolveAliasHintOwners()/extractMainEndpoint() so a KANGIS alias that
                 // belongs to an ANCESTOR folds into the ancestor's block, not the searched child's.
                 'parent_file_number' => $t['parent_file_number'] ?? null,
+                // Preserve the mother-ST-commissioning flag so the lifecycle dedupe keeps it
+                // distinct from the Land File Commissioning row and arrange places it
+                // chronologically (not hoisted) within the land block.
+                '_st_primary_commissioning' => $t['_st_primary_commissioning'] ?? null,
             ];
         }
 
@@ -4974,6 +5382,27 @@ class LegalSearchService
             $commissioningTxnDate = $this->extractYearFromFileNumber($commissioningFileNo) ?? '-';
         }
 
+        // An ST mother file has TWO commissioning events (Land + ST). When the searched
+        // file is the land number of an ST scheme primary, relabel this generic row as
+        // "Land File Commissioning" so it reads distinctly from the "ST File Commissioning"
+        // row (np_fileno) that folds into the same block. source_table stays
+        // 'File Commissioning' so classification/hoisting are unaffected.
+        $isStMother = false;
+        try {
+            if (Schema::connection('sqlsrv')->hasTable('st_file_numbers')) {
+                $landNorm = strtoupper(trim((string) $commissioningFileNo));
+                $isStMother = $landNorm !== '' && DB::connection('sqlsrv')->table('st_file_numbers')
+                    ->where('file_no_type', 'PRIMARY')
+                    ->where(function ($q) use ($landNorm) {
+                        $q->whereRaw('UPPER(LTRIM(RTRIM(mls_fileno))) = ?', [$landNorm])
+                          ->orWhereRaw('UPPER(LTRIM(RTRIM(fileno))) = ?', [$landNorm]);
+                    })
+                    ->exists();
+            }
+        } catch (\Throwable $e) {
+            $isStMother = false;
+        }
+
         $commissioningRow = [
             'sn' => 0, // renumbered below
             'file_no' => $commissioningFileNo ?: '-',
@@ -4984,7 +5413,7 @@ class LegalSearchService
             'grantee' => $commissioningHolder,
             'party_3' => '-',
             'party_4' => '-',
-            'instrument_type' => 'File Commissioning',
+            'instrument_type' => $isStMother ? 'Land File Commissioning' : 'File Commissioning',
             'transaction_date' => $commissioningTxnDate,
             'reg_time' => '-',
             'reg_date' => $commissioningDate,
@@ -6490,6 +6919,14 @@ class LegalSearchService
             return 'Ministry of Land and Physical Planning Recertification';
         }
         if (stripos($stored, 'recertification') !== false) {
+            // "First/Second KANGIS Recertification" applies ONLY to a genuine KANGIS-format
+            // file (Rules 6/7): old KNML/MLKN/KNGP -> First, new KN -> Second. When NEITHER
+            // endpoint is a KANGIS number, a stored "KANGIS Recertification" type is spurious
+            // (e.g. a land file wrongly linked as a recert, RES-1999-113) and must NOT be
+            // relabelled a KANGIS recert — keep it neutral so it never shows a KANGIS line.
+            if (!$this->isKangisFormat($kangisNo)) {
+                return 'Related File';
+            }
             return $this->identifyFileNumberType($kangisNo) === 'new_kangis'
                 ? 'Second KANGIS Recertification'
                 : 'First KANGIS Recertification';
@@ -6557,6 +6994,22 @@ class LegalSearchService
             return false;
         }
         return (bool) preg_match('~(?:^|[-_/ ])RC(?:[-_/ ]|$)~', $v);
+    }
+
+    /**
+     * An Occupancy Permit / Transfer of Title row. OP (temp and/or land file) and its ToT
+     * (land file) legitimately share one prop_id, so the prop_id-misassignment guard must
+     * never drop them. Matches the instrument/transaction label, tolerant of the "(OP)" suffix.
+     */
+    private function isOpTotRow(array $row): bool
+    {
+        $t = strtolower((string) ($row['transaction_type'] ?? ($row['instrument_type'] ?? '')));
+        if ($t === '') {
+            return false;
+        }
+        return str_contains($t, 'occupancy permit')
+            || str_contains($t, 'transfer of title')
+            || str_contains($t, '(op)');
     }
 
     /**
@@ -6893,6 +7346,14 @@ class LegalSearchService
                 || $instrument === 'File Commissioning' || $instrument === 'DCIV File Commissioning') {
                 $hasCommissioning[$fno] = true;
             }
+            // A unit ST "ST File Commissioning – Fragmentation" row IS that unit's
+            // commissioning event — don't also synthesize a generic "File Commissioning"
+            // for it (which would replace the real ST label + date). The mother's ST
+            // primary row is tagged to the LAND lifecycle, which already carries its own
+            // Land File Commissioning row, so this is a no-op there.
+            if ($source === 'ST File Commissioning') {
+                $hasCommissioning[$fno] = true;
+            }
             if ($source === 'File Decommissioning' || $instrument === 'File Decommissioning') {
                 $hasDecommissioning[$fno] = true;
             }
@@ -7005,6 +7466,13 @@ class LegalSearchService
             return null;
         }
 
+        // The mother ST "ST File Commissioning" event is DISTINCT from the mother's
+        // "Land File Commissioning" event — both classify as 'File Commissioning' but must
+        // coexist in the same land lifecycle block, so give the ST primary its own key.
+        if (!empty($row['_st_primary_commissioning'])) {
+            return 'ST File Commissioning';
+        }
+
         if ($type === 'Kangis Recertification') {
             $kangis = $this->extractKangisLifecycleKey($row);
             if ($kangis === '') {
@@ -7045,9 +7513,10 @@ class LegalSearchService
         $type = (string) ($row['transaction_type'] ?? '');
         $synth = $row['_synthesized'] ?? false;
 
-        if ($source === 'File Commissioning' || $source === 'DCIV File Commissioning'
+        if ($source === 'File Commissioning' || $source === 'DCIV File Commissioning' || $source === 'ST File Commissioning'
             || $instrument === 'File Commissioning' || $instrument === 'DCIV File Commissioning'
             || $type === 'File Commissioning' || $type === 'DCIV File Commissioning'
+            || str_starts_with($type, 'ST File Commissioning')
             || ($synth && (str_contains($instrument, 'Commissioning') || str_contains($type, 'Commissioning')))) {
             return 'File Commissioning';
         }
@@ -7294,7 +7763,12 @@ class LegalSearchService
         // transaction_type land in the correct phase instead of the transactions bucket.
         foreach ($rows as $row) {
             $event = $this->classifyLifecycleEventType($row);
-            if ($event === 'File Commissioning') {
+            // The mother ST "ST File Commissioning" row (np_fileno) is a SECOND commissioning
+            // event that must sit chronologically after the Land File Commissioning and its
+            // intervening transactions, not be hoisted with it. Flagged _st_primary_commissioning
+            // (already date-positioned), so route it through the transactions bucket. Unit
+            // "– Fragmentation" rows are not flagged and still hoist to the top of their blocks.
+            if ($event === 'File Commissioning' && empty($row['_st_primary_commissioning'])) {
                 $commissioning[] = $row;
             } elseif ($event === 'Temporary File') {
                 $temp[] = $row;
@@ -7310,7 +7784,69 @@ class LegalSearchService
         // transaction phase so rows never leave their lifecycle group.
         $transactions = $this->placeKangisRecertBeforeCofo($transactions);
 
+        // Rule 4: the "Ministry of Land and Physical Planning Recertification" line for an
+        // "-RC-" land file must sit directly UNDER the File Commissioning line (top of the
+        // transaction band). It is usually undated, which would otherwise float it to the
+        // very end of the block — so hoist it to the front of the transactions here.
+        $ministryRecert = [];
+        $otherTransactions = [];
+        foreach ($transactions as $t) {
+            $ty = (string) ($t['transaction_type'] ?? ($t['instrument_type'] ?? ''));
+            if (stripos($ty, 'physical planning') !== false && stripos($ty, 'recertification') !== false) {
+                $ministryRecert[] = $t;
+            } else {
+                $otherTransactions[] = $t;
+            }
+        }
+        $transactions = array_merge($ministryRecert, $otherTransactions);
+
+        // Sectional Titling: within an ST unit's block the transactions must read strictly
+        // chronologically (e.g. Right of Occupancy before its later Assignment/Transfer of
+        // Title), NOT by the global legal-hierarchy weight (which ranks Transfer of Title
+        // above Right of Occupancy for OP/TOT parcels). Only re-sort when EVERY transaction
+        // in this band is an ST row, so non-ST lifecycles keep their weighted order untouched.
+        if (count($transactions) > 1 && $this->allStRows($transactions)) {
+            $ts = function (array $r): ?int {
+                $d = trim((string) ($r['transaction_date'] ?? ''));
+                if ($d === '' || $d === '-') {
+                    return null;
+                }
+                $parsed = rescue(fn () => \Carbon\Carbon::parse($d)->getTimestamp(), null, false);
+                return $parsed;
+            };
+            usort($transactions, function (array $a, array $b) use ($ts): int {
+                $ta = $ts($a);
+                $tb = $ts($b);
+                if ($ta === null && $tb === null) {
+                    return ((int) ($a['sn'] ?? 0)) <=> ((int) ($b['sn'] ?? 0));
+                }
+                if ($ta === null) return 1;   // undated rows sink to the end of the band
+                if ($tb === null) return -1;
+                return $ta <=> $tb;
+            });
+        }
+
         return array_merge($commissioning, $temp, $transactions, $decommissioning);
+    }
+
+    /**
+     * True when every row is a Sectional Titling row — an "ST File Commissioning" source,
+     * an "ST …" instrument (ST Assignment, ST Fragmentation), or a "(ST)" instrument
+     * (Right of Occupancy (ST)). Used to scope the ST chronological re-sort.
+     */
+    private function allStRows(array $rows): bool
+    {
+        foreach ($rows as $r) {
+            $source = (string) ($r['source_table'] ?? '');
+            $type = strtoupper((string) ($r['transaction_type'] ?? ($r['instrument_type'] ?? '')));
+            $isSt = $source === 'ST File Commissioning'
+                || strpos($type, 'ST ') === 0
+                || strpos($type, '(ST)') !== false;
+            if (!$isSt) {
+                return false;
+            }
+        }
+        return !empty($rows);
     }
 
     /**

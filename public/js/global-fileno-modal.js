@@ -830,7 +830,9 @@
                     const year = $('#mls-dciv-lpcc-year').val();
                     const serial = $('#mls-dciv-lpcc-serial').val();
                     if (prefix && year && serial) {
-                        return `${prefix}-${year}-${serial}`;
+                        const isTemp = $('#mls-dciv-file-type').val() === 'temporary';
+                        const fileNo = `${prefix}-${year}-${serial}`;
+                        return isTemp ? `${fileNo}(T)` : fileNo;
                     }
                     break;
                 }
@@ -883,7 +885,9 @@
             const year = $('#mls-dciv-lpcc-year').val();
             const serial = $('#mls-dciv-lpcc-serial').val();
             if (prefix && year && serial) {
-                return `${prefix}-${year}-${serial}`;
+                const isTemp = $('#mls-dciv-file-type').val() === 'temporary';
+                const fileNo = `${prefix}-${year}-${serial}`;
+                return isTemp ? `${fileNo}(T)` : fileNo;
             }
             return '';
         },

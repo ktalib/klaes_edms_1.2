@@ -941,6 +941,13 @@ const executeSearchAjax = (filters, searchData) => {
         // Whether the searched file is actually indexed (has its own file_indexings row).
         // When false, the synthetic "File Commissioning" timeline row is suppressed.
         const _apiIsIndexed = (data.is_indexed === true);
+
+        // Expose the searched file's land use + title globally so the standalone
+        // "Add New Property Record" opener (partials/file-history.blade.php) can
+        // prefill Land Use and backfill Grantee without access to selectedFile.
+        window.__lsSelectedFileLandUse = (_apiFileLandUse || '').toString().trim();
+        if (_apiFileTitle) window.__lsSelectedFileTitle = _apiFileTitle.toString().trim();
+
         searchResults.forEach(r => {
           r._file_is_indexed = _apiIsIndexed;
           if (_apiFileTitle) r._file_title = _apiFileTitle;
@@ -1661,6 +1668,12 @@ const executeSearchAjax = (filters, searchData) => {
 
     const source = String(item?.source_table || '').trim();
     if (source === 'DCIV File Commissioning') return 'DCIV_COMMISSIONING';
+    // ST commissioning rows (primary + "– Fragmentation" units) rank at the
+    // File Commissioning tier so they open their lifecycle block.
+    if (source === 'ST File Commissioning'
+        || String(getMappedValue(item, 'transactionType') || '').startsWith('ST File Commissioning')) {
+      return 'FILE_COMMISSIONING';
+    }
 
     // 'Related Fileno' is a source, not an event: a Merger or Subdivision links files just
     // as a recertification does, so the type must win. Testing the source first would rank
@@ -3544,6 +3557,20 @@ const executeSearchAjax = (filters, searchData) => {
     if (!_notKangisNo(fileNo)) return null;
     // A SYSTEM temporary number ("TEMP-xxx") is an internal placeholder, never a commissioning event.
     if (isSystemTempFileNo(fileNo)) return null;
+    // Sectional Titling: a mother ST file has TWO commissioning events that must BOTH
+    // show — the Land File Commissioning (this generic row, on the mls_fileno/land
+    // number) and the ST File Commissioning (a backend "ST File Commissioning" row on
+    // the np_fileno, tagged into this same land group). When the backend emitted an ST
+    // primary commissioning row for this land file, relabel this generic row to
+    // "Land File Commissioning" so the two events read distinctly (no longer suppressed).
+    const _stCommRows = window._preferredRelatedTransactions || window._allRelatedTransactions || [];
+    const _normStFn = (s) => String(s || '').toUpperCase().replace(/[\s\-_=\/]+/g, '');
+    const _fileNoNormST = _normStFn(fileNo);
+    const _hasStCommissioning = _stCommRows.some(r =>
+      String((r && r.source_table) || '') === 'ST File Commissioning' &&
+      String((r && r.transaction_type) || '').indexOf('Fragmentation') === -1 &&
+      _normStFn((r && (r.lifecycle_file_no || r.parent_file_number)) || '') === _fileNoNormST);
+    const _commissioningLabel = _hasStCommissioning ? 'Land File Commissioning' : 'File Commissioning';
     // The commissioning date belongs to whichever file number was actually
     // commissioned (fileNumber.mlsfNo, resolved server-side). It carries a "(T)"
     // suffix when the temporary file was the commissioned one. Show the date on
@@ -3572,7 +3599,7 @@ const executeSearchAjax = (filters, searchData) => {
       file_number: fileNo,
       mlsFNo: fileNo,
       lifecycle_file_no: fileNo,
-      transaction_type: 'File Commissioning',
+      transaction_type: _commissioningLabel,
       instrument_type: 'File Commissioning',
       party_1: 'Kano State Ministry of Land and Physical Planning', party_2: ownerName, party_3: '-', party_4: '-',
       serial_no: '', page_no: '', volume_no: '',
@@ -4034,9 +4061,10 @@ const executeSearchAjax = (filters, searchData) => {
     const type = String(row?.transaction_type || '');
     const synth = row?._synthesized === true;
 
-    if (source === 'File Commissioning' || source === 'DCIV File Commissioning'
+    if (source === 'File Commissioning' || source === 'DCIV File Commissioning' || source === 'ST File Commissioning'
         || instrument === 'File Commissioning' || instrument === 'DCIV File Commissioning'
         || type === 'File Commissioning' || type === 'DCIV File Commissioning'
+        || type.startsWith('ST File Commissioning')
         || (synth && (instrument.includes('Commissioning') || type.includes('Commissioning')))) {
       return 'File Commissioning';
     }
@@ -4077,6 +4105,10 @@ const executeSearchAjax = (filters, searchData) => {
     const lifecycleEventDedupeKey = (r) => {
       const eventType = classifyLifecycleEventType(r);
       if (!eventType) return null;
+      // The mother ST "ST File Commissioning" event is DISTINCT from the mother's
+      // "Land File Commissioning" — both classify as 'File Commissioning' but must
+      // coexist in the same land block, so give the ST primary its own dedupe key.
+      if (r && r._st_primary_commissioning) return 'ST File Commissioning';
       if (eventType === 'Kangis Recertification') {
         const k = extractKangisLifecycleKey(r) || normalizeLifecycleFileNo(extractLifecycleFileNo(r) || '');
         return `${eventType}|${k}`;
@@ -4141,6 +4173,11 @@ const executeSearchAjax = (filters, searchData) => {
       const hasCommissioning = rows.some(r =>
         String(r?.source_table || '') === 'File Commissioning'
         || String(r?.source_table || '') === 'DCIV File Commissioning'
+        // A unit ST "ST File Commissioning – Fragmentation" row IS that unit's own
+        // commissioning event — don't synthesize a generic "File Commissioning" that
+        // would replace its ST label + real date. (The mother's ST primary row is tagged
+        // to the LAND group, which already carries its Land File Commissioning row.)
+        || String(r?.source_table || '') === 'ST File Commissioning'
         || String(r?.instrument_type || '') === 'File Commissioning'
         || String(r?.instrument_type || '') === 'DCIV File Commissioning'
         || String(r?.transaction_type || '') === 'File Commissioning'
@@ -4235,7 +4272,14 @@ const executeSearchAjax = (filters, searchData) => {
     // of falling through to the transactions bucket and sinking to the bottom.
     for (const r of rows) {
       const evt = classifyLifecycleEventType(r);
-      if (evt === 'File Commissioning') {
+      // The mother ST "ST File Commissioning" row (np_fileno) is a SECOND commissioning
+      // event that must sit chronologically AFTER the Land File Commissioning and its
+      // intervening transactions — not be hoisted to the top of the block with the land
+      // commissioning. It is flagged _st_primary_commissioning (+ _pinned so it was
+      // already date-positioned by sortTimelineChronologically), so route it through the
+      // transactions bucket to preserve that position. Unit "– Fragmentation" rows are NOT
+      // flagged and still hoist to the top of their own unit blocks.
+      if (evt === 'File Commissioning' && !r._st_primary_commissioning) {
         commissioning.push(r);
       } else if (evt === 'Temporary File') {
         temp.push(r);
@@ -4250,7 +4294,42 @@ const executeSearchAjax = (filters, searchData) => {
 
     // Recertification/CoFO pairing executes strictly inside the current
     // lifecycle's transaction phase so rows never leave their group.
-    const arrangedTransactions = placeKangisRecertBeforeCofo(transactions);
+    let arrangedTransactions = placeKangisRecertBeforeCofo(transactions);
+
+    // Rule 4: the "Ministry of Land and Physical Planning Recertification" line for an
+    // "-RC-" land file must sit directly UNDER the File Commissioning line. It is usually
+    // undated, which would otherwise float it to the end of the block — hoist it to the
+    // front of the transactions. Mirrors LegalSearchService::arrangeLifecycleFileRows().
+    const isMinistryRecert = (r) => {
+      const t = String(r?.transaction_type || r?.instrument_type || '');
+      return /physical planning/i.test(t) && /recertification/i.test(t);
+    };
+    arrangedTransactions = [
+      ...arrangedTransactions.filter(isMinistryRecert),
+      ...arrangedTransactions.filter(r => !isMinistryRecert(r)),
+    ];
+
+    // Sectional Titling: within an ST unit's block the transactions read strictly
+    // chronologically (Right of Occupancy before its later Assignment/Transfer of Title),
+    // NOT by the global legal-hierarchy weight (which ranks Transfer of Title above Right
+    // of Occupancy for OP/TOT parcels). Only re-sort when EVERY transaction in the band is
+    // an ST row, so non-ST lifecycles keep their weighted order untouched. Mirrors
+    // LegalSearchService::arrangeLifecycleFileRows().
+    const isStRow = (r) => {
+      const source = String(r?.source_table || '');
+      const type = String(r?.transaction_type || r?.instrument_type || '').toUpperCase();
+      return source === 'ST File Commissioning' || type.startsWith('ST ') || type.includes('(ST)');
+    };
+    if (arrangedTransactions.length > 1 && arrangedTransactions.every(isStRow)) {
+      arrangedTransactions = arrangedTransactions.slice().sort((a, b) => {
+        const ta = getTransactionTimestamp(a);
+        const tb = getTransactionTimestamp(b);
+        if (ta === null && tb === null) return (Number(a.id) || 0) - (Number(b.id) || 0);
+        if (ta === null) return 1;   // undated rows sink to the end of the band
+        if (tb === null) return -1;
+        return ta - tb;
+      });
+    }
 
     return [...commissioning, ...temp, ...arrangedTransactions, ...decommissioning];
   };
@@ -4444,6 +4523,27 @@ const executeSearchAjax = (filters, searchData) => {
       timelineTotalCount.textContent = transactions.length;
     }
 
+    // When every timeline row belongs to the searched file itself — i.e. there are
+    // no related/associated file numbers — repeating the same File No on each row is
+    // noise, so the whole File No column is hidden (header + cells). The moment any
+    // row carries a different file number (merger/subdivision/alias/recert), the
+    // column returns so the associations stay visible.
+    const _normFN = (str) => String(str || '').toUpperCase().replace(/[\s\-_=\/]+/g, '');
+    const _searchedNormFN = _normFN(window.__lsLastSearchedFileNumber || '');
+    const _distinctFileNos = new Set();
+    let _hasOtherFileNo = false;
+    transactions.forEach((item) => {
+      const raw = String(getMappedValue(item, 'fileNumber') || '').trim();
+      if (!raw || raw === '-') return;
+      const n = _normFN(raw);
+      if (!n) return;
+      _distinctFileNos.add(n);
+      if (_searchedNormFN && n !== _searchedNormFN) _hasOtherFileNo = true;
+    });
+    const hideFileNoCol = _searchedNormFN ? !_hasOtherFileNo : (_distinctFileNos.size <= 1);
+    const _fileNoTh = document.querySelector('#timeline-table-wrapper thead th.file-no-col');
+    if (_fileNoTh) _fileNoTh.classList.toggle('hidden', hideFileNoCol);
+
     const hasCaveatOnRow = (item) => {
       const caveatText = String(item?.caveat ?? '').trim().toLowerCase();
       const isCaveatTextYes = ['yes', 'y', 'true', '1', 'caveated', 'under caveat'].includes(caveatText);
@@ -4527,7 +4627,7 @@ const executeSearchAjax = (filters, searchData) => {
         <td class="cleanup-col text-center${cleanupModeActive ? '' : ' hidden'}"><input type="checkbox" class="row-checkbox" data-id="${item.id}" data-table="${timelineSourceToDbTable(item.source_table)}" data-prop-id="${item.prop_id || ''}"></td>
         <td class="arrange-col hidden text-center font-mono text-xs text-gray-400">${idx + 1}</td>
         <td class="text-center text-xs text-gray-500">${idx + 1}</td>
-        <td class="text-xs text-gray-600 whitespace-nowrap">${renderFileNumberSpan(item, 'fileNumber')}</td>
+        <td class="file-no-col text-xs text-gray-600 whitespace-nowrap${hideFileNoCol ? ' hidden' : ''}">${renderFileNumberSpan(item, 'fileNumber')}</td>
         <td><span class="source-badge ${sourceBadgeClass(item.source_table)}">${item.source_table}</span></td>
         <td class="text-center text-xs ${weightColorClass}" title="${weightTitle}">${weightDisplay}</td>
         <td>${transType}</td>
@@ -5923,13 +6023,15 @@ const executeSearchAjax = (filters, searchData) => {
         await swalAlert('Select at least one record.', 'warning', 'No Selection');
         return;
       }
-      const proceed = await swalConfirm('Drop selected records from their prop_id group? (They will become orphan records.)', 'Confirm Drop', 'warning');
+      const proceed = await swalConfirm('Drop selected records from their prop_id group?\n\nEach dropped record will be detached and allocated a NEW prop_id — it will no longer share history with this file.', 'Confirm Drop', 'warning');
       if (!proceed) return;
 
+      let totalAffected = 0;
       for (const [table, ids] of Object.entries(byTable)) {
-        await cleanupAjax('/legal_search/drop', { table, ids });
+        const resp = await cleanupAjax('/propid-master/drop-reallocate', { table, ids });
+        if (resp && resp.data && typeof resp.data.affected === 'number') totalAffected += resp.data.affected;
       }
-      await swalAlert('Records dropped successfully.', 'success', 'Completed');
+      await swalAlert(`${totalAffected} record(s) dropped. A new prop_id was allocated to each.`, 'success', 'Completed');
       refreshAfterCleanup(byTable);
     });
   }

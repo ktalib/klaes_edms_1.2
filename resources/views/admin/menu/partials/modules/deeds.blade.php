@@ -147,7 +147,7 @@
           data-section="encumbrance">
           <div class="flex items-center gap-2">
             <i data-lucide="shield" class="h-4 w-4 text-teal-500"></i>
-            <span>Encumbrance</span>
+            <span>Encumbrance Management</span>
           </div>
           <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200" data-chevron="encumbrance"></i>
         </div>
@@ -171,16 +171,16 @@
               <span>Lien</span>
             </a>
           @endif
-        </div>
-      @endif
 
-      <!-- g. Surrender & Release -->
-      @if($hasRole('Deeds - Surrender') || $hasRole('Surrender & Release') || $hasRole('Supper Admin'))
-        <a href="{{ route('surrender-release.index') }}"
-          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('surrender-release.*') ? 'active' : '' }}">
-          <i data-lucide="key-round" class="h-4 w-4 text-teal-500"></i>
-          <span>Surrender & Release</span>
-        </a>
+          <!-- Surrender & Release (moved under Encumbrance Management) -->
+          @if($hasRole('Deeds - Surrender') || $hasRole('Surrender & Release') || $hasRole('Supper Admin'))
+            <a href="{{ route('surrender-release.index') }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('surrender-release.*') ? 'active' : '' }}">
+              <i data-lucide="key-round" class="h-3.5 w-3.5 text-teal-400"></i>
+              <span>Surrender & Release</span>
+            </a>
+          @endif
+        </div>
       @endif
 
       <!-- h. Other Applications -->
@@ -189,7 +189,7 @@
           data-section="otherApplications-deeds">
           <div class="flex items-center gap-2">
             <i data-lucide="files" class="h-4 w-4 text-teal-500"></i>
-            <span>Other Applications</span>
+            <span>Parcel/Title Management</span>
           </div>
           <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200"
             data-chevron="otherApplications-deeds"></i>

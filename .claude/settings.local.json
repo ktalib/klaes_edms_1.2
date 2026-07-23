@@ -26,7 +26,10 @@
       "Bash(tasklist)",
       "Bash(php -l app/Http/Controllers/FileIndexingCoordinateBackfillController.php)",
       "Bash(php -l app/Console/Commands/BackfillFileIndexingCoordinates.php)",
-      "Bash(php -l app/Services/FileIndexingCoordinateBackfillService.php)"
+      "Bash(php -l app/Services/FileIndexingCoordinateBackfillService.php)",
+      "Bash(php -l app/Services/InstrumentCaptureService.php)",
+      "Bash(php -l app/Console/Commands/RemediateDeedPropIds.php)",
+      "Bash(grep -rhoiE \"plot[_ ]?size[\\\\\"']?\\\\s*[:=>]+\\\\s*[\\\\\"'][^\\\\\"']{1,30}[\\\\\"']\" database/pic/pic_inserts_1.sql)"
     ]
   }
 }

@@ -416,25 +416,6 @@
                                         <span id="log-count"
                                             class="ml-2 bg-blue-100 text-blue-800 py-1 px-2 rounded-full text-xs">0</span>
                                     </button>
-                                    @if(!in_array($module ?? '', ['dgis', 'dg']))
-                                    {{-- File Request Type tabs — filter the File Tracker Log by file_request_type. --}}
-                                    <button id="tab-in-transit"
-                                        class="main-tab border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                        data-request-type-tab="MANUAL">
-                                        <i data-lucide="truck" class="h-4 w-4 inline mr-2"></i>
-                                        In-transit
-                                        <span id="in-transit-count"
-                                            class="ml-2 bg-amber-100 text-amber-800 py-1 px-2 rounded-full text-xs">0</span>
-                                    </button>
-                                    <button id="tab-submitted-request"
-                                        class="main-tab border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                        data-request-type-tab="SUBMITTED">
-                                        <i data-lucide="send" class="h-4 w-4 inline mr-2"></i>
-                                        Submitted Request
-                                        <span id="submitted-request-count"
-                                            class="ml-2 bg-indigo-100 text-indigo-800 py-1 px-2 rounded-full text-xs">0</span>
-                                    </button>
-                                    @endif
                                     @if(in_array($module ?? '', ['dgis', 'dg']))
                                         <button id="tab-track-new"
                                             class="main-tab border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300"
@@ -2036,6 +2017,29 @@
                                             </button>
                                         </nav>
                                     </div>
+                                    @if(!in_array($module ?? '', ['dgis', 'dg']))
+                                    {{-- Nested sub-tabs under Active Files: filter the File Tracker Log by file_request_type. --}}
+                                    <div id="request-type-subtabs" class="px-6 pt-3">
+                                        <nav class="flex gap-2" aria-label="File request type">
+                                            <button id="tab-in-transit"
+                                                class="main-tab inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-gray-200 px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                                                data-request-type-tab="MANUAL">
+                                                <i data-lucide="truck" class="h-3.5 w-3.5"></i>
+                                                In-transit
+                                                <span id="in-transit-count"
+                                                    class="ml-0.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">0</span>
+                                            </button>
+                                            <button id="tab-submitted-request"
+                                                class="main-tab inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-gray-200 px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                                                data-request-type-tab="SUBMITTED">
+                                                <i data-lucide="send" class="h-3.5 w-3.5"></i>
+                                                Submitted Request
+                                                <span id="submitted-request-count"
+                                                    class="ml-0.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">0</span>
+                                            </button>
+                                        </nav>
+                                    </div>
+                                    @endif
                                     <div id="trackers-container" class="p-6 space-y-6">
                                         <!-- File trackers will be dynamically injected here -->
                                     </div>

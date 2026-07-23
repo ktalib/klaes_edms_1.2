@@ -1159,27 +1159,29 @@ function openRelatedFilesModal(id) {
         }
 
         tbody.innerHTML = data.data.map((file, idx) => `
-          <tr class="hover:bg-gray-50 transition-colors">
+          <tr class="hover:bg-gray-50 transition-colors related-file-row" data-file-number="${escapeHtml(file.file_number)}">
             <td class="px-4 py-3 text-sm text-gray-600 font-medium">${idx + 1}</td>
             <td class="px-4 py-3 text-sm">
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                <button type="button" class="related-fileno-link inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 hover:border-blue-300 cursor-pointer transition-colors"
+                    data-file-number="${escapeHtml(file.file_number)}" title="Click to backfill details from the indexed file">
                     ${escapeHtml(file.file_number)}
-                </span>
+                    <i data-lucide="download" class="w-3 h-3 opacity-60"></i>
+                </button>
             </td>
-            <td class="px-4 py-3 text-sm text-gray-700 font-semibold">${escapeHtml(file.file_title)}</td>
-            <td class="px-4 py-3 text-sm text-gray-600">${escapeHtml(file.location || '-')}</td>
+            <td class="px-4 py-3 text-sm text-gray-700 font-semibold js-cell-title">${escapeHtml(file.file_title || '-')}</td>
+            <td class="px-4 py-3 text-sm text-gray-600 js-cell-location">${escapeHtml(file.location || '-')}</td>
             <td class="px-4 py-3 text-xs text-gray-500">
                 <div class="flex flex-col gap-1">
-                    <span class="font-medium">Plot: ${escapeHtml(file.plot_number || '-')}</span>
-                    <span>TP: ${escapeHtml(file.tp_no || '-')} | LPKN: ${escapeHtml(file.lpkn_no || '-')}</span>
+                    <span class="font-medium js-cell-plot">Plot: ${escapeHtml(file.plot_number || '-')}</span>
+                    <span class="js-cell-tplpkn">TP: ${escapeHtml(file.tp_no || '-')} | LPKN: ${escapeHtml(file.lpkn_no || '-')}</span>
                 </div>
             </td>
             <td class="px-4 py-3 text-center">
-                <button type="button" class="edit-related-file-btn p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" 
-                    data-id="${file.id}" 
+                <button type="button" class="edit-related-file-btn p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                    data-id="${file.id}"
                     data-parent-id="${id}"
                     data-file-number="${escapeHtml(file.file_number)}"
-                    data-file-title="${escapeHtml(file.file_title)}"
+                    data-file-title="${escapeHtml(file.file_title || '')}"
                     data-location="${escapeHtml(file.location || '')}"
                     data-plot-number="${escapeHtml(file.plot_number || '')}"
                     data-tp-no="${escapeHtml(file.tp_no || '')}"
@@ -1194,6 +1196,8 @@ function openRelatedFilesModal(id) {
 
         // Bind Edit logic
         bindRelatedEditHandlers(id);
+        // Clicking a related file number backfills its row from the indexed record.
+        bindRelatedFilenoBackfill();
       } else {
         if (parentContainer) parentContainer.classList.add('hidden');
         const msg = data.message || 'No related files found for this record.';
@@ -1475,6 +1479,65 @@ function openEdmsPreview(list, startIndex) {
   overlay.classList.add('flex');
   render();
   if (window.lucide) window.lucide.createIcons();
+}
+
+// Clicking a related file number looks up its indexed record and fills that row's
+// File Title / Location / Plot / TP / LPKN cells (and the Edit button's data-*),
+// so the details backfill on demand instead of showing dashes.
+function bindRelatedFilenoBackfill() {
+  document.querySelectorAll('.related-fileno-link').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const fileNumber = (btn.dataset.fileNumber || '').trim();
+      if (!fileNumber) return;
+      const row = btn.closest('.related-file-row');
+      if (!row) return;
+
+      const icon = btn.querySelector('i');
+      if (icon) icon.classList.add('animate-spin');
+
+      fetch(`${window.location.origin}/api/file-indexings/related-indexed-details?file_number=${encodeURIComponent(fileNumber)}`, {
+        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+      })
+        .then(res => (res.ok ? res.json() : null))
+        .then(payload => {
+          if (!payload || !payload.indexed || !payload.data) {
+            if (typeof showToast === 'function') showToast('No indexed details found for ' + fileNumber, 'info');
+            return;
+          }
+          const d = payload.data;
+          const setCell = (sel, val) => {
+            const el = row.querySelector(sel);
+            if (el && val != null && String(val).trim() !== '') el.textContent = val;
+          };
+          setCell('.js-cell-title', d.file_title);
+          setCell('.js-cell-location', d.location);
+          if (d.plot_number != null && String(d.plot_number).trim() !== '') {
+            const plot = row.querySelector('.js-cell-plot');
+            if (plot) plot.textContent = 'Plot: ' + d.plot_number;
+          }
+          const tp = (d.tp_no != null && String(d.tp_no).trim() !== '') ? d.tp_no : '-';
+          const lpkn = (d.lpkn_no != null && String(d.lpkn_no).trim() !== '') ? d.lpkn_no : '-';
+          const tpCell = row.querySelector('.js-cell-tplpkn');
+          if (tpCell) tpCell.textContent = `TP: ${tp} | LPKN: ${lpkn}`;
+
+          // Keep the row's Edit button in sync so a subsequent edit preserves the backfill.
+          const editBtn = row.querySelector('.edit-related-file-btn');
+          if (editBtn) {
+            if (d.file_title) editBtn.dataset.fileTitle = d.file_title;
+            if (d.location) editBtn.dataset.location = d.location;
+            if (d.plot_number) editBtn.dataset.plotNumber = d.plot_number;
+            if (d.tp_no) editBtn.dataset.tpNo = d.tp_no;
+            if (d.lpkn_no) editBtn.dataset.lpknNo = d.lpkn_no;
+          }
+        })
+        .catch(() => {
+          if (typeof showToast === 'function') showToast('Failed to load details for ' + fileNumber, 'error');
+        })
+        .finally(() => {
+          if (icon) icon.classList.remove('animate-spin');
+        });
+    });
+  });
 }
 
 function bindRelatedEditHandlers(parentId) {

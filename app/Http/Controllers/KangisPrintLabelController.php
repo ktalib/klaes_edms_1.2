@@ -17,7 +17,7 @@ class KangisPrintLabelController extends Controller
     const RACK_SHELF_CAPACITY = 50;
     const MAX_BATCH_SELECTION = 500;
 
-    const PREFIXES = ['KNML', 'MNKL', 'MLKN', 'KNGP'];
+    const PREFIXES = ['KN', 'KNML', 'MNKL', 'MLKN', 'KNGP'];
 
     // -------------------------------------------------------------------------
     // Public endpoints
@@ -44,11 +44,14 @@ class KangisPrintLabelController extends Controller
         try {
             $result = [];
             foreach (self::PREFIXES as $prefix) {
-                // Count from kangis_grouping where is_indexed = 1
+                $cfg = $this->groupingConfig($prefix);
+                // Count ready-to-label files from the prefix's grouping table.
                 $count = DB::connection('sqlsrv')
-                    ->table('kangis_grouping')
-                    ->where('kangis_awaiting_fileno', 'like', $prefix . '%')
-                    ->where('is_indexed', 1)
+                    ->table($cfg['table'])
+                    ->where($cfg['awaiting'], 'like', $prefix . '%')
+                    ->when($cfg['has_is_indexed'], function ($q) {
+                        $q->where('is_indexed', 1);
+                    })
                     ->count();
 
                 $result[] = [
@@ -76,19 +79,21 @@ class KangisPrintLabelController extends Controller
         }
 
         try {
+            $cfg = $this->groupingConfig($prefix);
+
             // Find the highest registry_batch_no whose files already appear in our batch items
             $maxBatched = DB::connection('sqlsrv')
-                ->table('kangis_grouping as g')
-                ->join('kangis_print_label_batch_items as i', 'i.file_number', '=', 'g.kangis_awaiting_fileno')
-                ->where('g.kangis_awaiting_fileno', 'like', $prefix . '%')
+                ->table($cfg['table'] . ' as g')
+                ->join('kangis_print_label_batch_items as i', 'i.file_number', '=', 'g.' . $cfg['awaiting'])
+                ->where('g.' . $cfg['awaiting'], 'like', $prefix . '%')
                 ->max('g.registry_batch_no');
 
             $nextBatchNo = $maxBatched ? (int)$maxBatched + 1 : 1;
 
-            // Verify the suggested batch actually exists in kangis_grouping
+            // Verify the suggested batch actually exists in the grouping table
             $exists = DB::connection('sqlsrv')
-                ->table('kangis_grouping')
-                ->where('kangis_awaiting_fileno', 'like', $prefix . '%')
+                ->table($cfg['table'])
+                ->where($cfg['awaiting'], 'like', $prefix . '%')
                 ->where('registry_batch_no', $nextBatchNo)
                 ->exists();
 
@@ -121,16 +126,22 @@ class KangisPrintLabelController extends Controller
             $search          = trim((string) $request->input('search', ''));
             $excludeAssigned = filter_var($request->input('exclude_assigned', false), FILTER_VALIDATE_BOOLEAN);
 
+            $cfg = $this->groupingConfig($prefix);
+
+            // Normalise column names via aliases so the downstream mapping is table-agnostic.
             $query = DB::connection('sqlsrv')
-                ->table('kangis_grouping')
-                ->where('kangis_awaiting_fileno', 'like', $prefix . '%')
-                ->where('is_indexed', 1) // Only load files that are ready (indexed) but not yet batched for labels
+                ->table($cfg['table'])
+                ->where($cfg['awaiting'], 'like', $prefix . '%')
+                ->when($cfg['has_is_indexed'], function ($q) {
+                    // Only load files that are ready (indexed) but not yet batched for labels.
+                    $q->where('is_indexed', 1);
+                })
                 ->select([
                     'id',
                     'tracking_id',
-                    'kangis_awaiting_fileno',
+                    $cfg['awaiting'] . ' as awaiting_fileno',
                     'registry_batch_no',
-                    'kangis_fileno_placeholder'
+                    $cfg['secondary'] . ' as secondary_fileno',
                 ]);
 
             if ($registryBatchNo) {
@@ -143,16 +154,19 @@ class KangisPrintLabelController extends Controller
             }
 
             if ($search !== '') {
-                $query->where(function ($q) use ($search) {
-                    $q->where('kangis_awaiting_fileno', 'like', '%' . $search . '%')
+                $query->where(function ($q) use ($search, $cfg) {
+                    $q->where($cfg['awaiting'], 'like', '%' . $search . '%')
                       ->orWhere('tracking_id', 'like', '%' . $search . '%');
                 });
             }
 
-            $rows = $query->orderBy('kangis_awaiting_fileno')->get();
+            $rows = $query->orderBy($cfg['awaiting'])->get();
 
-            if ($rows->isNotEmpty()) {
-                $fileNumbers = $rows->pluck('kangis_awaiting_fileno')->filter()->unique()->values();
+            // For kangis_grouping, prefer the KANGIS file-no placeholder from file_indexings
+            // as the secondary number when available. kn_grouping has no placeholder concept,
+            // so its kn_fileno (aliased to secondary_fileno) stands as the secondary number.
+            if ($rows->isNotEmpty() && $cfg['has_placeholder']) {
+                $fileNumbers = $rows->pluck('awaiting_fileno')->filter()->unique()->values();
                 if ($fileNumbers->isNotEmpty()) {
                     $indexings = DB::connection('sqlsrv')
                         ->table('file_indexings')
@@ -166,9 +180,9 @@ class KangisPrintLabelController extends Controller
                         ->all();
 
                     foreach ($rows as $r) {
-                        $fn = $r->kangis_awaiting_fileno;
+                        $fn = $r->awaiting_fileno;
                         if (isset($indexings[$fn])) {
-                            $r->kangis_fileno_placeholder = $indexings[$fn];
+                            $r->secondary_fileno = $indexings[$fn];
                         }
                     }
                 }
@@ -182,7 +196,7 @@ class KangisPrintLabelController extends Controller
                         'missing' => [],
                         'total'   => 0,
                         'prefix'  => $prefix,
-                        'message' => 'No records found in kangis_grouping for this prefix/batch.',
+                        'message' => 'No records found in ' . $cfg['table'] . ' for this prefix/batch.',
                     ],
                 ]);
             }
@@ -198,9 +212,9 @@ class KangisPrintLabelController extends Controller
             $mapped = $rows->map(function ($r) use ($alreadyBatched) {
                 return [
                     'id'                        => $r->id,
-                    'file_number'               => $r->kangis_awaiting_fileno,
-                    'secondary_file_number'     => $r->kangis_fileno_placeholder,
-                    'kangis_fileno_placeholder' => $r->kangis_fileno_placeholder,
+                    'file_number'               => $r->awaiting_fileno,
+                    'secondary_file_number'     => $r->secondary_fileno,
+                    'kangis_fileno_placeholder' => $r->secondary_fileno,
                     'tracking_id'               => $r->tracking_id,
                     'registry_batch_no'         => $r->registry_batch_no,
                     'already_batched'           => isset($alreadyBatched[$r->id]),
@@ -234,9 +248,11 @@ class KangisPrintLabelController extends Controller
                 return response()->json(['success' => true, 'data' => ['files' => [], 'missing' => []]]);
             }
 
-            // Split by commas, newlines or whitespace
-            $parts = preg_split('/[\s,]+/', $raw);
-            $parts = array_filter(array_map('trim', $parts));
+            // Split on commas / newlines / semicolons ONLY — never on internal spaces:
+            // KANGIS awaiting file numbers contain a space (e.g. "KNML 1"), so splitting
+            // on whitespace would shatter each number into non-matching fragments.
+            $parts = preg_split('/[,;\r\n]+/', $raw);
+            $parts = array_filter(array_map('trim', $parts), fn($p) => $p !== '');
             $parts = array_values(array_unique($parts));
             $parts = array_slice($parts, 0, 100); // limit to 100
 
@@ -244,15 +260,32 @@ class KangisPrintLabelController extends Controller
                 return response()->json(['success' => true, 'data' => ['files' => [], 'missing' => []]]);
             }
 
+            // Manual Registry Override matches the entered values against any of the
+            // file's identifiers (awaiting file no, tracking id, or the KANGIS file no
+            // placeholder) and ignores the is_indexed gate, so a file can be resolved
+            // and reprinted regardless of its current batch state.
             $rows = DB::connection('sqlsrv')
                 ->table('kangis_grouping')
-                ->whereIn('kangis_awaiting_fileno', $parts)
-                ->where('is_indexed', 1)
+                ->where(function ($q) use ($parts) {
+                    $q->whereIn('kangis_awaiting_fileno', $parts)
+                      ->orWhereIn('tracking_id', $parts)
+                      ->orWhereIn('kangis_fileno_placeholder', $parts);
+                })
                 ->select(['id', 'tracking_id', 'kangis_awaiting_fileno', 'registry_batch_no', 'kangis_fileno_placeholder'])
                 ->get();
 
-            $foundFileNumbers = $rows->pluck('kangis_awaiting_fileno')->filter()->unique()->values()->all();
-            $missing = array_values(array_diff($parts, $foundFileNumbers));
+            // An entered value counts as "found" when it matches any identifier on a row.
+            $matchedValues = [];
+            foreach ($rows as $r) {
+                foreach ([$r->kangis_awaiting_fileno, $r->tracking_id, $r->kangis_fileno_placeholder] as $v) {
+                    if ($v !== null && $v !== '') {
+                        $matchedValues[] = (string) $v;
+                    }
+                }
+            }
+            $missing = array_values(array_filter($parts, function ($p) use ($matchedValues) {
+                return !in_array($p, $matchedValues, true);
+            }));
 
             // Fill placeholders from file_indexings where available
             $fileNumbers = $rows->pluck('kangis_awaiting_fileno')->filter()->unique()->values();
@@ -350,8 +383,13 @@ class KangisPrintLabelController extends Controller
     public function createBatch(Request $request)
     {
         try {
+            // Manual Registry Override prints labels for typed-in file numbers that may
+            // span any prefix, so the prefix selection is optional in that mode.
+            $manualOverride = filter_var($request->input('manual_override'), FILTER_VALIDATE_BOOLEAN);
+
             $validated = $request->validate([
-                'prefix'            => 'required|string|in:' . implode(',', self::PREFIXES),
+                'prefix'            => ($manualOverride ? 'nullable' : 'required') . '|string' . ($manualOverride ? '' : '|in:' . implode(',', self::PREFIXES)),
+                'manual_override'   => 'nullable|boolean',
                 'registry_batch_no' => 'nullable|string',
                 'file_ids'          => 'required|array|min:1|max:' . self::MAX_BATCH_SELECTION,
                 'file_ids.*'        => 'integer|min:1',
@@ -361,27 +399,37 @@ class KangisPrintLabelController extends Controller
                 'rack_secondary'    => 'nullable|string|max:5',
             ]);
 
-            $prefix        = $validated['prefix'];
+            // Label prefix used on batch numbers / QR payloads. In manual override with
+            // no prefix chosen, fall back to a generic marker.
+            $prefix        = trim((string) ($validated['prefix'] ?? '')) ?: ($manualOverride ? 'OVERRIDE' : '');
             $fileIds       = array_unique(array_map('intval', $validated['file_ids']));
             $fullLabel     = strtoupper(trim($validated['full_label']));
             $rackPrimary   = strtoupper(trim($validated['rack_primary']));
             $rackSecondary = isset($validated['rack_secondary']) ? strtoupper(trim($validated['rack_secondary'])) : null;
             $shelfNumber   = (int) $validated['shelf_number'];
 
+            // Manual override always sources kangis_grouping (its file ids come from there);
+            // otherwise the prefix decides the grouping table (KN -> kn_grouping).
+            $cfg = $manualOverride ? $this->groupingConfig('KANGIS') : $this->groupingConfig($prefix);
+
             $result = DB::connection('sqlsrv')->transaction(function () use (
-                $prefix, $fileIds, $fullLabel, $rackPrimary, $rackSecondary, $shelfNumber
+                $prefix, $fileIds, $fullLabel, $rackPrimary, $rackSecondary, $shelfNumber, $manualOverride, $cfg
             ) {
                 $now = Carbon::now();
-                
-                // Fetch files from kangis_grouping to group them by their registry_batch_no
+
+                // Fetch files from the grouping table to group them by their registry_batch_no.
+                // In manual override mode the selected files may span multiple prefixes,
+                // so match strictly by id and skip the prefix filter.
                 $filesFromDb = DB::connection('sqlsrv')
-                    ->table('kangis_grouping')
+                    ->table($cfg['table'])
                     ->whereIn('id', $fileIds)
-                    ->where('kangis_awaiting_fileno', 'like', $prefix . '%')
+                    ->when(!$manualOverride, function ($q) use ($prefix, $cfg) {
+                        $q->where($cfg['awaiting'], 'like', $prefix . '%');
+                    })
                     ->get();
 
                 if ($filesFromDb->isEmpty()) {
-                    throw ValidationException::withMessages(['file_ids' => 'No valid matching records found in kangis_grouping.']);
+                    throw ValidationException::withMessages(['file_ids' => 'No valid matching records found in ' . $cfg['table'] . '.']);
                 }
 
                 // Group by registry_batch_no and order ascending so the lowest batch
@@ -448,9 +496,11 @@ class KangisPrintLabelController extends Controller
                         ]);
                     }
 
-                    $items = $groupFiles->values()->map(function ($file, $index) use ($batch, $currentFullLabel, $prefix, $now) {
-                        $fileNumber = $file->kangis_awaiting_fileno;
-                        $placeholder = $file->kangis_fileno_placeholder;
+                    $items = $groupFiles->values()->map(function ($file, $index) use ($batch, $currentFullLabel, $prefix, $now, $cfg) {
+                        $fileNumber = $file->{$cfg['awaiting']};
+                        $placeholder = $cfg['has_placeholder']
+                            ? ($file->kangis_fileno_placeholder ?? null)
+                            : ($file->{$cfg['fileno']} ?? null);
                         $qrPayload  = [
                             'file_number'  => $fileNumber,
                             'tracking_id'  => $file->tracking_id ?? $fileNumber,
@@ -487,19 +537,23 @@ class KangisPrintLabelController extends Controller
                         'updated_by'      => auth()->id(),
                     ]);
 
+                    // Mark the consumed rows. kn_grouping has no is_indexed column, so only
+                    // touch it where the table supports it.
+                    $consumeUpdate = ['updated_at' => $now, 'updated_by' => auth()->id()];
+                    if ($cfg['has_is_indexed']) {
+                        $consumeUpdate['is_indexed'] = 0;
+                    }
                     DB::connection('sqlsrv')
-                        ->table('kangis_grouping')
+                        ->table($cfg['table'])
                         ->whereIn('id', $groupFiles->pluck('id')->all())
-                        ->update([
-                            'is_indexed' => 0,
-                            'updated_at' => $now,
-                            'updated_by' => auth()->id(),
-                        ]);
+                        ->update($consumeUpdate);
 
                     // Gather label items formatted for frontend print preview
-                    $groupFiles->values()->each(function ($file, $index) use (&$allLabelItems, $currentFullLabel, $prefix) {
-                        $fileNumber = $file->kangis_awaiting_fileno;
-                        $placeholder = $file->kangis_fileno_placeholder;
+                    $groupFiles->values()->each(function ($file, $index) use (&$allLabelItems, $currentFullLabel, $prefix, $cfg) {
+                        $fileNumber = $file->{$cfg['awaiting']};
+                        $placeholder = $cfg['has_placeholder']
+                            ? ($file->kangis_fileno_placeholder ?? null)
+                            : ($file->{$cfg['fileno']} ?? null);
                         $allLabelItems[] = [
                             'id'                    => $file->id,
                             'file_number'           => $fileNumber,
@@ -602,33 +656,46 @@ $query = KangisPrintLabelBatch::with(['creator'])
         try {
             $batch = KangisPrintLabelBatch::with(['batchItems'])->findOrFail($batchId);
 
+            // The grouping table follows the batch's prefix (KN -> kn_grouping).
+            $cfg = $this->groupingConfig($batch->prefix);
+
             $kangisGroupingIds = $batch->batchItems->pluck('kangis_grouping_id')->filter()->unique()->values();
 
             $groupingDetails = collect();
             if ($kangisGroupingIds->isNotEmpty()) {
                 $groupingDetails = DB::connection('sqlsrv')
-                    ->table('kangis_grouping')
+                    ->table($cfg['table'])
                     ->whereIn('id', $kangisGroupingIds)
                     ->get()
                     ->keyBy('id');
 
-                $fileNumbers = $groupingDetails->pluck('kangis_awaiting_fileno')->filter()->unique()->values();
-                if ($fileNumbers->isNotEmpty()) {
-                    $indexings = DB::connection('sqlsrv')
-                        ->table('file_indexings')
-                        ->whereIn('file_number', $fileNumbers)
-                        ->where(function ($q) {
-                            $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
-                        })
-                        ->whereNotNull('kangis_fileno_placeholder')
-                        ->where('kangis_fileno_placeholder', '!=', '')
-                        ->pluck('kangis_fileno_placeholder', 'file_number')
-                        ->all();
+                // Normalise the awaiting-file column so downstream lookups are table-agnostic.
+                foreach ($groupingDetails as $r) {
+                    $r->awaiting_fileno = $r->{$cfg['awaiting']} ?? null;
+                    if (!$cfg['has_placeholder']) {
+                        $r->kangis_fileno_placeholder = $r->{$cfg['fileno']} ?? null;
+                    }
+                }
 
-                    foreach ($groupingDetails as $r) {
-                        $fn = $r->kangis_awaiting_fileno;
-                        if (isset($indexings[$fn])) {
-                            $r->kangis_fileno_placeholder = $indexings[$fn];
+                if ($cfg['has_placeholder']) {
+                    $fileNumbers = $groupingDetails->pluck('awaiting_fileno')->filter()->unique()->values();
+                    if ($fileNumbers->isNotEmpty()) {
+                        $indexings = DB::connection('sqlsrv')
+                            ->table('file_indexings')
+                            ->whereIn('file_number', $fileNumbers)
+                            ->where(function ($q) {
+                                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                            })
+                            ->whereNotNull('kangis_fileno_placeholder')
+                            ->where('kangis_fileno_placeholder', '!=', '')
+                            ->pluck('kangis_fileno_placeholder', 'file_number')
+                            ->all();
+
+                        foreach ($groupingDetails as $r) {
+                            $fn = $r->awaiting_fileno;
+                            if (isset($indexings[$fn])) {
+                                $r->kangis_fileno_placeholder = $indexings[$fn];
+                            }
                         }
                     }
                 }
@@ -744,12 +811,17 @@ $query = KangisPrintLabelBatch::with(['creator'])
                 return response()->json(['success' => false, 'message' => 'Cannot delete printed or completed batches.'], 400);
             }
 
-            $ids = $batch->batchItems->pluck('kangis_grouping_id')->filter()->all();
-            if (!empty($ids)) {
-                DB::connection('sqlsrv')
-                    ->table('kangis_grouping')
-                    ->whereIn('id', $ids)
-                    ->update(['is_indexed' => 1, 'updated_at' => now()]);
+            // Return the rows to the "ready" pool. kn_grouping has no is_indexed column,
+            // so only restore that flag on the tables that support it.
+            $cfg = $this->groupingConfig($batch->prefix);
+            if ($cfg['has_is_indexed']) {
+                $ids = $batch->batchItems->pluck('kangis_grouping_id')->filter()->all();
+                if (!empty($ids)) {
+                    DB::connection('sqlsrv')
+                        ->table($cfg['table'])
+                        ->whereIn('id', $ids)
+                        ->update(['is_indexed' => 1, 'updated_at' => now()]);
+                }
             }
 
             $batch->delete();
@@ -771,6 +843,36 @@ $query = KangisPrintLabelBatch::with(['creator'])
     {
         $value = strtoupper(trim($raw));
         return in_array($value, self::PREFIXES, true) ? $value : null;
+    }
+
+    /**
+     * Resolve the grouping table and its column shape for a given prefix.
+     *
+     * The "KN" prefix is sourced from `kn_grouping`, which uses kn_* column names
+     * and lacks the is_indexed / placeholder columns; every other prefix comes from
+     * `kangis_grouping`. Callers use this so the same workflow serves both tables.
+     */
+    private function groupingConfig(?string $prefix): array
+    {
+        if (strtoupper(trim((string) $prefix)) === 'KN') {
+            return [
+                'table'           => 'kn_grouping',
+                'awaiting'        => 'kn_awaiting_fileno',
+                'fileno'          => 'kn_fileno',
+                'secondary'       => 'kn_fileno',
+                'has_is_indexed'  => false,
+                'has_placeholder' => false,
+            ];
+        }
+
+        return [
+            'table'           => 'kangis_grouping',
+            'awaiting'        => 'kangis_awaiting_fileno',
+            'fileno'          => 'kangis_fileno',
+            'secondary'       => 'kangis_fileno_placeholder',
+            'has_is_indexed'  => true,
+            'has_placeholder' => true,
+        ];
     }
 
     private function resolveRackLabelRecord(

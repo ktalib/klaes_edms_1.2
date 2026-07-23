@@ -677,7 +677,7 @@
                         <select name="inspection_officer" id="jointInspectionOfficerSelect" class="w-full border border-gray-300 rounded-md px-z3 py-2 text-sm focus:ring-2 focus:ring-green-500" data-jsi-validate>
                             <option value="">Select inspector</option>
                             @foreach($inspectors as $inspector)
-                                <option value="{{ $inspector->id }}" data-label="{{ $inspector->name }}" data-rank="{{ $inspector->rank }}">{{ $inspector->name }}</option>
+                                <option value="{{ $inspector->id }}" data-label="{{ $inspector->name }}" data-rank="{{ $inspector->rank }}" data-dept-pp="{{ (int) ($inspector->in_physical_planning ?? 1) }}" data-dept-st="{{ (int) ($inspector->in_sectional_titling ?? 0) }}">{{ $inspector->name }}</option>
                             @endforeach
                         </select>
                     @else
