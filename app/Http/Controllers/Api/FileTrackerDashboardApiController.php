@@ -255,6 +255,158 @@ class FileTrackerDashboardApiController extends Controller
         ]);
     }
 
+    /**
+     * Return aggregated metrics and tracker data for the Commissioner dashboard.
+     */
+    public function commissionerOverview(Request $request): JsonResponse
+    {
+        $limit = (int) $request->query('limit', 500);
+        $limit = max(10, min($limit, 500)); // Increase limit for more overview
+
+        $trackers = FileTracker::query()
+            ->select([
+                'id',
+                'tracking_id',
+                'file_number',
+                'file_title',
+                'priority',
+                'status',
+                'current_office_code',
+                'current_office_name',
+                'movement_log',
+                'created_at',
+                'updated_at',
+                'file_type',
+                'department',
+                'file_request_type',
+                'request_purpose_name',
+                'date_requested',
+                'created_by_name',
+                'origin_office_code',
+                'origin_office_name',
+                'receiving_officer_name',
+                'num_pages',
+                'deadline',
+                'timeline_days',
+            ])
+            // Exclude only cancelled files; the three tabs (Requested / In Transit /
+            // Not in Transit) between them cover every other tracker:
+            //   • Requested Files  = logged out, purpose/type NOT "In-Transit" (or SUBMITTED)
+            //   • In Transit       = purpose/type = "In-Transit", still logged out
+            //   • Not in Transit   = logged back into the registry (status COMPLETED)
+            // In-Transit and Completed files are ordered first so they are never
+            // truncated by the row limit.
+            ->whereRaw("UPPER(ISNULL(status, '')) NOT IN ('CANCELED', 'CANCELLED')")
+            ->orderByRaw("CASE WHEN file_request_type = 'In-Transit' OR request_purpose_name = 'In-Transit' THEN 0 WHEN UPPER(status) = 'COMPLETED' THEN 1 ELSE 2 END")
+            ->orderByDesc('updated_at')
+            ->limit($limit)
+            ->get();
+
+        $officeCodesNeeded = [];
+
+        foreach ($trackers as $tracker) {
+            if ($tracker->current_office_code) {
+                $officeCodesNeeded[$tracker->current_office_code] = true;
+            }
+
+            foreach ((array) $tracker->movement_log as $entry) {
+                $code = $this->extractOfficeCode($entry);
+                if ($code) {
+                    $officeCodesNeeded[$code] = true;
+                }
+            }
+        }
+
+        $officeMetadata = Office::query()
+            ->whereIn('office_code', array_keys($officeCodesNeeded))
+            ->get()
+            ->keyBy('office_code');
+
+        $trackerPayload = [];
+
+        foreach ($trackers as $tracker) {
+            $movementLog = $this->normaliseMovementLog((array) $tracker->movement_log, $officeMetadata);
+            
+            $currentOfficeCode = $tracker->current_office_code;
+            $office = $officeMetadata->get($currentOfficeCode);
+
+            // Classify the tracker against the Create File Tracker workflow.
+            //   • request_purpose_name / file_request_type carry the literal "In-Transit"
+            //     value when a file is logged OUT of the registry to a destination office.
+            //   • status becomes COMPLETED once the file is logged back IN to the registry
+            //     (the "Log-in" action in Create File Tracker).
+            $fileReqType = Str::upper((string) $tracker->file_request_type);
+            $reqPurpose  = Str::upper((string) $tracker->request_purpose_name);
+            $statusUpper = Str::upper((string) $tracker->status);
+
+            $isInTransitFlagged = ($fileReqType === 'IN-TRANSIT' || $reqPurpose === 'IN-TRANSIT');
+            $isCanceled = in_array($statusUpper, ['CANCELED', 'CANCELLED'], true);
+
+            if ($isCanceled) {
+                // Cancelled file — no longer moving.
+                $movementStatus = 'canceled';
+            } elseif ($statusUpper === 'COMPLETED') {
+                // Logged back into the registry → Not in Transit tab.
+                $movementStatus = 'returned';
+            } elseif ($isInTransitFlagged) {
+                // Logged out with an "In-Transit" purpose/type → In Transit tab.
+                $movementStatus = 'in_transit';
+            } else {
+                // Logged out for a request (SUBMITTED or any non In-Transit purpose),
+                // not yet returned → Requested Files tab, shown as "Log-out".
+                $movementStatus = 'logout';
+            }
+
+            $isReturned  = ($movementStatus === 'returned');
+            $isInTransit = ($movementStatus === 'in_transit');
+            // Requested = logged out, purpose/type is not "In-Transit", not yet returned.
+            $isRequested = ($movementStatus === 'logout');
+
+            $trackerPayload[] = [
+                'id' => $tracker->id,
+                'fileNo' => $tracker->file_number,
+                'fileName' => $tracker->file_title ?: ($tracker->file_number ?: 'File #' . $tracker->id),
+                'trackingId' => $tracker->tracking_id,
+                'priority' => Str::upper((string) $tracker->priority),
+                'status' => Str::upper((string) $tracker->status),
+                'currentOffice' => $office->office_name ?? $tracker->current_office_name,
+                'currentOfficeId' => $currentOfficeCode,
+                'currentOfficeDepartment' => $office->department ?? null,
+                'department' => $tracker->department,
+                'caseType' => $tracker->file_type ?? $tracker->request_purpose_name,
+                'applicant' => $tracker->created_by_name,
+                'originOffice' => $tracker->origin_office_name,
+                'originOfficeCode' => $tracker->origin_office_code,
+                'receivingOfficer' => $tracker->receiving_officer_name,
+                'requestPurpose' => $tracker->request_purpose_name,
+                'fileRequestType' => $tracker->file_request_type,
+                'numPages' => $tracker->num_pages,
+                'deadline' => optional($tracker->deadline)->toIso8601String(),
+                'timelineDays' => $tracker->timeline_days,
+                // Workflow classification (Create File Tracker parity)
+                'movementStatus' => $movementStatus,
+                'isInTransit' => $isInTransit,
+                'isReturned' => $isReturned,
+                'isCanceled' => $isCanceled,
+                'isRequested' => $isRequested,
+                'requestedDate' => optional($tracker->date_requested)->toIso8601String() ?? optional($tracker->created_at)->toIso8601String(),
+                'requestDate' => optional($tracker->date_requested)->toIso8601String() ?? optional($tracker->created_at)->toIso8601String(),
+                'logEntries' => $movementLog,
+                'createdAt' => optional($tracker->created_at)->toIso8601String(),
+                'updatedAt' => optional($tracker->updated_at)->toIso8601String(),
+            ];
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Commissioner dashboard overview generated successfully.',
+            'data' => [
+                'trackers' => $trackerPayload,
+                'generatedAt' => now()->toIso8601String(),
+            ],
+        ]);
+    }
+
     public function markNotificationAsRead(Request $request, Notification $notification): JsonResponse
     {
         $user = $request->user() ?? auth()->user();
@@ -303,6 +455,9 @@ class FileTrackerDashboardApiController extends Controller
                 'officeName' => $entry['office_name'] ?? $entry['officeName'] ?? ($office->office_name ?? null),
                 'notes' => $entry['notes'] ?? null,
                 'status' => Str::upper($entry['status'] ?? 'ACTIVE'),
+                'receivingOfficer' => $entry['receiving_officer_name'] ?? $entry['receivingOfficer'] ?? null,
+                'handledBy' => $entry['user_name'] ?? $entry['userName'] ?? null,
+                'purpose' => $entry['purpose'] ?? null,
                 'createdAt' => $entry['timestamp'] ?? $entry['createdAt'] ?? null,
             ];
         }

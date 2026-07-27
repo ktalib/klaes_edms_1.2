@@ -32,16 +32,16 @@ class LegalSearchTimelineWeights
 
     /** @var array<string, int|null> */
     public const MAP = [
+        self::OCCUPANCY_PERMIT         => 14,
+        self::TRANSFER_OF_TITLE_OP     => 13,
         self::FILE_COMMISSIONING       => 12,
         self::TEMP_FILE_COMMISSIONING  => 12,
-        self::OCCUPANCY_PERMIT         => 11,
-        self::TRANSFER_OF_TITLE_OP     => 10,
         self::RIGHT_OF_OCCUPANCY       => 9,
         // 8 keeps a recertification above the C of O it produced. placeKangisRecertBeforeCofo()
         // still enforces adjacency when both share a timestamp.
         self::KANGIS_RECERTIFICATION   => 8,
-        self::CERTIFICATE_OF_OCCUPANCY => 0,
-        self::OTHER_INSTRUMENTS        => 0,
+        self::CERTIFICATE_OF_OCCUPANCY => 1,
+        self::OTHER_INSTRUMENTS        => 1,
         self::PARCEL_UPDATE            => null,
         self::TITLE_STATUS_UPDATE      => null,
         self::FILE_DECOMMISSIONING     => null,

@@ -105,9 +105,9 @@
                         <div class="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-600">
                             <span class="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1 font-medium text-blue-700">
                                 <i data-lucide="gauge" class="h-3.5 w-3.5"></i>
-                                Freestyle Capacity
+                                Shelf Capacity
                             </span>
-                            <span class="leading-relaxed">Each shelf has unlimited capacity. The counter tracks how many files are currently occupying this label.</span>
+                            <span class="leading-relaxed">Each shelf is capped per ST application type: Primary 25, PUA 50, SUA 25 files. The counter tracks how many files currently occupy this label.</span>
                         </div>
                     </div>
                     <div class="p-6">
@@ -202,6 +202,7 @@
                                         <span class="font-semibold">Active Label:</span>
                                         <span id="fullLabelValue" class="ml-1">A1</span>
                                     </div>
+                                    <div id="shelfSpilloverNotice" class="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700" style="display:none;"></div>
                                 </div>
                                 <label for="excludeAssignedToggle" class="flex cursor-pointer items-start gap-3 rounded-lg border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-600">
                                     <input

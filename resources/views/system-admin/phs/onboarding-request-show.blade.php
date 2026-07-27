@@ -438,6 +438,40 @@
                 </form>
             </div>
         </div>
+    @elseif ($request->status === 'awaiting_sla')
+        <div class="mt-8 bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-bold mb-1">Resend Actions</h2>
+            <p class="text-sm text-slate-500 mb-5">This request is currently awaiting the signed SLA. If the contact did not receive the email, you can resend it here.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <form method="POST" action="{{ route('system-admin.phs.requests.resend-sla', ['id' => $request->id]) }}" class="approve-form">
+                    @csrf
+                    <div class="border border-indigo-300 rounded-lg p-4 bg-indigo-50">
+                        <h3 class="font-semibold text-indigo-900 mb-2">Resend SLA Link</h3>
+                        <p class="text-sm text-indigo-800 mb-4">Resend the secure link to download, sign, and upload the SLA document to the organization.</p>
+                        <button type="button" data-org="{{ $request->organization_name }}" data-msg="Resend SLA link to {{ $request->organization_name }}?" class="approve-btn-show w-full flex items-center justify-center gap-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 font-medium py-2">
+                            <i data-lucide="send" class="h-4 w-4"></i> Resend SLA Link
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @elseif ($request->status === 'payment_pending')
+        <div class="mt-8 bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-bold mb-1">Resend Actions</h2>
+            <p class="text-sm text-slate-500 mb-5">This request is currently awaiting payment. If the contact did not receive the email, you can resend it here.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <form method="POST" action="{{ route('system-admin.phs.requests.resend-onboarding', ['id' => $request->id]) }}" class="approve-form">
+                    @csrf
+                    <div class="border border-indigo-300 rounded-lg p-4 bg-indigo-50">
+                        <h3 class="font-semibold text-indigo-900 mb-2">Resend Payment &amp; Onboarding Link</h3>
+                        <p class="text-sm text-indigo-800 mb-4">Resend the secure link for subscription package payment and member registration to the organization.</p>
+                        <button type="button" data-org="{{ $request->organization_name }}" data-msg="Resend payment &amp; onboarding link to {{ $request->organization_name }}?" class="approve-btn-show w-full flex items-center justify-center gap-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 font-medium py-2">
+                            <i data-lucide="send" class="h-4 w-4"></i> Resend Onboarding Link
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
     @endif
 </div>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>

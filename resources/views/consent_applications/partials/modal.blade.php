@@ -85,6 +85,17 @@
                             </div>
                         </div>
 
+                        <!-- NEW PROMPT HERE -->
+                        <div id="multiple-properties-prompt-container" class="hidden">
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Multiple Properties?</label>
+                            <div class="flex items-center h-[46px]">
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="has_multiple_properties" class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500">
+                                    <span class="text-sm font-medium text-slate-700">Yes, involves more than one</span>
+                                </label>
+                            </div>
+                        </div>
+
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">File
                                 Number <span class="text-red-500">*</span></label>
@@ -104,7 +115,7 @@
                                     <i data-lucide="search" class="h-5 w-5"></i>
                                 </button>
                                 <button type="button" id="add-fileno-btn"
-                                    class="p-3 rounded-xl bg-emerald-50 text-emerald-600 font-bold border border-emerald-100 hover:bg-emerald-100 transition flex items-center justify-center shrink-0"
+                                    class="hidden p-3 rounded-xl bg-emerald-50 text-emerald-600 font-bold border border-emerald-100 hover:bg-emerald-100 transition items-center justify-center shrink-0"
                                     title="Add Another File Number">
                                     <i data-lucide="plus" class="h-5 w-5"></i>
                                 </button>

@@ -24,6 +24,9 @@
                         @if($ossViewOnly)
                             <input type="hidden" name="view" value="only">
                         @endif
+                        @if(!$ossViewOnly)
+                            <input type="hidden" name="tab" value="{{ $tab }}">
+                        @endif
                         <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors"></i>
                         <input type="text"
                                name="search"
@@ -154,11 +157,31 @@
                 </div>
             </div>
 
+            @if(!$ossViewOnly)
+            <div class="flex items-center gap-2 mb-4 bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm w-full sm:w-max">
+                <a href="{{ route('land-rofos.index', array_filter(['tab' => 'not_printed', 'search' => request('search')])) }}"
+                   class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'not_printed' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100' }}">
+                    <i data-lucide="file-clock" class="h-4 w-4"></i>
+                    Not Printed
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black {{ $tab === 'not_printed' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500' }}">{{ number_format($stats['not_printed']) }}</span>
+                </a>
+                <a href="{{ route('land-rofos.index', array_filter(['tab' => 'printed', 'search' => request('search')])) }}"
+                   class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'printed' ? 'bg-green-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100' }}">
+                    <i data-lucide="printer-check" class="h-4 w-4"></i>
+                    Printed
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black {{ $tab === 'printed' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500' }}">{{ number_format($stats['printed']) }}</span>
+                </a>
+            </div>
+            @endif
+
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between">
                     <h3 class="font-bold text-slate-800 uppercase tracking-wider text-xs flex items-center gap-2">
                         <i data-lucide="shield" class="h-4 w-4 text-blue-600"></i>
                         RoFO Management Records
+                        @if(!$ossViewOnly)
+                        <span class="text-slate-400 normal-case tracking-normal font-medium">· {{ $tab === 'printed' ? 'Printed' : 'Not Printed' }}</span>
+                        @endif
                     </h3>
                 </div>
                 <div class="overflow-x-auto">
@@ -195,7 +218,19 @@
                             @php $isOssRec = strtoupper($rec->type ?? '') === 'OSS'; @endphp
                             <tr class="hover:bg-slate-50/50 transition {{ $isOssRec ? 'bg-purple-50/30' : '' }}">
                                 <td class="px-4 py-2 text-center text-slate-500 whitespace-nowrap">{{ ($recommendations->currentPage() - 1) * $recommendations->perPage() + $loop->iteration }}</td>
-                                <td class="px-4 py-2 font-mono font-bold text-slate-900 whitespace-nowrap">{{ $rec->file_number }}</td>
+                                <td class="px-4 py-2 font-mono font-bold text-slate-900 whitespace-nowrap">
+                                    <div>{{ $rec->file_number }}</div>
+                                    @if(!$isOssRec && isset($rofoSerials[$rec->id]))
+                                        @php $rofoSc = $rofoSerials[$rec->id]; @endphp
+                                        <div style="display:flex; align-items:center; gap:4px; margin-top:3px; letter-spacing:normal;" title="Security Serial No.">
+                                            <span style="line-height:1; color:#059669; display:inline-flex; flex-direction:column; align-items:center; font-weight:900; font-family:Arial, sans-serif;">
+                                                <span style="border-bottom:1.5px solid #059669; padding-bottom:1px; font-size:8px;">{{ $rofoSc['alphabet'] }}</span>
+                                                <span style="padding-top:1px; font-size:8px;">{{ $rofoSc['digits_start'] }}</span>
+                                            </span>
+                                            <span style="font-size:13px; font-weight:900; letter-spacing:0.1em; color:#059669; font-family:'Courier New', monospace;">{{ $rofoSc['digits_end'] }}</span>
+                                        </div>
+                                    @endif
+                                </td>
                                 <td class="px-4 py-2 whitespace-nowrap">
                                     @if($isOssRec)
                                         <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800">
@@ -217,7 +252,7 @@
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->development_period }}</td>
                                 <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">₦{{ number_format($rec->survey_fees, 2) }}</td>
                                 <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">₦{{ number_format($rec->development_value, 2) }}</td>
-                                <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">₦{{ number_format($rec->development_charge, 2) }}</td>
+                                <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">{{ is_numeric($rec->development_charge) ? '₦'.number_format($rec->development_charge, 2) : ($rec->development_charge ?: '₦0.00') }}</td>
                                 <td class="px-4 py-2 text-center whitespace-nowrap">
                                     @if($isOssRec)
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800">
@@ -300,6 +335,9 @@
                                                 <button type="button" disabled class="flex w-full items-center px-4 py-2.5 text-sm text-slate-300 gap-2 font-bold cursor-not-allowed" title="Security paper code already assigned">
                                                     <i data-lucide="hash" class="h-4 w-4"></i> Enter Security Paper Code
                                                 </button>
+                                                <button type="button" onclick="resetSecurityPaperCode('{{ $rec->id }}', '{{ route('land-rofos.reset-security-paper', $rec->id) }}')" class="flex w-full items-center px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition gap-2 font-bold">
+                                                    <i data-lucide="rotate-ccw" class="h-4 w-4"></i> Reset Security Paper Code
+                                                </button>
                                                 @else
                                                 <button type="button" onclick="openAssignSecurityPaperModal('{{ $rec->id }}', '{{ $rec->file_number }}', '{{ $rec->land_rofo_serial_no }}', '{{ route('land-rofos.assign-security-paper', $rec->id) }}')" class="flex w-full items-center px-4 py-2.5 text-sm text-emerald-600 hover:bg-emerald-50 transition gap-2 font-bold">
                                                     <i data-lucide="hash" class="h-4 w-4"></i> Enter Security Paper Code
@@ -326,7 +364,15 @@
                                         <div class="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 mb-4">
                                             <i data-lucide="file-text" class="h-6 w-6"></i>
                                         </div>
-                                        <p class="text-slate-500 font-medium">No approved recommendations ready for RofO.</p>
+                                        <p class="text-slate-500 font-medium">
+                                            @if(!$ossViewOnly && $tab === 'printed')
+                                                No RofOs have been printed yet.
+                                            @elseif(!$ossViewOnly)
+                                                No RofOs awaiting print.
+                                            @else
+                                                No approved recommendations ready for RofO.
+                                            @endif
+                                        </p>
                                     </div>
                                 </td>
                             </tr>
@@ -1078,6 +1124,47 @@ function bpmCancelConfirm() {
         });
     }
 
+    function resetSecurityPaperCode(id, url) {
+        Swal.fire({
+            title: 'Reset Security Paper Code?',
+            text: "This will remove the currently assigned security paper code and make it available again. You can assign a new code afterwards.",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Yes, reset it!',
+            cancelButtonText: 'Cancel'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                Swal.fire({
+                    title: 'Resetting...',
+                    didOpen: () => Swal.showLoading(),
+                    allowOutsideClick: false
+                });
+
+                fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'Accept': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        Swal.fire('Success', 'Security paper code reset successfully.', 'success')
+                        .then(() => window.location.reload());
+                    } else {
+                        Swal.fire('Error', data.message || 'Reset failed', 'error');
+                    }
+                })
+                .catch(error => {
+                    Swal.fire('Error', 'An unexpected error occurred.', 'error');
+                });
+            }
+        });
+    }
 
 </script>
 

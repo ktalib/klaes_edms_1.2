@@ -69,6 +69,26 @@
     .btn-submit { display: inline-flex; align-items: center; gap: 8px; padding: 12px 30px; border-radius: 10px; border: none; background: #6c63ff; font-size: 14px; font-weight: 600; color: #fff; cursor: pointer; transition: background .15s, transform .1s; box-shadow: 0 4px 18px rgba(108,99,255,.35); }
     .btn-submit:hover { background: #5a52e0; }
     .btn-submit:active { transform: scale(.98); }
+
+    /* Dark Mode Overrides */
+    .dark body { background: #0f1117; }
+    .dark .navbar { background: rgba(17,24,39,.92); border-bottom-color: rgba(108,99,255,.15); }
+    .dark .navbar-brand span { color: #e5e7eb; }
+    .dark .btn-ghost { border-color: #374151; color: #d1d5db; }
+    .dark .btn-ghost:hover { background: #1f2937; }
+    .dark .form-card { background: #1f2937; border-color: rgba(108,99,255,.15); box-shadow: 0 4px 24px rgba(0,0,0,.3); }
+    .dark .form-title { color: #f3f4f6; }
+    .dark .form-sub, .dark .rv-lbl { color: #9ca3af; }
+    .dark .review-row { border-bottom-color: #374151; }
+    .dark .rv-val { color: #f3f4f6; }
+    .dark .doc-item { color: #d1d5db; }
+    .dark .info-box { background: #111827; border-color: #374151; }
+    .dark .info-box h4 { color: #f3f4f6; }
+    .dark .info-box ol li { color: #d1d5db; }
+    .dark .btn-back { background: #1f2937; border-color: #374151; color: #d1d5db; }
+    .dark .btn-back:hover { background: #374151; }
+    .dark .step-badge { background: #1e1b4b; color: #a5b4fc; }
+    .dark .mobile-menu { background: rgba(17,24,39,.97); border-bottom-color: rgba(108,99,255,.15); }
 </style>
 
 <div class="blob-1"></div>
@@ -80,6 +100,10 @@
         <span>PHS Portal</span>
     </div>
     <div class="navbar-actions">
+        <button onclick="phsToggleTheme()" title="Toggle dark mode" class="btn-ghost" style="padding:8px 12px;display:inline-flex;align-items:center;gap:6px;">
+            <svg class="dark:hidden" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            <svg class="hidden dark:block" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
         <a href="{{ route('phs.login') }}" class="btn-ghost">Sign In</a>
         <a href="{{ route('phs.request.form') }}" class="btn-primary-nav">Request Access</a>
     </div>
@@ -88,6 +112,11 @@
     </button>
 </nav>
 <div id="mobile-menu" class="mobile-menu">
+    <button onclick="phsToggleTheme()" class="btn-ghost" style="display:flex;align-items:center;justify-content:center;gap:6px;width:100%;">
+        <svg class="dark:hidden" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        <svg class="hidden dark:block" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        Toggle Theme
+    </button>
     <a href="{{ route('phs.login') }}" class="btn-ghost">Sign In</a>
     <a href="{{ route('phs.request.form') }}" class="btn-primary-nav" style="text-align:center">Request Access</a>
 </div>

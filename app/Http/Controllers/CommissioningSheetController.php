@@ -82,6 +82,7 @@ class CommissioningSheetController extends Controller
                 'related_file_number'=> 'nullable|string|max:255',
                 'related_file_title' => 'nullable|string|max:255',
                 'original_file_no'   => 'nullable|string|max:255',
+                'original_op_holder' => 'nullable|string|max:500',
             ]);
 
             if ($validator->fails()) {
@@ -162,6 +163,9 @@ class CommissioningSheetController extends Controller
             unset($data['commissioning_time']);
             // original_file_no is not a DB column either
             unset($data['original_file_no']);
+            // original_op_holder is not a DB column either
+            $originalOpHolder = $data['original_op_holder'] ?? null;
+            unset($data['original_op_holder']);
             $data['status'] = 'Draft';
             $data['created_at'] = now();
             $data['updated_at'] = now();
@@ -174,7 +178,11 @@ class CommissioningSheetController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Commissioning sheet data saved successfully',
-                'data' => ['id' => $id, 'commissioning_time' => $commissioningTime]
+                'data' => [
+                    'id' => $id,
+                    'commissioning_time' => $commissioningTime,
+                    'original_op_holder' => $originalOpHolder
+                ]
             ]);
 
         } catch (\Exception $e) {
@@ -366,6 +374,11 @@ class CommissioningSheetController extends Controller
             // Accept commissioning_time from query param (passed from OSS table)
             if (empty($data['commissioning_time']) && request()->has('commissioning_time')) {
                 $data['commissioning_time'] = request()->input('commissioning_time');
+            }
+
+            // Accept original_op_holder from query param (passed from OSS table)
+            if (empty($data['original_op_holder']) && request()->has('original_op_holder')) {
+                $data['original_op_holder'] = request()->input('original_op_holder');
             }
 
             // Fallback: use created_at for time/date when DCIV data is unavailable

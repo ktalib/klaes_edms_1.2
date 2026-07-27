@@ -127,8 +127,8 @@
     <div class="fixed inset-0 z-0">
         <div class="slideshow">
             <img src="2.jpeg" alt="City Skyline" class="slideshow-slide">
-            <img src="1.jpeg" alt="City Skyline" class="slideshow-slide">
-            <img src="1.jpeg" alt="City Skyline" class="slideshow-slide">
+            <img src="Klase.png" alt="City Skyline" class="slideshow-slide">
+            <img src="Klase.png" alt="City Skyline" class="slideshow-slide">
         </div>
         <div class="absolute inset-0 bg-gradient-custom"></div>
     </div>

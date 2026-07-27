@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -486,68 +486,68 @@
             <!-- Settings Form -->
             <div class="space-y-4 sm:space-y-6">
               <!-- Organization Name -->
-              <div class="bg-gray-50 rounded-2xl p-4 sm:p-6">
-                <label class="block text-sm font-medium text-gray-700 mb-2">Organization Name</label>
-                <input type="text" id="org-name" class="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base" placeholder="Enter organization name" />
-                <p class="text-xs text-gray-500 mt-2">This will appear in headers and user interfaces</p>
+              <div class="bg-gray-50 dark:bg-gray-800 rounded-2xl p-4 sm:p-6">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Organization Name</label>
+                <input type="text" id="org-name" class="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 dark:border-gray-650 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base" placeholder="Enter organization name" />
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">This will appear in headers and user interfaces</p>
               </div>
 
               <!-- Organization Username -->
-              <div class="bg-gray-50 rounded-2xl p-4 sm:p-6">
-                <label class="block text-sm font-medium text-gray-700 mb-2">Organization Username</label>
-                <input type="text" id="org-username" pattern="[a-z0-9_]+" class="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base" placeholder="organization_username" />
-                <p class="text-xs text-gray-500 mt-2">Lowercase letters, numbers and underscores only. Must be unique.</p>
+              <div class="bg-gray-50 dark:bg-gray-800 rounded-2xl p-4 sm:p-6">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Organization Username</label>
+                <input type="text" id="org-username" pattern="[a-z0-9_]+" class="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 dark:border-gray-650 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base" placeholder="organization_username" />
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">Lowercase letters, numbers and underscores only. Must be unique.</p>
               </div>
 
               <!-- Colors -->
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-                <div class="bg-gray-50 rounded-2xl p-4 sm:p-6">
-                  <label class="block text-sm font-medium text-gray-700 mb-2">Primary Color</label>
+                <div class="bg-gray-50 dark:bg-gray-800 rounded-2xl p-4 sm:p-6">
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Primary Color</label>
                   <div class="flex gap-2 sm:gap-3">
-                    <input type="color" id="primary-color" class="w-10 h-10 sm:w-14 sm:h-14 rounded-xl border border-gray-300 cursor-pointer" />
-                    <input type="text" id="primary-color-hex" class="flex-1 px-2 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-xl font-mono text-xs sm:text-sm" />
+                    <input type="color" id="primary-color" class="w-10 h-10 sm:w-14 sm:h-14 rounded-xl border border-gray-300 dark:border-gray-600 cursor-pointer" />
+                    <input type="text" id="primary-color-hex" class="flex-1 px-2 sm:px-4 py-2 sm:py-3 border border-gray-300 dark:border-gray-650 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-mono text-xs sm:text-sm" />
                   </div>
                 </div>
 
-                <div class="bg-gray-50 rounded-2xl p-4 sm:p-6">
-                  <label class="block text-sm font-medium text-gray-700 mb-2">Secondary Color</label>
+                <div class="bg-gray-50 dark:bg-gray-800 rounded-2xl p-4 sm:p-6">
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Secondary Color</label>
                   <div class="flex gap-2 sm:gap-3">
-                    <input type="color" id="secondary-color" class="w-10 h-10 sm:w-14 sm:h-14 rounded-xl border border-gray-300 cursor-pointer" />
-                    <input type="text" id="secondary-color-hex" class="flex-1 px-2 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-xl font-mono text-xs sm:text-sm" />
+                    <input type="color" id="secondary-color" class="w-10 h-10 sm:w-14 sm:h-14 rounded-xl border border-gray-300 dark:border-gray-600 cursor-pointer" />
+                    <input type="text" id="secondary-color-hex" class="flex-1 px-2 sm:px-4 py-2 sm:py-3 border border-gray-300 dark:border-gray-650 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-mono text-xs sm:text-sm" />
                   </div>
                 </div>
               </div>
 
               <!-- Logo Upload -->
-              <div class="bg-gray-50 rounded-2xl p-4 sm:p-6">
-                <label class="block text-sm font-medium text-gray-700 mb-3">Organization Logo</label>
-                <div id="logo-dropzone" class="dropzone border-2 border-dashed border-gray-300 rounded-2xl p-4 sm:p-8 text-center hover:border-blue-400 transition-all cursor-pointer">
+              <div class="bg-gray-50 dark:bg-gray-800 rounded-2xl p-4 sm:p-6">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Organization Logo</label>
+                <div id="logo-dropzone" class="dropzone border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-2xl p-4 sm:p-8 text-center hover:border-blue-400 transition-all cursor-pointer bg-white dark:bg-gray-700">
                   <input type="file" id="logo-upload" accept="image/*" class="hidden" />
-                  <div id="logo-preview-area" class="mx-auto w-20 h-20 sm:w-28 sm:h-28 bg-white border border-gray-200 rounded-2xl flex items-center justify-center overflow-hidden mb-3 sm:mb-4 shadow-sm">
-                    <i data-lucide="image" class="w-8 h-8 sm:w-12 sm:h-12 text-gray-300"></i>
+                  <div id="logo-preview-area" class="mx-auto w-20 h-20 sm:w-28 sm:h-28 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl flex items-center justify-center overflow-hidden mb-3 sm:mb-4 shadow-sm">
+                    <i data-lucide="image" class="w-8 h-8 sm:w-12 sm:h-12 text-gray-300 dark:text-gray-500"></i>
                   </div>
-                  <button type="button" id="upload-logo-btn" class="inline-flex items-center px-3 sm:px-5 py-1.5 sm:py-2.5 bg-white border border-gray-300 rounded-xl text-xs sm:text-sm font-medium hover:bg-gray-50">
+                  <button type="button" id="upload-logo-btn" class="inline-flex items-center px-3 sm:px-5 py-1.5 sm:py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-650 rounded-xl text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
                     <i data-lucide="upload" class="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2"></i> Upload Logo
                   </button>
-                  <p class="text-xs text-gray-500 mt-2 sm:mt-3">PNG, JPG or SVG â€¢ 200Ã—200px recommended â€¢ Max 2MB</p>
-                  <button id="remove-logo-btn" class="hidden mt-2 sm:mt-3 text-red-600 hover:text-red-700 text-xs sm:text-sm font-medium flex items-center gap-1 mx-auto">
+                  <p class="text-xs text-gray-500 dark:text-gray-400 mt-2 sm:mt-3">PNG, JPG or SVG • 200×200px recommended • Max 2MB</p>
+                  <button id="remove-logo-btn" class="hidden mt-2 sm:mt-3 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 text-xs sm:text-sm font-medium flex items-center gap-1 mx-auto">
                     <i data-lucide="trash-2" class="w-3 h-3 sm:w-4 sm:h-4"></i> Remove Logo
                   </button>
                 </div>
               </div>
 
               <!-- Banner Upload -->
-              <div class="bg-gray-50 rounded-2xl p-4 sm:p-6">
-                <label class="block text-sm font-medium text-gray-700 mb-3">Banner Image</label>
-                <div id="banner-dropzone" class="border-2 border-dashed border-gray-300 rounded-2xl p-4 sm:p-8 text-center hover:border-blue-400 transition-all cursor-pointer">
+              <div class="bg-gray-50 dark:bg-gray-800 rounded-2xl p-4 sm:p-6">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Banner Image</label>
+                <div id="banner-dropzone" class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-2xl p-4 sm:p-8 text-center hover:border-blue-400 transition-all cursor-pointer bg-white dark:bg-gray-700">
                   <input type="file" id="banner-upload" accept="image/*" class="hidden" />
-                  <div id="banner-preview-area" class="mx-auto w-full h-20 sm:h-28 bg-white border border-gray-200 rounded-2xl flex items-center justify-center overflow-hidden mb-3 sm:mb-4 shadow-sm">
-                    <i data-lucide="image" class="w-8 h-8 sm:w-12 sm:h-12 text-gray-300"></i>
+                  <div id="banner-preview-area" class="mx-auto w-full h-20 sm:h-28 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl flex items-center justify-center overflow-hidden mb-3 sm:mb-4 shadow-sm">
+                    <i data-lucide="image" class="w-8 h-8 sm:w-12 sm:h-12 text-gray-300 dark:text-gray-500"></i>
                   </div>
-                  <button type="button" id="upload-banner-btn" class="inline-flex items-center px-3 sm:px-5 py-1.5 sm:py-2.5 bg-white border border-gray-300 rounded-xl text-xs sm:text-sm font-medium hover:bg-gray-50">
+                  <button type="button" id="upload-banner-btn" class="inline-flex items-center px-3 sm:px-5 py-1.5 sm:py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-650 rounded-xl text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
                     <i data-lucide="upload" class="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2"></i> Upload Banner
                   </button>
-                  <p class="text-xs text-gray-500 mt-2 sm:mt-3">1200Ã—300px recommended</p>
+                  <p class="text-xs text-gray-500 dark:text-gray-400 mt-2 sm:mt-3">1200×300px recommended</p>
                 </div>
               </div>
             </div>
@@ -875,36 +875,36 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8 hidden">
           @foreach ($packages as $key => $pkg)
           @if (strtolower($key) === 'starter') @continue @endif
-          <div class="package-card bg-white rounded-xl shadow-lg border-2 border-gray-200 cursor-pointer p-6 text-center transition"
+          <div class="package-card bg-white dark:bg-gray-700 rounded-xl shadow-lg border-2 border-gray-200 dark:border-gray-650 cursor-pointer p-6 text-center transition"
             data-key="{{ $key }}" data-name="{{ $pkg['name'] }}" data-tokens="{{ $pkg['tokens'] }}" data-price="{{ $pkg['price'] }}">
-            <h3 class="text-xl sm:text-2xl font-semibold text-gray-900">{{ $pkg['name'] }}</h3>
-            <div class="text-2xl sm:text-3xl font-bold text-blue-600 mt-2">₦{{ number_format($pkg['price']) }}</div>
-            <p class="text-gray-500 text-xs sm:text-sm mt-1">{{ number_format($pkg['tokens']) }} tokens / bundle</p>
+            <h3 class="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ $pkg['name'] }}</h3>
+            <div class="text-2xl sm:text-3xl font-bold text-blue-600 dark:text-blue-400 mt-2">₦{{ number_format($pkg['price']) }}</div>
+            <p class="text-gray-500 dark:text-gray-400 text-xs sm:text-sm mt-1">{{ number_format($pkg['tokens']) }} tokens / bundle</p>
           </div>
           @endforeach
         </div>
 
         {{-- Bundle quantity + live total --}}
-        <div class="rounded-2xl border border-gray-200 bg-gray-50 p-4 sm:p-5 mb-2">
+        <div class="rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 sm:p-5 mb-2">
           <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <label for="topup-qty" class="block text-sm font-semibold text-gray-700 mb-1">Number of bundles</label>
+              <label for="topup-qty" class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Number of bundles</label>
               <div class="flex items-center gap-2">
-                <button type="button" id="topup-minus" class="w-9 h-9 rounded-lg border border-gray-300 bg-white text-lg font-bold text-gray-600 hover:bg-gray-100">−</button>
-                <input type="number" id="topup-qty" min="1" max="10" value="1" class="w-20 text-center px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
-                <button type="button" id="topup-plus" class="w-9 h-9 rounded-lg border border-gray-300 bg-white text-lg font-bold text-gray-600 hover:bg-gray-100">+</button>
+                <button type="button" id="topup-minus" class="w-9 h-9 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-lg font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600">−</button>
+                <input type="number" id="topup-qty" min="1" max="10" value="1" class="w-20 text-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500" />
+                <button type="button" id="topup-plus" class="w-9 h-9 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-lg font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600">+</button>
               </div>
-              <p class="text-xs text-gray-400 mt-1">Max 10 bundles per top-up.</p>
+              <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Max 10 bundles per top-up.</p>
             </div>
             <div class="text-left sm:text-right">
               <p class="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">You receive</p>
-              <p class="text-2xl font-bold text-gray-900"><span id="topup-tokens">0</span> <span class="text-sm font-medium text-gray-500">tokens</span></p>
-              <p class="text-sm text-gray-500 mt-1">Total: <span class="font-bold text-blue-600" id="topup-total">₦0</span></p>
+              <p class="text-2xl font-bold text-gray-900 dark:text-gray-100"><span id="topup-tokens">0</span> <span class="text-sm font-medium text-gray-500 dark:text-gray-400">tokens</span></p>
+              <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Total: <span class="font-bold text-blue-600 dark:text-blue-400" id="topup-total">₦0</span></p>
             </div>
           </div>
         </div>
         {{-- Pay with Paystack directly --}}
-        <div class="border-t pt-6 mt-4 flex justify-center">
+        <div class="border-t dark:border-gray-700 pt-6 mt-4 flex justify-center">
           <button id="topup-continue"
             class="inline-flex items-center justify-center gap-2 px-8 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold shadow-md text-sm sm:text-base">
             <i data-lucide="credit-card" class="w-4 h-4 sm:w-5 sm:h-5"></i>
@@ -912,7 +912,7 @@
           </button>
         </div>
         <div class="flex justify-center gap-4 mt-6">
-          <button id="cancel-token-purchase" class="px-5 sm:px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm sm:text-base">Cancel</button>
+          <button id="cancel-token-purchase" class="px-5 sm:px-6 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 text-sm sm:text-base">Cancel</button>
         </div>
       </div>
     </div>

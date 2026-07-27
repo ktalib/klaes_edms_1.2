@@ -21,10 +21,10 @@
 
       @media print {
         html, body {
-          height: 100%;
+          height: auto !important;
           margin: 0 !important;
           padding: 0 !important;
-          overflow: hidden;
+          background-color: #fdfcf0 !important;
         }
         @page {
           size: A4;
@@ -34,23 +34,25 @@
           display: none !important;
         }
         .a4-page {
-          width: 210mm;
-          height: 297mm;
+          width: 210mm !important;
+          height: 296mm !important; /* Slightly less than 297mm to prevent overflow loops */
           padding: 10mm !important;
           margin: 0 !important;
           border: none !important;
           box-shadow: none !important;
           background-color: #fdfcf0 !important;
+          background-color: #fdfcf0 !important;
         }
       }
 
       .dotted-line {
-        border-bottom: 2px dotted #1a4731;
+        border-bottom: 1px dashed #1a4731;
         flex-grow: 1;
-        height: 14px;
+        height: auto;
         margin-left: 4px;
         position: relative;
         top: -4px;
+        display: block;
       }
 
       .full-width-green {
@@ -72,6 +74,9 @@
         position: relative;
         top: -2px;
         padding: 0 5px;
+        margin-bottom: 2px;
+        display: inline-block;
+        line-height: 1.3;
       }
 
       .serial-box {
@@ -145,12 +150,7 @@
             <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data={{ $recommendation->file_number }}" alt="QR" class="w-full h-full grayscale">
           </div>
           <div class="text-right flex flex-col items-end gap-1">
-            <p class="font-bold text-sm text-[#1a4731]">
-              Serial No.
-              <span class="border-b border-black px-6 ml-1 text-base text-black font-mono">
-                  {{ $recommendation->land_rofo_serial_no ?? '_____' }}
-              </span>
-            </p>
+         
             <div class="serial-box">
               <div class="serial-label">Serial No:</div>
               <div class="serial-code-wrap">
@@ -164,13 +164,13 @@
           </div>
         </div>
 
-        <div class="border-2 border-[#1a4731] p-6 flex flex-col flex-grow box-border relative overflow-hidden">
+        <div class="border-2 border-[#1a4731] pt-4 pb-3 px-5 flex flex-col flex-grow box-border relative overflow-hidden">
           <!-- Main Banner -->
-          <div class="flex items-center gap-4 mb-4">
+          <div class="flex items-center gap-4 mb-1 shrink-0">
             <div class="w-16">
-              <img src="{{ asset('img/kano-logo.png') }}" class="w-14 mx-auto" alt="Logo" onerror="this.src='https://via.placeholder.com/60?text=LOGO'">
+              <img src="http://app.klaes.ng/assets/logo/ministry1.jpg" class="w-14 mx-auto" alt="Logo" onerror="this.src='http://app.klaes.ng/assets/logo/ministry1.jpg'">
             </div>
-            <div class="bg-[#1a4731] text-white text-center py-2 px-4 flex-1 relative" style="border-top-left-radius: 25px">
+            <div class="bg-[#1a4731] text-white text-center py-1.5 px-4 flex-1 relative" style="border-top-left-radius: 25px">
               <h1 class="font-bold text-[16px] uppercase tracking-tighter leading-tight">
                 Recommendation for the Conversion of <br />
                 Customary Title to Statutory Right of Occupancy
@@ -180,14 +180,14 @@
           </div>
 
           <!-- Address Block -->
-          <div class="mb-4 text-[11px] font-bold leading-tight text-[#1a4731]">
+          <div class="mb-1 text-[13px] font-bold leading-tight text-[#1a4731] shrink-0">
             <p>Honourable Commissioner</p>
             <p class="italic text-[#2e6349]">Ministry of Land and Physical Planning</p>
             <p>Kano State.</p>
           </div>
 
           <!-- Application Details (Section 3 mappings) -->
-          <div class="text-black space-y-3 text-[11px] mb-6">
+          <div class="text-black space-y-1 text-[13px] mb-1 shrink-0">
             <div class="flex items-end">
               <span>Page
                 <span class="border-b border-black px-2 min-w-[30px] inline-block text-center font-bold">
@@ -207,40 +207,48 @@
             </div>
             <div class="flex items-end">
               <div class="ml-20 dotted-line">
-                  <span class="value-text">{{ strtoupper($recommendation->location) }} @if($recommendation->plot_number) (PLOT: {{ $recommendation->plot_number }}) @endif</span>
+                  <span class="value-text">{{ normalizeLocationText($recommendation->location) }} @if($recommendation->plot_number) (PLOT: {{ $recommendation->plot_number }}) @endif</span>
               </div>
             </div>
             <div class="ml-20 flex items-end">
               <span class="italic">for the purpose of</span>
               <div class="dotted-line">
-                  <span class="value-text">{{ $recommendation->land_use }} ({{ $recommendation->purpose_of_clause }})</span>
+                  <span class="value-text">
+                      {{ $recommendation->land_use }}
+                      @if($recommendation->purpose_of_clause)
+                          ({{ $recommendation->purpose_of_clause }})
+                      @endif
+                  </span>
               </div>
             </div>
-            <div class="flex items-end">
-              <span>Page
+            <div class="pt-1 text-[13px] leading-relaxed flex items-start gap-2">
+              <div class="flex items-center shrink-0 gap-1">
+                <span>Page</span>
                 <span class="border-b border-black px-2 min-w-[30px] inline-block text-center font-bold">
                     {{ $recommendation->page_survey_report }}
                 </span>
-              </span>
-              <span class="ml-4 italic">Survey Report</span>
-              <div class="dotted-line">
-                  <span class="value-text">{{ $recommendation->survey_report }}</span>
+                <span class="ml-2 italic whitespace-nowrap">Survey Report</span>
+              </div>
+              <div class="flex-grow text-black">
+                <span class="border-b border-dashed border-[#1a4731] font-bold px-1 inline text-black">
+                    {{ $recommendation->survey_report }}
+                </span>
               </div>
             </div>
           </div>
 
           <!-- Planning Recommendation -->
-          <div class="mb-6 text-black">
-            <p class="text-center font-bold text-[10px] mb-2 uppercase tracking-wide">
+          <div class="mb-0 text-black shrink-0">
+            <p class="text-center font-bold text-[13px] mb-0.5 uppercase tracking-wide">
               PLANNING RECOMMENDATION (IF ANY)
             </p>
-            <div class="space-y-4 px-2 py-3 border border-slate-200 rounded-lg min-h-[60px] text-[10px]">
+            <div class="space-y-2 px-2 py-1 border border-slate-200 rounded-lg min-h-[24px] text-[13px]">
                 {{ $recommendation->recommendation ?? 'NONE PROVIDED' }}
             </div>
           </div>
 
           <!-- Terms Table -->
-          <div class="text-black text-[10px] space-y-2.5 mb-6">
+          <div class="text-black text-[13px] space-y-0.5 mb-1 shrink-0">
             <p class="font-bold underline italic">
               The grant of Right of Occupancy is recommended on the terms set out as follows:
             </p>
@@ -282,20 +290,20 @@
           </div>
 
           <!-- Recommendation Footer -->
-          <p class="text-black text-[10px] italic mb-6 leading-tight">
+          <p class="text-black text-[13px] italic mb-1 shrink-0">
             You may wish to approve this application on the terms set out above
-            and subject to Survey Report and recommendation of the <br /> Urban Planning Board/ Physical Planning
+            and subject to Survey Report at page <span class="inline-block w-8 border-b border-black text-center font-bold">{{ $recommendation->page_survey_report }}</span> and recommendation of the <br /> Urban Planning Board/ Physical Planning
             Department at page
-            <span class="inline-block w-16 border-b border-black text-center font-bold">{{ $recommendation->page_survey_report }}</span>.
+            <span class="inline-block w-16 border-b border-black text-center font-bold">{{ $recommendation->page_2 }}</span>.
           </p>
 
-          <div class="flex justify-between text-center text-[10px] mb-8 px-4 text-black">
+          <div class="flex justify-between text-center text-[13px] mt-11 mb-1 px-4 text-black shrink-0">
             <div class="w-40 border-t border-black pt-1 font-bold">Rank</div>
             <div class="w-40 border-t border-black pt-1 font-bold">Director Land</div>
           </div>
 
           <!-- Approval Banner -->
-          <div class="full-width-green text-white text-center py-3 mb-4 relative">
+          <div class="full-width-green text-white text-center py-1.5 mb-1 shrink-0">
             <h2 class="font-bold text-[14px] uppercase tracking-tight">
               APPROVAL FOR THE CONVERSION OF CUSTOMARY <br />
               TITLE TO STATUTORY RIGHT OF OCCUPANCY
@@ -304,7 +312,7 @@
           </div>
 
           <!-- Approval Details -->
-          <div class="text-black text-[10px] space-y-4 mb-8">
+          <div class="text-black text-[13px] space-y-2 mb-1 shrink-0">
             <div class="flex items-end">
               <span>I recommend/do not recommend the application for a Grant over
                 Plot No.:</span>
@@ -319,14 +327,14 @@
               </div>
               <span>Location</span>
               <div class="dotted-line w-2/3">
-                  <span class="value-text">{{ $recommendation->location }}</span>
+                  <span class="value-text">{{ normalizeLocationText($recommendation->location) }}</span>
               </div>
             </div>
           </div>
 
-          <!-- Signatures -->
-          <div class="mt-auto space-y-8">
-            <div class="flex justify-between text-[10px] text-black">
+          <!-- Permanent Secretary Signature -->
+          <div class="mt-10 shrink-0">
+            <div class="flex justify-between text-[13px] text-black">
               <div class="w-56 border-t border-black text-center pt-1 font-bold uppercase">
                 Permanent Secretary
               </div>
@@ -334,12 +342,16 @@
                 Date
               </div>
             </div>
+          </div>
 
-            <p class="text-red-600 font-bold text-[10px] text-left tracking-tighter">
-              The Grant of Occupancy is hereby APPROVED/NOT APPROVED
-            </p>
+          <!-- Status / Approval Text -->
+          <p class="text-red-600 font-bold text-[13px] text-left tracking-tighter mt-10 mb-0 shrink-0">
+            The Grant of Occupancy is hereby APPROVED/NOT APPROVED
+          </p>
 
-            <div class="flex justify-between text-[10px] text-black">
+          <!-- Honourable Commissioner Signature -->
+          <div class="mt-10 shrink-0">
+            <div class="flex justify-between text-[13px] text-black">
               <div class="w-56 border-t border-black text-center pt-1 font-bold uppercase">
                 Honourable Commissioner
               </div>
@@ -351,5 +363,52 @@
         </div>
       </div>
     </div>
+
+    {{-- Page 2: acknowledgement / collection sheet.
+         Wrapped so it inherits this template's cream background and gets page
+         padding (this layout uses @page { margin: 0 }); the partial's own
+         .ack-page carries the page-break so it starts on a fresh sheet. --}}
+    <style>
+      .ack-print-wrap { background-color: #fdfcf0; }
+      .ack-print-wrap .ack-page {
+        padding: 10mm;
+        box-sizing: border-box;
+        min-height: 285mm;
+      }
+      /* Inset the footer so the logo sits inside the corner, not flush to the
+         physical paper edge (this layout uses @page { margin: 0 }). */
+      .ack-print-wrap .ack-page .footer {
+        bottom: 12mm;
+        right: 12mm;
+      }
+      @media print {
+        .ack-print-wrap { background-color: #fdfcf0 !important; }
+      }
+    </style>
+    <div class="ack-print-wrap">
+      @include('land_recommendations.templates._ack_sheet')
+    </div>
+
+    <script>
+      // Auto-open the print dialog once the page (and images) have loaded.
+      window.addEventListener('load', function () {
+        setTimeout(function () { window.print(); }, 300);
+      });
+
+      // Log the print after the dialog closes.
+      window.onafterprint = function () {
+        fetch('{{ route("land-recommendations.log-print", $recommendation->id) }}', {
+          method: 'POST',
+          headers: {
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        })
+        .then(response => response.json())
+        .then(data => console.log('Print logged:', data))
+        .catch(error => console.error('Error logging print:', error));
+      };
+    </script>
   </body>
 </html>

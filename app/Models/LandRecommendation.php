@@ -95,7 +95,9 @@ class LandRecommendation extends Model
         'ground_rent' => 'decimal:2',
         'survey_fees' => 'decimal:2',
         'development_value' => 'decimal:2',
-        'development_charge' => 'decimal:2',
+        // development_charge is stored as free text (e.g. "To follow"), so it must
+        // not be cast to a decimal — casting throws on non-numeric values.
+        // 'development_charge' => 'decimal:2',
         'approved_at' => 'datetime',
         'rofo_generated_at' => 'datetime',
         'application_date' => 'date',

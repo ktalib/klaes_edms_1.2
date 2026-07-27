@@ -124,6 +124,53 @@
 <body class="print:bg-white">
 
     @php
+        // Merge file numbers and applicant names for multi-property mortgages
+        $displayFileNumber = $application->file_number;
+        $displayApplicantName = strtoupper(trim($application->applicant_name));
+        
+        if (!empty($application->additional_properties)) {
+            $additionalProps = is_array($application->additional_properties) 
+                ? $application->additional_properties 
+                : json_decode($application->additional_properties, true);
+                
+            if (is_array($additionalProps)) {
+                // Merge file numbers
+                $fileNos = [$application->file_number];
+                foreach ($additionalProps as $prop) {
+                    if (!empty($prop['file_number'])) {
+                        $fileNos[] = $prop['file_number'];
+                    }
+                }
+                $fileNos = array_unique(array_filter($fileNos));
+                if (count($fileNos) == 2) {
+                    $displayFileNumber = array_values($fileNos)[0] . ' & ' . array_values($fileNos)[1];
+                } elseif (count($fileNos) > 2) {
+                    $fileNos = array_values($fileNos);
+                    $last = array_pop($fileNos);
+                    $displayFileNumber = implode(', ', $fileNos) . ', & ' . $last;
+                }
+                
+                // Merge applicant names
+                $titles = [$displayApplicantName];
+                foreach ($additionalProps as $prop) {
+                    if (!empty($prop['applicant_name'])) {
+                        $titles[] = strtoupper(trim($prop['applicant_name']));
+                    } elseif (!empty($prop['applicant'])) {
+                        $titles[] = strtoupper(trim($prop['applicant']));
+                    }
+                }
+                $titles = array_unique(array_filter($titles));
+                if (count($titles) == 2) {
+                    $titles = array_values($titles);
+                    $displayApplicantName = $titles[0] . ' & ' . $titles[1];
+                } elseif (count($titles) > 2) {
+                    $titles = array_values($titles);
+                    $last = array_pop($titles);
+                    $displayApplicantName = implode(', ', $titles) . ', & ' . $last;
+                }
+            }
+        }
+        
         $watermarkText = $application->print_count == 0 ? 'FIRST PRINT' : 'SECOND PRINT';
     @endphp
     <div class="watermark">{{ $watermarkText }}</div>
@@ -135,14 +182,14 @@
     <div class="w-[210mm] mx-auto bg-white p-[1.5cm] box-border relative">
         <div class="letterhead-space"></div>
 
-        <div class="text-center font-bold pt-2">{{ $application->file_number }}</div>
+        <div class="text-center font-bold pt-2">{{ $displayFileNumber }}</div>
 
         <div class="text-right mt-6 text-sm">
             <strong>Date: {{ $application->created_at->format('jS F, Y') }}</strong>
         </div>
 
         <div class="mt-6 leading-relaxed text-sm">
-            <span class="json-data">{{ strtoupper($application->applicant_name) }}</span><br>
+            <span class="json-data">{{ $displayApplicantName }}</span><br>
             <span
                 class="json-data">{!! preg_replace('/, ([^,]+ State)$/i', ',<br>$1.', e(ucfirst($application->applicant_address))) !!}</span>
         </div>
@@ -151,7 +198,7 @@
 
         <div class="text-center mt-6 uppercase font-bold text-base leading-tight">
             RE: APPLICATION FOR CONSENT TO MORTGAGE THE PROPERTY COVERED BY<br>
-            CERTIFICATE OF OCCUPANCY: <span class="json-data">{{ $application->file_number }}</span>
+            CERTIFICATE OF OCCUPANCY: <span class="json-data">{{ $displayFileNumber }}</span>
         </div>
 
         <div class="mt-6 leading-relaxed text-md text-justify">
@@ -159,7 +206,7 @@
             the Land Use Act Laws of the Federation of Nigeria, Vol.118 and further to your application dated <span
                 class="json-data">{{ \Carbon\Carbon::parse($application->application_date)->format('jS F, Y') }}</span>
             on the above subject matter I hereby convey my approval for Consent to Mortgage the property with
-            Certificate of Occupancy No: <span class="json-data">{{ $application->file_number }}</span> To :- 
+            Certificate of Occupancy No: <span class="json-data">{{ $displayFileNumber }}</span> To :- 
             @if(empty($application->additional_parties))
                 <span class="json-data">{{ strtoupper($application->party_name) }}</span> of <span
                 class="json-data">{{ rtrim($application->party_address, '.') }}.</span>

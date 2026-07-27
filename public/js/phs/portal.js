@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   const cfg = window.PHS_PORTAL || {};
   const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
   let selectedPackage = null;
@@ -155,6 +155,11 @@
     }
     const totalEl = $('timeline-total-count');
     if (totalEl) totalEl.textContent = String(rows.length);
+    const uniqueFileNos = new Set(
+      rows.map(r => String(r.file_no || r.fileno || r.mlsFNo || '').trim().toUpperCase())
+          .filter(fn => fn !== '' && fn !== '-')
+    );
+    const showFileNo = uniqueFileNos.size > 1;
 
     $('timeline-container').innerHTML = rows.length ? rows.map((row, index) => {
       const src = row.source_table || '';
@@ -170,11 +175,11 @@
       const reg = (regRaw && regRaw !== '-' && regRaw !== '0/0/0') ? regRaw : '';
       const location = row.location || row.property_location || [result.file_district, result.file_lga].filter(Boolean).join(', ') || '';
       return `<div class="timeline-item ${index === rows.length - 1 ? '' : 'completed'}">
-        <div class="bg-white rounded-xl p-3 sm:p-4 border border-gray-100 shadow-sm">
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-3 sm:p-4 border border-gray-100 dark:border-gray-700 shadow-sm relative z-10">
           <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
             <div class="flex items-center gap-2 flex-wrap">
               ${src ? `<span class="phs-source-tag phs-source-tag-${src}">${esc(srcLabel)}</span>` : ''}
-              <span class="text-sm font-semibold text-gray-800">${esc(type)}</span>
+              <span class="text-sm font-semibold text-gray-800 dark:text-gray-200">${esc(type)}</span>
               ${reg && reg !== '-' ? `<span class="text-xs text-gray-400">Reg: ${esc(reg)}</span>` : ''}
             </div>
             <span class="text-xs text-gray-500 whitespace-nowrap flex items-center"><i data-lucide="calendar" class="w-3 h-3 mr-1"></i>${esc(date)}</span>
@@ -182,17 +187,21 @@
           <div class="flex items-center gap-2 sm:gap-3 flex-wrap">
             <div class="flex items-center gap-2">
               <div class="w-6 h-6 sm:w-8 sm:h-8 bg-blue-100 rounded-full flex items-center justify-center"><i data-lucide="user" class="w-3 h-3 sm:w-4 sm:h-4 text-blue-600"></i></div>
-              <div><p class="text-[10px] text-gray-400 uppercase tracking-wide">From</p><p class="font-semibold text-gray-800 text-xs sm:text-sm">${esc(party1)}</p></div>
+              <div>
+                <p class="text-[10px] text-gray-400 uppercase tracking-wide">From</p>
+                ${showFileNo && row.file_no && row.file_no !== '-' ? `<p class="text-xs font-bold text-gray-500 dark:text-gray-400 mb-0.5">${esc(row.file_no)}</p>` : ''}
+                <p class="font-semibold text-gray-800 dark:text-gray-200 text-xs sm:text-sm">${esc(party1)}</p>
+              </div>
             </div>
             <i data-lucide="arrow-right" class="w-4 h-4 text-gray-400"></i>
             <div class="flex items-center gap-2">
               <div class="w-6 h-6 sm:w-8 sm:h-8 bg-green-100 rounded-full flex items-center justify-center"><i data-lucide="user-check" class="w-3 h-3 sm:w-4 sm:h-4 text-green-600"></i></div>
-              <div><p class="text-[10px] text-gray-400 uppercase tracking-wide">To</p><p class="font-semibold text-gray-800 text-xs sm:text-sm">${esc(party2)}</p></div>
+              <div><p class="text-[10px] text-gray-400 uppercase tracking-wide">To</p><p class="font-semibold text-gray-800 dark:text-gray-200 text-xs sm:text-sm">${esc(party2)}</p></div>
             </div>
             ${party3 ? `<i data-lucide="arrow-right" class="w-4 h-4 text-gray-400"></i>
             <div class="flex items-center gap-2">
               <div class="w-6 h-6 sm:w-8 sm:h-8 bg-purple-100 rounded-full flex items-center justify-center"><i data-lucide="user" class="w-3 h-3 sm:w-4 sm:h-4 text-purple-600"></i></div>
-              <div><p class="text-[10px] text-gray-400 uppercase tracking-wide">Party 3</p><p class="font-semibold text-gray-800 text-xs sm:text-sm">${esc(party3)}</p></div>
+              <div><p class="text-[10px] text-gray-400 uppercase tracking-wide">Party 3</p><p class="font-semibold text-gray-800 dark:text-gray-200 text-xs sm:text-sm">${esc(party3)}</p></div>
             </div>` : ''}
           </div>
           ${location ? `<p class="text-xs text-gray-400 mt-3 flex items-center"><i data-lucide="map-pin" class="w-3 h-3 mr-1"></i>${esc(location)}</p>` : ''}
@@ -318,7 +327,11 @@
         link.classList.toggle('font-medium', !active);
       });
       if (isSearch) {
-        $('search-query')?.focus();
+        if (typeof window.jQuery !== 'undefined' && window.jQuery('#search-query').data('select2')) {
+          window.jQuery('#search-query').select2('open');
+        } else {
+          $('search-query')?.focus();
+        }
         $('search-query')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       } else {
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -338,7 +351,21 @@
     // "Search Now" link on the Organization page).
     if (window.location.hash === '#search') setView('search');
     $('sidebar-buy-tokens-btn')?.addEventListener('click', () => show($('token-modal')));
-    $('try-new-search')?.addEventListener('click', () => { $('search-query').value = ''; hide($('results-section')); $('search-query').focus(); });
+    $('try-new-search')?.addEventListener('click', () => {
+      const q = $('search-query');
+      if (q) {
+        q.value = '';
+        if (typeof window.jQuery !== 'undefined' && window.jQuery(q).data('select2')) {
+          window.jQuery(q).val(null).trigger('change');
+        }
+      }
+      hide($('results-section'));
+      if (typeof window.jQuery !== 'undefined' && window.jQuery('#search-query').data('select2')) {
+        window.jQuery('#search-query').select2('open');
+      } else {
+        q?.focus();
+      }
+    });
     $('back-to-dashboard-btn')?.addEventListener('click', () => { hide($('file-details-section')); show($('results-section')); });
     $('print-slip-btn')?.addEventListener('click', printSearchSlip);
     $('dashboard-logout-btn')?.addEventListener('click', logout);

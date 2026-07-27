@@ -207,7 +207,7 @@
 <!-- Top bar -->
 <div class="topbar">
     <div class="brand-icon">
-        <img src="http://app.klaes.ng/storage/upload/logo/1.jpeg" alt="SPAS">
+        <img src="http://app.klaes.ng/storage/upload/logo/Klase.png" alt="SPAS">
     </div>
     <div class="brand-text">
         <h1>SPAS Mobile</h1>
@@ -221,7 +221,7 @@
 
         <div class="card-logo">
             <div class="card-logo-icon">
-                <img src="http://app.klaes.ng/storage/upload/logo/1.jpeg" alt="SPAS">
+                <img src="http://app.klaes.ng/storage/upload/logo/Klase.png" alt="SPAS">
             </div>
             <h2>Welcome Back</h2>
             <p>Sign in to access field assignments<br>and property records</p>

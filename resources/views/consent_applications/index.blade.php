@@ -83,7 +83,21 @@
                                 <tr class="hover:bg-slate-50/50 transition duration-200">
                                     <td class="px-6 py-4 text-slate-600 font-bold italic">{{ $loop->iteration }}</td>
                                     <td class="px-6 py-4 text-slate-900 font-bold whitespace-nowrap">
-                                        {{ $app->file_number }}
+                                        <button type="button" class="view-properties-btn flex items-center gap-2 hover:text-blue-600 transition outline-none" 
+                                                data-main-file="{{ $app->file_number }}"
+                                                data-main-desc="{{ $app->property_description }}"
+                                                data-main-applicant="{{ $app->applicant_name }}"
+                                                data-additional="{{ json_encode($app->additional_properties ?? []) }}">
+                                            <span>{{ $app->file_number }}</span>
+                                            @php
+                                                $additionalCount = is_array($app->additional_properties) ? count($app->additional_properties) : 0;
+                                            @endphp
+                                            @if($additionalCount > 0)
+                                                <span class="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 text-[10px] font-bold border border-amber-200">
+                                                    +{{ $additionalCount }}
+                                                </span>
+                                            @endif
+                                        </button>
                                     </td>
                                     <td class="px-6 py-4">
                                         @php
@@ -98,7 +112,27 @@
                                             {{ $app->consent_type }}
                                         </span>
                                     </td>
-                                    <td class="px-6 py-4 text-slate-900 font-semibold">{{ $app->applicant_name }}</td>
+                                    @php
+                                        $titles = collect([$app->applicant_name]);
+                                        if (is_array($app->additional_properties)) {
+                                            foreach ($app->additional_properties as $prop) {
+                                                if (!empty($prop['applicant_name'])) $titles->push($prop['applicant_name']);
+                                                elseif (!empty($prop['applicant'])) $titles->push($prop['applicant']);
+                                            }
+                                        }
+                                        $titles = $titles->filter()->unique()->values();
+                                        
+                                        $party1Text = 'N/A';
+                                        if ($titles->count() === 1) {
+                                            $party1Text = $titles->first();
+                                        } elseif ($titles->count() === 2) {
+                                            $party1Text = $titles->first() . ' & ' . $titles->last();
+                                        } elseif ($titles->count() > 2) {
+                                            $last = $titles->pop();
+                                            $party1Text = $titles->implode(', ') . ', & ' . $last;
+                                        }
+                                    @endphp
+                                    <td class="px-6 py-4 text-slate-900 font-semibold uppercase">{{ $party1Text }}</td>
                                     <td class="px-6 py-4 text-slate-900 font-semibold">{{ $app->party_name }}</td>
                                     @php
                                         $extraApplicants = collect($app->additional_applicants ?? [])->pluck('name')->filter()->values();
@@ -201,6 +235,25 @@
     @include('consent_applications.partials.modal')
     @include('components.global-fileno-modal')
 
+    <!-- Properties Modal -->
+    <div id="properties-modal" class="fixed inset-0 z-[60] hidden flex items-center justify-center p-4">
+        <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity properties-modal-overlay"></div>
+        <div class="relative bg-white rounded-3xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col overflow-hidden border border-slate-100 transform transition-all scale-95 opacity-0 duration-200" id="properties-modal-content">
+            <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+                <div>
+                    <h3 class="text-xl font-bold text-slate-900">Properties Involved</h3>
+                    <p class="text-xs text-slate-500 mt-1 uppercase tracking-widest font-semibold">List of file numbers and property descriptions</p>
+                </div>
+                <button type="button" class="close-properties-modal text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-50 rounded-xl transition">
+                    <i data-lucide="x" class="h-6 w-6"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto space-y-4" id="properties-modal-list">
+                <!-- Populated via JS -->
+            </div>
+        </div>
+    </div>
+
     @push('scripts')
     <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
     <script src="{{ asset('js/consent_applications.js') }}"></script>
@@ -216,6 +269,76 @@
             if (window.GlobalFileNoModal) {
                 window.GlobalFileNoModal.init();
             }
+
+            // Properties Modal Logic
+            const propertiesModal = document.getElementById('properties-modal');
+            const propertiesModalContent = document.getElementById('properties-modal-content');
+            const propertiesModalList = document.getElementById('properties-modal-list');
+            const overlay = document.querySelector('.properties-modal-overlay');
+            const closeBtns = document.querySelectorAll('.close-properties-modal');
+
+            function closePropertiesModal() {
+                propertiesModalContent.classList.remove('scale-100', 'opacity-100');
+                propertiesModalContent.classList.add('scale-95', 'opacity-0');
+                setTimeout(() => {
+                    propertiesModal.classList.add('hidden');
+                }, 200);
+            }
+
+            closeBtns.forEach(btn => btn.addEventListener('click', closePropertiesModal));
+            if (overlay) overlay.addEventListener('click', closePropertiesModal);
+
+            document.querySelectorAll('.view-properties-btn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const mainFile = this.dataset.mainFile;
+                    const mainDesc = this.dataset.mainDesc || 'No description available';
+                    const mainApplicant = this.dataset.mainApplicant || 'N/A';
+                    let additional = [];
+                    try {
+                        additional = JSON.parse(this.dataset.additional || '[]');
+                    } catch(e) {}
+
+                    let html = `
+                        <div class="p-4 rounded-xl border border-indigo-100 bg-indigo-50/30 space-y-2">
+                            <div class="flex items-center justify-between">
+                                <span class="text-[10px] font-bold text-indigo-500 uppercase tracking-widest">Primary Property</span>
+                                <span class="px-2 py-1 bg-white border border-indigo-100 rounded text-xs font-mono font-bold text-indigo-700">${mainFile}</span>
+                            </div>
+                            <div class="mt-2 text-sm">
+                                <p class="font-bold text-slate-800 uppercase mb-1">${mainApplicant}</p>
+                                <p class="font-medium text-slate-700">${mainDesc}</p>
+                            </div>
+                        </div>
+                    `;
+
+                    if (additional && additional.length > 0) {
+                        additional.forEach((prop, index) => {
+                            const propApplicant = prop.applicant_name || prop.applicant || 'N/A';
+                            html += `
+                                <div class="p-4 rounded-xl border border-slate-100 bg-slate-50 space-y-2">
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Additional Property ${index + 1}</span>
+                                        <span class="px-2 py-1 bg-white border border-slate-200 rounded text-xs font-mono font-bold text-slate-700">${prop.file_number}</span>
+                                    </div>
+                                    <div class="mt-2 text-sm">
+                                        <p class="font-bold text-slate-800 uppercase mb-1">${propApplicant}</p>
+                                        <p class="font-medium text-slate-700">${prop.description || 'No description available'}</p>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                    }
+
+                    propertiesModalList.innerHTML = html;
+                    
+                    propertiesModal.classList.remove('hidden');
+                    // trigger reflow
+                    void propertiesModal.offsetWidth;
+                    propertiesModalContent.classList.remove('scale-95', 'opacity-0');
+                    propertiesModalContent.classList.add('scale-100', 'opacity-100');
+                });
+            });
         });
     </script>
     @endpush

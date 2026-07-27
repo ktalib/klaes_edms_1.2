@@ -27,7 +27,7 @@
         <div class="flex flex-col items-center justify-center">
           <div class="w-32 h-32 relative mb-4">
             <img
-              src="{{ asset('storage/upload/logo/1.jpeg') }}"
+              src="{{ asset('storage/upload/logo/Klase.png') }}"
               alt="KLAES Logo"
               class="rounded-lg w-full h-full object-cover"
             />

@@ -59,7 +59,7 @@
     $headerLeft  = 'http://app.klaes.ng/assets/logo/ministry2.png';
     $headerRight = 'http://app.klaes.ng/assets/logo/ministry1.jpg';
     $footerLeft  = 'http://app.klaes.ng/assets/logo/phs-light-logo.jpeg';
-    $footerRight = 'http://app.klaes.ng/storage/upload/logo/1.jpeg';
+    $footerRight = 'http://app.klaes.ng/storage/upload/logo/Klase.png';
     $verifyUrl   = 'www.klaes.gov.ng/verify';
     $lastUpdated = $date ?? now()->format('F j, Y');
 @endphp

@@ -170,11 +170,24 @@
                         </div>
                     </div>
                 </div>
+                @php
+                    // Strip a leading plot-number token (legacy prefix) and force
+                    // uppercase so mixed-case legacy locations print consistently.
+                    $printLocation = trim((string) ($recommendation->location ?? ''));
+                    $plotNo = trim((string) ($recommendation->plot_number ?? ''));
+                    if ($plotNo !== '' && $printLocation !== '') {
+                        $printLocation = preg_replace('/^' . preg_quote($plotNo, '/') . '\s*[-\/]?\s*/i', '', $printLocation);
+                    }
+                    $printLocation = trim(preg_replace('/\s+/', ' ', $printLocation));
+                    if ($printLocation !== '') {
+                        $printLocation = mb_strtoupper($printLocation, 'UTF-8');
+                    }
+                @endphp
                 <div>
                     <div class="bordered-section">
                         <div class="row">R of O No:<span class="inline-data" style="min-width:235px">{{ $recommendation->file_number }}</span></div>
                         <div class="row">PLOT/PLAN No:<span class="inline-data" style="min-width:190px;margin-top:10px">{{ $recommendation->plot_number }} / {{ $recommendation->layout_plan_no }}</span></div>
-                        <div class="row">LOCATION:<span class="inline-data" style="min-width:220px;margin-top:10px">{{ $recommendation->location }}</span></div>
+                        <div class="row">LOCATION:<span class="inline-data" style="min-width:220px;margin-top:10px">{{ $printLocation }}</span></div>
                         <div class="row">DATE OF ISSUE:<span class="inline-data" style="min-width:190px;margin-top:10px">{{ $recommendation->rofo_generated_at ? $recommendation->rofo_generated_at->format('Y-m-d') : now()->format('Y-m-d') }}</span></div>
                     </div>
                 </div>
@@ -187,14 +200,15 @@
                     <span class="inline-data" style="min-width:30px">{{ $recommendation->created_at ? $recommendation->created_at->format('y') : '' }}</span>,
                     I am directed to inform you that the Governor of Kano State has approved the grant of a Right of Occupancy to you over piece of land/plot No
                     <span class="inline-data" style="min-width:40px">{{ $recommendation->plot_number }}</span>
-                    situated at <span class="inline-data" style="min-width:150px">{{ $recommendation->location }}</span>
+                    situated at <span class="inline-data" style="min-width:150px">{{ $printLocation }}</span>
                     as per plan No. <span class="inline-data" style="min-width:50px">{{ $recommendation->layout_plan_no }}</span> on following the conditions:
                 </p>
                 <div class="condition-item">
                     <strong>1. Payment of:</strong>
                     <div class="sub-item">
                         <div class="sub-item-line"><span class="sub-item-label">(a)</span> Ground Rent N<span class="inline-data" style="min-width:80px">{{ number_format($recommendation->ground_rent, 2) }}</span> P.H.P.A. (Revisable after every 5 years)</div>
-                        <div class="sub-item-line"><span class="sub-item-label">(b)</span> Development Charges N<span class="inline-data" style="min-width:80px">{{ number_format($recommendation->development_charge, 2) }}</span> (Payable once)</div>
+                        @php $devIsText = filled($recommendation->development_charge) && !is_numeric($recommendation->development_charge); @endphp
+                        <div class="sub-item-line"><span class="sub-item-label">(b)</span> Development Charges @unless($devIsText) N @endunless<span class="inline-data" style="min-width:80px">{{ is_numeric($recommendation->development_charge) ? number_format($recommendation->development_charge, 2) : ($recommendation->development_charge ?: '0.00') }}</span> (Payable once)</div>
                         <div class="sub-item-line"><span class="sub-item-label">(c)</span> Survey/Processing fees N<span class="inline-data" style="min-width:80px">{{ number_format($recommendation->survey_fees, 2) }}</span></div>
                     </div>
                 </div>

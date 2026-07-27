@@ -1823,11 +1823,11 @@ async function generateMatchedFileCommissioningSheetPDF(row, watermarkText = 'OR
   const [logo1Base64, logo2Base64, leftFooterLogoBase64, footerLogoBase64, matchedDetails] = await Promise.all([
     fetchImageAsBase64('/assets/logo/logo1.png')
       .then(r => r || fetchImageAsBase64('/assets/logo/logo1.jpg'))
-      .then(r => r || fetchImageAsBase64('/assets/logo/logo1.jpeg')),
+      .then(r => r || fetchImageAsBase64('/assets/logo/logoKlase.png')),
     fetchImageAsBase64('/assets/logo/logo3.jpeg')
       .then(r => r || fetchImageAsBase64('/assets/logo/las.jpeg'))
       .then(r => r || fetchImageAsBase64('/assets/logo/logo3.jpg')),
-    fetchImageAsBase64('/assets/logo/1.jpeg'),
+    fetchImageAsBase64('/assets/logo/Klase.png'),
     fetchImageAsBase64('/assets/logo/las.png').then(r => r || fetchImageAsBase64('/assets/logo/las.jpg')),
     fetchMatchedFileDetails(matchedFileNo)
   ]);

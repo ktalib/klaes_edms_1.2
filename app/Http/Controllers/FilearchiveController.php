@@ -15,6 +15,9 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 
 class FilearchiveController extends Controller
 {
@@ -605,6 +608,7 @@ class FilearchiveController extends Controller
                     ->with([
                         'coverType',
                         'typedBy:id,first_name,last_name',
+                        'qcReviewer:id,first_name,last_name',
                         'pageType',
                         'pageSubType',
                         'scanning:id,file_indexing_id,document_path,display_order,original_filename,document_type,created_at'
@@ -692,7 +696,7 @@ class FilearchiveController extends Controller
             ];
         };
 
-        $pages = $file->pagetypings->map(function ($pageTyping) use ($resolveMedia) {
+        $pages = $file->pagetypings->map(function ($pageTyping) use ($resolveMedia, $imageExtensions) {
             $mediaSources = [
                 ['path' => optional($pageTyping->scanning)->document_path, 'source' => 'scanning'],
                 ['path' => $pageTyping->file_path, 'source' => 'pagetypings']
@@ -729,7 +733,25 @@ class FilearchiveController extends Controller
                 }
             }
 
+            // A page is "image-editable" if it resolves to an image OR it is
+            // meant to be an image (a candidate path has an image extension)
+            // but the file is missing/broken — so the reviewer can Replace it.
+            $isImagePage = ($media['media_type'] === 'image');
+            if (!$isImagePage) {
+                foreach ([optional($pageTyping->scanning)->document_path, $pageTyping->file_path] as $candidatePath) {
+                    if (!$candidatePath) {
+                        continue;
+                    }
+                    $candidateExt = strtolower(pathinfo(str_replace('\\', '/', $candidatePath), PATHINFO_EXTENSION));
+                    if (in_array($candidateExt, $imageExtensions)) {
+                        $isImagePage = true;
+                        break;
+                    }
+                }
+            }
+
             return [
+                'pagetyping_id' => $pageTyping->id,
                 'page_number' => $pageTyping->page_number,
                 'page_type' => $pageTyping->pageType ? [
                     'id' => $pageTyping->pageType->id,
@@ -771,6 +793,13 @@ class FilearchiveController extends Controller
                 'scanning_original_filename' => optional($pageTyping->scanning)->original_filename,
                 'scanning_document_type' => optional($pageTyping->scanning)->document_type,
                 'scanning_document_path' => optional($pageTyping->scanning)->document_path,
+                'is_editable' => $isImagePage,
+                'is_broken' => $isImagePage && empty($media['viewer_url']),
+                'qc_status' => $pageTyping->qc_status ?: 'pending',
+                'qc_reviewed_by' => $pageTyping->qcReviewer ? trim($pageTyping->qcReviewer->first_name . ' ' . $pageTyping->qcReviewer->last_name) : null,
+                'qc_reviewed_at' => $pageTyping->qc_reviewed_at ? $pageTyping->qc_reviewed_at->format('Y-m-d H:i') : null,
+                'qc_override_note' => $pageTyping->qc_override_note,
+                'has_qc_issues' => (bool) $pageTyping->has_qc_issues,
                 'created_at' => $pageTyping->created_at->format('Y-m-d H:i:s')
             ];
         });
@@ -784,6 +813,189 @@ class FilearchiveController extends Controller
                 'total_pages' => $file->pagetypings->count()
             ],
             'pages' => $pages
+        ]);
+    }
+
+    /**
+     * Resolve the exact public-disk relative path currently backing a page's
+     * image, using the same prefix-stripping order as getDocumentPages(). The
+     * returned path is what an in-place edit must overwrite (filename kept).
+     */
+    private function resolveInPlaceImagePath(PageTyping $pageTyping): ?string
+    {
+        $pathPrefixes = ['storage/app/public/', 'app/public/', 'public/', 'storage/'];
+        $imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff', 'tif'];
+
+        $candidates = [
+            optional($pageTyping->scanning)->document_path,
+            $pageTyping->file_path,
+        ];
+
+        // Remember the first image-typed path even if its file is missing, so a
+        // broken image can be (re)created in place with its original filename.
+        $firstImagePath = null;
+
+        foreach ($candidates as $rawPath) {
+            if (!$rawPath) {
+                continue;
+            }
+
+            $normalized = ltrim(str_replace('\\', '/', $rawPath), '/');
+            foreach ($pathPrefixes as $prefix) {
+                if (stripos($normalized, $prefix) === 0) {
+                    $normalized = substr($normalized, strlen($prefix));
+                    break;
+                }
+            }
+            $normalized = ltrim($normalized, '/');
+            if (!$normalized) {
+                continue;
+            }
+
+            $ext = strtolower(pathinfo($normalized, PATHINFO_EXTENSION));
+            if (!in_array($ext, $imageExtensions)) {
+                continue;
+            }
+
+            // Prefer a path whose file actually exists on disk.
+            if (Storage::disk('public')->exists($normalized)) {
+                return $normalized;
+            }
+            if ($firstImagePath === null) {
+                $firstImagePath = $normalized;
+            }
+        }
+
+        // May point at a currently-missing file (broken image) — the caller
+        // will recreate it at this exact path/filename.
+        return $firstImagePath;
+    }
+
+    /**
+     * Quality-control edit: overwrite the page image in place with an edited
+     * version produced client-side. The filename/path is preserved; the
+     * original is backed up first so the pre-edit version is recoverable.
+     */
+    public function applyPageEdits(Request $request, PageTyping $pageTyping)
+    {
+        $validator = Validator::make($request->all(), [
+            'file' => 'required|file|mimes:jpg,jpeg,png,webp|max:51200',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $targetPath = $this->resolveInPlaceImagePath($pageTyping);
+        if (!$targetPath) {
+            return response()->json([
+                'success' => false,
+                'message' => 'The original image for this page could not be located, so it cannot be edited in place.',
+            ], 404);
+        }
+
+        $extension = strtolower(pathinfo($targetPath, PATHINFO_EXTENSION));
+        $imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff', 'tif'];
+        if (!in_array($extension, $imageExtensions)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only image pages can be edited.',
+            ], 422);
+        }
+
+        try {
+            $disk = Storage::disk('public');
+
+            // 1) Back up the current file before overwriting it — but only if it
+            //    actually exists (a broken/missing image has nothing to back up).
+            $backupPath = null;
+            if ($disk->exists($targetPath)) {
+                $backupPath = 'EDMS/SCAN_UPLOAD/_qc_backups/' . $targetPath . '.' . now()->format('YmdHis') . '.' . $extension;
+                $disk->copy($targetPath, $backupPath);
+            }
+
+            // 2) Write in place — SAME path, SAME filename (recreates it if missing).
+            $disk->put($targetPath, file_get_contents($request->file('file')->getRealPath()));
+
+            // 3) Keep metadata honest without touching the filename/path.
+            if ($pageTyping->scanning) {
+                $pageTyping->scanning->update([
+                    'file_size' => $disk->size($targetPath),
+                    'is_pdf_converted' => false,
+                ]);
+            }
+
+            Log::info('File archive QC edit applied in place', [
+                'pagetyping_id' => $pageTyping->id,
+                'path' => $targetPath,
+                'backup' => $backupPath,
+                'user_id' => Auth::id(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Document updated successfully.',
+                'viewer_url' => $disk->url($targetPath) . '?v=' . now()->timestamp,
+            ]);
+        } catch (\Throwable $exception) {
+            Log::error('Unable to apply QC edits to archive page', [
+                'pagetyping_id' => $pageTyping->id,
+                'error' => $exception->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to apply edits: ' . $exception->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Record a quality-control review decision for a page (passed/failed),
+     * capturing the reviewer and timestamp on the pagetypings row.
+     */
+    public function setPageQcStatus(Request $request, PageTyping $pageTyping)
+    {
+        $validator = Validator::make($request->all(), [
+            'qc_status' => 'required|in:passed,failed',
+            'qc_override_note' => 'nullable|string|max:1000',
+            'has_qc_issues' => 'nullable|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $status = $request->input('qc_status');
+
+        $pageTyping->update([
+            'qc_status' => $status,
+            'qc_reviewed_by' => Auth::id(),
+            'qc_reviewed_at' => now(),
+            'qc_override_note' => $request->input('qc_override_note'),
+            'has_qc_issues' => $request->boolean('has_qc_issues', $status === 'failed'),
+        ]);
+
+        $pageTyping->load('qcReviewer:id,first_name,last_name');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'QC status saved.',
+            'qc_status' => $pageTyping->qc_status,
+            'qc_reviewed_by' => $pageTyping->qcReviewer
+                ? trim($pageTyping->qcReviewer->first_name . ' ' . $pageTyping->qcReviewer->last_name)
+                : null,
+            'qc_reviewed_at' => optional($pageTyping->qc_reviewed_at)->format('Y-m-d H:i'),
+            'qc_override_note' => $pageTyping->qc_override_note,
+            'has_qc_issues' => (bool) $pageTyping->has_qc_issues,
         ]);
     }
 

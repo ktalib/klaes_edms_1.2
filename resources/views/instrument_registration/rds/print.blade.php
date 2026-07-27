@@ -253,9 +253,57 @@
             $fileNumber = '';
         }
 
+        // --- Multi-property Mortgage logic ---
+        $copiesToPrint = 1;
+        if (stripos($upperType, 'MORTGAGE') !== false && !empty($fileNumber)) {
+            $consentApp = DB::connection('sqlsrv')->table('consent_applications')
+                ->where('file_number', $fileNumber)
+                ->orderBy('id', 'desc')
+                ->first();
+                
+            if ($consentApp && !empty($consentApp->additional_properties)) {
+                $additionalProps = json_decode($consentApp->additional_properties, true);
+                if (is_array($additionalProps)) {
+                    $copiesToPrint = 1 + count($additionalProps);
+                    
+                    // Merge all applicant names
+                    $titles = [];
+                    if (!empty($consentApp->applicant_name)) {
+                        $titles[] = strtoupper(trim($consentApp->applicant_name));
+                    }
+                    foreach ($additionalProps as $prop) {
+                        if (!empty($prop['applicant_name'])) {
+                            $titles[] = strtoupper(trim($prop['applicant_name']));
+                        } elseif (!empty($prop['applicant'])) {
+                            $titles[] = strtoupper(trim($prop['applicant']));
+                        }
+                    }
+                    $titles = array_unique(array_filter($titles));
+                    if (count($titles) == 1) {
+                        $grantorDisplay = array_values($titles)[0];
+                    } elseif (count($titles) == 2) {
+                        $titles = array_values($titles);
+                        $grantorDisplay = $titles[0] . ' & ' . $titles[1];
+                    } elseif (count($titles) > 2) {
+                        $titles = array_values($titles);
+                        $last = array_pop($titles);
+                        $grantorDisplay = implode(', ', $titles) . ', & ' . $last;
+                    }
+                }
+            }
+        }
+        // --- End Multi-property Mortgage logic ---
+
         // Note: CONSIDERATION, STAMP DUTY, and REGISTRATION FEE are manual entry fields (not data-driven)
     @endphp
 
+    @for ($copy = 0; $copy < $copiesToPrint; $copy++)
+    @php
+        $displayFileNumber = $fileNumber;
+        if ($copy > 0 && !empty($additionalProps[$copy - 1]['file_number'])) {
+            $displayFileNumber = $additionalProps[$copy - 1]['file_number'];
+        }
+    @endphp
     <!-- Document Container -->
     <div class="max-w-4xl mx-auto relative document-content">
 
@@ -320,7 +368,7 @@
             <div class="mt-6">
                 <div class="flex items-baseline gap-2 flex-wrap">
                     <span>{{ $fileNumberLabel }}</span>
-                    <span class="underline-field flex-1 min-w-[200px] font-bold">{{ $fileNumber }}</span>
+                    <span class="underline-field flex-1 min-w-[200px] font-bold">{{ $displayFileNumber }}</span>
                     <span id="assignment-mortgage-text">{{ $assignmentMortgageText }}</span>
                 </div>
             </div>
@@ -423,6 +471,11 @@
                 class="h-10 w-auto object-contain">
         </div>
     </div>
+    
+    @if ($copy < $copiesToPrint - 1)
+        <div style="page-break-after: always;"></div>
+    @endif
+    @endfor
 
     <script>
         /**

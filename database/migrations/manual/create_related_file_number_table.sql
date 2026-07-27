@@ -112,7 +112,7 @@ SELECT
         WHEN s.file_number LIKE '%-RC-%' AND
              (   UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KN [0-9]%'
               OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KN-[0-9]%')
-            THEN CONCAT('MINISTRY OF LAND AND PHYSICAL PLANNING RECERTIFICATION ', s.file_number)
+            THEN LTRIM(RTRIM(j.[value]))
         WHEN s.file_number LIKE '%-RC-%'
             THEN CONCAT('KANGIS RECERTIFICATION ', s.file_number)
         WHEN UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNML%'
@@ -156,7 +156,7 @@ SELECT
         WHEN s.file_number LIKE '%-RC-%' AND
              (   UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KN [0-9]%'
               OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KN-[0-9]%')
-            THEN CONCAT('MINISTRY OF LAND AND PHYSICAL PLANNING RECERTIFICATION ', s.file_number)
+            THEN LTRIM(RTRIM(j.[value]))
         WHEN s.file_number LIKE '%-RC-%'
             THEN CONCAT('KANGIS RECERTIFICATION ', s.file_number)
         WHEN UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNML%'
@@ -218,7 +218,7 @@ SELECT
         WHEN s.mlsFNo LIKE '%-RC-%' AND
              (   UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KN [0-9]%'
               OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KN-[0-9]%')
-            THEN CONCAT('MINISTRY OF LAND AND PHYSICAL PLANNING RECERTIFICATION ', s.mlsFNo)
+            THEN LTRIM(RTRIM(j.[value]))
         WHEN s.mlsFNo LIKE '%-RC-%'
             THEN CONCAT('KANGIS RECERTIFICATION ', s.mlsFNo)
         WHEN UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNML%'
@@ -264,7 +264,7 @@ SELECT
         WHEN s.mlsFNo LIKE '%-RC-%' AND
              (   UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KN [0-9]%'
               OR UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KN-[0-9]%')
-            THEN CONCAT('MINISTRY OF LAND AND PHYSICAL PLANNING RECERTIFICATION ', s.mlsFNo)
+            THEN LTRIM(RTRIM(j.[value]))
         WHEN s.mlsFNo LIKE '%-RC-%'
             THEN CONCAT('KANGIS RECERTIFICATION ', s.mlsFNo)
         WHEN UPPER(LTRIM(RTRIM(j.[value]))) LIKE 'KNML%'
@@ -294,8 +294,9 @@ GO
 -- 8) Transaction type backfill (Recertification | Subdivision | Change of Purpose)
 -- ---------------------------------------------------------------------------
 UPDATE [dbo].[related_file_number]
-SET    transaction_type = 'Ministry of Land & Physical Planning Recertification'
-WHERE  comment LIKE 'MINISTRY OF LAND AND PHYSICAL%';
+SET    transaction_type = 'Land Recertification (File Commissioning)'
+WHERE  file_number LIKE '%-RC-%'
+  AND  (UPPER(comment) LIKE 'KN [0-9]%' OR UPPER(comment) LIKE 'KN-[0-9]%');
 
 UPDATE [dbo].[related_file_number]
 SET    transaction_type = 'KANGIS Recertification'

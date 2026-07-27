@@ -63,6 +63,9 @@
     .sb-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: rgba(255,255,255,.55); margin-bottom: 10px; }
     .sb-title { font-family: 'Sora', sans-serif; font-size: 22px; font-weight: 700; line-height: 1.25; color: #fff; margin-bottom: 14px; }
     .sb-desc { font-size: 13px; line-height: 1.7; color: rgba(255,255,255,.72); margin-bottom: 24px; }
+    .sb-video { margin-bottom: 24px; }
+    .sb-video-el { width: 100%; border-radius: 12px; border: 1px solid rgba(255,255,255,.14); background: #000; display: block; }
+    .sb-video a { color: #06d6a0; }
 
     /* Package cards in sidebar */
     .pkg-list { display: flex; flex-direction: column; gap: 10px; }
@@ -160,6 +163,16 @@
             <div class="sb-eyebrow">Kano State Ministry of Land &amp; Physical Planning</div>
             <div class="sb-title">Property History Search (PHS) Portal</div>
             <div class="sb-desc">Request institutional access to search official property records. You will select a subscription package after your documents are reviewed and approved.</div>
+
+            {{-- On-boarding user guide video --}}
+            <div class="sb-video">
+                <div class="sb-eyebrow" style="margin-bottom:8px;">Watch how it works</div>
+                <video controls preload="metadata" playsinline class="sb-video-el">
+                    <source src="{{ asset('assets/videos/video.mp4') }}" type="video/mp4">
+                    Your browser does not support embedded video. You can
+                    <a href="{{ asset('assets/videos/video.mp4') }}">download the guide video</a> instead.
+                </video>
+            </div>
 
               {{-- <div class="pkg-list">
                 <div class="pkg-item" style="--accent: #1a6b3c; --card-bg: rgba(26,107,60,.08); cursor:default;">
@@ -348,11 +361,11 @@
                         </button>
                     </div>
                     <button type="button" class="btn-submit" id="btn-next">
-                        Continue
+                        Next
                         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
                     </button>
                     <button type="submit" class="btn-submit" id="btn-finish" style="display:none;">
-                        Continue to Payment
+                     Next
                         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
                     </button>
                 </div>

@@ -936,6 +936,39 @@ class FileNumberApiController extends Controller
         }
     }
 
+    public function st(Request $request): JsonResponse
+    {
+        try {
+            $limit = (int) max(1, min($request->get('limit', 100), 500));
+            $search = $request->get('search');
+
+            $query = DB::connection('sqlsrv')
+                ->table('st_file_numbers')
+                ->select([
+                    'id',
+                    DB::raw('fileno as file_number'),
+                    DB::raw('fileno as mlsFNo'),
+                    DB::raw("COALESCE(corporate_name, NULLIF(LTRIM(RTRIM(ISNULL(first_name, '') + ' ' + ISNULL(surname, ''))), ''), applicant_type) as FileName"),
+                    DB::raw("'ST Registry' as location")
+                ])
+                ->whereNotNull('fileno')
+                ->where('fileno', '!=', '')
+                ->whereIn('status', ['ACTIVE', 'USED', 'RESERVED']);
+
+            if (!empty($search)) {
+                $query->where('fileno', 'LIKE', '%' . $search . '%');
+            }
+
+            return response()->json([
+                'success' => true,
+                'files' => $query->orderBy('id', 'desc')->limit($limit)->get()
+            ]);
+        } catch (\Throwable $e) {
+            return $this->error('ST', $e);
+        }
+    }
+
+
     /**
      * Fetch legacy KANGIS file numbers.
      */

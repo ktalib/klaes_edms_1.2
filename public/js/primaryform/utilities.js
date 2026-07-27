@@ -95,17 +95,16 @@ function updatePropertyAddressDisplay() {
     }
     
     const houseNo = propertyHouseNo?.value || '';
-    const plotNo = propertyPlotNo?.value || '';
     const streetName = propertyStreetName?.value || '';
     const district = propertyDistrict?.value || '';
     const lga = propertyLga?.value || '';
     const state = propertyState?.value || '';
-    
+
     console.log('🏗️ Property address components:', {
-        houseNo, plotNo, streetName, district, lga, state
+        houseNo, streetName, district, lga, state
     });
-    
-    const fullPropertyAddress = [houseNo, plotNo, streetName, district, lga, state]
+
+    const fullPropertyAddress = [houseNo, streetName, district, lga, state]
         .filter(part => part && part.trim() !== '')
         .join(', ');
     

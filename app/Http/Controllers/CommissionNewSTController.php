@@ -342,7 +342,13 @@ class CommissionNewSTController extends Controller
                 'corporate_name' => 'nullable|string',
                 'rc_number' => 'nullable|string',
                 'commissioned_by' => 'nullable|string',
-                'commissioned_date' => 'nullable|date'
+                'commissioned_date' => 'nullable|date',
+                'property_house_no' => 'nullable|string',
+                'property_plot_no' => 'nullable|string',
+                'property_street_name' => 'nullable|string',
+                'property_district' => 'nullable|string',
+                'property_lga' => 'nullable|string',
+                'property_state' => 'nullable|string'
             ]);
 
             // Extract components from file number (e.g., ST-COM-2025-5)
@@ -437,12 +443,88 @@ class CommissionNewSTController extends Controller
 
                 $syncResult = [
                     'st_file_number_id' => $stFileNumberId,
-                    'file_number_id' => $fileNumberId,
-                    'tracking_id' => $tra,
-                    'file_name' => $fileName,
-                    'mlsf_no' => $mlsFileNo,
-                    'st_file_no' => $npFileNo
+                    'file_number_id'    => $fileNumberId,
+                    'tracking_id'       => $tra,
+                    'file_name'         => $fileName,
+                    'mlsf_no'           => $mlsFileNo,
+                    'st_file_no'        => $npFileNo
                 ];
+
+                // -------------------------------------------------------
+                // Create file_indexings record for the NPFN.
+                // The NPFN (e.g. ST-COM-2026-10) becomes the primary indexed
+                // file; the selected existing file number is stored as a
+                // related file so history / legal-search links work.
+                // -------------------------------------------------------
+                $appliedFileNo = trim((string) ($validated['applied_file_number'] ?? ''));
+
+                // Avoid duplicating if a record already exists for this NPFN
+                $alreadyIndexed = $connection
+                    ->table('file_indexings')
+                    ->where('file_number', $npFileNo)
+                    ->whereNull('is_deleted')
+                    ->orWhere(function ($q) use ($npFileNo) {
+                        $q->where('file_number', $npFileNo)->where('is_deleted', 0);
+                    })
+                    ->exists();
+
+                if (!$alreadyIndexed) {
+                    // The selected existing file number is already indexed and is the
+                    // source of truth for the property's location. Copy its location
+                    // fields onto the new primary NPFN row, and carry its prop_id
+                    // forward as parent_prop_id so the new file stays linked to the
+                    // parent property record.
+                    $sourceIndexing = $appliedFileNo !== ''
+                        ? $connection->table('file_indexings')
+                            ->where(function ($q) use ($appliedFileNo) {
+                                $q->where('file_number', $appliedFileNo)
+                                  ->orWhere('mls_file_no', $appliedFileNo)
+                                  ->orWhere('kangis_file_no', $appliedFileNo)
+                                  ->orWhere('new_kangis_file_no', $appliedFileNo);
+                            })
+                            ->where(function ($q) {
+                                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                            })
+                            ->orderByDesc('id')
+                            ->first()
+                        : null;
+
+                    // Form values (possibly edited by the user after backfill) win;
+                    // fall back to the source file's indexed location otherwise.
+                    $district = $validated['property_district'] ?? null;
+                    $lga = $validated['property_lga'] ?? null;
+                    $streetName = $validated['property_street_name'] ?? null;
+                    $plotNumber = $validated['property_plot_no'] ?? null;
+
+                    $connection->table('file_indexings')->insert([
+                        'file_number'    => $npFileNo,
+                        'file_title'     => $fileName,
+                        'tracking_id'    => $tra,
+                        'land_use_type'  => $landUseFullName,
+                        'related_fileno' => $appliedFileNo ?: null,
+                        'source'         => 'ST Commissioning',
+                        'file_type'      => 'PRIMARY',
+                        'status'         => 'ACTIVE',
+                        'location'       => $sourceIndexing->location ?? null,
+                        'district'       => $district !== null && $district !== '' ? $district : ($sourceIndexing->district ?? null),
+                        'lga'            => $lga !== null && $lga !== '' ? $lga : ($sourceIndexing->lga ?? null),
+                        'street_name'    => $streetName !== null && $streetName !== '' ? $streetName : ($sourceIndexing->street_name ?? null),
+                        'plot_number'    => $plotNumber !== null && $plotNumber !== '' ? $plotNumber : ($sourceIndexing->plot_number ?? null),
+                        'plot_size'      => $sourceIndexing->plot_size ?? null,
+                        'parent_prop_id' => $sourceIndexing->prop_id ?? null,
+                        'created_by'     => Auth::id(),
+                        'created_at'     => $commissionedAt,
+                        'updated_at'     => $commissionedAt,
+                    ]);
+
+                    Log::info('file_indexings record created for Primary NPFN', [
+                        'file_number'    => $npFileNo,
+                        'related_fileno' => $appliedFileNo,
+                        'tracking_id'    => $tra,
+                        'location_copied_from' => $sourceIndexing->id ?? null,
+                        'parent_prop_id' => $sourceIndexing->prop_id ?? null,
+                    ]);
+                }
 
                 // Sync to staging tables
                 $this->syncToStaging($validated, $npFileNo);

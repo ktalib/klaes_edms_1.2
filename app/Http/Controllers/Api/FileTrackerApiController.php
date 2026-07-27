@@ -1342,7 +1342,7 @@ class FileTrackerApiController extends Controller
                 $bucketEnd = $bucketStart->copy()->addHours(3)->subSecond();
 
                 $dailyLabels[] = $bucketStart->format('ga');
-                $dailyActivity[] = FileTracker::whereBetween('created_at', [$bucketStart, $bucketEnd])->count();
+                $dailyActivity[] = \App\Models\FileSearchRequest::whereBetween('created_at', [$bucketStart, $bucketEnd])->count();
             }
 
             // Weekly Activity: files logged per day over the last 7 days, oldest first
@@ -1350,13 +1350,18 @@ class FileTrackerApiController extends Controller
             // the day bucketing behaves identically on SQL Server and MySQL.
             $weeklyLabels = [];
             $weeklyActivity = [];
+            $weeklyFound = [];
+            $weeklyNotFound = [];
+            $weeklyAwaiting = [];
             for ($i = 6; $i >= 0; $i--) {
                 $day = now()->subDays($i);
+                $start = $day->copy()->startOfDay();
+                $end = $day->copy()->endOfDay();
                 $weeklyLabels[] = $day->format('D');
-                $weeklyActivity[] = FileTracker::whereBetween('created_at', [
-                    $day->copy()->startOfDay(),
-                    $day->copy()->endOfDay(),
-                ])->count();
+                $weeklyActivity[] = \App\Models\FileSearchRequest::whereBetween('created_at', [$start, $end])->count();
+                $weeklyFound[] = \App\Models\FileSearchRequest::whereBetween('created_at', [$start, $end])->where('status', 'FOUND')->count();
+                $weeklyNotFound[] = \App\Models\FileSearchRequest::whereBetween('created_at', [$start, $end])->whereIn('status', ['NOT_FOUND', 'NOT FOUND'])->count();
+                $weeklyAwaiting[] = \App\Models\FileSearchRequest::whereBetween('created_at', [$start, $end])->whereIn('status', ['PENDING', 'SEARCHING'])->count();
             }
 
             $stats = [
@@ -1364,6 +1369,9 @@ class FileTrackerApiController extends Controller
                 'daily_activity' => $dailyActivity,
                 'weekly_labels' => $weeklyLabels,
                 'weekly_activity' => $weeklyActivity,
+                'weekly_found' => $weeklyFound,
+                'weekly_not_found' => $weeklyNotFound,
+                'weekly_awaiting' => $weeklyAwaiting,
                 'total_trackers' => FileTracker::count(),
                 'active_trackers' => FileTracker::active()->count(),
                 'completed_trackers' => FileTracker::completed()->count(),
@@ -1499,8 +1507,12 @@ class FileTrackerApiController extends Controller
     {
         try {
             // Try to find by tracking ID first, then by file number
-            $tracker = FileTracker::where('tracking_id', $identifier)
-                                 ->orWhere('file_number', $identifier)
+            $needle = mb_strtoupper(trim((string) $identifier));
+            $tracker = FileTracker::where(function ($q) use ($identifier, $needle) {
+                $q->where('tracking_id', $identifier)
+                  ->orWhere('tracking_id', 'LIKE', $needle . '%')
+                  ->orWhere('file_number', $identifier);
+            })
                                  ->orderByDesc('id')
                                  ->first();
 

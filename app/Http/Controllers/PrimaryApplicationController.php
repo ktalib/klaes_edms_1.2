@@ -800,29 +800,62 @@ class PrimaryApplicationController extends Controller
                 ]);
             }
 
-            // Create file indexing entry
+            // Link the file indexing entry created during ST commissioning to this
+            // application. That row already carries the correct file_number
+            // (np_fileno) and location/parent_prop_id copied from the source
+            // file, so update it in place rather than inserting a duplicate.
             try {
-                $fileIndexingData = [
-                    'main_application_id' => $applicationId,
-                    'st_fillno' => $validated['np_fileno'],
-                    'file_number' => $validated['fileno'],
-                    'file_title' => $validated['corporate_name'] ?? $validated['first_name'] . ' ' . $validated['surname'],
-                    'land_use_type' => $validated['land_use'],
-                    'tracking_id' => $validated['tracking_id'] ?? null,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                    'created_by' => Auth::id(),
-                    'updated_by' => Auth::id()
-                ];
-
-                $fileIndexingId = DB::connection('sqlsrv')
+                $existingIndexing = DB::connection('sqlsrv')
                     ->table('file_indexings')
-                    ->insertGetId($fileIndexingData);
+                    ->where('file_number', $validated['np_fileno'])
+                    ->where(function ($q) {
+                        $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                    })
+                    ->orderByDesc('id')
+                    ->first();
 
-                Log::info('File indexing created successfully', [
-                    'file_indexing_id' => $fileIndexingId,
-                    'application_id' => $applicationId
-                ]);
+                if ($existingIndexing) {
+                    DB::connection('sqlsrv')
+                        ->table('file_indexings')
+                        ->where('id', $existingIndexing->id)
+                        ->update([
+                            'main_application_id' => $applicationId,
+                            'st_application_type' => 'Primary',
+                            'tracking_id' => $existingIndexing->tracking_id ?? ($validated['tracking_id'] ?? null),
+                            'updated_at' => now(),
+                            'updated_by' => Auth::id(),
+                        ]);
+
+                    $fileIndexingId = $existingIndexing->id;
+
+                    Log::info('File indexing linked to submitted application', [
+                        'file_indexing_id' => $fileIndexingId,
+                        'application_id' => $applicationId
+                    ]);
+                } else {
+                    $fileIndexingData = [
+                        'main_application_id' => $applicationId,
+                        'st_fillno' => $validated['np_fileno'],
+                        'file_number' => $validated['np_fileno'],
+                        'file_title' => $validated['corporate_name'] ?? $validated['first_name'] . ' ' . $validated['surname'],
+                        'land_use_type' => $validated['land_use'],
+                        'st_application_type' => 'Primary',
+                        'tracking_id' => $validated['tracking_id'] ?? null,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                        'created_by' => Auth::id(),
+                        'updated_by' => Auth::id()
+                    ];
+
+                    $fileIndexingId = DB::connection('sqlsrv')
+                        ->table('file_indexings')
+                        ->insertGetId($fileIndexingData);
+
+                    Log::info('File indexing created successfully', [
+                        'file_indexing_id' => $fileIndexingId,
+                        'application_id' => $applicationId
+                    ]);
+                }
                 
                 // Process uploaded documents for EDMS workflow
                 if ($fileIndexingId && !empty($edmsDocuments)) {
@@ -938,7 +971,46 @@ class PrimaryApplicationController extends Controller
                 ->orWhere('np_fileno', $fileno)
                 ->first();
 
-            if (!$application) {
+            if ($application) {
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'id' => $application->id,
+                        'fileno' => $application->fileno,
+                        'np_fileno' => $application->np_fileno,
+                        'scheme_no' => $application->scheme_no,
+                        'property_street_name' => $application->property_street_name,
+                        'property_lga' => $application->property_lga,
+                        'property_state' => $application->property_state,
+                        'property_house_no' => $application->property_house_no,
+                        'property_plot_no' => $application->property_plot_no,
+                        'property_district' => $application->property_district,
+                        'applicant_type' => $application->applicant_type,
+                        'applicant_title' => $application->applicant_title,
+                        'first_name' => $application->first_name,
+                        'middle_name' => $application->middle_name,
+                        'surname' => $application->surname,
+                        'corporate_name' => $application->corporate_name,
+                        'rc_number' => $application->rc_number,
+                        'land_use' => $application->land_use
+                    ]
+                ]);
+            }
+
+            // No mother_applications record yet (application not submitted). The
+            // primary file number selected here was commissioned with its location
+            // copied from the source file's file_indexings row, so fall back to
+            // that as the backfill source.
+            $indexing = DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->where('file_number', $fileno)
+                ->where(function ($q) {
+                    $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                })
+                ->orderByDesc('id')
+                ->first();
+
+            if (!$indexing) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Application not found'
@@ -948,24 +1020,26 @@ class PrimaryApplicationController extends Controller
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'id' => $application->id,
-                    'fileno' => $application->fileno,
-                    'np_fileno' => $application->np_fileno,
-                    'scheme_no' => $application->scheme_no,
-                    'property_street_name' => $application->property_street_name,
-                    'property_lga' => $application->property_lga,
-                    'property_state' => $application->property_state,
-                    'property_house_no' => $application->property_house_no,
-                    'property_plot_no' => $application->property_plot_no,
-                    'property_district' => $application->property_district,
-                    'applicant_type' => $application->applicant_type,
-                    'applicant_title' => $application->applicant_title,
-                    'first_name' => $application->first_name,
-                    'middle_name' => $application->middle_name,
-                    'surname' => $application->surname,
-                    'corporate_name' => $application->corporate_name,
-                    'rc_number' => $application->rc_number,
-                    'land_use' => $application->land_use
+                    'id' => $indexing->id,
+                    'fileno' => $indexing->related_fileno,
+                    'np_fileno' => $indexing->file_number,
+                    'scheme_no' => null,
+                    'property_street_name' => $indexing->street_name,
+                    'property_lga' => $indexing->lga,
+                    'property_state' => null,
+                    'property_house_no' => null,
+                    'property_plot_no' => $indexing->plot_number,
+                    'property_district' => $indexing->district,
+                    'plot_size' => $indexing->plot_size,
+                    'parent_prop_id' => $indexing->parent_prop_id,
+                    'applicant_type' => null,
+                    'applicant_title' => null,
+                    'first_name' => null,
+                    'middle_name' => null,
+                    'surname' => null,
+                    'corporate_name' => null,
+                    'rc_number' => null,
+                    'land_use' => $indexing->land_use_type
                 ]
             ]);
 

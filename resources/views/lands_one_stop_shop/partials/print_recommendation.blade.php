@@ -51,12 +51,49 @@
 
       .serial-block {
         position: absolute;
-        top: 18mm;
+        top: 10mm;
         right: 15mm;
-        text-align: right;
-        font-family: "Courier New", Courier, monospace;
-        font-size: 12px;
-        font-weight: bold;
+        border: 1px solid black;
+        padding: 4px 8px;
+        min-width: 110px;
+        text-align: center;
+        background: white;
+        z-index: 20;
+      }
+
+      .serial-code-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        justify-content: center;
+      }
+
+      .serial-fraction {
+        line-height: 1;
+        color: #1e293b;
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        font-weight: 900;
+      }
+
+      .serial-fraction .frac-top {
+        border-bottom: 1.5px solid #1e293b;
+        padding-bottom: 1px;
+        font-size: 8px;
+      }
+
+      .serial-fraction .frac-bot {
+        padding-top: 1px;
+        font-size: 8px;
+      }
+
+      .serial-digits {
+        font-size: 13px;
+        font-weight: 900;
+        letter-spacing: 0.1em;
+        color: #1e293b;
+        font-family: 'Courier New', monospace;
       }
 
       .header-logo {
@@ -249,6 +286,13 @@
               }
               return implode(', ', $parts);
           };
+
+          $securityCode = app(\App\Services\SecurityCodeService::class)->getOrGenerateForDocument(
+              (string) ($record->file_ref ?? ($record->tracking_id ?? ($record->id ?? ''))),
+              (int) ($record->id ?? 0),
+              'OSS Recomm'
+          );
+          $sc = app(\App\Services\SecurityCodeService::class)->formatForDisplay($securityCode->code);
       @endphp
       @if(!empty($record->tracking_id))
       <div class="qr-block">
@@ -256,9 +300,16 @@
       </div>
       @endif
 
-      @if(!empty($record->rofo_serial_no))
-      <div class="serial-block" style="color: #b91c1c;">Serial No: {{ $record->rofo_serial_no }}</div>
-      @endif
+      <div class="serial-block">
+        <div style="font-weight: bold; text-transform: uppercase; border-bottom: 1px solid black; padding-bottom: 3px; margin-bottom: 4px; font-size: 9px;">Serial No:</div>
+        <div class="serial-code-wrap">
+            <span class="serial-fraction">
+              <span class="frac-top">{{ $sc['alphabet'] }}</span>
+              <span class="frac-bot">{{ $sc['digits_start'] }}</span>
+            </span>
+            <span class="serial-digits">{{ $sc['digits_end'] }}</span>
+        </div>
+      </div>
 
       <div class="header-logo">
         <img

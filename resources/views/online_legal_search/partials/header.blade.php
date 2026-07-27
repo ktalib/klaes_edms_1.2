@@ -8,9 +8,9 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between items-center gap-2 h-16">
             <a href="{{ route('ols.landing') }}" class="flex items-center gap-2 sm:gap-3 min-w-0">
-                <img src="{{ asset('storage/upload/logo/1.jpeg') }}" alt="KLAES"
+                <img src="{{ asset('storage/upload/logo/Klase.png') }}" alt="KLAES"
                      class="h-8 sm:h-10 w-auto shrink-0"
-                     onerror="this.onerror=null;this.src='{{ asset('assets/logo/1.jpeg') }}';">
+                     onerror="this.onerror=null;this.src='{{ asset('assets/logo/Klase.png') }}';">
                 <div class="leading-tight min-w-0">
                     <span class="block text-base sm:text-lg font-bold text-gray-900 dark:text-white truncate">Online Legal Search</span>
                     <span class="hidden sm:block text-xs text-gray-500 dark:text-gray-400 truncate"> LAnd ADmin Enterprise System</span>

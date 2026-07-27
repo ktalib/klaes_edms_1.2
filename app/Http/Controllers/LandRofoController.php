@@ -35,6 +35,22 @@ class LandRofoController extends Controller
             });
         }
 
+        // Tab filter: "printed" (RofO already printed at least once) vs
+        // "not_printed" (still awaiting print). rofo_print_count is incremented by
+        // both batch and individual prints, so it is the authoritative flag.
+        // The OSS-only view is a separate print flow, so tabs apply to the land view only.
+        $tab = $request->query('tab', 'not_printed');
+        if (!in_array($tab, ['printed', 'not_printed'], true)) {
+            $tab = 'not_printed';
+        }
+        if (!$ossViewOnly) {
+            if ($tab === 'printed') {
+                $query->whereRaw("ISNULL(rofo_print_count, 0) > 0");
+            } else { // not_printed
+                $query->whereRaw("ISNULL(rofo_print_count, 0) = 0");
+            }
+        }
+
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
@@ -44,7 +60,7 @@ class LandRofoController extends Controller
             });
         }
 
-        $recommendations = $query->latest()->paginate(20);
+        $recommendations = $query->latest()->paginate(20)->withQueryString();
 
         $PageTitle = $ossViewOnly ? 'OSS RofO' : 'Land RofO';
         $landUses = \App\Models\LandUse::orderBy('landuse')->get();
@@ -55,6 +71,8 @@ class LandRofoController extends Controller
             COUNT(CASE WHEN UPPER(ISNULL(type,'')) <> 'OSS' AND status = 'approved' AND ISNULL(rofo_status,'') = 'pending'   THEN 1 END)   AS pending_generation,
             COUNT(CASE WHEN UPPER(ISNULL(type,'')) <> 'OSS' AND ISNULL(rofo_status,'') = 'generated'                        THEN 1 END)   AS generated,
             COUNT(CASE WHEN UPPER(ISNULL(type,'')) <> 'OSS'                                                                THEN 1 END)   AS total_land,
+            COUNT(CASE WHEN ((status = 'approved' AND UPPER(ISNULL(type,'')) <> 'OSS') OR UPPER(ISNULL(type,'')) = 'OSS') AND ISNULL(rofo_print_count,0) > 0 THEN 1 END) AS printed,
+            COUNT(CASE WHEN ((status = 'approved' AND UPPER(ISNULL(type,'')) <> 'OSS') OR UPPER(ISNULL(type,'')) = 'OSS') AND ISNULL(rofo_print_count,0) = 0 THEN 1 END) AS not_printed,
             ISNULL(SUM(CASE WHEN UPPER(ISNULL(type,'')) <> 'OSS' AND ISNULL(rofo_status,'') = 'generated' THEN ISNULL(rofo_dev_charge,0) ELSE 0 END), 0) AS total_dev_charge
         ")->first();
 
@@ -77,6 +95,8 @@ class LandRofoController extends Controller
             'total_eligible'    => (int) ($statsRow->total_eligible    ?? 0),
             'pending_generation'=> (int) ($statsRow->pending_generation ?? 0),
             'generated'         => (int) ($statsRow->generated          ?? 0),
+            'printed'           => (int) ($statsRow->printed            ?? 0),
+            'not_printed'       => (int) ($statsRow->not_printed        ?? 0),
             'total_land'        => (int) ($statsRow->total_land         ?? 0),
             'total_dev_charge'  => (float) ($statsRow->total_dev_charge ?? 0),
             'oss_total'         => $ossTotal,
@@ -90,7 +110,29 @@ class LandRofoController extends Controller
             ->orderBy('paper_code', 'asc')
             ->get();
 
-        return view('land_rofos.index', compact('recommendations', 'PageTitle', 'landUses', 'stats', 'availableSerials', 'ossViewOnly'));
+        // Batch-load the auto-generated security codes for the rows on this page so
+        // the table can show the same serial-no fraction as the printed certificate,
+        // without generating a new code for every listed record (side-effect free).
+        $rofoSerials = [];
+        $recIds = $recommendations->getCollection()->pluck('id')->all();
+        if (!empty($recIds)) {
+            $codeService = app(\App\Services\SecurityCodeService::class);
+            $codes = DB::connection('sqlsrv')->table('security_codes')
+                ->whereIn('document_id', $recIds)
+                ->where('document_type', 'Land ROFO')
+                ->where('is_used', 0)
+                ->orderBy('id')
+                ->get(['document_id', 'code']);
+            foreach ($codes as $c) {
+                // getOrGenerateForDocument returns the first unused code; mirror that
+                // by keeping the earliest per document.
+                if (!isset($rofoSerials[$c->document_id])) {
+                    $rofoSerials[$c->document_id] = $codeService->formatForDisplay($c->code);
+                }
+            }
+        }
+
+        return view('land_rofos.index', compact('recommendations', 'PageTitle', 'landUses', 'stats', 'availableSerials', 'ossViewOnly', 'rofoSerials', 'tab'));
     }
 
     /**
@@ -330,7 +372,47 @@ class LandRofoController extends Controller
             return response()->json(['success' => true]);
         } catch (\Exception $e) {
             DB::connection('sqlsrv')->rollBack();
-            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'Failed to assign security paper code. ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function resetSecurityPaperCode($id)
+    {
+        $recommendation = LandRecommendation::findOrFail($id);
+
+        if (!$recommendation->land_rofo_serial_no) {
+            return response()->json(['success' => false, 'message' => 'No security paper code assigned to reset.'], 422);
+        }
+
+        DB::connection('sqlsrv')->beginTransaction();
+        try {
+            $oldCode = $recommendation->land_rofo_serial_no;
+
+            // Mark the old code as unused in global_security_paper_codes
+            DB::connection('sqlsrv')->table('global_security_paper_codes')
+                ->where('paper_code', $oldCode)
+                ->update([
+                    'is_used' => false,
+                    'assigned_to_type' => null,
+                    'assigned_to_id' => null,
+                    'assigned_by' => null,
+                    'assigned_at' => null,
+                ]);
+
+            // Remove from security_codes table
+            DB::connection('sqlsrv')->table('security_codes')
+                ->where('security_paper_code', $oldCode)
+                ->where('assigned_to', 'Land ROFO')
+                ->delete();
+
+            // Clear the paper code on the recommendation
+            $recommendation->update(['land_rofo_serial_no' => null]);
+
+            DB::connection('sqlsrv')->commit();
+            return response()->json(['success' => true]);
+        } catch (\Exception $e) {
+            DB::connection('sqlsrv')->rollBack();
+            return response()->json(['success' => false, 'message' => 'Failed to reset security paper code. ' . $e->getMessage()], 500);
         }
     }
 

@@ -300,7 +300,7 @@
         <div class="login-card">
             <div class="brand-section">
                 <div class="logo-box">
-                    <img src="http://app.klaes.ng/storage/upload/logo/1.jpeg" alt="KLAES" onerror="this.innerHTML='<i class=\'fas fa-shield-halved\'></i>'; this.style.display='none';">
+                    <img src="http://app.klaes.ng/storage/upload/logo/Klase.png" alt="KLAES" onerror="this.innerHTML='<i class=\'fas fa-shield-halved\'></i>'; this.style.display='none';">
                     <i class="fas fa-file-invoice-dollar" id="fallback-icon" style="display:none"></i>
                 </div>
                 <h1 class="brand-name">VFC MOBILE</h1>

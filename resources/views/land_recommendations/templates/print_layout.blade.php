@@ -63,10 +63,45 @@
 
     .serial {
       border: 1px solid black;
-      padding: 4px 7px;
-      font-size: 8pt;
-      line-height: 1.2;
+      padding: 4px 8px;
+      min-width: 110px;
+      margin-top: 4px;
       text-align: center;
+    }
+
+    .serial-code-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      justify-content: center;
+    }
+
+    .serial-fraction {
+      line-height: 1;
+      color: #1e293b;
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      font-weight: 900;
+    }
+
+    .serial-fraction .frac-top {
+      border-bottom: 1.5px solid #1e293b;
+      padding-bottom: 1px;
+      font-size: 8px;
+    }
+
+    .serial-fraction .frac-bot {
+      padding-top: 1px;
+      font-size: 8px;
+    }
+
+    .serial-digits {
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.1em;
+      color: #1e293b;
+      font-family: 'Courier New', monospace;
     }
 
     .ministry {
@@ -174,7 +209,7 @@
     .sig-row {
       display: flex;
       justify-content: space-between;
-      margin: 0.7cm 0 0.35cm;
+      margin: 1.1cm 0 0.35cm;
       font-size: 9.5pt;
     }
 
@@ -273,6 +308,13 @@
         'Triplicate' => '#008000',
         'CTC' => '#ff0000'
     ];
+
+    $securityCode = app(\App\Services\SecurityCodeService::class)->getOrGenerateForDocument(
+        (string) ($recommendation->file_number ?? ($recommendation->id ?? '')),
+        (int) $recommendation->id,
+        'Lands ROFO'
+    );
+    $sc = app(\App\Services\SecurityCodeService::class)->formatForDisplay($securityCode->code);
 @endphp
 
 @foreach($printVersions as $index => $version)
@@ -299,9 +341,14 @@
                 {{ strtoupper($version) }}
             </span><br>
         @endif
-         <!-- SECURITY CODE: {{ str_pad($recommendation->id, 5, '0', STR_PAD_LEFT) }}<br> -->
-        CODE: LAND II B
-       
+        <div style="font-weight: bold; text-transform: uppercase; border-bottom: 1px solid black; padding-bottom: 3px; margin-bottom: 4px; font-size: 9px;">Serial No:</div>
+        <div class="serial-code-wrap">
+            <span class="serial-fraction">
+              <span class="frac-top">{{ $sc['alphabet'] }}</span>
+              <span class="frac-bot">{{ $sc['digits_start'] }}</span>
+            </span>
+            <span class="serial-digits">{{ $sc['digits_end'] }}</span>
+        </div>
     </div>
   </div>
 
@@ -351,7 +398,7 @@
 
   <div class="field-row">Annual Ground Rent: <span class="field" style="width:450px;">{{ number_format($recommendation->ground_rent, 2) }}</span></div>
 
-  <div class="field-row">Development Charge (if any): <span class="field" style="width:400px;">{{ $recommendation->development_charge ? number_format($recommendation->development_charge, 2) : 'NIL' }}</span></div>
+  <div class="field-row">Development Charge (if any): <span class="field" style="width:400px;">{{ $recommendation->development_charge ? (is_numeric($recommendation->development_charge) ? number_format($recommendation->development_charge, 2) : $recommendation->development_charge) : 'NIL' }}</span></div>
 
   <div class="field-row">Survey and processing charges: <span class="field" style="width:390px;">{{ number_format($recommendation->preparation_fees, 2) }}</span></div>
 
@@ -416,6 +463,9 @@
   </div>
 
 </div>
+
+{{-- Page 2: acknowledgement / collection sheet --}}
+@include('land_recommendations.templates._ack_sheet')
 @endforeach
 
 <button class="no-print print-button" onclick="window.print()">

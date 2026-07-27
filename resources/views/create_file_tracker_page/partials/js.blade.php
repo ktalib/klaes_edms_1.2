@@ -4072,10 +4072,21 @@
     // office is known.
     const OFFICE_TITLE_RE = /^\s*(ag\.?\s+|actg\.?\s+)?(deputy\s+|dep\.?\s+|asst\.?\s+|assistant\s+)?(director(\s+general)?|dg|permanent\s+secretary|ps|hod|head\s+of\s+department|head|controller|registrar|surveyor(\s+general)?|manager)\b[\s,:.-]*/i;
 
+    // Some deployments name the office the other way round — "<Department> <Title>",
+    // e.g. "DCIV Director" — putting the title at the END instead of the start.
+    // Detect and strip that trailing title too, otherwise "DCIV Director" reads as an
+    // untitled department and both the OFFICE and DEPARTMENT rows print the same value.
+    const OFFICE_TITLE_SUFFIX_RE = /[\s,:.-]+(director(\s+general)?|dg|permanent\s+secretary|ps|hod|head\s+of\s+department|head|controller|registrar|surveyor(\s+general)?|manager)\s*$/i;
+
+    function isOfficeName(name) {
+        const raw = (name || '').trim();
+        return OFFICE_TITLE_RE.test(raw) || OFFICE_TITLE_SUFFIX_RE.test(raw);
+    }
+
     function departmentFromOffice(name) {
         const raw = (name || '').trim();
         if (!raw) return '';
-        const stripped = raw.replace(OFFICE_TITLE_RE, '').trim();
+        const stripped = raw.replace(OFFICE_TITLE_RE, '').replace(OFFICE_TITLE_SUFFIX_RE, '').trim();
         return stripped || raw;
     }
 
@@ -4085,8 +4096,8 @@
             .filter(v => v && v !== '-');
         if (!list.length) return { office: '-', department: '-' };
 
-        const titled   = list.find(v => OFFICE_TITLE_RE.test(v));
-        const untitled = list.find(v => !OFFICE_TITLE_RE.test(v));
+        const titled   = list.find(isOfficeName);
+        const untitled = list.find(v => !isOfficeName(v));
         const office   = titled || list[0];
         const department = untitled || departmentFromOffice(office);
         return { office: office || '-', department: department || '-' };
@@ -4441,6 +4452,10 @@
             originRegistry: tracker.origin_registry ?? tracker.originRegistry ?? null,
             receivingOfficerName: receivingOfficerName || null,
             rackShelfLocation,
+            loggedOutAt: tracker.logged_out_at ?? null,
+            durationWithHolder: tracker.duration_with_holder ?? null,
+            registry: tracker.registry ?? null,
+            receivingDepartment: tracker.receiving_department ?? null,
             // Module origin (e.g. 'digital_request', 'kangis', etc.)
             module: tracker.module ?? tracker.module_origin ?? null,
             // Workflow fields
@@ -4738,6 +4753,10 @@
         let effectiveReceivingOfficerId = receivingOfficerIdRaw;
         let effectiveReceivingOfficerName = $officerOption.text() || _hiddenOfficerName;
 
+        const requesterDirectorId = document.getElementById('requester-director')?.value || null;
+        const requesterDirectorFirstName = document.getElementById('rd-first-name')?.value?.trim() || null;
+        const requesterDirectorLastName = document.getElementById('rd-last-name')?.value?.trim() || null;
+
         // Cross-Registry Request mode overrides the standard KANGIS workflow
         // routing. Per docs/file_reqest, workflow.md the first hop is the
         // Supply registry (Land Registry when KANGIS requests; KANGIS Registry
@@ -4977,7 +4996,10 @@
             deadline: requestDeadline || null,
             timelineDays: Number.isInteger(requestTimelineDays) ? requestTimelineDays : null,
             notes,
-            createdAt: now.toISOString()
+            createdAt: now.toISOString(),
+            requesterDirectorId,
+            requesterDirectorFirstName,
+            requesterDirectorLastName
         };
 
         // ── Digital Request: check In-Transit status before opening preview ──
@@ -5475,7 +5497,10 @@
             proposed_tracking_id: currentTracker.trackingId || null,
             // Temporary file — the TMP code is already on the proposed tracking ID;
             // the flag lets the backend re-append it if it must regenerate the ID.
-            is_temporary_file: isTempFileChecked()
+            is_temporary_file: isTempFileChecked(),
+            requester_director_id: currentTracker.requesterDirectorId || null,
+            requester_director_first_name: currentTracker.requesterDirectorFirstName || null,
+            requester_director_last_name: currentTracker.requesterDirectorLastName || null
         };
 
         // Show loading state
@@ -6087,6 +6112,14 @@
                                                     <span>Generate Log Sheet</span>
                                                 </button>
                                                 ${printLogButtonHtml}
+                                                <button class="${actionsEnabled ? 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-emerald-700 transition hover:bg-emerald-50' : 'dropdown-item flex w-full items-center px-4 py-2 text-sm text-gray-400 cursor-not-allowed opacity-50'}" data-action="log-out" ${commonDisabledAttr}>
+                                                    <i data-lucide="log-out" class="mr-2 h-4 w-4"></i>
+                                                    <span>Complete Log</span>
+                                                </button>
+                                                <button class="${standardItemClass}" data-action="print-complete-log" ${commonDisabledAttr}>
+                                                    <i data-lucide="printer" class="mr-2 h-4 w-4"></i>
+                                                    <span>Print Complete Log Sheet</span>
+                                                </button>
                                                 <button class="${standardItemClass}" data-action="update-request-sheet" ${commonDisabledAttr}>
                                                     <i data-lucide="file-pen-line" class="mr-2 h-4 w-4"></i>
                                                     <span>Update Request Type</span>
@@ -6195,8 +6228,9 @@
                                 ${(() => {
                                     const officerName = entry.receivingOfficerName || tracker.receivingOfficer?.name || '';
                                     const officerId = entry.receivingOfficerId ?? tracker.receivingOfficer?.id ?? null;
-                                    const displayName = officerName ? sanitize(officerName) : 'N/A';
-                                    const badge = officerId ? sanitize(String(officerId)) : null;
+                                    const isCompleted = entryStatusLabel === 'Completed' || entryStatusLabel === 'In Archive';
+                                    const displayName = isCompleted ? 'Archive' : (officerName ? sanitize(officerName) : 'N/A');
+                                    const badge = isCompleted ? null : (officerId ? sanitize(String(officerId)) : null);
                                     return '<div class="flex items-center gap-2"><span>' + displayName + '</span>' + (badge ? '<span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-mono text-blue-700">' + badge + '</span>' : '') + '</div>';
                                 })()}
                             </td>
@@ -6315,7 +6349,7 @@
                                     <span class="font-medium text-gray-800">${homeRegistryDisplay}</span>
                                 </div>
                             </td>
-                            <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-400">—</td>
+                            <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-700">Archive</td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">${homeLogInCell}</td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-400">—</td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm">
@@ -6372,7 +6406,12 @@
                                 </div>
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                                <div class="flex items-center gap-2"><span>${displayName}</span>${officerBadge ? `<span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-mono text-blue-700">${officerBadge}</span>` : ''}</div>
+                                ${(() => {
+                                    const isCompleted = entryStatusLabel === 'Completed' || entryStatusLabel === 'In Archive';
+                                    const finalDisplayName = isCompleted ? 'Archive' : displayName;
+                                    const finalBadge = isCompleted ? null : officerBadge;
+                                    return `<div class="flex items-center gap-2"><span>${finalDisplayName}</span>${finalBadge ? `<span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-mono text-blue-700">${finalBadge}</span>` : ''}</div>`;
+                                })()}
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
                                 ${(isLoginEntry || entryStatusLabel === 'Completed') ? `
@@ -8430,7 +8469,7 @@
                                     <p class="generated-meta">Generated on ${generatedDateSafe} by ${generatedBySafe}</p>
                                 </div>
                                 <div style="text-align: center;">
-                                    <img src="http://app.klaes.ng/storage/upload/logo/1.jpeg" alt="Logo" style="height: 32px;" onerror="this.style.display='none'">
+                                    <img src="http://app.klaes.ng/storage/upload/logo/Klase.png" alt="Logo" style="height: 32px;" onerror="this.style.display='none'">
                                 </div>
                             </div>
                         </div>
@@ -8748,6 +8787,20 @@
                                         : '—';
 
                                     const logIn = first.logInDate ? `${escapeHtml(first.logInDate)}${first.logInTime ? ' @ ' + escapeHtml(toAmPm(first.logInTime)) : ''}` : '';
+                                    
+                                    const lastPhys = physE[physE.length - 1];
+                                    const lastStatusMeta = resolveStatusDisplay(lastPhys, (lastPhys.status || ''));
+                                    let currentStatusLabel = lastStatusMeta.label || 'Log-out';
+                                    
+                                    const lastRawStatus = (lastPhys.status || '').toLowerCase();
+                                    if (lastRawStatus === 'completed' || lastRawStatus === 'log_in' || lastRawStatus === 'log-in') {
+                                        currentStatusLabel = 'Log-in';
+                                    } else if (kangisLoggedBackIn) {
+                                        currentStatusLabel = 'Log-in';
+                                    }
+                                    
+                                    const statusColor = currentStatusLabel.toLowerCase() === 'completed' || currentStatusLabel.toLowerCase() === 'log-in' ? '#059669' : '#16a34a';
+
                                     return `<tr>
                                         <td>1</td>
                                         <td><strong>${escapeHtml(tracker.originOfficeName || tracker.originRegistry || first.officeName || '-')}</strong></td>
@@ -8757,7 +8810,7 @@
                                         <td>${escapeHtml(tracker.receivingOfficerName || tracker.receiving_officer_name || tracker.receivingOfficer?.name || '-')}</td>
                                         <td>${kangisRequestPurposeValue}${kangisExpectedReturnValue !== '-' ? `<br><span style="font-size:0.72rem;color:#6b7280;">Due ${kangisExpectedReturnValue}</span>` : ''}</td>
                                         <td>${kangisTimelineCellFrozen}</td>
-                                        <td><span style="font-weight:700;color:#16a34a;">Log-out</span></td>
+                                        <td><span style="font-weight:700;color:${statusColor};">${escapeHtml(currentStatusLabel)}</span></td>
                                     </tr>`;
                                 })()}
                             </tbody>
@@ -8779,7 +8832,7 @@
                         <!-- Footer -->
                         <div class="footer">
                             <img class="footer-logo" src="${baseUrl}/assets/logo/klaes.png" alt="KLAES" onerror="this.style.display='none'">
-                            <span class="footer-center">KLAES — Kano Land Administration Enterprise System<br><span style="font-size:0.62rem;">Generated on ${generatedDateSafe} by ${generatedBySafe}</span><br><img src="http://app.klaes.ng/storage/upload/logo/1.jpeg" alt="Logo" style="height: 43px; margin-top: 0.2rem;" onerror="this.style.display='none'"></span>
+                            <span class="footer-center">KLAES — Kano Land Administration Enterprise System<br><span style="font-size:0.62rem;">Generated on ${generatedDateSafe} by ${generatedBySafe}</span><br><img src="http://app.klaes.ng/storage/upload/logo/Klase.png" alt="Logo" style="height: 43px; margin-top: 0.2rem;" onerror="this.style.display='none'"></span>
                             <img class="footer-logo footer-logo-las" src="${baseUrl}/assets/logo/las.jpg" alt="LAS" style="margin-left:auto;" onerror="this.style.display='none'">
                         </div>
                     </div>
@@ -11070,6 +11123,56 @@
             }
         }
 
+        function filterRequesterDirectors(departmentName) {
+            const directorSelect = document.getElementById('requester-director');
+            const otherWrapper = document.getElementById('requester-director-other-wrapper');
+            if (!directorSelect) return;
+            
+            directorSelect.innerHTML = '<option value="">Select requester director</option>';
+            if (otherWrapper) {
+                otherWrapper.classList.add('hidden');
+                document.getElementById('rd-first-name').required = false;
+                document.getElementById('rd-last-name').required = false;
+            }
+            
+            if (!departmentName || !window.requesterDirectors) {
+                return;
+            }
+
+            const directors = window.requesterDirectors.filter(d => (d.department || '').toLowerCase() === departmentName.toLowerCase());
+            
+            directors.forEach(director => {
+                const opt = document.createElement('option');
+                opt.value = director.id;
+                opt.textContent = `${director.first_name} ${director.last_name}`;
+                directorSelect.appendChild(opt);
+            });
+            
+            const otherOpt = document.createElement('option');
+            otherOpt.value = 'OTHER';
+            otherOpt.textContent = '+ Add New Director...';
+            otherOpt.className = 'font-bold text-blue-600';
+            directorSelect.appendChild(otherOpt);
+        }
+
+        const requesterDirectorSelect = document.getElementById('requester-director');
+        if (requesterDirectorSelect) {
+            requesterDirectorSelect.addEventListener('change', function() {
+                const otherWrapper = document.getElementById('requester-director-other-wrapper');
+                if (!otherWrapper) return;
+                
+                if (this.value === 'OTHER') {
+                    otherWrapper.classList.remove('hidden');
+                    document.getElementById('rd-first-name').required = true;
+                    document.getElementById('rd-last-name').required = true;
+                } else {
+                    otherWrapper.classList.add('hidden');
+                    document.getElementById('rd-first-name').required = false;
+                    document.getElementById('rd-last-name').required = false;
+                }
+            });
+        }
+
         // Initial run
         if (!isSltrInternalScope()) {
             filterReceivingOffices(destinationOfficeSelect.value);
@@ -11082,6 +11185,7 @@
             // needs the select populated once its group is revealed.
             if (isSltrInternalScope() && this.value !== 'Other Departments') return;
             filterReceivingOffices(this.value);
+            filterRequesterDirectors(this.value);
             receivingOfficeSelect.value = ''; // Reset selection on department change
 
             // Cross-module request mode is controlled only by the Request File button.

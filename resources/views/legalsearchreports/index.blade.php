@@ -302,6 +302,39 @@
             </div>
         </div>
 
+        {{-- Stats cards --}}
+        <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4 mb-5">
+            <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-100 shadow-sm ring-1 ring-emerald-100 bg-emerald-50/10">
+                <p class="text-[10px] md:text-xs font-semibold text-emerald-600 uppercase tracking-wider">Searches Today</p>
+                <p class="text-2xl md:text-3xl font-bold text-emerald-700 mt-1.5">{{ $totalToday ?? 0 }}</p>
+            </div>
+
+            <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-100 shadow-sm">
+                <p class="text-[10px] md:text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Searches</p>
+                <p class="text-2xl md:text-3xl font-bold text-slate-900 mt-1.5">{{ $total ?? 0 }}</p>
+            </div>
+            
+            <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-100 shadow-sm">
+                <p class="text-[10px] md:text-xs font-semibold text-blue-600 uppercase tracking-wider">Found Results</p>
+                <p class="text-2xl md:text-3xl font-bold text-blue-700 mt-1.5">{{ $foundCount ?? 0 }}</p>
+            </div>
+
+            <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-100 shadow-sm">
+                <p class="text-[10px] md:text-xs font-semibold text-rose-600 uppercase tracking-wider">Not Found</p>
+                <p class="text-2xl md:text-3xl font-bold text-rose-700 mt-1.5">{{ $notFoundCount ?? 0 }}</p>
+            </div>
+
+            <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-100 shadow-sm">
+                <p class="text-[10px] md:text-xs font-semibold text-purple-600 uppercase tracking-wider">Official Prints</p>
+                <p class="text-2xl md:text-3xl font-bold text-purple-700 mt-1.5">{{ $officialCount ?? 0 }}</p>
+            </div>
+
+            <div class="bg-white p-4 md:p-5 rounded-2xl border border-slate-100 shadow-sm">
+                <p class="text-[10px] md:text-xs font-semibold text-amber-600 uppercase tracking-wider">On-Premise Prints</p>
+                <p class="text-2xl md:text-3xl font-bold text-amber-700 mt-1.5">{{ $onPremiseCount ?? 0 }}</p>
+            </div>
+        </div>
+
         {{-- Tabs --}}
         <div class="w-full">
             <div class="tabs-list mb-5">

@@ -339,7 +339,7 @@
                                 <span class="sub-item-label">(a)</span> Ground Rent N <span class="underline" style="min-width: 80px">{{ number_format($recommendation->ground_rent, 2) }}</span> P.H.P.A.
                             </div>
                             <div class="sub-item-line">
-                                <span class="sub-item-label">(b)</span> Development Charges N <span class="underline" style="min-width: 80px">{{ number_format($recommendation->development_charge, 2) }}</span>
+                                <span class="sub-item-label">(b)</span> Development Charges N <span class="underline" style="min-width: 80px">{{ is_numeric($recommendation->development_charge) ? number_format($recommendation->development_charge, 2) : ($recommendation->development_charge ?: '0.00') }}</span>
                             </div>
                             <div class="sub-item-line">
                                 <span class="sub-item-label">(c)</span> Survey/Processing fees N <span class="underline" style="min-width: 80px">{{ number_format($recommendation->preparation_fees, 2) }}</span>

@@ -6825,10 +6825,10 @@
             const doc = new jsPDF();
 
             // Fetch logos
-            const logo1Base64 = await getImageBase64('/assets/logo/logo1.png') || await getImageBase64('/assets/logo/logo1.jpg') || await getImageBase64('/assets/logo/logo1.jpeg');
+            const logo1Base64 = await getImageBase64('/assets/logo/logo1.png') || await getImageBase64('/assets/logo/logo1.jpg') || await getImageBase64('/assets/logo/logoKlase.png');
             const logo2Base64 = await getImageBase64('/assets/logo/logo3.jpeg') || await getImageBase64('/assets/logo/las.jpeg') || await getImageBase64('/assets/logo/logo3.jpg');
             // LAS logo for footer
-            const leftFooterLogoBase64 = await getImageBase64('/assets/logo/1.jpeg');
+            const leftFooterLogoBase64 = await getImageBase64('/assets/logo/Klase.png');
             // Try PNG first, fallback to JPEG
             // Try local asset path for LAS logo
             let footerLogoBase64 = await getImageBase64('/assets/logo/las.png');
@@ -6958,9 +6958,9 @@
             const doc = new jsPDF();
 
             // Fetch logos once and reuse for all pages.
-            const logo1Base64 = await getImageBase64('/assets/logo/logo1.png') || await getImageBase64('/assets/logo/logo1.jpg') || await getImageBase64('/assets/logo/logo1.jpeg');
+            const logo1Base64 = await getImageBase64('/assets/logo/logo1.png') || await getImageBase64('/assets/logo/logo1.jpg') || await getImageBase64('/assets/logo/logoKlase.png');
             const logo2Base64 = await getImageBase64('/assets/logo/logo3.jpeg') || await getImageBase64('/assets/logo/las.jpeg') || await getImageBase64('/assets/logo/logo3.jpg');
-            const leftFooterLogoBase64 = await getImageBase64('/assets/logo/1.jpeg');
+            const leftFooterLogoBase64 = await getImageBase64('/assets/logo/Klase.png');
             const footerLogoBase64 = await getImageBase64('/assets/logo/las.jpeg');
 
             const totalPages = records.length;

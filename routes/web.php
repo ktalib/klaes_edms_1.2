@@ -1586,6 +1586,10 @@ Route::get('/file-tracker-dashboard', [FileTrackerDashboardController::class, 'i
     ->name('file-tracker.dashboard')
     ->middleware(['auth', 'XSS']);
 
+Route::get('/commissioner-dashboard', [FileTrackerDashboardController::class, 'commissionerDashboard'])
+    ->name('commissioner.dashboard')
+    ->middleware(['auth', 'XSS']);
+
 Route::get('/file-tracker-dashboard/notifications', [FileTrackerDashboardApiController::class, 'notifications'])
     ->name('file-tracker-dashboard.notifications')
     ->middleware(['auth', 'XSS']);
@@ -1596,6 +1600,9 @@ Route::post('/file-tracker-dashboard/notifications/{notification}/read', [FileTr
 Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'api/file-tracker-dashboard'], function () {
     Route::get('/overview', [FileTrackerDashboardApiController::class, 'overview'])
         ->name('web.api.file-tracker-dashboard.overview');
+        
+    Route::get('/overview-commissioner', [FileTrackerDashboardApiController::class, 'commissionerOverview'])
+        ->name('web.api.file-tracker-dashboard.overview-commissioner');
 
     Route::get('/notifications', [FileTrackerDashboardApiController::class, 'notifications'])
         ->name('web.api.file-tracker-dashboard.notifications');

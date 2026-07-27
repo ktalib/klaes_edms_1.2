@@ -128,7 +128,7 @@
                                         </p>
                                     </td>
                                     <td width="20%" style="text-align: left; vertical-align: middle; padding-left: 12px;">
-                                        <img src="http://app.klaes.ng/storage/upload/logo/1.jpeg" alt="KLAES" style="max-width: 45px; height: auto; display: inline-block;">
+                                        <img src="http://app.klaes.ng/storage/upload/logo/Klase.png" alt="KLAES" style="max-width: 45px; height: auto; display: inline-block;">
                                     </td>
                                 </tr>
                             </table>

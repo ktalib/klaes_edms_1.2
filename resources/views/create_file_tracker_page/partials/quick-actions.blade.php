@@ -219,9 +219,11 @@
         const out = [];
         const fno = encodeURIComponent(d.file_number);
         if (d.status === 'IN_TRANSIT' && d.file_tracker_id) {
+            /*
             out.push(`<a href="/create-file-tracker/${d.file_tracker_id}/request-sheet" target="_blank"
                 class="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700">
                 <i data-lucide="printer" class="h-4 w-4"></i> Print Tracking Confirmation Slip</a>`);
+            */
         } else if (d.slip_variant) {
             const labels = { tracking_sheet:'Print Request Sheet', missing:'Print Missing File Slip', refer_registry:'Print Refer-to-Registry Slip' };
             out.push(`<a href="${SLIP_URL}?file_number=${fno}&variant=${d.slip_variant}" target="_blank"

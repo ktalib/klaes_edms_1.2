@@ -222,7 +222,7 @@
                 <p style="margin:0;">This invoice was generated electronically by the KLAES PHS Portal. For enquiries contact the ministry's finance office.</p>
             </td>
             <td style="width:100px; vertical-align:middle; text-align:right;">
-                <img src="http://app.klaes.ng/storage/upload/logo/1.jpeg" alt="KLAES" style="height:60px; width:auto;">
+                <img src="http://app.klaes.ng/storage/upload/logo/Klase.png" alt="KLAES" style="height:60px; width:auto;">
             </td>
         </tr>
     </table>

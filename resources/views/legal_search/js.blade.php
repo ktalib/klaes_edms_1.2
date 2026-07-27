@@ -1,4 +1,4 @@
-﻿<script>
+<script>
   // Lookup data from DB
   const dbLandUseOptions = @json($landUseOptions ?? []);
   const dbDistrictOptions = @json($districtOptions ?? []);
@@ -3285,7 +3285,9 @@ const executeSearchAjax = (filters, searchData) => {
     if (!raw || raw === '-') return raw;
 
     if (raw.includes('right of occupancy') || raw.includes('right of occupanc')) return 'right of occupancy';
-    if (/^r\s*of\s*o$/.test(raw)) return 'right of occupancy';
+    if (raw.includes('occupancy permit') || raw === 'op') return 'occupancy permit';
+    if (raw.includes('transfer of title') || raw.includes('tot')) return 'transfer of title';
+    if (raw.includes('file commissioning')) return 'file commissioning';
     const compact = raw.replace(/[^a-z0-9]/g, '');
     if (/^r[o0]f[o0]$/.test(compact) || /^r[o0]f[o0]occupanc/.test(compact)) return 'right of occupancy';
     if (raw === 'customary right of occupancy' || raw === 'statutory right of occupancy') return 'right of occupancy';
@@ -4066,7 +4068,7 @@ const executeSearchAjax = (filters, searchData) => {
         || instrument === 'File Commissioning' || instrument === 'DCIV File Commissioning'
         || type === 'File Commissioning' || type === 'DCIV File Commissioning'
         || type.startsWith('ST File Commissioning')
-        || (synth && (instrument.includes('Commissioning') || type.includes('Commissioning')))) {
+        || (synth && !row?._is_recertification && (instrument.includes('Commissioning') || type.includes('Commissioning')))) {
       return 'File Commissioning';
     }
     if (source === 'Temporary File' || instrument === 'Temporary File' || type === 'Temporary File' || (synth && instrument.includes('Temporary File'))) {
@@ -4204,22 +4206,29 @@ const executeSearchAjax = (filters, searchData) => {
       // real link row. Classified into the recert band (weight 8) → under commissioning, above CofO.
       const hasMinistryRecert = rows.some(r => {
         const t = String(r?.transaction_type || r?.instrument_type || '');
-        return /physical planning/i.test(t) && /recertification/i.test(t);
+        return (/physical planning/i.test(t) && /recertification/i.test(t)) || /Land Recertification/i.test(t);
       });
       if (!hasMinistryRecert && isRecertLandFileNo(fno)) {
+        let txDate = '-';
+        const m = String(fno).match(/(?:^|[-_/ ])(19\d{2}|20\d{2})(?:[-_/ ]|$)/);
+        if (m) {
+          txDate = m[1];
+        }
         rows.push({
           _is_recertification: true,
           id: 'ministry-recert-' + fno,
           source_table: 'Related Fileno',
           fileno: fno, file_number: fno, mlsFNo: fno,
           lifecycle_file_no: normalizeLifecycleFileNo(fno),
-          transaction_type: 'Ministry of Land and Physical Planning Recertification',
-          instrument_type: 'Ministry of Land and Physical Planning Recertification',
+          transaction_type: 'Land Recertification (File Commissioning)',
+          instrument_type: 'Land Recertification (File Commissioning)',
           party_1: 'Kano State Ministry of Land and Physical Planning',
           party_2: getHolderForFile(fno, rows), party_3: '-', party_4: '-',
           serial_no: '', page_no: '', volume_no: '',
-          transaction_date: '-', reg_date: '',
-          caveat: 'No', is_caveated: 0, prop_id: '', _synthesized: true
+          transaction_date: txDate, reg_date: '',
+          caveat: 'No', is_caveated: 0, prop_id: '',
+          comments: meta?.kn_file_no || '-',
+          _synthesized: true
         });
       }
       const shouldHaveTemp = (meta?.is_temp === true) || isTempFileNo(fno);
@@ -4262,39 +4271,33 @@ const executeSearchAjax = (filters, searchData) => {
   };
 
   const arrangeLifecycleFileRows = (rows) => {
-    const commissioning = [];
-    const temp = [];
     const decommissioning = [];
     const transactions = [];
 
-    // Classify by lifecycle event type — which also inspects transaction_type, so
-    // real related-file "File Commissioning"/"File Decommissioning" rows (whose label
-    // lives in transaction_type, not instrument_type) land in the right phase instead
-    // of falling through to the transactions bucket and sinking to the bottom.
     for (const r of rows) {
       const evt = classifyLifecycleEventType(r);
-      // The mother ST "ST File Commissioning" row (np_fileno) is a SECOND commissioning
-      // event that must sit chronologically AFTER the Land File Commissioning and its
-      // intervening transactions — not be hoisted to the top of the block with the land
-      // commissioning. It is flagged _st_primary_commissioning (+ _pinned so it was
-      // already date-positioned by sortTimelineChronologically), so route it through the
-      // transactions bucket to preserve that position. Unit "– Fragmentation" rows are NOT
-      // flagged and still hoist to the top of their own unit blocks.
-      if (evt === 'File Commissioning' && !r._st_primary_commissioning) {
-        commissioning.push(r);
-      } else if (evt === 'Temporary File') {
-        temp.push(r);
-      } else if (evt === 'File Decommissioning') {
+      if (evt === 'File Decommissioning') {
         decommissioning.push(r);
       } else {
-        // 'Kangis Recertification' and null both stay as associated transactions,
-        // preserving the weight/chronological order established before grouping.
         transactions.push(r);
       }
     }
 
-    // Recertification/CoFO pairing executes strictly inside the current
-    // lifecycle's transaction phase so rows never leave their group.
+    // Sort transactions by weight DESC, then by date ASC, then ID ASC
+    transactions.sort((a, b) => {
+      const wa = recordPriorityWeight(a) ?? 0;
+      const wb = recordPriorityWeight(b) ?? 0;
+      if (wa !== wb) return wb - wa;
+
+      const ta = getTransactionTimestamp(a);
+      const tb = getTransactionTimestamp(b);
+      if (ta === null && tb === null) return (Number(a.id) || 0) - (Number(b.id) || 0);
+      if (ta === null) return 1;
+      if (tb === null) return -1;
+      if (ta !== tb) return ta - tb;
+      return (Number(a.id) || 0) - (Number(b.id) || 0);
+    });
+
     let arrangedTransactions = placeKangisRecertBeforeCofo(transactions);
 
     // Rule 4: the "Ministry of Land and Physical Planning Recertification" line for an
@@ -4303,12 +4306,23 @@ const executeSearchAjax = (filters, searchData) => {
     // front of the transactions. Mirrors LegalSearchService::arrangeLifecycleFileRows().
     const isMinistryRecert = (r) => {
       const t = String(r?.transaction_type || r?.instrument_type || '');
-      return /physical planning/i.test(t) && /recertification/i.test(t);
+      return (/physical planning/i.test(t) && /recertification/i.test(t)) || /Land Recertification/i.test(t);
     };
-    arrangedTransactions = [
-      ...arrangedTransactions.filter(isMinistryRecert),
-      ...arrangedTransactions.filter(r => !isMinistryRecert(r)),
-    ];
+    const commissioning = [];
+    const ministryRecert = [];
+    const otherTransactions = [];
+    for (const r of arrangedTransactions) {
+      const evt = classifyLifecycleEventType(r);
+      const isComm = (evt === 'File Commissioning' || evt === 'Temporary File' || evt === 'DCIV File Commissioning' || evt === 'ST File Commissioning');
+      if (isComm) {
+        commissioning.push(r);
+      } else if (isMinistryRecert(r)) {
+        ministryRecert.push(r);
+      } else {
+        otherTransactions.push(r);
+      }
+    }
+    arrangedTransactions = [...commissioning, ...ministryRecert, ...otherTransactions];
 
     // Sectional Titling: within an ST unit's block the transactions read strictly
     // chronologically (Right of Occupancy before its later Assignment/Transfer of Title),
@@ -4332,7 +4346,7 @@ const executeSearchAjax = (filters, searchData) => {
       });
     }
 
-    return [...commissioning, ...temp, ...arrangedTransactions, ...decommissioning];
+    return [...arrangedTransactions, ...decommissioning];
   };
 
   const groupAndSortTimeline = (transactions) => {

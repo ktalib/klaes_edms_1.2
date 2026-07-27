@@ -1079,8 +1079,7 @@
                                                     </div>
                                                     <div class="space-y-2">
                                                         <label for="current-office"
-                                                            class="block text-sm font-medium text-gray-700">Destination
-                                                            Office (@if(($module ?? '') === 'sltr') Units @else Departments @endif) *</label>
+                                                            class="block text-sm font-medium text-gray-700">Requester Department *</label>
                                                         @php
                                                             $isDigitalRequestModule = in_array(strtolower($module ?? ''), ['digital_request','digital-request']);
                                                         @endphp
@@ -1122,6 +1121,36 @@
                                                     </div>
                                                     @endif
                                                 </div>
+
+                                                {{-- Row 1.5: Requester Director — KANGIS keeps it in its own row (office/officer
+                                                     live inside the approval step blocks below). Standard modules render it
+                                                     inline as the first column of the Requester Office / File Requester row. --}}
+                                                @if(in_array(($module ?? ''), ['kangis', 'new_kangis']))
+                                                <div id="requester-director-row" class="grid grid-cols-1 gap-4 @if(($module ?? '') === 'new_kangis') hidden @endif" @if(($module ?? '') === 'new_kangis') aria-hidden="true" @endif>
+                                                    <div class="space-y-2">
+                                                        <label for="requester-director"
+                                                            class="block text-sm font-medium text-gray-700">Requester Director</label>
+                                                        <select id="requester-director" name="requester_director_id"
+                                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                            <option value="">Select requester director</option>
+                                                            {{-- Populated via AJAX when department is selected --}}
+                                                        </select>
+                                                        <div id="requester-director-other-wrapper" class="hidden mt-2 p-3 bg-gray-50 border border-gray-200 rounded-md shadow-inner space-y-3">
+                                                            <p class="text-xs font-semibold text-gray-600 uppercase">Add New Director</p>
+                                                            <div class="grid grid-cols-2 gap-3">
+                                                                <div>
+                                                                    <label for="rd-first-name" class="block text-xs text-gray-500 mb-1">First Name *</label>
+                                                                    <input type="text" id="rd-first-name" name="requester_director_first_name" placeholder="First Name" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                                                </div>
+                                                                <div>
+                                                                    <label for="rd-last-name" class="block text-xs text-gray-500 mb-1">Last Name *</label>
+                                                                    <input type="text" id="rd-last-name" name="requester_director_last_name" placeholder="Last Name" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                @endif
 
                                                 @if(($module ?? '') === 'new_kangis')
                                                 @php
@@ -1252,7 +1281,8 @@
                                                         <span class="text-xs text-amber-600 font-medium ml-1">&mdash; enabled after approval</span>
                                                     </div>
                                                 @endif
-                                                <div class="grid grid-cols-2 gap-4">
+                                                @php $isStdOfficeRow = !in_array(($module ?? ''), ['kangis', 'new_kangis']); @endphp
+                                                <div class="grid grid-cols-1 md:grid-cols-{{ $isStdOfficeRow ? '3' : '2' }} gap-4">
                                                     <!-- Hidden ID fields -->
                                                     <div class="space-y-2 hidden" aria-hidden="true">
                                                         <label for="origin-office-id" class="sr-only">Origin Office ID</label>
@@ -1264,10 +1294,37 @@
                                                         <input type="text" id="current-office-id" readonly
                                                             class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 font-mono text-sm">
                                                     </div>
+
+                                                    {{-- Requester Director — inline first column for standard modules
+                                                         (KANGIS renders it in its own row above). --}}
+                                                    @if($isStdOfficeRow)
+                                                    <div class="space-y-2">
+                                                        <label for="requester-director"
+                                                            class="block text-sm font-medium text-gray-700">Requester Director</label>
+                                                        <select id="requester-director" name="requester_director_id"
+                                                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                            <option value="">Select requester director</option>
+                                                            {{-- Populated via AJAX when department is selected --}}
+                                                        </select>
+                                                        <div id="requester-director-other-wrapper" class="hidden mt-2 p-3 bg-gray-50 border border-gray-200 rounded-md shadow-inner space-y-3">
+                                                            <p class="text-xs font-semibold text-gray-600 uppercase">Add New Director</p>
+                                                            <div class="grid grid-cols-2 gap-3">
+                                                                <div>
+                                                                    <label for="rd-first-name" class="block text-xs text-gray-500 mb-1">First Name *</label>
+                                                                    <input type="text" id="rd-first-name" name="requester_director_first_name" placeholder="First Name" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                                                </div>
+                                                                <div>
+                                                                    <label for="rd-last-name" class="block text-xs text-gray-500 mb-1">Last Name *</label>
+                                                                    <input type="text" id="rd-last-name" name="requester_director_last_name" placeholder="Last Name" class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    @endif
                                                     <!-- New Receiving Office Dropdown -->
                                                     <div id="receiving-office-group" class="space-y-2 @if(($module ?? '') === 'new_kangis') hidden @endif" @if(($module ?? '') === 'new_kangis') aria-hidden="true" @endif>
                                                         <label for="receiving-office"
-                                                            class="block text-sm font-medium text-gray-700">Receiving Office
+                                                            class="block text-sm font-medium text-gray-700">Requester Office
                                                             *</label>
 
                                                         @if(in_array(strtolower($module ?? ''), ['digital_request','digital-request']))
@@ -1311,7 +1368,7 @@
                                                     </div>
                                                     <div id="receiving-officer-group" class="space-y-2 @if(($module ?? '') === 'new_kangis') hidden @endif" @if(($module ?? '') === 'new_kangis') aria-hidden="true" @endif>
                                                         <label for="receiving-officer"
-                                                            class="block text-sm font-medium text-gray-700">Receiving Officer *</label>
+                                                            class="block text-sm font-medium text-gray-700">File Requester *</label>
 
                                                         @if(in_array(strtolower($module ?? ''), ['digital_request','digital-request']))
                                                             {{-- Digital Request: show read-only field only; NO <select id="receiving-officer"> so Select2 never initialises --}}
@@ -2616,12 +2673,14 @@
                                          <i data-lucide="printer" class="h-4 w-4 mr-2"></i>
                                          Print Details
                                      </button>
+                                     {{-- 
                                      <a id="print-html-request-sheet-btn" href="/klaes/file_request_sheet.html" target="_blank"
                                          class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700"
                                          style="display: none;">
                                          <i data-lucide="printer" class="h-4 w-4 mr-2"></i>
                                          Print Request Sheet
                                      </a>
+                                     --}}
                                  </div>
                             </div>
                         </div>
@@ -2899,6 +2958,7 @@
                             window.currentModule = '{{ $module ?? '' }}';
                             window.isApprovalModule = {{ in_array($module ?? '', ['dgis', 'dg']) ? 'true' : 'false' }};
                             window.isDigitalRequestModule = {{ in_array(strtolower($module ?? ''), ['digital_request', 'digital-request']) ? 'true' : 'false' }};
+                            window.requesterDirectors = @json($requesterDirectors);
                         </script>
 
                         @include('create_file_tracker_page.partials.quick-actions-js')

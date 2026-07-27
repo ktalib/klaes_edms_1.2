@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -15,6 +15,7 @@
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
+  <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 
   <script>
     tailwind.config = {
@@ -44,6 +45,61 @@
   </script>
 
   <style>
+    /* Select2 custom overrides for premium look and feel */
+    .select2-container { width: 100% !important; }
+    .select2-container--default .select2-selection--single {
+      height: 3rem;
+      border-color: #d1d5db;
+      border-radius: 0.5rem;
+      padding-left: 0.75rem;
+      display: flex;
+      align-items: center;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__rendered {
+      color: #1f2937;
+      font-size: 0.95rem;
+      padding-left: 0;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__placeholder { color: #9ca3af; }
+    .select2-container--default .select2-selection--single .select2-selection__arrow { height: 3rem; right: 0.5rem; }
+    .select2-container--default.select2-container--focus .select2-selection--single,
+    .select2-container--default.select2-container--open .select2-selection--single {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    }
+    .dark .select2-container--default .select2-selection--single {
+      background-color: #374151;
+      border-color: #4b5563;
+    }
+    .dark .select2-container--default .select2-selection--single .select2-selection__rendered {
+      color: #f3f4f6;
+    }
+    .dark .select2-dropdown {
+      background-color: #374151;
+      border-color: #4b5563;
+    }
+    .dark .select2-container--default .select2-results__option {
+      color: #f3f4f6;
+    }
+    .dark .select2-container--default .select2-results__option--highlighted[aria-selected] {
+      background-color: #3b82f6;
+      color: #ffffff;
+    }
+    .dark .select2-container--default .select2-search--dropdown .select2-search__field {
+      background-color: #1f2937;
+      border-color: #4b5563;
+      color: #ffffff;
+    }
+    .select2-dropdown { border-color:#d1d5db; border-radius:.5rem; box-shadow:0 10px 25px rgba(0,0,0,.08); background:#fff; }
+    .select2-container--default .select2-search--dropdown .select2-search__field {
+      border-color: #d1d5db;
+      border-radius: 0.375rem;
+      padding: 6px 12px;
+    }
+    .select2-container--default .select2-results__option { color:#111827; }
+    .select2-container--default .select2-results__option--highlighted[aria-selected] { background:#2563eb; color:#fff; }
+    .select2-results__message { color:#6b7280; }
+
     :root {
       --phs-border: #e5e7eb;
       --phs-timeline-dot: #3b82f6;
@@ -385,7 +441,7 @@
       <!-- Image Slider Banner - Responsive -->
       <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div class="slider-container">
-          <div class="slide active" style="background-image: url('imagebg1.jpeg')">
+          <div class="slide active" style="background-image: url('imagebgKlase.png')">
             <div class="slide-content">
               <h3 class="text-2xl font-bold">Official Land Records</h3>
               <p class="text-lg">
@@ -1063,17 +1119,9 @@
                 Property History Search
               </h2>
               <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                <div class="relative w-full sm:max-w-xs">
-                  <i data-lucide="search"
-                    class="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5"></i>
-                  <input type="text" id="search-query" readonly placeholder="Click to select a file number..."
-                    title="Click to open the file number selector"
-                    class="w-full cursor-pointer pl-10 sm:pl-11 pr-4 py-2 sm:py-3 text-sm sm:text-base h-10 sm:h-12 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 rounded-lg focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20" />
+                <div class="w-full sm:max-w-md">
+                  <select id="search-query" name="query" class="w-full"></select>
                 </div>
-                <button type="button" id="phs-build-fileno-btn"
-                  class="inline-flex items-center justify-center gap-1.5 rounded-lg font-medium px-4 sm:px-5 py-2 sm:py-3 h-10 sm:h-12 bg-blue-600 text-white hover:bg-blue-700 transition text-sm sm:text-base w-full sm:w-auto whitespace-nowrap">
-                  <i data-lucide="file-text" class="w-4 h-4 sm:w-5 sm:h-5"></i>Select File Number
-                </button>
                 <button id="search-btn"
                   class="inline-flex items-center justify-center rounded-lg font-medium px-5 sm:px-7 py-2 sm:py-3 h-10 sm:h-12 bg-blue-600 text-white hover:bg-blue-700 transition text-sm sm:text-base w-full sm:w-auto">
                   <i data-lucide="search" class="w-4 h-4 sm:w-5 sm:h-5 mr-2"></i>1 Token per Search
@@ -1619,6 +1667,8 @@
       }
     };
   </script>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
   <script src="{{ asset('js/phs/portal.js') }}"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function () {
@@ -1633,41 +1683,34 @@
     });
   </script>
 
-  {{-- PHS File Number Selector (self-contained, namespaced PhsFileNoModal) --}}
-  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-  @include('phs.partials.fileno-modal')
-  <script src="{{ asset('js/phs/fileno-modal.js') }}"></script>
   <script>
     (function () {
-      // Drop the chosen file number into the dashboard search box.
-      function fillSearch(result) {
-        var box = document.getElementById('search-query');
-        if (box && result && result.fileNumber) {
-          box.value = result.fileNumber;
-          box.dispatchEvent(new Event('input', { bubbles: true }));
-          box.focus();
-        }
-      }
-
-      function openFileNoModal() {
-        if (!window.PhsFileNoModal) return;
-        PhsFileNoModal.open({
-          initialTab: 'mls',
-          autoPopulateGenericFields: false, // PHS dashboard has no registry/fileno fields to auto-fill
-          callback: fillSearch
-        });
-      }
-
       document.addEventListener('DOMContentLoaded', function () {
-        // The "Build / select a file number" link opens the selector.
-        document.getElementById('phs-build-fileno-btn')?.addEventListener('click', openFileNoModal);
-
-        // The search box is read-only: clicking (or focusing) it opens the
-        // selector instead of letting the user type a file number by hand.
-        var box = document.getElementById('search-query');
-        if (box) {
-          box.addEventListener('click', openFileNoModal);
-          box.addEventListener('focus', openFileNoModal);
+        var $querySelect = $('#search-query');
+        if ($querySelect.length) {
+          $querySelect.select2({
+            placeholder: 'Search or select a file number...',
+            allowClear: true,
+            width: '100%',
+            minimumInputLength: 2,
+            ajax: {
+              url: "{{ route('ols.file-numbers') }}",
+              dataType: 'json',
+              delay: 250,
+              data: function (params) {
+                return { term: params.term || '' };
+              },
+              processResults: function (data) {
+                return { results: data.results || [] };
+              },
+              cache: true
+            },
+            language: {
+              inputTooShort: function () { return 'Type at least 2 characters…'; },
+              searching: function () { return 'Searching file indexings…'; },
+              noResults: function () { return 'No matching file found'; }
+            }
+          });
         }
 
         initAdditionalFilters();

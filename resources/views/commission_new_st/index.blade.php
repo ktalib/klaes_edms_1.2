@@ -18,6 +18,7 @@
 @endpush
 
 @section('content')
+    <script src="{{ asset('js/primaryform/states-lga.js') }}"></script>
     <script src="{{ asset('js/commission_new_st/primary.js') }}"></script>
     <script src="{{ asset('js/commission_new_st/sua_commission.js') }}"></script>
     <script src="{{ asset('js/commission_new_st/pua.js') }}"></script>

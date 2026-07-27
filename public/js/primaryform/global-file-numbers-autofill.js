@@ -506,13 +506,14 @@ async function fetchApplicationDetails(fileno) {
             updateFormField('propertyHouseNo', data.data.property_house_no);
             updateFormField('propertyPlotNo', data.data.property_plot_no);
             updateFormField('propertyDistrict', data.data.property_district);
-            
+
             // Update form fields by name as well
             updateMainFormField('scheme_no', data.data.scheme_no);
             updateMainFormField('property_street_name', data.data.property_street_name);
             updateMainFormField('property_house_no', data.data.property_house_no);
             updateMainFormField('property_plot_no', data.data.property_plot_no);
             updateMainFormField('property_district', data.data.property_district);
+            updateMainFormField('plot_size', data.data.plot_size);
             updateFormField('ksipRefNoPrimary', data.data.ksip_ref_no);
             updateMainFormField('ksip_ref_no', data.data.ksip_ref_no);
             
@@ -522,7 +523,7 @@ async function fetchApplicationDetails(fileno) {
                 if (stateSelect) {
                     stateSelect.value = data.data.property_state;
                     stateSelect.dispatchEvent(new Event('change'));
-                    
+
                     // Wait a moment for LGA options to load, then set LGA
                     setTimeout(() => {
                         if (data.data.property_lga) {
@@ -536,8 +537,13 @@ async function fetchApplicationDetails(fileno) {
                         }
                     }, 500);
                 }
+            } else if (data.data.property_lga) {
+                // No state on record (e.g. backfilled from file_indexings, which has
+                // no state column) - resolve the LGA's parent state by reverse lookup
+                // against the Nigerian states/LGA reference data.
+                resolvePropertyStateFromLga(data.data.property_lga, 10);
             }
-            
+
             console.log('✅ Property fields auto-filled from application details');
             
         } else {
@@ -546,6 +552,52 @@ async function fetchApplicationDetails(fileno) {
         
     } catch (error) {
         console.error('❌ Error fetching application details:', error);
+    }
+}
+
+/**
+ * Resolve which state an LGA belongs to (via the Nigerian states/LGA
+ * reference data loaded by states-lga.js) and use it to select the State
+ * dropdown and populate/select the matching LGA option. Retries briefly if
+ * the reference data hasn't finished loading yet.
+ */
+function resolvePropertyStateFromLga(lgaName, attemptsLeft) {
+    if (!lgaName) return;
+
+    if (typeof nigerianStatesData === 'undefined' || !nigerianStatesData.length) {
+        if (attemptsLeft > 0) {
+            setTimeout(() => resolvePropertyStateFromLga(lgaName, attemptsLeft - 1), 300);
+        }
+        return;
+    }
+
+    const matchedState = nigerianStatesData.find(state =>
+        (state.local_governments || []).some(lga => lga.toLowerCase() === lgaName.toLowerCase())
+    );
+
+    if (!matchedState) return;
+
+    const stateSelect = document.getElementById('propertyState');
+    const lgaSelect = document.getElementById('propertyLga');
+    if (!stateSelect || !lgaSelect) return;
+
+    stateSelect.value = matchedState.name;
+    if (typeof selectPropertyLGA === 'function') {
+        selectPropertyLGA(stateSelect);
+    }
+
+    const matchedOption = Array.from(lgaSelect.options).find(
+        opt => opt.value.toLowerCase() === lgaName.toLowerCase()
+    );
+    if (matchedOption) {
+        lgaSelect.value = matchedOption.value;
+    }
+
+    updateMainFormField('property_state', matchedState.name);
+    updateMainFormField('property_lga', lgaName);
+
+    if (typeof updatePropertyAddressDisplay === 'function') {
+        updatePropertyAddressDisplay();
     }
 }
 

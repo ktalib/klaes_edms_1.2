@@ -13,6 +13,7 @@
         RECENT_LIMIT: 5,
         API_ENDPOINTS: {
             MLS_FILES: '/api/file-numbers/mls',
+            ST_FILES: '/api/file-numbers/st',
             KANGIS_FILES: '/api/file-numbers/kangis',
             NEWKANGIS_FILES: '/api/file-numbers/newkangis',
             LOOKUP: '/api/file-numbers/lookup'
@@ -250,6 +251,12 @@
                     icon: 'map-pinned',
                     gradient: 'from-orange-600 via-orange-700 to-red-800',
                     color: 'text-orange-600'
+                },
+                'st': {
+                    title: 'ST (Sectional Titling) Selector',
+                    icon: 'layers',
+                    gradient: 'from-violet-600 via-violet-700 to-purple-800',
+                    color: 'text-violet-600'
                 }
             };
 
@@ -511,6 +518,12 @@
                         console.log('[GlobalFileNoModal] Extracted MLS file number:', mlsNum);
                     }
                     return mlsNum;
+                case 'st':
+                    const stNum = file.file_number || file.mlsFNo || file.fileno;
+                    if (stNum) {
+                        console.log('[GlobalFileNoModal] Extracted ST file number:', stNum);
+                    }
+                    return stNum;
                 case 'kangis':
                     return file.kangisFileNo || file.kangis_file_no || file.kangis_number || 
                            file.kangisFNo || file.kangis_number;
@@ -572,6 +585,9 @@
                     case 'gkn':
                         preview = this.generateGKNPreview();
                         break;
+                    case 'st':
+                        preview = this.generateSTPreview();
+                        break;
                 }
 
                 // If the input method is smart, extract the selected JSON data
@@ -597,7 +613,8 @@
                     tabName === 'old_mls' ? 'text-yellow-900' :
                     tabName === 'sit' ? 'text-pink-900' :
                     tabName === 'dciv' ? 'text-teal-900' :
-                    tabName === 'gkn' ? 'text-orange-900' : 'text-gray-900';
+                    tabName === 'gkn' ? 'text-orange-900' :
+                    tabName === 'st' ? 'text-violet-900' : 'text-gray-900';
                 $preview.html(`<span class="${colorClass} font-bold">${preview}</span>`);
                 $preview.removeClass('text-gray-400');
                 this.showSuccess('✓ File number ready');
@@ -904,6 +921,38 @@
             return '';
         },
 
+        // Generate ST (Sectional Titling) preview — format depends on type
+        generateSTPreview: function () {
+            const inputMethod = $('input[name="st-input-method"]:checked').val();
+            
+            if (inputMethod === 'smart') {
+                const selected = $('#st-smart-selector').val();
+                if (selected) {
+                    try {
+                        const fileData = JSON.parse(selected);
+                        return this.extractFileNumber(fileData, 'st');
+                    } catch (e) {
+                        return '';
+                    }
+                }
+                return '';
+            }
+
+            const type    = $('#mls-st-type').val() || 'primary';
+            const landuse = $('#mls-st-landuse').val() || 'COM';
+            const year    = $('#mls-st-year').val();
+            const serial  = $('#mls-st-serial').val();
+            if (!landuse || !year || !serial) return '';
+            const base = `ST-${landuse}-${year}-${serial}`;
+            if (type === 'primary') {
+                return base;
+            }
+            // SuA / PuA — append unit sequence (zero-padded to 3)
+            const unit = $('#mls-st-unit').val();
+            if (!unit) return '';
+            return `${base}-${String(unit).padStart(3, '0')}`;
+        },
+
         // Generate KANGIS preview
         generateKANGISPreview: function () {
             const inputMethod = $('input[name="kangis-input-method"]:checked').val();
@@ -1130,7 +1179,8 @@
                     'sltr':      'SLTR Registry',
                     'sit':       'SIT Registry',
                     'dciv':      'DCIV Registry',
-                    'gkn':       'Survey Registry'
+                    'gkn':       'Survey Registry',
+                    'st':        'ST Registry'
                 };
                 const registryValue = tabRegistryMap[tabName];
                 if (registryValue) {
@@ -1659,7 +1709,7 @@
 
             // Initialize year field with current year (skip on file indexing create page)
             if (!window.location.pathname.includes('/fileindexing/create')) {
-                $('#mls-year, #mls-sit-year, #mls-dciv-lpcc-year, #mls-extension-year').val(new Date().getFullYear());
+                $('#mls-year, #mls-sit-year, #mls-dciv-lpcc-year, #mls-extension-year, #mls-st-year').val(new Date().getFullYear());
             }
 
             // Enhanced preview updates with animations

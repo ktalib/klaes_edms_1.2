@@ -177,6 +177,13 @@
             </div>
 
             <div class="section-title">TRANSACTION(S) TIMELINE ({{ count($data['rows'] ?? []) }})</div>
+            @php
+                $uniqueFileNumbers = collect($data['rows'] ?? [])
+                    ->pluck('file_no')
+                    ->filter(fn($fn) => $fn && $fn !== '-')
+                    ->unique();
+                $showFileNo = $uniqueFileNumbers->count() > 1;
+            @endphp
             <div class="timeline">
                 @forelse(($data['rows'] ?? []) as $row)
                     @php
@@ -199,6 +206,9 @@
                             <div class="tl-parties">
                                 <div class="tl-party">
                                     <div class="lbl">From</div>
+                                    @if($showFileNo && !empty($row['file_no']) && $row['file_no'] !== '-')
+                                        <div class="tl-file-no" style="font-size: 11px; font-weight: bold; color: #4b5563; margin-bottom: 2px;">{{ $row['file_no'] }}</div>
+                                    @endif
                                     <div class="val">{{ $grantor ?: '-' }}</div>
                                 </div>
                                 <div class="tl-arrow">&rarr;</div>
@@ -215,6 +225,10 @@
                 @empty
                     <div class="timeline-row"><div class="timeline-card"><div class="tl-party"><div class="val">No timeline rows available.</div></div></div></div>
                 @endforelse
+            </div>
+            
+            <div style="text-align: center; font-size: 10px; font-weight: bold; font-style: italic; margin: 16px 0 10px 0; color: #374151; letter-spacing: 0.5px; border-top: 1px dashed #d1d5db; padding-top: 8px;">
+                *** END OF TRANSACTION HISTORY ***
             </div>
 
             @php
@@ -265,7 +279,7 @@
                       
                         {{-- <img src="{{ asset('storage/' . $institution->logo_path) }}" alt="{{ $institution->name }} Logo"> --}}
                     @else
-                        <img src="http://app.klaes.ng/storage/upload/logo/1.jpeg" alt="Organization Logo">
+                        <img src="http://app.klaes.ng/storage/upload/logo/Klase.png" alt="Organization Logo">
                     @endif
                 </div>
                 <div class="org-name" >For {{ $institution->name }} Authorized by Kano State Ministry Of Land and Physical Planning</div>

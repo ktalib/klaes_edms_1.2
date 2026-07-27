@@ -134,7 +134,11 @@ class TrackFileArchiveController extends Controller
      */
     protected function fileNumberForIdentifier(string $identifier): string
     {
-        $tracker = FileTracker::where('tracking_id', $identifier)
+        $needle = mb_strtoupper(trim((string) $identifier));
+        $tracker = FileTracker::where(function ($q) use ($identifier, $needle) {
+            $q->where('tracking_id', $identifier)
+              ->orWhere('tracking_id', 'LIKE', $needle . '%');
+        })
             ->orderByDesc('id')
             ->first(['file_number']);
 

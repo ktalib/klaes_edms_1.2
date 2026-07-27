@@ -20,6 +20,7 @@
         // SIT files show the reason directly after the Location.
         $sitReason = $data['sit_reason'] ?? '';
         $isSit = stripos((string) $fileNumber, 'SIT-') === 0;
+        $originalOpHolder = $data['original_op_holder'] ?? '';
 
         $status = request('status', 'Original');
         $isCtc = request('isCTC') == '1';
@@ -326,8 +327,14 @@
                 @endif
                 @if(!empty($allottee))
                 <div class="row">
-                    <div class="label">Allottee:</div>
+                    <div class="label">File Title:</div>
                     <div class="value-line">{{ $allottee }}</div>
+                </div>
+                @endif
+                @if(!empty($originalOpHolder))
+                <div class="row">
+                    <div class="label">Original OP Holder:</div>
+                    <div class="value-line">{{ $originalOpHolder }}</div>
                 </div>
                 @endif
                 <div class="row">
@@ -376,12 +383,7 @@
         </div>{{-- end .sheet-body --}}
 <br><br>
         <div class="sheet-footer">
-            <div class="mark">
-                <span class="m-red"></span>
-                <span class="m-black"></span>
-                <span class="m-green"></span>
-                <span class="m-yellow"></span>
-            </div>
+            <img src="http://app.klaes.ng/storage/upload/logo/Klase.png" alt="Left Footer Logo" class="footer-logo-left" style="height: 16mm; width: auto; max-height: 16mm; object-fit: contain;" onerror="this.style.display='none'">
             <img src="http://app.klaes.ng/assets/logo/las.jpg" alt="Right Footer Logo" class="footer-logo-right" onerror="this.style.display='none'">
         </div>
     </div>

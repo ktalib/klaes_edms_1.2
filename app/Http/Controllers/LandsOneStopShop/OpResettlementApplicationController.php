@@ -180,11 +180,15 @@ class OpResettlementApplicationController extends Controller
         return 'MULTIPLE (' . $values->count() . ')';
     }
 
-    public function index(Request $request): View
+    public function index(Request $request)
     {
         set_time_limit(120);
         $limit = (int) $request->input('limit', 25);
-        $limit = max(10, min($limit, 200));
+        if ($request->query('format') === 'json') {
+            $limit = 5000;
+        } else {
+            $limit = max(10, min($limit, 200));
+        }
         $page = max(1, (int) $request->input('page', 1));
         $offset = ($page - 1) * $limit;
         $isChangeOfName = trim((string) $request->query('type')) === 'change-of-name';
@@ -260,7 +264,7 @@ class OpResettlementApplicationController extends Controller
                        op_serial_number, property_description, location,
                        created_by, created_at, plot_no, tp_no, lgsaOrCity,
                        land_use, system_source,
-                       ROW_NUMBER() OVER (PARTITION BY prop_id, instrument_type ORDER BY id DESC) as rn
+                       ROW_NUMBER() OVER (PARTITION BY COALESCE(NULLIF(parent_prop_id, ''), prop_id), instrument_type ORDER BY id DESC) as rn
                 FROM pra
                 WHERE system_source = 'OSSOPCHANGEOFNAME'
                   AND prop_id IS NOT NULL AND prop_id != ''
@@ -327,7 +331,7 @@ class OpResettlementApplicationController extends Controller
                       OR p1.transaction_type LIKE '%Transfer of Title%'
                   )
                 GROUP BY COALESCE(NULLIF(p1.parent_prop_id, ''), p1.prop_id)
-            ) as tot_agg"), 'tot_agg.op_prop_id', '=', 'p.prop_id')
+            ) as tot_agg"), 'tot_agg.op_prop_id', '=', DB::raw("COALESCE(NULLIF(p.parent_prop_id, ''), p.prop_id)"))
             ->leftJoin('instrument_capture as source_capture', 'source_capture.id', '=', 'mfn.source_instrument_capture_id')
             // Resolve the human-readable Commissioned By by joining users on the
             // PRA / fileNumber created_by user ids. Without this the column shows
@@ -2683,8 +2687,8 @@ class OpResettlementApplicationController extends Controller
             'op_type' => $row->op_type ?? null,
             'op_serial_number' => $row->op_serial_number ?? null,
             'registration_number' => $this->composeRegNo($row),
-            'party_1_name' => $row->Grantor ?? $row->Assignor ?? $row->Mortgagor ?? null,
-            'party_2_name' => $row->Grantee ?? $row->Assignee ?? $row->Mortgagee ?? null,
+            'party_1_name' => $this->firstFilledParty($row->Grantor ?? null, $row->Assignor ?? null, $row->Mortgagor ?? null, $row->party_1 ?? null),
+            'party_2_name' => $this->firstFilledParty($row->Grantee ?? null, $row->Assignee ?? null, $row->Mortgagee ?? null, $row->party_2 ?? null),
             'property_description' => $row->property_description ?? null,
             'land_use' => $row->land_use ?? null,
             'lga' => $row->lgsaOrCity ?? null,

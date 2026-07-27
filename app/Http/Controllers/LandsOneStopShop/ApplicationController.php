@@ -513,6 +513,10 @@ class ApplicationController extends Controller
             })
             ->orderByRaw('COALESCE(p.created_at, oa.created_at) DESC');
 
+        if ($request->query('format') === 'json') {
+            $limit = 5000;
+        }
+
         $records = $query->paginate($limit)->appends($request->query());
 
         $records->getCollection()->transform(function ($row) {
@@ -601,6 +605,34 @@ class ApplicationController extends Controller
                 'land_use' => $rawLandUse,
             ]);
         });
+
+        if ($request->query('format') === 'json') {
+            $columns = [
+                ['key' => 'sn', 'label' => 'S/N'],
+                ['key' => 'pra_op_serial_number', 'label' => 'OP SERIAL NO'],
+                ['key' => 'file_no', 'label' => 'FILE NO'],
+                ['key' => 'pra_original_holder', 'label' => 'ORIGINAL HOLDER'],
+                ['key' => 'applicant_name', 'label' => 'APPLICANT NAME'],
+                ['key' => 'application_type', 'label' => 'APPLICATION TYPE'],
+                ['key' => 'plot_no', 'label' => 'PLOT'],
+                ['key' => 'location', 'label' => 'LOCATION'],
+                ['key' => 'captured_by_name', 'label' => 'COMMISSIONED BY'],
+                ['key' => 'created_at', 'label' => 'DATE CREATED'],
+            ];
+
+            $rows = $records->getCollection()->values()->map(function($r, $i) {
+                $arr = (array) $r;
+                $arr['sn'] = $i + 1;
+                return $arr;
+            })->all();
+
+            return response()->json([
+                'success' => true,
+                'columns' => $columns,
+                'data'    => $rows,
+                'count'   => count($rows),
+            ]);
+        }
 
         $states = DB::connection('sqlsrv')->table('States')->orderBy('StateName')->get();
         $lgas = DB::connection('sqlsrv')->table('lgas')->where('is_active', 1)->orderBy('name')->get();
@@ -1143,6 +1175,7 @@ class ApplicationController extends Controller
 
         $trackingId = '';
         $rofoSerialNo = '';
+        $recommendationId = 0;
         if ($fileRef) {
             $indexing = DB::connection('sqlsrv')
                 ->table('file_indexings')
@@ -1151,15 +1184,18 @@ class ApplicationController extends Controller
                 ->value('tracking_id');
             $trackingId = (string) ($indexing ?? '');
 
-            $rec = DB::connection('sqlsrv')
+            $recRow = DB::connection('sqlsrv')
                 ->table('land_recommendations')
                 ->whereRaw('UPPER(file_number) = ?', [$fileRef])
                 ->orderByDesc('id')
-                ->value('land_rofo_serial_no');
-            $rofoSerialNo = (string) ($rec ?? '');
+                ->select(['id', 'land_rofo_serial_no'])
+                ->first();
+            $recommendationId = $recRow ? (int) $recRow->id : 0;
+            $rofoSerialNo = (string) ($recRow->land_rofo_serial_no ?? '');
         }
 
         $record = (object) [
+            'id' => $recommendationId,
             'applicant_name' => strtoupper((string) $request->input('applicant_name', '')),
             'file_ref' => $fileRef,
             'purpose' => strtoupper((string) $request->input('purpose', '')),
@@ -1670,9 +1706,8 @@ class ApplicationController extends Controller
         }
 
         $partyFromOp = trim((string) (
-            $validated['party_1']
-            ?? data_get($opRecord, 'parties.party_2')
-            ?? data_get($opRecord, 'party_2')
+            $this->firstFilledValue(['party_1' => $validated['party_1'] ?? null], ['party_1'])
+            ?? $this->firstFilledValue($opRecord, ['parties.party_2', 'party_2', 'Grantee', 'grantee'])
             ?? ''
         ));
 
@@ -2802,6 +2837,16 @@ class ApplicationController extends Controller
                 $opInheritedTransactionDate = data_get($opPra, 'transaction_date') ?: ($txDate ?: null);
                 $opInheritedRegDate = data_get($opPra, 'reg_date') ?: null;
                 $opInheritedRegTime = data_get($opPra, 'reg_time') ?: null;
+                $opInheritedAllottee = trim((string) (
+                    data_get($opPra, 'party_2')
+                    ?: data_get($opPra, 'Grantee')
+                    ?: data_get($opPra, 'grantee')
+                    ?: $allottee
+                ));
+
+                if ($opInheritedAllottee === '') {
+                    throw new \RuntimeException('Failed to resolve OP Party 2 for the Transfer of Title Party 1.');
+                }
 
                 // ── Row 2: Transfer of Title ──
                 // For indexed files: allottee becomes party_1, current holder becomes party_2
@@ -2812,9 +2857,10 @@ class ApplicationController extends Controller
                 // carries its own identity so OP\u2194ToT pairs are never confused
                 // across siblings.
 
-                $totSourceTable = null;
-                $totSourceId = null;
-                if (!empty($existingOp)) {
+                $opPraRowId = data_get($opPra, 'id');
+                $totSourceTable = $opPraRowId ? 'pra' : null;
+                $totSourceId = $opPraRowId ? (int) $opPraRowId : null;
+                if (!$totSourceId && !empty($existingOp)) {
                     $totSourceTable = (string) ($existingOp['_source_table'] ?? '') ?: null;
                     $totSourceId = !empty($existingOp['id']) ? (int) $existingOp['id'] : null;
                 }
@@ -2846,14 +2892,14 @@ class ApplicationController extends Controller
                     'source' => 'FFR Direct OP Capture',
                     'system_source' => 'OSSOPCHANGEOFNAME',
                     'customer_type' => $customerType,
-                    'Grantor' => $allottee,
+                    'Grantor' => $opInheritedAllottee,
                     'Grantee' => $resolvedCurrentHolder,
-                    'party_1' => $allottee,
+                    'party_1' => $opInheritedAllottee,
                     'party_2' => $resolvedCurrentHolder,
                     'parties' => [
-                        'grantor' => $allottee,
+                        'grantor' => $opInheritedAllottee,
                         'grantee' => $resolvedCurrentHolder,
-                        'party_1' => $allottee,
+                        'party_1' => $opInheritedAllottee,
                         'party_2' => $resolvedCurrentHolder,
                     ],
                     'merger_group_id' => $mergerGroupId ?: null,

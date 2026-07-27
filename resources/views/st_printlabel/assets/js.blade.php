@@ -3,6 +3,9 @@ document.addEventListener('DOMContentLoaded', function() {
     if (typeof lucide !== 'undefined') lucide.createIcons();
 
     const LABEL_CAPACITY = 999999;
+    // Per-application-type shelf capacity (must mirror StPrintLabelController::RACK_SHELF_CAPACITY_BY_TYPE).
+    const LABEL_CAPACITY_BY_TYPE = { primary: 25, pua: 50, sua: 25 };
+    function capacityForType(t){ t=(t||'').toString().toLowerCase().trim(); return LABEL_CAPACITY_BY_TYPE[t]||LABEL_CAPACITY; }
     const ST_PREFIX = 'ST';
 
     let state = {
@@ -15,7 +18,7 @@ document.addEventListener('DOMContentLoaded', function() {
         previewInFlight: false, previewPromise: null, labelStatistics: null, rackLabelStatus: null,
         excludeAssignedFromBatch: false, reprintMode: false, batchSearchQuery: '',
         batchPagination: { current_page:1, last_page:1, per_page:20, total:0 },
-        stPrefix: ST_PREFIX, stApplicationType: '',
+        stPrefix: ST_PREFIX, stApplicationType: '', shelvesUsed: [],
     };
 
     const PRINT_TEMPLATE_URL = '/st-printlabel/print-template';
@@ -46,6 +49,8 @@ document.addEventListener('DOMContentLoaded', function() {
         state.preparedRecords = null; state.preparedBaseEntries = null; state.preparedSignature = null;
         state.previewPrepared = false; state.preparedBatchResponse = null; state.previewPromise = null;
         state.previewInFlight = false; state.labelStatistics = null;
+        state.shelvesUsed = [];
+        if (typeof updateSpilloverNotice === 'function') updateSpilloverNotice();
         updateRackStatisticsDisplay(null);
         if (!o.preserveBatchId) state.currentBatchId = null;
         if (!o.preserveReprint) state.reprintMode = false;
@@ -72,13 +77,32 @@ document.addEventListener('DOMContentLoaded', function() {
         var st = state.rackLabelStatus;
         if (!st) { ce.textContent='0'; se.textContent='Awaiting selection'; se.className='text-slate-500'; return; }
         var c = Math.max(0,parseInt(st.counter)||0);
-        ce.textContent = c;
-        se.textContent = 'Files on this label';
-        se.className = 'text-slate-500';
+        var cap = Number(st.capacity)||capacityForType(state.stApplicationType);
+        var remaining = Math.max(0, cap - c);
+        ce.textContent = c + ' / ' + cap;
+        if (remaining <= 0) {
+            se.textContent = 'Shelf full — choose another shelf';
+            se.className = 'text-red-600 font-medium';
+        } else if (remaining <= Math.ceil(cap*0.2)) {
+            se.textContent = remaining + ' slot' + (remaining===1?'':'s') + ' remaining';
+            se.className = 'text-amber-600 font-medium';
+        } else {
+            se.textContent = remaining + ' slot' + (remaining===1?'':'s') + ' remaining';
+            se.className = 'text-slate-500';
+        }
+    }
+    function updateSpilloverNotice() {
+        var el = document.getElementById('shelfSpilloverNotice');
+        if (!el) return;
+        var used = Array.isArray(state.shelvesUsed) ? state.shelvesUsed : [];
+        if (used.length <= 1) { el.style.display='none'; el.textContent=''; return; }
+        var parts = used.map(function(s){ return s.shelf + ' (' + s.count + ')'; });
+        el.style.display = '';
+        el.textContent = 'Files exceeded one shelf and were spread across ' + used.length + ' shelves: ' + parts.join(', ') + '.';
     }
     async function fetchRackLabelStatus(label) {
         var n=(label||'').trim(); if(!n){state.rackLabelStatus=null;updateRackLabelStatusDisplay();return;}
-        try{var r=await fetch(API.rackStatus+'?'+new URLSearchParams({full_label:n}));if(!r.ok)throw new Error('err');var d=await r.json();if(d.success){state.rackLabelStatus=d.data;updateRackLabelStatusDisplay();}}
+        try{var params={full_label:n};if(state.stApplicationType)params.application_type=state.stApplicationType;var r=await fetch(API.rackStatus+'?'+new URLSearchParams(params));if(!r.ok)throw new Error('err');var d=await r.json();if(d.success){state.rackLabelStatus=d.data;updateRackLabelStatusDisplay();}}
         catch(e){console.error('Rack status error:',e);state.rackLabelStatus=null;updateRackLabelStatusDisplay();}
     }
 
@@ -171,6 +195,8 @@ document.addEventListener('DOMContentLoaded', function() {
             state.labelStatistics=(result&&result.data&&result.data.label_statistics)?result.data.label_statistics:null;
             var rd=result&&result.data?result.data:null;
             if(rd&&rd.rack_label_status){state.rackLabelStatus=rd.rack_label_status;updateRackLabelStatusDisplay();}
+            state.shelvesUsed=(rd&&Array.isArray(rd.shelves_used))?rd.shelves_used:[];
+            updateSpilloverNotice();
             state.previewInFlight=false;state.previewPromise=null;
             if(rd&&rd.batch_id)state.currentBatchId=rd.batch_id;
             if(rd&&rd.source!=='existing')state.reprintMode=false;
@@ -540,6 +566,8 @@ document.addEventListener('DOMContentLoaded', function() {
             state.availableFiles=[]; state.selectedFiles=[];
             resetPreparedState();
             renderFileList(); updateCounts(); updateSelectAllCheckbox();
+            // Capacity depends on the application type — refresh the shelf status readout.
+            fetchRackLabelStatus(state.fullLabel);
         });
 
         // Optionally pull live counts and decorate option labels.

@@ -31,6 +31,7 @@
                             </button>
                         </div>
                         <div class="flex items-center gap-2">
+                            <span id="qc-status-badge" class="hidden items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold"></span>
                             <button class="btn btn-ghost btn-sm" id="zoom-out">
                                 <i data-lucide="zoom-out" class="h-4 w-4"></i>
                             </button>
@@ -41,6 +42,77 @@
                             <button class="btn btn-ghost btn-sm" id="rotate">
                                 <i data-lucide="rotate-cw" class="h-4 w-4"></i>
                             </button>
+                            <div class="w-px h-5 bg-gray-300 mx-1"></div>
+                            <button class="btn btn-sm bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1" id="qc-edit-toggle" title="Quality control tools">
+                                <i data-lucide="sliders-horizontal" class="h-4 w-4"></i>
+                                <span class="hidden sm:inline">Quality Control</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- QC / Edit toolbar (hidden until "Quality Control" is toggled) -->
+                    <div id="qc-toolbar" class="hidden border-b bg-indigo-50/60 px-3 py-2" data-apply-endpoint="{{ route('filearchive.pages.apply-edits', ['pageTyping' => '__ID__']) }}" data-qc-endpoint="{{ route('filearchive.pages.qc-status', ['pageTyping' => '__ID__']) }}">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="text-xs font-semibold text-indigo-700 uppercase tracking-wide mr-1">Edit</span>
+                            <button type="button" class="btn btn-ghost btn-sm border" id="qc-rotate-left" title="Rotate left 90°">
+                                <i data-lucide="rotate-ccw" class="h-4 w-4"></i>
+                            </button>
+                            <button type="button" class="btn btn-ghost btn-sm border" id="qc-rotate-right" title="Rotate right 90°">
+                                <i data-lucide="rotate-cw" class="h-4 w-4"></i>
+                            </button>
+                            <button type="button" class="btn btn-ghost btn-sm border flex items-center gap-1" id="qc-crop-toggle" title="Crop to a selected region">
+                                <i data-lucide="crop" class="h-4 w-4"></i><span class="text-xs">Crop</span>
+                            </button>
+                            <button type="button" class="btn btn-sm bg-amber-500 hover:bg-amber-600 text-white flex items-center gap-1 hidden" id="qc-crop-apply" title="Apply crop">
+                                <i data-lucide="check" class="h-4 w-4"></i><span class="text-xs">Apply crop</span>
+                            </button>
+                            <button type="button" class="btn btn-ghost btn-sm border flex items-center gap-1 hidden" id="qc-crop-cancel">
+                                <i data-lucide="x" class="h-4 w-4"></i><span class="text-xs">Cancel crop</span>
+                            </button>
+                            <button type="button" class="btn btn-ghost btn-sm border flex items-center gap-1" id="qc-enhance-toggle" title="Brightness / contrast">
+                                <i data-lucide="sun" class="h-4 w-4"></i><span class="text-xs">Enhance</span>
+                            </button>
+                            <button type="button" class="btn btn-ghost btn-sm border flex items-center gap-1" id="qc-replace-btn" title="Replace with a new image">
+                                <i data-lucide="upload" class="h-4 w-4"></i><span class="text-xs">Replace</span>
+                            </button>
+                            <input type="file" id="qc-replace-input" accept="image/png,image/jpeg,image/webp" class="hidden">
+
+                            <div class="flex-1"></div>
+
+                            <button type="button" class="btn btn-sm bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 disabled:opacity-50" id="qc-save-btn" disabled>
+                                <i data-lucide="save" class="h-4 w-4"></i><span class="text-xs">Save changes</span>
+                            </button>
+                            <button type="button" class="btn btn-ghost btn-sm border flex items-center gap-1" id="qc-cancel-btn">
+                                <i data-lucide="x" class="h-4 w-4"></i><span class="text-xs">Cancel</span>
+                            </button>
+                        </div>
+
+                        <!-- Enhance sliders (hidden until Enhance is toggled) -->
+                        <div id="qc-enhance-panel" class="hidden mt-2 flex flex-wrap items-center gap-4 bg-white border rounded-md p-2">
+                            <label class="flex items-center gap-2 text-xs text-gray-600">
+                                <i data-lucide="sun" class="h-3.5 w-3.5"></i> Brightness
+                                <input type="range" id="qc-brightness" min="50" max="150" value="100" class="w-32">
+                                <span id="qc-brightness-val" class="w-10 text-right font-mono">100%</span>
+                            </label>
+                            <label class="flex items-center gap-2 text-xs text-gray-600">
+                                <i data-lucide="contrast" class="h-3.5 w-3.5"></i> Contrast
+                                <input type="range" id="qc-contrast" min="50" max="150" value="100" class="w-32">
+                                <span id="qc-contrast-val" class="w-10 text-right font-mono">100%</span>
+                            </label>
+                            <button type="button" class="btn btn-ghost btn-xs border text-xs" id="qc-enhance-reset">Reset</button>
+                        </div>
+
+                        <!-- QC review decision -->
+                        <div class="mt-2 flex flex-wrap items-center gap-2 border-t border-indigo-100 pt-2">
+                            <span class="text-xs font-semibold text-indigo-700 uppercase tracking-wide mr-1">Review</span>
+                            <button type="button" class="btn btn-sm bg-green-600 hover:bg-green-700 text-white flex items-center gap-1" id="qc-pass-btn">
+                                <i data-lucide="check-circle" class="h-4 w-4"></i><span class="text-xs">Pass</span>
+                            </button>
+                            <button type="button" class="btn btn-sm bg-red-600 hover:bg-red-700 text-white flex items-center gap-1" id="qc-fail-btn">
+                                <i data-lucide="x-circle" class="h-4 w-4"></i><span class="text-xs">Fail</span>
+                            </button>
+                            <input type="text" id="qc-note" placeholder="Issue note (optional)" class="flex-1 min-w-[160px] text-sm border rounded-md px-2 py-1">
+                            <span id="qc-review-meta" class="text-xs text-gray-500"></span>
                         </div>
                     </div>
 
@@ -48,6 +120,7 @@
                         <div id="current-page-content" class="bg-white shadow-md rounded-md max-w-[900px] w-full mx-auto transition-transform" style="transform: scale(1) rotate(0deg);">
                             <div class="relative h-full w-full flex items-center justify-center">
                                 <img src="" alt="Document page" id="document-image" class="w-full max-h-[85vh] object-contain hidden">
+                                <canvas id="qc-canvas" class="max-w-full max-h-[85vh] object-contain hidden"></canvas>
                                 <iframe id="document-pdf" src="" title="Document page" class="w-full h-[85vh] hidden" frameborder="0"></iframe>
                                 <div id="document-placeholder" class="flex flex-col items-center justify-center p-6 text-center text-sm text-gray-500 gap-3" style="display: none;">
                                     <i data-lucide="file" class="h-10 w-10 text-gray-300"></i>
@@ -86,6 +159,7 @@ let rotation = 0;
 const thumbnailPlaceholder = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none"><rect width="64" height="64" rx="8" fill="#F3F4F6"/><path d="M20 18h24v28H20z" stroke="#9CA3AF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 26h16M24 32h10" stroke="#9CA3AF" stroke-width="2" stroke-linecap="round"/></svg>');
 
 function clearDocumentViewerData() {
+    if (typeof exitQcEditMode === 'function') exitQcEditMode();
     documentPages = [];
     currentFileMeta = null;
     currentPageIndex = 0;
@@ -274,6 +348,7 @@ function selectPage(index) {
 
     updatePageIndicator();
     updateTransform();
+    refreshQcUi();
 }
 
 function showEmptyState(message = 'No pages available for this document.') {
@@ -430,5 +505,436 @@ document.addEventListener('DOMContentLoaded', function() {
                 break;
         }
     });
+});
+
+/* ============================================================
+ * Quality Control — in-viewer editing (rotate/enhance/replace)
+ * + pass/fail review. Edits overwrite the image in place; the
+ * stored filename/path never changes (server backs up original).
+ * ============================================================ */
+let qcEditMode = false;
+let qcDirty = false;
+let qcBaseImage = null;          // HTMLImageElement of the current (or replacement) image
+let qcRotation = 0;              // 0/90/180/270
+let qcBrightness = 100;          // percent
+let qcContrast = 100;            // percent
+let qcCropping = false;          // crop selection in progress/armed
+let qcCropStart = null;          // {x, y} viewport coords of drag start
+let qcCropRect = null;           // {left, top, w, h} viewport coords of selection
+
+function qcEndpoint(kind) {
+    const toolbar = document.getElementById('qc-toolbar');
+    const page = documentPages[currentPageIndex];
+    if (!toolbar || !page || !page.pagetyping_id) return null;
+    const tpl = kind === 'apply'
+        ? toolbar.getAttribute('data-apply-endpoint')
+        : toolbar.getAttribute('data-qc-endpoint');
+    return tpl ? tpl.replace('__ID__', page.pagetyping_id) : null;
+}
+
+function qcCsrf() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : '';
+}
+
+function refreshQcUi() {
+    const page = documentPages[currentPageIndex];
+    // Any page change leaves edit mode without saving.
+    if (qcEditMode) exitQcEditMode();
+
+    const badge = document.getElementById('qc-status-badge');
+    const toggle = document.getElementById('qc-edit-toggle');
+    const meta = document.getElementById('qc-review-meta');
+    const editable = !!(page && page.is_editable);
+
+    if (toggle) {
+        toggle.disabled = !editable;
+        toggle.classList.toggle('opacity-50', !editable);
+        toggle.title = editable ? 'Quality control tools' : 'Only image pages can be edited';
+    }
+
+    if (badge) {
+        const status = page ? (page.qc_status || 'pending') : 'pending';
+        const map = {
+            passed: { t: 'QC Passed', c: 'bg-green-100 text-green-700' },
+            failed: { t: 'QC Failed', c: 'bg-red-100 text-red-700' },
+            pending: { t: 'QC Pending', c: 'bg-gray-100 text-gray-600' },
+        };
+        const cfg = map[status] || map.pending;
+        badge.className = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ' + cfg.c;
+        badge.textContent = cfg.t;
+        badge.classList.remove('hidden');
+    }
+
+    if (meta) {
+        if (page && page.qc_reviewed_by) {
+            meta.textContent = 'Reviewed by ' + page.qc_reviewed_by + (page.qc_reviewed_at ? ' · ' + page.qc_reviewed_at : '');
+        } else {
+            meta.textContent = 'Not yet reviewed';
+        }
+    }
+    const noteInput = document.getElementById('qc-note');
+    if (noteInput) noteInput.value = (page && page.qc_override_note) ? page.qc_override_note : '';
+}
+
+function qcRenderCanvas() {
+    const canvas = document.getElementById('qc-canvas');
+    if (!canvas || !qcBaseImage) return;
+    const ctx = canvas.getContext('2d');
+    const w = qcBaseImage.naturalWidth;
+    const h = qcBaseImage.naturalHeight;
+    const swap = (qcRotation === 90 || qcRotation === 270);
+    canvas.width = swap ? h : w;
+    canvas.height = swap ? w : h;
+
+    ctx.save();
+    ctx.filter = 'brightness(' + qcBrightness + '%) contrast(' + qcContrast + '%)';
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate(qcRotation * Math.PI / 180);
+    ctx.drawImage(qcBaseImage, -w / 2, -h / 2);
+    ctx.restore();
+}
+
+function qcMarkDirty() {
+    qcDirty = true;
+    const save = document.getElementById('qc-save-btn');
+    if (save) save.disabled = false;
+}
+
+function qcShowBrokenCanvas() {
+    qcBaseImage = null; // nothing to rotate/crop/enhance until a Replace happens
+    const canvas = document.getElementById('qc-canvas');
+    if (!canvas) return;
+    canvas.width = 800;
+    canvas.height = 1035;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#f9fafb';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(12, 12, canvas.width - 24, canvas.height - 24);
+    ctx.fillStyle = '#9ca3af';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 30px sans-serif';
+    ctx.fillText('Image unavailable', canvas.width / 2, canvas.height / 2 - 12);
+    ctx.font = '20px sans-serif';
+    ctx.fillText('Click "Replace" to upload a new image for this page.', canvas.width / 2, canvas.height / 2 + 26);
+    canvas.classList.remove('hidden');
+    const save = document.getElementById('qc-save-btn');
+    if (save) save.disabled = true; // stays disabled until a replacement is chosen
+    qcToast('This image is broken or missing — use Replace to upload a new one.');
+}
+
+function enterQcEditMode() {
+    const page = documentPages[currentPageIndex];
+    if (!page || !page.is_editable) return;
+
+    qcEditMode = true;
+    qcDirty = false;
+    qcRotation = 0;
+    qcBrightness = 100;
+    qcContrast = 100;
+
+    document.getElementById('qc-toolbar').classList.remove('hidden');
+    document.getElementById('qc-enhance-panel').classList.add('hidden');
+    ['qc-brightness', 'qc-contrast'].forEach(id => { const el = document.getElementById(id); if (el) el.value = 100; });
+    document.getElementById('qc-brightness-val').textContent = '100%';
+    document.getElementById('qc-contrast-val').textContent = '100%';
+    const save = document.getElementById('qc-save-btn'); if (save) save.disabled = true;
+
+    // Neutralise the view-only transform while editing on the canvas.
+    const content = document.getElementById('current-page-content');
+    if (content) content.style.transform = 'scale(1) rotate(0deg)';
+
+    const img = document.getElementById('document-image');
+    const canvas = document.getElementById('qc-canvas');
+    if (img) img.classList.add('hidden');
+
+    // Broken/missing image (no source URL) → go straight to the replace canvas.
+    if (!page.viewer_url || page.is_broken) {
+        qcShowBrokenCanvas();
+        return;
+    }
+
+    qcBaseImage = new Image();
+    qcBaseImage.onload = function () {
+        qcRenderCanvas();
+        if (canvas) canvas.classList.remove('hidden');
+    };
+    qcBaseImage.onerror = function () {
+        // The URL existed but the file won't decode — treat as broken so the
+        // reviewer can still Replace it.
+        qcShowBrokenCanvas();
+    };
+    // Same-origin public-disk image → canvas stays untainted for toBlob().
+    qcBaseImage.src = (page.viewer_url || '').split('?')[0] + '?edit=' + Date.now();
+}
+
+function exitQcEditMode() {
+    qcCancelCrop();
+    qcEditMode = false;
+    qcDirty = false;
+    qcBaseImage = null;
+    const toolbar = document.getElementById('qc-toolbar');
+    if (toolbar) toolbar.classList.add('hidden');
+    const canvas = document.getElementById('qc-canvas');
+    if (canvas) canvas.classList.add('hidden');
+    const img = document.getElementById('document-image');
+    const page = documentPages[currentPageIndex];
+    if (img && page && page.media_type === 'image' && page.viewer_url) {
+        img.classList.remove('hidden');
+    }
+    updateTransform();
+}
+
+/* ---- Crop: drag a rectangle over the canvas, then apply ---- */
+function qcCropOverlayEl() {
+    let el = document.getElementById('qc-crop-rect');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'qc-crop-rect';
+        el.className = 'fixed z-[70] border-2 border-dashed border-amber-500 bg-amber-400/20 pointer-events-none';
+        el.style.display = 'none';
+        document.body.appendChild(el);
+    }
+    return el;
+}
+
+function qcStartCropMode() {
+    if (!qcEditMode || !qcBaseImage) return;
+    qcCropping = true;
+    qcCropStart = null;
+    qcCropRect = null;
+    const canvas = document.getElementById('qc-canvas');
+    if (canvas) canvas.style.cursor = 'crosshair';
+    document.getElementById('qc-crop-apply').classList.remove('hidden');
+    document.getElementById('qc-crop-cancel').classList.remove('hidden');
+    document.getElementById('qc-crop-toggle').classList.add('hidden');
+    qcToast('Drag a rectangle over the page, then "Apply crop".');
+}
+
+function qcCancelCrop() {
+    qcCropping = false;
+    qcCropStart = null;
+    qcCropRect = null;
+    const overlay = document.getElementById('qc-crop-rect');
+    if (overlay) overlay.style.display = 'none';
+    const canvas = document.getElementById('qc-canvas');
+    if (canvas) canvas.style.cursor = '';
+    ['qc-crop-apply', 'qc-crop-cancel'].forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
+    const toggle = document.getElementById('qc-crop-toggle');
+    if (toggle && qcEditMode) toggle.classList.remove('hidden');
+}
+
+function qcCropMouseDown(e) {
+    if (!qcCropping) return;
+    const canvas = document.getElementById('qc-canvas');
+    const rect = canvas.getBoundingClientRect();
+    if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) return;
+    e.preventDefault();
+    qcCropStart = { x: e.clientX, y: e.clientY };
+    qcCropRect = null;
+}
+
+function qcCropMouseMove(e) {
+    if (!qcCropping || !qcCropStart) return;
+    const overlay = qcCropOverlayEl();
+    const left = Math.min(qcCropStart.x, e.clientX);
+    const top = Math.min(qcCropStart.y, e.clientY);
+    const w = Math.abs(e.clientX - qcCropStart.x);
+    const h = Math.abs(e.clientY - qcCropStart.y);
+    qcCropRect = { left, top, w, h };
+    overlay.style.display = 'block';
+    overlay.style.left = left + 'px';
+    overlay.style.top = top + 'px';
+    overlay.style.width = w + 'px';
+    overlay.style.height = h + 'px';
+}
+
+function qcCropMouseUp() {
+    if (!qcCropping) return;
+    qcCropStart = null; // selection kept in qcCropRect until Apply
+}
+
+function qcApplyCrop() {
+    const canvas = document.getElementById('qc-canvas');
+    if (!canvas || !qcCropRect || qcCropRect.w < 8 || qcCropRect.h < 8) {
+        qcToast('Draw a larger selection first.');
+        return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    let sx = Math.max(0, (qcCropRect.left - rect.left) * scaleX);
+    let sy = Math.max(0, (qcCropRect.top - rect.top) * scaleY);
+    let sw = Math.min(canvas.width - sx, qcCropRect.w * scaleX);
+    let sh = Math.min(canvas.height - sy, qcCropRect.h * scaleY);
+    if (sw < 1 || sh < 1) { qcToast('Selection is outside the page.'); return; }
+
+    // Bake the currently displayed canvas (rotation + enhance already applied) into the crop.
+    const tmp = document.createElement('canvas');
+    tmp.width = Math.round(sw);
+    tmp.height = Math.round(sh);
+    tmp.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, tmp.width, tmp.height);
+
+    const dataUrl = tmp.toDataURL('image/jpeg', 0.95);
+    qcCancelCrop();
+    // Flatten: cropped result becomes the new base; reset transform/filters.
+    qcRotation = 0;
+    qcBrightness = 100;
+    qcContrast = 100;
+    ['qc-brightness', 'qc-contrast'].forEach(id => { const el = document.getElementById(id); if (el) el.value = 100; });
+    document.getElementById('qc-brightness-val').textContent = '100%';
+    document.getElementById('qc-contrast-val').textContent = '100%';
+    qcBaseImage = new Image();
+    qcBaseImage.onload = function () { qcRenderCanvas(); qcMarkDirty(); };
+    qcBaseImage.src = dataUrl;
+}
+
+function qcSave() {
+    const canvas = document.getElementById('qc-canvas');
+    const url = qcEndpoint('apply');
+    if (!canvas || !url) return;
+
+    const saveBtn = document.getElementById('qc-save-btn');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.querySelector('span').textContent = 'Saving…'; }
+
+    canvas.toBlob(function (blob) {
+        if (!blob) { alert('Could not read the edited image.'); return; }
+        const form = new FormData();
+        form.append('file', blob, 'qc-edit.jpg');
+
+        fetch(url, {
+            method: 'POST',
+            headers: { 'X-CSRF-TOKEN': qcCsrf(), 'Accept': 'application/json' },
+            body: form,
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) throw new Error(data.message || 'Save failed');
+            const page = documentPages[currentPageIndex];
+            if (page && data.viewer_url) {
+                page.viewer_url = data.viewer_url;
+                page.thumbnail_url = data.viewer_url;
+                page.media_type = 'image'; // a broken page is now a real image
+                page.is_broken = false;
+            }
+            exitQcEditMode();
+            // Re-render the (now overwritten) image + thumbnail with the cache-busted URL.
+            renderPagesList();
+            selectPage(currentPageIndex);
+            qcToast('Document updated — filename unchanged.');
+        })
+        .catch(err => alert('Unable to save: ' + err.message))
+        .finally(() => {
+            if (saveBtn) { saveBtn.querySelector('span').textContent = 'Save changes'; }
+        });
+    }, 'image/jpeg', 0.95);
+}
+
+function qcSetStatus(status) {
+    const url = qcEndpoint('qc');
+    if (!url) return;
+    const note = document.getElementById('qc-note');
+    const form = new FormData();
+    form.append('qc_status', status);
+    if (note && note.value.trim()) form.append('qc_override_note', note.value.trim());
+    if (status === 'failed') form.append('has_qc_issues', '1');
+
+    fetch(url, {
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': qcCsrf(), 'Accept': 'application/json' },
+        body: form,
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.success) throw new Error(data.message || 'Failed to save QC status');
+        const page = documentPages[currentPageIndex];
+        if (page) {
+            page.qc_status = data.qc_status;
+            page.qc_reviewed_by = data.qc_reviewed_by;
+            page.qc_reviewed_at = data.qc_reviewed_at;
+            page.qc_override_note = data.qc_override_note;
+            page.has_qc_issues = data.has_qc_issues;
+        }
+        // Update the badge/meta without leaving edit mode.
+        const badge = document.getElementById('qc-status-badge');
+        const map = {
+            passed: { t: 'QC Passed', c: 'bg-green-100 text-green-700' },
+            failed: { t: 'QC Failed', c: 'bg-red-100 text-red-700' },
+            pending: { t: 'QC Pending', c: 'bg-gray-100 text-gray-600' },
+        };
+        const cfg = map[data.qc_status] || map.pending;
+        if (badge) { badge.className = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ' + cfg.c; badge.textContent = cfg.t; badge.classList.remove('hidden'); }
+        const meta = document.getElementById('qc-review-meta');
+        if (meta && data.qc_reviewed_by) meta.textContent = 'Reviewed by ' + data.qc_reviewed_by + (data.qc_reviewed_at ? ' · ' + data.qc_reviewed_at : '');
+        qcToast(status === 'passed' ? 'Marked as QC passed.' : 'Marked as QC failed.');
+    })
+    .catch(err => alert(err.message));
+}
+
+function qcToast(msg) {
+    let el = document.getElementById('qc-toast');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'qc-toast';
+        el.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-gray-900 text-white text-sm px-4 py-2 rounded-md shadow-lg transition-opacity';
+        document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.style.opacity = '1';
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.style.opacity = '0'; }, 2500);
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    const on = (id, evt, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(evt, fn); };
+
+    on('qc-edit-toggle', 'click', () => { qcEditMode ? exitQcEditMode() : enterQcEditMode(); if (window.lucide) lucide.createIcons(); });
+    on('qc-cancel-btn', 'click', () => {
+        if (qcDirty && !confirm('Discard unsaved edits?')) return;
+        exitQcEditMode();
+    });
+    on('qc-rotate-left', 'click', () => { if (!qcEditMode) return; qcRotation = (qcRotation + 270) % 360; qcRenderCanvas(); qcMarkDirty(); });
+    on('qc-rotate-right', 'click', () => { if (!qcEditMode) return; qcRotation = (qcRotation + 90) % 360; qcRenderCanvas(); qcMarkDirty(); });
+    on('qc-enhance-toggle', 'click', () => { document.getElementById('qc-enhance-panel').classList.toggle('hidden'); });
+    on('qc-enhance-reset', 'click', () => {
+        qcBrightness = 100; qcContrast = 100;
+        document.getElementById('qc-brightness').value = 100;
+        document.getElementById('qc-contrast').value = 100;
+        document.getElementById('qc-brightness-val').textContent = '100%';
+        document.getElementById('qc-contrast-val').textContent = '100%';
+        qcRenderCanvas(); qcMarkDirty();
+    });
+    on('qc-brightness', 'input', (e) => { qcBrightness = parseInt(e.target.value, 10); document.getElementById('qc-brightness-val').textContent = qcBrightness + '%'; qcRenderCanvas(); qcMarkDirty(); });
+    on('qc-contrast', 'input', (e) => { qcContrast = parseInt(e.target.value, 10); document.getElementById('qc-contrast-val').textContent = qcContrast + '%'; qcRenderCanvas(); qcMarkDirty(); });
+
+    on('qc-replace-btn', 'click', () => { const i = document.getElementById('qc-replace-input'); if (i) i.click(); });
+    on('qc-replace-input', 'change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            qcRotation = 0;
+            qcBaseImage = new Image();
+            qcBaseImage.onload = () => { qcRenderCanvas(); document.getElementById('qc-canvas').classList.remove('hidden'); qcMarkDirty(); };
+            qcBaseImage.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+        e.target.value = '';
+    });
+
+    on('qc-crop-toggle', 'click', qcStartCropMode);
+    on('qc-crop-apply', 'click', qcApplyCrop);
+    on('qc-crop-cancel', 'click', qcCancelCrop);
+
+    const canvasEl = document.getElementById('qc-canvas');
+    if (canvasEl) canvasEl.addEventListener('mousedown', qcCropMouseDown);
+    document.addEventListener('mousemove', qcCropMouseMove);
+    document.addEventListener('mouseup', qcCropMouseUp);
+
+    on('qc-save-btn', 'click', qcSave);
+    on('qc-pass-btn', 'click', () => qcSetStatus('passed'));
+    on('qc-fail-btn', 'click', () => qcSetStatus('failed'));
 });
 </script>

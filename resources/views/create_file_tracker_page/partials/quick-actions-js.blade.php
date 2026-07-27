@@ -1,4 +1,4 @@
-﻿<script>
+<script>
     // Quick Actions functionality
     const QuickActions = {
         searchRequest: null,
@@ -1186,6 +1186,33 @@
             const trackingId = tracker.trackingId || query || '—';
             const fileName = tracker.fileName || 'Unnamed File';
 
+            const row = (l, v) => v ? `
+                <div class="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
+                    <span class="text-xs font-semibold text-gray-500">${l}</span>
+                    <span class="text-xs font-bold text-gray-900 text-right">${self.escapeHtml(v)}</span>
+                </div>` : '';
+
+            let receivingOfficerRow = '';
+            if (tracker.status === 'IN_TRANSIT') {
+                let dept = (tracker.receivingDepartment || '').trim();
+                if (dept && !/department$/i.test(dept)) dept = dept + ' Department';
+                receivingOfficerRow = row('Receiving Officer (holder)', tracker.receivingOfficerName)
+                                    + row('Department', dept || tracker.currentOffice);
+            } else {
+                receivingOfficerRow = row('Current Location (Expected)', tracker.currentOffice)
+                                    + row('Receiving Officer', 'Archive');
+            }
+
+            const detailsHtml = `
+                <div class="mb-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-left">
+                    ${row('Registry', tracker.registry || 'Registry / Archive')}
+                    ${row('Shelf/Rack', tracker.rackShelfLocation || '—')}
+                    ${receivingOfficerRow}
+                    ${row('Logged Out', tracker.loggedOutAt)}
+                    ${row('Duration with holder', tracker.durationWithHolder)}
+                </div>
+            `;
+
             const html = `
                 <div class="space-y-5 text-left">
                     <div class="flex items-start gap-3">
@@ -1197,29 +1224,18 @@
                             <p class="text-sm text-gray-600">We added the tracker to the log panel. Use the shortcuts below to jump to it.</p>
                         </div>
                     </div>
-                    <div class="grid gap-4 sm:grid-cols-2">
 
-                        <div>
-                            <p class="text-xs font-semibold uppercase text-gray-500">File Number</p>
-                            <p class="mt-1 text-sm font-semibold text-gray-900">${self.escapeHtml(fileNo)}</p>
+                    ${detailsHtml}
+
+                    <div class="mb-3 rounded-lg border border-gray-200 mt-4 text-left" data-movement-timeline>
+                        <div class="px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-600 flex items-center gap-2">
+                            <i data-lucide="route" class="h-3.5 w-3.5"></i> Movement Timeline
                         </div>
-                        <div>
-                            <p class="text-xs font-semibold uppercase text-gray-500">Applicant / File Name</p>
-                            <p class="mt-1 text-sm text-gray-900">${self.escapeHtml(fileName)}</p>
-                        </div>
-                        <div>
-                            <p class="text-xs font-semibold uppercase text-gray-500">Current Office</p>
-                            <p class="mt-1 text-sm text-gray-900">${self.escapeHtml(office.name)} <span class="text-xs text-gray-500">(${self.escapeHtml(office.code || '—')})</span></p>
-                        </div>
-                        <div>
-                            <p class="text-xs font-semibold uppercase text-gray-500">Status</p>
-                            <span class="mt-1 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusClass}">${statusLabel}</span>
-                        </div>
-                        <div>
-                            <p class="text-xs font-semibold uppercase text-gray-500">Created</p>
-                            <p class="mt-1 text-sm text-gray-900">${self.escapeHtml(createdAt)}</p>
+                        <div class="px-4 pb-3 pt-3">
+                            <div class="modal-movement-timeline"></div>
                         </div>
                     </div>
+
                     <div class="flex flex-wrap gap-2 pt-2">
                         <button type="button" class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700" data-action="focus-tracker">
                             <i data-lucide="panel-left-open" class="mr-2 h-4 w-4"></i>
@@ -1241,6 +1257,11 @@
             lucide.createIcons();
 
             const container = $('#search-results');
+
+            const movementDetails = container.find('[data-movement-timeline]')[0];
+            if (movementDetails) {
+                self.toggleMovementTimeline(fileNo, movementDetails, tracker.originRegistry, tracker.rackShelfLocation);
+            }
 
             container.find('[data-action="focus-tracker"]').on('click', function () {
                 self.closeModal('search-files-modal');
@@ -1302,45 +1323,15 @@
 
             const html = `
                 <div class="space-y-5 text-left">
-                    <div class="flex items-start gap-3">
-                        <span class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-600">
-                            <i data-lucide="archive" class="h-5 w-5"></i>
-                        </span>
-                        <div>
-                            <p class="text-base font-semibold text-blue-700">Archive record identified</p>
-                            <p class="text-sm text-gray-600">No active tracker exists yet. Use the details below to prefill the create form.</p>
+                    <div class="mb-3 rounded-lg border border-gray-200 mt-4 text-left" data-movement-timeline>
+                        <div class="px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-600 flex items-center gap-2">
+                            <i data-lucide="route" class="h-3.5 w-3.5"></i> Movement Timeline
+                        </div>
+                        <div class="px-4 pb-3 pt-3">
+                            <div class="modal-movement-timeline"></div>
                         </div>
                     </div>
-                    <div class="grid gap-4 sm:grid-cols-2">
-                        <div>
-                            <p class="text-xs font-semibold uppercase text-gray-500">File Number</p>
-                            <p class="mt-1 text-sm font-semibold text-gray-900">${fileNumber}</p>
-                        </div>
-                        <div>
-                            <p class="text-xs font-semibold uppercase text-gray-500">Tracking ID</p>
-                            <p class="mt-1 text-sm font-mono text-gray-900">${trackingId}</p>
-                        </div>
-                        <div>
-                            <p class="text-xs font-semibold uppercase text-gray-500">Applicant / File Name</p>
-                            <p class="mt-1 text-sm text-gray-900">${fileName}</p>
-                        </div>
-                        <div>
-                            <p class="text-xs font-semibold uppercase text-gray-500">Archive Location</p>
-                            <p class="mt-1 text-sm text-gray-900">${location}</p>
-                        </div>
-                        <div>
-                            <p class="text-xs font-semibold uppercase text-gray-500">Source</p>
-                            <p class="mt-1 text-sm text-gray-900">${source}</p>
-                        </div>
-                        <div>
-                            <p class="text-xs font-semibold uppercase text-gray-500">Created</p>
-                            <p class="mt-1 text-sm text-gray-900">${created}</p>
-                        </div>
-                        <div class="sm:col-span-2">
-                            <p class="text-xs font-semibold uppercase text-gray-500">Decommissioning Notes</p>
-                            <p class="mt-1 text-sm text-gray-700">${reason}</p>
-                        </div>
-                    </div>
+
                     <div class="flex flex-wrap gap-2 pt-2">
                         <button type="button" class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700" data-action="prefill-tracker">
                             <i data-lucide="plus" class="mr-2 h-4 w-4"></i>
@@ -1358,6 +1349,11 @@
             lucide.createIcons();
 
             const container = $('#search-results');
+
+            const movementDetails = container.find('[data-movement-timeline]')[0];
+            if (movementDetails) {
+                self.toggleMovementTimeline(record.file_number, movementDetails, record.location, record.rack_shelf_location);
+            }
 
             container.find('[data-action="prefill-tracker"]').on('click', function () {
                 if (typeof prefillCreateFormFromArchive === 'function') {
@@ -2480,6 +2476,263 @@
 
     QuickActions.clearFileMovementInfo = function () {
         $('#modal-movement-file-info').addClass('hidden');
+    };
+
+    // ── Movement Timeline functions ported from quick_search.blade.php
+    QuickActions.toggleMovementTimeline = async function (fileNumber, detailsEl, originRegistry, rackShelf) {
+        const container = detailsEl.querySelector('.modal-movement-timeline');
+        if (!container || !detailsEl) return;
+        if (container.dataset.loaded === '1') return;
+
+        const esc = QuickActions.escapeHtml;
+        const TRACK_URL = '/api/file-trackers/track';
+
+        container.innerHTML = `<div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-500">Loading movement history for <strong>${esc(fileNumber)}</strong>…</div>`;
+
+        const archiveHomeRow = `
+            <div class="relative pl-6 pb-3 text-left">
+                <span class="absolute left-[6px] top-0 bottom-0 w-0.5 bg-gray-200"></span>
+                <span class="absolute left-0 top-px h-[15px] w-[15px] rounded-full bg-emerald-500 border-2 border-gray-200 flex items-center justify-center">
+                    <i data-lucide="archive" class="h-2 w-2 text-white"></i>
+                </span>
+                <div class="flex items-start justify-between gap-2 flex-wrap">
+                    <div>
+                        <div class="text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-0.5">Archive / Registry</div>
+                        <div class="text-[13px] font-bold text-gray-900">${esc(originRegistry || 'Registry / Archive')}${rackShelf ? ` — Shelf/Rack ${esc(rackShelf)}` : ''}</div>
+                    </div>
+                    <span class="inline-flex items-center rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 text-[11px] font-bold whitespace-nowrap">In Archive</span>
+                </div>
+            </div>`;
+
+        try {
+            const res  = await fetch(`${TRACK_URL}/${encodeURIComponent(fileNumber)}`, { headers: { 'Accept': 'application/json' } });
+            const json = await res.json();
+            if (!json || !json.success || !json.data) {
+                container.innerHTML = `${archiveHomeRow}<div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-600">Could not load movement history.</div>`;
+            } else {
+                const currentLogs = Array.isArray(json.data.movement_history) ? json.data.movement_history : [];
+                const priorLogs   = Array.isArray(json.data.prior_movements) ? json.data.prior_movements : [];
+                const allLogs     = [...priorLogs, ...currentLogs].sort(QuickActions.compareMovementEntries);
+                if (!allLogs.length) {
+                    container.innerHTML = `${archiveHomeRow}<div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-500">No movement history available for this file.</div>`;
+                } else {
+                    const approvalPurposes = ['recommendation', 'approval'];
+                    const movementLogs = allLogs.filter(e => !approvalPurposes.includes(String(e.purpose || '').toLowerCase()));
+                    const approvalLogs = allLogs.filter(e => approvalPurposes.includes(String(e.purpose || '').toLowerCase()));
+                    const trackerMeta = {
+                        requestPurposeName: json.data.request_purpose_name || '',
+                        timelineStatus: json.data.timeline_status || null,
+                        daysUntilDeadline: (json.data.days_until_deadline === null || json.data.days_until_deadline === undefined) ? null : Number(json.data.days_until_deadline),
+                        expectedReturnDate: json.data.deadline || null,
+                    };
+                    container.innerHTML = `
+                        ${priorLogs.length ? `<div class="mb-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-500">Tracking cycles for this file.</div>` : ''}
+                        <div>
+                            ${archiveHomeRow}
+                            ${movementLogs.length ? movementLogs.map(e => QuickActions.renderMovementRow(e, trackerMeta)).join('') : `<div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-500">No physical movement entries found. Approval steps may still be present below.</div>`}
+                        </div>
+                        ${approvalLogs.length ? `
+                        <div class="mt-4 mb-2 text-[10px] font-extrabold uppercase tracking-wider text-gray-500">Workflow Approvals</div>
+                        <div class="space-y-2">${approvalLogs.map(e => QuickActions.renderApprovalRow(e)).join('')}</div>` : ''}`;
+                    container.dataset.loaded = '1';
+                }
+            }
+        } catch (e) {
+            container.innerHTML = `<div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-600">Error loading movement history: ${esc(e.message)}</div>`;
+        }
+        if (window.lucide) window.lucide.createIcons();
+    };
+
+    QuickActions.compareMovementEntries = function (a, b) {
+        return QuickActions.movementEntryTimestamp(a) - QuickActions.movementEntryTimestamp(b);
+    };
+
+    QuickActions.movementEntryTimestamp = function (entry) {
+        const parseDateTime = (date, time) => {
+            const d = (date || '').toString().trim();
+            if (!d) return null;
+            const t = (time || '').toString().trim() || '00:00';
+            const parsed = Date.parse(`${d} ${t}`);
+            return Number.isNaN(parsed) ? null : parsed;
+        };
+        const inTs = parseDateTime(entry.log_in_date || entry.logInDate, entry.log_in_time || entry.logInTime);
+        if (inTs !== null) return inTs;
+        const outTs = parseDateTime(entry.log_out_date || entry.logOutDate, entry.log_out_time || entry.logOutTime);
+        if (outTs !== null) return outTs;
+        const createdTs = Date.parse(entry.created_at || entry.createdAt || '');
+        return Number.isNaN(createdTs) ? Number.POSITIVE_INFINITY : createdTs;
+    };
+
+    QuickActions.mtToAmPm = function (timeStr) {
+        if (!timeStr) return '';
+        const parts = timeStr.toString().trim().split(':');
+        if (parts.length < 2) return timeStr;
+        let h = parseInt(parts[0], 10);
+        const m = parts[1].padStart(2, '0');
+        if (isNaN(h)) return timeStr;
+        const period = h >= 12 ? 'PM' : 'AM';
+        h = h % 12 || 12;
+        return `${h}:${m} ${period}`;
+    };
+
+    QuickActions.formatMovementDate = function (date, time) {
+        const esc = QuickActions.escapeHtml;
+        const d = (date || '').toString().trim();
+        if (!d) return '—';
+        if (!time) return esc(d);
+        return `${esc(d)} ${esc(QuickActions.mtToAmPm(time))}`;
+    };
+
+    QuickActions.resolveMovementStatus = function (entry) {
+        const rawOverride = (entry.status_label || entry.statusLabel || entry.new_status || entry.newStatus || '').toString().trim();
+        const rawStatus = (entry.status || '').toString().trim().toLowerCase();
+        const normalize = (value) => value.toLowerCase().replace(/_/g, ' ');
+
+        if (rawOverride) {
+            switch (normalize(rawOverride)) {
+                case 'log-in':
+                case 'log in':
+                    return { label: 'Log-in', style: 'background:#d1fae5;color:#166534;border:1px solid #a7f3d0;' };
+                case 'log-out':
+                case 'log out':
+                    return { label: 'Log-out', style: 'background:#d1fae5;color:#166534;border:1px solid #a7f3d0;' };
+                case 'pending acceptance':
+                case 'in-transit':
+                case 'in transit':
+                    return { label: 'In-Transit', style: 'background:#fef9c3;color:#78350f;border:1px solid #fde68a;' };
+                case 'rejected':
+                    return { label: 'Rejected', style: 'background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;' };
+                case 'cancelled':
+                case 'canceled':
+                    return { label: 'Cancelled', style: 'background:#f3f4f6;color:#4b5563;border:1px solid #d1d5db;' };
+                default:
+                    return { label: rawOverride, style: 'background:#e0e7ff;color:#3730a3;border:1px solid #c7d2fe;' };
+            }
+        }
+        switch (rawStatus) {
+            case 'pending_acceptance':
+                return { label: 'In-Transit', style: 'background:#fef9c3;color:#78350f;border:1px solid #fde68a;' };
+            case 'active':
+                return { label: 'Log-out', style: 'background:#d1fae5;color:#166534;border:1px solid #a7f3d0;' };
+            case 'completed':
+                return { label: 'Log-in', style: 'background:#d1fae5;color:#166534;border:1px solid #a7f3d0;' };
+            case 'rejected':
+                return { label: 'Rejected', style: 'background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;' };
+            default:
+                return { label: String(entry.status || 'Completed').replace(/_/g, ' '), style: 'background:#e0e7ff;color:#3730a3;border:1px solid #c7d2fe;' };
+        }
+    };
+
+    QuickActions.formatTimelineMeta = function (meta) {
+        const byStatus = {
+            green:   { color: '#166534', bg: '#d1fae5', border: '#a7f3d0' },
+            amber:   { color: '#78350f', bg: '#fef9c3', border: '#fde68a' },
+            red:     { color: '#b91c1c', bg: '#fee2e2', border: '#fecaca' },
+            pending: { color: '#475569', bg: '#e2e8f0', border: '#cbd5e1' },
+        };
+        if (!meta || !meta.timelineStatus || !byStatus[meta.timelineStatus]) return null;
+        if (meta.timelineStatus === 'pending') {
+            return { label: 'Pending', icon: 'fa-clock', ...byStatus.pending };
+        }
+        const days = meta.daysUntilDeadline;
+        let label;
+        if (days === null || days === undefined) {
+            label = { green: 'On Track', amber: 'Due Soon', red: 'Overdue' }[meta.timelineStatus];
+        } else if (days > 0) {
+            label = `${days} day${days === 1 ? '' : 's'} left`;
+        } else if (days === 0) {
+            label = 'Due today';
+        } else {
+            const abs = Math.abs(days);
+            label = `${abs} day${abs === 1 ? '' : 's'} overdue`;
+        }
+        return { label, ...byStatus[meta.timelineStatus] };
+    };
+
+    QuickActions.formatExpectedReturnDate = function (value) {
+        const esc = QuickActions.escapeHtml;
+        if (!value) return '—';
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) return esc(String(value).slice(0, 10));
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        return `${dd}/${mm}/${d.getFullYear()}`;
+    };
+
+    QuickActions.renderMovementRow = function (entry, trackerMeta) {
+        const esc = QuickActions.escapeHtml;
+        const office = esc(entry.office_name || entry.office || entry.receiving_office_name || 'Unknown');
+        const status = QuickActions.resolveMovementStatus(entry);
+        const statusLower = (status.label || '').trim().toLowerCase();
+        const isCompletedStatus = statusLower === 'completed' || statusLower === 'complete' || (entry.status || '').toString().trim().toLowerCase() === 'completed';
+        const officer = isCompletedStatus
+            ? 'Archive'
+            : esc(entry.receiving_officer_name || entry.receivingOfficerName || entry.accepted_by_name || '-');
+        const hasLogIn = status.label === 'Log-in' || status.label === 'Completed';
+        const inDate = hasLogIn
+            ? QuickActions.formatMovementDate(entry.log_in_date || entry.logInDate, entry.log_in_time || entry.logInTime)
+            : '-';
+        const outDateRaw = entry.log_out_date || entry.logOutDate;
+        const outTimeRaw = entry.log_out_time || entry.logOutTime;
+        const outDate = outDateRaw
+            ? QuickActions.formatMovementDate(outDateRaw, outTimeRaw)
+            : ['active', 'pending_acceptance', 'in-transit', 'in transit'].includes((entry.status || '').toString().trim().toLowerCase())
+                ? 'In transit' : '-';
+        const notes = entry.notes ? `<div class="mt-2 text-xs text-gray-500">${esc(entry.notes)}</div>` : '';
+        const timelineMeta = QuickActions.formatTimelineMeta(trackerMeta);
+        const requestPurposeName = trackerMeta && trackerMeta.requestPurposeName ? esc(trackerMeta.requestPurposeName) : '—';
+        const expectedReturnDate = QuickActions.formatExpectedReturnDate(trackerMeta && trackerMeta.expectedReturnDate);
+        const delayReason = entry.delay_reason ? esc(entry.delay_reason) : '—';
+
+        return `
+            <div class="relative pl-6 pb-4 text-left">
+                <span class="absolute left-[6px] top-0 bottom-0 w-0.5 bg-gray-200"></span>
+                <span class="absolute left-0 top-px h-[15px] w-[15px] rounded-full bg-indigo-600 border-2 border-gray-200 flex items-center justify-center">
+                    <i data-lucide="truck" class="h-2 w-2 text-white"></i>
+                </span>
+                <div class="rounded-lg border border-gray-200 bg-white px-3 py-2.5">
+                    <div class="flex items-start justify-between gap-2 flex-wrap">
+                        <div>
+                            <div class="text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-0.5">Office</div>
+                            <div class="text-[13px] font-bold text-gray-900">${office}</div>
+                        </div>
+                        <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold whitespace-nowrap" style="${status.style}">${esc(status.label)}</span>
+                    </div>
+                    <div class="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                        <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Receiving Officer</div><div class="text-gray-800 font-semibold">${officer}</div></div>
+                        <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Timeline</div><div>${timelineMeta ? `<span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold" style="background:${timelineMeta.bg};color:${timelineMeta.color};border:1px solid ${timelineMeta.border};">${timelineMeta.icon ? `<i class="fas ${timelineMeta.icon}"></i>` : ''}${esc(timelineMeta.label)}</span>` : '<span class="text-gray-400">—</span>'}</div></div>
+                        <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Log In</div><div class="text-gray-800 font-semibold">${inDate}</div></div>
+                        <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Log Out</div><div class="text-gray-800 font-semibold">${outDate}</div></div>
+                        <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Request Purpose</div><div class="text-gray-800 font-semibold">${requestPurposeName}</div></div>
+                        <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Expected Return</div><div class="text-gray-800 font-semibold">${expectedReturnDate}</div></div>
+                        <div class="col-span-2"><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Delay Reason</div><div class="text-gray-800 font-semibold">${delayReason}</div></div>
+                    </div>
+                    ${notes}
+                </div>
+            </div>`;
+    };
+
+    QuickActions.renderApprovalRow = function (entry) {
+        const esc = QuickActions.escapeHtml;
+        const office = esc(entry.office_name || entry.office || entry.receiving_office_name || 'Unknown');
+        const officer = esc(entry.receiving_officer_name || entry.accepted_by_name || '—');
+        const eventDate = QuickActions.formatMovementDate(entry.log_in_date || entry.logInDate, entry.log_in_time || entry.logInTime);
+        const purposeLabel = String(entry.purpose || '').toLowerCase() === 'recommendation' ? 'Recommendation' : 'Approval';
+        const notes = entry.notes ? `<div class="mt-2 text-xs text-gray-500">${esc(entry.notes)}</div>` : '';
+        return `
+            <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-left">
+                <div class="flex items-start justify-between gap-2 flex-wrap">
+                    <div>
+                        <div class="text-xs font-bold text-gray-800">${purposeLabel}</div>
+                        <div class="mt-1 text-xs text-gray-500">${eventDate}</div>
+                    </div>
+                    <div class="text-right text-xs">
+                        <div class="font-semibold text-gray-800">${office}</div>
+                        <div class="text-gray-500">${officer}</div>
+                    </div>
+                </div>
+                ${notes}
+            </div>`;
     };
 
     window.QuickActions = QuickActions;

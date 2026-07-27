@@ -580,5 +580,19 @@ class FileTracker extends Model
 
         return $progress;
     }
+
+    public function getFileTitleAttribute($value)
+    {
+        try {
+            $title = DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->where('file_number', $this->file_number)
+                ->value('file_title');
+
+            return $title !== null ? trim($title) : $value;
+        } catch (\Exception $e) {
+            return $value;
+        }
+    }
 }
 

@@ -213,8 +213,13 @@
                             <option value="{{ $option }}" @selected($limit == $option)>{{ $option }} rows</option>
                         @endforeach
                     </select>
+                    <button type="button" onclick="openRecordsExportModal()"
+                        class="inline-flex items-center gap-2 px-5 py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold shadow-sm hover:bg-emerald-700 transition whitespace-nowrap">
+                        <i data-lucide="download" class="w-4 h-4"></i>
+                        Export Records
+                    </button>
                     <button type="button" id="btn-new-application"
-                        class="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold shadow-sm hover:bg-blue-700 transition"
+                        class="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold shadow-sm hover:bg-blue-700 transition whitespace-nowrap"
                         onclick="ossOpenCreateModal()">
                         <i data-lucide="plus" class="w-4 h-4"></i>
                         New Application
@@ -491,6 +496,19 @@
     @include('lands_one_stop_shop.partials.acknowledgement-modal')
     @include('lands_one_stop_shop.partials.recommendation-modal')
     @include('lands_one_stop_shop.partials.verification-modal')
+
+    {{-- ──────────────── Export Records Modal ──────────────── --}}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.7.1/jspdf.plugin.autotable.min.js"></script>
+    @include('exports.records_export_modal', ['exportConfig' => [
+        'title'         => $isChangeOfName ? 'Export Change of Name Applications' : 'Export Applications',
+        'subtitle'      => 'Consolidated report generation & export filter',
+        'endpoint'      => route('lands-one-stop-shop.all-applications.index'),
+        'params'        => ['type' => request()->query('type')],
+        'filename'      => $isChangeOfName ? 'Change_of_Name_Applications' : 'OSS_Applications',
+        'reportTitle'   => $isChangeOfName ? 'Change of Name Applications Register' : 'OSS Applications Register',
+        'search'        => request('search'),
+        'statusOptions' => ['' => 'All Statuses'] + \App\Models\LandsOneStopShopApplication::statusOptions(),
+    ]])
 
     {{-- ──────────────── Global File Number Selector Modal ──────────────── --}}
     @include('components.global-fileno-modal')

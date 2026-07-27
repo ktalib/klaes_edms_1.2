@@ -1506,7 +1506,51 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Party 1 (Applicant / Assignor / Mortgagor)
         const fName = document.getElementById('firstPartyName');
-        const p1Name = cons.applicant_name || prior.party_1_name || '';
+        let p1Name = cons.applicant_name || prior.party_1_name || '';
+
+        // --- Multi-property Mortgage Logic ---
+        let addProps = [];
+        let hasMultipleProperties = false;
+        if (cons && cons.additional_properties) {
+            if (typeof cons.additional_properties === 'string') {
+                try {
+                    addProps = JSON.parse(cons.additional_properties);
+                } catch (e) {
+                    console.warn('[autoFillFromConsent] Failed to parse additional_properties:', e);
+                }
+            } else if (Array.isArray(cons.additional_properties)) {
+                addProps = cons.additional_properties;
+            }
+        }
+
+        if (addProps.length > 0) {
+            if (currentInstrumentType === 'deed-of-mortgage' || currentInstrumentType === 'tripartite-mortgage' || (cons.consent_type && String(cons.consent_type).toLowerCase().includes('mortgage'))) {
+                hasMultipleProperties = true;
+
+                // Collect all applicant names (File Titles)
+                let titles = [];
+                if (cons.applicant_name) titles.push(cons.applicant_name);
+                addProps.forEach(prop => {
+                    if (prop.applicant_name) titles.push(prop.applicant_name);
+                    else if (prop.applicant) titles.push(prop.applicant);
+                });
+                
+                // Remove duplicates and blanks
+                titles = [...new Set(titles.filter(n => typeof n === 'string' && n.trim() !== ''))];
+
+                // Join names properly
+                if (titles.length === 1) {
+                    p1Name = titles[0];
+                } else if (titles.length === 2) {
+                    p1Name = titles[0] + ' & ' + titles[1];
+                } else if (titles.length > 2) {
+                    const last = titles.pop();
+                    p1Name = titles.join(', ') + ', & ' + last;
+                }
+            }
+        }
+        // --- End Multi-property Mortgage Logic ---
+
         if (fName && p1Name) {
             fName.value = p1Name.toUpperCase();
         }
@@ -1703,16 +1747,76 @@ document.addEventListener('DOMContentLoaded', function () {
         setAutoFilledSubmitMode(true);
 
         if (typeof Swal !== 'undefined') {
-            Swal.fire({
-                toast: true,
-                position: 'top-end',
-                icon: 'success',
-                title: 'Data Auto-filled',
-                text: `Details populated from ${sources.join(' & ')}.`,
-                showConfirmButton: false,
-                timer: 4000,
-                timerProgressBar: true
-            });
+            if (hasMultipleProperties) {
+                // Get all file numbers
+                let allFileNumbers = [];
+                const primaryFile = prior.file_number || (document.getElementById('display_fileno') ? document.getElementById('display_fileno').value : '');
+                if (primaryFile) allFileNumbers.push(primaryFile);
+                addProps.forEach(prop => {
+                    if (prop.file_number) allFileNumbers.push(prop.file_number);
+                });
+                
+                allFileNumbers = [...new Set(allFileNumbers.filter(n => typeof n === 'string' && n.trim() !== ''))];
+                let joinedFileNos = primaryFile;
+                if (allFileNumbers.length === 1) {
+                    joinedFileNos = allFileNumbers[0];
+                } else if (allFileNumbers.length === 2) {
+                    joinedFileNos = allFileNumbers[0] + ' & ' + allFileNumbers[1];
+                } else if (allFileNumbers.length > 2) {
+                    const last = allFileNumbers.pop();
+                    joinedFileNos = allFileNumbers.join(', ') + ', & ' + last;
+                }
+
+                // Show below the input field in the file_source_info element
+                const originalInput = document.getElementById('display_fileno');
+                if (originalInput) {
+                    originalInput.style.display = ''; // ensure visible
+                }
+                const displayInput = document.getElementById('multi_prop_display_fileno');
+                if (displayInput) {
+                    displayInput.style.display = 'none'; // hide if we previously cloned it
+                }
+
+                const infoEl = document.getElementById('file_source_info');
+                if (infoEl) {
+                    let currentHtml = infoEl.innerHTML;
+                    if (currentHtml.includes('multi-prop-files')) {
+                        currentHtml = currentHtml.replace(/<div class="multi-prop-files.*?>.*?<\/div>/, '');
+                    }
+                    infoEl.innerHTML = `<div class="multi-prop-files text-gray-800 font-bold mb-1 text-sm break-words" style="line-height: 1.2;">${joinedFileNos}</div>` + currentHtml;
+                }
+
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Multiple Properties Involved',
+                    html: `This mortgage involves more than one property.<br><br><small class="text-gray-500">Details populated from ${sources.join(' & ')}.</small>`,
+                    confirmButtonColor: '#2563eb'
+                });
+            } else {
+                // If it was previously a multi-property, revert it
+                const displayInput = document.getElementById('multi_prop_display_fileno');
+                const originalInput = document.getElementById('display_fileno');
+                if (displayInput && originalInput) {
+                    displayInput.style.display = 'none';
+                    originalInput.style.display = ''; // restore original
+                }
+                
+                const infoEl = document.getElementById('file_source_info');
+                if (infoEl && infoEl.innerHTML.includes('multi-prop-files')) {
+                    infoEl.innerHTML = infoEl.innerHTML.replace(/<div class="multi-prop-files.*?>.*?<\/div>/, '');
+                }
+
+                Swal.fire({
+                    toast: true,
+                    position: 'top-end',
+                    icon: 'success',
+                    title: 'Data Auto-filled',
+                    text: `Details populated from ${sources.join(' & ')}.`,
+                    showConfirmButton: false,
+                    timer: 4000,
+                    timerProgressBar: true
+                });
+            }
         }
     }
 
@@ -5927,6 +6031,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 const deedRegId = data.deed_registration_id || null;
                 const instrumentCaptureId = data.id || null;
 
+                // Capture multi-property file numbers if present before reset
+                const multiPropEl = document.querySelector('.multi-prop-files');
+                const finalFilenoDisplay = multiPropEl ? multiPropEl.textContent : (data.fileno || elements.displayFileno.value);
+
                 // Reset the form immediately before showing success popup
                 resetRegistrationState({ hideDialog: false, resetInstrumentType: false });
 
@@ -5951,14 +6059,10 @@ document.addEventListener('DOMContentLoaded', function () {
                             </div>
 
                             <!-- Context Details (Compact) -->
-                            <div class="grid grid-cols-2 gap-2 mb-6">
+                            <div class="mb-6">
                                 <div class="bg-gray-50/80 p-2 rounded-xl border border-gray-100">
                                     <span class="block text-[8px] text-gray-400 uppercase font-bold mb-0.5">Instrument Type</span>
                                     <span class="font-bold text-gray-700 text-xs truncate block">${data.instrument_type || currentInstrumentType}</span>
-                                </div>
-                                <div class="bg-gray-50/80 p-2 rounded-xl border border-gray-100">
-                                    <span class="block text-[8px] text-gray-400 uppercase font-bold mb-0.5">FileNo</span>
-                                    <span class="font-bold text-blue-600 text-xs block">${data.fileno || elements.displayFileno.value}</span>
                                 </div>
                             </div>
 
@@ -6021,6 +6125,12 @@ document.addEventListener('DOMContentLoaded', function () {
                                                 <span class="block text-[8px] text-gray-400 uppercase font-bold mb-0.5">Vol</span>
                                                 <span class="text-base font-black text-slate-700">${data.volume_no || '-'}</span>
                                             </div>
+                                        </div>
+
+                                        <!-- Multi-Property File Numbers -->
+                                        <div class="mt-3 p-2 bg-white/60 rounded-xl border border-blue-100/50 shadow-sm text-center">
+                                            <span class="block text-[8px] text-gray-400 uppercase font-bold mb-0.5">File Numbers</span>
+                                            <span class="text-xs font-black text-blue-800 block">${finalFilenoDisplay}</span>
                                         </div>
 
                                         <!-- Integrated Date/Time -->

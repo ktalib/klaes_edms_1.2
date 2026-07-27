@@ -392,6 +392,56 @@
                 margin: 1.2cm 0.4cm 2cm 0.4cm;
             }
         }
+
+        .serial-box {
+            position: absolute;
+            top: 2.8cm;
+            right: 0.5cm;
+            border: 1px solid #1e3a8a;
+            padding: 3px 6px;
+            min-width: 100px;
+            font-size: 10px;
+            background: white;
+            z-index: 20;
+        }
+        .serial-box .serial-label {
+            font-weight: bold;
+            text-transform: uppercase;
+            border-bottom: 1px solid #1e3a8a;
+            padding-bottom: 2px;
+            margin-bottom: 3px;
+            font-size: 10px;
+            color: #1e3a8a;
+        }
+        .serial-code-wrap {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .serial-fraction {
+            line-height: 1;
+            color: #1e293b;
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            font-weight: 900;
+        }
+        .serial-fraction .frac-top {
+            border-bottom: 1.5px solid #1e293b;
+            padding-bottom: 1px;
+            font-size: 8px;
+        }
+        .serial-fraction .frac-bot {
+            padding-top: 1px;
+            font-size: 8px;
+        }
+        .serial-digits {
+            font-size: 12px;
+            font-weight: 900;
+            letter-spacing: 0.1em;
+            color: #1e293b;
+            font-family: 'Courier New', monospace;
+        }
     </style>
 </head>
 @php
@@ -680,6 +730,13 @@
             $formattedApplicationDate = null;
         }
     }
+
+    $securityCode = app(\App\Services\SecurityCodeService::class)->getOrGenerateForDocument(
+        (string) $displayFileNumber,
+        (int) ($application->id ?? 0),
+        'ST Planning Recomm'
+    );
+    $sc = app(\App\Services\SecurityCodeService::class)->formatForDisplay($securityCode->code);
 @endphp
 <body class="py-2" data-planning-content data-application-id="{{ $application->id ?? '' }}"
     data-date="{{ $generatedAtDisplay }}" data-user="{{ $generatedBy }}"
@@ -705,6 +762,17 @@
     <div class="memo-container">
         <img class="corner-logo logo-top-left" src="{{ asset('assets/logo/ministry1.jpg') }}" alt="Ministry Left Logo" onerror="this.style.display='none'">
         <img class="corner-logo logo-top-right" src="{{ asset('assets/logo/ministry2.jpeg') }}" alt="Ministry Right Logo" onerror="this.style.display='none'">
+
+        <div class="serial-box">
+            <div class="serial-label">Serial No:</div>
+            <div class="serial-code-wrap">
+                <span class="serial-fraction">
+                    <span class="frac-top">{{ $sc['alphabet'] }}</span>
+                    <span class="frac-bot">{{ $sc['digits_start'] }}</span>
+                </span>
+                <span class="serial-digits">{{ $sc['digits_end'] }}</span>
+            </div>
+        </div>
 
         <div class="memo-body">
     

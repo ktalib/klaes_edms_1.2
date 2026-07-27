@@ -406,8 +406,12 @@ function buildArchiveHomeRow(d) {
  */
 function buildMovementRow(entry, trackerMeta) {
     const office = entry.office_name || entry.office || entry.receiving_office_name || 'Unknown';
-    const officer = entry.receiving_officer_name || entry.receivingOfficerName || entry.accepted_by_name || '-';
     const status = resolveMovementStatus(entry);
+    const statusLower = (status.label || '').trim().toLowerCase();
+    const isCompletedStatus = statusLower === 'completed' || statusLower === 'complete' || (entry.status || '').toString().trim().toLowerCase() === 'completed';
+    const officer = isCompletedStatus
+        ? 'Archive'
+        : (entry.receiving_officer_name || entry.receivingOfficerName || entry.accepted_by_name || '-');
 
     // Log In is only meaningful once the file has actually been logged back in.
     const loggedIn = status.label === 'Log-in' || status.label === 'Completed';

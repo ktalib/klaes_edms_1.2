@@ -342,13 +342,54 @@ class LandRecommendationController extends Controller
         return view('land_recommendations.form', compact('PageTitle', 'landUses'));
     }
 
+    /**
+     * Check whether a recommendation already exists for the given file number.
+     * Used by the form to warn the user before they re-enter a duplicate.
+     * `exclude_id` lets the edit page skip the record being edited.
+     */
+    public function checkDuplicate(Request $request)
+    {
+        $fileNumber = trim((string) $request->query('file_number', ''));
+
+        if ($fileNumber === '') {
+            return response()->json(['exists' => false]);
+        }
+
+        $query = LandRecommendation::query()
+            // Case/space-insensitive match so "RES-2026-1" and "res-2026-1 " collide.
+            ->whereRaw("UPPER(LTRIM(RTRIM(file_number))) = ?", [strtoupper($fileNumber)]);
+
+        if ($request->filled('exclude_id')) {
+            $query->where('id', '!=', (int) $request->query('exclude_id'));
+        }
+
+        $existing = $query->orderByDesc('created_at')
+            ->first(['id', 'file_number', 'applicant_name', 'status', 'type', 'created_at']);
+
+        if (!$existing) {
+            return response()->json(['exists' => false]);
+        }
+
+        return response()->json([
+            'exists'         => true,
+            'id'             => $existing->id,
+            'file_number'    => $existing->file_number,
+            'applicant_name' => $existing->applicant_name,
+            'status'         => $existing->status,
+            'type'           => $existing->type,
+            'created_at'     => optional($existing->created_at)->format('Y-m-d h:i A'),
+            'edit_url'       => route('land-recommendations.edit', $existing->id),
+        ]);
+    }
+
     public function store(Request $request)
     {
         $validated = $request->validate([
             'file_number' => 'required|string',
             'applicant_name' => 'required|string',
             'purpose_of_clause' => 'nullable|string',
-            'purpose_id' => 'required|exists:sqlsrv.purposes,id',
+            'purpose_id' => 'nullable|string',
+            'purpose_id_other' => 'nullable|string',
             'location' => 'nullable|string',
             'term' => 'nullable|string',
             'cofo_year' => 'nullable|integer|min:1900|max:' . date('Y'),
@@ -369,7 +410,7 @@ class LandRecommendationController extends Controller
             'state' => 'nullable|string',
             'layout_plan_no' => 'nullable|string',
             'development_value' => 'nullable|numeric',
-            'development_charge' => 'nullable|numeric',
+            'development_charge' => 'nullable|string',
             'tracking_id' => 'nullable|string',
             'application_date' => 'required|date',
             'applicant_address' => 'required|string',
@@ -409,8 +450,13 @@ class LandRecommendationController extends Controller
         }
 
         if ($request->filled('purpose_id')) {
-            $p = Purpose::find($request->purpose_id);
-            if ($p) $validated['purpose_of_clause'] = $p->name;
+            if ($request->purpose_id === 'other') {
+                $validated['purpose_of_clause'] = $request->purpose_id_other;
+                $validated['purpose_id'] = null;
+            } else {
+                $p = Purpose::find($request->purpose_id);
+                if ($p) $validated['purpose_of_clause'] = $p->name;
+            }
         }
 
         $validated['created_by'] = Auth::id();
@@ -474,7 +520,8 @@ class LandRecommendationController extends Controller
             'file_number' => 'required|string',
             'applicant_name' => 'required|string',
             'purpose_of_clause' => 'nullable|string',
-            'purpose_id' => 'required|exists:sqlsrv.purposes,id',
+            'purpose_id' => 'nullable|string',
+            'purpose_id_other' => 'nullable|string',
             'location' => 'nullable|string',
             'term' => 'nullable|string',
             'cofo_year' => 'nullable|integer|min:1900|max:' . date('Y'),
@@ -495,7 +542,7 @@ class LandRecommendationController extends Controller
             'state' => 'nullable|string',
             'layout_plan_no' => 'nullable|string',
             'development_value' => 'nullable|numeric',
-            'development_charge' => 'nullable|numeric',
+            'development_charge' => 'nullable|string',
             'tracking_id' => 'nullable|string',
             'application_date' => 'required|date',
             'applicant_address' => 'required|string',
@@ -536,8 +583,13 @@ class LandRecommendationController extends Controller
         }
 
         if ($request->filled('purpose_id')) {
-            $p = Purpose::find($request->purpose_id);
-            if ($p) $validated['purpose_of_clause'] = $p->name;
+            if ($request->purpose_id === 'other') {
+                $validated['purpose_of_clause'] = $request->purpose_id_other;
+                $validated['purpose_id'] = null;
+            } else {
+                $p = Purpose::find($request->purpose_id);
+                if ($p) $validated['purpose_of_clause'] = $p->name;
+            }
         }
 
         $validated['updated_by'] = Auth::id();
@@ -599,7 +651,7 @@ class LandRecommendationController extends Controller
                 'dev_value'         => $formatNaira($recommendation->development_value ?? null),
                 'completion_time'   => (string) ($recommendation->development_period ?? ''),
                 'ground_rent'       => $formatNaira($recommendation->ground_rent ?? null),
-                'dev_charge'        => $formatNaira($recommendation->development_charge ?? null),
+                'dev_charge'        =>  (string)($recommendation->development_charge ?? null),
                 'survey_charges'    => $formatNaira($recommendation->survey_fees ?? null),
                 'director_reasons'  => (string) ($recommendation->recommendation ?? ''),
                 'director_sign'     => '',

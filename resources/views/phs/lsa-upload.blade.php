@@ -32,6 +32,7 @@
     .file-drop label { cursor: pointer; display: block; }
     .file-drop .icon { font-size: 28px; margin-bottom: 8px; }
     .file-drop .hint { font-size: 12px; color: #8b88aa; margin-top: 6px; }
+    .file-drop-text { color: #4a4760; }
     .file-name { margin-top: 10px; font-size: 12px; color: #166534; font-weight: 600; min-height: 18px; }
     .btn-upload { display: inline-flex; align-items: center; gap: 8px; background: #6c63ff; color: #fff; padding: 12px 28px; border-radius: 10px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 16px; transition: background .15s; width: 100%; justify-content: center; }
     .btn-upload:hover { background: #5a52e0; }
@@ -65,6 +66,37 @@
     .check-badge svg { width: 11px; height: 11px; stroke: #fff; fill: none; stroke-width: 2.5; }
     .pkg-card.selected .check-badge { display: flex; }
     .btn-download.disabled { background: #9ca3af; pointer-events: none; opacity: .7; }
+    .success-box { background: #f0fdf4; border: 2px solid #86efac; }
+    .success-title { color: #14532d; }
+    .success-subtitle { color: #166534; }
+    .success-desc { color: #4b7c5a; }
+
+    /* Dark Mode Overrides */
+    .dark body { background: #0f1117; }
+    .dark .card { background: #1f2937; border-color: rgba(108,99,255,.15); box-shadow: 0 4px 24px rgba(0,0,0,.3); }
+    .dark h1, .dark .section-title, .dark .upload-section h2, .dark .pkg-name { color: #f3f4f6; }
+    .dark .subtitle, .dark .meta-box .lbl, .dark .upload-section p, .dark .pkg-members, .dark .pkg-price span, .dark .hint { color: #9ca3af; }
+    .dark .meta-box { background: #111827; border-color: #374151; }
+    .dark .meta-box .val { color: #f3f4f6; }
+    .dark .file-drop { border-color: #374151; background: #111827; }
+    .dark .file-drop:hover { border-color: #6c63ff; }
+    .dark .pkg-card { border-color: #374151; background: #111827; }
+    .dark .pkg-card:hover { border-color: #6c63ff; }
+    .dark .pkg-card.selected { border-color: #6c63ff; background: #1e1b4b; }
+    .dark .ministry-title h2 { color: #4ade80; }
+    .dark .ministry-title h3 { color: #e5e7eb; }
+    .dark .step-dot { background: #374151; color: #9ca3af; }
+    .dark .step::after { background: #374151; }
+    .dark .step-label { color: #9ca3af; }
+    .dark .step.done .step-dot { background: #166534; color: #fff; }
+    .dark .step.done .step-label { color: #4ade80; }
+    .dark .step.active .step-dot { background: #1f2937; border-color: #f59e0b; color: #f59e0b; }
+    .dark .step.active .step-label { color: #f59e0b; }
+    .dark .file-drop-text { color: #d1d5db; }
+    .dark .success-box { background: rgba(6, 78, 59, 0.2); border-color: #059669; }
+    .dark .success-title { color: #34d399; }
+    .dark .success-subtitle { color: #6ee7b7; }
+    .dark .success-desc { color: #a7f3d0; }
 </style>
 
 <div class="page-wrapper">
@@ -74,7 +106,7 @@
             <div class="ministry-title">
                 <h2>Ministry of Land &amp; Physical Planning</h2>
                  
-                <p>PHS Portal &mdash; Service Level Agreement</p>
+                <p class="dark:text-gray-400">PHS Portal &mdash; Service Level Agreement</p>
             </div>
             <img src="http://app.klaes.ng/assets/logo/ministry1.jpg" alt="">
         </div>
@@ -147,14 +179,14 @@
         <div class="upload-section">
             @if (session('success') || $onboardingRequest->lsa_signed_document_path)
                 {{-- Success state --}}
-                <div style="margin-top:24px;background:#f0fdf4;border:2px solid #86efac;border-radius:14px;padding:36px 24px;text-align:center;">
+                <div style="margin-top:24px;border-radius:14px;padding:36px 24px;text-align:center;" class="success-box">
                     <div style="display:inline-flex;align-items:center;justify-content:center;width:64px;height:64px;background:#166534;border-radius:50%;margin-bottom:16px;">
                         <svg width="28" height="28" fill="none" stroke="#fff" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
                     </div>
-                    <h2 style="font-family:'Sora',sans-serif;font-size:20px;color:#14532d;margin-bottom:8px;">Signed SLA Received!</h2>
-                    <p style="font-size:13px;color:#166534;margin-bottom:4px;">Thank you. Your signed SLA was uploaded on {{ $onboardingRequest->lsa_signed_at?->format('M j, Y \a\t g:i A') ?? now()->format('M j, Y') }}.</p>
-                    <p style="font-size:12px;color:#4b7c5a;margin-top:10px;">The Legal Department will review your SLA. You will receive an email with next steps once the review is complete.</p>
-                    <p style="font-size:12px;color:#6b7280;margin-top:20px;">You can now safely close this tab.</p>
+                    <h2 style="font-family:'Sora',sans-serif;font-size:20px;margin-bottom:8px;" class="success-title">Signed SLA Received!</h2>
+                    <p style="font-size:13px;margin-bottom:4px;" class="success-subtitle">Thank you. Your signed SLA was uploaded on {{ $onboardingRequest->lsa_signed_at?->format('M j, Y \a\t g:i A') ?? now()->format('M j, Y') }}.</p>
+                    <p style="font-size:12px;margin-top:10px;" class="success-desc">The Legal Department will review your SLA. You will receive an email with next steps once the review is complete.</p>
+                    <p style="font-size:12px;margin-top:20px;" class="dark:text-gray-400">You can now safely close this tab.</p>
                     <button onclick="phsCloseTab()" style="margin-top:16px;padding:10px 28px;background:#166534;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">
                         Close Tab
                     </button>
@@ -190,7 +222,7 @@
                     <div class="file-drop">
                         <label style="display:block;">
                             <div class="icon">📄</div>
-                            <div style="font-size:13px;color:#4a4760;font-weight:600;">Click to select signed SLA</div>
+                            <div style="font-size:13px;font-weight:600;" class="file-drop-text">Click to select signed SLA</div>
                             <div class="hint">PDF only · max 10 MB</div>
                             <input type="file" id="signed_lsa_input" name="signed_lsa" accept="application/pdf,.pdf"
                                    onchange="document.getElementById('file-name-display').textContent = this.files[0]?.name ?? ''">
@@ -204,6 +236,19 @@
                 </form>
             @endif
         </div>
+
+        <!-- Theme toggle -->
+        <div style="margin-top:20px;display:flex;justify-content:center;">
+            <button onclick="phsToggleTheme()" title="Toggle dark mode"
+                style="padding:8px 16px;background:transparent;border:1.5px solid #d6d4ee;border-radius:10px;font-size:13px;font-weight:600;color:#4a4760;cursor:pointer;display:inline-flex;align-items:center;gap:6px;"
+                class="btn-theme-toggle">
+                <i data-lucide="sun" class="h-4.5 w-4.5 dark:hidden"></i>
+                <i data-lucide="moon" class="h-4.5 w-4.5 hidden dark:block"></i>
+                Toggle Theme
+            </button>
+        </div>
+    </div>
+</div>
     </div>
 </div>
 

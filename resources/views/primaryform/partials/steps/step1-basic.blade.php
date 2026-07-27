@@ -478,45 +478,52 @@
         </div>
       </div>
       
-      <h4 class="font-medium mb-2 mt-4">Property Address</h4>
+      <div class="flex items-center justify-between mb-2 mt-4">
+        <h4 class="font-medium">Property Address</h4>
+        <button type="button" id="propertyAddressEditBtn" onclick="togglePropertyAddressEdit()" class="inline-flex items-center px-3 py-1.5 text-sm font-medium text-teal-700 bg-teal-50 border border-teal-200 rounded-md hover:bg-teal-100">
+          <i data-lucide="pencil" class="w-4 h-4 mr-1"></i>
+          Edit
+        </button>
+      </div>
+      <p id="propertyAddressHint" class="text-sm text-gray-600 mb-2">Backfilled automatically from the selected primary file number (read-only)</p>
       <div class="grid grid-cols-4 gap-4 mb-4">
         <div>
           <label class="block text-sm mb-1">Scheme Number <span class="text-red-500">*</span></label>
-          <input type="text" id="schemeNumber" class="w-full p-2 border border-gray-300 rounded-md" placeholder="ENTER SCHEME NUMBER" name="scheme_no" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();">
+          <input type="text" id="schemeNumber" class="property-address-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" placeholder="ENTER SCHEME NUMBER" name="scheme_no" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();" disabled>
         </div>
         <div>
           <label class="block text-sm mb-1">House No.</label>
-          <input type="text" id="propertyHouseNo" class="w-full p-2 border border-gray-300 rounded-md" placeholder="ENTER HOUSE NUMBER" name="property_house_no" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();">
+          <input type="text" id="propertyHouseNo" class="property-address-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" placeholder="ENTER HOUSE NUMBER" name="property_house_no" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();" disabled>
         </div>
         <div>
           <label class="block text-sm mb-1">Plot No.</label>
-          <input type="text" id="propertyPlotNo" class="w-full p-2 border border-gray-300 rounded-md" placeholder="ENTER PLOT NUMBER" name="property_plot_no" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();">
+          <input type="text" id="propertyPlotNo" class="property-address-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" placeholder="ENTER PLOT NUMBER" name="property_plot_no" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();" disabled>
         </div>
         <div>
           <label class="block text-sm mb-1">Street Name <span class="text-red-500">*</span></label>
-          <input type="text" id="propertyStreetName" class="w-full p-2 border border-gray-300 rounded-md" placeholder="ENTER STREET NAME" name="property_street_name" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();">
+          <input type="text" id="propertyStreetName" class="property-address-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" placeholder="ENTER STREET NAME" name="property_street_name" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();" disabled>
         </div>
       </div>
-      
+
       <div class="grid grid-cols-3 gap-4 mb-4">
         <div>
           <label class="block text-sm mb-1">District</label>
-          <input type="text" id="propertyDistrict" class="w-full p-2 border border-gray-300 rounded-md" placeholder="ENTER DISTRICT" name="property_district" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();">
+          <input type="text" id="propertyDistrict" class="property-address-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" placeholder="ENTER DISTRICT" name="property_district" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();" disabled>
         </div>
         <div>
           <label class="block text-sm mb-1">LGA <span class="text-red-500">*</span></label>
-          <select id="propertyLga" name="property_lga" class="w-full p-2 border border-gray-300 rounded-md" onchange="updatePropertyAddressDisplay();">
+          <select id="propertyLga" name="property_lga" class="property-address-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" onchange="updatePropertyAddressDisplay();" disabled>
             <option value="">Select LGA</option>
           </select>
         </div>
         <div>
           <label class="block text-sm mb-1">State <span class="text-red-500">*</span></label>
-          <select id="propertyState" class="w-full p-2 border border-gray-300 rounded-md" name="property_state" onchange="selectPropertyLGA(this); updatePropertyAddressDisplay();">
+          <select id="propertyState" class="property-address-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" name="property_state" onchange="selectPropertyLGA(this); updatePropertyAddressDisplay();" disabled>
             <option value="">Select State</option>
           </select>
         </div>
       </div>
-      
+
       {{-- Property Address Preview and Hidden Input --}}
       <div class="mb-4">
         <label class="block text-sm mb-1">Property Address:</label>
@@ -526,6 +533,39 @@
         <input type="hidden" name="property_address" id="propertyAddressDisplay">
       </div>
     </div>
+
+    <script>
+    function togglePropertyAddressEdit() {
+      var btn = document.getElementById('propertyAddressEditBtn');
+      var hint = document.getElementById('propertyAddressHint');
+      var fields = document.querySelectorAll('.property-address-field');
+      var willEnable = fields.length ? fields[0].disabled : true;
+
+      fields.forEach(function (field) {
+        field.disabled = !willEnable;
+        field.classList.toggle('bg-gray-100', !willEnable);
+        field.classList.toggle('text-gray-500', !willEnable);
+        field.classList.toggle('cursor-not-allowed', !willEnable);
+        field.classList.toggle('bg-white', willEnable);
+        field.classList.toggle('text-gray-900', willEnable);
+        field.classList.toggle('cursor-text', willEnable);
+      });
+
+      if (btn) {
+        btn.innerHTML = willEnable
+          ? '<i data-lucide="lock" class="w-4 h-4 mr-1"></i>Done'
+          : '<i data-lucide="pencil" class="w-4 h-4 mr-1"></i>Edit';
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+      }
+
+      if (hint) {
+        hint.textContent = willEnable
+          ? 'Editing enabled - values will be used as entered'
+          : 'Backfilled automatically from the selected primary file number (read-only)';
+      }
+    }
+    window.togglePropertyAddressEdit = togglePropertyAddressEdit;
+    </script>
 
     @include('primaryform.types.ownership')
     

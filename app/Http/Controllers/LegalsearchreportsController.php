@@ -15,7 +15,28 @@ class LegalsearchreportsController extends Controller
     public function index() {
         $PageTitle = 'Legal Search Reports';
         $PageDescription = '';
-        return view('legalsearchreports.index', compact('PageTitle', 'PageDescription'));
+
+        $today = now()->startOfDay();
+        
+        $totalToday = \App\Models\LegalSearchLog::where('created_at', '>=', $today)->count();
+        $total = \App\Models\LegalSearchLog::count();
+        
+        $foundCount = \App\Models\LegalSearchLog::where('result_status', 'Found')->count();
+        $notFoundCount = \App\Models\LegalSearchLog::where('result_status', 'Not Found')->count();
+        
+        $officialCount = \App\Models\LegalSearchLog::where('search_source', 'legal_search.print.official')->count();
+        $onPremiseCount = \App\Models\LegalSearchLog::where('search_source', 'legal_search.print.onpremise')->count();
+
+        return view('legalsearchreports.index', compact(
+            'PageTitle', 
+            'PageDescription',
+            'totalToday',
+            'total',
+            'foundCount',
+            'notFoundCount',
+            'officialCount',
+            'onPremiseCount'
+        ));
     }
 
     public function data(Request $request) {

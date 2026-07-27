@@ -7,10 +7,69 @@
     @include('admin.header', ['PageTitle' => $PageTitle, 'PageDescription' => 'Review and approve PHS onboarding requests submitted by organizations.'])
     <div class="flex-1 p-6">
         <div class="mb-8">
-            <h1 class="text-3xl font-bold mb-4">{{ $PageTitle }}</h1>
+            <h1 class="text-3xl font-bold mb-6">{{ $PageTitle }}</h1>
+
+            <!-- Overview Stats Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <!-- Total Requests Card -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex items-center justify-between transition hover:shadow-md">
+                    <div>
+                        <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Requests</p>
+                        <h3 class="text-3xl font-black text-slate-900 mt-2">{{ number_format($overviewStats['total_requests']) }}</h3>
+                        <p class="text-xs text-slate-400 mt-1">All registered applications</p>
+                    </div>
+                    <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- Pending Actions Card -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex items-center justify-between transition hover:shadow-md">
+                    <div>
+                        <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Pending Actions</p>
+                        <h3 class="text-3xl font-black text-amber-600 mt-2">{{ number_format($overviewStats['pending_actions']) }}</h3>
+                        <p class="text-xs text-amber-500 font-semibold mt-1">Requires admin review</p>
+                    </div>
+                    <div class="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- Active Organizations Card -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex items-center justify-between transition hover:shadow-md">
+                    <div>
+                        <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Active Partners</p>
+                        <h3 class="text-3xl font-black text-emerald-600 mt-2">{{ number_format($overviewStats['active_orgs']) }}</h3>
+                        <p class="text-xs text-emerald-500 font-semibold mt-1">Approved & activated</p>
+                    </div>
+                    <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- Total Revenue Card -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex items-center justify-between transition hover:shadow-md">
+                    <div>
+                        <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Revenue</p>
+                        <h3 class="text-3xl font-black text-blue-600 mt-2">₦{{ number_format($overviewStats['total_revenue'], 2) }}</h3>
+                        <p class="text-xs text-slate-400 mt-1">From verified payments</p>
+                    </div>
+                    <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                    </div>
+                </div>
+            </div>
 
             <!-- Status Filter Tabs -->
-        <div class="flex space-x-4 border-b mb-6">
+        <div class="flex space-x-4 border-b mb-6 overflow-x-auto">
             <a href="{{ route('system-admin.phs.requests.index') }}"
                 class="px-4 py-2 border-b-2 font-medium {{ !$statusFilter ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-600 hover:text-gray-800' }}">
                 All ({{ array_sum($statsByStatus) }})
@@ -210,6 +269,36 @@
                                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
                                                 Send Onboarding Link
                                             </span>
+                                        @endif
+
+                                        {{-- e. Resend SLA Link --}}
+                                        @if ($req->status === 'awaiting_sla')
+                                            <form action="{{ route('system-admin.phs.requests.resend-sla', ['id' => $req->id]) }}" method="POST" class="m-0">
+                                                @csrf
+                                                <button type="button"
+                                                    class="approve-btn w-full flex items-center gap-2 text-left px-4 py-2 text-sm text-indigo-700 hover:bg-gray-50"
+                                                    data-title="Resend SLA Link?"
+                                                    data-msg="Resend the SLA download &amp; upload link to {{ $req->organization_name }}?"
+                                                    data-confirm="Yes, resend">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-indigo-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                                                    Resend SLA Link
+                                                </button>
+                                            </form>
+                                        @endif
+
+                                        {{-- f. Resend Onboarding/Payment Link --}}
+                                        @if ($req->status === 'payment_pending')
+                                            <form action="{{ route('system-admin.phs.requests.resend-onboarding', ['id' => $req->id]) }}" method="POST" class="m-0">
+                                                @csrf
+                                                <button type="button"
+                                                    class="approve-btn w-full flex items-center gap-2 text-left px-4 py-2 text-sm text-indigo-700 hover:bg-gray-50"
+                                                    data-title="Resend Onboarding Link?"
+                                                    data-msg="Resend the payment &amp; onboarding link to {{ $req->organization_name }}?"
+                                                    data-confirm="Yes, resend">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-indigo-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                                                    Resend Onboarding Link
+                                                </button>
+                                            </form>
                                         @endif
                                     </div>
                                     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>

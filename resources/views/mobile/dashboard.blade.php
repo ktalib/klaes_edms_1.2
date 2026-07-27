@@ -435,7 +435,7 @@
     </div>
 
     <div class="card panel">
-      <div class="panel-title"><i class="fas fa-chart-line"></i> Daily Activity</div>
+      <div class="panel-title"><i class="fas fa-chart-line"></i> Weekly Activity</div>
       <canvas id="weeklyChart"></canvas>
     </div>
 
@@ -952,11 +952,14 @@ async function renderDashboard() {
     // Recent Activity: SCB Monitors see their 5 most recent File Search Requests;
     // everyone else gets an empty placeholder (file-tracker activity is not shown here).
     renderRecentActivity();
-    const wl = s.daily_labels || s.weekly_labels || ['12am','3am','6am','9am','12pm','3pm','6pm','9pm'];
-    const wd = s.daily_activity || s.weekly_activity || [0,0,0,0,0,0,0,0];
+    const wl = s.weekly_labels || ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    const wdTotal = s.weekly_activity || [0,0,0,0,0,0,0];
+    const wdFound = s.weekly_found || [0,0,0,0,0,0,0];
+    const wdNotFound = s.weekly_not_found || [0,0,0,0,0,0,0];
+    const wdAwaiting = s.weekly_awaiting || [0,0,0,0,0,0,0];
     const cc = chartColors();
     if (weeklyChart) weeklyChart.destroy();
-    weeklyChart = new Chart(document.getElementById('weeklyChart').getContext('2d'), { type:'line', data:{ labels:wl, datasets:[{ label:'Files', data:wd, borderColor:'#8b5cf6', backgroundColor:'rgba(139,92,246,0.12)', borderWidth:2.5, fill:true, tension:0.4, pointBackgroundColor:'#8b5cf6', pointRadius:4 }]}, options:{ responsive:true, maintainAspectRatio:true, plugins:{ legend:{ display:false }}, scales:{ y:{ beginAtZero:true, grid:{ color:cc.grid }, ticks:{ color:cc.tick, font:{ size:9 }}}, x:{ grid:{ display:false }, ticks:{ color:cc.tick, font:{ size:9 }}}}}});
+    weeklyChart = new Chart(document.getElementById('weeklyChart').getContext('2d'), { type:'line', data:{ labels:wl, datasets:[{ label:'Total', data:wdTotal, borderColor:'#8b5cf6', backgroundColor:'rgba(139,92,246,0.12)', borderWidth:2.5, fill:true, tension:0.4, pointBackgroundColor:'#8b5cf6', pointRadius:4 }]}, options:{ responsive:true, maintainAspectRatio:true, plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, grid:{ color:cc.grid }, ticks:{ color:cc.tick, font:{ size:9 }}}, x:{ grid:{ display:false }, ticks:{ color:cc.tick, font:{ size:9 }}}}}});
   } catch(e) { console.error(e); }
 }
 

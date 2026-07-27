@@ -36,7 +36,7 @@ class PhsAdminController extends Controller
     {
         $PageTitle = 'PHS Administration — Organizations';
         $institutions = PhsInstitution::withCount('members')
-            ->orderBy('name')
+            ->orderByDesc('created_at')
             ->get();
 
         $stats = [
@@ -444,7 +444,19 @@ class PhsAdminController extends Controller
             ->mapWithKeys(fn ($s) => [$s => PhsOnboardingRequest::where('status', $s)->count()])
             ->all();
 
-        return view('system-admin.phs.onboarding-requests', compact('PageTitle', 'requests', 'statusFilter', 'statsByStatus'));
+        $totalRequests = array_sum($statsByStatus);
+        $pendingActions = ($statsByStatus['pending'] ?? 0) + ($statsByStatus['sla_uploaded'] ?? 0) + ($statsByStatus['payment_received'] ?? 0);
+        $activeOrgs = ($statsByStatus['activated'] ?? 0) + ($statsByStatus['approved'] ?? 0);
+        $totalRevenue = (float) PhsOnboardingRequest::whereIn('payment_status', ['completed', 'overpaid'])->sum('verified_amount');
+
+        $overviewStats = [
+            'total_requests'  => $totalRequests,
+            'pending_actions' => $pendingActions,
+            'active_orgs'     => $activeOrgs,
+            'total_revenue'   => $totalRevenue,
+        ];
+
+        return view('system-admin.phs.onboarding-requests', compact('PageTitle', 'requests', 'statusFilter', 'statsByStatus', 'overviewStats'));
     }
 
     /* ===================== Feedback / Complaints ===================== */
@@ -503,10 +515,21 @@ class PhsAdminController extends Controller
     public function legalDashboard()
     {
         $PageTitle = 'PHS — Legal Department';
-        $docReview = PhsOnboardingRequest::where('status', PhsOnboardingRequest::STATUS_PENDING)
-            ->orderByDesc('created_at')->get();
-        $slaReview = PhsOnboardingRequest::where('status', PhsOnboardingRequest::STATUS_SLA_UPLOADED)
-            ->orderByDesc('created_at')->get();
+
+        $docReview = PhsOnboardingRequest::where('status', '!=', PhsOnboardingRequest::STATUS_REJECTED)
+            ->orderByRaw("CASE WHEN status = 'pending' THEN 0 ELSE 1 END")
+            ->orderByDesc('created_at')
+            ->get();
+
+        $slaReview = PhsOnboardingRequest::whereNotIn('status', [
+                PhsOnboardingRequest::STATUS_PENDING,
+                PhsOnboardingRequest::STATUS_DOCUMENTS_APPROVED,
+                PhsOnboardingRequest::STATUS_AWAITING_SLA,
+                PhsOnboardingRequest::STATUS_REJECTED
+            ])
+            ->orderByRaw("CASE WHEN status = 'sla_uploaded' THEN 0 ELSE 1 END")
+            ->orderByDesc('created_at')
+            ->get();
 
         return view('system-admin.phs.legal-dashboard', compact('PageTitle', 'docReview', 'slaReview'));
     }
@@ -661,6 +684,42 @@ class PhsAdminController extends Controller
         }
 
         return back()->with('success', 'Final approval complete. Payment & onboarding link sent to organization.');
+    }
+
+    public function resendSlaLink(Request $request, $id)
+    {
+        $onboardingRequest = PhsOnboardingRequest::findOrFail($id);
+
+        if (!$onboardingRequest->lsa_token) {
+            $onboardingRequest->update(['lsa_token' => Str::random(64)]);
+        }
+
+        try {
+            Mail::to($onboardingRequest->contact_email)
+                ->send(new PhsSlaRequestLink($onboardingRequest->fresh()));
+            return back()->with('success', 'SLA download & upload link resent to organization.');
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->with('error', 'Failed to resend SLA link: ' . $e->getMessage());
+        }
+    }
+
+    public function resendOnboardingLink(Request $request, $id)
+    {
+        $onboardingRequest = PhsOnboardingRequest::findOrFail($id);
+
+        if (!$onboardingRequest->payment_token) {
+            $onboardingRequest->update(['payment_token' => Str::random(64)]);
+        }
+
+        try {
+            Mail::to($onboardingRequest->contact_email)
+                ->send(new PhsPaymentLinkSent($onboardingRequest->fresh()));
+            return back()->with('success', 'Payment & onboarding link resent to organization.');
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->with('error', 'Failed to resend onboarding link: ' . $e->getMessage());
+        }
     }
 
     /**

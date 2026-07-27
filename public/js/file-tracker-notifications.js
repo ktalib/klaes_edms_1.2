@@ -309,11 +309,14 @@
     }
 
     notificationCenter
-      .on('update', ({ items, unreadCount, totalCount }) => {
+      .on('update', ({ items, unreadCount, totalCount, newItems }) => {
         hideErrors();
         showLoading(false);
         renderList(items);
         updateCounters(unreadCount, totalCount);
+        if (newItems && newItems.length > 0) {
+          showDynamicToasts(newItems, unreadCount);
+        }
       })
       .on('error', (error) => {
         showLoading(false);
@@ -342,6 +345,286 @@
         notificationCenter.refresh();
       }
     });
+
+    // ── Dynamic Toast Notifications ──────────────────────────────────────────
+    function getOrCreateToastContainer() {
+      let container = document.querySelector('.notification-flash-container');
+      if (container) {
+        return container;
+      }
+      container = document.createElement('div');
+      container.className = 'notification-flash-container';
+      document.body.appendChild(container);
+      return container;
+    }
+
+    function dismissToast(toast) {
+      toast.classList.add('notification-flash-toast--closing');
+      setTimeout(() => {
+        toast.remove();
+      }, 150);
+    }
+
+    function showDynamicToasts(newItems, unreadCount) {
+      if (!Array.isArray(newItems) || !newItems.length) {
+        return;
+      }
+
+      const container = getOrCreateToastContainer();
+
+      // Show only the latest/first new item card on screen
+      const item = newItems[0];
+
+      // Remove any existing toast to replace it with the latest
+      const existingToasts = container.querySelectorAll('.notification-flash-toast');
+      existingToasts.forEach((t) => {
+        if (t.dataset.dismissTimeoutId) {
+          clearTimeout(Number(t.dataset.dismissTimeoutId));
+        }
+        t.remove();
+      });
+
+      const toast = document.createElement('div');
+      toast.className = 'notification-flash-toast';
+      toast.dataset.toastNotificationId = item.id;
+
+      const fileNo = item.data?.fileNumber || item.data?.file_number;
+      const office = item.data?.officeName || item.data?.office_name;
+
+      const raw = item.data?.raw || {};
+      const trackerId = raw.file_tracker_id || raw.file_tracking_id;
+      const status = (raw.assignment_status || '').toLowerCase();
+      const pendingStatuses = ['pending', 'pending_acceptance', 'awaiting_acceptance'];
+      const isPendingAssignment = (!status || pendingStatuses.includes(status)) &&
+        (item.type?.startsWith('file_tracking') || raw.module === 'file_tracking') &&
+        trackerId;
+
+      const isDigitalRequest = (item.type === 'digital_request' || raw.module === 'digital_request') && raw.request_id;
+      const requestId = raw.request_id;
+
+      const isInteractive = isPendingAssignment || isDigitalRequest;
+      const duration = isInteractive ? 18000 : 8000;
+      toast.style.setProperty('--toast-duration', `${duration}ms`);
+
+      let actionButtonsHtml = '';
+      if (isPendingAssignment) {
+        actionButtonsHtml = `
+          <div class="toast-action-bar">
+            <button
+              type="button"
+              class="toast-bar-action text-emerald-600 hover:bg-slate-50 transition"
+              data-action="accept"
+              data-tracker-id="${trackerId}"
+              data-notification-id="${item.id}"
+            >
+              Accept
+            </button>
+            <button
+              type="button"
+              class="toast-bar-action text-red-500 hover:bg-slate-50 transition"
+              data-action="reject"
+              data-tracker-id="${trackerId}"
+              data-notification-id="${item.id}"
+            >
+              Reject
+            </button>
+          </div>
+        `;
+      } else if (isDigitalRequest) {
+        actionButtonsHtml = `
+          <div class="toast-action-bar">
+            <button
+              type="button"
+              class="toast-bar-action text-violet-600 hover:bg-slate-50 transition"
+              data-action="approve-dr"
+              data-dr-request-id="${requestId}"
+              data-notification-id="${item.id}"
+            >
+              Approve
+            </button>
+            <button
+              type="button"
+              class="toast-bar-action text-red-500 hover:bg-slate-50 transition"
+              data-action="reject-dr"
+              data-dr-request-id="${requestId}"
+              data-notification-id="${item.id}"
+            >
+              Reject
+            </button>
+          </div>
+        `;
+      } else {
+        actionButtonsHtml = `
+          <div class="toast-action-bar">
+            <button
+              type="button"
+              class="toast-bar-action text-blue-600 hover:bg-slate-50 transition"
+              data-action="open-notifications"
+            >
+              Open
+            </button>
+            <button
+              type="button"
+              class="toast-bar-action text-slate-500 hover:bg-slate-50 transition"
+              data-action="close-toast"
+            >
+              Close
+            </button>
+          </div>
+        `;
+      }
+
+      toast.innerHTML = `
+        <!-- Floating Bell with Badge -->
+        <div class="toast-floating-bell-wrapper">
+          <div class="toast-floating-bell">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2a5.006 5.006 0 0 0-5 5v4.586l-.707.707A1 1 0 0 0 7 14h10a1 1 0 0 0 .707-1.707L17 11.586V7a5.006 5.006 0 0 0-5-5zm-2 13a2 2 0 0 0 4 0h-4z"/>
+            </svg>
+          </div>
+          ${unreadCount > 1 ? `
+            <div class="toast-bell-badge">
+              +${unreadCount - 1}
+            </div>
+          ` : ''}
+        </div>
+
+        <div class="notification-flash-toast__content text-center">
+          <div class="toast-header-text">${escapeHtml(item.title || 'Notification')}</div>
+          <p class="toast-body-text mt-2 px-1">${escapeHtml(item.body || '')}</p>
+          <div class="mt-2.5 flex justify-center gap-1.5 text-[9px] uppercase tracking-wide text-slate-400 font-bold">
+            ${fileNo ? `<span class="px-2 py-0.5 bg-slate-100 rounded-full">File ${escapeHtml(fileNo)}</span>` : ''}
+            ${office ? `<span class="px-2 py-0.5 bg-slate-100 rounded-full">${escapeHtml(office)}</span>` : ''}
+          </div>
+        </div>
+
+        ${actionButtonsHtml}
+        <div class="notification-flash-toast__progress">
+          <span class="notification-flash-toast__progress-bar"></span>
+        </div>
+      `;
+
+      container.appendChild(toast);
+
+      // Clicking anywhere on the popup card (except action or dismiss buttons) opens /notifications
+      toast.addEventListener('click', (e) => {
+        if (!e.target.closest('.toast-bar-action') && !e.target.closest('.toast-dismiss')) {
+          window.location.href = '/notifications';
+        }
+      });
+
+      // Establish auto-dismiss for standalone toast
+      const dismissTimeout = setTimeout(() => {
+        dismissToast(toast);
+      }, duration);
+      toast.dataset.dismissTimeoutId = dismissTimeout;
+
+      const actionButtons = toast.querySelectorAll('.toast-bar-action');
+      actionButtons.forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const action = btn.dataset.action;
+
+          // Handle local informational actions
+          if (action === 'open-notifications') {
+            window.location.href = '/notifications';
+            return;
+          }
+          if (action === 'close-toast') {
+            if (toast.dataset.dismissTimeoutId) {
+              clearTimeout(Number(toast.dataset.dismissTimeoutId));
+            }
+            dismissToast(toast);
+            return;
+          }
+
+          const trackerId = btn.dataset.trackerId;
+          const notificationId = Number(btn.dataset.notificationId || '');
+          const drRequestId = btn.dataset.drRequestId;
+
+          if (toast.dataset.dismissTimeoutId) {
+            clearTimeout(Number(toast.dataset.dismissTimeoutId));
+          }
+
+          actionButtons.forEach((b) => (b.disabled = true));
+
+          const originalLabel = btn.innerHTML;
+          btn.innerHTML = '<span class="inline-flex items-center gap-1"><span class="h-3.5 w-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></span></span>';
+
+          try {
+            if (action === 'accept' || action === 'reject') {
+              let note = '';
+              if (action === 'reject') {
+                note = window.prompt('Enter a reason for rejecting (optional):', '');
+                if (note === null) {
+                  actionButtons.forEach((b) => (b.disabled = false));
+                  btn.innerHTML = originalLabel;
+                  return;
+                }
+              }
+
+              await performAssignmentAction(trackerId, action, {
+                note: note,
+                notificationId,
+              });
+
+              if (notificationId) {
+                try { await markNotificationRead(notificationId); } catch (_) {}
+              }
+
+              btn.innerHTML = '✓ Done';
+            } else if (action === 'approve-dr' || action === 'reject-dr') {
+              const act = action === 'approve-dr' ? 'approve' : 'reject';
+              let rejectionReason = '';
+              if (act === 'reject') {
+                rejectionReason = window.prompt('Enter rejection reason:', '');
+                if (rejectionReason === null) {
+                  actionButtons.forEach((b) => (b.disabled = false));
+                  btn.innerHTML = originalLabel;
+                  return;
+                }
+                if (!rejectionReason.trim()) {
+                  alert('Rejection reason is required.');
+                  actionButtons.forEach((b) => (b.disabled = false));
+                  btn.innerHTML = originalLabel;
+                  return;
+                }
+              }
+
+              const res = await fetch(`/digital-request/${act}/${drRequestId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin',
+                body: JSON.stringify(act === 'reject' ? { rejection_reason: rejectionReason } : {}),
+              });
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok || data?.success === false) throw new Error(data?.message || 'Request failed.');
+
+              if (notificationId) {
+                try { await markNotificationRead(notificationId); } catch (_) {}
+              }
+
+              btn.innerHTML = '✓ Done';
+            }
+
+            if (window.FileTrackerNotificationCenter) {
+              window.FileTrackerNotificationCenter.refresh();
+            }
+
+            setTimeout(() => {
+              dismissToast(toast);
+            }, 1000);
+
+          } catch (err) {
+            alert(err?.message || 'Unable to complete action.');
+            actionButtons.forEach((b) => (b.disabled = false));
+            btn.innerHTML = originalLabel;
+          }
+        });
+      });
+    }
 
     async function performAssignmentAction(trackerId, action, options = {}) {
       const endpoint =

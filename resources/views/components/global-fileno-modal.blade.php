@@ -61,6 +61,14 @@
                 </button>
                 <button type="button"
                     class="fileno-tab-btn flex-1 px-5 py-3 text-base font-semibold rounded-md transition-all duration-200 text-gray-700 hover:text-gray-900 whitespace-nowrap"
+                    data-tab="st" onclick="GlobalFileNoModal.switchTab('st'); return false;">
+                    <div class="flex items-center justify-center space-x-2">
+                        <i data-lucide="layers" class="w-5 h-5 text-violet-600"></i>
+                        <span>ST</span>
+                    </div>
+                </button>
+                <button type="button"
+                    class="fileno-tab-btn flex-1 px-5 py-3 text-base font-semibold rounded-md transition-all duration-200 text-gray-700 hover:text-gray-900 whitespace-nowrap"
                     data-tab="sltr" onclick="GlobalFileNoModal.switchTab('sltr'); return false;">
                     <div class="flex items-center justify-center space-x-2">
                         <i data-lucide="file-text" class="w-5 h-5 text-indigo-600"></i>
@@ -757,6 +765,124 @@
                         <div id="gkn-details-container" class="mt-3"></div>
                     </div>
                 </div>
+
+                <!-- ST (Sectional Titling) Tab Content -->
+                <div class="fileno-tab-content hidden bg-white rounded p-4 border border-gray-200" data-tab="st">
+                    <div class="bg-violet-600 text-white p-3 rounded mb-4">
+                        <div class="flex items-center">
+                            <i data-lucide="layers" class="w-4 h-4 mr-2"></i>
+                            <h4 class="font-medium text-sm">ST (Sectional Titling)</h4>
+                        </div>
+                    </div>
+
+                    <!-- Input Method Toggle -->
+                    <div class="flex p-1 bg-gray-100 rounded-lg mb-4" id="modal-st-method-toggle">
+                        <label class="flex-1 flex items-center justify-center cursor-pointer group">
+                            <input type="radio" name="st-input-method" value="smart" class="sr-only peer" checked>
+                            <span class="flex items-center space-x-2 px-4 py-2 rounded-md font-medium text-sm transition-all duration-200 
+                                             text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:shadow-sm
+                                             hover:text-gray-800 peer-checked:hover:bg-violet-700">
+                                <i data-lucide="sparkles" class="w-4 h-4"></i>
+                                <span>Smart Selector</span>
+                            </span>
+                        </label>
+                        <label class="flex-1 flex items-center justify-center cursor-pointer group">
+                            <input type="radio" name="st-input-method" value="manual" class="sr-only peer">
+                            <span class="flex items-center space-x-2 px-4 py-2 rounded-md font-medium text-sm transition-all duration-200 
+                                             text-gray-600 peer-checked:bg-violet-600 peer-checked:text-white peer-checked:shadow-sm
+                                             hover:text-gray-800 peer-checked:hover:bg-violet-700">
+                                <i data-lucide="pencil" class="w-4 h-4"></i>
+                                <span>Manual Entry</span>
+                            </span>
+                        </label>
+                    </div>
+
+                    <!-- Smart Selector Section -->
+                    <div class="st-input-section" data-method="smart">
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Search Existing ST Files</label>
+                            <select id="st-smart-selector" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-violet-500">
+                                <option value="">Select from recent files or search for more...</option>
+                            </select>
+                            <div id="st-loading" class="hidden mt-2">
+                                <div class="flex items-center p-2 bg-violet-50 rounded text-sm">
+                                    <div class="animate-spin rounded-full h-4 w-4 border-2 border-violet-600 border-t-transparent mr-2"></div>
+                                    <span class="text-violet-700">Loading ST file numbers...</span>
+                                </div>
+                            </div>
+                            <div class="text-xs text-gray-500 mt-1">
+                                💡 <strong>Tip:</strong> Recent files are pre-loaded. Start typing to search for more options.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Manual Entry Section -->
+                    <div class="st-input-section hidden" data-method="manual">
+                        {{-- Type selector --}}
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Application Type <span class="text-red-500">*</span></label>
+                            <select id="mls-st-type" class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-violet-500">
+                                <option value="primary" selected>Primary</option>
+                                <option value="sua">SuA (Sub-unit Application)</option>
+                                <option value="pua">PuA (Phase-unit Application)</option>
+                            </select>
+                            <p id="st-type-hint" class="mt-1 text-xs text-gray-500">Primary: <span class="font-mono">ST-COM-2026-10</span></p>
+                        </div>
+
+                        {{-- Manual entry fields --}}
+                        <div class="grid grid-cols-3 gap-3 mb-3">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Land Use</label>
+                            <select id="mls-st-landuse" class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-violet-500">
+                                <option value="COM" selected>COM (Commercial)</option>
+                                <option value="RES">RES (Residential)</option>
+                                <option value="IND">IND (Industrial)</option>
+                                <option value="MIXED">MIXED (Mixed Use)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                            <select id="mls-st-year" class="w-full p-2 border border-gray-300 rounded year-select focus:ring-2 focus:ring-violet-500" data-placeholder="Select year">
+                                <option value="">Select year</option>
+                                @for($year = date('Y'); $year >= 2020; $year--)
+                                    <option value="{{$year}}" {{($year == date('Y')) ? 'selected' : ''}}>
+                                        {{$year}}
+                                    </option>
+                                @endfor
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Serial</label>
+                            <input type="text" id="mls-st-serial"
+                                oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+                                class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-violet-500" placeholder="1">
+                        </div>
+                    </div>
+
+                    {{-- Unit field — only shown for SuA / PuA --}}
+                    <div id="st-unit-row" class="hidden mb-3">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Unit Sequence <span class="text-red-500">*</span></label>
+                        <input type="text" id="mls-st-unit"
+                            oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+                            class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-violet-500" placeholder="1">
+                        <p class="mt-1 text-xs text-gray-500">Will be zero-padded to 3 digits — e.g. 1 → <span class="font-mono">001</span></p>
+                    </div>
+                    </div> <!-- End Manual Entry Section -->
+
+                    <div class="bg-gray-50 border rounded p-3">
+                        <div class="flex items-center justify-between">
+                            <div class="flex-1">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Preview</label>
+                                <div id="st-preview" class="text-lg font-mono font-bold text-violet-900 bg-white border px-3 py-2 rounded h-[48px] flex items-center">
+                                    <span class="text-gray-400 font-normal">-</span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- ST FILE DETAILS UI -->
+                        <div id="st-details-container" class="mt-3"></div>
+                    </div>
+                </div>
+
             </div> <!-- End Tab Content Container -->
 
         </div> <!-- End Modal Body -->
@@ -825,6 +951,8 @@
                 '#mls-old-serial',
                 '#mls-dciv-lpcc-serial',
                 '#mls-gkn-serial',
+                '#mls-st-serial',
+                '#mls-st-unit',
                 '#kangis-number',
                 '#newkangis-number'
             ];
@@ -839,6 +967,24 @@
                         }
                     }
                 });
+            });
+
+            // ST type toggle: show/hide unit field and update hint
+            $(document).on('change', '#mls-st-type', function () {
+                const type = $(this).val();
+                const $unitRow = $('#st-unit-row');
+                const $hint    = $('#st-type-hint');
+                if (type === 'primary') {
+                    $unitRow.addClass('hidden');
+                    $hint.html('Primary: <span class="font-mono">ST-COM-2026-10</span>');
+                } else if (type === 'sua') {
+                    $unitRow.removeClass('hidden');
+                    $hint.html('SuA: <span class="font-mono">ST-COM-2026-10-001</span> (own primary + unit)');
+                } else {
+                    $unitRow.removeClass('hidden');
+                    $hint.html('PuA: <span class="font-mono">ST-COM-2026-10-001</span> (linked to existing primary)');
+                }
+                GlobalFileNoModal.updatePreview();
             });
         });
     </script>

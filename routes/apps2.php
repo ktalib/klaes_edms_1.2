@@ -267,7 +267,32 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/upload', [FilearchiveController::class, 'upload'])->name('filearchive.upload');
         Route::get('/view/{id}', [FilearchiveController::class, 'view'])->name('filearchive.view');
         Route::delete('/delete/{id}', [FilearchiveController::class, 'delete'])->name('filearchive.delete');
+
+        // Quality Control — in-place page image edits (rotate/enhance/replace) + review status
+        Route::post('/pages/{pageTyping}/apply-edits', [FilearchiveController::class, 'applyPageEdits'])->name('filearchive.pages.apply-edits');
+        Route::post('/pages/{pageTyping}/qc-status', [FilearchiveController::class, 'setPageQcStatus'])->name('filearchive.pages.qc-status');
     });
+
+    // Document Library (Report / Manual PDF viewer) — frontend sample, reads public/assets/documents
+    Route::get('/documents', function () {
+        $categories = ['report' => 'Report', 'manuall' => 'Manual'];
+        $docs = [];
+        foreach ($categories as $folder => $label) {
+            $dir = public_path('assets/documents/' . $folder);
+            $files = [];
+            if (is_dir($dir)) {
+                foreach (glob($dir . '/*.pdf') as $f) {
+                    $files[] = [
+                        'name' => pathinfo($f, PATHINFO_FILENAME),
+                        'url'  => asset('assets/documents/' . $folder . '/' . rawurlencode(basename($f))),
+                        'size' => filesize($f),
+                    ];
+                }
+            }
+            $docs[] = ['key' => $folder, 'label' => $label, 'files' => $files];
+        }
+        return view('documents.index', compact('docs'));
+    })->name('documents.index');
 
     Route::prefix('filetracker')->group(function () {
         Route::get('/', [FileTrackerController::class, 'index'])->name('filetracker.index');

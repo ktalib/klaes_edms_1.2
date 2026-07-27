@@ -159,10 +159,10 @@
         }
 
         $pageTitle = $isChangeOfName 
-            ? 'OSS File Commissioning (Change of Name)' . $recordTypeSuffix
-            : 'Applications (No Change of Name)';
+            ? 'OSS File Commissioning (Change of Ownership)' . $recordTypeSuffix
+            : 'Applications (No Change of Ownership)';
         $pageDescription = $isChangeOfName
-            ? 'Land One Stop Shop overview of Change of Name Occupancy Permit records' . ($recordType ? ' filtered by ' . strtoupper($recordType) : '') . '.'
+            ? 'Land One Stop Shop overview of Change of Ownership Occupancy Permit records' . ($recordType ? ' filtered by ' . strtoupper($recordType) : '') . '.'
             : 'Land One Stop Shop overview of regular Occupancy Permit records.';
 
         $assignRoles = collect(explode(',', (string) (auth()->user()->assign_role ?? '')))->map(fn($r) => trim($r))->filter();
@@ -675,7 +675,7 @@
                                                     $canUpdateOp = $isSupperAdmin || auth()->id() == 101524;
                                                 @endphp
                                                 @if($isGenerateChangeOfName)
-                                                <!-- OSS - Generate FileNos (Change of Name) -->
+                                                <!-- OSS - Generate FileNos (Change of Ownership) -->
                                                 <button type="button" class="inline-flex items-center gap-2">
                                                     <i class="fas fa-eye w-3.5 h-3.5 text-blue-500"></i> View Record
                                                 </button>
@@ -706,7 +706,7 @@
                                                     <i class="fas fa-trash w-3.5 h-3.5"></i> Delete Entry
                                                 </button>
                                                 @elseif($isChangeOfName)
-                                                <!-- OSS Applications (Change of Name) -->
+                                                <!-- OSS Applications (Change of Ownership) -->
                                                 <button type="button" class="inline-flex items-center gap-2">
                                                     <i class="fas fa-eye w-3.5 h-3.5 text-blue-500"></i> View Record
                                                 </button>
@@ -743,7 +743,7 @@
                                                     <i class="fas fa-trash w-3.5 h-3.5"></i> Delete Entry
                                                 </button>
                                                 @else
-                                                <!-- Land Applications (No Change of Name) -->
+                                                <!-- Land Applications (No Change of Ownership) -->
                                                 <!-- 1. View Record -->
                                                 <button type="button" class="inline-flex items-center gap-2">
                                                     <i class="fas fa-eye w-3.5 h-3.5 text-blue-500"></i> View Record
@@ -955,7 +955,7 @@
     </div>
 
     {{-- ──────────────── Commission New File Number Modal ──────────────── --}}
-    {{-- Batch Mode re-enabled (was previously hidden for Change of Name). --}}
+    {{-- Batch Mode re-enabled (was previously hidden for Change of Ownership). --}}
     <script>window.commissionModalHideBatchMode = false;</script>
     @include('components.commission-fileno-modal-include')
 
@@ -990,6 +990,16 @@
                             </button>
                         </div>
                         <p id="ffrStatus" class="mt-2 text-xs text-slate-500">Awaiting file selection.</p>
+                        <div id="ffrDetailsBadges" class="hidden mt-2 flex flex-wrap items-center gap-2">
+                            <div class="inline-flex items-center gap-1.5 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 border border-blue-200">
+                                <i data-lucide="user" class="h-3.5 w-3.5"></i>
+                                <span id="ffrFileTitleText"></span>
+                            </div>
+                            <div id="ffrLocationBadgeContainer" class="hidden inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
+                                <i data-lucide="map-pin" class="h-3.5 w-3.5"></i>
+                                <span id="ffrLocationText"></span>
+                            </div>
+                        </div>
                         <div class="flex flex-wrap gap-2 mt-3">
                             <button type="button" id="ffrMatchOpBtn" onclick="ffrHandleMatchOp()" class="hidden inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 transition">
                                 <i data-lucide="link-2" class="h-3.5 w-3.5"></i>
@@ -1112,7 +1122,7 @@
         <div class="mx-auto mt-10 w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
             <div class="flex items-start justify-between gap-4 border-b border-slate-200 p-5">
                 <div>
-                    <p class="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">OSS — Change of Name</p>
+                    <p class="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">OSS — Change of Ownership</p>
                     <h3 class="mt-1 text-xl font-extrabold text-slate-900">Do you want to match this OP?</h3>
                     <p class="mt-1 text-sm text-slate-500">This will assign a TEMP file number, set the system source, and create a Transfer of Title row for the OP below.</p>
                 </div>
@@ -1206,7 +1216,7 @@
         <div class="mx-auto mt-6 w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl flex flex-col max-h-[calc(100vh-4rem)]">
             <div class="flex items-start justify-between gap-4 border-b border-slate-200 p-5 flex-shrink-0">
                 <div>
-                    <p class="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Applications (Change of Name)</p>
+                    <p class="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Applications (Change of Ownership)</p>
                     <h3 class="mt-1 text-xl font-extrabold text-slate-900">Edit File Number Details</h3>
                 </div>
                 <button type="button" onclick="closeOpEditModal()" class="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700">
@@ -2390,7 +2400,7 @@
 
         // Give Alpine a tick to initialise, then apply desired defaults.
         setTimeout(function () {
-            // In Lands One Stop Shop (Applications - No Change of Name),
+            // In Lands One Stop Shop (Applications - No Change of Ownership),
             // hide Conversion and Allocation List options in this modal.
             var conversionOption = document.querySelector('#generateModal .commission-conversion-option');
             if (conversionOption) {
@@ -2436,7 +2446,7 @@
                 // on Direct Allocation or Resettlement radios.
                 component.defaultAllocationType = '';
                 component.requireOpSource = true;
-                component.subSource = @json($isChangeOfName ? 'OP Change of Name' : '');
+                component.subSource = @json($isChangeOfName ? 'OP Change of Ownership' : '');
                 component.hideBatchMode = false; // Batch Mode re-enabled
                 if (mode === 'new' && preselectedFileNo) {
                     component.existingFileNo = preselectedFileNo;
@@ -2540,7 +2550,7 @@
         }
     }
 
-    // Fallback helper for address-builder based modals (Verification / Change of Name)
+    // Fallback helper for address-builder based modals (Verification / Change of Ownership)
     // Some actions call this directly from this page script.
     function _ossClearSingleAddressBuilder(prefix, outputId) {
         ['_plot', '_street', '_street_other', '_district', '_district_other', '_lga', '_state'].forEach(function (suffix) {
@@ -3447,6 +3457,12 @@
         document.getElementById('ffrSourceFileNo').value = '';
         var matchOpBtn = document.getElementById('ffrMatchOpBtn');
         if (matchOpBtn) matchOpBtn.classList.add('hidden');
+        var badgeEl = document.getElementById('ffrDetailsBadges');
+        if (badgeEl) badgeEl.classList.add('hidden');
+        var titleTextEl = document.getElementById('ffrFileTitleText');
+        if (titleTextEl) titleTextEl.textContent = '';
+        var locationTextEl = document.getElementById('ffrLocationText');
+        if (locationTextEl) locationTextEl.textContent = '';
         document.getElementById('ffrStatus').textContent = 'Awaiting file selection.';
         ffrShowModes(false, false, false);
         document.getElementById('ffrNewCard').classList.add('hidden');
@@ -3607,6 +3623,9 @@
 
     function ffrLooksLikeOpRecord(row) {
         if (!row || typeof row !== 'object') return false;
+
+        // A Transfer of Title is never an OP record, even if the instrument says "(OP)"
+        if (ffrLooksLikeTransferOfTitle(row)) return false;
 
         var opSerial = ((row.op_serial_number || row.opSerialNumber || '') + '').trim();
         if (opSerial) return true;
@@ -3789,6 +3808,62 @@
         ffrState.opRecord = null;
         ffrState.captureExistingFromNotFound = false;
         ffrState.indexedFile = null;
+
+        try {
+            var titleResp = await fetch('{{ route("lands-one-stop-shop.all-applications.lookup-file-indexing") }}?file_no=' + encodeURIComponent(targetFileNo), {
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+            });
+            var titleData = await titleResp.json();
+            var fileTitle = (titleData && titleData.data && titleData.data.file_title) ? titleData.data.file_title : (ffrState.selectedFileMeta ? ffrState.selectedFileMeta.file_name : '');
+            var location = (titleData && titleData.data && titleData.data.location) ? titleData.data.location : (ffrState.selectedFileMeta ? ffrState.selectedFileMeta.location : '');
+            
+            var badgesContainer = document.getElementById('ffrDetailsBadges');
+            var titleTextEl = document.getElementById('ffrFileTitleText');
+            var locationTextEl = document.getElementById('ffrLocationText');
+            var locationContainer = document.getElementById('ffrLocationBadgeContainer');
+            
+            if (badgesContainer) {
+                if (fileTitle || location) {
+                    badgesContainer.classList.remove('hidden');
+                    
+                    if (titleTextEl) titleTextEl.textContent = fileTitle || 'No Title';
+                    
+                    if (location && locationContainer && locationTextEl) {
+                        locationTextEl.textContent = location;
+                        locationContainer.classList.remove('hidden');
+                    } else if (locationContainer) {
+                        locationContainer.classList.add('hidden');
+                    }
+                } else {
+                    badgesContainer.classList.add('hidden');
+                }
+            }
+        } catch (e) {
+            var fileTitle = ffrState.selectedFileMeta ? ffrState.selectedFileMeta.file_name : '';
+            var location = ffrState.selectedFileMeta ? ffrState.selectedFileMeta.location : '';
+            
+            var badgesContainer = document.getElementById('ffrDetailsBadges');
+            var titleTextEl = document.getElementById('ffrFileTitleText');
+            var locationTextEl = document.getElementById('ffrLocationText');
+            var locationContainer = document.getElementById('ffrLocationBadgeContainer');
+            
+            if (badgesContainer) {
+                if (fileTitle || location) {
+                    badgesContainer.classList.remove('hidden');
+                    
+                    if (titleTextEl) titleTextEl.textContent = fileTitle || 'No Title';
+                    
+                    if (location && locationContainer && locationTextEl) {
+                        locationTextEl.textContent = location;
+                        locationContainer.classList.remove('hidden');
+                    } else if (locationContainer) {
+                        locationContainer.classList.add('hidden');
+                    }
+                } else {
+                    badgesContainer.classList.add('hidden');
+                }
+            }
+        }
 
         try {
             var response = await fetch('/api/pra/v1/records/all-by-file/' + encodeURIComponent(targetFileNo), {
@@ -6212,7 +6287,7 @@
     }
 
     /* ═══════════════════════════════════════════════════════════════════
-       Print Bill / Verification / Change of Name actions
+       Print Bill / Verification / Change of Ownership actions
        ═══════════════════════════════════════════════════════════════════ */
     function printBillForOP(btn) {
         var data = _getRecordFromButton(btn);
@@ -6261,6 +6336,12 @@
             return;
         }
 
+        var originalOpHolder = '';
+        var p1 = String(data.party_1_name || data.party_1 || '').trim();
+        if (p1 && p1 !== '—' && p1.toUpperCase() !== 'KANO STATE GOVERNMENT') {
+            originalOpHolder = p1;
+        }
+
         var csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
         var payload = {
             file_number: fileNo,
@@ -6272,7 +6353,8 @@
             lga: String(data.lga || '').trim(),
             created_by: String(data.commissioned_by || '').trim(),
             commissioning_time: String(data.time_commissioned || '').trim(),
-            date_created: String(data.date_commissioned || '').trim()
+            date_created: String(data.date_commissioned || '').trim(),
+            original_op_holder: originalOpHolder
         };
 
         fetch('{{ route("commissioning-sheet.generate-print") }}', {
@@ -6293,6 +6375,9 @@
             var printUrl = '{{ url("commissioning-sheet/print") }}/' + result.data.id + '?source=oss';
             if (result.data.commissioning_time) {
                 printUrl += '&commissioning_time=' + encodeURIComponent(result.data.commissioning_time);
+            }
+            if (result.data.original_op_holder) {
+                printUrl += '&original_op_holder=' + encodeURIComponent(result.data.original_op_holder);
             }
             window.open(printUrl, '_blank');
         })

@@ -8458,8 +8458,8 @@
             const currentHolderObj = latest ? deriveCurrentHolder(latest) : null;
             const currentHolder = (currentHolderObj && currentHolderObj.name)
                 || (record && record.current_holder) || '';
-            const originalHolder = deriveOriginalHolderFromEntry(earliest)
-                || (record && record.original_holder) || '';
+            const originalHolder = (record && record.original_holder)
+                || deriveOriginalHolderFromEntry(earliest) || '';
 
             // Backfill detail fields from the existing indexed record (blank if not indexed).
             // File Title doubles as Current Holder; only fill empty fields so user edits stay.

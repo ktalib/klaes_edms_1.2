@@ -1327,7 +1327,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 const addPartyBtnSpan = document.querySelector('#add-party-btn span');
                 if (addPartyBtnSpan) addPartyBtnSpan.textContent = 'Add Another Assignee';
 
-            } else if (type === 'Mortgage') {
+            } else if (type === 'Mortgage' || type === 'Tripartite Mortgage') {
                 if (financialSection) financialSection.classList.remove('hidden');
                 financialInput.required = true;
                 financialWordsInput.required = true;
@@ -1347,6 +1347,18 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (addPartyBtnSpan) addPartyBtnSpan.textContent = 'Add Another Mortgagee';
             }
 
+            const multiplePropertiesContainer = document.getElementById('multiple-properties-prompt-container');
+            const hasMultipleCheckbox = document.getElementById('has_multiple_properties');
+            if (type === 'Mortgage' || type === 'Tripartite Mortgage') {
+                if (multiplePropertiesContainer) multiplePropertiesContainer.classList.remove('hidden');
+            } else {
+                if (multiplePropertiesContainer) multiplePropertiesContainer.classList.add('hidden');
+                if (hasMultipleCheckbox && hasMultipleCheckbox.checked) {
+                    hasMultipleCheckbox.checked = false;
+                    hasMultipleCheckbox.dispatchEvent(new Event('change'));
+                }
+            }
+
             toggleMortgageSpecificFields(type);
 
             if (typeof updateApplicantNamePreview === 'function') updateApplicantNamePreview();
@@ -1354,6 +1366,23 @@ document.addEventListener('DOMContentLoaded', function () {
             if (window.lucide) window.lucide.createIcons();
         });
         consentTypeSelect.dispatchEvent(new Event('change'));
+    }
+
+    const hasMultipleCheckbox = document.getElementById('has_multiple_properties');
+    if (hasMultipleCheckbox) {
+        hasMultipleCheckbox.addEventListener('change', function() {
+            const addFilenoBtn = document.getElementById('add-fileno-btn');
+            if (addFilenoBtn) {
+                if (this.checked) {
+                    addFilenoBtn.classList.remove('hidden');
+                    addFilenoBtn.classList.add('flex');
+                } else {
+                    addFilenoBtn.classList.add('hidden');
+                    addFilenoBtn.classList.remove('flex');
+                    document.querySelectorAll('.remove-fileno-btn').forEach(btn => btn.click());
+                }
+            }
+        });
     }
 
     // Keep applicant name badge in sync whenever the applicant name changes

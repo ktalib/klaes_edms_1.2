@@ -9,7 +9,7 @@
             <!-- Header -->
             <div class="bg-slate-50 px-8 py-6 flex justify-between items-center border-b border-slate-200">
                 <div>
-                    <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Recommendation for Grant of Change of Purpose</h1>
+                    <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Recommendation</h1>
                     <p class="text-slate-500 text-sm mt-1">Data entry form</p>
                 </div>
                 <div class="flex items-center gap-3">
@@ -19,7 +19,9 @@
                 </div>
             </div>
 
-            <form id="land-recommendation-form" action="{{ isset($recommendation) ? route('land-recommendations.update', $recommendation->id) : route('land-recommendations.store') }}" method="POST" class="p-8 space-y-8">
+            <form id="land-recommendation-form" action="{{ isset($recommendation) ? route('land-recommendations.update', $recommendation->id) : route('land-recommendations.store') }}" method="POST" class="p-8 space-y-8"
+                data-dupcheck-url="{{ route('land-recommendations.check-duplicate') }}"
+                data-record-id="{{ $recommendation->id ?? '' }}">
                 @csrf
                 @if(isset($recommendation))
                     @method('PUT')
@@ -529,20 +531,33 @@
                                     <input type="hidden" name="land_use" id="land_use_text" value="{{ old('land_use', $recommendation->land_use ?? '') }}">
                                 </div>
 
+                                @php
+                                    $defaultPurposeId = old('purpose_id', $recommendation->purpose_id ?? '');
+                                    if (isset($recommendation) && !$recommendation->purpose_id && $recommendation->purpose_of_clause) {
+                                        $defaultPurposeId = 'other';
+                                    }
+                                    if (old('purpose_id') === 'other') {
+                                        $defaultPurposeId = 'other';
+                                    }
+                                @endphp
                                 <div>
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">(b) Purpose Clause</label>
-                                    <select name="purpose_id" id="purpose_id" required
-                                        data-selected="{{ old('purpose_id', $recommendation->purpose_id ?? '') }}"
+                                    <select name="purpose_id" id="purpose_id"
+                                        data-selected="{{ $defaultPurposeId }}"
                                         class="w-full border @error('purpose_id') border-red-500 @else border-slate-200 @enderror rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
                                         <option value="">Select Purpose</option>
                                         @if(isset($purposes))
                                             @foreach($purposes as $p)
-                                                <option value="{{ $p->id }}" {{ (old('purpose_id', $recommendation->purpose_id ?? '') == $p->id) ? 'selected' : '' }}>
+                                                <option value="{{ $p->id }}" {{ ($defaultPurposeId == $p->id) ? 'selected' : '' }}>
                                                     {{ $p->name }}
                                                 </option>
                                             @endforeach
                                         @endif
+                                        <option value="other" {{ ($defaultPurposeId == 'other') ? 'selected' : '' }}>Other</option>
                                     </select>
+                                    <input type="text" id="purpose_id_other" name="purpose_id_other" placeholder="Specify Purpose..."
+                                        value="{{ old('purpose_id_other', ($defaultPurposeId == 'other' ? ($recommendation->purpose_of_clause ?? '') : '')) }}"
+                                        class="mt-2 w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition bg-amber-50" style="display:none;">
                                     @error('purpose_id')
                                         <p class="text-red-500 text-[10px] mt-1 font-semibold uppercase">{{ $message }}</p>
                                     @enderror
@@ -669,9 +684,11 @@
                                 </div>
                                 <div>
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Dev. Charge: </label>
-                                    <input type="number" step="0.01" name="development_charge" value="{{ old('development_charge', $recommendation->development_charge ?? '') }}"
+                                    <input type="text" name="development_charge" value="{{ old('development_charge', $recommendation->development_charge ?? 'To follow') }}"
                                         class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
                                 </div>
+
+                               
                             </div>
                             <div class="grid grid-cols-2 gap-4">
                                 <div>
@@ -699,29 +716,36 @@
                     <div id="conversion-fields-section" class="{{ old('type', $recommendation->type ?? '') == 'Conversion' ? '' : 'hidden' }} bg-amber-50/50 border border-amber-200 rounded-xl p-6 space-y-4 col-span-2">
                         <div class="flex items-center gap-2 mb-2">
                             <i data-lucide="refresh-cw" class="h-4 w-4 text-amber-600"></i>
-                            <h3 class="text-sm font-bold text-amber-900 uppercase tracking-tight">Conversion Metadata</h3>
+                            <h3 class="text-sm font-bold text-amber-900 uppercase tracking-tight">Page Number details</h3>
                         </div>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        
+                        <!-- Row 1 & 2: Page Numbers and Survey Report -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                             <div>
-                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Page</label>
+                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Survey Report Page No</label>
+                                <input type="text" name="page_survey_report" value="{{ old('page_survey_report', $recommendation->page_survey_report ?? '') }}"
+                                    class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Survey Report Detail</label>
+                                <input type="text" name="survey_report" value="{{ old('survey_report', $recommendation->survey_report ?? '') }}"
+                                    class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition"
+                                    placeholder="Reference/Description">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Application Page No</label>
                                 <input type="text" name="page" value="{{ old('page', $recommendation->page ?? '') }}"
                                     class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
                             </div>
-                            <div class="md:col-span-2">
-                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Survey Report</label>
-                                <div class="flex gap-4">
-                                    <div class="flex-1">
-                                        <input type="text" name="survey_report" value="{{ old('survey_report', $recommendation->survey_report ?? '') }}"
-                                            class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition"
-                                            placeholder="Reference/Description">
-                                    </div>
-                                    <div class="w-32">
-                                        <input type="text" name="page_survey_report" value="{{ old('page_survey_report', $recommendation->page_survey_report ?? '') }}"
-                                            class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition"
-                                            placeholder="Add. Page">
-                                    </div>
-                                </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Physical Planning Page No</label>
+                                <input type="text" name="page_2" value="{{ old('page_2', $recommendation->page_2 ?? '') }}"
+                                    class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
                             </div>
+                        </div>
+
+                        <!-- Row 3: Other Metadata -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div>
                                 <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Improvement</label>
                                 <input type="text" name="improvement" value="{{ old('improvement', $recommendation->improvement ?? '') }}"
@@ -879,7 +903,7 @@
 </style>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
-<script src="{{ asset('js/land_recommendations.js') }}"></script>
+<script src="{{ asset('js/land_recommendations.js') }}?v={{ time() + 1 }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         // TP No Select2 — lazy search against tp_lookups (200k+ rows)
@@ -1014,6 +1038,40 @@
                 if (window._buildLocation) window._buildLocation();
             });
         }
+
+        // Toggle custom purpose field when 'other' is selected
+        var $purposeSelect = $('#purpose_id');
+        var $purposeOther = $('#purpose_id_other');
+        var $purposeText = $('#purpose_of_clause_text');
+
+        function togglePurposeOther() {
+            var val = $purposeSelect.val();
+            if (val === 'other') {
+                $purposeOther.show().focus();
+            } else {
+                $purposeOther.hide();
+                if (val) {
+                    $purposeText.val($purposeSelect.find('option:selected').text().trim());
+                } else {
+                    $purposeText.val('');
+                }
+            }
+        }
+
+        $purposeSelect.on('change', togglePurposeOther);
+
+        // Run on load
+        if ($purposeSelect.val() === 'other' || ($purposeSelect.val() === null && $purposeOther.val() !== '')) {
+            $purposeOther.show();
+        } else {
+            $purposeOther.hide();
+        }
+
+        $purposeOther.on('input', function() {
+            if ($purposeSelect.val() === 'other') {
+                $purposeText.val($(this).val());
+            }
+        });
 
         initOtherSelect2('#street_name_select', '#street_name', '#street_name_other',
             '/api/reference/streets', 'search');

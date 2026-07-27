@@ -203,15 +203,19 @@
                     <td>{{ $tracker->origin_office_name ?? '—' }}</td>
                 </tr>
                 <tr>
-                    <td class="label">Destination Office (Department)</td>
+                    <td class="label">Requester Department</td>
                     <td>{{ $tracker->department ?? '—' }}</td>
                 </tr>
                 <tr>
-                    <td class="label">Receiving Office</td>
+                    <td class="label">Requester Director</td>
+                    <td>{{ $tracker->requester_director_name ?? '—' }}</td>
+                </tr>
+                <tr>
+                    <td class="label">Requester Office</td>
                     <td>{{ $tracker->receiving_office_name ?? '—' }}</td>
                 </tr>
                 <tr>
-                    <td class="label">Receiving Officer</td>
+                    <td class="label">File Requester</td>
                     <td>{{ $tracker->receiving_officer_name ?? '—' }}</td>
                 </tr>
                 <tr>

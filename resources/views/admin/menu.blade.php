@@ -34,6 +34,7 @@
   <!-- Sidebar Content -->
   <div class="sidebar-content p-2 overflow-y-auto max-h-[calc(100vh-8rem)] scroll-smooth scrollbar-visible">
     @include('admin.menu.partials.modules.dashboard')
+    @include('admin.menu.partials.modules.hc_ps_view')
     @include('admin.menu.partials.modules.crm')
     @include('admin.menu.partials.modules.edms')
     @include('admin.menu.partials.modules.digital_archive')

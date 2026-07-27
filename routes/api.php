@@ -307,6 +307,7 @@ Route::prefix('file-numbers')->controller(FileNumberApiController::class)->group
 
     // Legacy file number systems
     Route::get('/mls', 'mls');
+    Route::get('/st', 'st');
     Route::get('/kangis', 'kangis');
     Route::get('/newkangis', 'newKangis');
 

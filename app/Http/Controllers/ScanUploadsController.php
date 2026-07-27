@@ -1272,7 +1272,11 @@ class ScanUploadsController extends Controller
             }
             
             $files = $query
-                ->select('file_number', 'file_title', 'registry')
+                ->select(
+                    'file_number', 'file_title', 'registry', 'tracking_id',
+                    'district', 'lga', 'street_name', 'plot_number', 'plot_size',
+                    'location', 'prop_id'
+                )
                 ->orderByDesc('created_at')
                 ->limit($perPage)
                 ->get();
@@ -1282,8 +1286,16 @@ class ScanUploadsController extends Controller
                 'data' => $files->map(function ($file) {
                     return [
                         'file_number' => $file->file_number,
-                        'file_title' => $file->file_title ?? 'Untitled',
-                        'registry' => $file->registry ?? 'Unknown',
+                        'file_title' => $file->file_title ?? '',
+                        'registry' => $file->registry ?? '',
+                        'tracking_id' => $file->tracking_id ?? '',
+                        'district' => $file->district ?? '',
+                        'lga' => $file->lga ?? '',
+                        'street_name' => $file->street_name ?? '',
+                        'plot_number' => $file->plot_number ?? '',
+                        'plot_size' => $file->plot_size ?? '',
+                        'location' => $file->location ?? '',
+                        'prop_id' => $file->prop_id ?? '',
                     ];
                 })->toArray(),
             ]);

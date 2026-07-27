@@ -201,11 +201,63 @@ document.addEventListener('DOMContentLoaded', function () {
                             // Auto-detect recommendation type from file number
                             const fileNo = (fileNoInput ? fileNoInput.value : '') || (data.fileNumber || '');
                             autoDetectRecommendationType(fileNo);
+
+                            // Warn immediately if a recommendation already exists for this file
+                            checkDuplicateFileNo(fileNo).then(dup => { if (dup) warnDuplicate(dup); });
                         }
                     }
                 });
             });
         }
+    }
+
+    // ── Duplicate file-number check ──────────────────────────────────────────
+    // Warns when a recommendation already exists for the selected file number.
+    // On the edit page the current record is excluded via data-record-id.
+    const dupCheckUrl = form?.dataset.dupcheckUrl || '';
+    const excludeId   = form?.dataset.recordId || '';
+    let lastDuplicate = null; // cache the most recent check result
+
+    function checkDuplicateFileNo(fileNo) {
+        lastDuplicate = null;
+        if (!dupCheckUrl || !fileNo) return Promise.resolve(null);
+
+        const params = new URLSearchParams({ file_number: fileNo });
+        if (excludeId) params.append('exclude_id', excludeId);
+
+        return fetch(dupCheckUrl + '?' + params.toString(), {
+            headers: { 'Accept': 'application/json' }
+        })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                lastDuplicate = (data && data.exists) ? data : null;
+                return lastDuplicate;
+            })
+            .catch(() => null);
+    }
+
+    function warnDuplicate(dup) {
+        if (!dup || typeof Swal === 'undefined') return;
+        Swal.fire({
+            icon: 'warning',
+            title: 'Possible Duplicate',
+            html:
+                'A recommendation already exists for <strong>' + (dup.file_number || '') + '</strong>.' +
+                '<div style="text-align:left;margin-top:10px;font-size:0.85rem;color:#475569">' +
+                    '<div><strong>Applicant:</strong> ' + (dup.applicant_name || '—') + '</div>' +
+                    '<div><strong>Status:</strong> ' + (dup.status || '—') + '</div>' +
+                    '<div><strong>Created:</strong> ' + (dup.created_at || '—') + '</div>' +
+                '</div>',
+            showCancelButton: true,
+            confirmButtonText: 'Open Existing',
+            cancelButtonText: 'Continue Anyway',
+            confirmButtonColor: '#2563eb',
+            cancelButtonColor: '#64748b',
+        }).then(result => {
+            if (result.isConfirmed && dup.edit_url) {
+                window.location.href = dup.edit_url;
+            }
+        });
     }
 
     function autoDetectRecommendationType(fileNo) {
@@ -235,6 +287,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Form submission validation
     if (form) {
+        let dupConfirmed = false; // set once the user chooses to save despite a duplicate
+
         form.addEventListener('submit', function (e) {
             if (!fileNoInput.value) {
                 e.preventDefault();
@@ -246,11 +300,28 @@ document.addEventListener('DOMContentLoaded', function () {
                 Swal.fire({ icon: 'warning', title: 'Land Use Required', text: 'Please select a land use category.' });
                 return;
             }
-            if (purposeSelect && !purposeSelect.value) {
+
+            // Block on a known duplicate until the user explicitly confirms.
+            if (lastDuplicate && !dupConfirmed) {
                 e.preventDefault();
-                Swal.fire({ icon: 'warning', title: 'Purpose Clause Required', text: 'Please select a purpose clause.' });
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Possible Duplicate',
+                    html: 'A recommendation already exists for <strong>' + (lastDuplicate.file_number || fileNoInput.value) + '</strong>.<br>Save this one anyway?',
+                    showCancelButton: true,
+                    confirmButtonText: 'Save Anyway',
+                    cancelButtonText: 'Cancel',
+                    confirmButtonColor: '#dc2626',
+                    cancelButtonColor: '#64748b',
+                }).then(result => {
+                    if (result.isConfirmed) {
+                        dupConfirmed = true;
+                        form.requestSubmit ? form.requestSubmit() : form.submit();
+                    }
+                });
                 return;
             }
+
             if (submitBtn) {
                 submitBtn.disabled = true;
                 submitBtn.innerHTML = '<i class="animate-spin mr-2"></i> Processing...';
@@ -303,13 +374,21 @@ document.addEventListener('DOMContentLoaded', function () {
                                 const sel = String(p.id) === String(savedPurpose) ? ' selected' : '';
                                 options += `<option value="${p.id}"${sel}>${p.name}</option>`;
                             });
+                            // Add 'Other' option
+                            const isOther = String(savedPurpose) === 'other' || (savedPurpose === '' && purposeSelect.dataset.custom === 'true');
+                            options += `<option value="other"${isOther ? ' selected' : ''}>Other</option>`;
+                            
                             purposeSelect.innerHTML = options;
                             purposeSelect.disabled = false;
+                            
                             // Sync the hidden text field
-                            if (savedPurpose) {
+                            if (savedPurpose && savedPurpose !== 'other') {
                                 const selOpt = purposeSelect.options[purposeSelect.selectedIndex];
                                 if (purposeText && selOpt) purposeText.value = selOpt.text;
                             }
+                            
+                            // Trigger change so UI can update (e.g. show custom purpose field)
+                            purposeSelect.dispatchEvent(new Event('change'));
                         } else {
                             purposeSelect.innerHTML = '<option value="">Error loading purposes</option>';
                         }

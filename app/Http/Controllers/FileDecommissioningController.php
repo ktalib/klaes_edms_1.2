@@ -337,6 +337,10 @@ class FileDecommissioningController extends Controller
 
         $conn = \Illuminate\Support\Facades\DB::connection('sqlsrv');
         $sources = [
+            ['PropID_Master', 'primary_file_number', 'prop_id'],
+            ['PropID_Master', 'mlsFNo', 'prop_id'],
+            ['PropID_Master', 'kangisFileNo', 'prop_id'],
+            ['PropID_Master', 'NewKANGISFileno', 'prop_id'],
             ['deprecated_records', 'file_number', 'prop_id'],
             ['file_history_staging', 'mlsfNo', 'prop_id'],
             ['CofO_staging', 'mlsFNo', 'prop_id'],

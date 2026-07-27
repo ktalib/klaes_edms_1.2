@@ -9,6 +9,13 @@
         $letterheadBase64 = file_exists($letterheadPath)
             ? 'data:image/jpeg;base64,' . base64_encode(file_get_contents($letterheadPath))
             : null;
+
+        $securityCode = app(\App\Services\SecurityCodeService::class)->getOrGenerateForDocument(
+            (string) ($recommendation->sltr_number ?? ($recommendation->id ?? '')),
+            (int) $recommendation->id,
+            'SLTR Recomm'
+        );
+        $sc = app(\App\Services\SecurityCodeService::class)->formatForDisplay($securityCode->code);
     @endphp
     <style>
         :root {
@@ -158,11 +165,73 @@
             }
             @page { size: A4; margin: 0; }
         }
+
+        .serial-box {
+            position: absolute;
+            top: 12mm;
+            right: 12mm;
+            border: 1px solid var(--primary-green);
+            padding: 4px 8px;
+            min-width: 110px;
+            font-size: 8pt;
+            background: white;
+            z-index: 20;
+            text-align: center;
+        }
+        .serial-box .serial-label {
+            font-weight: bold;
+            text-transform: uppercase;
+            border-bottom: 1px solid var(--primary-green);
+            padding-bottom: 3px;
+            margin-bottom: 4px;
+            font-size: 8pt;
+            color: var(--primary-green);
+        }
+        .serial-code-wrap {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            justify-content: center;
+        }
+        .serial-fraction {
+            line-height: 1;
+            color: #1e293b;
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            font-weight: 900;
+        }
+        .serial-fraction .frac-top {
+            border-bottom: 1.5px solid #1e293b;
+            padding-bottom: 1px;
+            font-size: 8px;
+        }
+        .serial-fraction .frac-bot {
+            padding-top: 1px;
+            font-size: 8px;
+        }
+        .serial-digits {
+            font-size: 13px;
+            font-weight: 900;
+            letter-spacing: 0.1em;
+            color: #1e293b;
+            font-family: 'Courier New', monospace;
+        }
     </style>
 </head>
 <body>
 
 <div class="a4-page">
+    <div class="serial-box">
+        <div class="serial-label">Serial No:</div>
+        <div class="serial-code-wrap">
+            <span class="serial-fraction">
+              <span class="frac-top">{{ $sc['alphabet'] }}</span>
+              <span class="frac-bot">{{ $sc['digits_start'] }}</span>
+            </span>
+            <span class="serial-digits">{{ $sc['digits_end'] }}</span>
+        </div>
+    </div>
     <div class="main-container">
         <div class="title-block">
             Recommendation for the Conversion of<br>

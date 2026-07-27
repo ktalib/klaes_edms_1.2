@@ -595,6 +595,8 @@ Route::middleware(['auth'])->group(function () {
             Route::post('{id}/approve', [PhsAdminController::class, 'approveRequest'])->name('approve');
             Route::post('{id}/final-approve', [PhsAdminController::class, 'finalApproveRequest'])->name('final-approve');
             Route::post('{id}/reject', [PhsAdminController::class, 'rejectRequest'])->name('reject');
+            Route::post('{id}/resend-sla', [PhsAdminController::class, 'resendSlaLink'])->name('resend-sla');
+            Route::post('{id}/resend-onboarding', [PhsAdminController::class, 'resendOnboardingLink'])->name('resend-onboarding');
         });
 
         // Legal department
@@ -799,14 +801,14 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/', [DeedsApplicationController::class, 'index'])->name('index');
         Route::get('/create', [DeedsApplicationController::class, 'create'])->name('create');
         Route::post('/', [DeedsApplicationController::class, 'store'])->name('store');
-        
+
         // Master Delete Endpoints
         Route::delete('/delete-master/{id}', [DeedsApplicationController::class, 'deleteMaster'])->name('delete-master');
         Route::delete('/delete-master-bulk', [DeedsApplicationController::class, 'deleteMasterBulk'])->name('delete-master-bulk');
 
         // Master Print Reset Endpoint
         Route::post('/reset-print-master/{id}', [DeedsApplicationController::class, 'resetPrintMaster'])->name('reset-print-master');
-        
+
         Route::get('/{deedsApplication}', [DeedsApplicationController::class, 'show'])->name('show');
         Route::get('/{deedsApplication}/edit', [DeedsApplicationController::class, 'edit'])->name('edit');
         Route::put('/{deedsApplication}', [DeedsApplicationController::class, 'update'])->name('update');
@@ -992,6 +994,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/batch-print-log', [\App\Http\Controllers\LandRofoController::class, 'batchPrintLog'])->name('batch-print-log');
         Route::post('/{id}/generate', [\App\Http\Controllers\LandRofoController::class, 'generate'])->name('generate');
         Route::post('/{id}/assign-security-paper', [\App\Http\Controllers\LandRofoController::class, 'assignSecurityPaperCode'])->name('assign-security-paper');
+        Route::post('/{id}/reset-security-paper', [\App\Http\Controllers\LandRofoController::class, 'resetSecurityPaperCode'])->name('reset-security-paper');
         Route::get('/{id}/print', [\App\Http\Controllers\LandRofoController::class, 'print'])->name('print');
         Route::post('/{id}/log-print', [\App\Http\Controllers\LandRofoController::class, 'logPrint'])->name('log-print');
     });
@@ -1019,6 +1022,8 @@ Route::middleware(['auth'])->group(function () {
     Route::post('land-recommendations/batch-approve', [\App\Http\Controllers\LandRecommendationController::class, 'batchApprove'])->name('land-recommendations.batch-approve');
     // Must stay above the resource route so /export is not swallowed by /{id}
     Route::get('land-recommendations/export', [\App\Http\Controllers\LandRecommendationController::class, 'export'])->name('land-recommendations.export');
+    // Duplicate check by file number — must also stay above the resource route
+    Route::get('land-recommendations/check-duplicate', [\App\Http\Controllers\LandRecommendationController::class, 'checkDuplicate'])->name('land-recommendations.check-duplicate');
     Route::resource('land-recommendations', \App\Http\Controllers\LandRecommendationController::class);
     Route::post('land-recommendations/{id}/log-print', [\App\Http\Controllers\LandRecommendationController::class, 'logPrint'])->name('land-recommendations.log-print');
     Route::post('land-recommendations/{id}/approve', [\App\Http\Controllers\LandRecommendationController::class, 'approve'])->name('land-recommendations.approve');
@@ -1095,7 +1100,8 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('kangis-printlabel')->name('kangis-printlabel.')->group(function () {
         Route::get('/', [KangisPrintLabelController::class, 'index'])->name('index');
         Route::get('/print-template', function () {
-            return view('kangis_printlabel.print-file-lab'); })->name('print-template');
+            return view('kangis_printlabel.print-file-lab');
+        })->name('print-template');
         Route::get('/api/prefixes', [KangisPrintLabelController::class, 'getPrefixes'])->name('api.prefixes');
         Route::get('/api/prefix-next-range', [KangisPrintLabelController::class, 'getNextRangeForPrefix'])->name('api.prefix-next-range');
         Route::get('/api/files', [KangisPrintLabelController::class, 'getAvailableFiles'])->name('api.files');
@@ -1113,7 +1119,8 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('sltr-printlabel')->name('sltr-printlabel.')->group(function () {
         Route::get('/', [SltrPrintLabelController::class, 'index'])->name('index');
         Route::get('/print-template', function () {
-            return view('sltr_printlabel.print-file-lab'); })->name('print-template');
+            return view('sltr_printlabel.print-file-lab');
+        })->name('print-template');
         Route::get('/api/prefixes', [SltrPrintLabelController::class, 'getPrefixes'])->name('api.prefixes');
         Route::get('/api/sub-prefixes', [SltrPrintLabelController::class, 'getSubPrefixes'])->name('api.sub-prefixes');
         Route::get('/api/prefix-next-range', [SltrPrintLabelController::class, 'getNextRangeForPrefix'])->name('api.prefix-next-range');
@@ -1130,7 +1137,8 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('st-printlabel')->name('st-printlabel.')->group(function () {
         Route::get('/', [StPrintLabelController::class, 'index'])->name('index');
         Route::get('/print-template', function () {
-            return view('st_printlabel.print-file-lab'); })->name('print-template');
+            return view('st_printlabel.print-file-lab');
+        })->name('print-template');
         Route::get('/api/prefixes', [StPrintLabelController::class, 'getPrefixes'])->name('api.prefixes');
         Route::get('/api/application-types', [StPrintLabelController::class, 'getApplicationTypes'])->name('api.application-types');
         Route::get('/api/prefix-next-range', [StPrintLabelController::class, 'getNextRangeForPrefix'])->name('api.prefix-next-range');
@@ -1147,7 +1155,8 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('dciv-printlabel')->name('dciv-printlabel.')->group(function () {
         Route::get('/', [DcivPrintLabelController::class, 'index'])->name('index');
         Route::get('/print-template', function () {
-            return view('dciv_printlabel.print-file-lab'); })->name('print-template');
+            return view('dciv_printlabel.print-file-lab');
+        })->name('print-template');
         Route::get('/api/prefixes', [DcivPrintLabelController::class, 'getPrefixes'])->name('api.prefixes');
         Route::get('/api/prefix-next-range', [DcivPrintLabelController::class, 'getNextRangeForPrefix'])->name('api.prefix-next-range');
         Route::get('/api/files', [DcivPrintLabelController::class, 'getAvailableFiles'])->name('api.files');

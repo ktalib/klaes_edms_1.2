@@ -1421,6 +1421,34 @@ class LegalSearchService
             // suppress the display value per-endpoint even though $displayDate/$sortDate were
             // computed once for the whole (possibly multi-file) related_file_number row.
             $relIsManualLinkage = isset($manualLinkageFiles[$norm($relNo)]);
+
+            $txType = $this->recertDisplayLabel(
+                $this->isKangisFormat($relNo) ? $relNo : $otherSide,
+                $row->transaction_type
+            );
+
+            $commentVal = $row->comment ?: '-';
+            if ($txType === 'Land Recertification (File Commissioning)') {
+                $knFileNo = null;
+                if ($this->isOldMlsKnFileNo($relNo)) {
+                    $knFileNo = $relNo;
+                } elseif ($this->isOldMlsKnFileNo($otherSide)) {
+                    $knFileNo = $otherSide;
+                } else {
+                    $knFileNo = $this->resolveKnFileNoForLandFile($relNo) ?: $this->resolveKnFileNoForLandFile($otherSide);
+                }
+                if ($knFileNo) {
+                    $commentVal = $knFileNo;
+                }
+            }
+
+            $txDate = $relIsManualLinkage ? '-' : $displayDate;
+            if ($txType === 'Land Recertification (File Commissioning)' && ($txDate === '-' || trim($txDate) === '')) {
+                if (preg_match('/(?:^|[-_\/ ])(19\d{2}|20\d{2})(?:[-_\/ ]|$)/', $relNo, $matches)) {
+                    $txDate = $matches[1];
+                }
+            }
+
             $out[] = [
                 'id'                => $row->id,
                 'file_number'       => $relNo, // orange-highlighted column
@@ -1428,17 +1456,8 @@ class LegalSearchService
                 'fileno'            => $relNo,
                 'kangisFileNo'      => null,
                 'NewKANGISFileno'   => null,
-                // Untyped related_file_number rows (e.g. Change-of-Purpose rename aliases with a
-                // blank transaction_type) must NOT be relabelled "Recertification" — that made
-                // rename/merger links masquerade as KANGIS recerts. recertDisplayLabel() keeps the
-                // neutral label for those and only relabels genuine recert types: a KANGIS recert
-                // becomes First (old KNML/MLKN/KNGP) or Second (new KN) by the linked KANGIS file's
-                // format; a Ministry/Physical-Planning recert becomes the Ministry label.
-                'transaction_type'  => $this->recertDisplayLabel(
-                    $this->isKangisFormat($relNo) ? $relNo : $otherSide,
-                    $row->transaction_type
-                ),
-                'transaction_date'  => $relIsManualLinkage ? '-' : $displayDate,
+                'transaction_type'  => $txType,
+                'transaction_date'  => $txDate,
                 'sort_date'         => $sortDate,
                 // Title/holder of the endpoint shown in the orange cell (see $displayTitle above).
                 // A deprecated_records fallback for any remaining blanks is applied after the loop.
@@ -1461,7 +1480,7 @@ class LegalSearchService
                 'caveated_comment'  => null,
                 'is_caveated'       => 0,
                 'plot_no'           => '-',
-                'comments'          => $row->comment ?: '-',
+                'comments'          => $commentVal,
                 'cofo_comment'      => null,
                 'prop_id'           => $row->prop_id,
                 'parent_prop_id'    => null,
@@ -5625,6 +5644,33 @@ class LegalSearchService
             $encumbranceComment = $encumbrance->comment;
         }
 
+        // The no-CofO / "Letter of Grant" reassurance can arrive from two
+        // channels at once: the auto-generated caveat note (produced above when
+        // the file has no CofO) and a saved No CofO remark. When a saved remark
+        // is present it supersedes the auto note, so drop the auto note to avoid
+        // printing the same sentence twice. Only the untouched positive defaults
+        // are dropped — a genuine caveat/mortgage/investigation/flagged warning
+        // won't exact-match and is always preserved.
+        $autoFreeFromDefaults = [
+            'Based on our available records, the subject title is currently at the Letter of Grant stage, hence Certificate of Occupancy is yet to be issued. However the title is free from encumbrances.',
+            'Based on our available records, the title is free from encumbrances.',
+        ];
+        if ($noCofoComment && is_string($caveatNote) && in_array($caveatNote, $autoFreeFromDefaults, true)) {
+            $caveatNote = null;
+        }
+
+        // The standalone encumbrance reassurance ("...the subject title is free
+        // from encumbrances") is redundant when another remark already carries
+        // that phrase — e.g. the no-CofO / Letter of Grant caveat note or a saved
+        // No CofO remark both end with "the title is free from encumbrances".
+        // Suppress it so the reassurance doesn't print twice.
+        if ($encumbranceComment
+            && ((is_string($caveatNote) && stripos($caveatNote, 'free from encumbrances') !== false)
+                || (is_string($noCofoComment) && stripos($noCofoComment, 'free from encumbrances') !== false))
+        ) {
+            $encumbranceComment = null;
+        }
+
         $litigationComment = null;
         $litigation = $comments->get('litigation');
         if ($litigation && $litigation->comment) {
@@ -6783,8 +6829,9 @@ class LegalSearchService
         return $hints;
     }
 
-    private function tagRowsWithLifecycleFileNo(array $rows, array $aliasHints = []): array
+    private function tagRowsWithLifecycleFileNo(array $rows, array $aliasHints = [], string $primaryFileNo = ''): array
     {
+        $normPrimary = $primaryFileNo !== '' ? $this->normalizeLifecycleFileNo($primaryFileNo) : '';
         // Build a KANGIS-alias -> main-file map. Recertification link rows are the
         // strongest signal, but any row that carries both a KANGIS number and a main
         // land number pairs them too (e.g. a KANGIS C of O row that also holds the
@@ -6865,6 +6912,11 @@ class LegalSearchService
                     }
                 }
             }
+            if ($lifecycle !== '' && $this->isSystemTempFileNo($lifecycle) && $normPrimary !== '') {
+                // System temporary files have no independent lifecycle and their numbers are
+                // hidden in the UI; roll them into the primary searched file's group.
+                $lifecycle = $normPrimary;
+            }
 
             $rows[$i]['lifecycle_file_no'] = $lifecycle;
         }
@@ -6885,6 +6937,86 @@ class LegalSearchService
     {
         $type = $this->identifyFileNumberType($fileNo);
         return $type === 'kangis' || $type === 'new_kangis';
+    }
+
+    private function isOldMlsKnFileNo(?string $v): bool
+    {
+        $v = strtoupper(trim((string) $v));
+        return (bool) preg_match('/^KN[- ]\d+/i', $v);
+    }
+
+    private function resolveKnFileNoForLandFile(string $fileNo): ?string
+    {
+        $variants = $this->fileNumberVariants($fileNo);
+        if (empty($variants)) {
+            return null;
+        }
+
+        // 1. Check in related_file_number table
+        if (Schema::connection('sqlsrv')->hasTable('related_file_number')) {
+            $rfnRecord = DB::connection('sqlsrv')->table('related_file_number')
+                ->whereIn('file_number', $variants)
+                ->where(function ($q) {
+                    $q->where('related_fileno', 'like', 'KN%');
+                })
+                ->orderByDesc('id')
+                ->first();
+            if ($rfnRecord && $this->isOldMlsKnFileNo($rfnRecord->related_fileno)) {
+                return $rfnRecord->related_fileno;
+            }
+
+            // check the other way around
+            $rfnRecordRev = DB::connection('sqlsrv')->table('related_file_number')
+                ->whereIn('related_fileno', $variants)
+                ->where(function ($q) {
+                    $q->where('file_number', 'like', 'KN%');
+                })
+                ->orderByDesc('id')
+                ->first();
+            if ($rfnRecordRev && $this->isOldMlsKnFileNo($rfnRecordRev->file_number)) {
+                return $rfnRecordRev->file_number;
+            }
+        }
+
+        // 2. Check in file_indexings table
+        if (Schema::connection('sqlsrv')->hasTable('file_indexings')) {
+            $fiRecord = DB::connection('sqlsrv')->table('file_indexings')
+                ->whereIn('file_number', $variants)
+                ->whereNull('deleted_at')
+                ->where(function ($q) {
+                    $q->whereNotNull('new_kangis_file_no')->where('new_kangis_file_no', '<>', '')
+                      ->orWhereNotNull('kangis_file_no')->where('kangis_file_no', '<>', '');
+                })
+                ->orderByDesc('id')
+                ->first();
+            if ($fiRecord) {
+                $val = $fiRecord->new_kangis_file_no ?: $fiRecord->kangis_file_no;
+                if ($this->isOldMlsKnFileNo($val)) {
+                    return $val;
+                }
+            }
+        }
+
+        // 3. Check in pra table
+        if (Schema::connection('sqlsrv')->hasTable('pra')) {
+            $praRecord = DB::connection('sqlsrv')->table('pra')
+                ->whereIn('mlsFNo', $variants)
+                ->whereNull('deleted_at')
+                ->where(function ($q) {
+                    $q->whereNotNull('NewKANGISFileno')->where('NewKANGISFileno', '<>', '')
+                      ->orWhereNotNull('kangisFileNo')->where('kangisFileNo', '<>', '');
+                })
+                ->orderByDesc('id')
+                ->first();
+            if ($praRecord) {
+                $val = $praRecord->NewKANGISFileno ?: $praRecord->kangisFileNo;
+                if ($this->isOldMlsKnFileNo($val)) {
+                    return $val;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -6915,8 +7047,8 @@ class LegalSearchService
         if ($stored === '') {
             return 'Related File';
         }
-        if (stripos($stored, 'physical planning') !== false || stripos($stored, 'ministry') !== false) {
-            return 'Ministry of Land and Physical Planning Recertification';
+        if (stripos($stored, 'physical planning') !== false || stripos($stored, 'ministry') !== false || stripos($stored, 'Land Recertification') !== false) {
+            return 'Land Recertification (File Commissioning)';
         }
         if (stripos($stored, 'recertification') !== false) {
             // "First/Second KANGIS Recertification" applies ONLY to a genuine KANGIS-format
@@ -7041,7 +7173,15 @@ class LegalSearchService
     private function makePrintMinistryRecertRow(string $fileNo, array $meta): array
     {
         $holder = $meta['commissioning_holder'] ?: $meta['file_title'] ?: '-';
+        $knFileNo = $this->resolveKnFileNoForLandFile($fileNo) ?: '-';
+
+        $txDate = '-';
+        if (preg_match('/(?:^|[-_\/ ])(19\d{2}|20\d{2})(?:[-_\/ ]|$)/', $fileNo, $matches)) {
+            $txDate = $matches[1];
+        }
+
         return [
+            '_is_recertification' => true,
             'sn' => 0,
             'file_no' => $fileNo,
             'lifecycle_file_no' => $fileNo,
@@ -7049,15 +7189,15 @@ class LegalSearchService
             'grantee' => $holder,
             'party_3' => '-',
             'party_4' => '-',
-            'instrument_type' => 'Ministry of Land and Physical Planning Recertification',
-            'transaction_type' => 'Ministry of Land and Physical Planning Recertification',
-            'transaction_date' => '-',
+            'instrument_type' => 'Land Recertification (File Commissioning)',
+            'transaction_type' => 'Land Recertification (File Commissioning)',
+            'transaction_date' => $txDate,
             'reg_time' => '-',
             'reg_date' => '-',
             'reg_no' => '0/0/0',
             'size' => '-',
             'caveat' => 'No',
-            'comments' => '-',
+            'comments' => $knFileNo,
             'source_table' => 'Related Fileno',
             'location' => '',
             '_synthesized' => true,
@@ -7517,7 +7657,7 @@ class LegalSearchService
             || $instrument === 'File Commissioning' || $instrument === 'DCIV File Commissioning'
             || $type === 'File Commissioning' || $type === 'DCIV File Commissioning'
             || str_starts_with($type, 'ST File Commissioning')
-            || ($synth && (str_contains($instrument, 'Commissioning') || str_contains($type, 'Commissioning')))) {
+            || ($synth && empty($row['_is_recertification']) && (str_contains($instrument, 'Commissioning') || str_contains($type, 'Commissioning')))) {
             return 'File Commissioning';
         }
         if ($source === 'Temporary File' || $instrument === 'Temporary File' || $type === 'Temporary File' || ($synth && str_contains($instrument, 'Temporary File'))) {
@@ -7767,32 +7907,82 @@ class LegalSearchService
      */
     private function arrangeLifecycleFileRows(array $rows): array
     {
-        $commissioning = [];
-        $temp = [];
         $decommissioning = [];
         $transactions = [];
 
-        // Classify by lifecycle event type (which also inspects transaction_type) so
-        // related-file commissioning/decommissioning rows whose label lives in
-        // transaction_type land in the correct phase instead of the transactions bucket.
         foreach ($rows as $row) {
             $event = $this->classifyLifecycleEventType($row);
-            // The mother ST "ST File Commissioning" row (np_fileno) is a SECOND commissioning
-            // event that must sit chronologically after the Land File Commissioning and its
-            // intervening transactions, not be hoisted with it. Flagged _st_primary_commissioning
-            // (already date-positioned), so route it through the transactions bucket. Unit
-            // "– Fragmentation" rows are not flagged and still hoist to the top of their blocks.
-            if ($event === 'File Commissioning' && empty($row['_st_primary_commissioning'])) {
-                $commissioning[] = $row;
-            } elseif ($event === 'Temporary File') {
-                $temp[] = $row;
-            } elseif ($event === 'File Decommissioning') {
+            if ($event === 'File Decommissioning') {
                 $decommissioning[] = $row;
             } else {
-                // 'Kangis Recertification' and null stay as associated transactions.
                 $transactions[] = $row;
             }
         }
+
+        $canonicalTransactionType = function (?string $type): string {
+            $raw = trim(mb_strtolower($type ?? ''));
+            if ($raw === '' || $raw === '-') {
+                return '';
+            }
+            if (str_contains($raw, 'right of occupancy') || str_contains($raw, 'right of occupanc') || preg_match('/^r\s*of\s*o$/', $raw)) {
+                return 'right of occupancy';
+            }
+            if (str_contains($raw, 'certificate of occupancy') || str_contains($raw, 'cert of occupancy') || preg_match('/^c\s*of\s*o$/', $raw)) {
+                return 'certificate of occupancy';
+            }
+            if (str_contains($raw, 'occupancy permit') || preg_match('/^o\s*p$/', $raw)) {
+                return 'occupancy permit';
+            }
+            if (str_contains($raw, 'transfer of title') || str_contains($raw, 'tot')) {
+                return 'transfer of title';
+            }
+            if (str_contains($raw, 'file commissioning')) {
+                return 'file commissioning';
+            }
+            return $raw;
+        };
+
+        $weightOf = function (array $row) use ($canonicalTransactionType): int {
+            $txType = $canonicalTransactionType($row['transaction_type'] ?? ($row['instrument_type'] ?? ''));
+            $w = \App\Support\LegalSearchTimelineWeights::weightFor($row, $txType);
+            return $w ?? 0;
+        };
+
+        $ts = function (array $r): ?int {
+            $candidates = [
+                $r['transaction_date'] ?? null,
+                $r['deeds_date'] ?? null,
+                $r['reg_date'] ?? null,
+                $r['cofo_date'] ?? null,
+                $r['certificateDate'] ?? null,
+                $r['approval_date'] ?? null,
+                $r['date'] ?? null,
+            ];
+            foreach ($candidates as $c) {
+                $d = trim((string) $c);
+                if ($d !== '' && $d !== '-') {
+                    $parsed = rescue(fn () => \Carbon\Carbon::parse($d)->getTimestamp(), null, false);
+                    if ($parsed !== null) return $parsed;
+                }
+            }
+            return null;
+        };
+
+        usort($transactions, function (array $a, array $b) use ($weightOf, $ts): int {
+            $wa = $weightOf($a);
+            $wb = $weightOf($b);
+            if ($wa !== $wb) {
+                return $wb <=> $wa;
+            }
+            $ta = $ts($a);
+            $tb = $ts($b);
+            if ($ta === null && $tb === null) {
+                return ((int) ($a['sn'] ?? 0)) <=> ((int) ($b['sn'] ?? 0));
+            }
+            if ($ta === null) return 1;
+            if ($tb === null) return -1;
+            return $ta <=> $tb;
+        });
 
         // Recertification/CoFO pairing executes strictly inside this lifecycle's
         // transaction phase so rows never leave their lifecycle group.
@@ -7802,17 +7992,26 @@ class LegalSearchService
         // "-RC-" land file must sit directly UNDER the File Commissioning line (top of the
         // transaction band). It is usually undated, which would otherwise float it to the
         // very end of the block — so hoist it to the front of the transactions here.
+        $commissioning = [];
         $ministryRecert = [];
         $otherTransactions = [];
         foreach ($transactions as $t) {
             $ty = (string) ($t['transaction_type'] ?? ($t['instrument_type'] ?? ''));
-            if (stripos($ty, 'physical planning') !== false && stripos($ty, 'recertification') !== false) {
+            $evt = $this->classifyLifecycleEventType($t);
+            $isComm = ($evt === 'File Commissioning' || $evt === 'Temporary File' || $evt === 'DCIV File Commissioning' || $evt === 'ST File Commissioning');
+            
+            $isMinistry = (stripos($ty, 'physical planning') !== false && stripos($ty, 'recertification') !== false)
+                || (stripos($ty, 'Land Recertification') !== false);
+            
+            if ($isComm) {
+                $commissioning[] = $t;
+            } elseif ($isMinistry) {
                 $ministryRecert[] = $t;
             } else {
                 $otherTransactions[] = $t;
             }
         }
-        $transactions = array_merge($ministryRecert, $otherTransactions);
+        $transactions = array_merge($commissioning, $ministryRecert, $otherTransactions);
 
         // Sectional Titling: within an ST unit's block the transactions must read strictly
         // chronologically (e.g. Right of Occupancy before its later Assignment/Transfer of
@@ -7820,7 +8019,7 @@ class LegalSearchService
         // above Right of Occupancy for OP/TOT parcels). Only re-sort when EVERY transaction
         // in this band is an ST row, so non-ST lifecycles keep their weighted order untouched.
         if (count($transactions) > 1 && $this->allStRows($transactions)) {
-            $ts = function (array $r): ?int {
+            $tsSt = function (array $r): ?int {
                 $d = trim((string) ($r['transaction_date'] ?? ''));
                 if ($d === '' || $d === '-') {
                     return null;
@@ -7828,9 +8027,9 @@ class LegalSearchService
                 $parsed = rescue(fn () => \Carbon\Carbon::parse($d)->getTimestamp(), null, false);
                 return $parsed;
             };
-            usort($transactions, function (array $a, array $b) use ($ts): int {
-                $ta = $ts($a);
-                $tb = $ts($b);
+            usort($transactions, function (array $a, array $b) use ($tsSt): int {
+                $ta = $tsSt($a);
+                $tb = $tsSt($b);
                 if ($ta === null && $tb === null) {
                     return ((int) ($a['sn'] ?? 0)) <=> ((int) ($b['sn'] ?? 0));
                 }
@@ -7840,7 +8039,7 @@ class LegalSearchService
             });
         }
 
-        return array_merge($commissioning, $temp, $transactions, $decommissioning);
+        return array_merge($transactions, $decommissioning);
     }
 
     /**
@@ -7874,7 +8073,7 @@ class LegalSearchService
     private function groupTimelineByLifecycle(array $rows, string $primaryFileNo, string $searchedFileNo, array $aliasHints = []): array
     {
         $conn = DB::connection('sqlsrv');
-        $rows = $this->tagRowsWithLifecycleFileNo($rows, $aliasHints);
+        $rows = $this->tagRowsWithLifecycleFileNo($rows, $aliasHints, $primaryFileNo);
 
         $normPrimary = $this->normalizeLifecycleFileNo($primaryFileNo);
         $normSearched = $this->normalizeLifecycleFileNo($searchedFileNo);
@@ -7903,7 +8102,7 @@ class LegalSearchService
         }
 
         $rows = $this->ensureLifecycleSyntheticRows($conn, $rows, $lifecycleFiles, $searchedFileNo);
-        $rows = $this->tagRowsWithLifecycleFileNo($rows, $aliasHints);
+        $rows = $this->tagRowsWithLifecycleFileNo($rows, $aliasHints, $primaryFileNo);
         $rows = $this->dedupeLifecycleRows($rows);
 
         $orderedFiles = $this->orderLifecycleFiles(array_keys($lifecycleFiles), $normPrimary, $fileMeta);

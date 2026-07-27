@@ -386,12 +386,13 @@
 
                         <div id="batchList" class="rounded-md border">
                             <div class="p-3 bg-gray-50">
-                                <div class="grid grid-cols-9 gap-4 text-sm font-medium">
+                                <div class="grid grid-cols-10 gap-4 text-sm font-medium">
                                     <div class="truncate min-w-0">Batch Number</div>
                                     <div>Digit Rank</div>
                                     <div>Group</div>
                                     <div>Created Date</div>
                                     <div>Files Count</div>
+                                    <div>Shelf/Rack</div>
                                     <div>Format</div>
                                     <div>Status</div>
                                     <div>Created By</div>

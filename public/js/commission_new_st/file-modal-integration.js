@@ -99,6 +99,38 @@ function loadPrimaryTrackingId(fileNumber) {
     setPrimaryTrackingDisplay('Searching...', 'muted');
     setPrimaryTrackingStatus('Checking grouping records...', 'muted');
 
+    // Helper: fallback — look up tracking_id directly from file_indexings
+    function fallbackToIndexing() {
+        if (currentRequest !== primaryTrackingState.requestId) return;
+
+        setPrimaryTrackingStatus('Checking file indexing records...', 'muted');
+
+        fetch(`/api/file-indexings/lookup-by-number?file_number=${encodeURIComponent(normalized)}`)
+            .then(r => r.json().catch(() => ({})))
+            .then(payload => {
+                if (currentRequest !== primaryTrackingState.requestId) return;
+
+                const trackingId = (payload?.data?.tracking_id || '').toString().trim();
+                if (trackingId) {
+                    applyPrimaryTrackingId(trackingId, 'Linked to file indexing record.', {
+                        statusTone: 'success'
+                    });
+                } else {
+                    applyPrimaryTrackingId('', 'No tracking ID found for this file number.', {
+                        displayWhenMissing: 'Tracking ID not found',
+                        statusToneWhenMissing: 'error'
+                    });
+                }
+            })
+            .catch(() => {
+                if (currentRequest !== primaryTrackingState.requestId) return;
+                applyPrimaryTrackingId('', 'Unable to load tracking ID. Please verify the selected file.', {
+                    displayWhenMissing: 'Tracking ID not found',
+                    statusToneWhenMissing: 'error'
+                });
+            });
+    }
+
     fetch(`/api/grouping/awaiting/${encodeURIComponent(normalized)}`)
         .then(response => response.json().catch(() => ({})).then(payload => ({ response, payload })))
         .then(({ response, payload }) => {
@@ -106,8 +138,10 @@ function loadPrimaryTrackingId(fileNumber) {
                 return;
             }
 
+            // 404 or non-success → fall back to file_indexings
             if (!response.ok || !payload.success) {
-                throw new Error(payload?.message || `Grouping lookup failed (${response.status})`);
+                fallbackToIndexing();
+                return;
             }
 
             const record = payload.data || payload;
@@ -118,25 +152,19 @@ function loadPrimaryTrackingId(fileNumber) {
                     statusTone: 'success'
                 });
             } else {
-                applyPrimaryTrackingId('', 'Grouping record is missing a tracking ID. Please update the source record before continuing.', {
-                    displayWhenMissing: 'Grouping record missing tracking ID',
-                    statusToneWhenMissing: 'error'
-                });
+                // Grouping exists but no tracking_id — still try indexing
+                fallbackToIndexing();
             }
         })
         .catch(error => {
             if (currentRequest !== primaryTrackingState.requestId) {
                 return;
             }
-
-            console.error('Failed to load tracking ID from grouping:', error);
-
-            applyPrimaryTrackingId('', 'Unable to load tracking ID. Please verify the selected file has an associated tracking ID.', {
-                displayWhenMissing: 'Tracking ID not found',
-                statusToneWhenMissing: 'error'
-            });
+            console.warn('Grouping lookup failed, trying file indexing fallback:', error.message);
+            fallbackToIndexing();
         });
 }
+
 
 function setAppliedFileValidationState(isValid, message = '') {
     const appliedFileField = document.getElementById('applied-file-number');
@@ -490,7 +518,13 @@ function commissionFileNumber() {
         applicant_type: applicantType,
         land_use: landUse,
         commissioned_by: formData.get('commissioned_by') || document.querySelector('input[name="commissioned_by"]')?.value || '',
-        commissioned_date: formData.get('commissioned_date') || document.querySelector('input[name="commissioned_date"]')?.value || ''
+        commissioned_date: formData.get('commissioned_date') || document.querySelector('input[name="commissioned_date"]')?.value || '',
+        property_house_no: document.getElementById('propertyHouseNo')?.value || '',
+        property_plot_no: document.getElementById('propertyPlotNo')?.value || '',
+        property_street_name: document.getElementById('propertyStreetName')?.value || '',
+        property_district: document.getElementById('propertyDistrict')?.value || '',
+        property_lga: document.getElementById('propertyLga')?.value || '',
+        property_state: document.getElementById('propertyState')?.value || ''
     };
 
     // Add applicant-specific data

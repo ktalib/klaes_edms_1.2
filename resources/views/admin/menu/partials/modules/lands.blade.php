@@ -125,7 +125,7 @@
             data-section="lands-oss-change-name">
             <div class="flex items-center gap-2">
               <i data-lucide="hash" class="h-3.5 w-3.5 text-orange-400"></i>
-              <span>Generate FileNos (Change of Name)</span>
+              <span>Generate FileNos (Change of Ownership)</span>
             </div>
             <i data-lucide="chevron-right" class="h-3.5 w-3.5 transition-transform duration-200" data-chevron="lands-oss-change-name"></i>
           </div>

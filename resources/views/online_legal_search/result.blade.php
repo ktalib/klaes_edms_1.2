@@ -58,6 +58,7 @@
     .remarks-content { margin: 0; flex-grow: 1; }
     .remarks-text { color: #0f766e; font-size: 13px; font-weight: bold; margin: 8px 0; line-height: 1.4; display: block; }
     .disclaimer-nb { font-size: 9.5px; font-style: italic; font-weight: bold; text-align: center; margin: 8px 0 4px; color: #333; }
+    .table-end-notice { text-align: center; font-size: 9.5px; font-weight: bold; font-style: italic; margin: 6px 0 8px; color: #000; page-break-inside: avoid; }
     .footer-bottom { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #000; padding-top: 4px; margin-top: 10px; position: relative; z-index: 1; }
     .gen-text { font-size: 9px; color: #333; text-align: center; flex: 1; }
     .footer-logo-left img, .footer-logo-right img { height: 26px; }
@@ -223,13 +224,23 @@
           </tr>
         </table>
 
+        @php
+            $uniqueFileNumbers = collect($report['rows'] ?? [])
+                ->pluck('file_no')
+                ->filter(fn($fn) => $fn && $fn !== '-')
+                ->unique();
+            $showFileNo = $uniqueFileNumbers->count() > 1;
+        @endphp
+
         <div class="section-label">File History</div>
         <table class="transaction-table">
           <thead>
             <tr class="header-row">
               <th style="width:3%">S/N</th>
-              <th style="width:9%">File No</th>
-              <th class="instrument-cell" style="width:18%">Instrument/Transaction Type</th>
+              @if($showFileNo)
+                <th style="width:9%">File No</th>
+              @endif
+              <th class="instrument-cell" style="width:{{ $showFileNo ? '18%' : '27%' }}">Instrument/Transaction Type</th>
               <th style="width:13%">Party 1</th>
               <th style="width:13%">Party 2</th>
               <th style="width:10%">Party 3</th>
@@ -243,7 +254,9 @@
             @forelse($report['rows'] ?? [] as $row)
               <tr>
                 <td>{{ $row['sn'] ?? $loop->iteration }}</td>
-                <td>{{ $row['file_no'] ?? '-' }}</td>
+                @if($showFileNo)
+                  <td>{{ $row['file_no'] ?? '-' }}</td>
+                @endif
                 <td class="instrument-cell">{{ $row['instrument_type'] ?? '-' }}</td>
                 <td>{{ $row['grantor'] ?? '-' }}</td>
                 <td>{{ $row['grantee'] ?? '-' }}</td>
@@ -257,10 +270,11 @@
                 <td>{{ $row['comments'] ?? '-' }}</td>
               </tr>
             @empty
-              <tr><td colspan="10" style="text-align:center;padding:14px;">No transactions on record for this file.</td></tr>
+              <tr><td colspan="{{ $showFileNo ? 10 : 9 }}" style="text-align:center;padding:14px;">No transactions on record for this file.</td></tr>
             @endforelse
           </tbody>
         </table>
+        <div class="table-end-notice">*** END OF TRANSACTION HISTORY ***</div>
       </div>
 
       <div class="footer-wrapper">

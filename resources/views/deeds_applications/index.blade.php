@@ -345,8 +345,7 @@
                 </th>
               @endif
               <th class="px-6 py-4 font-semibold text-slate-700 uppercase tracking-wider text-[11px]">S/N</th>
-              <th class="px-6 py-4 font-semibold text-slate-700 uppercase tracking-wider text-[11px] whitespace-nowrap">
-                Tracking No</th>
+
               <th class="px-6 py-4 font-semibold text-slate-700 uppercase tracking-wider text-[11px] whitespace-nowrap">
                 File Number</th>
               <th class="px-6 py-4 font-semibold text-slate-700 uppercase tracking-wider text-[11px]">Consent Type</th>
@@ -378,19 +377,24 @@
                 </td>
               @endif
               <td class="px-6 py-4 text-slate-600 font-bold italic">{{ $loop->iteration }}</td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                <span class="font-mono text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1">
-                  {{ $application->application_tracking_no ?: '—' }}
-                </span>
-              </td>
+
               <td class="px-6 py-4 text-slate-900 font-bold whitespace-nowrap">
-                {{ $application->file_number }}
-                @if(is_array($application->additional_properties) && count($application->additional_properties))
-                  <span class="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200"
-                        title="{{ collect($application->additional_properties)->pluck('file_number')->filter()->implode(', ') }}">
-                    +{{ count($application->additional_properties) }}
-                  </span>
-                @endif
+                <button type="button" class="view-properties-btn flex items-center gap-2 hover:text-blue-600 transition outline-none" 
+                        data-main-file="{{ $application->file_number }}"
+                        data-main-desc="{{ $application->property_description }}"
+                        data-main-applicant="{{ $application->applicant_name }}"
+                        data-additional="{{ json_encode($application->additional_properties ?? []) }}">
+                    <span>{{ $application->file_number }}</span>
+                    @php
+                        $additionalCount = is_array($application->additional_properties) ? count($application->additional_properties) : 0;
+                    @endphp
+                    @if($additionalCount > 0)
+                        <span class="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 text-[10px] font-bold border border-amber-200"
+                              title="{{ collect($application->additional_properties)->pluck('file_number')->filter()->implode(', ') }}">
+                            +{{ $additionalCount }}
+                        </span>
+                    @endif
+                </button>
               </td>
               <td class="px-6 py-4">
                 @php
@@ -409,7 +413,27 @@
                   {{ $application->consent_type }}
                 </span>
               </td>
-              <td class="px-6 py-4 text-slate-900 font-semibold uppercase">{{ $application->applicant_name }}</td>
+              @php
+                  $titles = collect([$application->applicant_name]);
+                  if (is_array($application->additional_properties)) {
+                      foreach ($application->additional_properties as $prop) {
+                          if (!empty($prop['applicant_name'])) $titles->push($prop['applicant_name']);
+                          elseif (!empty($prop['applicant'])) $titles->push($prop['applicant']);
+                      }
+                  }
+                  $titles = $titles->filter()->unique()->values();
+                  
+                  $party1Text = 'N/A';
+                  if ($titles->count() === 1) {
+                      $party1Text = $titles->first();
+                  } elseif ($titles->count() === 2) {
+                      $party1Text = $titles->first() . ' & ' . $titles->last();
+                  } elseif ($titles->count() > 2) {
+                      $last = $titles->pop();
+                      $party1Text = $titles->implode(', ') . ', & ' . $last;
+                  }
+              @endphp
+              <td class="px-6 py-4 text-slate-900 font-semibold uppercase">{{ $party1Text }}</td>
               <td class="px-6 py-4 text-slate-900 font-semibold uppercase">{{ $application->party_name }}</td>
               @php
               $extraApplicants = collect($application->additional_applicants ?? [])->pluck('name')->filter()->values();
@@ -459,7 +483,7 @@
             </tr>
             @empty
             <tr>
-              <td @if($isSupperAdmin) colspan="14" @else colspan="13" @endif class="px-6 py-12 text-center text-slate-500 italic">
+              <td @if($isSupperAdmin) colspan="13" @else colspan="12" @endif class="px-6 py-12 text-center text-slate-500 italic">
                 No applications found. Click "New Application" to capture your first one.
               </td>
             </tr>
@@ -609,9 +633,9 @@
     if (typeof jQuery !== 'undefined' && jQuery.fn.DataTable) {
       const $table = jQuery('#consent-table');
       if (!jQuery.fn.DataTable.isDataTable('#consent-table')) {
-        // Columns: [checkbox?] S/N, Tracking No, File Number, Consent Type, …, Actions
-        const consentTypeColIndex = isSupperAdmin ? 4 : 3;
-        const actionsColIndex = isSupperAdmin ? 13 : 12;
+        // Columns: [checkbox?] S/N, File Number, Consent Type, Party 1-3, Captured By, App. Date, Time, Date, Prints, Actions
+        const consentTypeColIndex = isSupperAdmin ? 3 : 2;
+        const actionsColIndex = isSupperAdmin ? 12 : 11;
 
         const dt = $table.DataTable({
           pageLength: 10,
@@ -619,7 +643,7 @@
           ordering: true,
           autoWidth: false,
           columnDefs: [
-            { orderable: false, targets: isSupperAdmin ? [0, 13] : [12] }
+            { orderable: false, targets: isSupperAdmin ? [0, actionsColIndex] : [actionsColIndex] }
           ],
           language: {
             search: "",
@@ -1161,8 +1185,104 @@
         });
     };
 
+    // Properties Modal Logic
+    const propertiesModal = document.getElementById('properties-modal');
+    const propertiesModalContent = document.getElementById('properties-modal-content');
+    const propertiesModalList = document.getElementById('properties-modal-list');
+    const overlay = document.querySelector('.properties-modal-overlay');
+    const closeBtns = document.querySelectorAll('.close-properties-modal');
+
+    function closePropertiesModal() {
+        if (!propertiesModal) return;
+        propertiesModalContent.classList.remove('scale-100', 'opacity-100');
+        propertiesModalContent.classList.add('scale-95', 'opacity-0');
+        setTimeout(() => {
+            propertiesModal.classList.add('hidden');
+        }, 200);
+    }
+
+    closeBtns.forEach(btn => btn.addEventListener('click', closePropertiesModal));
+    if (overlay) overlay.addEventListener('click', closePropertiesModal);
+
+    // Using event delegation since table might be paginated/re-rendered by DataTables if applicable
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.view-properties-btn');
+        if (btn) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const mainFile = btn.dataset.mainFile;
+            const mainDesc = btn.dataset.mainDesc || 'No description available';
+            const mainApplicant = btn.dataset.mainApplicant || 'N/A';
+            let additional = [];
+            try {
+                additional = JSON.parse(btn.dataset.additional || '[]');
+            } catch(e) {}
+
+            let html = `
+                <div class="p-4 rounded-xl border border-indigo-100 bg-indigo-50/30 space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[10px] font-bold text-indigo-500 uppercase tracking-widest">Primary Property</span>
+                        <span class="px-2 py-1 bg-white border border-indigo-100 rounded text-xs font-mono font-bold text-indigo-700">${mainFile}</span>
+                    </div>
+                    <div class="mt-2 text-sm">
+                        <p class="font-bold text-slate-800 uppercase mb-1">${mainApplicant}</p>
+                        <p class="font-medium text-slate-700">${mainDesc}</p>
+                    </div>
+                </div>
+            `;
+
+            if (additional && additional.length > 0) {
+                additional.forEach((prop, index) => {
+                    const propApplicant = prop.applicant_name || prop.applicant || 'N/A';
+                    html += `
+                        <div class="p-4 rounded-xl border border-slate-100 bg-slate-50 space-y-2">
+                            <div class="flex items-center justify-between">
+                                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Additional Property ${index + 1}</span>
+                                <span class="px-2 py-1 bg-white border border-slate-200 rounded text-xs font-mono font-bold text-slate-700">${prop.file_number}</span>
+                            </div>
+                            <div class="mt-2 text-sm">
+                                <p class="font-bold text-slate-800 uppercase mb-1">${propApplicant}</p>
+                                <p class="font-medium text-slate-700">${prop.description || 'No description available'}</p>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            if (propertiesModalList) propertiesModalList.innerHTML = html;
+            
+            if (propertiesModal) {
+                propertiesModal.classList.remove('hidden');
+                // trigger reflow
+                void propertiesModal.offsetWidth;
+                propertiesModalContent.classList.remove('scale-95', 'opacity-0');
+                propertiesModalContent.classList.add('scale-100', 'opacity-100');
+            }
+        }
+    });
+
   });
 </script>
+
+<!-- Properties Modal -->
+<div id="properties-modal" class="fixed inset-0 z-[60] hidden flex items-center justify-center p-4">
+    <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity properties-modal-overlay"></div>
+    <div class="relative bg-white rounded-3xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col overflow-hidden border border-slate-100 transform transition-all scale-95 opacity-0 duration-200" id="properties-modal-content">
+        <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+            <div>
+                <h3 class="text-xl font-bold text-slate-900">Properties Involved</h3>
+                <p class="text-xs text-slate-500 mt-1 uppercase tracking-widest font-semibold">List of file numbers and property descriptions</p>
+            </div>
+            <button type="button" class="close-properties-modal text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-50 rounded-xl transition">
+                <i data-lucide="x" class="h-6 w-6"></i>
+            </button>
+        </div>
+        <div class="p-6 overflow-y-auto space-y-4" id="properties-modal-list">
+            <!-- Populated via JS -->
+        </div>
+    </div>
+</div>
 
 <!-- Global Actions Dropdown placed at the very end of the body to escape all stacking contexts -->
 <div id="deeds-global-dropdown" class="deeds-action-dropdown"

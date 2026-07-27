@@ -22,16 +22,18 @@
                 :class="tab === 'docs' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600 hover:text-gray-800'"
                 class="px-4 py-2 font-medium text-sm">
                 Document Review
-                @if ($docReview->isNotEmpty())
-                    <span class="ml-1.5 inline-flex items-center justify-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-bold text-yellow-800">{{ $docReview->count() }}</span>
+                @php $pendingDocsCount = $docReview->where('status', 'pending')->count(); @endphp
+                @if ($pendingDocsCount > 0)
+                    <span class="ml-1.5 inline-flex items-center justify-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-bold text-yellow-800">{{ $pendingDocsCount }}</span>
                 @endif
             </button>
             <button @click="tab = 'sla'"
                 :class="tab === 'sla' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600 hover:text-gray-800'"
                 class="px-4 py-2 font-medium text-sm">
                 SLA Review
-                @if ($slaReview->isNotEmpty())
-                    <span class="ml-1.5 inline-flex items-center justify-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-bold text-indigo-800">{{ $slaReview->count() }}</span>
+                @php $pendingSlaCount = $slaReview->where('status', 'sla_uploaded')->count(); @endphp
+                @if ($pendingSlaCount > 0)
+                    <span class="ml-1.5 inline-flex items-center justify-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-bold text-indigo-800">{{ $pendingSlaCount }}</span>
                 @endif
             </button>
         </div>
@@ -41,7 +43,7 @@
             {{-- Document Review Tab --}}
             <div x-show="tab === 'docs'" x-cloak>
                 @if ($docReview->isEmpty())
-                    <p class="text-gray-500 text-center py-12">No requests awaiting document review.</p>
+                    <p class="text-gray-500 text-center py-12">No requests found for document review.</p>
                 @else
                     <div class="bg-white rounded-lg shadow overflow-hidden">
                         <table class="w-full">
@@ -51,20 +53,33 @@
                                     <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Type</th>
                                     <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Contact</th>
                                     <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Submitted</th>
+                                    <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Status</th>
                                     <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Action</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach ($docReview as $req)
-                                    <tr class="border-b hover:bg-gray-50">
+                                    @php $isPending = $req->status === 'pending'; @endphp
+                                    <tr class="border-b hover:bg-gray-50 {{ !$isPending ? 'bg-slate-50/70 text-slate-500' : '' }}">
                                         <td class="px-6 py-4 text-sm font-semibold">{{ \Illuminate\Support\Str::title($req->organization_name) }}</td>
                                         <td class="px-6 py-4 text-sm capitalize">{{ str_replace('_', ' ', $req->organization_type) }}</td>
-                                        <td class="px-6 py-4 text-sm">{{ \Illuminate\Support\Str::title($req->contact_name) }}<br><span class="text-xs text-gray-500">{{ $req->contact_email }}</span></td>
+                                        <td class="px-6 py-4 text-sm">
+                                            {{ \Illuminate\Support\Str::title($req->contact_name) }}
+                                            <br>
+                                            <span class="text-xs {{ $isPending ? 'text-gray-500' : 'text-slate-400' }}">{{ $req->contact_email }}</span>
+                                        </td>
                                         <td class="px-6 py-4 text-sm">{{ $req->created_at->format('M j, Y') }}</td>
                                         <td class="px-6 py-4 text-sm">
+                                            @if ($isPending)
+                                                <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800">Pending Review</span>
+                                            @else
+                                                <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">Documents Approved</span>
+                                            @endif
+                                        </td>
+                                        <td class="px-6 py-4 text-sm">
                                             <a href="{{ route('system-admin.phs.legal.show', $req->id) }}"
-                                               class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700">
-                                                Review Documents
+                                               class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold text-white {{ $isPending ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-600 hover:bg-slate-700' }}">
+                                                {{ $isPending ? 'Review Documents' : 'View' }}
                                             </a>
                                         </td>
                                     </tr>
@@ -78,7 +93,7 @@
             {{-- SLA Review Tab --}}
             <div x-show="tab === 'sla'" x-cloak>
                 @if ($slaReview->isEmpty())
-                    <p class="text-gray-500 text-center py-12">No requests awaiting SLA review.</p>
+                    <p class="text-gray-500 text-center py-12">No requests found for SLA review.</p>
                 @else
                     <div class="bg-white rounded-lg shadow overflow-hidden">
                         <table class="w-full">
@@ -87,19 +102,28 @@
                                     <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Organization</th>
                                     <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Package</th>
                                     <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">SLA Uploaded</th>
+                                    <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Status</th>
                                     <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900">Action</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach ($slaReview as $req)
-                                    <tr class="border-b hover:bg-gray-50">
+                                    @php $isPending = $req->status === 'sla_uploaded'; @endphp
+                                    <tr class="border-b hover:bg-gray-50 {{ !$isPending ? 'bg-slate-50/70 text-slate-500' : '' }}">
                                         <td class="px-6 py-4 text-sm font-semibold">{{ \Illuminate\Support\Str::title($req->organization_name) }}</td>
                                         <td class="px-6 py-4 text-sm">{{ $req->initial_token_package ?? '—' }}</td>
                                         <td class="px-6 py-4 text-sm">{{ $req->lsa_signed_at?->format('M j, Y') ?? '—' }}</td>
                                         <td class="px-6 py-4 text-sm">
+                                            @if ($isPending)
+                                                <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800">Pending Review</span>
+                                            @else
+                                                <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">SLA Approved</span>
+                                            @endif
+                                        </td>
+                                        <td class="px-6 py-4 text-sm">
                                             <a href="{{ route('system-admin.phs.legal.show', $req->id) }}"
-                                               class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700">
-                                                Review SLA
+                                               class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold text-white {{ $isPending ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-slate-600 hover:bg-slate-700' }}">
+                                                {{ $isPending ? 'Review SLA' : 'View' }}
                                             </a>
                                         </td>
                                     </tr>

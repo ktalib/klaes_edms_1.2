@@ -314,6 +314,7 @@
         // Request Purpose lookup (id, name, turnaround_days) — used to build the
         // Request Purpose / Expected Return Date prompt shown before "Log File".
         const REQUEST_PURPOSES = @json($requestPurposes ?? []);
+        const REQ_DIRECTORS   = @json($requesterDirectors ?? []);
         const ADD_OFFICER_URL = "{{ route('create-file-tracker.receiving-officers.store') }}";
 
         const STATUS_OPTIONS = [
@@ -411,11 +412,13 @@
                 }
                 // The slip can only be printed once the re-direct request has been sent —
                 // disabled/greyed until then (only gated when a redirect button is shown).
+                /*
                 const slipDisabled = showRedirect;
                 out.push(`<a href="/create-file-tracker/${d.file_tracker_id}/request-sheet" target="_blank" data-print-slip
                     class="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white ${slipDisabled ? 'bg-gray-300 cursor-not-allowed pointer-events-none opacity-60' : 'bg-amber-600 hover:bg-amber-700'}"
                     ${slipDisabled ? 'aria-disabled="true" tabindex="-1"' : ''}>
                     <i data-lucide="printer" class="h-4 w-4"></i> Print Tracking Confirmation Slip</a>`);
+                */
             }
             // SCB confirmed Found -> log the file (redirect to create-file-tracker, prefilled).
             if (d.can_log) {
@@ -1179,9 +1182,9 @@
                                 <span data-fr-registry-code class="inline-flex items-center justify-center min-w-[56px] rounded-lg bg-indigo-50 border border-indigo-100 px-2 py-2 text-xs font-bold text-indigo-700">—</span>
                             </div>
                         </div>
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
-                                <label class="block text-[11px] font-semibold text-gray-600 mb-1">Requester Office (Departments) <span class="text-red-500">*</span></label>
+                                <label class="block text-[11px] font-semibold text-gray-600 mb-1">Requester Department <span class="text-red-500">*</span></label>
                                 <select data-fr-dept class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500">
                                     <option value="">— Select Department —</option>
                                     ${REQ_DEPARTMENTS.map(dn => `<option value="${esc(dn)}">${esc(dn)}</option>`).join('')}
@@ -1190,6 +1193,21 @@
                                 <input data-fr-dept-other type="text" placeholder="Specify department *" class="hidden mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500">
                             </div>
                             <div>
+                                <label class="block text-[11px] font-semibold text-gray-600 mb-1">Requester Director</label>
+                                <select data-fr-director class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" disabled>
+                                    <option value="">— Select Director —</option>
+                                </select>
+                                <div data-fr-director-other class="hidden mt-2 p-2 bg-gray-50 border border-gray-200 rounded-md">
+                                    <p class="text-[10px] font-semibold text-gray-500 uppercase mb-1">Add New Director</p>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <input type="text" data-fr-director-first-name placeholder="First Name *" class="w-full rounded-lg border border-gray-300 px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500">
+                                        <input type="text" data-fr-director-last-name placeholder="Last Name *" class="w-full rounded-lg border border-gray-300 px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                            <div>
                                 <label class="block text-[11px] font-semibold text-gray-600 mb-1">Requester Office <span class="text-red-500">*</span></label>
                                 <select data-fr-office class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" disabled>
                                     <option value="">— Select Office —</option>
@@ -1197,7 +1215,7 @@
                                 <input data-fr-office-other type="text" placeholder="Specify office *" class="hidden mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500">
                             </div>
                             <div>
-                                <label class="block text-[11px] font-semibold text-gray-600 mb-1">Requester Officer <span class="text-red-500">*</span></label>
+                                <label class="block text-[11px] font-semibold text-gray-600 mb-1">File Requester <span class="text-red-500">*</span></label>
                                 <select data-fr-officer class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" disabled>
                                     <option value="">— Select Officer —</option>
                                 </select>
@@ -1318,9 +1336,10 @@
         }
 
         // Inline duplicate-request warning shown next to the Send button.
-        const DEPT_OTHER   = '__DEPT_OTHER__';
-        const OFFICE_OTHER = '__OFFICE_OTHER__';
-        const OFFICER_ADD  = '__OFFICER_ADD__';
+        const DEPT_OTHER     = '__DEPT_OTHER__';
+        const DIRECTOR_OTHER = '__DIRECTOR_OTHER__';
+        const OFFICE_OTHER   = '__OFFICE_OTHER__';
+        const OFFICER_ADD    = '__OFFICER_ADD__';
 
         // ── Smart Registry (Origin) detection ──────────────────────────────────
         // Auto-selects the Requester section's Registry (Origin) from the file
@@ -1385,12 +1404,14 @@
         // Wire the Requester cascade: Department → Office → Officer (mirrors Create File Tracker).
         function initRequesterCascade(fileData = {}) {
             const deptSel    = result.querySelector('[data-fr-dept]');
+            const directorSel= result.querySelector('[data-fr-director]');
             const officeSel  = result.querySelector('[data-fr-office]');
             const officerSel = result.querySelector('[data-fr-officer]');
             const addCard    = result.querySelector('[data-fr-addcard]');
             if (!deptSel || !officeSel || !officerSel) return;
 
             const deptOther   = result.querySelector('[data-fr-dept-other]');
+            const directorOther = result.querySelector('[data-fr-director-other]');
             const officeOther = result.querySelector('[data-fr-office-other]');
 
             // Requester Officer is searchable (select2) — the officer list can run long,
@@ -1445,6 +1466,16 @@
                     deptOther.classList.toggle('hidden', dept !== DEPT_OTHER);
                     if (dept !== DEPT_OTHER) deptOther.value = '';
                 }
+                
+                if (directorSel) {
+                    directorSel.innerHTML = '<option value="">— Select Director —</option>' +
+                        REQ_DIRECTORS.filter(d => d.department === dept || dept === DEPT_OTHER)
+                            .map(d => `<option value="${d.id}">${esc(d.first_name)} ${esc(d.last_name)}</option>`).join('') +
+                        `<option value="${DIRECTOR_OTHER}">Other…</option>`;
+                    directorSel.disabled = false;
+                    if (directorOther) { directorOther.classList.add('hidden'); }
+                }
+
                 officeSel.innerHTML = '<option value="">— Select Office —</option>' +
                     REQ_OFFICES.filter(o => o.department === dept)
                         .map(o => `<option value="${esc(o.code)}" data-name="${esc(o.name)}">${esc(o.name)}</option>`).join('') +
@@ -1456,6 +1487,21 @@
                 refreshOfficerSelect2();
                 hideAddCard();
             });
+
+            if (directorSel) {
+                directorSel.addEventListener('change', () => {
+                    if (directorOther) {
+                        const isOther = directorSel.value === DIRECTOR_OTHER;
+                        directorOther.classList.toggle('hidden', !isOther);
+                        if (!isOther) {
+                            const f = result.querySelector('[data-fr-director-first-name]');
+                            const l = result.querySelector('[data-fr-director-last-name]');
+                            if (f) f.value = '';
+                            if (l) l.value = '';
+                        }
+                    }
+                });
+            }
 
             officeSel.addEventListener('change', () => {
                 // "Other" office → reveal a free-text specify input (officer still picked below).
@@ -1662,6 +1708,13 @@
             const requestPurposeId = (purposeIsOther || purposeIsInTransit) ? '' : rawPurposeValue;
             const requestPurposeOther = purposeIsOther ? (purposeOther ? purposeOther.value.trim() : '') : (purposeIsInTransit ? 'In-Transit' : '');
 
+            const directorSel = result.querySelector('[data-fr-director]');
+            const directorOther = result.querySelector('[data-fr-director-other]');
+            const directorId = directorSel ? directorSel.value : '';
+            const directorIsOther = directorId === DIRECTOR_OTHER;
+            const directorFirstName = directorIsOther && directorOther ? result.querySelector('[data-fr-director-first-name]').value.trim() : '';
+            const directorLastName = directorIsOther && directorOther ? result.querySelector('[data-fr-director-last-name]').value.trim() : '';
+
             const flag = (el) => { if (el) { el.classList.add('ring-2','ring-red-400','border-red-400'); } };
             const unflag = (el) => { if (el) el.classList.remove('ring-2','ring-red-400','border-red-400'); };
             // select2 hides the native <select> behind its own rendered box, so flagging
@@ -1669,9 +1722,13 @@
             const officerSelect2Box = () => $(officerSel).next('.select2-container').find('.select2-selection');
             const flagOfficerSelect2 = () => officerSelect2Box().css({ boxShadow: '0 0 0 2px #f87171', borderColor: '#f87171' });
             const unflagOfficerSelect2 = () => officerSelect2Box().css({ boxShadow: '', borderColor: '' });
-            [deptSel, officeSel, officerSel, deptOther, officeOther, registrySel, purposeSel, purposeOther].forEach(unflag);
+            [deptSel, officeSel, officerSel, deptOther, officeOther, registrySel, purposeSel, purposeOther, directorSel].forEach(unflag);
             unflagOfficerSelect2();
             if (deptIsOther && !requesterDept) { flag(deptOther); deptOther.focus(); return; }
+            if (directorIsOther && (!directorFirstName || !directorLastName)) { 
+                flag(directorOther.querySelector('input')); 
+                return; 
+            }
             if (officeIsOther && !requesterOffice) { flag(officeOther); officeOther.focus(); return; }
             if (officerSel && !receivingOfficer) { flag(officerSel); flagOfficerSelect2(); $(officerSel).select2('open'); return; }
             if (registrySel && !registry) { flag(registrySel); registrySel.focus(); return; }
@@ -1699,7 +1756,7 @@
                 const res = await fetch(FR_URL, {
                     method:'POST',
                     headers:{ 'Content-Type':'application/json', 'X-CSRF-TOKEN':CSRF, 'Accept':'application/json' },
-                    body: JSON.stringify({ file_number:d.file_number, file_title:d.file_title, current_location:d.current_location, resolved_status:d.status, receiving_officer: receivingOfficer, requester_department: requesterDept, requester_office: requesterOffice, requester_office_code: requesterOfficeCode, registry: registry || null, registry_code: registryCode || null, force: force ? 1 : 0, update_existing_id: updateId || null, request_purpose_id: requestPurposeId || null, request_purpose_other: requestPurposeOther || null }),
+                    body: JSON.stringify({ file_number:d.file_number, file_title:d.file_title, current_location:d.current_location, resolved_status:d.status, receiving_officer: receivingOfficer, requester_department: requesterDept, requester_office: requesterOffice, requester_office_code: requesterOfficeCode, registry: registry || null, registry_code: registryCode || null, force: force ? 1 : 0, update_existing_id: updateId || null, request_purpose_id: requestPurposeId || null, request_purpose_other: requestPurposeOther || null, requester_director_id: directorIsOther ? null : directorId, requester_director_first_name: directorFirstName, requester_director_last_name: directorLastName }),
                 });
                 const json = await res.json();
                 if (json.success) {

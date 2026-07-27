@@ -322,7 +322,7 @@
           <div class="relative">
             <select name="rent_from_year" id="rent_from_year" class="form-input pl-10 bg-white">
               <option value="">Select year</option>
-              @for($y = 2025; $y >= 1970; $y--)
+              @for($y = 2026; $y >= 1970; $y--)
                 <option value="{{ $y }}" {{ (string) old('rent_from_year', $billBalance->rent_from_year ?? '') === (string) $y ? 'selected' : '' }}>{{ $y }}</option>
               @endfor
             </select>
@@ -334,8 +334,8 @@
           <div class="relative">
             <select name="rent_to_year" id="rent_to_year" class="form-input pl-10 bg-white">
               <option value="">Select year</option>
-              @for($y = 2025; $y >= 1970; $y--)
-                <option value="{{ $y }}" {{ (string) old('rent_to_year', $billBalance->rent_to_year ?? '2025') === (string) $y ? 'selected' : '' }}>{{ $y }}</option>
+              @for($y = 2026; $y >= 1970; $y--)
+                <option value="{{ $y }}" {{ (string) old('rent_to_year', $billBalance->rent_to_year ?? '2026') === (string) $y ? 'selected' : '' }}>{{ $y }}</option>
               @endfor
             </select>
             <i data-lucide="calendar-x" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>

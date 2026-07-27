@@ -495,7 +495,7 @@
                     }
                     $printLocation = trim(preg_replace('/\s+/', ' ', $printLocation));
                     if ($printLocation !== '') {
-                        $printLocation = \Illuminate\Support\Str::title(strtolower($printLocation));
+                        $printLocation = mb_strtoupper($printLocation, 'UTF-8');
                     }
                 @endphp
                 <!-- REF-GRID SECTION -->
@@ -547,7 +547,7 @@
                             piece of land
                         @endif
                         situated at
-                        <span class="inline-data" style="min-width: 150px">{{ $recommendation->location }}</span>
+                        <span class="inline-data" style="min-width: 150px">{{ $printLocation }}</span>
                        
                   
 
@@ -562,8 +562,9 @@
                                 P.H.P.A. (Revisable after every 5 years)
                             </div>
                             <div class="sub-item-line">
-                                <span class="sub-item-label">(b)</span> Development Charges N
-                                <span class="inline-data" style="min-width: 80px">{{ number_format($recommendation->development_charge, 2) }}</span>
+                                @php $devIsText = filled($recommendation->development_charge) && !is_numeric($recommendation->development_charge); @endphp
+                                <span class="sub-item-label">(b)</span> Development Charges @unless($devIsText) N @endunless
+                                <span class="inline-data" style="min-width: 80px">{{ is_numeric($recommendation->development_charge) ? number_format($recommendation->development_charge, 2) : ($recommendation->development_charge ?: '0.00') }}</span>
                                 (Payable once)
                             </div>
                             <div class="sub-item-line">

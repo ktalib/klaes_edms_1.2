@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class PrintManagerController extends Controller
-{ 
+{
     /**
      * Store a new print log entry.
      * ['Original', 'Duplicate', 'Triplicate'] [colors: 'red','blue','green']
@@ -63,7 +63,7 @@ class PrintManagerController extends Controller
             'original' => $logs->where('status', 'Original')->count(),
             'duplicate' => $logs->where('status', 'Duplicate')->count(),
             'triplicate' => $logs->where('status', 'Triplicate')->count(),
-            'completed' => $isSingleStep 
+            'completed' => $isSingleStep
                 ? $logs->where('status', 'Original')->count() > 0
                 : $logs->whereIn('status', ['Original', 'Duplicate', 'Triplicate'])->groupBy('status')->count() >= 3
         ];
@@ -102,5 +102,5 @@ class PrintManagerController extends Controller
     }
 
 
-  
+
 }

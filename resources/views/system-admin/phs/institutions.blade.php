@@ -54,6 +54,7 @@
                             <th class="px-4 py-3">Type</th>
                             <th class="px-4 py-3">Members</th>
                             <th class="px-4 py-3">Tokens</th>
+                            <th class="px-4 py-3">Onboarded</th>
                             <th class="px-4 py-3">Status</th>
                             <th class="px-4 py-3 text-right">Action</th>
                         </tr>
@@ -93,6 +94,9 @@
                                         <i data-lucide="coins" class="h-4 w-4 text-sky-500"></i>
                                         {{ number_format((int) $institution->token_balance) }}
                                     </span>
+                                </td>
+                                <td class="px-4 py-4 text-slate-500 text-xs font-medium">
+                                    {{ $institution->created_at?->format('M j, Y') ?? '—' }}
                                 </td>
                                 <td class="px-4 py-4">
                                     @if($institution->status === 'active')

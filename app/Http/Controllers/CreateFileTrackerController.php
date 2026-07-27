@@ -29,6 +29,8 @@ class CreateFileTrackerController extends Controller
 
     protected array $indexingCreatedAtCache = [];
 
+    protected array $indexingTitleCache = [];
+
     /**
      * Per-request map of normalized (UPPER+trim) file number => the highest-id
      * file_indexings row {id, created_at}. Primed once per results page so
@@ -121,10 +123,12 @@ class CreateFileTrackerController extends Controller
             }
         }
 
+        $requesterDirectors = \App\Models\RequesterDirector::orderBy('first_name')->get();
+
         return view('create_file_tracker_page.index', compact(
             'PageTitle', 'PageDescription', 'registries', 'departments', 'offices',
             'requestPurposes', 'receivingOfficers', 'currentUserPayload', 'assignmentPermissionsPayload',
-            'module', 'userOffice', 'userDepartmentName', 'userDepartmentOffices'
+            'module', 'userOffice', 'userDepartmentName', 'userDepartmentOffices', 'requesterDirectors'
         ));
     }
 
@@ -155,7 +159,10 @@ class CreateFileTrackerController extends Controller
                 'movement_log.*.log_out_time' => 'nullable|string',
                 'movement_log.*.log_out_date' => 'nullable|date',
                 'movement_log.*.notes' => 'nullable|string',
-                'notes' => 'nullable|string'
+                'notes' => 'nullable|string',
+                'requester_director_id' => 'nullable|integer',
+                'requester_director_first_name' => 'nullable|string|max:255',
+                'requester_director_last_name' => 'nullable|string|max:255'
             ]);
 
             if ($validator->fails()) {
@@ -306,6 +313,25 @@ class CreateFileTrackerController extends Controller
                 ? \Carbon\Carbon::parse($request->deadline)->setTime(23, 59, 59)
                 : ($timelineDays !== null ? now()->addDays($timelineDays)->setTime(23, 59, 59) : null);
 
+            $requesterDirectorId = $request->requester_director_id;
+            $requesterDirectorName = null;
+            if ($requesterDirectorId) {
+                $rd = \App\Models\RequesterDirector::find($requesterDirectorId);
+                $requesterDirectorName = $rd ? $rd->full_name : null;
+            } elseif ($request->filled('requester_director_first_name') && $request->filled('requester_director_last_name')) {
+                $firstName = trim($request->requester_director_first_name);
+                $lastName = trim($request->requester_director_last_name);
+                $fullName = $firstName . ' ' . $lastName;
+                $rd = \App\Models\RequesterDirector::create([
+                    'department' => $request->department,
+                    'first_name' => $firstName,
+                    'last_name' => $lastName,
+                    'full_name' => $fullName
+                ]);
+                $requesterDirectorId = $rd->id;
+                $requesterDirectorName = $rd->full_name;
+            }
+
             // Create file tracker
             $tracker = FileTracker::create([
                 'tracking_id' => $trackingId,
@@ -319,6 +345,8 @@ class CreateFileTrackerController extends Controller
                 'destination' => $request->destination,
                 'request_purpose_id' => $requestPurpose?->id,
                 'request_purpose_name' => $requestPurposeName,
+                'requester_director_id' => $requesterDirectorId,
+                'requester_director_name' => $requesterDirectorName,
                 'description' => $request->description,
                 'status' => $workflowStatus,
                 'date_created' => now(),
@@ -1383,9 +1411,11 @@ HTML;
 
         $tracker = FileTracker::where(function ($query) use ($needle) {
             $query->whereRaw('UPPER(tracking_id) = ?', [$needle])
+                ->orWhereRaw('UPPER(tracking_id) LIKE ?', [$needle . '%'])
                 ->orWhereRaw('UPPER(file_number) = ?', [$needle])
                 ->orWhereRaw('UPPER(file_title) = ?', [$needle]);
         })
+            ->orderByDesc('id')
             ->first();
 
         if ($tracker) {
@@ -1421,6 +1451,7 @@ HTML;
             ])
             ->where(function ($q) use ($needle) {
                 $q->whereRaw('UPPER(tracking_id) = ?', [$needle])
+                    ->orWhereRaw('UPPER(tracking_id) LIKE ?', [$needle . '%'])
                     ->orWhereRaw('UPPER(st_file_no) = ?', [$needle])
                     ->orWhereRaw('UPPER(kangisFileNo) = ?', [$needle])
                     ->orWhereRaw('UPPER(mlsfNo) = ?', [$needle])
@@ -1462,7 +1493,7 @@ HTML;
                         'id' => $archiveRecord->id,
                         'file_number' => $archiveFileNumber,
                         'tracking_id' => $archiveRecord->tracking_id,
-                        'file_name' => $archiveRecord->FileName,
+                        'file_name' => $this->getFileIndexingTitle($archiveFileNumber) ?? $archiveRecord->FileName,
                         'location' => $archiveRecord->location,
                         'application_id' => $archiveRecord->application_id,
                         'type' => $archiveRecord->type,
@@ -1471,6 +1502,7 @@ HTML;
                         'created_at' => $archiveRecord->created_at,
                         'num_pages' => $archiveFileIndexing?->pagetypings_count,
                         'in_digital_archive' => $archiveFileIndexing ? true : false,
+                        'rack_shelf_location' => $this->getRackShelfLocation($archiveFileNumber),
                     ],
                 ],
                 'message' => 'File located in archive records (fileNumber).'
@@ -1536,8 +1568,10 @@ HTML;
         // backfilled straight into the Create File Tracker form on "Log File".
         $requestPurposes = RequestPurpose::active()->orderBy('name')->get(['id', 'name', 'turnaround_days']);
 
+        $requesterDirectors = \App\Models\RequesterDirector::orderBy('first_name')->get();
+
         return view('create_file_tracker_page.quick_search', compact(
-            'PageTitle', 'PageDescription', 'receivingOfficers', 'offices', 'departments', 'departmentIds', 'registries', 'requestPurposes'
+            'PageTitle', 'PageDescription', 'receivingOfficers', 'offices', 'departments', 'departmentIds', 'registries', 'requestPurposes', 'requesterDirectors'
         ));
     }
 
@@ -2841,6 +2875,13 @@ HTML;
 
         $tracker->setAttribute('rack_shelf_location', $this->getRackShelfLocation($tracker->file_number));
 
+        // Sync and override file_title with the correct title from file_indexings
+        $indexingTitle = $this->getFileIndexingTitle($tracker->file_number);
+        if ($indexingTitle !== null) {
+            $tracker->file_title = $indexingTitle;
+            $tracker->setAttribute('file_title', $indexingTitle);
+        }
+
         // Original file-indexing created_at — used as the "home location" row's
         // Date & Time / Log In on the Movement History sheet.
         $tracker->setAttribute('file_indexing_created_at', $this->getFileIndexingCreatedAt($tracker->file_number));
@@ -2864,6 +2905,21 @@ HTML;
         // sheet shows its temporary "(T)" file when one exists.
         $tracker->setAttribute('mother_file_location', $this->getMotherFileLocation($tracker->file_number));
         $tracker->setAttribute('temp_file_location', $this->getTempFileLocation($tracker->file_number));
+
+        // Fetch current resolver location data
+        try {
+            $locationResult = app(FileLocationResolver::class)->resolve($tracker->file_number);
+            $locationData = $this->presentLocationResult($locationResult);
+            $tracker->setAttribute('logged_out_at', $locationData['logged_out_at'] ?? null);
+            $tracker->setAttribute('duration_with_holder', $locationData['duration_with_holder'] ?? null);
+            $tracker->setAttribute('registry', $locationData['registry'] ?? null);
+            $tracker->setAttribute('receiving_department', $locationData['receiving_department'] ?? null);
+        } catch (\Throwable $e) {
+            \Log::warning('Unable to resolve location data for decoration', [
+                'file_number' => $tracker->file_number,
+                'error' => $e->getMessage()
+            ]);
+        }
 
         return $tracker;
     }
@@ -3575,9 +3631,9 @@ HTML;
                 ->table('file_indexings')
                 ->whereIn('file_number', $variants->all())
                 ->orderBy('id')
-                ->get(['id', 'file_number', 'created_at']);
+                ->get(['id', 'file_number', 'created_at', 'file_title']);
         } catch (Exception $exception) {
-            Log::warning('Unable to prime file indexing created_at cache', [
+            Log::warning('Unable to prime file indexing cache', [
                 'error' => $exception->getMessage(),
             ]);
             return;
@@ -3588,8 +3644,64 @@ HTML;
             $this->indexingRowCache[mb_strtoupper(trim((string) $row->file_number))] = [
                 'id' => $row->id,
                 'created_at' => $row->created_at,
+                'file_title' => $row->file_title !== null ? trim((string) $row->file_title) : null,
             ];
         }
+    }
+
+    /**
+     * Resolve the original file_title of the matching file_indexings
+     * row for a file number. Returns a string (or null).
+     */
+    protected function getFileIndexingTitle(?string $fileNumber): ?string
+    {
+        $normalized = trim((string) $fileNumber);
+        if ($normalized === '') {
+            return null;
+        }
+
+        $key = mb_strtoupper($normalized);
+        if (array_key_exists($key, $this->indexingTitleCache)) {
+            return $this->indexingTitleCache[$key];
+        }
+
+        $variants = $this->indexingVariantsFor($normalized);
+
+        // Fast path: served from the page-level prime (no query).
+        if ($this->indexingRowCache !== null) {
+            $best = null;
+            foreach ($variants as $variant) {
+                $row = $this->indexingRowCache[$variant] ?? null;
+                if ($row && ($best === null || $row['id'] > $best['id'])) {
+                    $best = $row;
+                }
+            }
+            $title = $best && isset($best['file_title'])
+                ? $best['file_title']
+                : null;
+            $this->indexingTitleCache[$key] = $title;
+            return $title;
+        }
+
+        try {
+            $title = DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->whereIn('file_number', $variants)
+                ->orderByDesc('id')
+                ->value('file_title');
+
+            $title = $title !== null ? trim((string) $title) : null;
+        } catch (Exception $exception) {
+            Log::warning('Unable to fetch file indexing file_title', [
+                'file_number' => $fileNumber,
+                'error' => $exception->getMessage(),
+            ]);
+            $title = null;
+        }
+
+        $this->indexingTitleCache[$key] = $title;
+
+        return $title;
     }
 
     /**
