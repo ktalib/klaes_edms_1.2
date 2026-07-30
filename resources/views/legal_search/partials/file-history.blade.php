@@ -941,19 +941,6 @@
               <p class="comment-status text-xs mt-1 hidden" data-type="encumbrance"></p>
             </div>
 
-            {{-- General Comment --}}
-            <div class="p-3 bg-gray-50 border border-gray-200 rounded-lg">
-              <div class="flex items-center justify-between mb-2">
-                <h4 class="text-sm font-semibold text-gray-800">General Comment</h4>
-                <button class="save-comment-btn inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-600 text-white hover:bg-gray-700" data-type="general">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
-                  Save
-                </button>
-              </div>
-              <input type="text" id="comment-general-text" class="w-full px-2 py-1 text-xs border border-gray-300 rounded" placeholder="Optional comment">
-              <p class="comment-status text-xs mt-1 hidden" data-type="general"></p>
-            </div>
-
             {{-- W/R/C (Withdrawn / Revoked / Cancelled) Remark --}}
             {{-- Only shown when the searched file is tagged [WRC] in duplicate_fileno.
                  Leave blank to use the default wording; type here to override it. --}}
@@ -967,6 +954,20 @@
               </div>
               <input type="text" id="comment-wrc-text" class="w-full px-2 py-1 text-xs border border-gray-300 rounded" value="N.B. This Application has been Cancelled !!!">
               <p class="comment-status text-xs mt-1 hidden" data-type="wrc"></p>
+            </div>
+
+            {{-- General Comment — kept last so it always closes the stack, --}}
+            {{-- below every conditional remark card. --}}
+            <div class="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+              <div class="flex items-center justify-between mb-2">
+                <h4 class="text-sm font-semibold text-gray-800">General Comment</h4>
+                <button class="save-comment-btn inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-600 text-white hover:bg-gray-700" data-type="general">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                  Save
+                </button>
+              </div>
+              <input type="text" id="comment-general-text" class="w-full px-2 py-1 text-xs border border-gray-300 rounded" placeholder="Optional comment">
+              <p class="comment-status text-xs mt-1 hidden" data-type="general"></p>
             </div>
 
           </div>
@@ -1060,9 +1061,24 @@
                 <label class="block text-xs font-medium text-gray-700 mb-1">Size</label>
                 <input type="text" id="edit-file-info-size" maxlength="100" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="e.g. 0.05 HA">
               </div>
+              {{-- TP No / District / LGA are picked from the reference lists rather
+                   than typed, so the indexing record stays consistent with the rest
+                   of the system. Each keeps an "Other (specify)" escape for values
+                   not yet in its list, and openEditFileInfoModal() injects the
+                   record's current value as an option when it isn't one already so
+                   legacy entries are never silently dropped. --}}
               <div>
                 <label class="block text-xs font-medium text-gray-700 mb-1">TP No</label>
-                <input type="text" id="edit-file-info-tpno" maxlength="100" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="TP number">
+                <select id="edit-file-info-tpno" class="edit-file-info-lookup searchable-select w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" data-other-input="edit-file-info-tpno-other">
+                  <option value="">Select TP No</option>
+                  @isset($tpNoOptions)
+                    @foreach ($tpNoOptions as $tp)
+                      <option value="{{ $tp }}">{{ $tp }}</option>
+                    @endforeach
+                  @endisset
+                  <option value="__other__">Other (specify)</option>
+                </select>
+                <input type="text" id="edit-file-info-tpno-other" maxlength="100" class="hidden w-full mt-2 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Enter TP number">
               </div>
               <div>
                 <label class="block text-xs font-medium text-gray-700 mb-1">Land Use</label>
@@ -1077,18 +1093,39 @@
               </div>
               <div>
                 <label class="block text-xs font-medium text-gray-700 mb-1">District</label>
-                <input type="text" id="edit-file-info-district" maxlength="100" list="edit-file-info-district-options" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="District">
-                <datalist id="edit-file-info-district-options">
+                <select id="edit-file-info-district" class="edit-file-info-lookup searchable-select w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" data-other-input="edit-file-info-district-other">
+                  <option value="">Select District</option>
                   @isset($districtOptions)
                     @foreach ($districtOptions as $d)
-                      <option value="{{ $d }}"></option>
+                      <option value="{{ $d }}">{{ $d }}</option>
                     @endforeach
                   @endisset
-                </datalist>
+                  <option value="__other__">Other (specify)</option>
+                </select>
+                <input type="text" id="edit-file-info-district-other" maxlength="100" class="hidden w-full mt-2 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Enter district">
               </div>
               <div>
                 <label class="block text-xs font-medium text-gray-700 mb-1">LGA</label>
-                <input type="text" id="edit-file-info-lga" maxlength="100" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Local Government Area">
+                <select id="edit-file-info-lga" class="edit-file-info-lookup w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" data-other-input="edit-file-info-lga-other">
+                  <option value="">Select LGA</option>
+                  @isset($lgaOptions)
+                    @foreach ($lgaOptions as $l)
+                      <option value="{{ $l }}">{{ $l }}</option>
+                    @endforeach
+                  @endisset
+                  <option value="__other__">Other (specify)</option>
+                </select>
+                <input type="text" id="edit-file-info-lga-other" maxlength="100" class="hidden w-full mt-2 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Enter Local Government Area">
+              </div>
+              {{-- Term is normally derived from land use (99 years residential /
+                   agricultural, 40 years commercial / industrial); what is entered
+                   here is saved on the indexing record and overrides that, on screen
+                   and on the search report. The Residual Term stays derived — it is
+                   this term minus the years elapsed since the commencement date. --}}
+              <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Term</label>
+                <input type="text" id="edit-file-info-term" maxlength="50" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="e.g. 99 Years">
+                <p class="text-[11px] text-gray-400 mt-1">Overrides the term derived from land use, and drives the Residual Term. Clear to derive it again.</p>
               </div>
             </div>
             <p id="edit-file-info-error" class="text-xs text-red-600 hidden"></p>
@@ -1110,6 +1147,60 @@
           var text = (document.getElementById(id)?.textContent || '').trim();
           return text === '-' ? '' : text;
         }
+
+        // --- TP No / District / LGA lookup selects ---------------------------------
+        // Each is a <select> of reference values plus an "Other (specify)" option that
+        // reveals a free-text input, so an unlisted value can still be entered.
+
+        function otherInputFor(select) {
+          return select ? document.getElementById(select.dataset.otherInput || '') : null;
+        }
+
+        function toggleOtherInput(select) {
+          var other = otherInputFor(select);
+          if (!other) return;
+          var isOther = select.value === '__other__';
+          other.classList.toggle('hidden', !isOther);
+          if (isOther) other.focus();
+          else other.value = '';
+        }
+
+        // Select the record's current value, adding it to the list when the reference
+        // table doesn't contain it — otherwise reopening the modal and saving would
+        // silently blank out a legacy value the operator never touched.
+        function setLookupValue(selectId, value) {
+          var select = document.getElementById(selectId);
+          if (!select) return;
+          var other = otherInputFor(select);
+          if (other) { other.value = ''; other.classList.add('hidden'); }
+
+          Array.prototype.slice.call(select.querySelectorAll('option[data-injected="1"]'))
+            .forEach(function (opt) { opt.remove(); });
+
+          value = (value || '').trim();
+          if (!value) { select.value = ''; return; }
+
+          var match = Array.prototype.find.call(select.options, function (o) {
+            return o.value !== '__other__' && o.value.trim().toUpperCase() === value.toUpperCase();
+          });
+          if (!match) {
+            match = new Option(value, value);
+            match.dataset.injected = '1';
+            select.insertBefore(match, select.options[select.options.length - 1]);
+          }
+          select.value = match.value;
+        }
+
+        function lookupValue(selectId) {
+          var select = document.getElementById(selectId);
+          if (!select) return '';
+          if (select.value === '__other__') return (otherInputFor(select)?.value || '').trim();
+          return (select.value || '').trim();
+        }
+
+        document.querySelectorAll('.edit-file-info-lookup').forEach(function (select) {
+          select.addEventListener('change', function () { toggleOtherInput(select); });
+        });
 
         function openEditFileInfoModal() {
           var modal = document.getElementById('edit-file-info-modal');
@@ -1135,10 +1226,21 @@
           document.getElementById('edit-file-info-title').value = panelValue('file-title-value');
           document.getElementById('edit-file-info-plot-no').value = panelValue('plot-no-value');
           document.getElementById('edit-file-info-size').value = panelValue('size-value');
-          document.getElementById('edit-file-info-tpno').value = panelValue('tpno-value');
-          document.getElementById('edit-file-info-district').value = panelValue('district-value');
-          document.getElementById('edit-file-info-lga').value = panelValue('lga-value');
+          setLookupValue('edit-file-info-tpno', panelValue('tpno-value'));
+          setLookupValue('edit-file-info-district', panelValue('district-value'));
+          setLookupValue('edit-file-info-lga', panelValue('lga-value'));
+
+          // TP No / District are Select2-enhanced (thousands of entries each).
+          // Enhance on first open, then repaint — the values above were set
+          // programmatically and an option may have just been injected, neither
+          // of which Select2 notices on its own.
+          if (typeof window.initSearchableSelects === 'function') window.initSearchableSelects(modal);
+          if (typeof window.syncSearchableSelects === 'function') window.syncSearchableSelects(modal);
           document.getElementById('edit-file-info-land-use').value = panelValue('property-type-value');
+          // Prefill with what the panel currently shows — the saved term when the
+          // file has one, otherwise the land-use derived value the operator is
+          // about to correct.
+          document.getElementById('edit-file-info-term').value = panelValue('term-value');
 
           var errorEl = document.getElementById('edit-file-info-error');
           errorEl.textContent = '';
@@ -1172,10 +1274,11 @@
             file_title: document.getElementById('edit-file-info-title').value.trim(),
             plot_no: document.getElementById('edit-file-info-plot-no').value.trim(),
             size: document.getElementById('edit-file-info-size').value.trim(),
-            tp_no: document.getElementById('edit-file-info-tpno').value.trim(),
-            district: document.getElementById('edit-file-info-district').value.trim(),
-            lga: document.getElementById('edit-file-info-lga').value.trim(),
+            tp_no: lookupValue('edit-file-info-tpno'),
+            district: lookupValue('edit-file-info-district'),
+            lga: lookupValue('edit-file-info-lga'),
             land_use: document.getElementById('edit-file-info-land-use').value.trim(),
+            term: document.getElementById('edit-file-info-term').value.trim(),
           };
 
           if (!payload.file_title) {
@@ -1215,6 +1318,28 @@
               setPanel('district-value', d.district);
               setPanel('lga-value', d.lga);
               setPanel('property-type-value', d.land_use);
+
+              // Term — keep the cached per-file value, the File Information display
+              // and the derived Residual Term in step. Clearing it hands the file
+              // back to the term derived from land use.
+              var savedTerm = (d.term || '').toString().trim();
+              window.__lsSavedTerm = savedTerm;
+              try {
+                if (typeof selectedFile === 'object' && selectedFile) selectedFile._file_term = savedTerm;
+                // Clearing the term falls back to the land-use derived one, using the
+                // land use just saved above.
+                var termDisplay = savedTerm;
+                if (!termDisplay && typeof lsTermYearsFromLandUse === 'function') {
+                  var derivedYears = lsTermYearsFromLandUse(panelValue('property-type-value'));
+                  termDisplay = derivedYears ? derivedYears + ' Years' : '';
+                }
+                setPanel('term-value', termDisplay);
+                // Refreshes the derived Residual Term (and its editor input) from the
+                // new term.
+                if (typeof lsRecomputeResidualTerm === 'function') lsRecomputeResidualTerm();
+              } catch (e) {
+                setPanel('term-value', savedTerm);
+              }
 
               closeEditFileInfoModal();
               if (typeof Swal !== 'undefined') {

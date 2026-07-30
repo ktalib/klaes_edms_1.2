@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use App\Models\PrintLog;
 
 class LandRecommendationController extends Controller
@@ -99,7 +100,38 @@ class LandRecommendationController extends Controller
             });
         }
 
-        $recommendations = $query->latest()->paginate(20)->withQueryString();
+        // Printed / Not-Printed tab filter. This uses the SAME source as the
+        // "Date Printed" column — the existence of a print_logs row matched on
+        // file number — so a record can never appear in "Not Printed" while
+        // still showing a print date (print_logs has no recommendation id, only
+        // the file number, and print_count diverges for CTC/duplicate-file cases).
+        $printedExists = function ($q) {
+            $q->select(DB::raw('1'))
+              ->from('print_logs as pl')
+              ->where('pl.document_type', 'Land Recommendation')
+              ->whereRaw('UPPER(LTRIM(RTRIM(pl.reference_number))) = UPPER(LTRIM(RTRIM(land_recommendations.file_number)))');
+        };
+
+        $tab = $request->query('tab', 'not_printed');
+        if (!in_array($tab, ['printed', 'not_printed'], true)) {
+            $tab = 'not_printed';
+        }
+        if ($tab === 'printed') {
+            $query->whereExists($printedExists);
+        } else { // not_printed
+            $query->whereNotExists($printedExists);
+        }
+
+        // Newest first by date created, for both the Printed and Not Printed tabs
+        // (and both the OSS and ROFO views). The column is qualified because the
+        // OSS view joins a derived table, and `id` breaks ties: bulk-created rows
+        // share a created_at, and SQL Server's OFFSET/FETCH paging needs a
+        // deterministic order or rows repeat / vanish between pages.
+        $recommendations = $query
+            ->orderByDesc('land_recommendations.created_at')
+            ->orderByDesc('land_recommendations.id')
+            ->paginate(20)
+            ->withQueryString();
         $PageTitle ='Recommendation For Grant Of Statutory Right Of Occupancy';
 
         $statsQuery = LandRecommendation::query();
@@ -117,10 +149,33 @@ class LandRecommendationController extends Controller
             'total' => (clone $statsQuery)->count(),
             'pending' => (clone $statsQuery)->where('status', LandRecommendation::STATUS_PENDING)->count(),
             'approved' => (clone $statsQuery)->where('status', LandRecommendation::STATUS_APPROVED)->count(),
-            'total_ground_rent' => (clone $statsQuery)->sum('ground_rent')
+            'total_ground_rent' => (clone $statsQuery)->sum('ground_rent'),
+            'printed' => (clone $statsQuery)->whereExists($printedExists)->count(),
+            'not_printed' => (clone $statsQuery)->whereNotExists($printedExists)->count(),
         ];
 
-        return view('land_recommendations.index', compact('recommendations', 'PageTitle', 'stats', 'isOssView'));
+        // Batch-load the most recent print date per file number (from print_logs)
+        // so the table can show a "Print Date" column without an N+1 per row.
+        $printDates = [];
+        $fileNumbers = $recommendations->getCollection()
+            ->pluck('file_number')
+            ->filter()
+            ->map(fn ($fn) => strtoupper(trim((string) $fn)))
+            ->unique()
+            ->all();
+        if (!empty($fileNumbers)) {
+            $rows = DB::connection('sqlsrv')->table('print_logs')
+                ->where('document_type', 'Land Recommendation')
+                ->whereRaw('UPPER(LTRIM(RTRIM(reference_number))) IN (' . implode(',', array_fill(0, count($fileNumbers), '?')) . ')', $fileNumbers)
+                ->selectRaw('UPPER(LTRIM(RTRIM(reference_number))) AS fn, MAX(created_at) AS last_printed')
+                ->groupByRaw('UPPER(LTRIM(RTRIM(reference_number)))')
+                ->get();
+            foreach ($rows as $r) {
+                $printDates[$r->fn] = $r->last_printed;
+            }
+        }
+
+        return view('land_recommendations.index', compact('recommendations', 'PageTitle', 'stats', 'isOssView', 'tab', 'printDates'));
     }
 
     /**
@@ -284,7 +339,11 @@ class LandRecommendationController extends Controller
             $query->whereDate('land_recommendations.created_at', '<=', $request->query('end_date'));
         }
 
-        $query->orderByDesc('land_recommendations.created_at');
+        // Same order as the on-screen table. The `id` tiebreak matters more here:
+        // the export chunks with OFFSET, so a non-deterministic order would drop
+        // or duplicate rows between chunks.
+        $query->orderByDesc('land_recommendations.created_at')
+              ->orderByDesc('land_recommendations.id');
 
         $columns = $this->exportColumns();
 
@@ -343,28 +402,71 @@ class LandRecommendationController extends Controller
     }
 
     /**
-     * Check whether a recommendation already exists for the given file number.
-     * Used by the form to warn the user before they re-enter a duplicate.
-     * `exclude_id` lets the edit page skip the record being edited.
+     * Find an existing recommendation for the given file number, if any.
+     * Shared by the AJAX warning endpoint and the server-side guard in
+     * store()/update() so both apply exactly the same matching rule.
      */
-    public function checkDuplicate(Request $request)
+    private function findDuplicate(string $fileNumber, $excludeId = null)
     {
-        $fileNumber = trim((string) $request->query('file_number', ''));
+        $fileNumber = trim($fileNumber);
 
         if ($fileNumber === '') {
-            return response()->json(['exists' => false]);
+            return null;
         }
 
         $query = LandRecommendation::query()
             // Case/space-insensitive match so "RES-2026-1" and "res-2026-1 " collide.
             ->whereRaw("UPPER(LTRIM(RTRIM(file_number))) = ?", [strtoupper($fileNumber)]);
 
-        if ($request->filled('exclude_id')) {
-            $query->where('id', '!=', (int) $request->query('exclude_id'));
+        if (!empty($excludeId)) {
+            $query->where('id', '!=', (int) $excludeId);
         }
 
-        $existing = $query->orderByDesc('created_at')
+        return $query->orderByDesc('created_at')
             ->first(['id', 'file_number', 'applicant_name', 'status', 'type', 'created_at']);
+    }
+
+    /**
+     * Reject a save that would duplicate an existing file number, unless the
+     * user explicitly confirmed it (the "Save Anyway" path sets
+     * `duplicate_confirmed`). The client-side check is only a warning — this is
+     * what actually stops a duplicate from a stale page, a failed fetch or a
+     * direct POST.
+     */
+    private function guardAgainstDuplicate(Request $request, $excludeId = null): void
+    {
+        if ($request->boolean('duplicate_confirmed')) {
+            return;
+        }
+
+        $existing = $this->findDuplicate((string) $request->input('file_number', ''), $excludeId);
+
+        if (!$existing) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'file_number' => sprintf(
+                'A recommendation already exists for %s (applicant: %s, status: %s, created %s). Re-select the file number and choose "Save Anyway" if this is intentional.',
+                $existing->file_number,
+                $existing->applicant_name ?: '—',
+                $existing->status ?: '—',
+                optional($existing->created_at)->format('Y-m-d') ?: '—'
+            ),
+        ]);
+    }
+
+    /**
+     * Check whether a recommendation already exists for the given file number.
+     * Used by the form to warn the user before they re-enter a duplicate.
+     * `exclude_id` lets the edit page skip the record being edited.
+     */
+    public function checkDuplicate(Request $request)
+    {
+        $existing = $this->findDuplicate(
+            (string) $request->query('file_number', ''),
+            $request->query('exclude_id')
+        );
 
         if (!$existing) {
             return response()->json(['exists' => false]);
@@ -384,6 +486,8 @@ class LandRecommendationController extends Controller
 
     public function store(Request $request)
     {
+        $this->guardAgainstDuplicate($request);
+
         $validated = $request->validate([
             'file_number' => 'required|string',
             'applicant_name' => 'required|string',
@@ -515,6 +619,8 @@ class LandRecommendationController extends Controller
     public function update(Request $request, $id)
     {
         $recommendation = LandRecommendation::findOrFail($id);
+
+        $this->guardAgainstDuplicate($request, $recommendation->id);
 
         $validated = $request->validate([
             'file_number' => 'required|string',

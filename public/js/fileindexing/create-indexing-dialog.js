@@ -5387,6 +5387,36 @@
             }
         }
 
+        // Gender required validation (per-file selects in the Personal Details card)
+        {
+            const genderSelects = form.querySelectorAll('select.gender-select, select[name^="gender["]');
+            let firstEmptyGender = null;
+            genderSelects.forEach(sel => {
+                if (!firstEmptyGender && !(sel.value || '').trim()) {
+                    firstEmptyGender = sel;
+                }
+            });
+            if (firstEmptyGender) {
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Gender Required',
+                        text: 'Please select a Gender (Male, Female, Corporate or Joint) before saving.',
+                        confirmButtonText: 'OK',
+                        confirmButtonColor: '#f59e0b'
+                    }).then(() => {
+                        firstEmptyGender.focus();
+                        try { firstEmptyGender.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) { }
+                    });
+                } else {
+                    alert('Please select a Gender before saving.');
+                    firstEmptyGender.focus();
+                }
+                updateCreateButtonState();
+                return;
+            }
+        }
+
         const tempSuffixPattern = /\(\s*T\s*\)\s*$/i;
         const hiddenFileNumberValue = (document.getElementById('fileno')?.value || '').trim();
         const displayFileNumberValue = (document.getElementById('file-number-display')?.value || '').trim();
@@ -5718,6 +5748,15 @@
             subapplication_id: document.getElementById('sub_application_id')?.value || null,
             source_file_id: resolvedSourceFileId,
             file_type: collectArrayValues('file_type') || (document.getElementById('file_type')?.value || ''),
+            gender: (function () {
+                // Gender is captured per-file (gender[index]) in the Personal Details card.
+                // The store endpoint records a single value, so send the first selected one.
+                const vals = collectArrayValues('gender');
+                if (Array.isArray(vals)) {
+                    return vals.find(v => v && v.trim()) || vals[0] || '';
+                }
+                return document.getElementById('gender-0')?.value || document.getElementById('gender')?.value || '';
+            })(),
             dob: collectArrayValues('dob') || (document.getElementById('dob')?.value || null),
             nin: collectArrayValues('nin') || (document.getElementById('nin')?.value || ''),
             tin: collectArrayValues('tin') || (document.getElementById('tin')?.value || ''),

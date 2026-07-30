@@ -19,6 +19,8 @@
 
 @section('content')
     <script src="{{ asset('js/primaryform/states-lga.js') }}"></script>
+    <script src="{{ asset('js/commission_new_st/location-map.js') }}"></script>
+    <script src="{{ asset('js/commission_new_st/applicant-autofill.js') }}"></script>
     <script src="{{ asset('js/commission_new_st/primary.js') }}"></script>
     <script src="{{ asset('js/commission_new_st/sua_commission.js') }}"></script>
     <script src="{{ asset('js/commission_new_st/pua.js') }}"></script>
@@ -50,7 +52,7 @@
                 Primary
                 </button>
                    <button 
-                @click="activeTab = 'pua'"
+                @click="activeTab = 'pua'; $nextTick(() => window.STLocationMaps?.pua?.refresh())"
                 :class="activeTab === 'pua' 
                     ? 'bg-purple-600 text-white shadow-md border-purple-600' 
                     : 'bg-white text-gray-700 hover:bg-purple-50 hover:text-purple-700 border-gray-300'"
@@ -60,7 +62,7 @@
                 PuA
                 </button>
                 <button 
-                @click="activeTab = 'sua'"
+                @click="activeTab = 'sua'; $nextTick(() => window.STLocationMaps?.sua?.refresh())"
                 :class="activeTab === 'sua' 
                     ? 'bg-green-600 text-white shadow-md border-green-600' 
                     : 'bg-white text-gray-700 hover:bg-green-50 hover:text-green-700 border-gray-300'"
@@ -102,12 +104,18 @@
     </div>
 </div>
 
-{{-- Include Global File Number Modal Component --}}
+{{-- Include Global File Number Modal Component (also loads Select2) --}}
 @include('components.global-fileno-modal')
+
+{{-- Searchable District / Street Name dropdowns --}}
+@include('components.reference-select')
 
 {{-- JavaScript Assets --}}
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 <script src="{{ asset('js/primaryform/init.js') }}"></script>
+
+{{-- Google Maps — powers the Property Location Map in Location Details --}}
+<script src="https://maps.googleapis.com/maps/api/js?key={{ config('services.google_maps.key') }}" defer></script>
 
 {{-- CSRF Token for JavaScript --}}
 <script>

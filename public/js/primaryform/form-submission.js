@@ -367,6 +367,10 @@ const FormSubmission = {
         forceCapture('property_state', '#propertyState');
         forceCapture('plot_size', 'input[name="plot_size"]');
 
+        // Property map pin
+        forceCapture('latitude', '#pfPropertyLatitude');
+        forceCapture('longitude', '#pfPropertyLongitude');
+
         // Capture numerical counts
         forceCapture('units_count', 'input[name="units_count"]');
         forceCapture('blocks_count', 'input[name="blocks_count"]');

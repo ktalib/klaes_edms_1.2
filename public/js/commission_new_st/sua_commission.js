@@ -286,6 +286,7 @@ async function generateSuaFileNumbers() {
             land_use: landUse.toUpperCase(),
             application_type: applicationType, // REQUIRED: Application Type
             ...applicantData,
+            ...(window.STLocationMaps?.sua ? window.STLocationMaps.sua.getPayload() : {}),
             commissioned_by: document.getElementById('sua_commissioned_by')?.value || '',
             commissioned_date: document.getElementById('sua_commissioned_date')?.value || ''
         };

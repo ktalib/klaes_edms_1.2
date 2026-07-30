@@ -1,11 +1,14 @@
 @extends('layouts.app')
 @section('page-title')
-    {{ __('Document Library') }}
+    {{ __('Report & Manual') }}
 @endsection
 
 @section('content')
 <div class="flex-1 overflow-auto">
-    @include('admin.header')
+    @include('admin.header', [
+        'PageTitle' => 'Report & Manual',
+        'PageDescription' => 'Reports and user manuals published for the Ministry',
+    ])
 
     <div class="bg-gradient-to-r from-slate-700 via-slate-600 to-slate-800 px-6 py-3 flex items-center gap-3 shadow-sm">
         <i data-lucide="library" class="h-5 w-5 text-white shrink-0"></i>

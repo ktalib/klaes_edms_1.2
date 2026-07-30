@@ -181,6 +181,12 @@
                 return;
             }
 
+            if (!(document.getElementById('gender')?.value || '').trim()) {
+                alert('Please select a Gender (Male or Female).');
+                document.getElementById('gender')?.focus();
+                return;
+            }
+
             if (!fileNumber) {
                 alert('Please select or enter a file number.');
                 return;
@@ -205,6 +211,7 @@
             const formData = {
                 file_number: fileNumber,
                 file_title: fileTitle,
+                gender: document.getElementById('gender')?.value || null,
                 plot_number: plotNumber,
                 land_use_type: landUseType,
                 district: districtValue,

@@ -484,8 +484,10 @@ class ChangeOfPurposeController extends Controller
     public function generateApplication(int $id): JsonResponse
     {
         $record = ChangeOfPurposeApplication::findOrFail($id);
+        // Stamp the generation flag the menu reads — NOT created_at, which is the
+        // application's own capture date and must not move.
         $record->update([
-            'created_at' => now(),
+            'application_generated_at' => now(),
             'updated_by' => Auth::id(),
         ]);
         return response()->json(['success' => true, 'message' => 'Application generated.']);
@@ -493,8 +495,9 @@ class ChangeOfPurposeController extends Controller
 
     public function printApplication(int $id)
     {
-        $record = ChangeOfPurposeApplication::findOrFail($id);
-        return view('change_of_purpose.print.acknowledgement', compact('record')); // Use existing acknowledgement as application print
+        // Same sheet as the acknowledgement — build the identical view data so the
+        // memo renders its land-use labels either way it is opened.
+        return $this->printAcknowledgement($id);
     }
 
     public function generateRecommendation(int $id): JsonResponse
@@ -538,6 +541,8 @@ class ChangeOfPurposeController extends Controller
             'new_purpose' => 'nullable|string|max:500',
             'land_use' => 'nullable|string|max:255',
             'location' => 'nullable|string|max:2000',
+            'district' => 'nullable|string|max:255',
+            'lga' => 'nullable|string|max:255',
             'plot_no' => 'nullable|string|max:100',
             'plan_no' => 'nullable|string|max:100',
             'phone' => 'nullable|string|max:50',

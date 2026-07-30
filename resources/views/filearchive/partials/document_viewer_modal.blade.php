@@ -43,6 +43,10 @@
                                 <i data-lucide="rotate-cw" class="h-4 w-4"></i>
                             </button>
                             <div class="w-px h-5 bg-gray-300 mx-1"></div>
+                            <button class="btn btn-sm bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1" id="edit-filetype-toggle" title="Edit page classification (file type)">
+                                <i data-lucide="tag" class="h-4 w-4"></i>
+                                <span class="hidden sm:inline">Edit Type</span>
+                            </button>
                             <button class="btn btn-sm bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1" id="qc-edit-toggle" title="Quality control tools">
                                 <i data-lucide="sliders-horizontal" class="h-4 w-4"></i>
                                 <span class="hidden sm:inline">Quality Control</span>
@@ -51,7 +55,7 @@
                     </div>
 
                     <!-- QC / Edit toolbar (hidden until "Quality Control" is toggled) -->
-                    <div id="qc-toolbar" class="hidden border-b bg-indigo-50/60 px-3 py-2" data-apply-endpoint="{{ route('filearchive.pages.apply-edits', ['pageTyping' => '__ID__']) }}" data-qc-endpoint="{{ route('filearchive.pages.qc-status', ['pageTyping' => '__ID__']) }}">
+                    <div id="qc-toolbar" class="hidden border-b bg-indigo-50/60 px-3 py-2" data-apply-endpoint="{{ route('filearchive.pages.apply-edits', ['pageTyping' => '__ID__']) }}" data-qc-endpoint="{{ route('filearchive.pages.qc-status', ['pageTyping' => '__ID__']) }}" data-delete-endpoint="{{ route('filearchive.pages.delete', ['pageTyping' => '__ID__']) }}">
                         <div class="flex flex-wrap items-center gap-2">
                             <span class="text-xs font-semibold text-indigo-700 uppercase tracking-wide mr-1">Edit</span>
                             <button type="button" class="btn btn-ghost btn-sm border" id="qc-rotate-left" title="Rotate left 90°">
@@ -76,6 +80,9 @@
                                 <i data-lucide="upload" class="h-4 w-4"></i><span class="text-xs">Replace</span>
                             </button>
                             <input type="file" id="qc-replace-input" accept="image/png,image/jpeg,image/webp" class="hidden">
+                            <button type="button" class="btn btn-sm bg-red-600 hover:bg-red-700 text-white flex items-center gap-1" id="qc-delete-btn" title="Delete this page">
+                                <i data-lucide="trash-2" class="h-4 w-4"></i><span class="text-xs">Delete page</span>
+                            </button>
 
                             <div class="flex-1"></div>
 
@@ -144,6 +151,94 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit File Type (Page Classification) Modal -->
+<div id="edit-filetype-dialog" class="dialog-backdrop" style="display: none;" aria-hidden="true" tabindex="-1"
+     data-typing-data-url="{{ route('pagetyping.api.typing-data') }}"
+     data-save-url="{{ route('filearchive.pages.classification', ['pageTyping' => '__ID__']) }}">
+    <div class="modal-container flex items-center justify-center p-4 min-h-screen">
+        <div class="modal-content bg-white rounded-lg shadow-xl w-full max-w-md flex flex-col max-h-[92vh]">
+            <div class="flex-shrink-0 flex items-center justify-between p-4 border-b bg-gray-50 rounded-t-lg">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="tag" class="h-5 w-5 text-emerald-600"></i>
+                    <h2 class="text-base font-semibold">Edit Page Classification</h2>
+                </div>
+                <button id="edit-filetype-close" class="btn btn-ghost btn-sm" type="button">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
+            </div>
+
+            <form id="edit-filetype-form" class="p-4 space-y-4 overflow-y-auto" autocomplete="off">
+                <div class="text-xs text-gray-500">
+                    Editing <span class="font-mono font-semibold text-blue-700" id="eft-page-label">page</span>
+                    of <span class="font-semibold" id="eft-file-number">-</span>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Registry</label>
+                    <select id="eft-registry" class="form-input w-full text-sm py-1.5 px-2 border rounded-md">
+                        <option value="Lands Registry">Lands Registry</option>
+                        <option value="KANGIS">KANGIS</option>
+                        <option value="SLTR">SLTR</option>
+                        <option value="DCIV">DCIV</option>
+                        <option value="Cadastral">Cadastral</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Cover Type</label>
+                    <select id="eft-cover-type" required class="form-input w-full text-sm py-1.5 px-2 border rounded-md">
+                        <option value="">Select cover type</option>
+                    </select>
+                    <p class="text-xs text-amber-600 mt-1">Front Cover: main documents with pagination | Back Cover: supporting documents without pagination</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Page Type</label>
+                    <select id="eft-page-type" required class="form-input w-full text-sm py-1.5 px-2 border rounded-md">
+                        <option value="">Select page type</option>
+                    </select>
+                    <input type="text" id="eft-page-type-other" maxlength="50" placeholder="Enter custom page type"
+                           class="form-input w-full text-sm mt-1 py-1.5 px-2 border rounded-md hidden">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Page Subtype</label>
+                    <select id="eft-page-subtype" class="form-input w-full text-sm py-1.5 px-2 border rounded-md">
+                        <option value="">Select page subtype</option>
+                    </select>
+                    <input type="text" id="eft-page-subtype-other" maxlength="50" placeholder="Enter custom subtype"
+                           class="form-input w-full text-sm mt-1 py-1.5 px-2 border rounded-md hidden">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Serial Number</label>
+                    <input type="text" id="eft-serial" maxlength="5" required placeholder="e.g., 0"
+                           class="form-input w-full text-sm py-1.5 px-2 border rounded-md">
+                    <p class="text-xs text-gray-500 mt-1">Auto-calculated: <span id="eft-serial-auto">0</span></p>
+                </div>
+
+                <div class="border rounded-md p-3 bg-gray-50">
+                    <h4 class="text-sm font-semibold mb-2">Page Code Preview</h4>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span id="eft-code-preview" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-semibold bg-blue-100 text-blue-800">—</span>
+                        <span id="eft-definition-preview" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-semibold bg-green-100 text-green-800">—</span>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-2">Format: CoverType-PageType-SubType-SerialNo</p>
+                    <p class="text-xs text-gray-500">Definition Code: AutoPosition-PageCode</p>
+                </div>
+            </form>
+
+            <div class="flex-shrink-0 flex items-center justify-end gap-2 p-4 border-t bg-gray-50 rounded-b-lg">
+                <button type="button" id="edit-filetype-cancel" class="btn btn-outline btn-sm">Cancel</button>
+                <button type="button" id="edit-filetype-save" class="btn btn-sm bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1">
+                    <i data-lucide="save" class="h-4 w-4"></i>
+                    <span>Save Classification</span>
+                </button>
             </div>
         </div>
     </div>
@@ -526,9 +621,10 @@ function qcEndpoint(kind) {
     const toolbar = document.getElementById('qc-toolbar');
     const page = documentPages[currentPageIndex];
     if (!toolbar || !page || !page.pagetyping_id) return null;
-    const tpl = kind === 'apply'
-        ? toolbar.getAttribute('data-apply-endpoint')
-        : toolbar.getAttribute('data-qc-endpoint');
+    const attr = kind === 'apply' ? 'data-apply-endpoint'
+        : kind === 'delete' ? 'data-delete-endpoint'
+        : 'data-qc-endpoint';
+    const tpl = toolbar.getAttribute(attr);
     return tpl ? tpl.replace('__ID__', page.pagetyping_id) : null;
 }
 
@@ -873,6 +969,54 @@ function qcSetStatus(status) {
     .catch(err => alert(err.message));
 }
 
+function qcDeletePage() {
+    const page = documentPages[currentPageIndex];
+    const url = qcEndpoint('delete');
+    if (!page || !url) return;
+
+    const label = page.page_code || (page.page_type && page.page_type.name) || ('Page ' + (page.page_number ?? (currentPageIndex + 1)));
+    if (!confirm(`Delete "${label}"?\n\nThis permanently removes the page from the archive and cannot be undone.`)) {
+        return;
+    }
+
+    const delBtn = document.getElementById('qc-delete-btn');
+    if (delBtn) { delBtn.disabled = true; const s = delBtn.querySelector('span'); if (s) s.textContent = 'Deleting…'; }
+
+    fetch(url, {
+        method: 'DELETE',
+        headers: {
+            'X-CSRF-TOKEN': qcCsrf(),
+            'Accept': 'application/json'
+        }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.success) throw new Error(data.message || 'Delete failed');
+
+        exitQcEditMode();
+
+        // Drop the page from memory and re-render the list.
+        const removedIndex = currentPageIndex;
+        documentPages.splice(removedIndex, 1);
+
+        if (!documentPages.length) {
+            renderPagesList();
+            showEmptyState('This document has no pages left.');
+            qcToast('Page deleted.');
+            return;
+        }
+
+        const nextIndex = Math.min(removedIndex, documentPages.length - 1);
+        renderPagesList();
+        selectPage(nextIndex);
+        qcToast('Page deleted.');
+    })
+    .catch(err => alert('Unable to delete: ' + err.message))
+    .finally(() => {
+        if (delBtn) { delBtn.disabled = false; const s = delBtn.querySelector('span'); if (s) s.textContent = 'Delete page'; }
+    });
+}
+
 function qcToast(msg) {
     let el = document.getElementById('qc-toast');
     if (!el) {
@@ -934,7 +1078,274 @@ document.addEventListener('DOMContentLoaded', function () {
     document.addEventListener('mouseup', qcCropMouseUp);
 
     on('qc-save-btn', 'click', qcSave);
+    on('qc-delete-btn', 'click', qcDeletePage);
     on('qc-pass-btn', 'click', () => qcSetStatus('passed'));
     on('qc-fail-btn', 'click', () => qcSetStatus('failed'));
 });
+</script>
+
+<script>
+/* ============================================================
+ * Edit File Type — re-classify the current page from the viewer.
+ * Reuses the same reference data + page-code format as pagetyping,
+ * saving through /filearchive/pages/{id}/classification. It never
+ * renames the stored file; only the classification columns change.
+ * ============================================================ */
+(function () {
+    const dialog = document.getElementById('edit-filetype-dialog');
+    if (!dialog) return;
+
+    let typingData = null;              // { coverTypes, pageTypes, pageSubTypes }
+    let typingDataPromise = null;
+    let editingPageIndex = null;
+
+    const $ = (id) => document.getElementById(id);
+    const csrf = () => {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.getAttribute('content') : '';
+    };
+    const isOther = (v) => ['other', 'others', 'oth'].includes(String(v).toLowerCase());
+    const otherCode = (text) => (String(text || '').trim().substring(0, 4).toUpperCase() || 'OTH');
+
+    async function loadTypingData() {
+        if (typingData) return typingData;
+        if (typingDataPromise) return typingDataPromise;
+
+        typingDataPromise = fetch(dialog.dataset.typingDataUrl, { headers: { 'Accept': 'application/json' } })
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success) throw new Error(data.message || 'Failed to load classification data');
+                typingData = {
+                    coverTypes: (data.cover_types || []).map(c => ({ id: String(c.id ?? c.Id), name: c.name ?? c.Name, code: c.code ?? c.Code ?? 'CV' })),
+                    pageTypes: (data.page_types || []).map(p => ({ id: String(p.id ?? p.Id), name: p.name ?? p.Name, code: p.code ?? p.Code ?? 'PT' })),
+                    pageSubTypes: {}
+                };
+                const raw = data.page_sub_types || {};
+                Object.keys(raw).forEach(k => {
+                    typingData.pageSubTypes[String(k)] = (raw[k] || []).map(s => ({ id: String(s.id ?? s.Id), name: s.name ?? s.Name, code: s.code ?? s.Code ?? 'ST' }));
+                });
+                return typingData;
+            });
+        return typingDataPromise;
+    }
+
+    function coverById(id) { return typingData.coverTypes.find(c => c.id == id); }
+    function pageTypeById(id) { return typingData.pageTypes.find(p => p.id == id); }
+    function subTypeById(typeId, subId) { return (typingData.pageSubTypes[String(typeId)] || []).find(s => s.id == subId); }
+
+    function fillSelect(select, items, placeholder) {
+        select.innerHTML = `<option value="">${placeholder}</option>`;
+        items.forEach(it => {
+            const opt = document.createElement('option');
+            opt.value = it.id;
+            opt.textContent = `${it.name} (${it.code})`;
+            select.appendChild(opt);
+        });
+    }
+
+    function populateSubtypes(typeId, selectedSubId) {
+        const subs = typingData.pageSubTypes[String(typeId)] || [];
+        fillSelect($('eft-page-subtype'), subs, 'Select page subtype');
+        if (selectedSubId != null) $('eft-page-subtype').value = String(selectedSubId);
+    }
+
+    function toggleOther(selectId, inputId) {
+        const input = $(inputId);
+        if (isOther($(selectId).value)) {
+            input.classList.remove('hidden');
+        } else {
+            input.classList.add('hidden');
+        }
+    }
+
+    function updatePreview() {
+        const page = documentPages[editingPageIndex] || {};
+        const coverCode = coverById($('eft-cover-type').value)?.code || 'XX';
+
+        const ptVal = $('eft-page-type').value;
+        const pageCode = ptVal
+            ? (isOther(ptVal) ? otherCode($('eft-page-type-other').value) : (pageTypeById(ptVal)?.code || 'XX'))
+            : 'XX';
+
+        const stVal = $('eft-page-subtype').value;
+        let subCode = '';
+        if (stVal) {
+            subCode = isOther(stVal) ? otherCode($('eft-page-subtype-other').value) : (subTypeById(ptVal, stVal)?.code || 'XX');
+        }
+
+        const serial = ($('eft-serial').value || '').trim();
+        const code = `${coverCode}-${pageCode}${subCode ? '-' + subCode : ''}-${serial}`;
+
+        const position = page.definition != null ? page.definition : page.page_number;
+        $('eft-code-preview').textContent = code;
+        $('eft-definition-preview').textContent = `${position ?? ''}-${code}`;
+    }
+
+    async function openModal() {
+        if (typeof documentPages === 'undefined' || !documentPages.length) {
+            alert('Open a document and select a page first.');
+            return;
+        }
+        editingPageIndex = currentPageIndex;
+        const page = documentPages[editingPageIndex];
+        if (!page || !page.pagetyping_id) {
+            alert('This page cannot be re-classified.');
+            return;
+        }
+
+        try {
+            await loadTypingData();
+        } catch (e) {
+            alert('Could not load classification options: ' + e.message);
+            return;
+        }
+
+        // Populate selects
+        fillSelect($('eft-cover-type'), typingData.coverTypes, 'Select cover type');
+        fillSelect($('eft-page-type'), typingData.pageTypes, 'Select page type');
+
+        // Pre-select existing classification
+        if (page.cover_type && page.cover_type.id != null) $('eft-cover-type').value = String(page.cover_type.id);
+
+        const pt = page.page_type || {};
+        const knownType = pt.id != null && pageTypeById(pt.id);
+        if (knownType) {
+            $('eft-page-type').value = String(pt.id);
+            $('eft-page-type-other').value = '';
+        } else if (pt.id != null && String(pt.id) !== '') {
+            $('eft-page-type').value = 'other';
+            $('eft-page-type-other').value = pt.name && pt.name !== 'Unknown Type' ? pt.name : String(pt.id);
+        }
+        toggleOther('eft-page-type', 'eft-page-type-other');
+
+        // Subtypes depend on the chosen type
+        const activeTypeId = $('eft-page-type').value;
+        populateSubtypes(activeTypeId, null);
+        const st = page.page_subtype;
+        if (st && st.id != null) {
+            const knownSub = subTypeById(activeTypeId, st.id);
+            if (knownSub) {
+                $('eft-page-subtype').value = String(st.id);
+                $('eft-page-subtype-other').value = '';
+            } else {
+                $('eft-page-subtype').value = 'other';
+                $('eft-page-subtype-other').value = st.name && st.name !== 'Unknown Subtype' ? st.name : String(st.id);
+            }
+        }
+        toggleOther('eft-page-subtype', 'eft-page-subtype-other');
+
+        $('eft-serial').value = page.serial_number != null ? String(page.serial_number) : '';
+        $('eft-serial-auto').textContent = page.serial_number != null ? String(page.serial_number) : '0';
+        $('eft-page-label').textContent = 'Page ' + (page.page_number ?? (editingPageIndex + 1));
+        $('eft-file-number').textContent = (currentFileMeta && currentFileMeta.file_number) ? currentFileMeta.file_number : (document.getElementById('viewer-file-number')?.textContent || '-');
+
+        updatePreview();
+
+        dialog.style.display = 'flex';
+        dialog.setAttribute('aria-hidden', 'false');
+        if (window.lucide) lucide.createIcons();
+    }
+
+    function closeModal() {
+        dialog.style.display = 'none';
+        dialog.setAttribute('aria-hidden', 'true');
+        editingPageIndex = null;
+    }
+
+    async function save() {
+        const page = documentPages[editingPageIndex];
+        if (!page || !page.pagetyping_id) return;
+
+        const coverVal = $('eft-cover-type').value;
+        const ptVal = $('eft-page-type').value;
+        const stVal = $('eft-page-subtype').value;
+        const serial = ($('eft-serial').value || '').trim();
+
+        if (!coverVal) { alert('Please select a cover type.'); return; }
+        if (!ptVal) { alert('Please select a page type.'); return; }
+        if (isOther(ptVal) && !$('eft-page-type-other').value.trim()) { alert('Please specify the custom page type.'); return; }
+        if (stVal && isOther(stVal) && !$('eft-page-subtype-other').value.trim()) { alert('Please specify the custom page subtype.'); return; }
+        if (serial === '' || isNaN(parseInt(serial, 10))) { alert('Please enter a numeric serial number.'); return; }
+
+        updatePreview();
+        const pageCode = $('eft-code-preview').textContent;
+
+        const payload = {
+            cover_type_id: coverVal,
+            page_type: ptVal,
+            page_type_other: isOther(ptVal) ? $('eft-page-type-other').value.trim() : null,
+            page_subtype: stVal || null,
+            page_subtype_other: (stVal && isOther(stVal)) ? $('eft-page-subtype-other').value.trim() : null,
+            serial_number: parseInt(serial, 10),
+            page_code: pageCode,
+            registry: $('eft-registry').value || null
+        };
+
+        const url = dialog.dataset.saveUrl.replace('__ID__', page.pagetyping_id);
+        const saveBtn = $('edit-filetype-save');
+        const label = saveBtn.querySelector('span');
+        saveBtn.disabled = true;
+        if (label) label.textContent = 'Saving…';
+
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrf(),
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!data.success) throw new Error(data.message || 'Save failed');
+
+            // Refresh in-memory page + re-render the list/detail in place.
+            page.page_code = data.page_code;
+            page.serial_number = data.serial_number;
+            if (data.cover_type) page.cover_type = data.cover_type;
+            if (data.page_type) page.page_type = data.page_type;
+            page.page_subtype = data.page_subtype || null;
+
+            if (typeof renderPagesList === 'function') renderPagesList();
+            if (typeof selectPage === 'function') selectPage(editingPageIndex);
+
+            closeModal();
+            if (typeof qcToast === 'function') qcToast('Page classification updated.');
+        } catch (err) {
+            alert('Unable to save: ' + err.message);
+        } finally {
+            saveBtn.disabled = false;
+            if (label) label.textContent = 'Save Classification';
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const btn = $('edit-filetype-toggle');
+        if (btn) btn.addEventListener('click', openModal);
+        $('edit-filetype-close')?.addEventListener('click', closeModal);
+        $('edit-filetype-cancel')?.addEventListener('click', closeModal);
+        $('edit-filetype-save')?.addEventListener('click', save);
+
+        dialog.addEventListener('click', (e) => { if (e.target === dialog) closeModal(); });
+
+        $('eft-cover-type')?.addEventListener('change', updatePreview);
+        $('eft-serial')?.addEventListener('input', updatePreview);
+        $('eft-page-type')?.addEventListener('change', function () {
+            toggleOther('eft-page-type', 'eft-page-type-other');
+            populateSubtypes(this.value, null);
+            toggleOther('eft-page-subtype', 'eft-page-subtype-other');
+            updatePreview();
+        });
+        $('eft-page-subtype')?.addEventListener('change', function () {
+            toggleOther('eft-page-subtype', 'eft-page-subtype-other');
+            updatePreview();
+        });
+        $('eft-page-type-other')?.addEventListener('input', updatePreview);
+        $('eft-page-subtype-other')?.addEventListener('input', updatePreview);
+    });
+
+    window.openEditFileTypeModal = openModal;
+})();
 </script>

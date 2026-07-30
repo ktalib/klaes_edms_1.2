@@ -165,6 +165,13 @@ class FileSearchRequest extends Model
             }
         }
 
+        // Fall back to the officer_ranks lookup table for custom ranks added at
+        // runtime (e.g. via the form's "Other (specify)" option), matched exactly.
+        $weight = \App\Models\OfficerRank::weightFor($officer);
+        if ($weight !== null) {
+            return $weight;
+        }
+
         return $default;
     }
 }

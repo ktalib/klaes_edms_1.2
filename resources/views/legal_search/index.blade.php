@@ -51,4 +51,7 @@ window.LEGAL_SEARCH_CONTEXT = {
 </script>
 @include('legal_search.js')
 @include('filearchive.assets.js')
+{{-- Searchable dropdowns for the Edit File Information modal's long TP No /
+     District lists (2,900+ and 1,800+ entries). --}}
+@include('components.searchable-select2')
 @endsection

@@ -6,10 +6,14 @@
 {{-- Core JavaScript Files --}}
 <script src="{{ asset('js/primaryform/utilities.js') }}?v={{ time() }}"></script>
 <script src="{{ asset('js/primaryform/states-lga.js') }}?v={{ time() }}"></script>
+<script src="{{ asset('js/commission_new_st/location-map.js') }}?v={{ time() }}"></script>
 <script src="{{ asset('js/primaryform/navigation.js') }}?v={{ time() }}"></script>
 <script src="{{ asset('js/primaryform/buyers.js') }}?v={{ time() }}"></script>
 <script src="{{ asset('js/primaryform/summary.js') }}?v={{ time() }}"></script>
 <script src="{{ asset('js/primaryform/init.js') }}?v={{ time() }}"></script>
+
+{{-- Google Maps — powers the Property Location Map in step 1 --}}
+<script src="https://maps.googleapis.com/maps/api/js?key={{ config('services.google_maps.key') }}" defer></script>
 
 {{-- Inline initialization script --}}
 <script>

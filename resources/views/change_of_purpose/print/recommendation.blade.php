@@ -107,10 +107,10 @@
             </div>
             <div style="margin-top: auto; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #000; padding-top: 10px; padding-bottom: 20px;">
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <img src="{{ asset('assets/logo/klaes.png') }}" alt="KLAES Logo" style="width: 100px; height: 100px; object-fit: contain;">
+                <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES Logo" style="width: 100px; height: 100px; object-fit: contain;">
                    
                 </div>
-                <img src="{{ asset('assets/logo/las.jpeg') }}" alt="LAS Logo" style="width: 100px; height: 100px; object-fit: contain;">
+                <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="LAS Logo" style="width: 100px; height: 100px; object-fit: contain;">
             </div>
         </div>
     </div>

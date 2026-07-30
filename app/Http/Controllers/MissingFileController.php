@@ -95,6 +95,11 @@ class MissingFileController extends Controller
         $existing = MissingFile::where('file_number', $fileNumber)->first();
         $transit  = $this->transitInfo($fileNumber);
 
+        // Auto-detect the physical registry from config/file_ranges.php (prefix + year),
+        // so the "Archive / Registry" dropdown pre-selects itself instead of relying on a
+        // manual pick. Null when the file number matches no configured range.
+        $range = app(FileLocationResolver::class)->matchRange($fileNumber);
+
         return response()->json([
             'success'         => true,
             'exists'          => (bool) $existing,
@@ -103,6 +108,8 @@ class MissingFileController extends Controller
             'in_transit'      => $transit['in_transit'],
             'transit_location'=> $transit['location'],
             'transit_tracking_id' => $transit['tracking_id'],
+            'registry'        => $range['registry'] ?? null,
+            'zone'            => $range['zone'] ?? null,
         ]);
     }
 

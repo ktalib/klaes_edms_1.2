@@ -35,19 +35,21 @@ class LandRofoController extends Controller
             });
         }
 
-        // Tab filter: "printed" (RofO already printed at least once) vs
-        // "not_printed" (still awaiting print). rofo_print_count is incremented by
-        // both batch and individual prints, so it is the authoritative flag.
-        // The OSS-only view is a separate print flow, so tabs apply to the land view only.
+        // Tab filter: "printed" vs "not_printed". rofo_print_count is the authoritative
+        // "actually printed" flag — it is incremented only by a real individual/batch
+        // print, so unlike the mere presence of a security code it excludes both
+        // preview-only serials and the bulk-backfilled serials (assigned_by 101563,
+        // 2026-05-21) that were never printed. The OSS-only view is a separate flow,
+        // so tabs apply to the main view.
         $tab = $request->query('tab', 'not_printed');
         if (!in_array($tab, ['printed', 'not_printed'], true)) {
             $tab = 'not_printed';
         }
         if (!$ossViewOnly) {
             if ($tab === 'printed') {
-                $query->whereRaw("ISNULL(rofo_print_count, 0) > 0");
+                $query->whereRaw('ISNULL(rofo_print_count, 0) > 0');
             } else { // not_printed
-                $query->whereRaw("ISNULL(rofo_print_count, 0) = 0");
+                $query->whereRaw('ISNULL(rofo_print_count, 0) = 0');
             }
         }
 
@@ -65,16 +67,25 @@ class LandRofoController extends Controller
         $PageTitle = $ossViewOnly ? 'OSS RofO' : 'Land RofO';
         $landUses = \App\Models\LandUse::orderBy('landuse')->get();
 
-        // Single aggregated query for all stats to avoid multiple full-table scans
+        // Single aggregated query for all stats to avoid multiple full-table scans.
+        // (printed / not_printed are computed separately below because SQL Server
+        // cannot nest an EXISTS subquery inside an aggregate function.)
         $statsRow = DB::connection('sqlsrv')->table('land_recommendations')->selectRaw("
             COUNT(CASE WHEN UPPER(ISNULL(type,'')) <> 'OSS' AND status = 'approved'                                          THEN 1 END)   AS total_eligible,
             COUNT(CASE WHEN UPPER(ISNULL(type,'')) <> 'OSS' AND status = 'approved' AND ISNULL(rofo_status,'') = 'pending'   THEN 1 END)   AS pending_generation,
             COUNT(CASE WHEN UPPER(ISNULL(type,'')) <> 'OSS' AND ISNULL(rofo_status,'') = 'generated'                        THEN 1 END)   AS generated,
             COUNT(CASE WHEN UPPER(ISNULL(type,'')) <> 'OSS'                                                                THEN 1 END)   AS total_land,
-            COUNT(CASE WHEN ((status = 'approved' AND UPPER(ISNULL(type,'')) <> 'OSS') OR UPPER(ISNULL(type,'')) = 'OSS') AND ISNULL(rofo_print_count,0) > 0 THEN 1 END) AS printed,
-            COUNT(CASE WHEN ((status = 'approved' AND UPPER(ISNULL(type,'')) <> 'OSS') OR UPPER(ISNULL(type,'')) = 'OSS') AND ISNULL(rofo_print_count,0) = 0 THEN 1 END) AS not_printed,
             ISNULL(SUM(CASE WHEN UPPER(ISNULL(type,'')) <> 'OSS' AND ISNULL(rofo_status,'') = 'generated' THEN ISNULL(rofo_dev_charge,0) ELSE 0 END), 0) AS total_dev_charge
         ")->first();
+
+        // Printed / Not-Printed counts — rofo_print_count is the actually-printed flag.
+        $rofoScopeQuery = DB::connection('sqlsrv')->table('land_recommendations')
+            ->where(function ($q) {
+                $q->whereRaw("status = 'approved' AND UPPER(ISNULL(type,'')) <> 'OSS'")
+                  ->orWhereRaw("UPPER(ISNULL(type,'')) = 'OSS'");
+            });
+        $printedCount    = (clone $rofoScopeQuery)->whereRaw('ISNULL(rofo_print_count, 0) > 0')->count();
+        $notPrintedCount = (clone $rofoScopeQuery)->whereRaw('ISNULL(rofo_print_count, 0) = 0')->count();
 
         // Count OSS Applications from the authoritative source (oss_applications) so
         // the stat matches the Change of Name page instead of counting type='OSS' rows
@@ -95,8 +106,8 @@ class LandRofoController extends Controller
             'total_eligible'    => (int) ($statsRow->total_eligible    ?? 0),
             'pending_generation'=> (int) ($statsRow->pending_generation ?? 0),
             'generated'         => (int) ($statsRow->generated          ?? 0),
-            'printed'           => (int) ($statsRow->printed            ?? 0),
-            'not_printed'       => (int) ($statsRow->not_printed        ?? 0),
+            'printed'           => (int) $printedCount,
+            'not_printed'       => (int) $notPrintedCount,
             'total_land'        => (int) ($statsRow->total_land         ?? 0),
             'total_dev_charge'  => (float) ($statsRow->total_dev_charge ?? 0),
             'oss_total'         => $ossTotal,
@@ -132,7 +143,51 @@ class LandRofoController extends Controller
             }
         }
 
-        return view('land_rofos.index', compact('recommendations', 'PageTitle', 'landUses', 'stats', 'availableSerials', 'ossViewOnly', 'rofoSerials', 'tab'));
+        // Batch-load the "Print Date" per record (keyed by record id) — ONLY for
+        // records that were actually printed (rofo_print_count > 0), so a backfilled
+        // serial never shows a date on a not-printed row. The date is the serial's
+        // date, with an actual print_log taking precedence. No N+1.
+        $printDates = [];
+        $printedIds = empty($recIds) ? [] : DB::connection('sqlsrv')->table('land_recommendations')
+            ->whereIn('id', $recIds)
+            ->whereRaw('ISNULL(rofo_print_count, 0) > 0')
+            ->pluck('id')->all();
+        if (!empty($printedIds)) {
+            // Serial date per printed record id.
+            $serialRows = DB::connection('sqlsrv')->table('security_codes')
+                ->where('document_type', 'Land ROFO')
+                ->whereIn('document_id', $printedIds)
+                ->selectRaw('document_id, MIN(created_at) AS serial_date')
+                ->groupBy('document_id')
+                ->get();
+            foreach ($serialRows as $r) {
+                $printDates[$r->document_id] = $r->serial_date;
+            }
+
+            // print_logs override, matched by file number, mapped back to record id.
+            $idByFile = [];
+            foreach ($recommendations->getCollection() as $rec) {
+                if (in_array($rec->id, $printedIds, true)) {
+                    $idByFile[strtoupper(trim((string) $rec->file_number))] = $rec->id;
+                }
+            }
+            $fileNumbers = array_keys($idByFile);
+            if (!empty($fileNumbers)) {
+                $logRows = DB::connection('sqlsrv')->table('print_logs')
+                    ->where('document_type', 'Land ROFO')
+                    ->whereRaw('UPPER(LTRIM(RTRIM(reference_number))) IN (' . implode(',', array_fill(0, count($fileNumbers), '?')) . ')', $fileNumbers)
+                    ->selectRaw('UPPER(LTRIM(RTRIM(reference_number))) AS fn, MAX(created_at) AS last_printed')
+                    ->groupByRaw('UPPER(LTRIM(RTRIM(reference_number)))')
+                    ->get();
+                foreach ($logRows as $r) {
+                    if (isset($idByFile[$r->fn])) {
+                        $printDates[$idByFile[$r->fn]] = $r->last_printed;
+                    }
+                }
+            }
+        }
+
+        return view('land_rofos.index', compact('recommendations', 'PageTitle', 'landUses', 'stats', 'availableSerials', 'ossViewOnly', 'rofoSerials', 'tab', 'printDates'));
     }
 
     /**

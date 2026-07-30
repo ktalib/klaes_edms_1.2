@@ -751,10 +751,12 @@ class CoroiController extends Controller
                             ->orWhere('temp_fileno', $fileno);
                     })
                     ->orderBy('created_at', 'desc')
-                    ->select('party_2_address', 'solicitor_name', 'solicitor_address')
+                    ->select('party_1_name', 'party_1_address', 'party_2_address', 'solicitor_name', 'solicitor_address')
                     ->first();
 
                 if ($capture) {
+                    $data->party_1_name = $capture->party_1_name;
+                    $data->party_1_address = $capture->party_1_address;
                     $data->party_2_address = $capture->party_2_address;
                     $data->solicitor_name = $capture->solicitor_name;
                     $data->solicitor_address = $capture->solicitor_address;
@@ -768,10 +770,12 @@ class CoroiController extends Controller
                                 ->orWhere('temp_fileno', 'LIKE', '%' . $fileno . '%');
                         })
                         ->orderBy('created_at', 'desc')
-                        ->select('party_2_address', 'solicitor_name', 'solicitor_address')
+                        ->select('party_1_name', 'party_1_address', 'party_2_address', 'solicitor_name', 'solicitor_address')
                         ->first();
 
                     if ($capture) {
+                        $data->party_1_name = $capture->party_1_name;
+                        $data->party_1_address = $capture->party_1_address;
                         $data->party_2_address = $capture->party_2_address;
                         $data->solicitor_name = $capture->solicitor_name;
                         $data->solicitor_address = $capture->solicitor_address;

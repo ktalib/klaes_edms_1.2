@@ -456,6 +456,20 @@
                                     </div>
                                 </div>
 
+                                <!-- Gender -->
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">
+                                       Gender
+                                    </label>
+                                    <div class="flex items-center h-[42px]">
+                                        <select id="gender" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white" name="gender" x-model="gender" required>
+                                            <option value="">Select Gender</option>
+                                            <option value="Male">Male</option>
+                                            <option value="Female">Female</option>
+                                        </select>
+                                    </div>
+                                </div>
+
                                 <!-- Row 4, Col 1: Phone Number -->
                                 <div>
                                     <label for="generatePhoneNo" class="block text-xs font-medium text-gray-600 mb-1">

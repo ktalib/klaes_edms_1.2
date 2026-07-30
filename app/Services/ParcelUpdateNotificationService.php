@@ -15,8 +15,11 @@ class ParcelUpdateNotificationService
 
     public function __construct(
         protected UserNotificationService $notifier
+
     ) {}
 
+
+    
     /**
      * Notify Land (MLS) users that a new Parcel Update application was created.
      */

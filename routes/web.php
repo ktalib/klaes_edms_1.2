@@ -1604,6 +1604,18 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'api/file-tracker-das
     Route::get('/overview-commissioner', [FileTrackerDashboardApiController::class, 'commissionerOverview'])
         ->name('web.api.file-tracker-dashboard.overview-commissioner');
 
+    Route::get('/not-in-transit', [FileTrackerDashboardApiController::class, 'notInTransit'])
+        ->name('web.api.file-tracker-dashboard.not-in-transit');
+
+    Route::get('/requested', [FileTrackerDashboardApiController::class, 'requestedFiles'])
+        ->name('web.api.file-tracker-dashboard.requested');
+
+    Route::get('/requested-departments', [FileTrackerDashboardApiController::class, 'requestedDepartments'])
+        ->name('web.api.file-tracker-dashboard.requested-departments');
+
+    Route::get('/in-transit', [FileTrackerDashboardApiController::class, 'inTransit'])
+        ->name('web.api.file-tracker-dashboard.in-transit');
+
     Route::get('/notifications', [FileTrackerDashboardApiController::class, 'notifications'])
         ->name('web.api.file-tracker-dashboard.notifications');
 });

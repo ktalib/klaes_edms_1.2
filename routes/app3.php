@@ -740,6 +740,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/list', [IndexedFileTableController::class, 'list'])->name('list');
         Route::get('/view-list', [IndexedFileTableController::class, 'viewList'])->name('view-list');
         Route::post('/{id}/mark-duplicate', [IndexedFileTableController::class, 'markAsDuplicate'])->name('mark-duplicate');
+        Route::post('/{id}/move-to-indexing-duplicates', [IndexedFileTableController::class, 'moveToIndexingDuplicates'])->name('move-to-indexing-duplicates');
         Route::post('/{id}/set-temp-file', [IndexedFileTableController::class, 'setTempFile'])->name('set-temp-file');
         Route::post('/{id}/match-correspondence', [IndexedFileTableController::class, 'matchCorrespondence'])->name('match-correspondence');
         Route::post('/{id}/unmatch-correspondence', [IndexedFileTableController::class, 'unmatchCorrespondence'])->name('unmatch-correspondence');
@@ -750,6 +751,15 @@ Route::middleware(['auth'])->group(function () {
         Route::put('/{id}/coordinates', [IndexedFileTableController::class, 'updateCoordinates'])->name('update-coordinates');
         Route::get('/edms-files/{id}', [IndexedFileTableController::class, 'getEdmsFiles'])->name('edms-files');
         Route::post('/{id}/update-placeholder', [IndexedFileTableController::class, 'updateKangisPlaceholder'])->name('update-placeholder');
+    });
+
+    // Indexed files removed from the live tables as duplicates.
+    Route::get('/indexing-duplicates', [App\Http\Controllers\IndexingDuplicateController::class, 'index'])
+        ->name('indexing-duplicates.index');
+    Route::prefix('api/indexing-duplicates')->name('indexing-duplicates.api.')->group(function () {
+        Route::get('/stats', [App\Http\Controllers\IndexingDuplicateController::class, 'stats'])->name('stats');
+        Route::get('/list', [App\Http\Controllers\IndexingDuplicateController::class, 'list'])->name('list');
+        Route::get('/{id}', [App\Http\Controllers\IndexingDuplicateController::class, 'show'])->name('show');
     });
 
     Route::get('/api/kangis-placeholder/check', [IndexedFileTableController::class, 'checkKangisPlaceholder'])->name('kangis-placeholder.check');
@@ -1108,6 +1118,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/api/rack-label/status', [KangisPrintLabelController::class, 'getRackLabelStatus'])->name('api.rack-label.status');
         Route::post('/api/batch', [KangisPrintLabelController::class, 'createBatch'])->name('api.batch.store');
         Route::get('/api/batches', [KangisPrintLabelController::class, 'getBatches'])->name('api.batches');
+        Route::get('/api/batch-index', [KangisPrintLabelController::class, 'getBatchIndex'])->name('api.batch-index');
+        Route::get('/batch-index/print', [KangisPrintLabelController::class, 'printBatchIndex'])->name('batch-index.print');
         Route::post('/api/manual-fetch', [KangisPrintLabelController::class, 'fetchManualFiles'])->name('api.manual_fetch');
         Route::post('/api/batches/backfill-sys-batch-no', [KangisPrintLabelController::class, 'backfillSysBatchNo'])->name('api.batches.backfill');
         Route::get('/api/batch/{id}/print', [KangisPrintLabelController::class, 'getBatchForPrinting'])->name('api.batch.print');

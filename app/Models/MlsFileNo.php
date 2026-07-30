@@ -22,6 +22,7 @@ class MlsFileNo extends Model
         'district',
         'tracking_id',
         'customer_type',
+        'gender',
         'file_option',
         'batch_no',
         'created_by',
@@ -33,7 +34,9 @@ class MlsFileNo extends Model
         'sub_source',
         'source_instrument_capture_id',
         'source_pra_id',
-        'sit_reason'
+        'sit_reason',
+        // Old (duplicated) file number kept when a file number is re-issued.
+        'old_fileno'
     ];
 
     public function purpose()

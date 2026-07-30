@@ -103,7 +103,7 @@ class UserController extends Controller
             $paymentStructures = $this->structureService->dropdownOptions();
 
             // Officer ranks (seniority) for file-request prioritisation.
-            $ranks = config('file_request_priority.options', []);
+            $ranks = \App\Models\OfficerRank::options();
 
             $deputyOptions = $this->deputyOptions();
 
@@ -187,7 +187,8 @@ class UserController extends Controller
                 // allow either phone or phone_number
                 $user->phone_number = $request->input('phone_number', $request->input('phone'));
                 $user->department_id = $request->department_id; // Save department_id
-                $user->rank = $request->filled('rank') ? $request->rank : null; // seniority for file-request priority
+                // Seniority for file-request priority; "Other (specify)" adds to the lookup table.
+                $user->rank = \App\Models\OfficerRank::resolveSubmittedRank($request->input('rank'), $request->input('rank_other'));
                 $user->work_station = $request->work_station;
                 $user->user_level = $request->user_level; // Save user_level
                 $user->type = 'owner';
@@ -255,6 +256,7 @@ class UserController extends Controller
                         'user_level' => 'required|string|in:Administrative,Technical,Finance,Lowest,High,Highest',
                         'user_role' => 'required|array',
                         'rank' => 'nullable|string|max:255',
+                        'rank_other' => 'nullable|string|max:255|required_if:rank,' . \App\Models\OfficerRank::OTHER_VALUE,
                         'work_station' => $this->workStationValidationRule(false),
                         'work_days_per_week' => 'nullable|integer|in:2,5,7',
                         'man_hours_per_day' => 'nullable|integer|in:4,8',
@@ -352,7 +354,8 @@ class UserController extends Controller
                 
                 $user->lang = 'english';
                 $user->parent_id = parentId();
-                $user->rank = $request->filled('rank') ? $request->rank : null; // seniority for file-request priority
+                // Seniority for file-request priority; "Other (specify)" adds to the lookup table.
+                $user->rank = \App\Models\OfficerRank::resolveSubmittedRank($request->input('rank'), $request->input('rank_other'));
                 $user->is_on_leave = $request->boolean('is_on_leave');
                 $user->leave_start_date = $request->filled('leave_start_date') ? $request->leave_start_date : null;
                 $user->leave_end_date = $request->filled('leave_end_date') ? $request->leave_end_date : null;
@@ -495,6 +498,7 @@ class UserController extends Controller
                         'user_level' => 'required|string|in:Administrative,Technical,Finance,Lowest,Highest,High',
                         'user_role' => 'required|array',
                         'rank' => 'nullable|string|max:255',
+                        'rank_other' => 'nullable|string|max:255|required_if:rank,' . \App\Models\OfficerRank::OTHER_VALUE,
                         'work_station' => $this->workStationValidationRule(false),
                         'work_days_per_week' => 'nullable|integer|in:2,5,7',
                         'man_hours_per_day' => 'nullable|integer|in:4,8',
@@ -530,7 +534,8 @@ class UserController extends Controller
                 $user->email = $request->filled('email') ? $request->email : uniqid('temp') . '@klaes.com.ng';
                 $user->phone_number = $request->phone_number;
                 $user->department_id = $request->department_id;
-                $user->rank = $request->filled('rank') ? $request->rank : null; // seniority for file-request priority
+                // Seniority for file-request priority; "Other (specify)" adds to the lookup table.
+                $user->rank = \App\Models\OfficerRank::resolveSubmittedRank($request->input('rank'), $request->input('rank_other'));
                 $user->user_level = $request->user_level;
                 if ($request->has('work_station')) {
                     $user->work_station = $request->input('work_station');

@@ -168,6 +168,9 @@ class FileIndexController extends Controller
                 'related_fileno' => 'nullable|array',
                 'related_fileno.*' => 'string|max:255',
                 'file_type' => 'nullable|string|max:20|in:Individual,Corporate',
+                // Required for human data-entry; the automated scanning importer
+                // (source=scanning_upload) has no gender input, so it is exempted.
+                'gender' => 'required_unless:source,scanning_upload|nullable|string|in:Male,Female,Corporate,Joint',
                 'dob' => 'nullable|date',
                 'nin' => 'nullable|string|size:13|regex:/^[0-9]{13}$/',
                 'tin' => 'nullable|string|max:50',
@@ -288,6 +291,7 @@ class FileIndexController extends Controller
                 'lga' => $validated['lga'] ?? 'Municipal',
                 // related_fileno handled separately below
                 'file_type' => $validated['file_type'] ?? null,
+                'gender' => $validated['gender'] ?? null,
                 'dob' => $validated['dob'] ?? null,
                 'nin' => $validated['nin'] ?? null,
                 'tin' => $validated['tin'] ?? null,
@@ -1039,6 +1043,8 @@ class FileIndexController extends Controller
             $validated = $request->validate([
                 'file_number' => 'required|string|max:255',
                 'file_title' => 'required|string|max:255',
+                // Required for human data-entry; scanning imports (source=scanning_upload) are exempt.
+                'gender' => 'required_unless:source,scanning_upload|nullable|string|in:Male,Female,Corporate,Joint',
                 'land_use_type' => 'nullable|string|max:255',
                 'plot_number' => 'nullable|string|max:255',
                 'tp_no' => 'nullable|string|max:255',

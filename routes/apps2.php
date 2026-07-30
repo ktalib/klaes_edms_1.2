@@ -271,6 +271,12 @@ Route::middleware(['auth'])->group(function () {
         // Quality Control — in-place page image edits (rotate/enhance/replace) + review status
         Route::post('/pages/{pageTyping}/apply-edits', [FilearchiveController::class, 'applyPageEdits'])->name('filearchive.pages.apply-edits');
         Route::post('/pages/{pageTyping}/qc-status', [FilearchiveController::class, 'setPageQcStatus'])->name('filearchive.pages.qc-status');
+
+        // Re-classify a page (edit its "file type" / page code) from the viewer
+        Route::post('/pages/{pageTyping}/classification', [FilearchiveController::class, 'updatePageClassification'])->name('filearchive.pages.classification');
+
+        // Delete a single page from the viewer
+        Route::delete('/pages/{pageTyping}', [FilearchiveController::class, 'deletePage'])->name('filearchive.pages.delete');
     });
 
     // Document Library (Report / Manual PDF viewer) — frontend sample, reads public/assets/documents

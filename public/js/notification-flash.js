@@ -3,6 +3,11 @@
 
   const displayInterval = 4500;
 
+  // Temporarily disabled: the post-login flash toasts (same card as the
+  // file-tracker toasts, see file-tracker-notifications.js).
+  // Set to true (or window.KLAES_ENABLE_NOTIFICATION_TOASTS = true) to re-enable.
+  const TOASTS_ENABLED = false;
+
   function createContainer() {
     let container = document.querySelector('.notification-flash-container');
     if (container) return container;
@@ -107,6 +112,9 @@
   }
 
   async function initFlashNotifications() {
+    if (!TOASTS_ENABLED && !window.KLAES_ENABLE_NOTIFICATION_TOASTS) {
+      return;
+    }
     const config = window.NotificationFlashConfig;
     const storageKey = (config && config.sessionKey) || 'notificationFlashPlayed';
     if (!config || sessionStorage.getItem(storageKey) === '1') {

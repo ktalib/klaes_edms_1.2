@@ -68,6 +68,9 @@
                                 placeholder="NO FILE SELECTED"
                                 class="w-full bg-white border border-blue-200 rounded-lg px-4 py-3 text-slate-900 font-bold font-mono placeholder:text-slate-400 text-lg shadow-sm outline-none focus:ring-2 focus:ring-blue-500 transition">
                             <input type="hidden" name="tracking_id" id="tracking_id" value="{{ old('tracking_id', $recommendation->tracking_id ?? '') }}">
+                            {{-- Set to 1 only when the user answers "Save Anyway" on the duplicate prompt;
+                                 the server rejects a duplicate file number unless this is present. --}}
+                            <input type="hidden" name="duplicate_confirmed" id="duplicate_confirmed" value="0">
                         </div>
                         <div class="flex flex-shrink-0 items-end">
                             <button type="button" id="select-fileno-btn"

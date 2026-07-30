@@ -348,7 +348,9 @@ class CommissionNewSTController extends Controller
                 'property_street_name' => 'nullable|string',
                 'property_district' => 'nullable|string',
                 'property_lga' => 'nullable|string',
-                'property_state' => 'nullable|string'
+                'property_state' => 'nullable|string',
+                'latitude' => 'nullable|numeric|between:-90,90',
+                'longitude' => 'nullable|numeric|between:-180,180'
             ]);
 
             // Extract components from file number (e.g., ST-COM-2025-5)
@@ -496,6 +498,11 @@ class CommissionNewSTController extends Controller
                     $streetName = $validated['property_street_name'] ?? null;
                     $plotNumber = $validated['property_plot_no'] ?? null;
 
+                    // Pinned coordinates from the map (backfilled, geocoded or
+                    // dragged); fall back to the source file's stored pin.
+                    $latitude = $validated['latitude'] ?? null;
+                    $longitude = $validated['longitude'] ?? null;
+
                     $connection->table('file_indexings')->insert([
                         'file_number'    => $npFileNo,
                         'file_title'     => $fileName,
@@ -506,6 +513,8 @@ class CommissionNewSTController extends Controller
                         'file_type'      => 'PRIMARY',
                         'status'         => 'ACTIVE',
                         'location'       => $sourceIndexing->location ?? null,
+                        'latitude'       => $latitude !== null && $latitude !== '' ? $latitude : ($sourceIndexing->latitude ?? null),
+                        'longitude'      => $longitude !== null && $longitude !== '' ? $longitude : ($sourceIndexing->longitude ?? null),
                         'district'       => $district !== null && $district !== '' ? $district : ($sourceIndexing->district ?? null),
                         'lga'            => $lga !== null && $lga !== '' ? $lga : ($sourceIndexing->lga ?? null),
                         'street_name'    => $streetName !== null && $streetName !== '' ? $streetName : ($sourceIndexing->street_name ?? null),
@@ -572,6 +581,39 @@ class CommissionNewSTController extends Controller
     }
 
     /**
+     * Map the Location Details fields captured on the PuA / SuA tabs onto the
+     * st_file_numbers columns. Unit file numbers get no file_indexings row of
+     * their own, so the property location is stored with the unit record.
+     *
+     * @param array $validated
+     * @return array
+     */
+    private function propertyLocationColumns(array $validated): array
+    {
+        $value = function (string $key) use ($validated) {
+            $raw = $validated[$key] ?? null;
+            if ($raw === null) {
+                return null;
+            }
+            $raw = is_string($raw) ? trim($raw) : $raw;
+
+            return $raw === '' ? null : $raw;
+        };
+
+        return [
+            'property_house_no'    => $value('property_house_no'),
+            'property_plot_no'     => $value('property_plot_no'),
+            'property_street_name' => $value('property_street_name'),
+            'property_district'    => $value('property_district'),
+            'property_lga'         => $value('property_lga'),
+            'property_state'       => $value('property_state'),
+            'property_address'     => $value('property_address'),
+            'latitude'             => $value('latitude'),
+            'longitude'            => $value('longitude'),
+        ];
+    }
+
+    /**
      * Commission (save) a new SuA file number
      *
      * @param Request $request
@@ -591,7 +633,16 @@ class CommissionNewSTController extends Controller
                 'corporate_name' => 'nullable|string',
                 'rc_number' => 'nullable|string',
                 'commissioned_by' => 'nullable|string',
-                'commissioned_date' => 'nullable|date'
+                'commissioned_date' => 'nullable|date',
+                'property_house_no' => 'nullable|string',
+                'property_plot_no' => 'nullable|string',
+                'property_street_name' => 'nullable|string',
+                'property_district' => 'nullable|string',
+                'property_lga' => 'nullable|string',
+                'property_state' => 'nullable|string',
+                'property_address' => 'nullable|string',
+                'latitude' => 'nullable|numeric|between:-90,90',
+                'longitude' => 'nullable|numeric|between:-180,180'
             ]);
 
             // Generate SuA file number
@@ -621,7 +672,7 @@ class CommissionNewSTController extends Controller
                 // Rule 2: MLS File No must be identical to the newly generated Primary File No
                 $mlsFileNo = $primaryFileNo;
 
-                $suaFileNumberId = $connection->table('st_file_numbers')->insertGetId([
+                $suaFileNumberId = $connection->table('st_file_numbers')->insertGetId(array_merge($this->propertyLocationColumns($validated), [
                     'np_fileno' => $primaryFileNo,
                     'fileno' => $unitFileNo,
                     'mls_fileno' => $mlsFileNo,
@@ -652,7 +703,7 @@ class CommissionNewSTController extends Controller
                     'created_by' => Auth::id(),
                     'created_at' => $commissionedAt,
                     'updated_at' => $commissionedAt
-                ]);
+                ]));
 
                 $fileName = $this->buildApplicantDisplayName(
                     $validated['applicant_type'],
@@ -758,7 +809,16 @@ class CommissionNewSTController extends Controller
                 'corporate_name' => 'nullable|string',
                 'rc_number' => 'nullable|string',
                 'commissioned_by' => 'nullable|string',
-                'commissioned_date' => 'nullable|date'
+                'commissioned_date' => 'nullable|date',
+                'property_house_no' => 'nullable|string',
+                'property_plot_no' => 'nullable|string',
+                'property_street_name' => 'nullable|string',
+                'property_district' => 'nullable|string',
+                'property_lga' => 'nullable|string',
+                'property_state' => 'nullable|string',
+                'property_address' => 'nullable|string',
+                'latitude' => 'nullable|numeric|between:-90,90',
+                'longitude' => 'nullable|numeric|between:-180,180'
             ]);
 
             // Get parent file number details
@@ -824,7 +884,7 @@ class CommissionNewSTController extends Controller
                 $fileNoType = 'PUA';
                 $tra = $this->generateTra();
 
-                $puaFileNumberId = DB::connection('sqlsrv')->table('st_file_numbers')->insertGetId([
+                $puaFileNumberId = DB::connection('sqlsrv')->table('st_file_numbers')->insertGetId(array_merge($this->propertyLocationColumns($validated), [
                     'np_fileno' => $validated['parent_file_number'],
                     'fileno' => $unitFileNo,
                     'mls_fileno' => null,
@@ -856,7 +916,7 @@ class CommissionNewSTController extends Controller
                     'created_by' => Auth::id(),
                     'created_at' => $commissionedAt,
                     'updated_at' => $commissionedAt
-                ]);
+                ]));
 
                 $fileName = $this->buildApplicantDisplayName(
                     $validated['applicant_type'],
@@ -1424,13 +1484,14 @@ class CommissionNewSTController extends Controller
                 ]
             );
 
-            // 2. Build property address (composed from form fields)
+            // 2. Build property address. The Location Details section posts a
+            // composed address; fall back to assembling one from loose fields.
             $addressParts = [];
-            // Note: Currently limited in ST view, but included for future parity
             if (!empty($data['plot_no'])) $addressParts[] = "Plot " . $data['plot_no'];
             if (!empty($data['location'])) $addressParts[] = $data['location'];
             if (!empty($data['lga'])) $addressParts[] = $data['lga'];
-            $propertyAddress = implode(', ', $addressParts) ?: 'N/A';
+            $propertyAddress = trim((string) ($data['property_address'] ?? ''))
+                ?: (implode(', ', $addressParts) ?: 'N/A');
 
             // 3. Create or Update Customer in staging
             \App\Models\Customer::on('sqlsrv')->updateOrCreate(

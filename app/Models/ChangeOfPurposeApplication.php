@@ -28,6 +28,8 @@ class ChangeOfPurposeApplication extends Model
         'plot_no',
         'plan_no',
         'location',
+        'district',
+        'lga',
         'applicant_name',
         'phone',
         'residential_address',

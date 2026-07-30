@@ -118,6 +118,7 @@
                                         <option value="Registry 2">Registry 2</option>
                                         <option value="Registry 3">Registry 3</option>
                                     </select>
+                                    <p class="mt-1 text-xs text-gray-500">Auto-detected from the file number &mdash; adjust if needed.</p>
                                 </div>
                                 {{-- Rack 1 --}}
                                 <div class="flex flex-col">

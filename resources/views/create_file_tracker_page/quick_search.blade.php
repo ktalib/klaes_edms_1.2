@@ -648,8 +648,14 @@
 
             try {
                 const res  = await fetch(`${TRACK_URL}/${encodeURIComponent(fileNumber)}`, { headers: { 'Accept': 'application/json' } });
-                const json = await res.json();
-                if (!json || !json.success || !json.data) {
+                const json = await res.json().catch(() => null);
+                // A 404 just means the file has never been tracked — that is an empty
+                // history, not a failure. Only a real error (500 / unparseable body)
+                // should surface the red "could not load" state.
+                const neverTracked = res.status === 404 || (json && json.success === false && /not found/i.test(String(json.message || '')));
+                if (neverTracked) {
+                    container.innerHTML = `${archiveHomeRow}<div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-500">No movement history available for this file.</div>`;
+                } else if (!json || !json.success || !json.data) {
                     container.innerHTML = `${archiveHomeRow}<div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-600">Could not load movement history.</div>`;
                 } else {
                     const currentLogs = Array.isArray(json.data.movement_history) ? json.data.movement_history : [];

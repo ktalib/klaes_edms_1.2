@@ -82,7 +82,7 @@
                             <i data-lucide="file-check" class="h-6 w-6"></i>
                         </div>
                         <div>
-                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total RofO Geneerated</p>
+                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total RofO Captured</p>
                             <h3 class="text-2xl font-black text-slate-800 tracking-tight">{{ number_format($stats['total_land'] + $stats['oss_total']) }}</h3>
                         </div>
                     </div>
@@ -208,6 +208,7 @@
                                 <th class="px-6 py-4 whitespace-nowrap">Created By</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Security Paper Code</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Date Generated</th>
+                                <th class="px-6 py-4 whitespace-nowrap text-green-600">Print Date</th>
                                 @if(!$ossViewOnly)
                                 <th class="px-6 py-4 text-right sticky right-0 bg-slate-50 border-l border-slate-200 z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap">Actions</th>
                                 @endif
@@ -222,12 +223,17 @@
                                     <div>{{ $rec->file_number }}</div>
                                     @if(!$isOssRec && isset($rofoSerials[$rec->id]))
                                         @php $rofoSc = $rofoSerials[$rec->id]; @endphp
-                                        <div style="display:flex; align-items:center; gap:4px; margin-top:3px; letter-spacing:normal;" title="Security Serial No.">
+                                        <div style="display:flex; align-items:center; gap:5px; margin-top:3px; letter-spacing:normal;" title="Security Serial No.">
                                             <span style="line-height:1; color:#059669; display:inline-flex; flex-direction:column; align-items:center; font-weight:900; font-family:Arial, sans-serif;">
-                                                <span style="border-bottom:1.5px solid #059669; padding-bottom:1px; font-size:8px;">{{ $rofoSc['alphabet'] }}</span>
-                                                <span style="padding-top:1px; font-size:8px;">{{ $rofoSc['digits_start'] }}</span>
+                                                <span style="border-bottom:1.5px solid #059669; padding-bottom:1px; font-size:11px;">{{ $rofoSc['alphabet'] }}</span>
+                                                <span style="padding-top:1px; font-size:11px;">{{ $rofoSc['digits_start'] }}</span>
                                             </span>
-                                            <span style="font-size:13px; font-weight:900; letter-spacing:0.1em; color:#059669; font-family:'Courier New', monospace;">{{ $rofoSc['digits_end'] }}</span>
+                                            <span style="font-size:18px; font-weight:900; letter-spacing:0.1em; color:#059669; font-family:'Courier New', monospace;">{{ $rofoSc['digits_end'] }}</span>
+                                        </div>
+                                    @endif
+                                    @if(!$isOssRec && $rec->land_rofo_serial_no)
+                                        <div style="margin-top:3px; font-size:18px; font-weight:900; letter-spacing:0.1em; color:#dc2626; font-family:'Courier New', monospace;" title="Security Paper Code">
+                                            {{ $rec->land_rofo_serial_no }}
                                         </div>
                                     @endif
                                 </td>
@@ -254,7 +260,11 @@
                                 <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">₦{{ number_format($rec->development_value, 2) }}</td>
                                 <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">{{ is_numeric($rec->development_charge) ? '₦'.number_format($rec->development_charge, 2) : ($rec->development_charge ?: '₦0.00') }}</td>
                                 <td class="px-4 py-2 text-center whitespace-nowrap">
-                                    @if($isOssRec)
+                                    @if(!$ossViewOnly && $tab === 'printed')
+                                        <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-800">
+                                            <i data-lucide="printer-check" class="h-3 w-3"></i> PRINTED
+                                        </span>
+                                    @elseif($isOssRec)
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800">
                                             PRINT READY
                                         </span>
@@ -285,6 +295,10 @@
                                 </td>
                                 <td class="px-4 py-2 text-slate-500 text-xs whitespace-nowrap">
                                     {{ $rec->created_at ? $rec->created_at->format('Y-m-d h:i A') : 'N/A' }}
+                                </td>
+                                @php $printedAt = $printDates[$rec->id] ?? null; @endphp
+                                <td class="px-4 py-2 text-xs whitespace-nowrap {{ $printedAt ? 'text-green-700 font-semibold' : 'text-slate-400 italic' }}">
+                                    {{ $printedAt ? \Carbon\Carbon::parse($printedAt)->format('Y-m-d h:i A') : 'Not printed' }}
                                 </td>
                                 @if(!$ossViewOnly)
                                 <td class="px-4 py-2 text-right sticky right-0 bg-white shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] border-l border-slate-100 z-10 whitespace-nowrap">
@@ -359,7 +373,7 @@
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="18" class="px-8 py-12 text-center">
+                                <td colspan="19" class="px-8 py-12 text-center">
                                     <div class="flex flex-col items-center">
                                         <div class="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 mb-4">
                                             <i data-lucide="file-text" class="h-6 w-6"></i>

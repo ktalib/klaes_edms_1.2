@@ -32,6 +32,7 @@ class FileIndexing extends Model
         'group_no',
         'file_number',
         'file_title',
+        'gender',
         'land_use_type',
         'plot_number',
         'plot_size',
@@ -95,6 +96,8 @@ class FileIndexing extends Model
         'mls_file_no',
         'kangis_file_no',
         'new_kangis_file_no',
+        'prop_id',
+        'parent_prop_id',
         'is_corresponding_file',
         'corresponding_fileno',
         'sub_prefix',
@@ -116,6 +119,11 @@ class FileIndexing extends Model
         'ground_rent_to_year',
         'ground_rent_receipt_no',
         'ground_rent_receipt_date',
+        // Term of the R of O as shown/printed on the Legal Search report (e.g.
+        // "99 Years"). Editable via the Edit File Information modal; when set it
+        // overrides the term derived from land use, and the Residual Term is
+        // computed from it.
+        'term',
     ];
 
     public static function columnWhitelist(): array
@@ -128,6 +136,7 @@ class FileIndexing extends Model
             'file_number_id',
             'file_number',
             'file_title',
+            'gender',
             'land_use_type',
             'plot_number',
             'plot_size',
@@ -212,6 +221,8 @@ class FileIndexing extends Model
             'mls_file_no',
             'kangis_file_no',
             'new_kangis_file_no',
+            'prop_id',
+            'parent_prop_id',
             'kn_grouping_id',
             'is_corresponding_file',
             'corresponding_fileno',
@@ -230,6 +241,7 @@ class FileIndexing extends Model
             'ground_rent_to_year',
             'ground_rent_receipt_no',
             'ground_rent_receipt_date',
+            'term',
         ];
     }
 

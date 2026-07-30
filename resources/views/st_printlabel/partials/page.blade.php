@@ -136,7 +136,7 @@
                                         <option value="pua">PUA (Parented Units Application)</option>
                                         <option value="sua">SUA (Standalone Unit Application)</option>
                                     </select>
-                                    <span class="mt-1 text-xs text-slate-500">Files are filtered from <code>file_indexings.st_application_type</code>.</span>
+                                    <span class="mt-1 text-xs text-slate-500">Files come from the ST FileNo table (<code>st_file_numbers.file_no_type</code>).</span>
                                 </div>
                                 <div class="flex flex-col">
                                     <span class="text-xs font-semibold uppercase tracking-wide text-slate-600">Rack</span>

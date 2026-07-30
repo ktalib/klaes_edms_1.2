@@ -1766,7 +1766,12 @@ async function toggleMovementTimeline(fileNumber, detailsEl, originRegistry, rac
 
   try {
     const res = await api(`${API_BASE}/track/${encodeURIComponent(fileNumber)}`);
-    if (!res || !res.success || !res.data) {
+    // "not found" just means the file has never been tracked — that is an empty
+    // history, not a failure.
+    const neverTracked = res && res.success === false && !res._authError && /not found/i.test(String(res.message || ''));
+    if (neverTracked) {
+      container.innerHTML = `${inArchiveHomeRow}<div style="padding:12px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2);font-size:13px;color:var(--muted);">No movement history available for this file.</div>`;
+    } else if (!res || !res.success || !res.data) {
       container.innerHTML = `${inArchiveHomeRow}<div style="padding:12px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2);font-size:13px;color:#ef4444;">Could not load movement history.</div>`;
     } else {
       const currentLogs = Array.isArray(res.data.movement_history) ? res.data.movement_history : [];

@@ -1275,7 +1275,7 @@ class ScanUploadsController extends Controller
                 ->select(
                     'file_number', 'file_title', 'registry', 'tracking_id',
                     'district', 'lga', 'street_name', 'plot_number', 'plot_size',
-                    'location', 'prop_id'
+                    'location', 'prop_id', 'latitude', 'longitude', 'rc_no'
                 )
                 ->orderByDesc('created_at')
                 ->limit($perPage)
@@ -1296,6 +1296,9 @@ class ScanUploadsController extends Controller
                         'plot_size' => $file->plot_size ?? '',
                         'location' => $file->location ?? '',
                         'prop_id' => $file->prop_id ?? '',
+                        'latitude' => $file->latitude ?? '',
+                        'longitude' => $file->longitude ?? '',
+                        'rc_no' => $file->rc_no ?? '',
                     ];
                 })->toArray(),
             ]);

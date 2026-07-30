@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\FileIndexing;
+use App\Services\IndexingDuplicateService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -137,7 +138,10 @@ class IndexedFileTableController extends Controller
             'id' => 'file_indexings.id',
         ];
 
-        $sortInput = (string) $request->input('sort', 'id');
+        // Default to the indexed date, not the id. Backfill commands insert rows with a
+        // historical created_at, so a new id no longer implies a newer indexing date and
+        // an id-ordered list reads as a broken date sort.
+        $sortInput = (string) $request->input('sort', 'created_at');
         $sortColumn = $sortMap[$sortInput] ?? 'file_indexings.created_at';
 
         $query = FileIndexing::on('sqlsrv')
@@ -176,6 +180,7 @@ class IndexedFileTableController extends Controller
                 'file_indexings.kangis_file_no',
                 'file_indexings.new_kangis_file_no',
                 'file_indexings.related_fileno',
+                'file_indexings.parent_prop_id',
                 'file_indexings.dciv_status',
                 'file_indexings.dciv_fileno',
                 'file_indexings.dciv_reason',
@@ -236,8 +241,10 @@ class IndexedFileTableController extends Controller
         }
 
         if ($sortColumn === 'file_indexings.created_at') {
+            // id alone breaks the tie: created_at is millisecond-precision so ties are
+            // effectively impossible, and leaving updated_at out of the ORDER BY lets
+            // idx_file_indexings_created_at satisfy it without a sort operator.
             $query->orderBy('file_indexings.created_at', $direction)
-                ->orderBy('file_indexings.updated_at', $direction)
                 ->orderBy('file_indexings.id', $direction === 'asc' ? 'asc' : 'desc');
         } else {
             $query->orderBy($sortColumn, $direction);
@@ -261,6 +268,13 @@ class IndexedFileTableController extends Controller
         $shelfLookup = in_array($registryUpperForShelf, ['KANGIS', 'SLTR'], true)
             ? $this->buildBatchShelfLookup($items, $indexedIds)
             : ['byId' => [], 'byFileNo' => []];
+
+        // New KANGIS (KN####) rows are indexed standalone and carry no Old KANGIS
+        // number of their own, so the Kangis FileNo column would show a dash. Resolve
+        // it from the surrounding links (cached map, see buildOldKangisLookup()).
+        $oldKangisLookup = $registryUpperForShelf === 'KANGIS'
+            ? $this->buildOldKangisLookup()
+            : [];
 
         $scanningCounts = $indexedIds->isEmpty()
             ? collect()
@@ -345,7 +359,7 @@ class IndexedFileTableController extends Controller
         // Since created_by now contains names directly, no need for user lookup
         $creators = collect();
 
-        $data = $items->map(function ($item) use ($scanningCounts, $pageTypingCounts, $creators, $groupingFallbacks, $relatedFileCounts, $edmsFolderMap, $duplicateSet, $shelfLookup) {
+        $data = $items->map(function ($item) use ($scanningCounts, $pageTypingCounts, $creators, $groupingFallbacks, $relatedFileCounts, $edmsFolderMap, $duplicateSet, $shelfLookup, $oldKangisLookup) {
             $scanned = (int) ($scanningCounts->get($item->id) ?? 0);
             $typed = (int) ($pageTypingCounts->get($item->id) ?? 0);
             $hasRelatedFilesFromLinks = (int) ($relatedFileCounts->get($item->id) ?? 0) > 0;
@@ -470,7 +484,7 @@ class IndexedFileTableController extends Controller
             $rowData['pp_lands_date_matched'] = $item->pp_lands_date_matched ?? null;
             $rowData['pp_lands_time_matched'] = $item->pp_lands_time_matched ?? null;
             $rowData['mls_file_no'] = $item->mls_file_no ?? null;
-            $rowData['kangis_file_no'] = $item->kangis_file_no ?? null;
+            $rowData['kangis_file_no'] = $this->resolveOldKangisNumber($item, $displayFileNo, $oldKangisLookup);
             $rowData['new_kangis_file_no'] = $item->new_kangis_file_no ?? null;
 
             // Flags whether scanned files exist in any EDMS registry folder,
@@ -716,6 +730,175 @@ class IndexedFileTableController extends Controller
         }
 
         return preg_replace('/[\s\-\/\.]+/', '', $normalized);
+    }
+
+    /** Legacy ("Old") KANGIS file-number prefixes. */
+    private const OLD_KANGIS_PREFIXES = ['KNML', 'MLKN', 'MNKL', 'KNGP'];
+
+    /**
+     * True for a legacy KANGIS number (KNML/MLKN/MNKL/KNGP — usually with a space,
+     * e.g. "MLKN 341").
+     */
+    private function isOldKangisNumber($value): bool
+    {
+        $normalized = strtoupper(trim((string) $value));
+
+        foreach (self::OLD_KANGIS_PREFIXES as $prefix) {
+            if (str_starts_with($normalized, $prefix)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * True for a New KANGIS number: "KN" + digits with no separator ("KN3561").
+     * "KN 120" / "KN-120" is a legacy land file, not a New KANGIS number.
+     */
+    private function isNewKangisNumber($value): bool
+    {
+        return (bool) preg_match('/^KN\d+$/', strtoupper(trim((string) $value)));
+    }
+
+    /**
+     * Resolve the Old KANGIS number to display for an indexed row.
+     *
+     * A stored kangis_file_no that merely repeats the row's own file number
+     * (e.g. KN153 -> "KN153") is noise rather than a mapping, so it is dropped and
+     * the resolved lookup is used instead.
+     */
+    private function resolveOldKangisNumber($item, ?string $displayFileNo, array $lookup): ?string
+    {
+        $existing = trim((string) ($item->kangis_file_no ?? ''));
+        $ownKey = $this->normalizeFileNoKey($displayFileNo);
+
+        if ($existing !== '' && $this->normalizeFileNoKey($existing) !== $ownKey) {
+            return $existing;
+        }
+
+        return $lookup[$ownKey] ?? null;
+    }
+
+    /**
+     * Map every New KANGIS number (KN####) to its Old KANGIS counterpart.
+     *
+     * New KANGIS files are indexed on their own row with nothing in kangis_file_no,
+     * so the legacy number has to be reverse-looked-up from the links around them.
+     * Sources, in descending trust (they were verified not to disagree):
+     *   1. kangis_mapping        — curated overrides
+     *   2. parent_prop_id        — the parent row created by kangis:index-new-kangis
+     *   3. new_kangis_file_no    — an Old KANGIS row pointing down at the KN
+     *   4. related_fileno JSON   — an Old KANGIS row listing the KN among its links
+     *
+     * PropID_Master / fileNumber are deliberately NOT used: their kangisFileNo is not
+     * reliably a KANGIS number (see LegalSearchService::resolveKangisAliasForLandFile)
+     * and for KN rows it usually just repeats the KN itself.
+     *
+     * Cached because the map covers the whole registry, not just the current page.
+     *
+     * @return array<string,string> normalised KN number => Old KANGIS number
+     */
+    private function buildOldKangisLookup(): array
+    {
+        return Cache::remember('indexed_files_old_kangis_lookup', 600, function () {
+            $conn = DB::connection('sqlsrv');
+            $map = [];
+
+            // First writer wins, so sources are consumed in trust order.
+            $put = function ($newKangis, $oldKangis) use (&$map): void {
+                $key = $this->normalizeFileNoKey($newKangis);
+                $value = trim((string) $oldKangis);
+
+                if ($key === '' || isset($map[$key])) {
+                    return;
+                }
+                if (!$this->isNewKangisNumber($newKangis) || !$this->isOldKangisNumber($value)) {
+                    return;
+                }
+
+                $map[$key] = $value;
+            };
+
+            // 1. Curated mapping table.
+            try {
+                foreach ($conn->table('kangis_mapping')->get(['file_number', 'kangis_file_no']) as $row) {
+                    $put($row->file_number, $row->kangis_file_no);
+                }
+            } catch (\Throwable $e) {
+                // Table may not exist in some environments — skip silently.
+            }
+
+            // 2. parent_prop_id -> the parent file's own number.
+            try {
+                $knRows = $conn->table('file_indexings')
+                    ->whereNull('deleted_at')
+                    ->where('file_number', 'like', 'KN[0-9]%')
+                    ->whereNotNull('parent_prop_id')
+                    ->get(['file_number', 'parent_prop_id']);
+
+                $parentPropIds = $knRows->pluck('parent_prop_id')->filter()->unique()->values();
+                $parents = [];
+                if ($parentPropIds->isNotEmpty()) {
+                    foreach ($conn->table('file_indexings')
+                        ->whereNull('deleted_at')
+                        ->whereIn('prop_id', $parentPropIds->all())
+                        ->get(['prop_id', 'file_number']) as $parent) {
+                        if ($this->isOldKangisNumber($parent->file_number)) {
+                            $parents[(string) $parent->prop_id] = trim((string) $parent->file_number);
+                        }
+                    }
+                }
+
+                foreach ($knRows as $row) {
+                    $parentNo = $parents[(string) $row->parent_prop_id] ?? null;
+                    if ($parentNo !== null) {
+                        $put($row->file_number, $parentNo);
+                    }
+                }
+            } catch (\Throwable $e) {
+                // fail-open: the column simply stays blank
+            }
+
+            // 3. An Old KANGIS row naming the KN in new_kangis_file_no.
+            try {
+                foreach ($conn->table('file_indexings')
+                    ->whereNull('deleted_at')
+                    ->where('new_kangis_file_no', 'like', 'KN[0-9]%')
+                    ->get(['file_number', 'new_kangis_file_no']) as $row) {
+                    if ($this->isOldKangisNumber($row->file_number)) {
+                        $put($row->new_kangis_file_no, $row->file_number);
+                    }
+                }
+            } catch (\Throwable $e) {
+                // fail-open
+            }
+
+            // 4. An Old KANGIS row listing the KN in its related_fileno JSON.
+            try {
+                foreach ($conn->table('file_indexings')
+                    ->whereNull('deleted_at')
+                    ->where('related_fileno', 'like', '%"KN%')
+                    ->get(['file_number', 'related_fileno']) as $row) {
+                    if (!$this->isOldKangisNumber($row->file_number)) {
+                        continue;
+                    }
+
+                    $related = json_decode((string) $row->related_fileno, true);
+                    if (!is_array($related)) {
+                        continue;
+                    }
+
+                    foreach ($related as $candidate) {
+                        $put($candidate, $row->file_number);
+                    }
+                }
+            } catch (\Throwable $e) {
+                // fail-open
+            }
+
+            return $map;
+        });
     }
 
     /**
@@ -1148,6 +1331,94 @@ class IndexedFileTableController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Move an indexed file into indexing_duplicates and remove it from the live
+     * tables (file_indexings, fileNumber, customers_staging, entities_staging).
+     *
+     * Refused when the file carries scans, page typings, bills or tracking
+     * movements — see IndexingDuplicateService::BLOCKING_REFERENCES.
+     */
+    public function moveToIndexingDuplicates(Request $request, $id, IndexingDuplicateService $service): JsonResponse
+    {
+        $fileId = (int) $id;
+        if ($fileId <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid file ID.',
+            ], 422);
+        }
+
+        $reason = trim((string) $request->input('reason', ''));
+        $duplicateOf = trim((string) $request->input('duplicate_of', ''));
+
+        try {
+            $result = $service->move(
+                $fileId,
+                $reason !== '' ? $reason : null,
+                $duplicateOf !== '' ? $duplicateOf : null
+            );
+        } catch (\Throwable $e) {
+            Log::error('Failed to move indexed file to indexing duplicates', [
+                'file_indexing_id' => $fileId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'The move failed and was rolled back: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        switch ($result['status']) {
+            case 'not_found':
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Indexed file not found.',
+                ], 404);
+
+            case 'already_moved':
+                return response()->json([
+                    'success' => false,
+                    'message' => sprintf(
+                        '%s was already moved to indexing duplicates by %s.',
+                        $result['file_number'],
+                        $result['moved_by'] ?: 'another user'
+                    ),
+                ], 409);
+
+            case 'blocked':
+                return response()->json([
+                    'success' => false,
+                    'blocked' => true,
+                    'message' => sprintf(
+                        '%s cannot be moved: it still has %s. Detach or delete those first.',
+                        $result['file_number'],
+                        implode(', ', array_values($result['dependencies']))
+                    ),
+                    'dependencies' => $result['dependencies'],
+                ], 409);
+        }
+
+        $counts = $result['counts'];
+        Cache::forget('indexed_files_old_kangis_lookup');
+
+        return response()->json([
+            'success' => true,
+            'message' => sprintf('%s moved to indexing duplicates.', $result['file_number']),
+            'details' => [
+                'indexing_duplicate_id' => $result['indexing_duplicate_id'],
+                'file_indexings_deleted' => $counts['file_indexings'],
+                'fileNumber_deleted' => $counts['fileNumber'],
+                'customers_staging_deleted' => $counts['customers_staging'],
+                'entities_staging_deleted' => $counts['entities_staging'],
+                'child_rows_deleted' => $counts['child_rows'],
+                'mls_file_no_retained' => $result['mls_file_no_retained'],
+                'retained_references' => $result['retained_references'],
+            ],
+        ]);
     }
 
     public function setTempFile(Request $request, $id): JsonResponse

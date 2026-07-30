@@ -8,7 +8,9 @@ const totalCols = (() => {
 const state = {
   page: 1,
   perPage: 20,
-  sort: 'id',
+  // Newest-indexed first. Sorting by id looks like a date sort but isn't: backfill
+  // commands write a historical created_at onto brand-new ids.
+  sort: 'created_at',
   direction: 'desc',
   search: '',
   isLoading: false,
@@ -207,6 +209,13 @@ function renderRows(rows) {
         // Ensure mlsVal strictly matches MLS prefixes, otherwise empty it out
         if (mlsVal && !/^(RES|COM|IND|AG|CON|MISC|SIT|SLTR|DCIV|LPCC|GKN|LPKN)/.test(mlsVal.toUpperCase().trim())) {
           mlsVal = '';
+        }
+
+        // A Kangis FileNo that just repeats the Newkangis number (e.g. KN153 -> "KN153")
+        // is a bad copy, not a mapping — don't print the same number in both columns.
+        const normFileNo = v => (v || '').toUpperCase().replace(/[\s\-\/.]+/g, '');
+        if (kangisVal && newKangisVal && normFileNo(kangisVal) === normFileNo(newKangisVal)) {
+          kangisVal = '';
         }
 
         return `
@@ -508,9 +517,20 @@ function buildActionsMenu(row, viewUrl) {
         </button>`
     : '';
 
+  // IsDuplicate is hidden — "Move to Indexing Duplicates" took its place in the
+  // menu. Kept (with its handler and endpoint) so it can be put back by adding
+  // ${duplicateButton} to the menu again.
+  // eslint-disable-next-line no-unused-vars
   const duplicateButton = `<button type="button" class="indexed-duplicate-btn block w-full text-left px-4 py-2.5 text-sm text-amber-700 hover:bg-amber-50 transition-colors" data-file-id="${id}" data-file-number="${safeFileNumber}">
           <i data-lucide="copy-check" class="h-4 w-4 mr-2.5 inline text-amber-600"></i>
           IsDuplicate
+        </button>`;
+
+  // Destructive: archives the record to indexing_duplicates and deletes it from
+  // file_indexings, fileNumber, customers_staging and entities_staging.
+  const moveToDuplicatesButton = `<button type="button" class="move-indexing-duplicate-btn block w-full text-left px-4 py-2.5 text-sm text-rose-700 hover:bg-rose-50 transition-colors" data-file-id="${id}" data-file-number="${safeFileNumber}">
+          <i data-lucide="folder-minus" class="h-4 w-4 mr-2.5 inline text-rose-600"></i>
+          Move to Indexing Duplicates
         </button>`;
 
   const duplicateCallupButton = `<button type="button" class="duplicate-callup-btn block w-full text-left px-4 py-2.5 text-sm ${row.has_duplicate ? 'text-rose-700 hover:bg-rose-50' : 'text-gray-400 cursor-not-allowed opacity-40'} transition-colors" data-file-id="${id}" data-file-number="${safeFileNumber}" ${row.has_duplicate ? '' : 'disabled="disabled"'}>
@@ -566,6 +586,8 @@ function buildActionsMenu(row, viewUrl) {
             </div>
             ${trackingButton}
             ${updatePlaceholderButton}
+            <div class="border-t border-slate-50 my-1.5"></div>
+            ${moveToDuplicatesButton}
           </div>
         </div>
       </div>
@@ -586,7 +608,7 @@ function buildActionsMenu(row, viewUrl) {
           ${viewButton}
           ${trackingButton}
           ${commissionSheetButton}
-          ${duplicateButton}
+          ${moveToDuplicatesButton}
           ${duplicateCallupButton}
           ${tempFileButton}
           ${mccFileNoButton}
@@ -756,6 +778,14 @@ function handleTableBodyClick(event) {
     event.preventDefault();
     event.stopPropagation();
     handleMarkDuplicate(duplicateButton);
+    return;
+  }
+
+  const moveDuplicateButton = event.target.closest('.move-indexing-duplicate-btn');
+  if (moveDuplicateButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    handleMoveToIndexingDuplicates(moveDuplicateButton);
     return;
   }
 
@@ -2117,6 +2147,119 @@ async function handleMarkDuplicate(button) {
   }
 }
 
+/**
+ * Move an indexed file to indexing_duplicates. This deletes the record from the
+ * indexing, file number, customer and entity tables, so the confirmation spells
+ * out what is removed and requires a typed reason.
+ */
+async function handleMoveToIndexingDuplicates(button) {
+  const fileId = button.getAttribute('data-file-id');
+  const fileNumber = button.getAttribute('data-file-number') || `File #${fileId}`;
+
+  if (!fileId) {
+    return;
+  }
+
+  const hasSwal = typeof window.Swal !== 'undefined' && typeof window.Swal.fire === 'function';
+
+  if (hasSwal) {
+    const confirmation = await window.Swal.fire({
+      title: 'Move to Indexing Duplicates?',
+      html: `
+        <p class="text-sm text-slate-600">
+          <strong>${escapeHtml(fileNumber)}</strong> will be moved to indexing duplicates.
+        </p>
+      `,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, move it',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#e11d48'
+    });
+
+    if (!confirmation.isConfirmed) {
+      closeAllActionMenus();
+      return;
+    }
+  } else if (!window.confirm(
+    `Move ${fileNumber} to indexing duplicates?\n\n` +
+    'It will be deleted from the indexing, file number, customer and entity tables.'
+  )) {
+    closeAllActionMenus();
+    return;
+  }
+
+  const csrfToken = getCsrfToken();
+  if (!csrfToken) {
+    const message = 'Unable to locate CSRF token. Please refresh the page and try again.';
+    if (hasSwal) {
+      await window.Swal.fire({ icon: 'error', title: 'Missing CSRF Token', text: message });
+    } else {
+      alert(message);
+    }
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `${window.location.origin}/api/indexed-files/${encodeURIComponent(fileId)}/move-to-indexing-duplicates`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': csrfToken,
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({})
+      }
+    );
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok || !result.success) {
+      const error = new Error(result.message || 'Failed to move the file to indexing duplicates.');
+      error.isBlocked = !!result.blocked;
+      throw error;
+    }
+
+    const d = result.details || {};
+    // A zero fileNumber count means the registry row was not found and is still
+    // there — surface it rather than reporting a clean sweep.
+    const registryNote = d.fileNumber_deleted === 0
+      ? '<p class="text-xs text-amber-600 mt-2">No matching fileNumber row was found, so the file number table was left unchanged.</p>'
+      : '';
+
+    if (hasSwal) {
+      await window.Swal.fire({
+        icon: 'success',
+        title: 'Moved',
+        html: `
+          <p class="text-sm text-slate-600">${escapeHtml(result.message || 'Moved.')}</p>
+          ${registryNote}
+        `
+      });
+    } else {
+      alert(result.message || 'Moved to indexing duplicates.');
+    }
+
+    closeAllActionMenus();
+    rowCache.delete(String(fileId));
+    await loadTable();
+    loadStats();
+  } catch (error) {
+    console.error('Failed to move to indexing duplicates:', error);
+    if (hasSwal) {
+      await window.Swal.fire({
+        icon: error.isBlocked ? 'warning' : 'error',
+        title: error.isBlocked ? 'Cannot Move This File' : 'Failed',
+        text: error.message
+      });
+    } else {
+      alert(error.message);
+    }
+  }
+}
+
 /* ---------------------------------------------------------------------------
  * MCC FileNo — Match Cadastral Correspondence FileNo modal
  * ------------------------------------------------------------------------- */
@@ -3173,6 +3316,7 @@ async function loadTable() {
 
     renderRows(payload.data || []);
     updatePagination(payload.meta);
+    updateSortIndicators();
   } catch (error) {
     if (error.name === 'AbortError') {
       return;
@@ -3183,6 +3327,26 @@ async function loadTable() {
   } finally {
     setLoading(false);
   }
+}
+
+// Mark the column currently driving the order, so the list is never silently sorted
+// by something other than the column the user thinks they are looking at.
+function updateSortIndicators() {
+  headers.forEach((header) => {
+    const isActive = header.dataset.sort === state.sort;
+    let arrow = header.querySelector('.sort-indicator');
+
+    if (!arrow) {
+      arrow = document.createElement('span');
+      arrow.className = 'sort-indicator ml-1 text-[10px]';
+      header.appendChild(arrow);
+    }
+
+    arrow.textContent = isActive ? (state.direction === 'asc' ? '▲' : '▼') : '';
+    header.classList.toggle('text-blue-700', isActive);
+    header.classList.toggle('text-gray-700', !isActive);
+    header.style.cursor = 'pointer';
+  });
 }
 
 function attachEventListeners() {

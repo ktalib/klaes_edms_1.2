@@ -20,6 +20,112 @@
             max-height: 90vh;
             overflow-y: auto;
         }
+        /* Report & Manual library link in the tab bar */
+        .documents-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #ffffff;
+            background: linear-gradient(135deg, #4f46e5 0%, #2563eb 100%);
+            box-shadow: 0 1px 2px rgba(37, 99, 235, 0.35);
+            white-space: nowrap;
+            transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+        }
+        .documents-link:hover {
+            color: #ffffff;
+            filter: brightness(1.06);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 14px rgba(37, 99, 235, 0.28);
+        }
+        .documents-link:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 2px rgba(37, 99, 235, 0.35);
+        }
+        .documents-link:focus-visible {
+            outline: 2px solid #1d4ed8;
+            outline-offset: 2px;
+        }
+
+        /* Collapsible department grouping header inside the Requested Files table */
+        .department-group-row {
+            background-color: #f8fafc;
+            border-top: 1px solid #e2e8f0;
+            border-bottom: 1px solid #e2e8f0;
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.15s ease;
+        }
+        .department-group-row:hover {
+            background-color: #f1f5f9;
+        }
+        .department-group-row.is-expanded {
+            background-color: #eef2ff;
+        }
+        .department-group-chevron {
+            transition: transform 0.15s ease;
+        }
+        .department-group-row.is-expanded .department-group-chevron {
+            transform: rotate(90deg);
+        }
+        .department-group-note {
+            font-size: 0.68rem;
+            color: #94a3b8;
+        }
+        .department-group-name {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #334155;
+        }
+        .department-group-count {
+            padding: 0.05rem 0.45rem;
+            border-radius: 9999px;
+            font-size: 0.68rem;
+            font-weight: 600;
+            color: #475569;
+            background-color: #e2e8f0;
+        }
+
+        /* File number pill used in the file details column */
+        .file-no-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.125rem 0.5rem;
+            border-radius: 9999px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            color: #1e40af;
+            background-color: #eff6ff;
+            border: 1px solid #bfdbfe;
+            white-space: nowrap;
+        }
+        .file-no-badge .dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 9999px;
+            background-color: #3b82f6;
+        }
+        .tracking-id-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.125rem 0.45rem;
+            border-radius: 9999px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.68rem;
+            color: #475569;
+            background-color: #f1f5f9;
+            border: 1px solid #e2e8f0;
+            white-space: nowrap;
+        }
+
         .priority-LOW { background-color: #10B981; color: white; }
         .priority-MEDIUM { background-color: #F59E0B; color: white; }
         .priority-HIGH { background-color: #EF4444; color: white; }
@@ -400,14 +506,19 @@
             </button>
             <button class="tab-btn" data-tab="transit">
                 <i data-lucide="truck" class="h-4 w-4 inline mr-2"></i>
-                In Transit
+                In-Transit (Movement)
             </button>
             <button class="tab-btn" data-tab="idle">
                 <i data-lucide="archive" class="h-4 w-4 inline mr-2"></i>
-                Not in Transit
+                Not in Transit (In-Archive)
             </button>
            
             <div class="flex-1"></div>
+            <a href="{{ route('documents.index') }}" class="documents-link">
+                <i data-lucide="book-open-text" class="h-4 w-4"></i>
+                <span>View Report &amp; Manual</span>
+                <i data-lucide="arrow-up-right" class="h-4 w-4 opacity-70"></i>
+            </a>
             <div class="relative">
                 <!-- <button id="printMenuBtn" class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
                     <i data-lucide="printer" class="h-4 w-4 mr-2"></i>
@@ -438,6 +549,73 @@
         <!-- Tab Panels -->
         <!-- Requested Files Panel -->
         <div id="panel-requested" class="tab-panel active-panel">
+            <!-- Dashboard Stats -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                <div class="dashboard-card bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-full bg-blue-100 text-blue-600 mr-4">
+                            <i data-lucide="clipboard-list" class="h-6 w-6"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-gray-600">Total Requested</p>
+                            <h3 class="text-2xl font-bold text-gray-900" id="requested-total">0</h3>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm text-gray-500">
+                        <i data-lucide="filter" class="h-4 w-4 text-blue-500 mr-1"></i>
+                        <span id="requested-period-label">All requests</span>
+                    </div>
+                </div>
+
+                <div class="dashboard-card bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-full bg-red-100 text-red-600 mr-4">
+                            <i data-lucide="alert-triangle" class="h-6 w-6"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-gray-600">High Priority</p>
+                            <h3 class="text-2xl font-bold text-gray-900" id="requested-high">0</h3>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm text-gray-500">
+                        <i data-lucide="alert-circle" class="h-4 w-4 text-red-500 mr-1"></i>
+                        <span>Requires immediate attention</span>
+                    </div>
+                </div>
+
+                <div class="dashboard-card bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-full bg-amber-100 text-amber-600 mr-4">
+                            <i data-lucide="gauge" class="h-6 w-6"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-gray-600">Medium / Low</p>
+                            <h3 class="text-2xl font-bold text-gray-900" id="requested-medium">0</h3>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm text-gray-500">
+                        <i data-lucide="list" class="h-4 w-4 text-amber-500 mr-1"></i>
+                        <span>Routine requests</span>
+                    </div>
+                </div>
+
+                <div class="dashboard-card bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-full bg-purple-100 text-purple-600 mr-4">
+                            <i data-lucide="building-2" class="h-6 w-6"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-gray-600">Departments</p>
+                            <h3 class="text-2xl font-bold text-gray-900" id="requested-departments">0</h3>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm text-gray-500">
+                        <i data-lucide="users" class="h-4 w-4 text-purple-500 mr-1"></i>
+                        <span id="requested-top-department">Across all departments</span>
+                    </div>
+                </div>
+            </div>
+
             <div class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-4">
                     <div>
@@ -445,15 +623,31 @@
                             <i data-lucide="clipboard-list" class="h-5 w-5"></i>
                             Requested Files
                         </h3>
-                        <p class="text-sm text-gray-600 mt-1">Files that have been requested by the Commissioner</p>
+                        <p class="text-sm text-gray-600 mt-1">Grouped by department — click a department to see its files</p>
                     </div>
-                    <div class="flex gap-2">
+                    <div class="flex gap-2 items-center flex-wrap">
+                        <div class="relative">
+                            <i data-lucide="search" class="h-4 w-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                            <input type="text" id="requested-search" placeholder="Search file no. or title..."
+                                class="pl-9 pr-3 py-2 w-56 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
                         <select id="requested-filter" class="px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                             <option value="ALL">All Requests</option>
                             <option value="weekly">Weekly</option>
                             <option value="monthly">Monthly</option>
                             <option value="quarterly">Quarterly</option>
                         </select>
+                        {{-- This tab paginates by department group, not by row --}}
+                        <select id="requested-per-page" class="px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="25">25 departments</option>
+                            <option value="50">50 departments</option>
+                            <option value="10">10 departments</option>
+                            <option value="5">5 departments</option>
+                        </select>
+                        <button id="requested-toggle-groups" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                            <i data-lucide="chevrons-up-down" class="h-4 w-4 mr-1"></i>
+                            <span id="requested-toggle-groups-label">Expand all</span>
+                        </button>
                         <button id="generateRequestedSheet" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
                             <i data-lucide="printer" class="h-4 w-4 mr-2"></i>
                             Generate Sheet
@@ -477,12 +671,20 @@
                         </tbody>
                     </table>
                 </div>
+                <div id="requested-loading" class="hidden p-12 text-center text-gray-500">
+                    <i data-lucide="loader-2" class="h-8 w-8 mx-auto mb-3 animate-spin text-gray-400"></i>
+                    Loading requested files...
+                </div>
                 <div id="requested-no-results" class="hidden p-12 text-center">
                     <div class="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                         <i data-lucide="clipboard-x" class="h-12 w-12 text-gray-400"></i>
                     </div>
                     <h3 class="text-lg font-medium text-gray-900 mb-2">No requested files</h3>
                     <p class="text-gray-500">Files requested by the Commissioner will appear here.</p>
+                </div>
+                <div id="requested-pagination" class="hidden px-6 py-3 border-t border-gray-200 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p class="text-sm text-gray-600" id="requested-pagination-summary"></p>
+                    <div class="flex items-center gap-1" id="requested-pagination-controls"></div>
                 </div>
             </div>
         </div>
@@ -613,20 +815,15 @@
                             <option value="MEDIUM">Medium Priority</option>
                             <option value="LOW">Low Priority</option>
                         </select>
+                        {{-- Offices are populated from the live in-transit distribution --}}
                         <select id="office-filter" class="block w-full md:w-auto px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                             <option value="ALL">All Offices</option>
-                            <option value="OFF-001">Reception (RCP)</option>
-                            <option value="OFF-002">Customer Care (CCU)</option>
-                            <option value="OFF-003">Document Verification (DVF)</option>
-                            <option value="OFF-004">Survey Department (SUR)</option>
-                            <option value="OFF-005">Legal Department (LEG)</option>
-                            <option value="OFF-006">Planning Department (PLN)</option>
-                            <option value="OFF-007">Director's Office (DIR)</option>
-                            <option value="OFF-008">Certificate Issuance (CRT)</option>
-                            <option value="OFF-009">Archive (ARC)</option>
-                            <option value="OFF-010">Finance Department (FIN)</option>
-                            <option value="OFF-011">IT Department (ITD)</option>
-                            <option value="OFF-012">Registry (REG)</option>
+                        </select>
+                        <select id="transit-per-page" class="block w-full md:w-auto px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            <option value="25">25 / page</option>
+                            <option value="50">50 / page</option>
+                            <option value="100">100 / page</option>
+                            <option value="200">200 / page</option>
                         </select>
                         <button id="clear-filters" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
                             <i data-lucide="x" class="h-4 w-4 mr-1"></i>
@@ -662,12 +859,20 @@
                         </tbody>
                     </table>
                 </div>
+                <div id="transit-loading" class="hidden p-12 text-center text-gray-500">
+                    <i data-lucide="loader-2" class="h-8 w-8 mx-auto mb-3 animate-spin text-gray-400"></i>
+                    Loading files in transit...
+                </div>
                 <div id="no-results" class="hidden p-12 text-center">
                     <div class="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                         <i data-lucide="file-x" class="h-12 w-12 text-gray-400"></i>
                     </div>
                     <h3 class="text-lg font-medium text-gray-900 mb-2">No files found</h3>
                     <p class="text-gray-500">Try adjusting your search or filter to find what you're looking for.</p>
+                </div>
+                <div id="transit-pagination" class="hidden px-6 py-3 border-t border-gray-200 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p class="text-sm text-gray-600" id="transit-pagination-summary"></p>
+                    <div class="flex items-center gap-1" id="transit-pagination-controls"></div>
                 </div>
             </div>
         </div>
@@ -682,7 +887,7 @@
                             <i data-lucide="archive" class="h-6 w-6"></i>
                         </div>
                         <div>
-                            <p class="text-sm font-medium text-gray-600">Total Idle Files</p>
+                            <p class="text-sm font-medium text-gray-600">Total Files in Registry</p>
                             <h3 class="text-2xl font-bold text-gray-900" id="idle-total">0</h3>
                         </div>
                     </div>
@@ -693,7 +898,7 @@
                             <i data-lucide="clock" class="h-6 w-6"></i>
                         </div>
                         <div>
-                            <p class="text-sm font-medium text-gray-600">Awaiting Action</p>
+                            <p class="text-sm font-medium text-gray-600">Never Moved</p>
                             <h3 class="text-2xl font-bold text-gray-900" id="idle-awaiting">0</h3>
                         </div>
                     </div>
@@ -704,7 +909,7 @@
                             <i data-lucide="check-circle" class="h-6 w-6"></i>
                         </div>
                         <div>
-                            <p class="text-sm font-medium text-gray-600">Completed</p>
+                            <p class="text-sm font-medium text-gray-600">Returned to Registry</p>
                             <h3 class="text-2xl font-bold text-gray-900" id="idle-completed">0</h3>
                         </div>
                     </div>
@@ -712,23 +917,37 @@
             </div>
 
             <div class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-                <div class="px-6 py-4 border-b border-gray-200">
-                    <h3 class="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                        <i data-lucide="archive" class="h-5 w-5"></i>
-                        Files Not in Transit
-                    </h3>
-                    <p class="text-sm text-gray-600 mt-1">Completed or idle files awaiting further action</p>
+                <div class="px-6 py-4 border-b border-gray-200 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                            <i data-lucide="archive" class="h-5 w-5"></i>
+                            Files Not in Transit
+                        </h3>
+                        <p class="text-sm text-gray-600 mt-1">Every indexed file currently sitting in the registry</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="relative">
+                            <i data-lucide="search" class="h-4 w-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                            <input type="text" id="idle-search" placeholder="Search file no. or title..."
+                                class="pl-9 pr-3 py-2 w-64 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <select id="idle-per-page" class="py-2 px-3 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="25">25 / page</option>
+                            <option value="50">50 / page</option>
+                            <option value="100">100 / page</option>
+                            <option value="200">200 / page</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
                             <tr>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File Details</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Office</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Updated</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File Type</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="idle-table-body" class="bg-white divide-y divide-gray-200">
@@ -736,12 +955,20 @@
                         </tbody>
                     </table>
                 </div>
+                <div id="idle-loading" class="hidden p-12 text-center text-gray-500">
+                    <i data-lucide="loader-2" class="h-8 w-8 mx-auto mb-3 animate-spin text-gray-400"></i>
+                    Loading files...
+                </div>
                 <div id="idle-no-results" class="hidden p-12 text-center">
                     <div class="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                         <i data-lucide="inbox" class="h-12 w-12 text-gray-400"></i>
                     </div>
-                    <h3 class="text-lg font-medium text-gray-900 mb-2">No idle files</h3>
-                    <p class="text-gray-500">All files are currently in transit.</p>
+                    <h3 class="text-lg font-medium text-gray-900 mb-2">No files found</h3>
+                    <p class="text-gray-500">No indexed files match the current search.</p>
+                </div>
+                <div id="idle-pagination" class="hidden px-6 py-3 border-t border-gray-200 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p class="text-sm text-gray-600" id="idle-pagination-summary"></p>
+                    <div class="flex items-center gap-1" id="idle-pagination-controls"></div>
                 </div>
             </div>
         </div>

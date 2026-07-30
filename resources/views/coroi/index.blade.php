@@ -636,13 +636,20 @@
                                         $isDeedOfAssignment = isset($data) && isset($data->instrument_type)
                                             && stripos((string) $data->instrument_type, 'DEED OF ASSIGNMENT') !== false;
 
-                                        $deliveryName = $isDeedOfAssignment
-                                            ? ($data->solicitor_name ?? $data->Applicant_Name ?? 'APPLICANT NAME')
-                                            : ($data->Applicant_Name ?? 'APPLICANT NAME');
+                                        $isMortgage = isset($data) && isset($data->instrument_type)
+                                            && stripos((string) $data->instrument_type, 'MORTGAGE') !== false;
 
-                                        $deliveryAddress = $isDeedOfAssignment
-                                            ? ($data->solicitor_address ?? $data->party_2_address ?? null)
-                                            : ($data->party_2_address ?? null);
+                                        // Mortgages are delivered by party 1 (the mortgagor)
+                                        if ($isDeedOfAssignment) {
+                                            $deliveryName = $data->solicitor_name ?? $data->Applicant_Name ?? 'APPLICANT NAME';
+                                            $deliveryAddress = $data->solicitor_address ?? $data->party_2_address ?? null;
+                                        } elseif ($isMortgage) {
+                                            $deliveryName = $data->party_1_name ?? $data->Applicant_Name ?? 'APPLICANT NAME';
+                                            $deliveryAddress = $data->party_1_address ?? null;
+                                        } else {
+                                            $deliveryName = $data->Applicant_Name ?? 'APPLICANT NAME';
+                                            $deliveryAddress = $data->party_2_address ?? null;
+                                        }
                                     @endphp
 
                                     <strong class="font-bold">

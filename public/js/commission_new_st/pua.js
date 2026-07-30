@@ -1002,9 +1002,12 @@ async function handleParentFileNumberChange(selectedValue) {
             document.getElementById('parent_applicant_display').textContent = applicantName || 'N/A';
             
             parentDetails.classList.remove('hidden');
-            
+
             // Setup parent file number in form
             await validateAndSetupParentFileNumber(selectedValue, details);
+
+            // Backfill Location Details / map from the parent's indexing record
+            await backfillPuaLocationFromParent(details.np_fileno || selectedValue);
         }
         
     } catch (error) {
@@ -1013,6 +1016,27 @@ async function handleParentFileNumberChange(selectedValue) {
         resetPuaForm();
         parentDetails.classList.add('hidden');
     }
+}
+
+/**
+ * Backfill the PuA Location Details section (and pin the map) from the parent
+ * PRIMARY file number's indexing record. The parent NPFN is indexed when it is
+ * commissioned, so its district / LGA / street / plot and — when present —
+ * latitude & longitude carry straight down to the unit.
+ */
+async function backfillPuaLocationFromParent(parentFileNumber) {
+    const locationMap = window.STLocationMaps && window.STLocationMaps.pua;
+    if (!locationMap) return;
+
+    const indexed = await fetchIndexedLocation(parentFileNumber);
+
+    if (!indexed) {
+        console.log('ℹ️ No indexing record found for parent', parentFileNumber, '- location left blank');
+        locationMap.clear();
+        return;
+    }
+
+    locationMap.backfill(indexed);
 }
 
 /**
@@ -1354,7 +1378,12 @@ function resetPuaForm() {
     
     // Disable all other form fields
     disablePuaFormFields();
-    
+
+    // Clear the Location Details / map inherited from the parent
+    if (window.STLocationMaps && window.STLocationMaps.pua) {
+        window.STLocationMaps.pua.clear();
+    }
+
     console.log('🔄 PuA form reset to initial state');
 }
 
@@ -1480,6 +1509,7 @@ async function commissionPuaFileNumber() {
             year: parseInt(year),
             buyer_list_id: buyerListId,
             ...applicantData,
+            ...(window.STLocationMaps?.pua ? window.STLocationMaps.pua.getPayload() : {}),
             commissioned_by: document.getElementById('pua_commissioned_by')?.value || '',
             commissioned_date: document.getElementById('pua_commissioned_date')?.value || ''
         };

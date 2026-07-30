@@ -1076,8 +1076,17 @@
             <label for="file-title" class="form-label required">File Title</label>
             <input type="text" id="file-title" class="input" placeholder="e.g. Musa Ali's Property">
           </div>
+
+          <div class="form-group">
+            <label for="gender" class="form-label required">Gender</label>
+            <select id="gender" class="input" required>
+              <option value="">Select Gender</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select>
+          </div>
         </div>
-        
+
         <!-- Property Details Section -->
         <div class="form-section">
           <h3 class="form-section-title">Property Details</h3>

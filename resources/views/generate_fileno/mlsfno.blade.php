@@ -583,6 +583,7 @@
                                             <option value="change_of_purpose">Change of Purpose</option>
                                             <option value="resettlement">Resettlement</option>
                                             <option value="regrant">Re-grant</option>
+                                            <option value="reissuance">Re-Issuance of FileNo</option>
                                             <option value="subdivision">Subdivision</option>
                                             <option value="merger">Merger</option>
                                             <option value="separation">Separation</option>
@@ -772,6 +773,7 @@
                                                     <option value="extension" hidden>Extension</option>
                                                     <option value="miscellaneous" hidden>Miscellaneous</option>
                                                     <option value="regrant" hidden>Re-grant</option>
+                                                    <option value="reissuance" hidden>Re-Issuance of FileNo</option>
                                                     <option value="resettlement" hidden>Resettlement</option>
                                                     <option value="old_mls">Old MLS</option>
                                                     <option value="sit" x-show="applicationType === 'new'">SIT</option>
@@ -911,6 +913,23 @@
                                                     </select>
                                                     <!-- Hidden input to ensure Government is submitted when select is disabled -->
                                                     <input type="hidden" x-show="fileOption === 'sit'" name="customer_type" :value="customerType" :disabled="fileOption !== 'sit'">
+                                                </div>
+                                            </div>
+
+                                            <!-- Gender -->
+                                            <div>
+                                                <label class="block text-xs font-medium text-gray-600 mb-1">
+                                                   Gender
+                                                </label>
+                                                <div class="flex items-center h-[42px]">
+                                                    <select id="gender" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                                                        name="gender" x-model="gender" required>
+                                                        <option value="">Select Gender</option>
+                                                        <option value="Male">Male</option>
+                                                        <option value="Female">Female</option>
+                                                        <option value="Corporate">Corporate</option>
+                                                        <option value="Joint">Joint</option>
+                                                    </select>
                                                 </div>
                                             </div>
 
@@ -1091,11 +1110,58 @@
                                             </div>
                                         </div>
 
+                                        <!-- Old FileNo (Duplicate) — Re-Issuance of FileNo.
+                                             The file being re-issued already exists under a duplicated
+                                             number; it is picked exactly like a Related File, but stored
+                                             on its own as the old file number. -->
+                                        <div x-show="fileOption === 'reissuance'" x-transition class="mb-4">
+                                            <div class="bg-rose-50 p-4 rounded-lg border border-rose-200 shadow-sm">
+                                                <label class="block text-sm font-semibold text-gray-700 mb-3">
+                                                    <i data-lucide="copy" class="w-4 h-4 inline mr-1 text-rose-600"></i>
+                                                    Old File (Duplicate FileNo)
+                                                    <span class="text-red-500 ml-1">*</span>
+                                                </label>
+                                                <div class="grid grid-cols-1 gap-4">
+                                                    <div>
+                                                        <label class="block text-xs font-medium text-gray-600 mb-1">
+                                                            Old FileNo (Duplicate) <span class="text-red-500">*</span>
+                                                        </label>
+                                                        <div class="flex items-center gap-2">
+                                                            <input type="text" readonly
+                                                                x-model="oldFileNo"
+                                                                class="flex-1 px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 font-mono cursor-not-allowed"
+                                                                placeholder="No old file selected">
+                                                            <button type="button" @click="openOldFileModal()"
+                                                                    class="px-3 py-2 bg-rose-600 text-white text-xs font-semibold rounded-md hover:bg-rose-700 transition-colors flex items-center gap-1.5 whitespace-nowrap">
+                                                                <i data-lucide="search" class="w-3.5 h-3.5"></i>
+                                                                Select
+                                                            </button>
+                                                            <button type="button" x-show="oldFileNo" @click="clearOldFile()"
+                                                                    class="px-3 py-2 bg-white border border-rose-300 text-rose-700 text-xs font-semibold rounded-md hover:bg-rose-100 transition-colors">
+                                                                Clear
+                                                            </button>
+                                                        </div>
+                                                        <input type="hidden" name="old_fileno" x-model="oldFileNo">
+                                                    </div>
+                                                    <div x-show="oldFileNo">
+                                                        <label class="block text-xs font-medium text-gray-600 mb-1">Old File Title</label>
+                                                        <input type="text" x-model="oldFileTitle" readonly
+                                                            class="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700"
+                                                            placeholder="Auto-filled from the selected file">
+                                                    </div>
+                                                </div>
+                                                <p class="text-[11px] text-gray-500 mt-3">
+                                                    <i data-lucide="info" class="w-3 h-3 inline mr-1"></i>
+                                                    The new file number is generated normally; the duplicated number selected here is kept on the record as the old file number.
+                                                </p>
+                                            </div>
+                                        </div>
+
                                         <!-- Related File Section. Hidden for the workflows that carry their own
-                                             dedicated related/source selectors (Merger, Subdivision, Separation),
-                                             for Temporary (inherits its source file), and for Change of Purpose
-                                             (has its own application selector above). -->
-                                        <div x-show="!['subdivision', 'merger', 'separation', 'temporary'].includes(fileOption) && applicationType !== 'change_of_purpose'"
+                                             dedicated related/source selectors (Merger, Subdivision, Separation,
+                                             Re-Issuance), for Temporary (inherits its source file), and for
+                                             Change of Purpose (has its own application selector above). -->
+                                        <div x-show="!['subdivision', 'merger', 'separation', 'temporary', 'reissuance'].includes(fileOption) && applicationType !== 'change_of_purpose'"
                                              class="mb-4">
                                             <!-- Checkbox to enable Related File (hidden for RC prefix since it's mandatory) -->
                                             <div x-show="!isRecertificationPrefix" class="mb-3">
@@ -1358,7 +1424,7 @@
                                                     <i data-lucide="hash" class="w-4 h-4 inline mr-1"></i>
                                                     Serial No.
                                                 </span>
-                                                <template x-if="['normal', 'subdivision', 'merger', 'separation', 'temporary'].includes(fileOption)">
+                                                <template x-if="['normal', 'reissuance', 'subdivision', 'merger', 'separation', 'temporary'].includes(fileOption)">
                                                     <span class="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100" 
                                                           x-text="'Next: ' + getNextSerialForLandUse(prefix || landUse)">
                                                     </span>
@@ -2845,6 +2911,14 @@
                         <i data-lucide="info" class="w-4 h-4 text-emerald-600 flex-shrink-0"></i>
                         <span class="text-xs text-emerald-800 font-medium">
                             Note: The <strong id="bpRemainingText" class="text-emerald-900">0</strong> unprinted sheet(s) will be generated for this date.
+                        </span>
+                    </div>
+                    <div id="bpConversionNote" class="hidden bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-2.5 flex items-center space-x-2">
+                        <i data-lucide="file-text" class="w-4 h-4 text-indigo-600 flex-shrink-0"></i>
+                        <span class="text-xs text-indigo-800 font-medium">
+                            Conversion (CON-) files: <strong id="bpConvTotalText" class="text-indigo-900">0</strong> total,
+                            <strong id="bpConvPrintedText" class="text-indigo-900">0</strong> printed,
+                            <strong id="bpConvUnprintedText" class="text-indigo-900">0</strong> awaiting an Application for Conversion.
                         </span>
                     </div>
                 </div>

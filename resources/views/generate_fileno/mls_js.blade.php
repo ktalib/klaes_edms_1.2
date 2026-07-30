@@ -1450,6 +1450,11 @@
             component.relatedFileIndexingId = '';
             component.isRecertificationPrefix = false;
 
+            // Reset old file fields (Re-Issuance of FileNo)
+            component.oldFileNo = '';
+            component.oldFileTitle = '';
+            component.oldFileIndexingId = '';
+
             // Update the preview
             component.updatePreview();
         }
@@ -2123,6 +2128,20 @@
             }
         }
 
+        // The old (duplicate) file number is what a Re-Issuance re-issues, so it is required.
+        if (alpineData && alpineData.fileOption === 'reissuance') {
+            const oldFileNo = (alpineData.oldFileNo || '').toString().trim();
+            if (!oldFileNo) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Old FileNo Required',
+                    text: 'Please select the old (duplicate) file number being re-issued.',
+                    confirmButtonColor: '#f59e0b'
+                });
+                return;
+            }
+        }
+
         // File Name is required for all new file number generations
         {
             const fileNameValue = (alpineData && alpineData.fileName
@@ -2137,6 +2156,25 @@
                 }).then(() => {
                     const fileNameInput = document.getElementById('fileName');
                     if (fileNameInput) fileNameInput.focus();
+                });
+                return;
+            }
+        }
+
+        // Gender is required for all file commissionings.
+        {
+            const genderValue = (alpineData && alpineData.gender
+                ? alpineData.gender
+                : (document.getElementById('gender')?.value || '')).toString().trim();
+            if (!genderValue) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Gender Required',
+                    text: 'Please select a Gender (Male or Female) before generating the file number.',
+                    confirmButtonColor: '#f59e0b'
+                }).then(() => {
+                    const genderInput = document.getElementById('gender');
+                    if (genderInput) genderInput.focus();
                 });
                 return;
             }
@@ -2199,6 +2237,14 @@
         } else {
             // Reason only applies to SIT files; drop any stale value for other types
             formData.delete('sit_reason');
+        }
+
+        // Old (duplicated) file number only applies to Re-Issuance of FileNo;
+        // drop any stale value for every other file type.
+        if (fileOption === 'reissuance') {
+            formData.set('old_fileno', (alpineData ? (alpineData.oldFileNo || '') : '').toString().trim());
+        } else {
+            formData.delete('old_fileno');
         }
 
         // Handle Direct Allocation (is_allocated check)
@@ -4134,6 +4180,7 @@
             purpose: '',
             prefix: '',
             customerType: '',
+            gender: '',
             // Default to normal file
             fileOption: 'normal',
             // Backs the top "FILE TYPE" select. Kept separate from fileOption because that
@@ -4205,7 +4252,14 @@
                 'Other'
             ],
             isRecertificationPrefix: false,
-            
+
+            // Old File Properties (Re-Issuance of FileNo). Picked with the same
+            // GlobalFileNoModal as a related file, but stored separately: the old
+            // (duplicated) number is written to mls_file_no.old_fileno.
+            oldFileNo: '',
+            oldFileTitle: '',
+            oldFileIndexingId: '',
+
             // Subdivision / Merger / Separation Properties
             subdivisionAppId: '',
             mergerAppId: '',
@@ -4654,7 +4708,7 @@
 
             get isSerialReadonly() {
                 // Readonly for normal (auto-generated), temporary, extension, and SIT types
-                return (this.fileOption === 'normal' || this.fileOption === 'regrant' || this.fileOption === 'resettlement' || this.fileOption === 'temporary' || this.fileOption === 'extension' || this.fileOption === 'sit') && !isOverrideMode;
+                return (this.fileOption === 'normal' || this.fileOption === 'regrant' || this.fileOption === 'resettlement' || this.fileOption === 'reissuance' || this.fileOption === 'temporary' || this.fileOption === 'extension' || this.fileOption === 'sit') && !isOverrideMode;
             },
 
             get isSerialDisabled() {
@@ -4663,7 +4717,7 @@
             },
 
             get serialFieldType() {
-                return (this.fileOption === 'normal' || this.fileOption === 'regrant' || this.fileOption === 'resettlement') && !isOverrideMode ? 'number' : 'text';
+                return (this.fileOption === 'normal' || this.fileOption === 'regrant' || this.fileOption === 'resettlement' || this.fileOption === 'reissuance') && !isOverrideMode ? 'number' : 'text';
             },
 
             get yearFieldClass() {
@@ -4840,6 +4894,51 @@
                 return parts.join(', ').toUpperCase();
             },
 
+            // Older Change of Purpose records stored only the composite `location`
+            // string ("STREET, DISTRICT, LGA, STATE") — district / lga were never
+            // persisted. Recover them by matching the comma-separated tokens against
+            // the generator's own District / LGA option lists; a token that matches
+            // no district but sits directly before the matched LGA is kept as a
+            // free-text district (the form's "Other (specify)" case).
+            deriveLocationParts(locationStr) {
+                const result = { district: '', lga: '' };
+                const parts = (locationStr || '').toString()
+                    .split(',').map(p => p.trim()).filter(Boolean);
+                if (!parts.length) return result;
+
+                const optionValues = (selectId) => {
+                    const sel = document.getElementById(selectId);
+                    return sel ? Array.from(sel.options).map(o => o.value).filter(Boolean) : [];
+                };
+                const matchToken = (token, values) => values.find(v =>
+                    this.normalizeLocationToken(v) === this.normalizeLocationToken(token)
+                ) || '';
+
+                const districts = optionValues('generator_district').filter(v => v !== 'Other');
+                const lgas = optionValues('generator_lga');
+
+                let lgaIndex = -1;
+                parts.forEach((token, i) => {
+                    if (!result.district) {
+                        const d = matchToken(token, districts);
+                        if (d) { result.district = d; return; }
+                    }
+                    const l = matchToken(token, lgas);
+                    if (l && !result.lga) { result.lga = l; lgaIndex = i; }
+                });
+
+                // No listed district: the token just before the LGA is the district
+                // the user typed under "Other".
+                if (!result.district && lgaIndex > 0) {
+                    const candidate = parts[lgaIndex - 1];
+                    if (this.normalizeLocationToken(candidate) !== 'OTHER') {
+                        result.district = candidate;
+                    }
+                }
+
+                return result;
+            },
+
             findPrefixForLandUseCode(code) {
                 const normalizedCode = this.normalizeLandUseCode(code);
                 if (!normalizedCode || !Array.isArray(this.allAllPrefixes)) return null;
@@ -4998,6 +5097,39 @@
                         }
                     })
                     .catch(err => console.error('Related file location backfill failed:', err));
+            },
+
+            // Open GlobalFileNoModal to select the old (duplicated) file being re-issued.
+            openOldFileModal() {
+                if (typeof GlobalFileNoModal === 'undefined' || typeof GlobalFileNoModal.open !== 'function') {
+                    alert('File number selector is not available. Please refresh the page.');
+                    return;
+                }
+                const self = this;
+                GlobalFileNoModal.open({
+                    callback: function(data) {
+                        if (!data || !data.fileNumber) return;
+
+                        // Legacy KN/KANGIS records store a trailing dash (e.g. "KN 3456-").
+                        self.oldFileNo = (data.fileNumber || '').toString().replace(/[\s-]+$/, '').trim();
+                        self.oldFileTitle = (
+                            data.file_name
+                            || data.file_title
+                            || (data.record && (data.record.file_name || data.record.FileName || data.record.file_title))
+                            || ''
+                        ).toString().trim();
+                        self.oldFileIndexingId = (data.record && data.record.id) || '';
+
+                        // Re-issuance covers the same property, so inherit its location.
+                        self.backfillLocationFromFile(self.oldFileNo);
+                    }
+                });
+            },
+
+            clearOldFile() {
+                this.oldFileNo = '';
+                this.oldFileTitle = '';
+                this.oldFileIndexingId = '';
             },
 
             clearRelatedFile() {
@@ -5557,9 +5689,12 @@
                     // Backfill details
                     this.fileName = data.applicant_name || '';
                     this.plotNo = data.plot_no || '';
-                    this.lga = data.lga || '';
-                    this.district = data.district || '';
                     this.location = this.stripPlotFromLocation(data.location || '', this.plotNo);
+                    // district / lga are only present on newer CoP records; fall back
+                    // to parsing them out of the location string for older ones.
+                    const derived = this.deriveLocationParts(data.location || '');
+                    this.lga = data.lga || derived.lga || '';
+                    this.district = data.district || derived.district || '';
                     this.isInherited = true;
                     this.$nextTick(() => {
                         this.syncLocationSelects();
@@ -5645,7 +5780,7 @@
                         // Reset category until the user explicitly picks one in the popup.
                         this.extensionType = '';
                     }
-                } else if (this.fileOption === 'normal' || this.fileOption === 'regrant' || this.fileOption === 'resettlement') {
+                } else if (this.fileOption === 'normal' || this.fileOption === 'regrant' || this.fileOption === 'resettlement' || this.fileOption === 'reissuance') {
                     this.isInherited = false;
                     // Reset SIT-specific overrides if switching from SIT
                     if (this.landUse === 'SIT') {
@@ -5690,7 +5825,7 @@
 
             updatePreview() {
                 // Auto-update serial number when land use changes for normal, subdivision, merger, and temporary files
-                if (['normal', 'regrant', 'resettlement', 'subdivision', 'merger', 'separation', 'temporary'].includes(this.fileOption) && (this.landUse || this.prefix) && !isOverrideMode) {
+                if (['normal', 'regrant', 'resettlement', 'reissuance', 'subdivision', 'merger', 'separation', 'temporary'].includes(this.fileOption) && (this.landUse || this.prefix) && !isOverrideMode) {
                     if (this.fileOption === 'temporary' && this.existingFileNo) {
                         // Keep extracted serial from existing file for temporary files
                     } else {
@@ -5735,7 +5870,7 @@
                     previewText = `SLTR-${this.serialNo}`;
                 } else if (this.fileOption === 'sit' && this.serialNo) {
                     previewText = `SIT-${this.year}-${this.serialNo}`;
-                } else if (['normal', 'regrant', 'resettlement', 'subdivision', 'merger'].includes(this.fileOption) && this.serialNo && this.year) {
+                } else if (['normal', 'regrant', 'resettlement', 'reissuance', 'subdivision', 'merger'].includes(this.fileOption) && this.serialNo && this.year) {
                     const code = this.prefix || this.landUse;
                     if (code) {
                          previewText = `${code}-${this.year}-${this.serialNo}`;
@@ -8627,6 +8762,31 @@
     // STANDALONE BATCH PRINT MODAL
     // =====================================================================
 
+    // Latest counts for the selected date. Commissioning sheets and Applications for
+    // Conversion are printed (and logged) independently, so each has its own tally.
+    let bpCounts = { sheetsUnprinted: 0, conversionTotal: 0, conversionUnprinted: 0, loaded: false };
+
+    // The Generate button stays enabled as long as at least one TICKED document still
+    // has something to print — a date whose sheets are all printed can still owe
+    // Applications for Conversion.
+    function updateBatchPrintButtonState() {
+        const printBtn = document.getElementById("bpPrintBtn");
+        if (!printBtn) return;
+
+        if (!bpCounts.loaded) {
+            printBtn.disabled = true;
+            return;
+        }
+
+        const wantCommissioning = document.getElementById("bpDocCommissioning")?.checked;
+        const wantConversion = document.getElementById("bpDocConversion")?.checked;
+
+        const hasWork = (wantCommissioning && bpCounts.sheetsUnprinted > 0)
+            || (wantConversion && bpCounts.conversionUnprinted > 0);
+
+        printBtn.disabled = !hasWork;
+    }
+
     async function onBatchPrintDateChange() {
         const dateInput = document.getElementById("bpDateSelect");
         const countInfo = document.getElementById("bpCountInfo");
@@ -8635,6 +8795,7 @@
         const noBatchesNotice = document.getElementById("bpNoBatchesNotice");
 
         const selectedDate = dateInput ? dateInput.value : "";
+        bpCounts = { sheetsUnprinted: 0, conversionTotal: 0, conversionUnprinted: 0, loaded: false };
 
         if (!selectedDate) {
             if (countInfo) countInfo.classList.add("hidden");
@@ -8671,10 +8832,30 @@
                 if (unprintedEl) unprintedEl.textContent = payload.unprinted_count;
                 if (remainingEl) remainingEl.textContent = payload.unprinted_count;
 
+                bpCounts = {
+                    sheetsUnprinted: Number(payload.unprinted_count) || 0,
+                    conversionTotal: Number(payload.conversion_total_count) || 0,
+                    conversionUnprinted: Number(payload.conversion_unprinted_count) || 0,
+                    loaded: true
+                };
+
+                // Conversion breakdown — only meaningful when the date has CON- files.
+                const convNote = document.getElementById("bpConversionNote");
+                if (convNote) {
+                    if (bpCounts.conversionTotal > 0) {
+                        document.getElementById("bpConvTotalText").textContent = bpCounts.conversionTotal;
+                        document.getElementById("bpConvPrintedText").textContent = Number(payload.conversion_printed_count) || 0;
+                        document.getElementById("bpConvUnprintedText").textContent = bpCounts.conversionUnprinted;
+                        convNote.classList.remove("hidden");
+                    } else {
+                        convNote.classList.add("hidden");
+                    }
+                }
+
                 if (countInfo) countInfo.classList.remove("hidden");
-                
-                // Only enable print button if there are unprinted records
-                if (printBtn) printBtn.disabled = (payload.unprinted_count === 0);
+                if (typeof lucide !== "undefined") lucide.createIcons();
+
+                updateBatchPrintButtonState();
             } else {
                 if (noBatchesNotice) noBatchesNotice.classList.remove("hidden");
             }
@@ -8698,6 +8879,15 @@
             dateInput.value = today;
         }
         
+        // Re-evaluate the button whenever the document selection changes.
+        ["bpDocCommissioning", "bpDocConversion"].forEach(id => {
+            const cb = document.getElementById(id);
+            if (cb && !cb.dataset.bpBound) {
+                cb.addEventListener("change", updateBatchPrintButtonState);
+                cb.dataset.bpBound = "1";
+            }
+        });
+
         await onBatchPrintDateChange();
         if (typeof lucide !== "undefined") lucide.createIcons();
     }
@@ -8721,13 +8911,15 @@
     async function reviewConversionForBatch(selectedDate, csrfToken) {
         const escHtml = (s) => (s || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-        // Load the CON- files for this date (unprinted set — same as the count boxes).
+        // Load the CON- files for this date whose Application for Conversion has NOT
+        // been printed yet. Note the document_type: the commissioning-sheet print log
+        // must not hide files that still owe a conversion application.
         let conFiles = [];
         try {
             const resp = await fetch('{{ route("mls-fileno.batch-records") }}', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken },
-                body: JSON.stringify({ scope: 'date', date: selectedDate })
+                body: JSON.stringify({ scope: 'date', date: selectedDate, document_type: 'Application for Conversion' })
             });
             const payload = await resp.json();
             const records = Array.isArray(payload.data) ? payload.data : [];
@@ -8737,10 +8929,13 @@
         }
 
         if (conFiles.length === 0) {
+            const allPrinted = bpCounts.conversionTotal > 0;
             await Swal.fire({
                 icon: 'info',
-                title: 'No Conversion Files',
-                text: 'There are no Conversion (CON-) files for this date, so no Application for Conversion was generated.',
+                title: allPrinted ? 'Already Generated' : 'No Conversion Files',
+                text: allPrinted
+                    ? `All ${bpCounts.conversionTotal} Application(s) for Conversion for this date have already been generated.`
+                    : 'There are no Conversion (CON-) files for this date, so no Application for Conversion was generated.',
                 confirmButtonColor: '#10b981'
             });
             return true; // nothing to do, but not a cancellation
@@ -8816,11 +9011,32 @@
 
         if (!result.isConfirmed) return false; // operator cancelled
 
-        // Open the server-rendered Application for Conversion document(s) for this date.
+        // Open the server-rendered Application for Conversion document(s) for this date,
+        // limited to the files just reviewed.
         const { method, other } = result.value;
+        const fileNumbers = conFiles.map(r => (r.full_file_number || '').toString().trim()).filter(Boolean);
         let url = `{{ route('file-numbers.date-conversion-application') }}?date=${encodeURIComponent(selectedDate)}&method=${encodeURIComponent(method)}`;
+        url += `&files=${encodeURIComponent(fileNumbers.join(','))}`;
         if (method === 'e' && other) url += `&other=${encodeURIComponent(other)}`;
         window.open(url, '_blank');
+
+        // Log the conversion print separately from the commissioning sheet, so these
+        // files drop out of the "awaiting Application for Conversion" tally.
+        try {
+            await fetch("{{ route('file-numbers.record-print') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken },
+                body: JSON.stringify({
+                    reference: selectedDate,
+                    type: 'Date',
+                    doc_type: 'Application for Conversion',
+                    file_numbers: fileNumbers
+                })
+            });
+        } catch (e) {
+            console.warn('Could not record conversion print', e);
+        }
+
         return true;
     }
 
@@ -8858,7 +9074,9 @@
             }
 
             // Commissioning Sheets: the normal batch commissioning-sheet print.
-            if (wantCommissioning) {
+            // Skipped when every sheet for the date is already printed — the operator
+            // may have ticked it only alongside the conversion applications.
+            if (wantCommissioning && bpCounts.sheetsUnprinted > 0) {
                 await generateBatchPDF(selectedDate, "Original", "date");
 
                 // ONLY record the print AFTER the PDF has been successfully generated

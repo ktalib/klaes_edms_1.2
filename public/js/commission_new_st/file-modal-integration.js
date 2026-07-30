@@ -524,7 +524,9 @@ function commissionFileNumber() {
         property_street_name: document.getElementById('propertyStreetName')?.value || '',
         property_district: document.getElementById('propertyDistrict')?.value || '',
         property_lga: document.getElementById('propertyLga')?.value || '',
-        property_state: document.getElementById('propertyState')?.value || ''
+        property_state: document.getElementById('propertyState')?.value || '',
+        latitude: document.getElementById('propertyLatitude')?.value || null,
+        longitude: document.getElementById('propertyLongitude')?.value || null
     };
 
     // Add applicant-specific data

@@ -127,8 +127,11 @@
 @include('primaryform.partials.print')
 
 {{-- JavaScript Assets --}}
-{{-- Include Global File Number Modal Component --}}
+{{-- Include Global File Number Modal Component (also loads Select2) --}}
 @include('components.global-fileno-modal')
+
+{{-- Searchable District / Street Name dropdowns --}}
+@include('components.reference-select')
 
 @include('primaryform.assets.js.scripts')
 
@@ -432,13 +435,13 @@ function emergencyUpdatePropertyAddressDisplay() {
     console.log('🏢 Emergency updatePropertyAddressDisplay called');
     
     const houseNo = document.getElementById('propertyHouseNo')?.value || '';
-    const plotNo = document.getElementById('propertyPlotNo')?.value || '';
     const streetName = document.getElementById('propertyStreetName')?.value || '';
     const district = document.getElementById('propertyDistrict')?.value || '';
     const lga = document.getElementById('propertyLga')?.value || '';
     const state = document.getElementById('propertyState')?.value || '';
-    
-    const fullAddress = [houseNo, plotNo, streetName, district, lga, state]
+
+    // Plot No. is deliberately excluded from the composed address.
+    const fullAddress = [houseNo, streetName, district, lga, state]
         .filter(part => part && part.trim() !== '')
         .join(', ');
     
@@ -477,7 +480,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Property address fields  
-    const propertyFields = ['propertyHouseNo', 'propertyPlotNo', 'propertyStreetName', 'propertyDistrict', 'propertyLga', 'propertyState'];
+    const propertyFields = ['propertyHouseNo', 'propertyStreetName', 'propertyDistrict', 'propertyLga', 'propertyState'];
     propertyFields.forEach(fieldId => {
         const element = document.getElementById(fieldId);
         if (element) {

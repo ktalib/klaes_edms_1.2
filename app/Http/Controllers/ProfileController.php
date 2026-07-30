@@ -23,13 +23,16 @@ class ProfileController extends Controller
         $workStationOptions = $this->workStationOptions();
         $canEditWorkStation = empty($user->work_station);
         $deputyOptions = User::deputyOptions($user->id);
+        // Officer ranks (seniority) for file-request prioritisation.
+        $ranks = \App\Models\OfficerRank::options();
 
         return view('profile.index', compact(
             'PageTitle',
             'PageDescription',
             'workStationOptions',
             'canEditWorkStation',
-            'deputyOptions'
+            'deputyOptions',
+            'ranks'
         ));
     }
 
@@ -51,6 +54,8 @@ class ProfileController extends Controller
                 Rule::unique('users')->ignore($user->id),
             ],
             'phone_number' => 'nullable|string|max:20',
+            'rank' => 'nullable|string|max:255',
+            'rank_other' => 'nullable|string|max:255|required_if:rank,' . \App\Models\OfficerRank::OTHER_VALUE,
             'password' => 'nullable|string|min:8|confirmed',
             'profile' => 'nullable',
             'signature_file' => 'nullable|image|mimes:png,jpg,jpeg|max:2048',
@@ -112,7 +117,9 @@ class ProfileController extends Controller
         $user->last_name = $validated['last_name'];
         $user->email = $validated['email'];
         $user->phone_number = $validated['phone_number'] ?? null;
-       
+        // Seniority for file-request priority; "Other (specify)" adds to the lookup table.
+        $user->rank = \App\Models\OfficerRank::resolveSubmittedRank($request->input('rank'), $request->input('rank_other'));
+
         // Only update password if provided
         if (!empty($validated['password'])) {
             $user->password = Hash::make($validated['password']);

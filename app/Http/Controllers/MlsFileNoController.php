@@ -1555,6 +1555,10 @@ class MlsFileNoController extends Controller
             return 'Resettlement';
         }
 
+        if ($fileOption === 'reissuance') {
+            return 'Re-Issuance of FileNo';
+        }
+
         // Default case: no sub-option selected
         return 'Direct Allocation';
     }
@@ -1623,6 +1627,7 @@ class MlsFileNoController extends Controller
                 'commission_date' => 'nullable|date',
                 'commission_time' => 'nullable|string',
                 'customer_type' => 'required|string|in:Individual,Corporate,Multiple,Government',
+                'gender' => 'required|string|in:Male,Female,Corporate,Joint,Government',
                 'existing_file_no' => 'nullable|string|max:50',
                 'existing_file_no_manual' => 'nullable|string|max:50',
                 'purpose_id' => 'nullable|integer',
@@ -1653,6 +1658,8 @@ class MlsFileNoController extends Controller
                 'change_of_purpose_app_id' => 'nullable|integer',
                 'file_option' => 'nullable|string|max:50',
                 'sit_reason' => 'nullable|string|max:1000',
+                // Re-Issuance of FileNo: the old (duplicated) number being re-issued.
+                'old_fileno' => 'nullable|string|max:100',
             ]);
 
             $landUse = $validated['land_use'] ?? null;
@@ -1682,6 +1689,15 @@ class MlsFileNoController extends Controller
                         'message' => 'Please enter the file title for the related original file.',
                     ], 422);
                 }
+            }
+
+            // Re-Issuance replaces a duplicated file number, so the old number is what
+            // makes the record meaningful — refuse to commission without it.
+            if ($fileOption === 'reissuance' && empty($validated['old_fileno'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Please select the old (duplicate) file number being re-issued.',
+                ], 422);
             }
 
             $requireOpSource = (bool) ($validated['require_op_source'] ?? false);
@@ -2322,6 +2338,7 @@ class MlsFileNoController extends Controller
                     'district' => $validated['district'] ?? null,
                     'tracking_id' => $trackingId,
                     'customer_type' => $validated['customer_type'],
+                    'gender' => $validated['gender'] ?? null,
                     'file_option' => $validated['file_option'] ?? 'normal',
                     'created_by' => $commissionedBy,
                     'purpose_id' => $validated['purpose_id'] ?? null,
@@ -2330,6 +2347,7 @@ class MlsFileNoController extends Controller
                     'source_instrument_capture_id' => $validated['source_instrument_capture_id'] ?? null,
                     'source_pra_id' => $validated['source_pra_id'] ?? null,
                     'sit_reason' => $fileOption === 'sit' ? ($validated['sit_reason'] ?? null) : null,
+                    'old_fileno' => $fileOption === 'reissuance' ? ($validated['old_fileno'] ?? null) : null,
                 ]);
 
                 if ($fileOption !== 'temporary') {
@@ -2848,6 +2866,7 @@ class MlsFileNoController extends Controller
                             'tracking_id' => $trackingId,
                             'file_number' => $fullFileNumber,
                             'file_title' => $validated['file_name'] ?? null,
+                            'gender' => $validated['gender'] ?? null,
                             'land_use' => $landUse,
                             'plot_number' => $validated['plot_no'] ?? null,
                             'tp_no' => $validated['tp_no'] ?? null,
@@ -5247,12 +5266,17 @@ class MlsFileNoController extends Controller
                 'batch_no' => 'nullable|string|required_without:scope',
                 'scope' => 'nullable|string|in:batch,daily_24h,date',
                 'date' => 'nullable|date|required_if:scope,date',
-                'include_printed' => 'nullable|boolean'
+                'include_printed' => 'nullable|boolean',
+                'document_type' => 'nullable|string'
             ]);
 
             $scope = $validated['scope'] ?? 'batch';
             $batchNo = $validated['batch_no'] ?? null;
             $date = $validated['date'] ?? null;
+            // Which document's print history decides "printed" here. Commissioning
+            // sheets and Applications for Conversion are logged separately, so a date
+            // whose sheets are all printed can still have unprinted conversion apps.
+            $documentType = $validated['document_type'] ?? 'Commissioning Sheet';
 
             // Fetch records joined with fileNumber for IDs.
             // Use a subquery for fileNumber to avoid multiplication if tracking_id is duplicated.
@@ -5302,14 +5326,26 @@ class MlsFileNoController extends Controller
             $totalCountForScope = (clone $query)->count();
 
             // Count unprinted records separately for the count badge
-            $unprintedCountQuery = (clone $query)->whereNotExists(function ($q) {
+            $unprintedCountQuery = (clone $query)->whereNotExists(function ($q) use ($documentType) {
                 $q->select(DB::raw(1))
                     ->from('print_logs as pl')
                     ->whereColumn('pl.reference_number', 'mls_file_no.full_file_number')
-                    ->where('pl.document_type', 'Commissioning Sheet');
+                    ->where('pl.document_type', $documentType);
             });
             $unprintedCount = $unprintedCountQuery->count();
             $printedCount = $totalCountForScope - $unprintedCount;
+
+            // Conversion (CON-) files carry a second document — the Application for
+            // Conversion — with its own print log, so report its counts alongside.
+            $conversionQuery = (clone $query)->where('mls_file_no.full_file_number', 'like', 'CON-%');
+            $conversionTotal = (clone $conversionQuery)->count();
+            $conversionUnprinted = (clone $conversionQuery)->whereNotExists(function ($q) {
+                $q->select(DB::raw(1))
+                    ->from('print_logs as pl')
+                    ->whereColumn('pl.reference_number', 'mls_file_no.full_file_number')
+                    ->where('pl.document_type', 'Application for Conversion');
+            })->count();
+            $conversionPrinted = $conversionTotal - $conversionUnprinted;
 
             // Exclude files already printed (for date/daily scopes only).
             if (in_array($scope, ['date', 'daily_24h'], true) && !$request->boolean('include_printed')) {
@@ -5337,7 +5373,11 @@ class MlsFileNoController extends Controller
                     'message' => $message,
                     'total_count' => $totalCountForScope,
                     'printed_count' => $printedCount,
-                    'unprinted_count' => $unprintedCount
+                    'unprinted_count' => $unprintedCount,
+                    'document_type' => $documentType,
+                    'conversion_total_count' => $conversionTotal,
+                    'conversion_printed_count' => $conversionPrinted,
+                    'conversion_unprinted_count' => $conversionUnprinted
                 ], 404);
             }
 
@@ -5347,6 +5387,10 @@ class MlsFileNoController extends Controller
                 'total_count' => $totalCountForScope,
                 'printed_count' => $printedCount,
                 'unprinted_count' => $unprintedCount,
+                'document_type' => $documentType,
+                'conversion_total_count' => $conversionTotal,
+                'conversion_printed_count' => $conversionPrinted,
+                'conversion_unprinted_count' => $conversionUnprinted,
                 'scope' => $scope,
                 'batch_no' => $batchNo,
                 'date' => $date,

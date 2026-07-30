@@ -225,6 +225,37 @@
                             <input type="tel" name="phone_number" id="phone_number" value="{{ auth()->user()->phone_number ?? '' }}"  class="w-full border rounded p-1 text-xs">
                         </div>
                         <div class="md:col-span-2">
+                            @php($currentRank = old('rank', auth()->user()->rank ?? ''))
+                            <label for="rank" class="block text-sm font-medium text-gray-700">Officer Rank</label>
+                            <select name="rank" id="rank" onchange="toggleRankOther(this)" class="w-full border rounded p-1 text-xs bg-white">
+                                <option value="">Select Rank (optional)</option>
+                                @foreach($ranks as $rankOption)
+                                    <option value="{{ $rankOption }}" {{ $currentRank === $rankOption ? 'selected' : '' }}>{{ $rankOption }}</option>
+                                @endforeach
+                                {{-- Preserve a previously-saved rank that isn't in the lookup options --}}
+                                @if($currentRank && $currentRank !== '__other__' && !in_array($currentRank, $ranks, true))
+                                    <option value="{{ $currentRank }}" selected>{{ $currentRank }} (current)</option>
+                                @endif
+                                <option value="__other__" {{ $currentRank === '__other__' ? 'selected' : '' }}>Other (specify)…</option>
+                            </select>
+                            <input type="text" name="rank_other" id="rank_other" value="{{ old('rank_other') }}"
+                                placeholder="Enter new rank title"
+                                class="w-full mt-1 border rounded p-1 text-xs {{ $currentRank === '__other__' ? '' : 'hidden' }}">
+                            <p class="text-xs text-gray-500 mt-1">Designation used to prioritise your file search requests. A new rank you add here is saved to the rank list.</p>
+                            <script>
+                                function toggleRankOther(sel) {
+                                    var other = document.getElementById('rank_other');
+                                    if (!other) return;
+                                    if (sel.value === '__other__') {
+                                        other.classList.remove('hidden');
+                                    } else {
+                                        other.classList.add('hidden');
+                                        other.value = '';
+                                    }
+                                }
+                            </script>
+                        </div>
+                        <div class="md:col-span-2">
                             @php($selectedWorkStation = old('work_station', auth()->user()->work_station))
                             <label for="work_station" class="block text-sm font-medium text-gray-700">
                                 Work Station @if($canEditWorkStation)<span class="text-red-500">*</span>@endif

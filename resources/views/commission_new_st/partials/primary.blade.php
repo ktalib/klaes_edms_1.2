@@ -321,16 +321,20 @@
                                         <label class="block text-sm mb-1">Plot No.</label>
                                         <input type="text" id="propertyPlotNo" name="property_plot_no" class="location-detail-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" placeholder="ENTER PLOT NUMBER" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();" disabled>
                                     </div>
-                                    <div>
+                                    <div class="reference-select-wrap">
                                         <label class="block text-sm mb-1">Street Name</label>
-                                        <input type="text" id="propertyStreetName" name="property_street_name" class="location-detail-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" placeholder="ENTER STREET NAME" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();" disabled>
+                                        <select id="propertyStreetName" name="property_street_name" data-reference-source="streets" class="location-detail-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" onchange="updatePropertyAddressDisplay();" disabled>
+                                            <option value="">Search street name...</option>
+                                        </select>
                                     </div>
                                 </div>
 
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                                    <div>
+                                    <div class="reference-select-wrap">
                                         <label class="block text-sm mb-1">District</label>
-                                        <input type="text" id="propertyDistrict" name="property_district" class="location-detail-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" placeholder="ENTER DISTRICT" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();" disabled>
+                                        <select id="propertyDistrict" name="property_district" data-reference-source="districts" class="location-detail-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" onchange="updatePropertyAddressDisplay();" disabled>
+                                            <option value="">Search district...</option>
+                                        </select>
                                     </div>
                                     <div>
                                         <label class="block text-sm mb-1">LGA</label>
@@ -352,6 +356,51 @@
                                         <span id="fullPropertyAddress" style="display: block; padding: 4px; text-transform: uppercase;"></span>
                                     </div>
                                     <input type="hidden" name="property_address" id="propertyAddressDisplay">
+                                </div>
+
+                                {{-- Property Location Map --}}
+                                <div class="mt-6 pt-6 border-t border-gray-200">
+                                    <div class="flex items-center justify-between gap-4 mb-3">
+                                        <div class="flex items-center gap-2 min-w-0">
+                                            <i data-lucide="map" class="h-4 w-4 text-blue-600 flex-shrink-0"></i>
+                                            <h4 class="text-sm font-bold uppercase tracking-wide text-gray-700 whitespace-nowrap">
+                                                Property Location Map
+                                            </h4>
+                                            <span id="propertyMapCoordSource" class="text-xs font-medium text-gray-400 whitespace-nowrap ml-1"></span>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <span id="propertyMapDragHint" class="hidden items-center gap-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-100 rounded-full px-3 py-1">
+                                                <i data-lucide="move" class="h-3.5 w-3.5"></i>
+                                                Drag the pin or click the map to fine-tune
+                                            </span>
+                                            <button type="button" id="propertyMapPinBtn" onclick="geocodePropertyLocation()"
+                                                    class="inline-flex items-center px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100">
+                                                <i data-lucide="map-pin" class="w-4 h-4 mr-1"></i>
+                                                Pin on Map
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {{-- Map shown once coordinates are known --}}
+                                    <div id="propertyMapWrapper" class="hidden rounded-md overflow-hidden border border-gray-200 shadow-sm">
+                                        <div id="propertyMapCanvas" style="height: 380px; width: 100%;"></div>
+                                        <div class="text-sm text-gray-600 px-3 py-2 bg-gray-50 flex flex-wrap gap-x-6 gap-y-1">
+                                            <span>Latitude: <strong id="propertyLatDisplay">—</strong></span>
+                                            <span>Longitude: <strong id="propertyLngDisplay">—</strong></span>
+                                        </div>
+                                    </div>
+
+                                    {{-- Empty state before a pin exists --}}
+                                    <div id="propertyMapEmpty"
+                                         class="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 bg-gray-50 text-gray-400"
+                                         style="height: 380px;">
+                                        <i data-lucide="map-pin" class="h-8 w-8"></i>
+                                        <p class="text-sm">No location pinned yet.</p>
+                                        <p class="text-xs">Select an existing file number to backfill its coordinates, or click <strong>Pin on Map</strong>.</p>
+                                    </div>
+
+                                    <input type="hidden" name="latitude" id="propertyLatitude">
+                                    <input type="hidden" name="longitude" id="propertyLongitude">
                                 </div>
                             </div>
 
@@ -510,7 +559,10 @@ document.addEventListener('DOMContentLoaded', function () {
                                 lga: item.lga || '',
                                 street_name: item.street_name || '',
                                 plot_number: item.plot_number || '',
-                                location: item.location || ''
+                                location: item.location || '',
+                                latitude: item.latitude || '',
+                                longitude: item.longitude || '',
+                                rc_no: item.rc_no || ''
                             };
                         })
                     };
@@ -545,26 +597,11 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             // ---- Auto-fill Applicant Information ----
-            var titleStr = (data.file_title || '').trim();
-            if (titleStr) {
-                // Corporate
-                var corp = document.getElementById('primary_corporate_name');
-                if (corp) corp.value = titleStr;
-
-                // Individual / Multiple: split first word as first name, rest as surname
-                var parts = titleStr.split(/\s+/).filter(Boolean);
-                var firstName = parts[0] || '';
-                var lastName  = parts.length > 1 ? parts.slice(1).join(' ') : '';
-
-                var fn1 = document.getElementById('primary_first_name');
-                var ln1 = document.getElementById('primary_last_name');
-                if (fn1) fn1.value = firstName;
-                if (ln1) ln1.value = lastName;
-
-                var fn2 = document.getElementById('primary_owner_first_name');
-                var ln2 = document.getElementById('primary_owner_last_name');
-                if (fn2) fn2.value = firstName;
-                if (ln2) ln2.value = lastName;
+            // Picks the Applicant Type from the file title (company names and
+            // "&"-joined owners are detected) and splits personal names into
+            // first / middle / surname. See js/commission_new_st/applicant-autofill.js
+            if (typeof applyApplicantBackfill === 'function') {
+                applyApplicantBackfill('primary', data);
             }
 
             // ---- Backfill Location Details from the selected file's indexing record ----
@@ -588,18 +625,30 @@ document.addEventListener('DOMContentLoaded', function () {
                 trackingDisplay2.classList.add('text-red-600');
             }
 
-            // Clear applicant fields
-            ['primary_first_name','primary_last_name','primary_corporate_name',
-             'primary_owner_first_name','primary_owner_last_name'].forEach(function(id) {
+            // Clear applicant fields and fall back to the default type
+            ['primary_first_name','primary_middle_name','primary_last_name',
+             'primary_corporate_name','primary_rc_number',
+             'primary_owner_first_name','primary_owner_middle_name','primary_owner_last_name'].forEach(function(id) {
                 var el = document.getElementById(id);
                 if (el) el.value = '';
             });
+            ['primary_title','primary_owner_title'].forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+            if (typeof setApplicantType === 'function') {
+                setApplicantType('primary', 'Individual');
+            }
 
             // Clear location fields
-            ['propertyHouseNo','propertyPlotNo','propertyStreetName','propertyDistrict'].forEach(function(id) {
+            ['propertyHouseNo','propertyPlotNo'].forEach(function(id) {
                 var el = document.getElementById(id);
                 if (el) el.value = '';
             });
+            if (typeof clearReferenceSelect === 'function') {
+                clearReferenceSelect('propertyStreetName', true);
+                clearReferenceSelect('propertyDistrict', true);
+            }
             var lgaClear = document.getElementById('propertyLga');
             if (lgaClear) lgaClear.value = '';
             var stateClear = document.getElementById('propertyState');
@@ -607,6 +656,9 @@ document.addEventListener('DOMContentLoaded', function () {
             if (typeof updatePropertyAddressDisplay === 'function') {
                 updatePropertyAddressDisplay();
             }
+
+            // Clear the pinned coordinates / map
+            if (typeof clearPropertyMap === 'function') clearPropertyMap();
         });
     }, 500);
 });
@@ -651,6 +703,11 @@ function toggleLocationDetailsEdit() {
         field.classList.toggle('bg-white', willEnable);
         field.classList.toggle('text-gray-900', willEnable);
         field.classList.toggle('cursor-text', willEnable);
+
+        // Keep the Select2 widget in step with the underlying select
+        if (field.tagName === 'SELECT' && typeof setReferenceSelectDisabled === 'function') {
+            setReferenceSelectDisabled(field, !willEnable);
+        }
     });
 
     if (btn) {
@@ -676,18 +733,216 @@ window.toggleLocationDetailsEdit = toggleLocationDetailsEdit;
  * LGA option list is populated and selected.
  */
 function backfillLocationDetails(data) {
-    var streetEl = document.getElementById('propertyStreetName');
-    if (streetEl) streetEl.value = data.street_name || '';
+    // District / Street are searchable reference dropdowns — set them through
+    // the helper so values missing from the reference tables still stick.
+    if (typeof setReferenceSelectValue === 'function') {
+        setReferenceSelectValue('propertyStreetName', data.street_name || '', true);
+        setReferenceSelectValue('propertyDistrict', data.district || '', true);
+    }
 
     var plotEl = document.getElementById('propertyPlotNo');
     if (plotEl) plotEl.value = data.plot_number || '';
 
-    var districtEl = document.getElementById('propertyDistrict');
-    if (districtEl) districtEl.value = data.district || '';
-
     applyLgaBackfill(data.lga || '', 10);
     updatePropertyAddressDisplay();
+
+    // Coordinates already indexed for this file? Pin them straight away.
+    var lat = parseFloat(data.latitude);
+    var lng = parseFloat(data.longitude);
+    if (!isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) {
+        setPropertyPin(lat, lng, true, 'Backfilled from file indexing');
+    } else {
+        clearPropertyMap();
+    }
 }
+
+/* =======================================================================
+ * Property Location Map
+ * -----------------------------------------------------------------------
+ * Coordinates come from the selected file's indexing record when it has
+ * them; otherwise the user geocodes the typed address with "Pin on Map".
+ * Either way the pin is draggable so the exact spot can be fine-tuned, and
+ * the live values are mirrored into the hidden latitude/longitude inputs
+ * that get posted with the commission form.
+ * ======================================================================= */
+var propertyMap = null;
+var propertyMarker = null;
+
+function roundPropertyCoord(v) {
+    return Math.round(parseFloat(v) * 1e7) / 1e7;
+}
+
+function getPropertyMarkerIcon() {
+    var FILL = '#2563eb';
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="42" height="50" viewBox="0 0 42 50">' +
+              '<path d="M21 0C10 0 1 9 1 20c0 14 20 30 20 30s20-16 20-30C41 9 32 0 21 0z" fill="' + FILL + '" stroke="#ffffff" stroke-width="2"/>' +
+              '<circle cx="21" cy="20" r="13" fill="#ffffff"/>' +
+              '<path d="M21 12l-8 7h2.4v8.4h11.2V19H29z" fill="' + FILL + '"/></svg>';
+    return {
+        url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+        scaledSize: new google.maps.Size(42, 50),
+        anchor: new google.maps.Point(21, 50),
+        labelOrigin: new google.maps.Point(21, 20)
+    };
+}
+
+/**
+ * Move (or create) the property pin and mirror the coordinates into the
+ * hidden form inputs. `recenter` pans the map; `sourceLabel` annotates
+ * where the coordinates came from.
+ */
+function setPropertyPin(lat, lng, recenter, sourceLabel) {
+    lat = roundPropertyCoord(lat);
+    lng = roundPropertyCoord(lng);
+
+    var latInput = document.getElementById('propertyLatitude');
+    var lngInput = document.getElementById('propertyLongitude');
+    if (latInput) latInput.value = lat;
+    if (lngInput) lngInput.value = lng;
+
+    var latDisplay = document.getElementById('propertyLatDisplay');
+    var lngDisplay = document.getElementById('propertyLngDisplay');
+    if (latDisplay) latDisplay.textContent = lat;
+    if (lngDisplay) lngDisplay.textContent = lng;
+
+    if (typeof sourceLabel === 'string') {
+        var srcEl = document.getElementById('propertyMapCoordSource');
+        if (srcEl) srcEl.textContent = sourceLabel ? '(' + sourceLabel + ')' : '';
+    }
+
+    var wrapper = document.getElementById('propertyMapWrapper');
+    var empty = document.getElementById('propertyMapEmpty');
+    var hint = document.getElementById('propertyMapDragHint');
+    if (wrapper) wrapper.classList.remove('hidden');
+    if (empty) empty.classList.add('hidden');
+    if (hint) { hint.classList.remove('hidden'); hint.classList.add('inline-flex'); }
+
+    renderPropertyMap(lat, lng, recenter);
+}
+window.setPropertyPin = setPropertyPin;
+
+function renderPropertyMap(lat, lng, recenter) {
+    if (typeof google === 'undefined' || !google.maps) {
+        // Maps API still loading — retry shortly.
+        setTimeout(function () { renderPropertyMap(lat, lng, recenter); }, 400);
+        return;
+    }
+
+    var mapEl = document.getElementById('propertyMapCanvas');
+    if (!mapEl) return;
+
+    var pos = { lat: lat, lng: lng };
+
+    if (!propertyMap) {
+        propertyMap = new google.maps.Map(mapEl, {
+            center: pos,
+            zoom: 17,
+            mapTypeId: 'satellite',
+            streetViewControl: true,
+            fullscreenControl: true
+        });
+        // Click anywhere on the map to move the pin there.
+        propertyMap.addListener('click', function (e) {
+            setPropertyPin(e.latLng.lat(), e.latLng.lng(), false, 'Adjusted manually');
+        });
+    } else {
+        if (recenter) propertyMap.panTo(pos);
+        // Container may have been display:none while hidden — nudge a resize.
+        google.maps.event.trigger(propertyMap, 'resize');
+        propertyMap.setCenter(pos);
+    }
+
+    if (!propertyMarker) {
+        propertyMarker = new google.maps.Marker({
+            position: pos,
+            map: propertyMap,
+            draggable: true,
+            title: 'Drag to adjust the exact property location',
+            animation: google.maps.Animation.DROP,
+            icon: getPropertyMarkerIcon()
+        });
+        propertyMarker.addListener('dragend', function (e) {
+            setPropertyPin(e.latLng.lat(), e.latLng.lng(), false, 'Adjusted manually');
+        });
+    } else {
+        propertyMarker.setPosition(pos);
+        propertyMarker.setMap(propertyMap);
+    }
+}
+
+/**
+ * Reset the map back to its empty state (no coordinates posted).
+ */
+function clearPropertyMap() {
+    var latInput = document.getElementById('propertyLatitude');
+    var lngInput = document.getElementById('propertyLongitude');
+    if (latInput) latInput.value = '';
+    if (lngInput) lngInput.value = '';
+
+    if (propertyMarker) {
+        propertyMarker.setMap(null);
+        propertyMarker = null;
+    }
+
+    var wrapper = document.getElementById('propertyMapWrapper');
+    var empty = document.getElementById('propertyMapEmpty');
+    var hint = document.getElementById('propertyMapDragHint');
+    var srcEl = document.getElementById('propertyMapCoordSource');
+    if (wrapper) wrapper.classList.add('hidden');
+    if (empty) empty.classList.remove('hidden');
+    if (hint) { hint.classList.add('hidden'); hint.classList.remove('inline-flex'); }
+    if (srcEl) srcEl.textContent = '';
+}
+window.clearPropertyMap = clearPropertyMap;
+
+/**
+ * Geocode the Location Details fields and drop a pin. Used when the
+ * selected file has no stored coordinates, or after the address is edited.
+ */
+function geocodePropertyLocation() {
+    var parts = [
+        document.getElementById('propertyHouseNo')?.value || '',
+        document.getElementById('propertyPlotNo')?.value ? 'Plot ' + document.getElementById('propertyPlotNo').value : '',
+        document.getElementById('propertyStreetName')?.value || '',
+        document.getElementById('propertyDistrict')?.value || '',
+        document.getElementById('propertyLga')?.value || '',
+        document.getElementById('propertyState')?.value || '',
+        'Nigeria'
+    ].filter(function (p) { return p && p.trim() !== ''; });
+
+    if (parts.length <= 1) {
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({ icon: 'warning', title: 'No address yet', text: 'Fill in the Location Details above (or select a file number) before pinning on the map.' });
+        }
+        return;
+    }
+
+    if (typeof google === 'undefined' || !google.maps) {
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({ icon: 'error', title: 'Map not ready', text: 'Google Maps is still loading. Please try again in a moment.' });
+        }
+        return;
+    }
+
+    var address = parts.join(', ');
+    new google.maps.Geocoder().geocode({ address: address, region: 'NG' }, function (results, status) {
+        if (status === 'OK' && results[0]) {
+            var pos = results[0].geometry.location;
+            setPropertyPin(pos.lat(), pos.lng(), true, 'Geocoded from address');
+        } else if (status === 'ZERO_RESULTS') {
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({ icon: 'warning', title: 'Location not found', text: 'Google could not find: ' + address });
+            }
+        } else if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                icon: 'error',
+                title: 'Geocoding failed (' + status + ')',
+                text: 'The map service rejected the request. Check that Billing and the Geocoding API are enabled for the API key.'
+            });
+        }
+    });
+}
+window.geocodePropertyLocation = geocodePropertyLocation;
 
 function applyLgaBackfill(lgaName, attemptsLeft) {
     if (!lgaName) return;

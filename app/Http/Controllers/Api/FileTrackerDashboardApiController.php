@@ -16,6 +16,17 @@ use Illuminate\Support\Str;
 class FileTrackerDashboardApiController extends Controller
 {
     /**
+     * Land use codes used as file number prefixes, in their direct, conversion
+     * ("CON-…") and recertification ("…-RC") forms.
+     */
+    protected const LAND_USE_CODES = [
+        'RES' => 'Residential',
+        'COM' => 'Commercial',
+        'IND' => 'Industrial',
+        'AG' => 'Agriculture',
+    ];
+
+    /**
      * Return aggregated metrics and tracker data for the dashboard overview.
      */
     public function overview(Request $request): JsonResponse
@@ -407,6 +418,633 @@ class FileTrackerDashboardApiController extends Controller
         ]);
     }
 
+    /**
+     * Paginated list of files currently in transit — trackers logged out with an
+     * "In-Transit" purpose/type that have not been logged back in.
+     *
+     * Like the requested tab, this was previously filtered client-side out of the
+     * capped 500-row commissioner overview, so both the table and the summary
+     * cards silently topped out at the cap.
+     */
+    public function inTransit(Request $request): JsonResponse
+    {
+        $perPage = (int) $request->query('per_page', 25);
+        $perPage = max(10, min($perPage, 1000));
+
+        $page = max(1, (int) $request->query('page', 1));
+        $search = trim((string) $request->query('search', ''));
+        $priority = Str::upper(trim((string) $request->query('priority', 'ALL')));
+        $office = trim((string) $request->query('office', 'ALL'));
+
+        $baseQuery = FileTracker::query()
+            ->whereRaw("UPPER(ISNULL(status, '')) NOT IN ('CANCELED', 'CANCELLED', 'COMPLETED')")
+            ->where(function ($query) {
+                $query->whereRaw("ISNULL(file_request_type, '') = 'In-Transit'")
+                    ->orWhereRaw("ISNULL(request_purpose_name, '') = 'In-Transit'");
+            });
+
+        if ($priority !== '' && $priority !== 'ALL') {
+            $baseQuery->whereRaw('UPPER(ISNULL(priority, \'\')) = ?', [$priority]);
+        }
+
+        if ($office !== '' && $office !== 'ALL') {
+            $baseQuery->where('current_office_code', $office);
+        }
+
+        if ($search !== '') {
+            $like = '%' . str_replace(['%', '_'], ['[%]', '[_]'], $search) . '%';
+            $baseQuery->where(function ($query) use ($like) {
+                $query->where('file_number', 'like', $like)
+                    ->orWhere('file_title', 'like', $like)
+                    ->orWhere('tracking_id', 'like', $like);
+            });
+        }
+
+        $total = (clone $baseQuery)->count();
+        $lastPage = max(1, (int) ceil($total / $perPage));
+        $page = min($page, $lastPage);
+
+        $trackers = (clone $baseQuery)
+            ->select([
+                'id',
+                'tracking_id',
+                'file_number',
+                'file_title',
+                'priority',
+                'status',
+                'department',
+                'current_office_code',
+                'current_office_name',
+                'origin_office_name',
+                'request_purpose_name',
+                'file_request_type',
+                'date_requested',
+                'movement_log',
+                'created_at',
+                'updated_at',
+            ])
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->forPage($page, $perPage)
+            ->get();
+
+        $officeCodesNeeded = [];
+
+        foreach ($trackers as $tracker) {
+            if ($tracker->current_office_code) {
+                $officeCodesNeeded[$tracker->current_office_code] = true;
+            }
+
+            foreach ((array) $tracker->movement_log as $entry) {
+                $code = $this->extractOfficeCode($entry);
+                if ($code) {
+                    $officeCodesNeeded[$code] = true;
+                }
+            }
+        }
+
+        // Whole-set office distribution — drives the summary card, the chart and
+        // the office filter, so it is computed before the office lookup.
+        $officeDistributionRaw = (clone $baseQuery)
+            ->select('current_office_code', DB::raw('COUNT(*) as total_files'))
+            ->whereNotNull('current_office_code')
+            ->groupBy('current_office_code')
+            ->orderByDesc('total_files')
+            ->get();
+
+        foreach ($officeDistributionRaw as $row) {
+            $officeCodesNeeded[$row->current_office_code] = true;
+        }
+
+        $officeMetadata = empty($officeCodesNeeded)
+            ? collect()
+            : Office::query()->whereIn('office_code', array_keys($officeCodesNeeded))->get()->keyBy('office_code');
+
+        $files = $trackers->map(function (FileTracker $tracker) use ($officeMetadata) {
+            $office = $officeMetadata->get($tracker->current_office_code);
+            $requestedDate = $tracker->date_requested ?: $tracker->created_at;
+
+            return [
+                'id' => $tracker->id,
+                'fileNo' => $tracker->file_number,
+                'fileName' => $tracker->file_title ?: ($tracker->file_number ?: 'File #' . $tracker->id),
+                'trackingId' => $tracker->tracking_id,
+                'priority' => Str::upper((string) $tracker->priority),
+                'status' => Str::upper((string) $tracker->status),
+                'department' => $tracker->department,
+                'currentOffice' => $office->office_name ?? $tracker->current_office_name,
+                'currentOfficeId' => $tracker->current_office_code,
+                // "Department Queue" is not a real office row, so the tracker's own
+                // department is what identifies where the file actually sits.
+                'currentOfficeDepartment' => $office->department ?? $tracker->department,
+                'originOffice' => $tracker->origin_office_name,
+                'requestPurpose' => $tracker->request_purpose_name,
+                'caseType' => $tracker->request_purpose_name,
+                'movementStatus' => 'in_transit',
+                'isInTransit' => true,
+                'isRequested' => false,
+                'isReturned' => false,
+                'isCanceled' => false,
+                'logEntries' => $this->normaliseMovementLog((array) $tracker->movement_log, $officeMetadata),
+                'requestedDate' => $requestedDate ? Carbon::parse($requestedDate)->toIso8601String() : null,
+                'requestDate' => $requestedDate ? Carbon::parse($requestedDate)->toIso8601String() : null,
+                'createdAt' => optional($tracker->created_at)->toIso8601String(),
+                'updatedAt' => optional($tracker->updated_at)->toIso8601String(),
+            ];
+        })->values();
+
+        $priorityExpression = "UPPER(ISNULL(priority, ''))";
+
+        $priorityCounts = (clone $baseQuery)
+            ->selectRaw($priorityExpression . ' as priority_group, COUNT(*) as total')
+            ->groupBy(DB::raw($priorityExpression))
+            ->pluck('total', 'priority_group');
+
+        $officeDistribution = $officeDistributionRaw->map(function ($row) use ($officeMetadata) {
+            $office = $officeMetadata->get($row->current_office_code);
+
+            return [
+                'officeCode' => $row->current_office_code,
+                // Codes without an office row (e.g. DEPARTMENT_QUEUE) read better
+                // as words than as raw codes in the filter and chart.
+                'officeName' => $office->office_name ?? Str::title(str_replace('_', ' ', (string) $row->current_office_code)),
+                'department' => $office->department ?? null,
+                'totalFiles' => (int) $row->total_files,
+            ];
+        })->values();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Files in transit retrieved successfully.',
+            'data' => [
+                'files' => $files,
+                'stats' => [
+                    'total' => $total,
+                    'high' => (int) ($priorityCounts[FileTracker::PRIORITY_HIGH] ?? 0),
+                    'medium' => (int) ($priorityCounts[FileTracker::PRIORITY_MEDIUM] ?? 0),
+                    'low' => (int) ($priorityCounts[FileTracker::PRIORITY_LOW] ?? 0),
+                    'offices' => $officeDistribution->count(),
+                ],
+                'officeDistribution' => $officeDistribution,
+                'pagination' => [
+                    'page' => $page,
+                    'perPage' => $perPage,
+                    'total' => $total,
+                    'lastPage' => $lastPage,
+                    'from' => $total === 0 ? 0 : (($page - 1) * $perPage) + 1,
+                    'to' => min($page * $perPage, $total),
+                ],
+                'generatedAt' => now()->toIso8601String(),
+            ],
+        ]);
+    }
+
+    /**
+     * Shared definition of a "requested" file: logged out for a purpose other
+     * than "In-Transit" and not yet logged back in. Honours the period and
+     * search parameters so the group list and the row list always agree.
+     */
+    protected function requestedBaseQuery(Request $request)
+    {
+        $search = trim((string) $request->query('search', ''));
+        $period = Str::lower(trim((string) $request->query('period', 'all')));
+
+        $query = FileTracker::query()
+            ->whereRaw("UPPER(ISNULL(status, '')) NOT IN ('CANCELED', 'CANCELLED', 'COMPLETED')")
+            ->where(function ($inner) {
+                $inner->whereRaw("ISNULL(file_request_type, '') <> 'In-Transit'")
+                    ->whereRaw("ISNULL(request_purpose_name, '') <> 'In-Transit'");
+            });
+
+        // Period filter, applied to the request date (falling back to created_at).
+        $startDate = match ($period) {
+            'weekly' => now()->subWeek(),
+            'monthly' => now()->subMonth(),
+            'quarterly' => now()->subMonths(3),
+            default => null,
+        };
+
+        if ($startDate) {
+            $query->whereRaw('ISNULL(date_requested, created_at) >= ?', [$startDate]);
+        }
+
+        if ($search !== '') {
+            $like = '%' . str_replace(['%', '_'], ['[%]', '[_]'], $search) . '%';
+            $query->where(function ($inner) use ($like) {
+                $inner->where('file_number', 'like', $like)
+                    ->orWhere('file_title', 'like', $like)
+                    ->orWhere('tracking_id', 'like', $like);
+            });
+        }
+
+        return $query;
+    }
+
+    /**
+     * The Requested tab's page unit: departments, not rows. Returns one page of
+     * department groups with their file counts, plus the whole-set summary for
+     * the tab's cards. Rows are fetched per department by requestedFiles() only
+     * when a group is expanded, so collapsed groups cost nothing.
+     */
+    public function requestedDepartments(Request $request): JsonResponse
+    {
+        $perPage = (int) $request->query('per_page', 25);
+        $perPage = max(5, min($perPage, 200));
+
+        $page = max(1, (int) $request->query('page', 1));
+
+        $baseQuery = $this->requestedBaseQuery($request);
+        $departmentExpression = "ISNULL(NULLIF(LTRIM(RTRIM(department)), ''), 'Unassigned')";
+
+        $groups = (clone $baseQuery)
+            ->selectRaw($departmentExpression . ' as department_group, COUNT(*) as total')
+            ->groupBy(DB::raw($departmentExpression))
+            ->orderByRaw($departmentExpression)
+            ->get()
+            ->map(fn ($row) => [
+                'department' => $row->department_group,
+                'totalFiles' => (int) $row->total,
+            ])
+            ->values();
+
+        $totalDepartments = $groups->count();
+        $lastPage = max(1, (int) ceil($totalDepartments / $perPage));
+        $page = min($page, $lastPage);
+
+        $priorityExpression = "UPPER(ISNULL(priority, ''))";
+
+        $priorityCounts = (clone $baseQuery)
+            ->selectRaw($priorityExpression . ' as priority_group, COUNT(*) as total')
+            ->groupBy(DB::raw($priorityExpression))
+            ->pluck('total', 'priority_group');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Requested file departments retrieved successfully.',
+            'data' => [
+                'departments' => $groups->forPage($page, $perPage)->values(),
+                'stats' => [
+                    'total' => (int) $groups->sum('totalFiles'),
+                    'high' => (int) ($priorityCounts[FileTracker::PRIORITY_HIGH] ?? 0),
+                    'medium' => (int) ($priorityCounts[FileTracker::PRIORITY_MEDIUM] ?? 0),
+                    'low' => (int) ($priorityCounts[FileTracker::PRIORITY_LOW] ?? 0),
+                    'departments' => $totalDepartments,
+                ],
+                'departmentCounts' => $groups,
+                'pagination' => [
+                    'page' => $page,
+                    'perPage' => $perPage,
+                    'total' => $totalDepartments,
+                    'lastPage' => $lastPage,
+                    'from' => $totalDepartments === 0 ? 0 : (($page - 1) * $perPage) + 1,
+                    'to' => min($page * $perPage, $totalDepartments),
+                    'unit' => 'departments',
+                ],
+                'period' => Str::lower(trim((string) $request->query('period', 'all'))),
+                'generatedAt' => now()->toIso8601String(),
+            ],
+        ]);
+    }
+
+    /**
+     * Rows for the Requested tab. Called with a `department` to fill in one
+     * expanded group; without one it still returns a flat paginated list (used
+     * by the printed request sheet).
+     */
+    public function requestedFiles(Request $request): JsonResponse
+    {
+        $perPage = (int) $request->query('per_page', 25);
+        $perPage = max(10, min($perPage, 1000));
+
+        $page = max(1, (int) $request->query('page', 1));
+
+        $baseQuery = $this->requestedBaseQuery($request);
+
+        // The table paginates by department and pulls one department's rows at a
+        // time, so a single group is never split across requests.
+        $department = trim((string) $request->query('department', ''));
+
+        if ($department !== '') {
+            if (Str::lower($department) === 'unassigned') {
+                $baseQuery->whereRaw("ISNULL(LTRIM(RTRIM(department)), '') = ''");
+            } else {
+                $baseQuery->where('department', $department);
+            }
+        }
+
+        $total = (clone $baseQuery)->count();
+        $lastPage = max(1, (int) ceil($total / $perPage));
+        $page = min($page, $lastPage);
+
+        $trackers = (clone $baseQuery)
+            ->select([
+                'id',
+                'tracking_id',
+                'file_number',
+                'file_title',
+                'priority',
+                'status',
+                'department',
+                'current_office_name',
+                'origin_office_name',
+                'request_purpose_name',
+                'file_request_type',
+                'date_requested',
+                'current_office_code',
+                'movement_log',
+                'created_at',
+                'updated_at',
+            ])
+            // Grouped by department: rows for one department stay contiguous so the
+            // table can emit a group header per department, newest request first
+            // within each group. Rows with no department sort last.
+            ->orderByRaw("CASE WHEN ISNULL(LTRIM(RTRIM(department)), '') = '' THEN 1 ELSE 0 END")
+            ->orderBy('department')
+            ->orderByRaw('ISNULL(date_requested, created_at) DESC')
+            ->orderByDesc('id')
+            ->forPage($page, $perPage)
+            ->get();
+
+        // Office metadata for the movement log of just this page of rows.
+        $officeCodesNeeded = [];
+
+        foreach ($trackers as $tracker) {
+            if ($tracker->current_office_code) {
+                $officeCodesNeeded[$tracker->current_office_code] = true;
+            }
+
+            foreach ((array) $tracker->movement_log as $entry) {
+                $code = $this->extractOfficeCode($entry);
+                if ($code) {
+                    $officeCodesNeeded[$code] = true;
+                }
+            }
+        }
+
+        $officeMetadata = empty($officeCodesNeeded)
+            ? collect()
+            : Office::query()->whereIn('office_code', array_keys($officeCodesNeeded))->get()->keyBy('office_code');
+
+        $files = $trackers->map(function (FileTracker $tracker) use ($officeMetadata) {
+            $requestedDate = $tracker->date_requested ?: $tracker->created_at;
+            $office = $officeMetadata->get($tracker->current_office_code);
+
+            return [
+                'id' => $tracker->id,
+                'fileNo' => $tracker->file_number,
+                'fileName' => $tracker->file_title ?: ($tracker->file_number ?: 'File #' . $tracker->id),
+                'trackingId' => $tracker->tracking_id,
+                'priority' => Str::upper((string) $tracker->priority),
+                'status' => Str::upper((string) $tracker->status),
+                'department' => $tracker->department,
+                'currentOffice' => $office->office_name ?? $tracker->current_office_name,
+                'currentOfficeId' => $tracker->current_office_code,
+                'currentOfficeDepartment' => $office->department ?? null,
+                'originOffice' => $tracker->origin_office_name,
+                'requestPurpose' => $tracker->request_purpose_name,
+                'caseType' => $tracker->request_purpose_name,
+                // The commissioner tabs share the same row/detail renderers, so the
+                // workflow flags they expect are emitted here too.
+                'movementStatus' => 'logout',
+                'isRequested' => true,
+                'isInTransit' => false,
+                'isReturned' => false,
+                'isCanceled' => false,
+                'logEntries' => $this->normaliseMovementLog((array) $tracker->movement_log, $officeMetadata),
+                'requestedDate' => $requestedDate ? Carbon::parse($requestedDate)->toIso8601String() : null,
+                'requestDate' => $requestedDate ? Carbon::parse($requestedDate)->toIso8601String() : null,
+                'createdAt' => optional($tracker->created_at)->toIso8601String(),
+                'updatedAt' => optional($tracker->updated_at)->toIso8601String(),
+            ];
+        })->values();
+
+        $priorityExpression = "UPPER(ISNULL(priority, ''))";
+
+        $priorityCounts = (clone $baseQuery)
+            ->selectRaw($priorityExpression . ' as priority_group, COUNT(*) as total')
+            ->groupBy(DB::raw($priorityExpression))
+            ->pluck('total', 'priority_group');
+
+        // Whole-set totals per department so a group header can show its real
+        // count even when the group is split across pages.
+        $departmentExpression = "ISNULL(NULLIF(LTRIM(RTRIM(department)), ''), 'Unassigned')";
+
+        $departmentCounts = (clone $baseQuery)
+            ->selectRaw($departmentExpression . ' as department_group, COUNT(*) as total')
+            ->groupBy(DB::raw($departmentExpression))
+            ->orderByRaw($departmentExpression)
+            ->get()
+            ->map(fn ($row) => [
+                'department' => $row->department_group,
+                'totalFiles' => (int) $row->total,
+            ])
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Requested files retrieved successfully.',
+            'data' => [
+                'files' => $files,
+                'stats' => [
+                    'total' => $total,
+                    'high' => (int) ($priorityCounts[FileTracker::PRIORITY_HIGH] ?? 0),
+                    'medium' => (int) ($priorityCounts[FileTracker::PRIORITY_MEDIUM] ?? 0),
+                    'low' => (int) ($priorityCounts[FileTracker::PRIORITY_LOW] ?? 0),
+                    'departments' => $departmentCounts->count(),
+                ],
+                'departmentCounts' => $departmentCounts,
+                'pagination' => [
+                    'page' => $page,
+                    'perPage' => $perPage,
+                    'total' => $total,
+                    'lastPage' => $lastPage,
+                    'from' => $total === 0 ? 0 : (($page - 1) * $perPage) + 1,
+                    'to' => min($page * $perPage, $total),
+                ],
+                'period' => Str::lower(trim((string) $request->query('period', 'all'))),
+                'department' => $department !== '' ? $department : null,
+                'generatedAt' => now()->toIso8601String(),
+            ],
+        ]);
+    }
+
+    /**
+     * Paginated list of every indexed file that is NOT currently in transit.
+     *
+     * The three commissioner tabs are sourced differently:
+     *   • Requested Files / In Transit → file_tracker rows still logged out.
+     *   • Not in Transit               → the whole file_indexings registry, minus
+     *     the file numbers that are currently logged out. A file only leaves this
+     *     tab while it is out of the registry; once it is logged back in it
+     *     reappears here (flagged as "Returned").
+     */
+    public function notInTransit(Request $request): JsonResponse
+    {
+        $perPage = (int) $request->query('per_page', 25);
+        $perPage = max(10, min($perPage, 200));
+
+        $page = max(1, (int) $request->query('page', 1));
+        $search = trim((string) $request->query('search', ''));
+
+        // A tracker that is neither completed nor cancelled means the file is
+        // still out of the registry, so it belongs to one of the other tabs.
+        $outOfRegistry = function ($query) {
+            $query->select(DB::raw('1'))
+                ->from('file_tracker')
+                ->whereColumn('file_tracker.file_number', 'file_indexings.file_number')
+                ->whereRaw("UPPER(ISNULL(file_tracker.status, '')) NOT IN ('CANCELED', 'CANCELLED', 'COMPLETED')");
+        };
+
+        $baseQuery = DB::connection('sqlsrv')
+            ->table('file_indexings')
+            ->whereRaw('ISNULL(is_deleted, 0) = 0')
+            ->whereNotNull('file_number')
+            ->whereRaw("LTRIM(RTRIM(file_number)) <> ''")
+            ->whereNotExists($outOfRegistry);
+
+        if ($search !== '') {
+            // The default SQL Server collation is case-insensitive, so the columns
+            // are left unwrapped here to keep the index seek.
+            $like = '%' . str_replace(['%', '_'], ['[%]', '[_]'], $search) . '%';
+            $baseQuery->where(function ($query) use ($like) {
+                $query->where('file_number', 'like', $like)
+                    ->orWhere('file_title', 'like', $like)
+                    ->orWhere('kangis_file_no', 'like', $like)
+                    ->orWhere('new_kangis_file_no', 'like', $like);
+            });
+        }
+
+        $total = (clone $baseQuery)->count();
+        $lastPage = max(1, (int) ceil($total / $perPage));
+        $page = min($page, $lastPage);
+
+        $rows = (clone $baseQuery)
+            ->select([
+                'id',
+                'file_number',
+                'file_title',
+                'file_type',
+                'land_use_type',
+                'registry',
+                'physical_registry',
+                'general_registry',
+                'location',
+                'shelf_location',
+                'current_location',
+                'tracking_status',
+                'district',
+                'created_at',
+                'updated_at',
+            ])
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->forPage($page, $perPage)
+            ->get();
+
+        // Pull the latest tracker (if any) for just the rows on this page so the
+        // table can show the last office the file visited.
+        $fileNumbers = $rows->pluck('file_number')->filter()->values()->all();
+        $trackers = collect();
+
+        if (!empty($fileNumbers)) {
+            $trackers = FileTracker::query()
+                ->select([
+                    'id',
+                    'tracking_id',
+                    'file_number',
+                    'priority',
+                    'status',
+                    'current_office_code',
+                    'current_office_name',
+                    'origin_office_name',
+                    'updated_at',
+                ])
+                ->whereIn('file_number', $fileNumbers)
+                ->orderByDesc('updated_at')
+                ->get()
+                ->keyBy(fn ($tracker) => Str::upper(trim((string) $tracker->file_number)));
+        }
+
+        $files = $rows->map(function ($row) use ($trackers) {
+            $tracker = $trackers->get(Str::upper(trim((string) $row->file_number)));
+            $hasReturned = $tracker && Str::upper((string) $tracker->status) === 'COMPLETED';
+
+            // `registry` holds bare values like "1" / "2" / "SLTR", so the more
+            // descriptive physical/general registry names are preferred.
+            $registryLabel = $row->physical_registry
+                ?: $row->general_registry
+                ?: ($row->registry
+                    ? (is_numeric($row->registry) ? 'Registry ' . $row->registry : $row->registry)
+                    : null);
+
+            // The file number prefix is the reliable signal — land_use_type holds a
+            // lot of legacy junk (bare codes, whole file numbers) — so it is only
+            // consulted for numbers without a land-use prefix (e.g. KANGIS numbers).
+            $landUse = $this->landUseFromFileNumber($row->file_number)
+                ?: $this->normaliseLandUse($row->land_use_type);
+
+            // Location column = the indexed property location, falling back to the
+            // district and then to where the file itself sits.
+            $location = $this->cleanLocation($row->location)
+                ?: $this->cleanLocation($row->district)
+                ?: $row->current_location
+                ?: ($tracker->current_office_name ?? null)
+                ?: $registryLabel;
+
+            return [
+                'id' => $row->id,
+                'fileNo' => $row->file_number,
+                'fileName' => $row->file_title ?: ($row->file_number ?: 'File #' . $row->id),
+                'trackingId' => $tracker->tracking_id ?? null,
+                'priority' => $tracker ? Str::upper((string) $tracker->priority) : null,
+                'location' => $location ?: '—',
+                'shelfLocation' => $row->shelf_location,
+                'registry' => $registryLabel,
+                'district' => $row->district,
+                'landUse' => $landUse,
+                'fileType' => $this->fileTypeFromLandUse($landUse) ?: $row->file_type,
+                'trackingStatus' => $row->tracking_status,
+                'hasTracker' => (bool) $tracker,
+                'isReturned' => $hasReturned,
+                'statusLabel' => $hasReturned ? 'Returned' : 'Indexed',
+                'createdAt' => $row->created_at ? Carbon::parse($row->created_at)->toIso8601String() : null,
+                'updatedAt' => $row->updated_at ? Carbon::parse($row->updated_at)->toIso8601String() : null,
+            ];
+        })->values();
+
+        // Whole-set counters for the summary cards (not just the current page).
+        $returnedTotal = (clone $baseQuery)
+            ->whereExists(function ($query) {
+                $query->select(DB::raw('1'))
+                    ->from('file_tracker')
+                    ->whereColumn('file_tracker.file_number', 'file_indexings.file_number')
+                    ->whereRaw("UPPER(ISNULL(file_tracker.status, '')) = 'COMPLETED'");
+            })
+            ->count();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Files not in transit retrieved successfully.',
+            'data' => [
+                'files' => $files,
+                'stats' => [
+                    'total' => $total,
+                    'returned' => $returnedTotal,
+                    'neverMoved' => max(0, $total - $returnedTotal),
+                ],
+                'pagination' => [
+                    'page' => $page,
+                    'perPage' => $perPage,
+                    'total' => $total,
+                    'lastPage' => $lastPage,
+                    'from' => $total === 0 ? 0 : (($page - 1) * $perPage) + 1,
+                    'to' => min($page * $perPage, $total),
+                ],
+                'generatedAt' => now()->toIso8601String(),
+            ],
+        ]);
+    }
+
     public function markNotificationAsRead(Request $request, Notification $notification): JsonResponse
     {
         $user = $request->user() ?? auth()->user();
@@ -428,6 +1066,82 @@ class FileTrackerDashboardApiController extends Controller
             'success' => true,
             'message' => 'Notification marked as read.',
         ]);
+    }
+
+    /**
+     * Drop the "UNKNOWN" placeholders out of a comma-separated location so that
+     * "PIECE OF LAND, UNKNOWN, UNKNOWN, KANO STATE" reads "PIECE OF LAND, KANO
+     * STATE". Returns null when nothing meaningful is left.
+     */
+    protected function cleanLocation(?string $location): ?string
+    {
+        $location = trim((string) $location);
+
+        if ($location === '') {
+            return null;
+        }
+
+        $parts = array_filter(
+            array_map('trim', explode(',', $location)),
+            fn ($part) => $part !== '' && !in_array(Str::upper($part), ['UNKNOWN', 'N/A', 'NA', 'NIL', 'NULL'], true)
+        );
+
+        return empty($parts) ? null : implode(', ', $parts);
+    }
+
+    /**
+     * Resolve the land use from a file number prefix.
+     *
+     * Covers the direct ("RES-…"), conversion ("CON-RES-…") and recertification
+     * ("RES-RC-…", "CON-RES-RC-…") forms by matching the first land-use segment.
+     */
+    protected function landUseFromFileNumber(?string $fileNumber): ?string
+    {
+        if (!$fileNumber) {
+            return null;
+        }
+
+        foreach (preg_split('/[-\s\/]+/', Str::upper(trim($fileNumber))) as $segment) {
+            if (isset(self::LAND_USE_CODES[$segment])) {
+                return self::LAND_USE_CODES[$segment];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Accept either a land-use code ("RES") or its full name, rejecting the
+     * legacy values that ended up in file_indexings.land_use_type.
+     */
+    protected function normaliseLandUse(?string $landUse): ?string
+    {
+        $value = Str::upper(trim((string) $landUse));
+
+        if ($value === '') {
+            return null;
+        }
+
+        if (isset(self::LAND_USE_CODES[$value])) {
+            return self::LAND_USE_CODES[$value];
+        }
+
+        return in_array($value, array_map('strtoupper', self::LAND_USE_CODES), true)
+            ? Str::title($value)
+            : null;
+    }
+
+    /**
+     * File type implied by the land use: residential land is held by individuals,
+     * commercial and industrial land by corporate bodies.
+     */
+    protected function fileTypeFromLandUse(?string $landUse): ?string
+    {
+        return match (Str::upper((string) $landUse)) {
+            'RESIDENTIAL' => 'Individual',
+            'COMMERCIAL', 'INDUSTRIAL' => 'Corporate',
+            default => null,
+        };
     }
 
     /**

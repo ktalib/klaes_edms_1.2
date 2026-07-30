@@ -18,6 +18,7 @@
                 <div class="flex items-center gap-3 w-full md:w-auto">
                     <form action="{{ route('land-recommendations.index') }}" method="GET" class="relative group flex-1 md:w-80">
                         <input type="hidden" name="type" value="{{ !empty($isOssView) ? 'OSS' : 'ROFO' }}">
+                        <input type="hidden" name="tab" value="{{ $tab ?? 'not_printed' }}">
                         <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors"></i>
                         <input type="text" 
                                name="search" 
@@ -102,11 +103,29 @@
                 </div>
             </div>
 
+            {{-- Printed / Not-Printed tabs --}}
+            @php $tab = $tab ?? 'not_printed'; @endphp
+            <div class="flex items-center gap-2 mb-4 bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm w-full sm:w-max">
+                <a href="{{ route('land-recommendations.index', array_filter(['type' => !empty($isOssView) ? 'OSS' : 'ROFO', 'tab' => 'not_printed', 'search' => request('search')])) }}"
+                   class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'not_printed' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100' }}">
+                    <i data-lucide="file-clock" class="h-4 w-4"></i>
+                    Not Printed
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black {{ $tab === 'not_printed' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500' }}">{{ number_format($stats['not_printed']) }}</span>
+                </a>
+                <a href="{{ route('land-recommendations.index', array_filter(['type' => !empty($isOssView) ? 'OSS' : 'ROFO', 'tab' => 'printed', 'search' => request('search')])) }}"
+                   class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'printed' ? 'bg-green-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100' }}">
+                    <i data-lucide="printer-check" class="h-4 w-4"></i>
+                    Printed
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black {{ $tab === 'printed' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500' }}">{{ number_format($stats['printed']) }}</span>
+                </a>
+            </div>
+
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-wrap gap-3">
                     <h3 class="font-bold text-slate-800 uppercase tracking-wider text-xs flex items-center gap-2">
                         <i data-lucide="list" class="h-4 w-4 text-blue-600"></i>
                         Application Records
+                        <span class="text-slate-400 normal-case tracking-normal font-medium">· {{ $tab === 'printed' ? 'Printed' : 'Not Printed' }}</span>
                     </h3>
                     @if(empty($isOssView))
                     <div id="batch-toolbar" class="hidden items-center gap-3">
@@ -144,6 +163,7 @@
                                 <th class="px-6 py-4 whitespace-nowrap">Created By</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Date Generated</th>
                                 <th class="px-6 py-4 whitespace-nowrap text-blue-600">Application Date</th>
+                                <th class="px-6 py-4 whitespace-nowrap text-green-600">Date Printed</th>
                                 <th class="px-6 py-4 text-right sticky right-0 bg-slate-50 border-l border-slate-200 z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap">Actions</th>
                             </tr>
                         </thead>
@@ -191,6 +211,10 @@
                                     {{ $rec->created_at ? $rec->created_at->format('Y-m-d h:i A') : 'N/A' }}
                                 </td>
                                 <td class="px-4 py-2 text-blue-600 whitespace-nowrap font-bold italic">{{ $rec->application_date ? $rec->application_date->format('Y-m-d') : ($rec->created_at ? $rec->created_at->format('Y-m-d') : 'N/A') }}</td>
+                                @php $printedAt = $printDates[strtoupper(trim((string) $rec->file_number))] ?? null; @endphp
+                                <td class="px-4 py-2 text-xs whitespace-nowrap {{ $printedAt ? 'text-green-700 font-semibold' : 'text-slate-400 italic' }}">
+                                    {{ $printedAt ? \Carbon\Carbon::parse($printedAt)->format('Y-m-d h:i A') : 'Not printed' }}
+                                </td>
                                 @if(empty($isOssView))
                                     <td class="px-4 py-2 text-right sticky right-0 bg-white shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] border-l border-slate-100 z-10 whitespace-nowrap">
                                         <div x-data="{ 
@@ -323,7 +347,7 @@
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="16" class="px-8 py-12 text-center">
+                                <td colspan="17" class="px-8 py-12 text-center">
                                     <div class="flex flex-col items-center">
                                         <div class="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 mb-4">
                                             <i data-lucide="file-text" class="h-6 w-6"></i>

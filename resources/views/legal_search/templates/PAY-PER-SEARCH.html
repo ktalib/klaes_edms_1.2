@@ -881,7 +881,9 @@
           setText('report-district-lga', d.lon_lat);
           setText('report-size', d.size);
           setText('report-land-use', d.land_use);
-          setText('report-term', termFromLandUse(d.land_use));
+          // Term: the value saved on the file indexing record (Edit File Information)
+          // when present, otherwise derived from land use.
+          setText('report-term', d.term || termFromLandUse(d.land_use));
           setText('report-rent', d.residual_term);
           const commencementText = (d.commencement_date && d.commencement_source)
             ? `${d.commencement_date} (${d.commencement_source})`

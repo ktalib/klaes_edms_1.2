@@ -820,13 +820,30 @@
                                         <div>
                                             {{ Form::label('rank', __('Officer Rank (Seniority)'), ['class' => 'block text-sm font-medium text-blue-800 mb-1']) }}
                                             <div class="text-xs text-blue-600 mb-2">Designation used to prioritise this officer's file search requests — the most senior requester is honored first.</div>
-                                            <select name="rank" id="rank"
+                                            <select name="rank" id="rank" onchange="toggleRankOther(this)"
                                                 class="w-full p-2 border border-blue-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
                                                 <option value="">Select Rank (optional)</option>
                                                 @foreach($ranks as $rankOption)
                                                     <option value="{{ $rankOption }}" {{ old('rank') === $rankOption ? 'selected' : '' }}>{{ $rankOption }}</option>
                                                 @endforeach
+                                                <option value="__other__" {{ old('rank') === '__other__' ? 'selected' : '' }}>Other (specify)…</option>
                                             </select>
+                                            <input type="text" name="rank_other" id="rank_other" value="{{ old('rank_other') }}"
+                                                placeholder="Enter new rank title"
+                                                class="w-full mt-2 p-2 border border-blue-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500 {{ old('rank') === '__other__' ? '' : 'hidden' }}">
+                                            <div class="text-xs text-blue-600 mt-1">A new rank you add here is saved to the rank list for future use.</div>
+                                            <script>
+                                                function toggleRankOther(sel) {
+                                                    var other = document.getElementById('rank_other');
+                                                    if (!other) return;
+                                                    if (sel.value === '__other__') {
+                                                        other.classList.remove('hidden');
+                                                    } else {
+                                                        other.classList.add('hidden');
+                                                        other.value = '';
+                                                    }
+                                                }
+                                            </script>
                                         </div>
                                     </div>
                                     <div class="w-full md:w-1/2 px-2 mb-2">

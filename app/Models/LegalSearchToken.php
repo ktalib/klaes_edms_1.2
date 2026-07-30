@@ -16,6 +16,19 @@ class LegalSearchToken extends Model
      */
     public const VALIDITY_HOURS = 24;
 
+    /**
+     * Requesting bodies available as the "Reason for Payment" when a token is
+     * flagged General — i.e. a statutory search, not one paid for by a client.
+     */
+    public const GENERAL_REASONS = ['Court', 'EFCC', 'Public Complaints', 'NDIC'];
+
+    /**
+     * A General search is not paid for by a client, so it carries a placeholder
+     * receipt number and a fixed payment reason.
+     */
+    public const GENERAL_RECEIPT = 'System Generated';
+    public const GENERAL_PAYMENT_REASON = 'Payment for Legal Search';
+
     protected $connection = 'sqlsrv';
     protected $table = 'legal_search_tokens';
 
@@ -27,6 +40,8 @@ class LegalSearchToken extends Model
         'property_location',
         'client_address',
         'payment_reason',
+        'is_general',
+        'general_body',
         'amount_paid',
         'receipt_number',
         'date_paid',
@@ -39,6 +54,7 @@ class LegalSearchToken extends Model
     protected $casts = [
         'date_paid' => 'date',
         'is_used' => 'boolean',
+        'is_general' => 'boolean',
         'usage_count' => 'integer',
         'used_at' => 'datetime',
     ];

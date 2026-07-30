@@ -921,6 +921,8 @@ const executeSearchAjax = (filters, searchData) => {
         const _apiFileSize = data.file_size || null;
         const _apiFileGroundRentAmount = data.file_ground_rent_amount || null;
         const _apiFileGroundRentDate = data.file_ground_rent_date || null;
+        // Term saved on the file indexing record (Edit File Information).
+        const _apiFileTerm = data.file_term || null;
         const _apiCommissioningDate = data.file_commissioning_date || null;
         const _apiCommissionedNumber = data.file_commissioned_number || null;
         const _apiCommissioningHolder = data.file_commissioning_holder || null;
@@ -966,6 +968,7 @@ const executeSearchAjax = (filters, searchData) => {
           if (_apiFileSize) r._file_size = _apiFileSize;
           if (_apiFileGroundRentAmount) r._file_ground_rent_amount = _apiFileGroundRentAmount;
           if (_apiFileGroundRentDate) r._file_ground_rent_date = _apiFileGroundRentDate;
+          if (_apiFileTerm) r._file_term = _apiFileTerm;
           if (_apiTempFileNumber) r._file_temp_number = _apiTempFileNumber;
           if (_apiFileNumberDisplay) r._file_number_display = _apiFileNumberDisplay;
         });
@@ -1994,6 +1997,14 @@ const executeSearchAjax = (filters, searchData) => {
     return null;
   };
 
+  // Term saved on the searched file's indexing record (file_indexings.term, set
+  // via the Edit File Information modal), as a year count — e.g. "99 Years" → 99.
+  // Overrides the land-use derived term wherever it is available.
+  const lsSavedTermYears = () => {
+    const m = String(window.__lsSavedTerm || '').match(/\d+/);
+    return m ? parseInt(m[0], 10) : null;
+  };
+
   // Commencement date of the R of O term. Two possible sources, checked in
   // priority order:
   //   1. Certificate of Occupancy — earliest dated row's transaction_date,
@@ -2047,23 +2058,44 @@ const executeSearchAjax = (filters, searchData) => {
   };
 
   // Residual Term = term minus years elapsed since the commencement year.
-  // Returns e.g. "28 Years", or '' when either part is unknown.
+  // Returns e.g. "28 Years", or '' when either part is unknown. When the term
+  // has fully elapsed the result is negative (e.g. "-3 Years") — no longer
+  // floored at 0 — so an expired title reads as such on screen and on the report.
   const lsComputeResidualTerm = (termYears, commencementYear) => {
     const nowYear = new Date().getFullYear();
     if (!termYears || !commencementYear || commencementYear > nowYear) return '';
-    return Math.max(termYears - (nowYear - commencementYear), 0) + ' Years';
+    return (termYears - (nowYear - commencementYear)) + ' Years';
+  };
+
+  // Expiry date of the R of O term = commencement date + term years, as an
+  // ISO yyyy-mm-dd string. Returns '' when either part is unknown/invalid.
+  const lsComputeExpiryIso = (isoDate, termYears) => {
+    if (!isoDate || !termYears) return '';
+    const d = new Date(isoDate);
+    if (isNaN(d.getTime())) return '';
+    d.setFullYear(d.getFullYear() + termYears);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   };
 
   // Recompute the Residual Term input + File Information display from the
   // current land use and commencement date. A manual residual entry is kept
   // while it differs from the last auto value.
   //
+  // A Term saved on the file indexing record (Edit File Information,
+  // window.__lsSavedTerm — set per file in displayFileDetails) takes precedence
+  // over the term derived from land use, so an operator-corrected term drives
+  // the Residual Term on screen and on the report.
+  //
   // autoHide=false is used right after the operator edits the Commencement
   // Date themselves: recomputing immediately hides the card (see below) before
   // they get a chance to click Save, so the card must stay open until the
   // value is actually persisted (or a different file is loaded).
   const lsRecomputeResidualTerm = (autoHide = true) => {
-    const termYears = lsTermYearsFromLandUse(document.getElementById('property-type-value')?.textContent || '');
+    const termYears = lsSavedTermYears()
+      || lsTermYearsFromLandUse(document.getElementById('property-type-value')?.textContent || '');
     const dateInput = document.getElementById('comment-commencement_date-text');
     const isoDate = (dateInput?.value || '').trim();
     const commencementYear = isoDate ? parseInt(isoDate.slice(0, 4), 10) || null : null;
@@ -2080,6 +2112,24 @@ const executeSearchAjax = (filters, searchData) => {
     if (display) display.textContent = (input?.value || computed || '-');
     const dateDisplay = document.getElementById('commencement-date-value');
     if (dateDisplay) dateDisplay.textContent = lsFormatCommencementDate(isoDate) || '-';
+
+    // When the title's term has fully elapsed, prefill the General Comment with
+    // the standard "term expired" remark carrying the actual expiry date. Kept
+    // editable and only overwrites the previous auto value, so a saved/manual
+    // General Comment is never clobbered.
+    const generalInput = document.getElementById('comment-general-text');
+    if (generalInput) {
+      const expiryIso = lsComputeExpiryIso(isoDate, termYears);
+      const isExpired = !!expiryIso && new Date(expiryIso) < new Date();
+      const expiryText = lsFormatCommencementDate(expiryIso);
+      const autoRemark = (isExpired && expiryText)
+        ? `The Term expired on ${expiryText}. However, there is no any request or application for Re-Grant.`
+        : '';
+      if (!generalInput.value || generalInput.value === generalInput.dataset.autoValue) {
+        generalInput.value = autoRemark;
+      }
+      generalInput.dataset.autoValue = autoRemark;
+    }
 
     // Source badge: shows which record supplied the Commencement Date — RofO
     // (pra) or CofO (CofO_staging) when it's the untouched auto value, or
@@ -2311,10 +2361,15 @@ const executeSearchAjax = (filters, searchData) => {
       }
     }
 
-    // Term of the R of O, derived from land use (99 res/agric, 40 comm/ind).
-    const termYears = lsTermYearsFromLandUse(landUseValue);
+    // Term of the R of O — the value saved on the indexing record (Edit File
+    // Information) when there is one, otherwise derived from land use (99
+    // res/agric, 40 comm/ind). Set before lsRecomputeResidualTerm below, which
+    // reads it back through lsSavedTermYears() for the Residual Term.
+    // Reset per file so a previous file's saved term never leaks onto the next one.
+    window.__lsSavedTerm = (selectedFile._file_term || '').toString().trim();
+    const termYears = lsSavedTermYears() || lsTermYearsFromLandUse(landUseValue);
     const termEl = document.getElementById('term-value');
-    if (termEl) termEl.textContent = termYears ? termYears + ' Years' : '-';
+    if (termEl) termEl.textContent = window.__lsSavedTerm || (termYears ? termYears + ' Years' : '-');
 
     // Commencement Date — auto-filled from the R of O grant's Transaction Date,
     // falling back to the CofO's transaction_date when no dated R of O exists
@@ -2497,6 +2552,7 @@ const executeSearchAjax = (filters, searchData) => {
         const _sz = data.file_size || null;
         const _gra = data.file_ground_rent_amount || null;
         const _grd = data.file_ground_rent_date || null;
+        const _trm = data.file_term || null;
         const _tf = data.file_temp_number || null;
         const _cd = data.file_commissioning_date || null;
         const _cn = data.file_commissioned_number || null;
@@ -2521,6 +2577,7 @@ const executeSearchAjax = (filters, searchData) => {
           if (_sz) r._file_size           = _sz;
           if (_gra) r._file_ground_rent_amount = _gra;
           if (_grd) r._file_ground_rent_date   = _grd;
+          if (_trm) r._file_term               = _trm;
           if (_tf) r._file_temp_number    = _tf;
           if (_cd) r._file_commissioning_date = _cd;
           if (_cn) r._file_commissioned_number = _cn;
@@ -2974,9 +3031,12 @@ const executeSearchAjax = (filters, searchData) => {
     // Render excluded/duplicate records
     renderExcludedRows();
 
-    // Load editable comments and show/hide sections based on data
+    // Load editable comments and show/hide sections based on data.
+    // Use the deduped/preferred set (not _all…) so the encumbrance/mortgage
+    // remark ignores Excluded / Duplicate records — matching what the timeline
+    // and printed report already operate on.
     loadComments(window._currentFileNumber);
-    showCommentSections(window._allRelatedTransactions || []);
+    showCommentSections(window._preferredRelatedTransactions || window._allRelatedTransactions || []);
 
     // Party 3 is always visible, Party 4 removed
   };
@@ -5563,9 +5623,19 @@ const executeSearchAjax = (filters, searchData) => {
     // Surrender and Release" all count. Keying on a fixed "deed of …" prefix
     // silently missed the release rows, so a discharged mortgage still showed the
     // "Under an Active Mortgage" remark. Mirrors LegalSearchService::buildPrintReport().
-    const hasMortgage = types.some(t => t.includes('mortgage'));
-    const hasRelease = types.some(t => t.includes('surrender') && t.includes('release'));
-    const mortgageCaveat = hasMortgage && !hasRelease;
+    const isMortgageType = (t) => (t || '').includes('mortgage');
+    const isReleaseType  = (t) => (t || '').includes('surrender') && (t || '').includes('release');
+
+    // Discharge test by COUNT, not mere presence: each Deed of Surrender & Release
+    // discharges one mortgage, so the title stays "Under an Active Mortgage" while
+    // there are more mortgages than releases on the file. The old presence-only
+    // rule (hasMortgage && !hasRelease) wrongly cleared the whole file the moment a
+    // single release existed — even when a second, unrelated mortgage (e.g. from a
+    // different lender) was never surrendered. Excluded/duplicate rows are already
+    // filtered out upstream. Mirrors LegalSearchService::buildPrintReport().
+    const mortgageCount = types.filter(isMortgageType).length;
+    const releaseCount  = types.filter(isReleaseType).length;
+    const mortgageCaveat = mortgageCount > releaseCount;
     const isClear = hasCofo && !hasCaveat && !mortgageCaveat;
 
     // A record flagged via Title Status Update (title_status = 1, e.g. an
@@ -6142,7 +6212,7 @@ const executeSearchAjax = (filters, searchData) => {
       { key: 'volumeNo', label: 'Volume No', type: 'particular' },
       { key: 'regNo', label: 'Reg No', readonly: true, sectionEnd: true },
       { key: 'reg_date', label: 'Reg Date', type: 'date' },
-      { key: 'reg_time', label: 'Reg Time' },
+      { key: 'reg_time', label: 'Reg Time', type: 'time' },
       { key: 'transaction_type', label: 'Instrument/Transaction Type', type: 'select', optionSource: 'transaction_type' },
       { key: 'transaction_date', label: 'Transaction Date', type: 'date' },
       // Standard parties
@@ -6179,8 +6249,12 @@ const executeSearchAjax = (filters, searchData) => {
       { key: 'pageNo', label: 'Page No', type: 'particular' },
       { key: 'volumeNo', label: 'Volume No', type: 'particular' },
       { key: 'regNo', label: 'Reg No', readonly: true, sectionEnd: true },
-      // CofO_staging has no reg_date column; its "Reg Time" is stored in transaction_time.
-      { key: 'transaction_time', label: 'Reg Time' },
+      // CofO_staging has no literal reg_date column; its registration date/time is
+      // stored in deeds_date/deeds_time (same as pra), which the report/timeline
+      // prefer for the displayed "Reg Date". transaction_time is kept as the
+      // last-resort Reg Time fallback.
+      { key: 'deeds_date', label: 'Reg Date', type: 'date' },
+      { key: 'deeds_time', label: 'Reg Time', type: 'time' },
       { key: 'transaction_type', label: 'Instrument/Transaction Type', type: 'select', optionSource: 'transaction_type' },
       { key: 'transaction_date', label: 'Transaction Date', type: 'date' },
       // Standard parties
@@ -6216,7 +6290,7 @@ const executeSearchAjax = (filters, searchData) => {
       // pra has no reg_date/reg_time columns; its registration date/time is
       // tracked as deeds_date/deeds_time instead.
       { key: 'deeds_date', label: 'Deeds Date', type: 'date' },
-      { key: 'deeds_time', label: 'Deeds Time' },
+      { key: 'deeds_time', label: 'Deeds Time', type: 'time' },
       { key: 'transaction_type', label: 'Instrument/Transaction Type', type: 'select', optionSource: 'transaction_type' },
       { key: 'transaction_date', label: 'Transaction Date', type: 'date' },
       // Standard parties
@@ -6253,7 +6327,7 @@ const executeSearchAjax = (filters, searchData) => {
       { key: 'volume_no', label: 'Volume No', type: 'particular' },
       { key: 'registration_number', label: 'Reg No', readonly: true, sectionEnd: true },
       { key: 'instrument_type', label: 'Instrument/Transaction Type', type: 'select', optionSource: 'transaction_type' },
-      { key: 'deeds_date', label: 'Deeds Date', type: 'date' }, { key: 'deeds_time', label: 'Deeds Time' },
+      { key: 'deeds_date', label: 'Deeds Date', type: 'date' }, { key: 'deeds_time', label: 'Deeds Time', type: 'time' },
       { key: 'instrument_date', label: 'Instrument Date', type: 'date' },
       { key: 'grantor', label: 'Party 1' }, { key: 'grantee', label: 'Party 2' },
       { key: 'lga', label: 'LGA' }, { key: 'district', label: 'District' },
@@ -6398,6 +6472,16 @@ const executeSearchAjax = (filters, searchData) => {
           <div class="${getEditFieldSpanClass(f)}">
             <label class="block text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1.5">${f.label}</label>
             <input type="date" name="${f.key}" value="${val ? val.substring(0, 10) : ''}" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:ring-1 focus:ring-black focus:border-black">
+          </div>`;
+      } else if (f.type === 'time') {
+        // Stored times can arrive as "17:00", "17:00:00" or a full datetime —
+        // pull out HH:MM so the native <input type="time"> accepts them.
+        const timeMatch = String(val ?? '').match(/(\d{1,2}):(\d{2})/);
+        const timeVal = timeMatch ? `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}` : '';
+        html += `
+          <div class="${getEditFieldSpanClass(f)}">
+            <label class="block text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1.5">${f.label}</label>
+            <input type="time" name="${f.key}" value="${timeVal}" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:ring-1 focus:ring-black focus:border-black">
           </div>`;
       } else if (f.type === 'fileno') {
         html += `
@@ -7318,8 +7402,6 @@ const executeSearchAjax = (filters, searchData) => {
     }
   });
 </script>
-
-
 
 
 

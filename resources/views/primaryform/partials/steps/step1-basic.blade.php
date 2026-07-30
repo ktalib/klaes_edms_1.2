@@ -489,7 +489,9 @@
       <div class="grid grid-cols-4 gap-4 mb-4">
         <div>
           <label class="block text-sm mb-1">Scheme Number <span class="text-red-500">*</span></label>
-          <input type="text" id="schemeNumber" class="property-address-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" placeholder="ENTER SCHEME NUMBER" name="scheme_no" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();" disabled>
+          {{-- Always editable: the scheme number is entered here, not backfilled,
+               so it is deliberately outside the .property-address-field lock group --}}
+          <input type="text" id="schemeNumber" class="w-full p-2 border border-gray-300 rounded-md" placeholder="ENTER SCHEME NUMBER" name="scheme_no" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();">
         </div>
         <div>
           <label class="block text-sm mb-1">House No.</label>
@@ -499,16 +501,20 @@
           <label class="block text-sm mb-1">Plot No.</label>
           <input type="text" id="propertyPlotNo" class="property-address-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" placeholder="ENTER PLOT NUMBER" name="property_plot_no" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();" disabled>
         </div>
-        <div>
+        <div class="reference-select-wrap">
           <label class="block text-sm mb-1">Street Name <span class="text-red-500">*</span></label>
-          <input type="text" id="propertyStreetName" class="property-address-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" placeholder="ENTER STREET NAME" name="property_street_name" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();" disabled>
+          <select id="propertyStreetName" name="property_street_name" data-reference-source="streets" class="property-address-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" onchange="updatePropertyAddressDisplay();" disabled>
+            <option value="">Search street name...</option>
+          </select>
         </div>
       </div>
 
       <div class="grid grid-cols-3 gap-4 mb-4">
-        <div>
+        <div class="reference-select-wrap">
           <label class="block text-sm mb-1">District</label>
-          <input type="text" id="propertyDistrict" class="property-address-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" placeholder="ENTER DISTRICT" name="property_district" style="text-transform:uppercase" oninput="this.value = this.value.toUpperCase(); updatePropertyAddressDisplay();" disabled>
+          <select id="propertyDistrict" name="property_district" data-reference-source="districts" class="property-address-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" onchange="updatePropertyAddressDisplay();" disabled>
+            <option value="">Search district...</option>
+          </select>
         </div>
         <div>
           <label class="block text-sm mb-1">LGA <span class="text-red-500">*</span></label>
@@ -532,6 +538,9 @@
         </div>
         <input type="hidden" name="property_address" id="propertyAddressDisplay">
       </div>
+
+      {{-- Property Location Map --}}
+      @include('primaryform.partials.steps.property-map')
     </div>
 
     <script>
@@ -549,6 +558,11 @@
         field.classList.toggle('bg-white', willEnable);
         field.classList.toggle('text-gray-900', willEnable);
         field.classList.toggle('cursor-text', willEnable);
+
+        // Keep the Select2 widget in step with the underlying select
+        if (field.tagName === 'SELECT' && typeof setReferenceSelectDisabled === 'function') {
+          setReferenceSelectDisabled(field, !willEnable);
+        }
       });
 
       if (btn) {

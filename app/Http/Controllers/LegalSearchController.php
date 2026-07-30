@@ -43,13 +43,49 @@ class LegalSearchController extends Controller
         $PageDescription = '';
         $moduleConfig = $this->moduleConfig();
         $landUseOptions = DB::connection('sqlsrv')->table('land_uses')->pluck('landuse')->toArray();
-        $districtOptions = DB::connection('sqlsrv')->table('districts')->pluck('name')->toArray();
+        $districtOptions = DB::connection('sqlsrv')->table('districts')
+            ->whereNotNull('name')
+            ->where('name', '<>', '')
+            ->orderBy('name')
+            ->pluck('name')
+            ->unique()
+            ->values()
+            ->toArray();
         $instrumentTypeOptions = DB::connection('sqlsrv')->table('InstrumentTypes')
             ->where('IsActive', 1)
             ->orderBy('InstrumentName')
             ->pluck('InstrumentName')
             ->toArray();
-        return view($this->viewPrefix . '.index', compact('PageTitle', 'PageDescription', 'moduleConfig', 'landUseOptions', 'districtOptions', 'instrumentTypeOptions'));
+
+        // Lookup lists for the "Edit File Information" modal's LGA / TP No dropdowns.
+        // TP numbers have no reference table of their own — the distinct values already
+        // recorded on fileNumber are the working list (same source the OSS form uses).
+        $lgaOptions = DB::connection('sqlsrv')->table('lgas')
+            ->where('is_active', 1)
+            ->whereNotNull('name')
+            ->where('name', '<>', '')
+            ->orderBy('name')
+            ->pluck('name')
+            ->unique()
+            ->values()
+            ->toArray();
+
+        $tpNoOptions = [];
+        try {
+            $tpNoOptions = DB::connection('sqlsrv')->table('fileNumber')
+                ->whereNotNull('tp_no')
+                ->where('tp_no', '<>', '')
+                ->distinct()
+                ->orderBy('tp_no')
+                ->pluck('tp_no')
+                ->unique()
+                ->values()
+                ->toArray();
+        } catch (\Throwable $e) {
+            $tpNoOptions = [];
+        }
+
+        return view($this->viewPrefix . '.index', compact('PageTitle', 'PageDescription', 'moduleConfig', 'landUseOptions', 'districtOptions', 'instrumentTypeOptions', 'lgaOptions', 'tpNoOptions'));
     }
 
     /**
@@ -557,6 +593,7 @@ class LegalSearchController extends Controller
             'district' => 'nullable|string|max:100',
             'lga' => 'nullable|string|max:100',
             'land_use' => 'nullable|string|max:100',
+            'term' => 'nullable|string|max:50',
         ]);
 
         $candidates = array_values(array_filter(array_unique([
@@ -591,6 +628,10 @@ class LegalSearchController extends Controller
             'district' => $validated['district'] ?? null,
             'lga' => $validated['lga'] ?? null,
             'land_use_type' => $validated['land_use'] ?? null,
+            // Term is stored as entered (e.g. "99 Years"); it overrides the term the
+            // search would otherwise derive from land use, and the Residual Term is
+            // computed from it.
+            'term' => trim((string) ($validated['term'] ?? '')) ?: null,
         ]);
         $record->save();
 
@@ -605,6 +646,7 @@ class LegalSearchController extends Controller
                 'district' => $record->district,
                 'lga' => $record->lga,
                 'land_use' => $record->land_use_type,
+                'term' => $record->term,
             ],
         ]);
     }

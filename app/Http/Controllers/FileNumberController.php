@@ -2837,9 +2837,16 @@ class FileNumberController extends Controller
                 })
                 ->where(function ($q) {
                     $q->whereNull('fileNumber.is_deleted')->orWhere('fileNumber.is_deleted', 0);
-                })
-                ->orderBy('fileNumber.mlsfNo')
-                ->get();
+                });
+
+            // Optional narrowing to the exact files the operator reviewed (normally the
+            // ones whose Application for Conversion has not been printed yet).
+            $onlyFiles = array_values(array_filter(array_map('trim', explode(',', (string) $request->query('files')))));
+            if (!empty($onlyFiles)) {
+                $records->whereIn('fileNumber.mlsfNo', $onlyFiles);
+            }
+
+            $records = $records->orderBy('fileNumber.mlsfNo')->get();
 
             if ($records->isEmpty()) {
                 return abort(404, 'No conversion files found for ' . $date);
@@ -2971,6 +2978,10 @@ class FileNumberController extends Controller
         $reference = $request->input('reference');
         $type = $request->input('type');
         $docType = $request->input('doc_type');
+        // Optional narrowing: log only these file numbers within the batch/date.
+        // Used by documents that apply to a subset of the batch (e.g. the
+        // Application for Conversion, which only covers CON- files).
+        $onlyFileNumbers = array_values(array_filter((array) $request->input('file_numbers', [])));
 
         if (!$reference) {
             return response()->json(['success' => false, 'message' => 'Missing reference']);
@@ -3003,6 +3014,10 @@ class FileNumberController extends Controller
                                 ->orWhereNull('source');
                         });
                 });
+
+                if (!empty($onlyFileNumbers)) {
+                    $query->whereIn('full_file_number', $onlyFileNumbers);
+                }
 
                 // Only log records that haven't been printed yet
                 $query->whereNotExists(function ($q) use ($docType) {

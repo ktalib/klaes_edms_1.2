@@ -515,7 +515,7 @@ class LegalSearchService
                                 ->orWhere('related_fileno', 'like', '%' . $candidate . '%');
                         }
                     })
-                    ->select('file_title', 'district', 'lga', 'land_use_type', 'plot_number', 'plot_size', 'tp_no', 'related_fileno', 'file_number', 'location', 'has_temp_file', 'temp_file_no', 'latitude', 'longitude', 'ground_rent_amount', 'ground_rent_receipt_date')
+                    ->select('file_title', 'district', 'lga', 'land_use_type', 'plot_number', 'plot_size', 'tp_no', 'related_fileno', 'file_number', 'location', 'has_temp_file', 'temp_file_no', 'latitude', 'longitude', 'ground_rent_amount', 'ground_rent_receipt_date', 'term')
                     ->get();
 
                 $fileIndexingData = $this->pickBestIndexingRow($fileIndexingDataList, $primaryCandidates);
@@ -727,6 +727,9 @@ class LegalSearchService
             'file_size' => $fileSize,
             'file_ground_rent_amount' => $fileIndexingData->ground_rent_amount ?? null,
             'file_ground_rent_date' => $fileIndexingData->ground_rent_receipt_date ?? null,
+            // Saved Term (Edit File Information). When present the UI shows it instead
+            // of the term derived from land use, and the Residual Term derives from it.
+            'file_term' => trim((string) ($fileIndexingData->term ?? '')) ?: null,
             'file_related_fileno' => $fileIndexingData->related_fileno ?? null,
             'file_index_number' => $fileIndexingData->file_number ?? null,
             // Whether the searched file has its own file_indexings row. Drives whether
@@ -2369,6 +2372,7 @@ class LegalSearchService
             'file_size' => null,
             'file_ground_rent_amount' => null,
             'file_ground_rent_date' => null,
+            'file_term' => null,
             'file_related_fileno' => null,
             'file_index_number' => null,
             'file_history_count' => 0,
@@ -3092,10 +3096,13 @@ class LegalSearchService
                 'caveated_comment',
                 'is_caveated',
                 'plot_no',
-                DB::raw("NULL AS deeds_date"),
-                DB::raw("NULL AS deeds_time"),
+                // Return the real deeds_date/deeds_time so values edited on the
+                // record actually display; for time, fall back to transaction_time
+                // when deeds_time hasn't been set (preserves the prior display).
+                DB::raw("deeds_date AS deeds_date"),
+                DB::raw("COALESCE(NULLIF(LTRIM(RTRIM(deeds_time)), ''), transaction_time) AS deeds_time"),
                 DB::raw("NULL AS reg_date"),
-                DB::raw("transaction_time AS reg_time"),
+                DB::raw("COALESCE(NULLIF(LTRIM(RTRIM(deeds_time)), ''), transaction_time) AS reg_time"),
                 DB::raw("NULL AS tp_no"),
                 DB::raw("'CofO_staging' AS source_table"),
             ]);
@@ -3804,8 +3811,12 @@ class LegalSearchService
             'pageNo',
             'volumeNo',
             'regNo',
-            // CofO_staging has no reg_date/reg_time columns — the "Reg Time" the
-            // report/timeline displays is actually this table's transaction_time.
+            // CofO_staging has no literal reg_date/reg_time columns; its
+            // registration date/time is tracked as deeds_date/deeds_time (same as
+            // pra), which is what the report/timeline prefer for the "Reg Date".
+            // transaction_time is kept as the last-resort Reg Time fallback.
+            'deeds_date',
+            'deeds_time',
             'transaction_time',
             'plot_no',
             'lgsaOrCity',
@@ -5107,6 +5118,7 @@ class LegalSearchService
         $fiLocation = null;
         $fiGroundRentAmount = null;
         $fiGroundRentReceiptDate = null;
+        $fiTerm = null;
         $lonLat = '-';
         if ($fileNumber && $fileNumber !== '-') {
             $fileNumberCandidates = array_values(array_unique(array_filter([$fileNumber, $fileNo])));
@@ -5119,7 +5131,7 @@ class LegalSearchService
                             ->orWhere('related_fileno', 'like', '%' . $candidate . '%');
                     }
                 })
-                ->select('file_title', 'plot_number', 'plot_size', 'tp_no', 'land_use_type', 'related_fileno', 'file_number', 'has_temp_file', 'temp_file_no', 'latitude', 'longitude', 'location', 'ground_rent_amount', 'ground_rent_receipt_date')
+                ->select('file_title', 'plot_number', 'plot_size', 'tp_no', 'land_use_type', 'related_fileno', 'file_number', 'has_temp_file', 'temp_file_no', 'latitude', 'longitude', 'location', 'ground_rent_amount', 'ground_rent_receipt_date', 'term')
                 ->get();
 
             $fi = $this->pickBestIndexingRow($fiList, $fileNumberCandidates);
@@ -5133,6 +5145,7 @@ class LegalSearchService
                 $fiLocation = trim((string) ($fi->location ?? '')) ?: null;
                 $fiGroundRentAmount = $fi->ground_rent_amount ?: null;
                 $fiGroundRentReceiptDate = $fi->ground_rent_receipt_date ?: null;
+                $fiTerm = trim((string) ($fi->term ?? '')) ?: null;
 
                 // Lon/Lat sourced from the file indexing record (replaces District/LGA
                 // on the report). Formatted "longitude, latitude" to match the label.
@@ -5503,7 +5516,6 @@ class LegalSearchService
         }
 
         $mortgageCaveat = false;
-        $parseDate = fn($d) => $d && $d !== '-' ? (rescue(fn() => \Carbon\Carbon::parse($d), null, false)) : null;
 
         // Match the instrument FAMILY, not one exact label. The digitised records
         // store mortgages as "MORTGAGE", "Deed of Mortgage", "Tripartite/Legal/
@@ -5515,32 +5527,21 @@ class LegalSearchService
         $isReleaseType = fn($t) => stripos($t['transaction_type'] ?? '', 'surrender') !== false
             && stripos($t['transaction_type'] ?? '', 'release') !== false;
 
-        // A mortgage keeps the title encumbered until it is discharged by a Surrender
-        // & Release. Presence is detected INDEPENDENTLY OF DATES: a mortgage recorded
-        // only by registration particulars (no reg_date) is common in the digitised
-        // records (e.g. CON-AG-2014-35's Deed of Mortgage, reg 56/21/21) and must
-        // still raise the "Under an Active Mortgage" remark automatically — the
-        // searcher should NOT have to save the Title Encumbrance Remark by hand for
-        // it to reach the report. Mirrors the frontend rule in showCommentSections()
-        // (js.blade.php): mortgageCaveat = hasMortgage && !hasRelease.
-        $hasMortgage = collect($transactions)->contains($isMortgageType);
-        if ($hasMortgage) {
-            $hasRelease = collect($transactions)->contains($isReleaseType);
-            $latestMortgage = collect($transactions)->filter($isMortgageType)
-                ->map(fn($t) => $parseDate($t['reg_date'] ?? null))->filter()->max();
-
-            if ($latestMortgage) {
-                // Dated mortgage: it stands unless a release registered on or after it
-                // discharges it.
-                $latestRelease = collect($transactions)->filter($isReleaseType)
-                    ->map(fn($t) => $parseDate($t['reg_date'] ?? null))->filter()->max();
-                $mortgageCaveat = !$latestRelease || $latestRelease->lt($latestMortgage);
-            } else {
-                // Undated mortgage: nothing to compare against, so treat it as active
-                // unless any Surrender & Release exists on the file.
-                $mortgageCaveat = !$hasRelease;
-            }
-        }
+        // A mortgage keeps the title encumbered until it is discharged by a Deed of
+        // Surrender & Release. Detection is by COUNT, not mere presence and
+        // independently of dates: each Surrender & Release discharges one mortgage,
+        // so the title stays "Under an Active Mortgage" while there are MORE
+        // mortgages than releases on the file. This correctly flags a file that
+        // carries a second, unrelated mortgage (e.g. from a different lender) that
+        // was never surrendered, and still auto-raises the remark for mortgages
+        // recorded only by registration particulars (no reg_date) — the searcher
+        // should NOT have to save the Title Encumbrance Remark by hand. Excluded/
+        // duplicate rows are already dropped from $transactions above. Mirrors the
+        // frontend rule in showCommentSections() (js.blade.php).
+        $mortgageCount = collect($transactions)->filter($isMortgageType)->count();
+        $releaseCount = collect($transactions)->filter($isReleaseType)->count();
+        $hasMortgage = $mortgageCount > 0;
+        $mortgageCaveat = $mortgageCount > $releaseCount;
 
         $isCaveated = (bool) $caveatedRecord || $mortgageCaveat;
 
@@ -5804,9 +5805,22 @@ class LegalSearchService
         if (!$commencementDate) {
             [$commencementDate, $commencementSource] = $this->commencementDateFromTransactions($transactions);
         }
+        // Term of the R of O: the value saved on the file indexing record (Edit File
+        // Information) overrides the one derived from land use, and the Residual Term
+        // is computed from whichever applies — unless the Residual Term editor passed
+        // an explicit value, which always wins.
+        $termYearsOverride = null;
+        if ($fiTerm !== null && preg_match('/\d+/', $fiTerm, $m)) {
+            $termYearsOverride = (int) $m[0];
+        }
+        $term = $fiTerm ?: $this->termFromLandUse($landUse);
         $residualTerm = $displayResidualTerm !== ''
             ? $displayResidualTerm
-            : $this->residualTermFromYear($landUse, $commencementDate ? (int) $commencementDate->year : null);
+            : $this->residualTermFromYear(
+                $landUse,
+                $commencementDate ? (int) $commencementDate->year : null,
+                $termYearsOverride
+            );
 
         return [
             'status' => 200,
@@ -5823,6 +5837,7 @@ class LegalSearchService
                     'size' => $size,
                     'plot_description' => $plotDescription,
                     'tpno' => $tpno,
+                    'term' => $term,
                     'residual_term' => $residualTerm,
                     'commencement_date' => $commencementDate ? $commencementDate->format('jS F, Y') : null,
                     'commencement_source' => $commencementSource,
@@ -5907,20 +5922,41 @@ class LegalSearchService
     }
 
     /**
-     * Residual Term of the Right of Occupancy: the land-use term (Residential/
-     * Agricultural = 99 years, Commercial/Industrial = 40 years) minus the
-     * years elapsed since the commencement year. Returns e.g. "28 Years", or
-     * null when the land use has no defined term or the year is unusable.
+     * Term of the Right of Occupancy derived from land use: Residential/
+     * Agricultural = 99 years, Commercial/Industrial = 40 years. Returns the
+     * year count, or null when the land use has no defined term.
      */
-    private function residualTermFromYear(?string $landUse, ?int $commencementYear): ?string
+    private function termYearsFromLandUse(?string $landUse): ?int
     {
         $lu = strtoupper(trim((string) $landUse));
-        $termYears = null;
         if (str_contains($lu, 'RESIDENT') || str_starts_with($lu, 'RES') || str_contains($lu, 'AGRIC') || str_starts_with($lu, 'AG')) {
-            $termYears = 99;
-        } elseif (str_contains($lu, 'COMMERC') || str_starts_with($lu, 'COM') || str_contains($lu, 'INDUSTR') || str_starts_with($lu, 'IND')) {
-            $termYears = 40;
+            return 99;
         }
+        if (str_contains($lu, 'COMMERC') || str_starts_with($lu, 'COM') || str_contains($lu, 'INDUSTR') || str_starts_with($lu, 'IND')) {
+            return 40;
+        }
+        return null;
+    }
+
+    /**
+     * The land-use term as printed, e.g. "99 Years", or null when unknown.
+     */
+    private function termFromLandUse(?string $landUse): ?string
+    {
+        $years = $this->termYearsFromLandUse($landUse);
+        return $years === null ? null : $years . ' Years';
+    }
+
+    /**
+     * Residual Term of the Right of Occupancy: the term minus the years elapsed
+     * since the commencement year. Returns e.g. "28 Years", or null when the
+     * term is unknown or the year is unusable. $termYearsOverride is the Term
+     * saved on the file indexing record and takes priority over the land-use
+     * derived term.
+     */
+    private function residualTermFromYear(?string $landUse, ?int $commencementYear, ?int $termYearsOverride = null): ?string
+    {
+        $termYears = $termYearsOverride ?: $this->termYearsFromLandUse($landUse);
         $nowYear = (int) now()->year;
         if ($termYears === null || $commencementYear === null || $commencementYear <= 1000 || $commencementYear > $nowYear) {
             return null;

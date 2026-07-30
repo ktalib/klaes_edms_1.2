@@ -382,17 +382,17 @@
                                 <div class="text-sm font-medium text-purple-700">Completed</div>
                                 <div class="text-2xl font-bold text-purple-900" id="completedBatchesCount">0</div>
                             </div>
-                        </div>
+                        </div> 
 
                         <div id="batchList" class="rounded-md border">
                             <div class="p-3 bg-gray-50">
                                 <div class="grid grid-cols-10 gap-4 text-sm font-medium">
                                     <div class="truncate min-w-0">Batch Number</div>
+                                    <div>Shelf/Rack</div>
                                     <div>Digit Rank</div>
                                     <div>Group</div>
                                     <div>Created Date</div>
                                     <div>Files Count</div>
-                                    <div>Shelf/Rack</div>
                                     <div>Format</div>
                                     <div>Status</div>
                                     <div>Created By</div>

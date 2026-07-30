@@ -76,6 +76,12 @@
                     </button>
                     <button
                         class="tab-btn border-b-2 border-transparent py-2 px-1 text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                        data-tab="batchindex"
+                    >
+                        Batch Index
+                    </button>
+                    <button
+                        class="tab-btn border-b-2 border-transparent py-2 px-1 text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300"
                         data-tab="settings"
                     >
                         Label Settings
@@ -405,6 +411,8 @@
                     </div>
                 </div>
             </div>
+
+            @include('kangis_printlabel.partials.batch-index')
 
             {{-- ====== LABEL SETTINGS TAB ====== --}}
             <div id="settings-tab" class="tab-content mt-6">

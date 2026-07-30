@@ -20,6 +20,7 @@ use App\Models\FileTracker;
 use App\Models\FileSearchRequest;
 use App\Services\CommissioningMirrorService;
 use App\Services\KangisFileNoPlaceholderService;
+use App\Services\KangisParentLinkService;
 use App\Services\FileLocationResolver;
 use Illuminate\Validation\Rule;
 use App\Services\PropertyIdAllocationService;
@@ -31,15 +32,18 @@ class FileIndexingController extends Controller
     private PropertyIdAllocationService $propertyIdAllocationService;
     private CommissioningMirrorService $commissioningMirrorService;
     private FileIndexingBillService $fileIndexingBillService;
+    private KangisParentLinkService $kangisParentLinkService;
 
     public function __construct(
         PropertyIdAllocationService $propertyIdAllocationService,
         CommissioningMirrorService $commissioningMirrorService,
-        FileIndexingBillService $fileIndexingBillService
+        FileIndexingBillService $fileIndexingBillService,
+        KangisParentLinkService $kangisParentLinkService
     ) {
         $this->propertyIdAllocationService = $propertyIdAllocationService;
         $this->commissioningMirrorService = $commissioningMirrorService;
         $this->fileIndexingBillService = $fileIndexingBillService;
+        $this->kangisParentLinkService = $kangisParentLinkService;
     }
 
     /**
@@ -1082,6 +1086,9 @@ class FileIndexingController extends Controller
                 'test_control' => 'nullable|string|max:25',
                 'street_name' => 'nullable',
                 'file_type' => 'nullable|string|max:255',
+                // Required for human data-entry; the automated scanning importer
+                // (source=scanning_upload) has no gender input, so it is exempted.
+                'gender' => 'required_unless:source,scanning_upload|nullable|string|in:Male,Female,Corporate,Joint',
                 'dob' => 'nullable',
                 'nin' => 'nullable',
                 'tin' => 'nullable',
@@ -3326,6 +3333,9 @@ class FileIndexingController extends Controller
                 'test_control' => 'nullable|string|max:25',
                 'street_name' => 'nullable',
                 'file_type' => 'nullable|string|max:255',
+                // Required for human data-entry; the automated scanning importer
+                // (source=scanning_upload) has no gender input, so it is exempted.
+                'gender' => 'required_unless:source,scanning_upload|nullable|string|in:Male,Female,Corporate,Joint',
                 'dob' => 'nullable',
                 'nin' => 'nullable',
                 'tin' => 'nullable',
@@ -4242,10 +4252,25 @@ class FileIndexingController extends Controller
             // ordinary file whose related number points at a DCIV.
             $this->syncMasterDcivLinks($fileIndexing, $relatedFileNos, $relatedDetails);
 
+            // KANGIS three-file linkage (guide-faithful "Option A"): give this file
+            // its own prop_id and, when it is a child (e.g. a Land file quoting an
+            // already-indexed Old KANGIS number), point it up at the Old KANGIS parent
+            // via parent_prop_id. When THIS file is the Old KANGIS parent, its
+            // already-indexed related Land file(s) are re-parented to it. Best-effort —
+            // gaps are filled by `php artisan kangis:link-parent-propids`.
+            $mainParentPropId = $this->kangisParentLinkService->linkOnIndex(
+                (int) $fileIndexing->id,
+                (string) $fileIndexing->file_number,
+                $propIdForStore,
+                $relatedFileNos
+            );
+
             // "Has New KANGIS FileNo": create a standalone file_indexings row for the
             // KN-series number itself, copying descriptive fields from this form. The
             // file being indexed here is only linked to it via the Related File Number
             // link synced just above — it is NOT where the transactions get saved.
+            // The New KANGIS record gets its OWN distinct prop_id and hangs off the
+            // Old KANGIS parent (this file's prop_id, $propIdForStore).
             $kangisFileIndexing = null;
             if ($hasNewKangisFileno && $newKangisFileNoRaw !== '') {
                 $kangisFileIndexing = $this->createStandaloneNewKangisRecord(
@@ -4255,10 +4280,20 @@ class FileIndexingController extends Controller
                 );
             }
 
-            // Persist "Has Transaction" rows to the pra table — against the standalone
-            // New KANGIS record when one was created above, otherwise (no New KANGIS
-            // FileNo selected) against the main file being indexed here.
-            $this->syncFileIndexingTransactions($request, $kangisFileIndexing ?? $fileIndexing, $propIdForStore);
+            // Persist "Has Transaction" rows — against the standalone New KANGIS record
+            // when one was created above, otherwise the main file being indexed. Each
+            // transaction carries its file's OWN prop_id plus the Old KANGIS parent's
+            // prop_id (parent_prop_id) so Legal Search's ancestor expansion resolves it.
+            if ($kangisFileIndexing !== null) {
+                // Transactions belong to the New KANGIS file: its own prop_id, parent = Old KANGIS.
+                $txnPropId = $kangisFileIndexing->prop_id !== null ? (int) $kangisFileIndexing->prop_id : $propIdForStore;
+                $txnParentPropId = $propIdForStore;
+            } else {
+                // Transactions belong to the main file: its own prop_id, parent = its resolved ancestor.
+                $txnPropId = $propIdForStore;
+                $txnParentPropId = $mainParentPropId;
+            }
+            $this->syncFileIndexingTransactions($request, $kangisFileIndexing ?? $fileIndexing, $txnPropId, $txnParentPropId);
 
             if ($propIdForStore !== null) {
                 $fileNoForHistory = $fileIndexing->file_number;
@@ -4916,7 +4951,16 @@ class FileIndexingController extends Controller
      * it can be picked up and completed later via its own edit page. The caller (store())
      * has already confirmed this file number isn't indexed yet.
      */
-    protected function createStandaloneNewKangisRecord(string $newKangisFileNo, array $mainPersistableData, ?int $propId = null): FileIndexing
+    /**
+     * Create the standalone New KANGIS (KN-series) record.
+     *
+     * Under the guide-faithful three-file model the New KANGIS file is an
+     * INDEPENDENT property with its OWN prop_id, pointing up at the Old KANGIS
+     * parent via parent_prop_id. $parentPropId is the Old KANGIS file's own
+     * prop_id (i.e. the prop_id allocated for the file currently being indexed,
+     * which is the Old KANGIS in the documented workflow).
+     */
+    protected function createStandaloneNewKangisRecord(string $newKangisFileNo, array $mainPersistableData, ?int $parentPropId = null): FileIndexing
     {
         $currentUserName = $this->resolveCurrentUserName();
 
@@ -4935,15 +4979,46 @@ class FileIndexingController extends Controller
         $payload['created_by'] = $currentUserName;
         $payload['updated_by'] = $currentUserName;
 
+        // Allocate a DISTINCT prop_id for the New KANGIS file (skip_lookup so it
+        // never collapses onto the parent's/sibling's prop_id via cross-identifier
+        // matching), then hang it off the Old KANGIS parent.
+        $ownPropId = null;
+        try {
+            $ownPropId = $this->propertyIdAllocationService->allocateOrRetrievePropId(
+                $newKangisFileNo,
+                null,
+                null,
+                $newKangisFileNo,
+                ['skip_lookup' => true]
+            );
+        } catch (\Throwable $e) {
+            Log::warning('createStandaloneNewKangisRecord: distinct prop_id allocation failed', [
+                'file_number' => $newKangisFileNo,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        if ($ownPropId !== null) {
+            $payload['prop_id'] = $ownPropId;
+        }
+        if ($parentPropId !== null) {
+            $payload['parent_prop_id'] = (string) $parentPropId;
+        }
+
         $kangisFileIndexing = FileIndexing::on('sqlsrv')->create($payload);
 
-        if ($propId !== null) {
+        // Mirror the parent link onto the fileNumber row too.
+        if ($parentPropId !== null) {
+            $this->kangisParentLinkService->assignFileLevelParent($newKangisFileNo, $parentPropId);
+        }
+
+        if ($ownPropId !== null) {
             try {
-                $this->propertyIdAllocationService->syncPropIdToFileHistory($newKangisFileNo, $propId, null);
+                $this->propertyIdAllocationService->syncPropIdToFileHistory($newKangisFileNo, $ownPropId, null);
             } catch (\Throwable $e) {
                 Log::warning('createStandaloneNewKangisRecord: prop_id sync to file_history failed', [
                     'file_number' => $newKangisFileNo,
-                    'prop_id' => $propId,
+                    'prop_id' => $ownPropId,
                     'error' => $e->getMessage(),
                 ]);
             }
@@ -5019,7 +5094,7 @@ class FileIndexingController extends Controller
      * table. Each row becomes one pra row; the target file's file number is stored as mlsFNo,
      * and every row shares $propId, so they all resolve to one property.
      */
-    protected function syncFileIndexingTransactions(Request $request, FileIndexing $fileIndexing, ?int $propId = null): void
+    protected function syncFileIndexingTransactions(Request $request, FileIndexing $fileIndexing, ?int $propId = null, ?int $parentPropId = null): void
     {
         if (!$request->boolean('has_new_kangis_transaction')) {
             return;
@@ -5093,6 +5168,11 @@ class FileIndexingController extends Controller
 
             if ($propId !== null) {
                 $payload['prop_id'] = $propId;
+            }
+            // Old KANGIS parent link so Legal Search's ancestor expansion resolves
+            // this transaction when the property is searched from any of its files.
+            if ($parentPropId !== null) {
+                $payload['parent_prop_id'] = (string) $parentPropId;
             }
 
             if ($isCofo) {

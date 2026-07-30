@@ -165,8 +165,10 @@ http://app.klaes.ng/assets/logo/ministry2.png
 
 FOOTER LOGOS
 right logo  
-http://app.klaes.ng/assets/logo/las.jpg
+http://app.klaes.ng/assets/logo/Left_Logo.png
  left logo
 
  http://app.klaes.ng/storage/upload/logo/logo.png
 
+kangis logo
+http://app.klaes.ng/assets/logo/kangis.jpg

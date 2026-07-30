@@ -633,11 +633,10 @@
                                 @foreach($streetNames as $street)
                                     <option value="{{ $street->name }}">{{ \Illuminate\Support\Str::upper((string) $street->name) }}</option>
                                 @endforeach
-                                <option value="Other">OTHER</option>
                             </select>
                             <input id="cop-street-other" type="text"
                                 class="w-full px-4 py-3 mt-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition text-sm hidden"
-                                placeholder="Type street name">
+                                placeholder="Specify street name">
                             {{-- Hidden: full location details (street, district, LGA, state) --}}
                             <input id="cop-location" name="location" type="hidden">
                         </div>
@@ -649,6 +648,9 @@
                                     <option value="{{ $district->name }}">{{ strtoupper($district->name) }}</option>
                                 @endforeach
                             </select>
+                            <input id="cop-district-other" type="text"
+                                class="w-full px-4 py-3 mt-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition text-sm hidden"
+                                placeholder="Specify district name">
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">LGA</label>
@@ -657,7 +659,11 @@
                                 @foreach($lgas as $lga)
                                     <option value="{{ $lga->name }}">{{ strtoupper($lga->name) }}</option>
                                 @endforeach
+                                <option value="Other">OTHER</option>
                             </select>
+                            <input id="cop-lga-other" type="text"
+                                class="w-full px-4 py-3 mt-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition text-sm hidden"
+                                placeholder="Specify LGA name">
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">State</label>

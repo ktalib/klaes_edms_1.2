@@ -129,6 +129,9 @@
                                         <td class="px-6 py-4">
                                             @if($token->payment_reason)
                                                 <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-100 text-[10px] font-bold text-indigo-600">{{ $token->payment_reason }}</span>
+                                                @if($token->general_body)
+                                                    <span class="ml-1 inline-flex items-center px-2 py-0.5 rounded-md bg-amber-50 border border-amber-100 text-[10px] font-bold text-amber-600">{{ $token->general_body }}</span>
+                                                @endif
                                             @else
                                                 <span class="text-[11px] text-slate-300">—</span>
                                             @endif
@@ -230,6 +233,24 @@
                 @csrf
                 <div class="space-y-4">
 
+                    {{-- General Search (statutory body request) --}}
+                    <div class="p-4 bg-amber-50/40 rounded-2xl border border-amber-100">
+                        <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+                            <input type="checkbox" id="is_general" name="is_general" value="1" checked
+                                class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30 cursor-pointer">
+                            <span class="text-xs font-black text-slate-500 uppercase tracking-widest">General</span>
+                        </label>
+                        <div id="general-body-wrapper" class="hidden mt-3">
+                            <label for="general_body" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Requesting Body</label>
+                            <select id="general_body" name="general_body" disabled
+                                class="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none">
+                                <option value="" disabled selected>Select a requesting body...</option>
+                                @foreach(\App\Models\LegalSearchToken::GENERAL_REASONS as $body)
+                                    <option value="{{ $body }}">{{ $body }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
 
                        {{-- Client Information (editable) --}}
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -308,7 +329,7 @@
                             </div>
                         </div>
                         <div>
-                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Reason for Payment</label>
+                            <label for="payment_reason" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Reason for Payment</label>
                             <select id="payment_reason" name="payment_reason" required
                                 class="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none">
                                 <option value="" disabled selected>Select a reason...</option>
@@ -441,7 +462,45 @@
     function closeTokenModal() {
         $('#token-modal').addClass('hidden').removeClass('flex');
         $('#token-form')[0].reset();
+        toggleGeneralBody();
     }
+
+    // "General" is ticked by default — an ordinary client-paid search. Unticking it
+    // marks the search as requested by a statutory body: the Requesting Body dropdown
+    // appears, there is no client receipt (so the number is system generated) and the
+    // reason is fixed to the legal search payment.
+    const GENERAL_RECEIPT = @json(\App\Models\LegalSearchToken::GENERAL_RECEIPT);
+    const GENERAL_PAYMENT_REASON = @json(\App\Models\LegalSearchToken::GENERAL_PAYMENT_REASON);
+
+    function toggleGeneralBody() {
+        const isGeneral = $('#is_general').is(':checked');
+        const needsBody = !isGeneral;
+        const $receipt = $('#receipt_number');
+        const $reason = $('#payment_reason');
+
+        $('#general-body-wrapper').toggleClass('hidden', !needsBody);
+        $('#general_body').prop('disabled', !needsBody).prop('required', needsBody);
+
+        // readonly (not disabled) so the value still posts with the form
+        $receipt.prop('readonly', needsBody)
+            .toggleClass('bg-white text-slate-700', !needsBody)
+            .toggleClass('bg-slate-100 text-slate-500 cursor-not-allowed', needsBody)
+            .val(needsBody ? GENERAL_RECEIPT : '');
+
+        if (needsBody) {
+            if (!$reason.find('option[value="' + GENERAL_PAYMENT_REASON + '"]').length) {
+                $reason.append($('<option>', { value: GENERAL_PAYMENT_REASON, text: GENERAL_PAYMENT_REASON }));
+            }
+            $reason.val(GENERAL_PAYMENT_REASON);
+        } else {
+            $('#general_body').val('');
+            $reason.val('');
+        }
+    }
+
+    $(function () { toggleGeneralBody(); });
+
+    $(document).on('change', '#is_general', toggleGeneralBody);
 
     function toggleToken(element, token) {
         const display = $(element).find('.token-display');

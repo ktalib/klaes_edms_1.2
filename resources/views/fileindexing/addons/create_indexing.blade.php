@@ -474,11 +474,12 @@
         document.addEventListener('alpine:init', () => {
             Alpine.data('indexingForm', () => ({
                 fileParams: [
-                    { 
-                        id: Date.now(), 
-                        title: '', 
+                    {
+                        id: Date.now(),
+                        title: '',
                         applicant_name: '',
-                        plot_number: '', 
+                        gender: '',
+                        plot_number: '',
                         district: '',
                         custom_district: '',
                         lga: '',
@@ -503,9 +504,10 @@
 
                 addFileParam() {
                     this.fileParams.push({
-                        id: Date.now() + Math.random(), 
+                        id: Date.now() + Math.random(),
                         title: '',
                         applicant_name: '',
+                        gender: '',
                         plot_number: '',
                         district: '',
                         custom_district: '',
@@ -721,6 +723,7 @@
 
                     const current = this.fileParams[this.activeTab];
                     const data = {
+                        gender: current.gender,
                         dob: current.dob,
                         nin: current.nin,
                         tin: current.tin,
@@ -873,6 +876,7 @@
                                 property_address: record.property_address,
                                 
                                 // Personal Details
+                                gender: record.gender,
                                 dob: record.dob,
                                 nin: record.nin,
                                 tin: record.tin,

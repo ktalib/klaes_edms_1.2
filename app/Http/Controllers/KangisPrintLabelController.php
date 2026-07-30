@@ -17,6 +17,9 @@ class KangisPrintLabelController extends Controller
     const RACK_SHELF_CAPACITY = 50;
     const MAX_BATCH_SELECTION = 500;
 
+    /** Batch Index "all statuses except pending" sentinel. */
+    const STATUS_ANY = 'any';
+
     const PREFIXES = ['KN', 'KNML', 'MNKL', 'MLKN', 'KNGP'];
 
     // -------------------------------------------------------------------------
@@ -746,6 +749,290 @@ $query = KangisPrintLabelBatch::with(['creator'])
             Log::error('kangis-printlabel.getBatchForPrinting', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Batch Index for QR-coded files, grouped/ordered by Shelf/Rack.
+     *
+     * One row per generated label batch: registry batch no, prefix, the serial
+     * range of the file numbers it contains, and the rack/shelf it sits on.
+     */
+    public function getBatchIndex(Request $request)
+    {
+        try {
+            $rows = $this->buildBatchIndexRows($request);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'rows'    => $rows,
+                    'total'   => count($rows),
+                    'filters' => $this->batchIndexFilters($request),
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('kangis-printlabel.getBatchIndex', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Printable Batch Index sheet (A4 portrait, two signature blocks).
+     */
+    public function printBatchIndex(Request $request)
+    {
+        $rows    = $this->buildBatchIndexRows($request);
+        $filters = $this->batchIndexFilters($request);
+
+        return view('kangis_printlabel.batch-index-print', [
+            'rows'      => $rows,
+            'filters'   => $filters,
+            'autoPrint' => filter_var($request->input('auto_print', false), FILTER_VALIDATE_BOOLEAN),
+        ]);
+    }
+
+    /**
+     * Normalised Batch Index filter set (shared by the JSON and print endpoints).
+     */
+    private function batchIndexFilters(Request $request): array
+    {
+        $status = strtolower(trim((string) $request->input('status', '')));
+        if (!in_array($status, [self::STATUS_ANY, KangisPrintLabelBatch::STATUS_GENERATED, KangisPrintLabelBatch::STATUS_PRINTED, KangisPrintLabelBatch::STATUS_COMPLETED], true)) {
+            $status = self::STATUS_ANY;
+        }
+
+        // Registry Batch No mirrors the Select Files panel: a single number or a
+        // comma-separated list ("1" or "1,4,5"). Never split on whitespace.
+        $batchNos = array_values(array_unique(array_filter(
+            array_map('trim', preg_split('/[,;\r\n]+/', (string) $request->input('registry_batch_no', ''))),
+            fn($v) => $v !== '' && is_numeric($v)
+        )));
+
+        $rack          = strtoupper(trim((string) $request->input('rack', '')));
+        $rackSecondary = strtoupper(trim((string) $request->input('rack_secondary', '')));
+        $shelf         = is_numeric($request->input('shelf')) ? (int) $request->input('shelf') : null;
+
+        return [
+            'prefix'            => $this->validatePrefix((string) $request->input('prefix', '')),
+            'registry_batch_no' => array_map('intval', $batchNos),
+            'rack'              => $rack !== '' ? $rack : null,
+            'rack_secondary'    => $rackSecondary !== '' ? $rackSecondary : null,
+            'shelf'             => $shelf,
+            // Full Label is display-only (auto-derived from rack + shelf, like the
+            // Select Files panel); the rack/shelf values above do the filtering.
+            'full_label'        => $rack !== '' ? $rack . ($shelf !== null ? $shelf : '') : null,
+            'status'            => $status,
+            // Detailed = one row per print batch. Default consolidates the print
+            // batches of a registry batch on the same shelf into a single index row,
+            // which is how the registry's index sheet is laid out.
+            'detailed'          => filter_var($request->input('detailed', false), FILTER_VALIDATE_BOOLEAN),
+        ];
+    }
+
+    /**
+     * Build the Batch Index rows, ordered by rack then shelf.
+     */
+    private function buildBatchIndexRows(Request $request): array
+    {
+        $f = $this->batchIndexFilters($request);
+
+        // SQL Server has no regex, so derive the numeric serial two ways and take
+        // whichever casts cleanly: the last space-delimited token ("MLKN 1050" -> 1050)
+        // or everything from the first digit onwards ("MLKN1050" -> 1050).
+        $trimmed   = "LTRIM(RTRIM(i.file_number))";
+        $lastToken = "REVERSE(LEFT(REVERSE({$trimmed}), CHARINDEX(' ', REVERSE({$trimmed}) + ' ') - 1))";
+        $fromDigit = "CASE WHEN PATINDEX('%[0-9]%', {$trimmed}) > 0
+                           THEN SUBSTRING({$trimmed}, PATINDEX('%[0-9]%', {$trimmed}), LEN({$trimmed}))
+                           ELSE NULL END";
+        $serial    = "COALESCE(TRY_CAST({$lastToken} AS INT), TRY_CAST({$fromDigit} AS INT))";
+
+        $query = DB::connection('sqlsrv')
+            ->table('kangis_print_label_batches as b')
+            ->join('kangis_print_label_batch_items as i', 'i.batch_id', '=', 'b.id')
+            ->where('b.status', '!=', KangisPrintLabelBatch::STATUS_PENDING)
+            ->groupBy(
+                'b.id',
+                'b.batch_number',
+                'b.prefix',
+                'b.sys_batch_no',
+                'b.rack_primary',
+                'b.rack_secondary',
+                'b.shelf_number',
+                'b.full_label',
+                'b.status',
+                'b.created_at'
+            )
+            ->select([
+                'b.id',
+                'b.batch_number',
+                'b.prefix',
+                'b.sys_batch_no',
+                'b.rack_primary',
+                'b.rack_secondary',
+                'b.shelf_number',
+                'b.full_label',
+                'b.status',
+                'b.created_at',
+                DB::raw('COUNT(i.id) as file_count'),
+                DB::raw("MIN({$serial}) as serial_from"),
+                DB::raw("MAX({$serial}) as serial_to"),
+            ]);
+
+        if ($f['status'] !== self::STATUS_ANY) {
+            $query->where('b.status', $f['status']);
+        }
+        if ($f['prefix']) {
+            $query->where('b.prefix', $f['prefix']);
+        }
+        if ($f['rack']) {
+            $query->whereRaw('UPPER(LTRIM(RTRIM(b.rack_primary))) = ?', [$f['rack']]);
+        }
+        if ($f['rack_secondary']) {
+            $query->whereRaw('UPPER(LTRIM(RTRIM(b.rack_secondary))) = ?', [$f['rack_secondary']]);
+        }
+        if ($f['shelf'] !== null) {
+            $query->where('b.shelf_number', $f['shelf']);
+        }
+        if (!empty($f['registry_batch_no'])) {
+            $query->whereIn(DB::raw('TRY_CAST(b.sys_batch_no AS INT)'), $f['registry_batch_no']);
+        }
+
+        $rows = $query
+            ->orderBy('b.rack_primary')
+            ->orderBy('b.shelf_number')
+            ->orderByRaw('TRY_CAST(b.sys_batch_no AS INT)')
+            ->get();
+
+        $this->attachBatchIndexFileNumbers($rows);
+
+        if (!$f['detailed']) {
+            $rows = $this->consolidateBatchIndexRows($rows);
+        }
+
+        $sn = 0;
+
+        return $rows->map(function ($r) use (&$sn) {
+            $rack  = strtoupper(trim((string) ($r->rack_primary ?? '')));
+            $shelf = $r->shelf_number !== null ? (string) $r->shelf_number : '';
+            $full  = trim((string) ($r->full_label ?? '')) ?: trim($rack . $shelf);
+
+            $from = $r->serial_from !== null ? (int) $r->serial_from : null;
+            $to   = $r->serial_to !== null ? (int) $r->serial_to : null;
+            if ($from !== null && $to !== null) {
+                $range = $from === $to ? (string) $from : $from . ' - ' . $to;
+            } else {
+                $range = '—';
+            }
+
+            return [
+                'sn'                => ++$sn,
+                'batch_id'          => $r->id,
+                'batch_number'      => $r->batch_number,
+                'registry_batch_no' => $r->sys_batch_no,
+                'file_prefix'       => $r->prefix,
+                'serial_from'       => $from,
+                'serial_to'         => $to,
+                'serial_range'      => $range,
+                'rack'              => $rack,
+                'rack_secondary'    => $r->rack_secondary,
+                'shelf'             => $shelf,
+                'shelf_rack'        => $full,
+                'file_count'        => (int) $r->file_count,
+                'batch_count'       => (int) ($r->batch_count ?? 1),
+                'file_numbers'      => $r->file_numbers ?? [],
+                'status'            => $r->status,
+                'created_at'        => $r->created_at,
+            ];
+        })->all();
+    }
+
+    /**
+     * Attach the member file numbers to each index row, sorted by their serial.
+     */
+    private function attachBatchIndexFileNumbers($rows): void
+    {
+        $batchIds = $rows->pluck('id')->filter()->unique()->values();
+        if ($batchIds->isEmpty()) {
+            return;
+        }
+
+        $byBatch = [];
+        foreach ($batchIds->chunk(1000) as $chunk) {
+            DB::connection('sqlsrv')
+                ->table('kangis_print_label_batch_items')
+                ->whereIn('batch_id', $chunk->all())
+                ->select(['batch_id', 'file_number', 'label_position'])
+                ->orderBy('batch_id')
+                ->orderBy('label_position')
+                ->get()
+                ->each(function ($item) use (&$byBatch) {
+                    $number = trim((string) $item->file_number);
+                    if ($number !== '') {
+                        $byBatch[$item->batch_id][] = $number;
+                    }
+                });
+        }
+
+        foreach ($rows as $r) {
+            $r->file_numbers = $this->sortFileNumbersBySerial($byBatch[$r->id] ?? []);
+        }
+    }
+
+    /**
+     * Order file numbers by their trailing serial ("MLKN 9" before "MLKN 10"),
+     * falling back to a plain string sort when no serial can be read.
+     */
+    private function sortFileNumbersBySerial(array $numbers): array
+    {
+        $numbers = array_values(array_unique($numbers));
+
+        usort($numbers, function ($a, $b) {
+            $sa = preg_match('/(\d+)\s*$/', $a, $ma) ? (int) $ma[1] : null;
+            $sb = preg_match('/(\d+)\s*$/', $b, $mb) ? (int) $mb[1] : null;
+
+            if ($sa !== null && $sb !== null && $sa !== $sb) {
+                return $sa <=> $sb;
+            }
+
+            return strcasecmp($a, $b);
+        });
+
+        return $numbers;
+    }
+
+    /**
+     * Collapse the print batches of one registry batch sitting on the same
+     * shelf into a single index row (min/max serial, summed file count).
+     */
+    private function consolidateBatchIndexRows($rows)
+    {
+        return $rows
+            ->groupBy(function ($r) {
+                return implode('|', [
+                    strtoupper(trim((string) $r->prefix)),
+                    (string) $r->sys_batch_no,
+                    strtoupper(trim((string) $r->rack_primary)),
+                    (string) $r->shelf_number,
+                ]);
+            })
+            ->map(function ($group) {
+                $first    = $group->first();
+                $statuses = $group->pluck('status')->unique()->values();
+
+                $merged = clone $first;
+                $merged->serial_from = $group->pluck('serial_from')->filter(fn($v) => $v !== null)->min();
+                $merged->serial_to   = $group->pluck('serial_to')->filter(fn($v) => $v !== null)->max();
+                $merged->file_count  = $group->sum('file_count');
+                $merged->batch_count = $group->count();
+                $merged->status      = $statuses->count() === 1 ? $statuses->first() : 'mixed';
+                $merged->created_at  = $group->pluck('created_at')->filter()->min();
+                $merged->file_numbers = $this->sortFileNumbersBySerial(
+                    $group->flatMap(fn($r) => $r->file_numbers ?? [])->all()
+                );
+
+                return $merged;
+            })
+            ->values();
     }
 
     /**

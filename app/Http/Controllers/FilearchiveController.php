@@ -1000,6 +1000,184 @@ class FilearchiveController extends Controller
     }
 
     /**
+     * Re-classify (edit the "file type") a single page from the archive's
+     * document viewer. Unlike pagetyping's save-single this never renames or
+     * moves the physical file — it only rewrites the classification columns and
+     * the derived page_code / definition_code on the pagetypings row.
+     */
+    public function updatePageClassification(Request $request, PageTyping $pageTyping)
+    {
+        $validator = Validator::make($request->all(), [
+            'cover_type_id'      => 'required|integer',
+            'page_type'          => 'required|string|max:100',
+            'page_type_other'    => 'required_if:page_type,other,others,oth|nullable|string|max:100',
+            'page_subtype'       => 'nullable|string|max:100',
+            'page_subtype_other' => 'required_if:page_subtype,other,others,oth|nullable|string|max:100',
+            'serial_number'      => 'required|integer|min:0',
+            'page_code'          => 'required|string|max:100',
+            'registry'           => 'nullable|string|max:100',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+
+        $validated = $validator->validated();
+
+        $isOther = static fn ($value) => in_array(strtolower((string) $value), ['other', 'others', 'oth'], true);
+
+        // Page type: a numeric id resolves the PageType FK; "other" stores the
+        // custom text in both columns so the pageType() relationship falls back
+        // to page_type_others when displayed (same shape as legacy records).
+        if ($isOther($validated['page_type'])) {
+            $pageTypeValue  = $validated['page_type_other'];
+            $pageTypeOthers = $validated['page_type_other'];
+        } else {
+            $pageTypeValue  = $validated['page_type'];
+            $pageTypeOthers = null;
+        }
+
+        $pageSubtypeRaw = $validated['page_subtype'] ?? null;
+        if ($pageSubtypeRaw === null || $pageSubtypeRaw === '') {
+            $pageSubtypeValue  = null;
+            $pageSubtypeOthers = null;
+        } elseif ($isOther($pageSubtypeRaw)) {
+            $pageSubtypeValue  = $validated['page_subtype_other'];
+            $pageSubtypeOthers = $validated['page_subtype_other'];
+        } else {
+            $pageSubtypeValue  = $pageSubtypeRaw;
+            $pageSubtypeOthers = null;
+        }
+
+        // Keep definition_code aligned with the (possibly changed) page_code,
+        // preserving the existing definition/position prefix.
+        $definition = $pageTyping->definition ?? (max(0, (int) $pageTyping->page_number - 1) + 1);
+
+        $updates = [
+            'cover_type_id'       => (int) $validated['cover_type_id'],
+            'page_type'           => $pageTypeValue,
+            'page_type_others'    => $pageTypeOthers,
+            'page_subtype'        => $pageSubtypeValue,
+            'page_subtype_others' => $pageSubtypeOthers,
+            'serial_number'       => (int) $validated['serial_number'],
+            'page_code'           => $validated['page_code'],
+            'definition_code'     => ((string) $definition) . '-' . $validated['page_code'],
+            'typed_by'            => Auth::id(),
+        ];
+
+        if (!empty($validated['registry'])) {
+            $updates['registry'] = $validated['registry'];
+        }
+
+        $pageTyping->update($updates);
+
+        // Reload relationships so the viewer can refresh the row in place.
+        $pageTyping->load(['pageType', 'pageSubType', 'coverType']);
+
+        $pageTypeName = $pageTyping->pageType->PageType ?? ($pageTypeOthers ?: 'Unknown Type');
+        $pageSubTypeName = $pageTyping->pageSubType->PageSubType ?? ($pageSubtypeOthers ?: null);
+
+        Log::info('File archive page re-classified', [
+            'pagetyping_id' => $pageTyping->id,
+            'page_code'     => $pageTyping->page_code,
+            'user_id'       => Auth::id(),
+        ]);
+
+        return response()->json([
+            'success'    => true,
+            'message'    => 'Page classification updated.',
+            'page_code'  => $pageTyping->page_code,
+            'serial_number' => $pageTyping->serial_number,
+            'cover_type' => $pageTyping->coverType ? [
+                'id'   => $pageTyping->coverType->Id,
+                'name' => $pageTyping->coverType->Name,
+                'code' => $pageTyping->coverType->code,
+            ] : null,
+            'page_type' => [
+                'id'   => $pageTyping->pageType->id ?? $pageTyping->page_type,
+                'name' => $pageTypeName,
+                'code' => $pageTyping->pageType->code ?? (strtoupper(substr((string) ($pageTypeOthers ?? ''), 0, 4)) ?: 'OTH'),
+            ],
+            'page_subtype' => $pageSubTypeName ? [
+                'id'   => $pageTyping->pageSubType->id ?? $pageTyping->page_subtype,
+                'name' => $pageSubTypeName,
+                'code' => $pageTyping->pageSubType->code ?? (strtoupper(substr((string) ($pageSubtypeOthers ?? ''), 0, 4)) ?: 'OTH'),
+            ] : null,
+        ]);
+    }
+
+    /**
+     * Delete a single page (pagetypings row) from the archive viewer. The
+     * backing scanning/physical file is only removed when no other page still
+     * references it (e.g. sibling pages of the same source PDF), so deleting
+     * one page never destroys the others.
+     */
+    public function deletePage(Request $request, PageTyping $pageTyping)
+    {
+        try {
+            $scanningId = $pageTyping->scanning_id;
+            $scanning = $pageTyping->scanning;
+
+            DB::connection('sqlsrv')->beginTransaction();
+
+            try {
+                $pageTyping->delete();
+
+                $scanningOrphaned = false;
+                if ($scanningId) {
+                    $remaining = PageTyping::on('sqlsrv')
+                        ->where('scanning_id', $scanningId)
+                        ->count();
+
+                    if ($remaining === 0 && $scanning) {
+                        $scanningOrphaned = true;
+
+                        $disk = Storage::disk('public');
+                        $documentPath = $scanning->document_path;
+                        if ($documentPath && $disk->exists($documentPath)) {
+                            $disk->delete($documentPath);
+                        }
+
+                        $scanning->delete();
+                    }
+                }
+
+                DB::connection('sqlsrv')->commit();
+
+                Log::info('File archive page deleted', [
+                    'pagetyping_id'     => $pageTyping->id,
+                    'scanning_id'       => $scanningId,
+                    'scanning_removed'  => $scanningOrphaned,
+                    'user_id'           => Auth::id(),
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Page deleted.',
+                    'scanning_removed' => $scanningOrphaned,
+                ]);
+            } catch (\Throwable $transactionException) {
+                DB::connection('sqlsrv')->rollBack();
+                throw $transactionException;
+            }
+        } catch (\Throwable $e) {
+            Log::error('Error deleting archive page', [
+                'pagetyping_id' => $pageTyping->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete page: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Printable File Movement History sheet for a file, populated from the
      * file tracker module's movement_log (all trackers ever opened for the
      * file number, so previously logged-out files keep their full history).

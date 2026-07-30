@@ -1,6 +1,11 @@
 (function (window, document) {
   'use strict';
 
+  // Temporarily disabled: on-screen toast pop-ups for new notifications.
+  // The header bell, unread counters and the notifications page are unaffected.
+  // Set to true (or window.KLAES_ENABLE_NOTIFICATION_TOASTS = true) to re-enable.
+  const TOASTS_ENABLED = false;
+
   const SELECTORS = {
     root: '#file-tracker-header-notifications',
     toggle: '[data-notification-toggle]',
@@ -366,6 +371,9 @@
     }
 
     function showDynamicToasts(newItems, unreadCount) {
+      if (!TOASTS_ENABLED && !window.KLAES_ENABLE_NOTIFICATION_TOASTS) {
+        return;
+      }
       if (!Array.isArray(newItems) || !newItems.length) {
         return;
       }

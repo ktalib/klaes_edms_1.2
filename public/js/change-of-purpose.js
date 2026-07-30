@@ -188,16 +188,44 @@
         return false;
     }
 
-    // Resolve the chosen street: either the dropdown value, or the free-text
+    // Property-location dropdowns that offer an "Other" choice, paired with the
+    // free-text box used to spell the value out.
+    var COP_LOC_OTHER_FIELDS = [
+        { select: 'cop-street',   other: 'cop-street-other'   },
+        { select: 'cop-district', other: 'cop-district-other' },
+        { select: 'cop-lga',      other: 'cop-lga-other'      }
+    ];
+
+    // Resolve one of those fields: either the dropdown value, or the free-text
     // "Other" input when "Other" is selected.
-    function copResolveStreet() {
-        var sel   = document.getElementById('cop-street');
-        var other = document.getElementById('cop-street-other');
+    function copResolveLocField(selectId, otherId) {
+        var sel   = document.getElementById(selectId);
+        var other = document.getElementById(otherId);
         if (!sel) return '';
         if ((sel.value || '').trim().toLowerCase() === 'other') {
             return (other?.value || '').trim();
         }
         return (sel.value || '').trim();
+    }
+
+    function copResolveStreet() {
+        return copResolveLocField('cop-street', 'cop-street-other');
+    }
+
+    // Set a property-location field to `value`. When the value is not one of the
+    // dropdown's options, fall back to "Other" + the free-text box so nothing is
+    // silently dropped.
+    function copSetLocValue(selectId, otherId, value) {
+        var sel   = document.getElementById(selectId);
+        var other = document.getElementById(otherId);
+        if (!sel) return;
+        if (copSetSelectByValue(sel, value)) {
+            copToggleLocOther(selectId, otherId);
+            return;
+        }
+        if (!other || !copSetSelectByValue(sel, 'Other')) return;
+        other.value = String(value).trim();
+        other.classList.remove('hidden');
     }
 
     // Writes the Full Property Location into the hidden `location` field and the
@@ -225,8 +253,8 @@
     function copUpdateLocationPreview() {
         var street   = copResolveStreet();
         var plot     = (document.getElementById('cop-plot-no')?.value || '').trim();
-        var district = (document.getElementById('cop-district')?.value || '').trim();
-        var lga      = (document.getElementById('cop-lga')?.value || '').trim();
+        var district = copResolveLocField('cop-district', 'cop-district-other');
+        var lga      = copResolveLocField('cop-lga', 'cop-lga-other');
         var state    = (document.getElementById('cop-state')?.value || '').trim();
         copApplyLocation([
             plot ? 'Plot ' + plot : '',
@@ -234,10 +262,10 @@
         ].filter(Boolean).join(', '));
     }
 
-    // Show/hide the "Other" street text box based on the dropdown selection.
-    function copToggleStreetOther() {
-        var sel   = document.getElementById('cop-street');
-        var other = document.getElementById('cop-street-other');
+    // Show/hide the "Other" text box of a property-location field.
+    function copToggleLocOther(selectId, otherId) {
+        var sel   = document.getElementById(selectId);
+        var other = document.getElementById(otherId);
         if (!sel || !other) return;
         var isOther = (sel.value || '').trim().toLowerCase() === 'other';
         other.classList.toggle('hidden', !isOther);
@@ -355,7 +383,12 @@
         document.getElementById('cop-purpose').value = '';
         document.getElementById('cop-res-addr-street-other-wrapper')?.classList.add('hidden');
         document.getElementById('cop-res-addr-district-other-wrapper')?.classList.add('hidden');
-        document.getElementById('cop-street-other')?.classList.add('hidden');
+        COP_LOC_OTHER_FIELDS.forEach(function (f) {
+            var other = document.getElementById(f.other);
+            if (!other) return;
+            other.value = '';
+            other.classList.add('hidden');
+        });
         document.getElementById('cop-residential-address').value = '';
         // Reset land use select
         var luSel = document.getElementById('cop-land-use-id');
@@ -375,6 +408,9 @@
     window.copSubmitForm = async function () {
         var form = document.getElementById('cop-form');
         var formData = new FormData(form);
+        // District / LGA post the free-text value when "Other" is selected.
+        formData.set('district', copResolveLocField('cop-district', 'cop-district-other'));
+        formData.set('lga', copResolveLocField('cop-lga', 'cop-lga-other'));
 
         try {
             var response = await fetch('/change-of-purpose', {
@@ -1040,14 +1076,19 @@
         copInitAddressBuilder();
 
         // Live "Full Property Location Preview" + hidden location updates
-        ['cop-plot-no', 'cop-street', 'cop-street-other', 'cop-district', 'cop-lga', 'cop-state'].forEach(function (id) {
+        ['cop-plot-no', 'cop-street', 'cop-street-other', 'cop-district', 'cop-district-other',
+         'cop-lga', 'cop-lga-other', 'cop-state'].forEach(function (id) {
             var el = document.getElementById(id);
             if (!el) return;
             el.addEventListener('input', copUpdateLocationPreview);
             el.addEventListener('change', copUpdateLocationPreview);
         });
-        // Toggle the free-text "Other" street box
-        document.getElementById('cop-street')?.addEventListener('change', copToggleStreetOther);
+        // Toggle the free-text "Other" boxes (street / district / LGA)
+        COP_LOC_OTHER_FIELDS.forEach(function (f) {
+            document.getElementById(f.select)?.addEventListener('change', function () {
+                copToggleLocOther(f.select, f.other);
+            });
+        });
 
         // File Number Selector button
         document.getElementById('cop-select-file-btn')?.addEventListener('click', function () {
@@ -1073,8 +1114,8 @@
                         if (plotEl && !plotEl.value && rec.plot_no)   { plotEl.value = rec.plot_no;  }
                         // Backfill the District / LGA dropdowns from the file record.
                         // The Street dropdown is left untouched — it is for the street only.
-                        if (distEl && !distEl.value && rec.district) { copSetSelectByValue(distEl, rec.district); }
-                        if (lgaEl  && !lgaEl.value  && rec.lga)      { copSetSelectByValue(lgaEl, rec.lga); }
+                        if (distEl && !distEl.value && rec.district) { copSetLocValue('cop-district', 'cop-district-other', rec.district); }
+                        if (lgaEl  && !lgaEl.value  && rec.lga)      { copSetLocValue('cop-lga', 'cop-lga-other', rec.lga); }
                         greyOutPrefilled();
                         // The record's full property location backfills the hidden location field.
                         if (rec.location) { copApplyLocation(rec.location); }

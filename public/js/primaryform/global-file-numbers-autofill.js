@@ -400,6 +400,17 @@ function autoFillApplicantFields(fileData) {
 function updateFormField(fieldId, value) {
     const field = document.getElementById(fieldId);
     if (field && value) {
+        // Searchable reference dropdowns (District / Street Name) load their
+        // options on demand, so the value has to be injected rather than matched
+        // against a pre-rendered option list.
+        if (field.dataset && field.dataset.referenceSource) {
+            if (typeof setReferenceSelectValue === 'function') {
+                setReferenceSelectValue(field, value);
+                console.log(`📝 Updated REFERENCE SELECT ${fieldId}: ${value}`);
+            }
+            return;
+        }
+
         // Handle select elements differently
         if (field.tagName === 'SELECT') {
             // For select elements, try exact match first
@@ -544,8 +555,20 @@ async function fetchApplicationDetails(fileno) {
                 resolvePropertyStateFromLga(data.data.property_lga, 10);
             }
 
+            // Pin the property map when the record already carries coordinates
+            const propertyMap = window.STLocationMaps && window.STLocationMaps.pf;
+            if (propertyMap) {
+                const lat = parseFloat(data.data.latitude);
+                const lng = parseFloat(data.data.longitude);
+                if (!isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) {
+                    propertyMap.setPin(lat, lng, true, 'Backfilled from file indexing');
+                } else {
+                    propertyMap.clearPin();
+                }
+            }
+
             console.log('✅ Property fields auto-filled from application details');
-            
+
         } else {
             console.log('ℹ️ No additional application details found for file:', fileno);
         }

@@ -157,6 +157,8 @@ class PrimaryApplicationController extends Controller
                 'property_lga' => 'nullable|string|max:1000',
                 'property_state' => 'nullable|string|max:1000',
                 'plot_size' => 'nullable|string|max:1000',
+                'latitude' => 'nullable|numeric|between:-90,90',
+                'longitude' => 'nullable|numeric|between:-180,180',
 
                 // Property details
                 'units_count' => 'nullable|integer',
@@ -621,6 +623,8 @@ class PrimaryApplicationController extends Controller
                 'property_district' => $validated['property_district'] ?? null,
                 'property_lga' => $validated['property_lga'] ?? null,
                 'property_state' => $validated['property_state'] ?? null,
+                'latitude' => $validated['latitude'] ?? null,
+                'longitude' => $validated['longitude'] ?? null,
                 'plot_size' => $validated['plot_size'] ?? null,
                 'NoOfUnits' => $validated['units_count'] ?? null,
                 'NoOfBlocks' => $validated['blocks_count'] ?? null,
@@ -962,6 +966,25 @@ class PrimaryApplicationController extends Controller
     /**
      * Lightweight application lookup used by the legacy autofill widget.
      */
+    /**
+     * The live file_indexings row for a file number — the source of truth for
+     * a property's location (and map pin) before an application exists.
+     *
+     * @param string $fileno
+     * @return object|null
+     */
+    private function findIndexedFile($fileno)
+    {
+        return DB::connection('sqlsrv')
+            ->table('file_indexings')
+            ->where('file_number', $fileno)
+            ->where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
+            ->orderByDesc('id')
+            ->first();
+    }
+
     public function getApplicationDetails($fileno)
     {
         try {
@@ -972,10 +995,23 @@ class PrimaryApplicationController extends Controller
                 ->first();
 
             if ($application) {
+                // mother_applications stores its own pin once the form has been
+                // submitted; before that, fall back to the file's indexing row.
+                $latitude = $application->latitude ?? null;
+                $longitude = $application->longitude ?? null;
+
+                if ($latitude === null || $longitude === null) {
+                    $indexedPin = $this->findIndexedFile($fileno);
+                    $latitude = $latitude ?? ($indexedPin->latitude ?? null);
+                    $longitude = $longitude ?? ($indexedPin->longitude ?? null);
+                }
+
                 return response()->json([
                     'success' => true,
                     'data' => [
                         'id' => $application->id,
+                        'latitude' => $latitude,
+                        'longitude' => $longitude,
                         'fileno' => $application->fileno,
                         'np_fileno' => $application->np_fileno,
                         'scheme_no' => $application->scheme_no,
@@ -1001,14 +1037,7 @@ class PrimaryApplicationController extends Controller
             // primary file number selected here was commissioned with its location
             // copied from the source file's file_indexings row, so fall back to
             // that as the backfill source.
-            $indexing = DB::connection('sqlsrv')
-                ->table('file_indexings')
-                ->where('file_number', $fileno)
-                ->where(function ($q) {
-                    $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
-                })
-                ->orderByDesc('id')
-                ->first();
+            $indexing = $this->findIndexedFile($fileno);
 
             if (!$indexing) {
                 return response()->json([
@@ -1030,6 +1059,8 @@ class PrimaryApplicationController extends Controller
                     'property_house_no' => null,
                     'property_plot_no' => $indexing->plot_number,
                     'property_district' => $indexing->district,
+                    'latitude' => $indexing->latitude ?? null,
+                    'longitude' => $indexing->longitude ?? null,
                     'plot_size' => $indexing->plot_size,
                     'parent_prop_id' => $indexing->parent_prop_id,
                     'applicant_type' => null,

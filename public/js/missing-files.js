@@ -124,6 +124,11 @@
                 if (res && res.success && res.in_transit) {
                     showTransitNotice(res.transit_location, res.transit_tracking_id);
                 }
+                // Auto-detect the Archive / Registry from config/file_ranges.php
+                // (resolved server-side from the file's prefix + year).
+                if (res && res.success) {
+                    applyDetectedRegistry(res.registry);
+                }
             })
             .catch(function () { /* the unique constraint still guards the save */ });
     }
@@ -191,6 +196,33 @@
         }
         state.duplicate = false;
         setBusy(document.getElementById('mf-submit-btn'), false);
+    }
+
+    /* ------------------------------------------------------------ Registry auto-detect */
+
+    // Pre-select the Archive / Registry dropdown from the range resolved server-side
+    // (config/file_ranges.php). The field stays editable so the user can override, but a
+    // matched registry drives the default instead of the static "Registry 1".
+    function applyDetectedRegistry(registry) {
+        const sel = document.getElementById('mf-archive-registry');
+        if (!sel) return;
+
+        const value = (registry || '').trim();
+        if (!value) return;
+
+        // Only apply when the resolved registry is one of the dropdown's options.
+        const match = Array.prototype.find.call(sel.options, function (opt) {
+            return opt.value === value;
+        });
+        if (!match) return;
+
+        sel.value = value;
+
+        // Brief highlight so the user sees the field was auto-filled for them.
+        sel.classList.add('ring-2', 'ring-rose-300');
+        setTimeout(function () {
+            sel.classList.remove('ring-2', 'ring-rose-300');
+        }, 1200);
     }
 
     /* ---------------------------------------------------------------- Full label */

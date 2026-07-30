@@ -216,10 +216,14 @@ document.addEventListener('DOMContentLoaded', function () {
     // On the edit page the current record is excluded via data-record-id.
     const dupCheckUrl = form?.dataset.dupcheckUrl || '';
     const excludeId   = form?.dataset.recordId || '';
+    const dupConfirmedInput = document.getElementById('duplicate_confirmed');
     let lastDuplicate = null; // cache the most recent check result
 
     function checkDuplicateFileNo(fileNo) {
         lastDuplicate = null;
+        // Any fresh check invalidates a previous "Save Anyway" — picking a
+        // different file number must not inherit the earlier confirmation.
+        if (typeof window._resetDupConfirmation === 'function') window._resetDupConfirmation();
         if (!dupCheckUrl || !fileNo) return Promise.resolve(null);
 
         const params = new URLSearchParams({ file_number: fileNo });
@@ -289,6 +293,31 @@ document.addEventListener('DOMContentLoaded', function () {
     if (form) {
         let dupConfirmed = false; // set once the user chooses to save despite a duplicate
 
+        window._resetDupConfirmation = function () {
+            dupConfirmed = false;
+            if (dupConfirmedInput) dupConfirmedInput.value = '0';
+        };
+
+        function promptDuplicate(dup) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Possible Duplicate',
+                html: 'A recommendation already exists for <strong>' + (dup.file_number || fileNoInput.value) + '</strong>.<br>Save this one anyway?',
+                showCancelButton: true,
+                confirmButtonText: 'Save Anyway',
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: '#dc2626',
+                cancelButtonColor: '#64748b',
+            }).then(result => {
+                if (result.isConfirmed) {
+                    dupConfirmed = true;
+                    // The server rejects a duplicate unless this flag comes with the post.
+                    if (dupConfirmedInput) dupConfirmedInput.value = '1';
+                    form.requestSubmit ? form.requestSubmit() : form.submit();
+                }
+            });
+        }
+
         form.addEventListener('submit', function (e) {
             if (!fileNoInput.value) {
                 e.preventDefault();
@@ -301,23 +330,18 @@ document.addEventListener('DOMContentLoaded', function () {
                 return;
             }
 
-            // Block on a known duplicate until the user explicitly confirms.
-            if (lastDuplicate && !dupConfirmed) {
+            // Always re-check on submit rather than trusting `lastDuplicate`: the
+            // file number may have been set without going through the picker, or an
+            // earlier check may have failed silently. The server enforces this too.
+            if (!dupConfirmed) {
                 e.preventDefault();
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'Possible Duplicate',
-                    html: 'A recommendation already exists for <strong>' + (lastDuplicate.file_number || fileNoInput.value) + '</strong>.<br>Save this one anyway?',
-                    showCancelButton: true,
-                    confirmButtonText: 'Save Anyway',
-                    cancelButtonText: 'Cancel',
-                    confirmButtonColor: '#dc2626',
-                    cancelButtonColor: '#64748b',
-                }).then(result => {
-                    if (result.isConfirmed) {
-                        dupConfirmed = true;
-                        form.requestSubmit ? form.requestSubmit() : form.submit();
+                checkDuplicateFileNo(fileNoInput.value).then(dup => {
+                    if (dup) {
+                        promptDuplicate(dup);
+                        return;
                     }
+                    dupConfirmed = true; // nothing to confirm — let the next submit through
+                    form.requestSubmit ? form.requestSubmit() : form.submit();
                 });
                 return;
             }

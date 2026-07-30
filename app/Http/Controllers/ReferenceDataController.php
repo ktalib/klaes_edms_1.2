@@ -70,6 +70,12 @@ class ReferenceDataController extends Controller
             $query->where('lga_id', $request->get('lga_id'));
         }
 
+        // Optional cap for type-ahead callers; omitted = full list, which the
+        // pages that populate a static <select> still rely on.
+        if ($request->filled('limit')) {
+            $query->limit(min((int) $request->get('limit'), 100));
+        }
+
         $districts = $query->get(['id', 'name', 'slug']);
 
         return response()->json([
@@ -127,6 +133,10 @@ class ReferenceDataController extends Controller
 
         if ($request->filled('district_id') && Schema::connection('sqlsrv')->hasColumn('street_names', 'district_id')) {
             $query->where('district_id', $request->get('district_id'));
+        }
+
+        if ($request->filled('limit')) {
+            $query->limit(min((int) $request->get('limit'), 100));
         }
 
         $streets = $query->get(['id', 'name']);

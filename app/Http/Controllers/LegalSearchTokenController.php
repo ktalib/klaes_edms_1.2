@@ -33,6 +33,16 @@ class LegalSearchTokenController extends Controller
 
     public function store(Request $request)
     {
+        // General is the default. When it is unticked the search was requested by a
+        // statutory body: no client receipt, so the number is system generated and
+        // the payment reason is fixed.
+        if (!$request->boolean('is_general')) {
+            $request->merge([
+                'receipt_number' => LegalSearchToken::GENERAL_RECEIPT,
+                'payment_reason' => LegalSearchToken::GENERAL_PAYMENT_REASON,
+            ]);
+        }
+
         $request->validate([
             'file_number' => 'required|string',
             'applicant_name' => 'required|string',
@@ -41,7 +51,20 @@ class LegalSearchTokenController extends Controller
             'receipt_number' => 'required|string',
             'date_paid' => 'required|date',
             'payment_reason' => 'required|string',
+            'is_general' => 'nullable|boolean',
+            'general_body' => 'nullable|string|in:' . implode(',', LegalSearchToken::GENERAL_REASONS),
         ]);
+
+        $isGeneral = $request->boolean('is_general');
+
+        // A non-General token records the statutory body that requested the search;
+        // it sits alongside the payment reason, not in place of it.
+        if (!$isGeneral && !$request->filled('general_body')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Select a requesting body for a non-General search.',
+            ], 422);
+        }
 
         $token = LegalSearchToken::create([
             'token' => Str::upper(Str::random(12)),
@@ -54,6 +77,8 @@ class LegalSearchTokenController extends Controller
             'receipt_number' => $request->receipt_number,
             'date_paid' => $request->date_paid,
             'payment_reason' => $request->payment_reason,
+            'is_general' => $isGeneral,
+            'general_body' => $isGeneral ? null : $request->general_body,
             'created_by' => Auth::id(),
         ]);
 

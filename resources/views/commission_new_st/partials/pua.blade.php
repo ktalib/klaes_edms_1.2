@@ -267,6 +267,13 @@
 {{-- PuA Applicant Information Component --}}
 @include('commission_new_st.partials.pua-applicant', ['titles' => $titles ?? []])
 
+{{-- Location Details + Map (backfilled from the parent PRIMARY file number) --}}
+@include('commission_new_st.partials.location-details-map', [
+    'prefix' => 'pua',
+    'mode' => 'backfill',
+    'hint' => 'Backfilled automatically from the selected parent primary file number (read-only)',
+])
+
 <!-- Commission Information Section -->
 <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
     <div class="flex items-center gap-3 mb-6">

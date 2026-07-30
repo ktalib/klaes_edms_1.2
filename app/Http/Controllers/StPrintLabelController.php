@@ -28,8 +28,12 @@ class StPrintLabelController extends Controller
 
     const PREFIX = 'ST';
 
-    // Allowed ST application types stored in file_indexings.st_application_type
+    // Allowed ST application types. These map onto st_file_numbers.file_no_type,
+    // which is the authoritative ST FileNo register the labels are printed from.
     const APPLICATION_TYPES = ['primary', 'pua', 'sua'];
+
+    // st_file_numbers.file_no_type values, in the same order as APPLICATION_TYPES.
+    const FILE_NO_TYPES = ['PRIMARY', 'PUA', 'SUA'];
 
     private const APPLICATION_TYPE_LABELS = [
         'primary' => 'Primary',
@@ -60,8 +64,8 @@ class StPrintLabelController extends Controller
     {
         try {
             $count = DB::connection('sqlsrv')
-                ->table('file_indexings')
-                ->whereIn('st_application_type', self::APPLICATION_TYPES)
+                ->table('st_file_numbers')
+                ->whereIn('file_no_type', self::FILE_NO_TYPES)
                 ->count();
 
             $result = [
@@ -81,49 +85,22 @@ class StPrintLabelController extends Controller
 
     /**
      * Return the ST application types (primary, pua, sua) with a live count
-     * of available files from the correct source table for each type.
+     * of available files taken from the ST FileNo register (st_file_numbers).
      * Files already in any batch (any status) are excluded from the count.
      */
     public function getApplicationTypes()
     {
         try {
-            // PUA count — subapplications where is_sua_unit = 0, not yet batched
-            $puaCount = DB::connection('sqlsrv')
-                ->table('subapplications as sa')
-                ->where('sa.is_sua_unit', 0)
-                ->whereNotExists(function ($q) {
-                    $q->select(DB::raw(1))
-                        ->from('st_print_label_batch_items as bi')
-                        ->whereRaw('bi.file_number = sa.fileno');
-                })
-                ->count();
-
-            // SUA count — subapplications where is_sua_unit = 1, not yet batched
-            $suaCount = DB::connection('sqlsrv')
-                ->table('subapplications as sa')
-                ->where('sa.is_sua_unit', 1)
-                ->whereNotExists(function ($q) {
-                    $q->select(DB::raw(1))
-                        ->from('st_print_label_batch_items as bi')
-                        ->whereRaw('bi.file_number = sa.fileno');
-                })
-                ->count();
-
-            // Primary count — mother_applications, not yet batched
-            $primaryCount = DB::connection('sqlsrv')
-                ->table('mother_applications as ma')
-                ->whereNotExists(function ($q) {
-                    $q->select(DB::raw(1))
-                        ->from('st_print_label_batch_items as bi')
-                        ->whereRaw('bi.file_number = ma.fileno');
-                })
-                ->count();
-
-            $counts = [
-                'primary' => $primaryCount,
-                'pua'     => $puaCount,
-                'sua'     => $suaCount,
-            ];
+            $counts = [];
+            foreach (self::APPLICATION_TYPES as $type) {
+                $counts[$type] = $this->stFileNumbersQuery($type)
+                    ->whereNotExists(function ($q) {
+                        $q->select(DB::raw(1))
+                            ->from('st_print_label_batch_items as bi')
+                            ->whereRaw('bi.file_number = sfn.st_number');
+                    })
+                    ->count();
+            }
 
             $data = [];
             foreach (self::APPLICATION_TYPES as $type) {
@@ -175,9 +152,14 @@ class StPrintLabelController extends Controller
     /**
      * Fetch available files for a given ST application type.
      *
-     * - primary : source is file_indexings (st_application_type = 'primary')
-     * - pua     : source is subapplications (is_sua_unit = 0), joined to file_indexings for tracking_id
-     * - sua     : source is subapplications (is_sua_unit = 1), joined to file_indexings for tracking_id
+     * Source of truth is the ST FileNo register (st_file_numbers): every ST
+     * file number generated for the selected type gets a label, whether or
+     * not an application/indexing row exists for it yet. file_indexings is
+     * joined only for the shelf location.
+     *
+     * - primary : st_file_numbers.file_no_type = 'PRIMARY' (top line = np_fileno, bottom = MLS fileno)
+     * - pua     : file_no_type = 'PUA'  (top line = unit fileno, bottom = parent np_fileno)
+     * - sua     : file_no_type = 'SUA'  (top line = unit fileno, bottom = parent np_fileno)
      */
     public function getAvailableFiles(Request $request)
     {
@@ -192,123 +174,50 @@ class StPrintLabelController extends Controller
                 ], 422);
             }
 
-            // ----------------------------------------------------------------
-            // PUA / SUA — drive from subapplications; join ONE file_indexings
-            // row per subapplication (MIN id) to avoid fan-out duplicates.
-            // ----------------------------------------------------------------
-            if (in_array($applicationType, ['pua', 'sua'], true)) {
-                $isSuaUnit = $applicationType === 'sua' ? 1 : 0;
+            $query = $this->stFileNumbersQuery($applicationType)
+                ->leftJoinSub($this->fileIndexingBridge(), 'fi_min', 'fi_min.file_number', '=', 'sfn.st_number')
+                ->leftJoin('file_indexings as fi', 'fi.id', '=', 'fi_min.fi_id')
+                ->select([
+                    'sfn.id',
+                    // Top label line: the ST file number itself.
+                    DB::raw('sfn.st_number  AS file_number'),
+                    // np_file_number left NULL so the JS top line falls back to file_number.
+                    DB::raw('NULL           AS np_file_number'),
+                    // Bottom label line: MLS number (primary) / parent ST number (units).
+                    DB::raw('sfn.alt_number AS application_file_number'),
+                    DB::raw('COALESCE(sfn.tra, fi.tracking_id) AS tracking_id'),
+                    DB::raw('COALESCE(fi.land_use_type, sfn.land_use) AS land_use_type'),
+                    'fi.shelf_location',
+                    DB::raw("'" . $applicationType . "' AS st_application_type"),
+                ]);
 
-                // Deduplicated bridge: one file_indexings row per subapplication_id
-                $fiSub = DB::connection('sqlsrv')
-                    ->table('file_indexings')
-                    ->selectRaw('subapplication_id, MIN(id) AS fi_id')
-                    ->whereNotNull('subapplication_id')
-                    ->groupBy('subapplication_id');
-
-                $query = DB::connection('sqlsrv')
-                    ->table('subapplications as sa')
-                    ->leftJoinSub($fiSub, 'fi_min', 'fi_min.subapplication_id', '=', 'sa.id')
-                    ->leftJoin('file_indexings as fi', 'fi.id', '=', 'fi_min.fi_id')
-                    ->where('sa.is_sua_unit', $isSuaUnit)
-                    ->select([
-                        DB::raw('ISNULL(fi.id, sa.id) AS id'),
-                        // Top label line  : unit file number (sa.fileno)
-                        DB::raw('sa.fileno     AS file_number'),
-                        // np_file_number left NULL so JS top-line falls back to file_number (sa.fileno)
-                        DB::raw('NULL          AS np_file_number'),
-                        // Bottom label line: new primary file number (sa.np_fileno)
-                        DB::raw('sa.np_fileno  AS application_file_number'),
-                        'fi.tracking_id',
-                        'fi.land_use_type',
-                        'fi.shelf_location',
-                        DB::raw("'" . $applicationType . "' AS st_application_type"),
-                    ]);
-
-                if ($search !== '') {
-                    $like = '%' . $search . '%';
-                    $query->where(function ($q) use ($like) {
-                        $q->where('sa.fileno',    'like', $like)
-                          ->orWhere('sa.np_fileno', 'like', $like)
-                          ->orWhere('fi.tracking_id', 'like', $like);
-                    });
-                }
-
-                // Exclude files already in ANY batch (any status).
-                // Use the Generated Batches tab to reprint existing labels.
-                $query->whereNotExists(function ($q) {
-                    $q->select(DB::raw(1))
-                        ->from('st_print_label_batch_items as bi')
-                        ->whereRaw('bi.file_number = sa.fileno');
+            if ($search !== '') {
+                $like = '%' . $search . '%';
+                $query->where(function ($q) use ($like) {
+                    $q->where('sfn.st_number',  'like', $like)
+                      ->orWhere('sfn.alt_number', 'like', $like)
+                      ->orWhere('sfn.tra',        'like', $like);
                 });
-
-                // Skip Assigned Shelves
-                if ($request->boolean('exclude_assigned')) {
-                    $query->where(function ($q) {
-                        $q->whereNull('fi.shelf_location')
-                          ->orWhere('fi.shelf_location', '')
-                          ->orWhere('fi.shelf_location', 'like', '%N/A%');
-                    });
-                }
-
-                $rows = $query->orderBy('sa.fileno')->get();
-
-            } else {
-                // ----------------------------------------------------------------
-                // Primary — source: mother_applications; join ONE file_indexings
-                // row per mother application (MIN id) to avoid fan-out duplicates.
-                // ----------------------------------------------------------------
-
-                // Deduplicated bridge: one file_indexings row per main_application_id
-                $fiSub = DB::connection('sqlsrv')
-                    ->table('file_indexings')
-                    ->selectRaw('main_application_id, MIN(id) AS fi_id')
-                    ->whereNotNull('main_application_id')
-                    ->groupBy('main_application_id');
-
-                $query = DB::connection('sqlsrv')
-                    ->table('mother_applications as ma')
-                    ->leftJoinSub($fiSub, 'fi_min', 'fi_min.main_application_id', '=', 'ma.id')
-                    ->leftJoin('file_indexings as fi', 'fi.id', '=', 'fi_min.fi_id')
-                    ->select([
-                        DB::raw('ISNULL(fi.id, ma.id) AS id'),
-                        DB::raw('ma.fileno    AS file_number'),
-                        DB::raw('ma.np_fileno AS np_file_number'),
-                        DB::raw('ma.fileno    AS application_file_number'),
-                        'fi.tracking_id',
-                        'fi.land_use_type',
-                        'fi.shelf_location',
-                        DB::raw("'primary' AS st_application_type"),
-                    ]);
-
-                if ($search !== '') {
-                    $like = '%' . $search . '%';
-                    $query->where(function ($q) use ($like) {
-                        $q->where('ma.fileno',    'like', $like)
-                          ->orWhere('ma.np_fileno', 'like', $like)
-                          ->orWhere('fi.tracking_id', 'like', $like);
-                    });
-                }
-
-                // Exclude files already in ANY batch (any status).
-                // Use the Generated Batches tab to reprint existing labels.
-                $query->whereNotExists(function ($q) {
-                    $q->select(DB::raw(1))
-                        ->from('st_print_label_batch_items as bi')
-                        ->whereRaw('bi.file_number = ma.fileno');
-                });
-
-                // Skip Assigned Shelves
-                if ($request->boolean('exclude_assigned')) {
-                    $query->where(function ($q) {
-                        $q->whereNull('fi.shelf_location')
-                          ->orWhere('fi.shelf_location', '')
-                          ->orWhere('fi.shelf_location', 'like', '%N/A%');
-                    });
-                }
-
-                $rows = $query->orderBy('ma.fileno')->get();
             }
+
+            // Exclude files already in ANY batch (any status).
+            // Use the Generated Batches tab to reprint existing labels.
+            $query->whereNotExists(function ($q) {
+                $q->select(DB::raw(1))
+                    ->from('st_print_label_batch_items as bi')
+                    ->whereRaw('bi.file_number = sfn.st_number');
+            });
+
+            // Skip Assigned Shelves
+            if ($request->boolean('exclude_assigned')) {
+                $query->where(function ($q) {
+                    $q->whereNull('fi.shelf_location')
+                      ->orWhere('fi.shelf_location', '')
+                      ->orWhere('fi.shelf_location', 'like', '%N/A%');
+                });
+            }
+
+            $rows = $query->orderBy('sfn.st_number')->get();
 
             if ($rows->isEmpty()) {
                 return response()->json([
@@ -319,7 +228,7 @@ class StPrintLabelController extends Controller
                         'total'            => 0,
                         'prefix'           => self::PREFIX,
                         'application_type' => $applicationType,
-                        'message'          => 'No indexed ST files found for application type "' . strtoupper($applicationType) . '".',
+                        'message'          => 'No ST file numbers available for application type "' . strtoupper($applicationType) . '".',
                     ],
                 ]);
             }
@@ -474,75 +383,36 @@ class StPrintLabelController extends Controller
                 ]);
 
                 // ----------------------------------------------------------------
-                // Fetch files from the correct source table per application type.
-                // PUA/SUA : source = subapplications  (sa.fileno on top, sa.np_fileno on bottom)
-                // Primary  : source = mother_applications (ma.fileno on top, ma.np_fileno on bottom)
-                // file_indexings is joined for tracking_id / shelf_location only.
+                // Fetch the selected ST file numbers from the ST FileNo register
+                // (st_file_numbers). file_ids are st_file_numbers.id values.
+                // file_indexings is joined only to carry the existing shelf
+                // location / indexing id across; it is optional.
                 // ----------------------------------------------------------------
-                $isUnit = in_array($applicationType, ['pua', 'sua'], true);
-
-                if ($isUnit) {
-                    $isSuaUnit = $applicationType === 'sua' ? 1 : 0;
-
-                    // Deduplicated bridge: one file_indexings row per subapplication_id
-                    $fiMinSub = DB::connection('sqlsrv')
-                        ->table('file_indexings')
-                        ->selectRaw('subapplication_id, MIN(id) AS fi_id')
-                        ->whereNotNull('subapplication_id')
-                        ->groupBy('subapplication_id');
-
-                    $files = DB::connection('sqlsrv')
-                        ->table('subapplications as sa')
-                        ->leftJoinSub($fiMinSub, 'fi_min', 'fi_min.subapplication_id', '=', 'sa.id')
-                        ->leftJoin('file_indexings as fi', 'fi.id', '=', 'fi_min.fi_id')
-                        ->where('sa.is_sua_unit', $isSuaUnit)
-                        ->whereIn('fi.id', $fileIds)
-                        ->select([
-                            'fi.id',
-                            // Top label line : unit file number
-                            DB::raw('sa.fileno    AS file_number'),
-                            // np_file_number = NULL so JS top-line uses file_number
-                            DB::raw('NULL         AS np_file_number'),
-                            // Bottom label line : new primary file number
-                            DB::raw('sa.np_fileno AS application_file_number'),
-                            'fi.tracking_id',
-                            'fi.land_use_type',
-                            'fi.shelf_location',
-                            DB::raw('NULL AS location'),
-                            DB::raw('NULL AS file_title'),
-                            DB::raw('NULL AS plot_number'),
-                        ])
-                        ->get();
-                } else {
-                    // Primary — source: mother_applications
-                    $fiMinSub = DB::connection('sqlsrv')
-                        ->table('file_indexings')
-                        ->selectRaw('main_application_id, MIN(id) AS fi_id')
-                        ->whereNotNull('main_application_id')
-                        ->groupBy('main_application_id');
-
-                    $files = DB::connection('sqlsrv')
-                        ->table('mother_applications as ma')
-                        ->leftJoinSub($fiMinSub, 'fi_min', 'fi_min.main_application_id', '=', 'ma.id')
-                        ->leftJoin('file_indexings as fi', 'fi.id', '=', 'fi_min.fi_id')
-                        ->whereIn('fi.id', $fileIds)
-                        ->select([
-                            'fi.id',
-                            DB::raw('ma.fileno    AS file_number'),
-                            DB::raw('ma.np_fileno AS np_file_number'),
-                            DB::raw('ma.fileno    AS application_file_number'),
-                            'fi.tracking_id',
-                            'fi.land_use_type',
-                            'fi.shelf_location',
-                            DB::raw('NULL AS location'),
-                            DB::raw('NULL AS file_title'),
-                            DB::raw('NULL AS plot_number'),
-                        ])
-                        ->get();
-                }
+                $files = $this->stFileNumbersQuery($applicationType)
+                    ->leftJoinSub($this->fileIndexingBridge(), 'fi_min', 'fi_min.file_number', '=', 'sfn.st_number')
+                    ->leftJoin('file_indexings as fi', 'fi.id', '=', 'fi_min.fi_id')
+                    ->whereIn('sfn.id', $fileIds)
+                    ->select([
+                        'sfn.id',
+                        'fi.id as file_indexing_id',
+                        // Top label line: the ST file number itself.
+                        DB::raw('sfn.st_number  AS file_number'),
+                        // np_file_number = NULL so the JS top line uses file_number.
+                        DB::raw('NULL           AS np_file_number'),
+                        // Bottom label line: MLS number (primary) / parent ST number (units).
+                        DB::raw('sfn.alt_number AS application_file_number'),
+                        DB::raw('COALESCE(sfn.tra, fi.tracking_id) AS tracking_id'),
+                        DB::raw('COALESCE(fi.land_use_type, sfn.land_use) AS land_use_type'),
+                        'fi.shelf_location',
+                        DB::raw('NULL AS location'),
+                        DB::raw('NULL AS file_title'),
+                        DB::raw('NULL AS plot_number'),
+                    ])
+                    ->orderBy('sfn.st_number')
+                    ->get();
 
                 if ($files->isEmpty()) {
-                    throw ValidationException::withMessages(['file_ids' => 'No matching files found in indexed files.']);
+                    throw ValidationException::withMessages(['file_ids' => 'No matching ST file numbers found in the ST FileNo register.']);
                 }
 
                 // ----------------------------------------------------------------
@@ -618,9 +488,14 @@ class StPrintLabelController extends Controller
                         'generated_at'            => $now->toIso8601String(),
                     ];
 
+                    // st_file_numbers.id drives the selection; the file_indexings
+                    // row is optional (an ST number can be registered before it
+                    // has ever been indexed).
+                    $fileIndexingId = isset($file->file_indexing_id) ? (int) $file->file_indexing_id : null;
+
                     $items[] = [
                         'batch_id'        => $batch->id,
-                        'file_indexing_id'=> $file->id,
+                        'file_indexing_id'=> $fileIndexingId,
                         'file_number'     => $fileNumber,
                         'prefix'          => $prefix,
                         'file_title'      => null,
@@ -638,7 +513,11 @@ class StPrintLabelController extends Controller
                     ];
 
                     $labelItems[] = [
+                        // Keep the selection id here so the preview can match
+                        // these items back to the loaded ST file numbers.
                         'file_indexing_id'        => $file->id,
+                        'st_file_number_id'       => $file->id,
+                        'indexing_id'             => $fileIndexingId,
                         'file_number'             => $fileNumber,
                         'np_file_number'          => $npFileNumber,
                         'application_file_number' => $appFileNumber,
@@ -656,7 +535,9 @@ class StPrintLabelController extends Controller
                         'prefix'                  => $prefix,
                     ];
 
-                    $idsByLabel[$label][] = $file->id;
+                    if ($fileIndexingId) {
+                        $idsByLabel[$label][] = $fileIndexingId;
+                    }
                 }
 
                 // Insert batch items in chunks
@@ -776,28 +657,30 @@ class StPrintLabelController extends Controller
         try {
             $batch = StPrintLabelBatch::with(['batchItems'])->findOrFail($batchId);
 
-            $fileIndexingIds = $batch->batchItems->pluck('file_indexing_id')->filter()->unique()->values();
+            // Batch items are keyed by ST file number — resolve their paired
+            // numbers straight from the ST FileNo register, so labels reprint
+            // correctly even for ST numbers that were never indexed.
+            $fileNumbers = $batch->batchItems->pluck('file_number')->filter()->unique()->values();
 
-            $indexingDetails = collect();
-            if ($fileIndexingIds->isNotEmpty()) {
-                $indexingDetails = DB::connection('sqlsrv')
-                    ->table('file_indexings as fi')
-                    ->leftJoin('mother_applications as ma', 'ma.id', '=', 'fi.main_application_id')
-                    ->leftJoin('subapplications as sa', 'sa.id', '=', 'fi.subapplication_id')
-                    ->whereIn('fi.id', $fileIndexingIds)
+            $registryDetails = collect();
+            if ($fileNumbers->isNotEmpty()) {
+                $registryDetails = $this->stFileNumbersQuery()
+                    ->leftJoinSub($this->fileIndexingBridge(), 'fi_min', 'fi_min.file_number', '=', 'sfn.st_number')
+                    ->leftJoin('file_indexings as fi', 'fi.id', '=', 'fi_min.fi_id')
+                    ->whereIn('sfn.st_number', $fileNumbers)
                     ->select([
-                        'fi.id',
-                        'fi.tracking_id',
+                        DB::raw('sfn.st_number AS file_number'),
+                        DB::raw('COALESCE(sfn.tra, fi.tracking_id) AS tracking_id'),
                         'fi.shelf_location',
-                        DB::raw('COALESCE(sa.np_fileno, ma.np_fileno) AS np_file_number'),
-                        DB::raw('COALESCE(sa.fileno, ma.fileno) AS application_file_number'),
+                        DB::raw('NULL AS np_file_number'),
+                        DB::raw('sfn.alt_number AS application_file_number'),
                     ])
                     ->get()
-                    ->keyBy('id');
+                    ->keyBy('file_number');
             }
 
-            $files = $batch->batchItems->map(function ($item) use ($indexingDetails) {
-                $details = $indexingDetails->get($item->file_indexing_id);
+            $files = $batch->batchItems->map(function ($item) use ($registryDetails) {
+                $details = $registryDetails->get($item->file_number);
 
                 $qrData = [];
                 if (!empty($item->qr_code_data)) {
@@ -815,7 +698,9 @@ class StPrintLabelController extends Controller
                 $appFileNumber = is_string($appFileNumber) && trim($appFileNumber) !== '' ? trim($appFileNumber) : null;
 
                 return [
-                    'id'                      => $item->file_indexing_id,
+                    // file_indexing_id is optional for ST-register-only files;
+                    // fall back to the batch item id so the UI always has a key.
+                    'id'                      => $item->file_indexing_id ?: $item->id,
                     'batch_item_id'           => $item->id,
                     'file_number'             => $item->file_number,
                     'np_file_number'          => $npFileNumber,
@@ -893,6 +778,58 @@ class StPrintLabelController extends Controller
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Base query over the ST FileNo register (st_file_numbers) — the authority
+     * for which ST files exist and therefore which labels can be printed.
+     *
+     * Exposed as the derived table `sfn` with two normalised label columns:
+     *   st_number  — the ST file number printed on the top line
+     *                (np_fileno for primaries, the unit fileno for PUA/SUA)
+     *   alt_number — the paired number printed underneath
+     *                (the MLS/old file number for primaries, the parent ST
+     *                 number for PUA/SUA units)
+     *
+     * @param  string|null $applicationType primary|pua|sua, or null for all types
+     */
+    private function stFileNumbersQuery(?string $applicationType = null)
+    {
+        $sub = DB::connection('sqlsrv')
+            ->table('st_file_numbers')
+            ->selectRaw("
+                id,
+                CASE WHEN file_no_type = 'PRIMARY' THEN np_fileno ELSE fileno    END AS st_number,
+                CASE WHEN file_no_type = 'PRIMARY' THEN fileno    ELSE np_fileno END AS alt_number,
+                mls_fileno,
+                land_use,
+                tra,
+                file_no_type,
+                status,
+                year
+            ");
+
+        $fileNoType = strtoupper(trim((string) $applicationType));
+        if ($fileNoType !== '' && in_array($fileNoType, self::FILE_NO_TYPES, true)) {
+            $sub->where('file_no_type', $fileNoType);
+        } else {
+            $sub->whereIn('file_no_type', self::FILE_NO_TYPES);
+        }
+
+        return DB::connection('sqlsrv')->query()->fromSub($sub, 'sfn');
+    }
+
+    /**
+     * One file_indexings row per file number, so joining an ST file number to
+     * its indexing record can never fan out into duplicate labels.
+     */
+    private function fileIndexingBridge()
+    {
+        return DB::connection('sqlsrv')
+            ->table('file_indexings')
+            ->selectRaw('file_number, MIN(id) AS fi_id')
+            ->whereNotNull('file_number')
+            ->groupBy('file_number');
+    }
 
     /**
      * Resolve the max number of files allowed on a single shelf label for the

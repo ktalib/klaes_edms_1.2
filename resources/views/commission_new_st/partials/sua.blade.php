@@ -178,6 +178,14 @@
 {{-- SuA Applicant Information Component --}}
 @include('commission_new_st.partials.sua-applicant', ['titles' => $titles ?? []])
 
+{{-- Location Details + Map. SuA has no parent/mother file to inherit from,
+     so the location is entered manually and pinned by the user. --}}
+@include('commission_new_st.partials.location-details-map', [
+    'prefix' => 'sua',
+    'mode' => 'manual',
+    'hint' => 'Enter the property location manually — SuA files have no parent file to inherit from',
+])
+
 <!-- Commission Information Section -->
 <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
     <div class="flex items-center gap-3 mb-6">
