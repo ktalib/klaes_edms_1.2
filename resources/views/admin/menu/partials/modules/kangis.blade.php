@@ -127,7 +127,7 @@
       <a href="{{ route('recertification.edms') }}" 
          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('recertification.edms') ? 'active' : '' }}">
         <i data-lucide="hard-drive" class="h-3.5 w-3.5 text-yellow-400"></i>
-        <span>EDMS</span>
+        <span>DMS</span>
       </a>
 
       <!-- viii. Certification -->
@@ -196,7 +196,7 @@
         <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md" data-section="digitalArchive-kangis-edms">
           <div class="flex items-center gap-2">
             <i data-lucide="refresh-cw" class="h-3.5 w-3.5 text-yellow-400"></i>
-            <span>EDMS Update</span>
+            <span>DMS Update</span>
           </div>
           <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200" data-chevron="digitalArchive-kangis-edms"></i>
         </div>

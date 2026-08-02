@@ -388,6 +388,13 @@
     <div class="field-row paired-narrow"><span class="field-label">(d) Plot No.:</span> <span class="field" style="flex:1;">{{ $recommendation->plot_number }}</span></div>
   </div>
 
+  @php
+      // Applications derived from an existing file (Plot Subdivision / Plot Merger /
+      // Change of Purpose) cite the parent file number as the Plan No. in the approval
+      // block below; the Layout Plan No. above always shows the layout plan itself.
+      $oldFileNumber = trim((string) ($recommendation->old_file_number ?? ''));
+      $planNoRef     = $oldFileNumber !== '' ? $oldFileNumber : $recommendation->layout_plan_no;
+  @endphp
   <div class="field-row">(e) Layout Plan No.: <span class="field" style="width:450px;">{{ $recommendation->layout_plan_no }}</span></div>
 
   <div class="field-row">Term: <span class="field" style="width:530px;">{{ $recommendation->term }}</span></div>
@@ -426,7 +433,7 @@
   </div>
 
   <div class="paired" style="margin-bottom:0.6cm;">
-    <div class="field-row"><span class="field-label">Plan No.:</span> <span class="field" style="flex:1;">{{ $recommendation->layout_plan_no }}</span></div>
+    <div class="field-row"><span class="field-label">Plan No.:</span> <span class="field" style="flex:1;">{{ $planNoRef }}</span></div>
     <div class="field-row" style="justify-content: flex-end;">
       <span class="field-label">Location:</span> <span class="field" style="flex:1;">{{ $normalizedLocation }}</span>
     </div>

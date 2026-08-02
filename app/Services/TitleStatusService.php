@@ -328,8 +328,12 @@ class TitleStatusService
                 'location'       => $context['location'] ?? null,
                 'land_use'       => $context['land_use'] ?? null,
                 'initiated_by'   => 'Ministry',
-                'reason'         => $regrantedTo,
-                'remark'         => $regrantedTo,
+                // The row is keyed on the NEW file, so it takes the "from" wording — the
+                // "to" wording belongs on the OLD file's flags above. Using $regrantedTo
+                // here produced "This File has been Re-granted to <itself>", and it also
+                // disagreed with the ~70 rows the File Indexing dialog had already written.
+                'reason'         => $regrantedFrom,
+                'remark'         => $regrantedFrom,
                 'status'         => TitleStatusApplication::STATUS_PENDING,
                 'captured_by'    => Auth::id(),
             ]);

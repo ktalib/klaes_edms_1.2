@@ -318,7 +318,7 @@
           <a href="#"
             class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 text-black">
             <i data-lucide="refresh-cw" class="h-3.5 w-3.5 text-blue-500"></i>
-            <span>EDMS Update</span>
+            <span>DMS Update</span>
           </a>
         </div>
       @endif

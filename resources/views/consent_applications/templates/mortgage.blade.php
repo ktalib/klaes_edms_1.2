@@ -303,7 +303,7 @@
             <span>{!! preg_replace('/,\s*([^,]+\s+state)\s*\.?\s*$/i', ',<br>$1.', e(ucfirst(trim($application->applicant_address)))) !!}</span>
         </div>
 
-        <div class="mt-4 text-sm">Sir,</div>
+        <div class="mt-4">Sir,</div>
 
         <div class="subject">
             <div><span data-fit-line>RE: APPLICATION FOR CONSENT TO MORTGAGE THE PROPERTY COVERED BY</span></div>
@@ -333,7 +333,7 @@
             Deed of Legal mortgage and payment of Stamp Duty.
         </div>
 
-        <div class="mt-5 text-sm">Yours faithfully,</div>
+        <div class="mt-5">Yours faithfully,</div>
 
         <div class="mt-6">
             <div class="font-bold uppercase text-base json-data">ALH ABDULJABBAR M. UMAR</div>
@@ -341,7 +341,7 @@
             <div class="uppercase text-sm">MINISTRY OF LAND AND PHYSICAL PLANNING,</div>
             <div class="uppercase text-sm">KANO STATE.</div>
 
-            <div class="mt-3 pt-2 border-t border-gray-300 text-xs text-gray-600">
+            <div class="mt-3 pt-2 text-xs text-gray-600">
                 <!-- <div>OFFICIAL STAMP:</div>
                 <div class="w-32 h-12 border border-gray-400 mt-1 flex items-center justify-center text-gray-500">
                     [Official Stamp Here]

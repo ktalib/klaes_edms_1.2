@@ -75,6 +75,186 @@ class IndexingDuplicateService
     private const FILE_NUMBER_COLUMNS = ['mlsfNo', 'kangisFileNo', 'NewKANGISFileNo', 'st_file_no'];
 
     /**
+     * Record / transaction tables keyed by file number rather than by
+     * file_indexing_id. They are never touched by the move — a dealing that was
+     * registered against the file stays registered — but the operator has to see
+     * them before confirming, because a file carrying transactions is usually the
+     * ORIGINAL rather than the duplicate.
+     *
+     * @var array<string,array{label:string,columns:array<int,string>}>
+     */
+    private const TRANSACTION_TABLES = [
+        'pra' => [
+            'label'   => 'Property records (PRA)',
+            'columns' => ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno'],
+        ],
+        'CofO_staging' => [
+            'label'   => 'Certificates of Occupancy',
+            'columns' => ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno'],
+        ],
+        'file_history_staging' => [
+            'label'   => 'File history (FH)',
+            'columns' => ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno'],
+        ],
+        'file_tracker' => [
+            'label'   => 'File tracker requests',
+            'columns' => ['file_number'],
+        ],
+    ];
+
+    /**
+     * The file's commissioning row is matched on full_file_number only — old_fileno
+     * holds a PREDECESSOR's number, so it would match the successor file's row.
+     * Recorded as retained; never deleted.
+     */
+    private const MLS_FILE_NO_COLUMNS = ['full_file_number'];
+
+    /** Human labels for the tables the move deletes from. */
+    private const DELETION_LABELS = [
+        'file_indexings'    => 'Indexed file record',
+        'fileNumber'        => 'File number registry',
+        'customers_staging' => 'Customer record(s)',
+        'entities_staging'  => 'Entity record(s)',
+    ];
+
+    /**
+     * Everything the move would touch, counted without changing anything, so the
+     * confirmation can spell it out before the operator commits.
+     *
+     * @return array{status:string, ...} status is 'ok', 'not_found' or 'blocked'
+     */
+    public function preview(int $fileIndexingId): array
+    {
+        $conn = DB::connection('sqlsrv');
+
+        $row = $conn->table('file_indexings')->where('id', $fileIndexingId)->first();
+        if (!$row) {
+            return ['status' => 'not_found'];
+        }
+
+        $blocking = $this->countBlockingReferences($fileIndexingId);
+        $fileNumberRows = [];
+        $numbers = $this->resolveNumbers($row, $fileNumberRows);
+
+        $deletions = [];
+        $this->addPreviewRow($deletions, 'file_indexings', 1);
+        $this->addPreviewRow($deletions, 'fileNumber', count($fileNumberRows));
+        $this->addPreviewRow(
+            $deletions,
+            'customers_staging',
+            empty($numbers) ? 0 : $conn->table('customers_staging')->whereIn('file_number', $numbers)->count()
+        );
+        $this->addPreviewRow(
+            $deletions,
+            'entities_staging',
+            empty($numbers) ? 0 : $conn->table('entities_staging')->whereIn('file_number', $numbers)->count()
+        );
+
+        foreach (self::CLEANABLE_REFERENCES as $table) {
+            if (!Schema::connection('sqlsrv')->hasTable($table)) {
+                continue;
+            }
+            $this->addPreviewRow(
+                $deletions,
+                $table,
+                $conn->table($table)->where('file_indexing_id', (string) $fileIndexingId)->count()
+            );
+        }
+
+        // Kept on purpose. Trackers key off file_indexing_id; the transaction
+        // tables key off the file number(s).
+        $retained = [];
+        foreach (self::RETAINED_REFERENCES as $table => $label) {
+            if (!Schema::connection('sqlsrv')->hasTable($table)) {
+                continue;
+            }
+            $this->addPreviewRow(
+                $retained,
+                $table,
+                $conn->table($table)->where('file_indexing_id', (string) $fileIndexingId)->count(),
+                ucfirst($label)
+            );
+        }
+
+        foreach (self::TRANSACTION_TABLES as $table => $meta) {
+            $this->addPreviewRow($retained, $table, $this->countByFileNumber($table, $meta['columns'], $numbers), $meta['label']);
+        }
+
+        $transactionTotal = 0;
+        foreach ($retained as $entry) {
+            if (isset(self::TRANSACTION_TABLES[$entry['table']])) {
+                $transactionTotal += $entry['count'];
+            }
+        }
+
+        return [
+            'status'            => empty($blocking) ? 'ok' : 'blocked',
+            'file_number'       => $row->file_number,
+            'file_title'        => $row->file_title ?? null,
+            'matched_numbers'   => $numbers,
+            'blocking'          => $blocking,
+            'deletions'         => array_values($deletions),
+            'retained'          => array_values($retained),
+            'transaction_total' => $transactionTotal,
+        ];
+    }
+
+    /**
+     * Count rows in a record/transaction table that carry any of this file's
+     * numbers, skipping columns the table does not actually have (these tables
+     * differ between installs) and rows already soft-deleted.
+     */
+    private function countByFileNumber(string $table, array $columns, array $numbers): int
+    {
+        if (empty($numbers) || !Schema::connection('sqlsrv')->hasTable($table)) {
+            return 0;
+        }
+
+        $columns = array_values(array_filter(
+            $columns,
+            fn ($column) => Schema::connection('sqlsrv')->hasColumn($table, $column)
+        ));
+
+        if (empty($columns)) {
+            return 0;
+        }
+
+        $query = DB::connection('sqlsrv')->table($table)
+            ->where(function ($q) use ($columns, $numbers) {
+                foreach ($columns as $column) {
+                    $q->orWhereIn($column, $numbers);
+                }
+            });
+
+        if (Schema::connection('sqlsrv')->hasColumn($table, 'is_deleted')) {
+            $query->where(function ($q) {
+                $q->where('is_deleted', 0)->orWhereNull('is_deleted');
+            });
+        }
+
+        return $query->count();
+    }
+
+    /** @param array<string,array{table:string,label:string,count:int}> $bucket */
+    private function addPreviewRow(array &$bucket, string $table, int $count, ?string $label = null): void
+    {
+        if ($count <= 0) {
+            return;
+        }
+
+        $bucket[$table] = [
+            'table' => $table,
+            'label' => $label ?? self::DELETION_LABELS[$table] ?? $this->humanizeTable($table),
+            'count' => $count,
+        ];
+    }
+
+    private function humanizeTable(string $table): string
+    {
+        return ucfirst(str_replace('_', ' ', $table));
+    }
+
+    /**
      * @return array{status:string, ...} status is 'moved', 'not_found', 'blocked' or 'already_moved'
      */
     public function move(int $fileIndexingId, ?string $reason = null, ?string $duplicateOf = null): array
@@ -110,42 +290,32 @@ class IndexingDuplicateService
             ];
         }
 
-        // Every number this record is known by. Matching is exact by design: file
-        // numbers here differ by whitespace alone ("KN 1" is a legacy land file,
-        // "KN1" is a New KANGIS file), so normalising separators before comparing
-        // would delete a different file's customer and entity rows.
-        $numbers = $this->collectFileNumbers($row);
-
-        $fileNumberRows = $this->findFileNumberRows($numbers, $row->tracking_id ?? null);
-
-        // fileNumber rows can carry numbers the indexing row does not know about.
-        foreach ($fileNumberRows as $fnRow) {
-            foreach (self::FILE_NUMBER_COLUMNS as $column) {
-                $value = trim((string) ($fnRow->{$column} ?? ''));
-                if ($value !== '') {
-                    $numbers[$value] = $value;
-                }
-            }
-        }
-        $numbers = array_values($numbers);
+        $numbers = $this->resolveNumbers($row, $fileNumberRows);
 
         $customerRows = $conn->table('customers_staging')->whereIn('file_number', $numbers)->get();
         $entityRows   = $conn->table('entities_staging')->whereIn('file_number', $numbers)->get();
         $cleanable    = $this->collectCleanableRows($fileIndexingId);
         $retained     = $this->countRetainedReferences($fileIndexingId);
 
-        $retainedMls = $conn->table('mls_file_no')
-            ->where(function ($q) use ($numbers) {
-                $q->whereIn('full_file_number', $numbers);
-            })
-            ->exists();
+        // Dealings registered against the file number. Left in place, but recorded
+        // so the archive shows what the moved record was still attached to.
+        $transactions = [];
+        foreach (self::TRANSACTION_TABLES as $table => $meta) {
+            $count = $this->countByFileNumber($table, $meta['columns'], $numbers);
+            if ($count > 0) {
+                $transactions[$table] = $count;
+            }
+        }
+
+        // Recorded, never deleted — the file stays commissioned.
+        $retainedMls = !empty($this->findMlsFileNoRows($numbers));
 
         $actor = $this->resolveActorName();
         $counts = [];
 
         $archiveId = $conn->transaction(function () use (
             $conn, $row, $fileIndexingId, $numbers, $fileNumberRows, $customerRows,
-            $entityRows, $cleanable, $retained, $retainedMls, $actor, $reason, $duplicateOf, &$counts
+            $entityRows, $cleanable, $retained, $transactions, $retainedMls, $actor, $reason, $duplicateOf, &$counts
         ) {
             $snapshot = [
                 'file_indexing'     => (array) $row,
@@ -157,6 +327,8 @@ class IndexingDuplicateService
                 'mls_file_no_retained' => $retainedMls,
                 // Left in place on purpose — see RETAINED_REFERENCES.
                 'retained_references'  => $retained,
+                // Left in place on purpose — see TRANSACTION_TABLES.
+                'transaction_references' => $transactions,
             ];
 
             // Clone the record column-for-column. indexing_duplicates mirrors
@@ -248,6 +420,7 @@ class IndexingDuplicateService
             'counts' => $counts,
             'mls_file_no_retained' => $retainedMls,
             'retained_references' => $retained,
+            'transaction_references' => $transactions,
         ];
     }
 
@@ -307,6 +480,34 @@ class IndexingDuplicateService
         return $found;
     }
 
+    /**
+     * Every number this record is known by, plus the fileNumber rows holding them.
+     *
+     * Matching is exact by design: file numbers here differ by whitespace alone
+     * ("KN 1" is a legacy land file, "KN1" is a New KANGIS file), so normalising
+     * separators before comparing would sweep up a different file's rows.
+     *
+     * @param array<int,object>|null $fileNumberRows out-param, filled with the matched fileNumber rows
+     * @return array<int,string>
+     */
+    private function resolveNumbers(object $row, ?array &$fileNumberRows = null): array
+    {
+        $numbers = $this->collectFileNumbers($row);
+        $fileNumberRows = $this->findFileNumberRows($numbers, $row->tracking_id ?? null);
+
+        // fileNumber rows can carry numbers the indexing row does not know about.
+        foreach ($fileNumberRows as $fnRow) {
+            foreach (self::FILE_NUMBER_COLUMNS as $column) {
+                $value = trim((string) ($fnRow->{$column} ?? ''));
+                if ($value !== '') {
+                    $numbers[$value] = $value;
+                }
+            }
+        }
+
+        return array_values($numbers);
+    }
+
     /** @return array<string,string> keyed by value so duplicates collapse */
     private function collectFileNumbers(object $row): array
     {
@@ -347,6 +548,27 @@ class IndexingDuplicateService
         }
 
         return $rows;
+    }
+
+    /**
+     * The commissioning rows carried by this file's number(s).
+     *
+     * @return array<int,object>
+     */
+    private function findMlsFileNoRows(array $numbers): array
+    {
+        if (empty($numbers)) {
+            return [];
+        }
+
+        return DB::connection('sqlsrv')->table('mls_file_no')
+            ->where(function ($query) use ($numbers) {
+                foreach (self::MLS_FILE_NO_COLUMNS as $column) {
+                    $query->orWhereIn($column, $numbers);
+                }
+            })
+            ->get()
+            ->all();
     }
 
     /** @return array<string,array<int,array>> */

@@ -139,6 +139,8 @@
       item.addEventListener('click', function(e) {
         // Add a subtle animation feedback
         this.style.transform = 'scale(0.98)';
+  
+
         setTimeout(() => {
           this.style.transform = '';
         }, 100);
@@ -161,4 +163,70 @@
     // Make sidebar content focusable for keyboard navigation
     sidebarContent.setAttribute('tabindex', '0');
   }
+
+  // --- Responsive & Collapsible Sidebar Logic ---
+  document.addEventListener('DOMContentLoaded', function() {
+    const htmlEl = document.documentElement;
+    const sidebar = document.querySelector('.sidebar');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    const desktopToggle = document.getElementById('sidebar-collapse-toggle');
+    const mobileToggle = document.getElementById('sidebar-mobile-toggle');
+    const mobileClose = document.getElementById('sidebar-mobile-close');
+
+    // Update titles as tooltips when sidebar is collapsed
+    function updateSidebarTooltips() {
+      const isCollapsed = htmlEl.classList.contains('sidebar-collapsed');
+      const items = document.querySelectorAll('.sidebar-item, .sidebar-module-header, .sidebar-submodule-header');
+      
+      items.forEach(item => {
+        if (isCollapsed) {
+          const textEl = item.querySelector('span');
+          if (textEl) {
+            item.setAttribute('title', textEl.textContent.trim());
+          }
+        } else {
+          item.removeAttribute('title');
+        }
+      });
+    }
+
+    // Toggle desktop collapse state
+    if (desktopToggle) {
+      desktopToggle.addEventListener('click', function() {
+        htmlEl.classList.toggle('sidebar-collapsed');
+        const isCollapsed = htmlEl.classList.contains('sidebar-collapsed');
+        localStorage.setItem('sidebar_state', isCollapsed ? 'collapsed' : 'expanded');
+        updateSidebarTooltips();
+        
+        // Dispatch resize event so that responsive tables/charts adapt to layout changes
+        setTimeout(() => {
+          window.dispatchEvent(new Event('resize'));
+        }, 305);
+      });
+    }
+
+    // Open mobile sidebar drawer
+    if (mobileToggle && sidebar && backdrop) {
+      mobileToggle.addEventListener('click', function() {
+        sidebar.classList.add('mobile-open');
+        backdrop.classList.add('active');
+      });
+    }
+
+    // Close mobile sidebar drawer
+    function closeMobileSidebar() {
+      if (sidebar) sidebar.classList.remove('mobile-open');
+      if (backdrop) backdrop.classList.add('active');
+    }
+
+    if (mobileClose) {
+      mobileClose.addEventListener('click', closeMobileSidebar);
+    }
+    if (backdrop) {
+      backdrop.addEventListener('click', closeMobileSidebar);
+    }
+
+    // Initial tooltip calculation on page load
+    updateSidebarTooltips();
+  });
 </script>

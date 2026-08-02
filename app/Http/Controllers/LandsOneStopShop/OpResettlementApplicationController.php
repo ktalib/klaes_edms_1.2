@@ -772,24 +772,64 @@ class OpResettlementApplicationController extends Controller
         // ── Card counts via a single SQL query ──
         // Ensure stats match the filtered table view (OP vs ToT) and include
         // instrument_capture records when applicable.
+        //
+        // land_use is resolved per prop_id rather than read straight off the selected row.
+        // The Transfer of Title row frequently carries no land_use even though the property
+        // is classified elsewhere, which used to leave the four land-use cards summing short
+        // of Total Commissioned. Fallback order: the row itself → the file's mls_file_no row
+        // → any other non-blank pra row for the same prop_id → the file number's land-use
+        // prefix. The prefix is a last resort because it is inferred rather than recorded,
+        // but it agrees with the recorded land_use in 1,553 of the 1,559 cases where both
+        // exist, and it is only consulted when nothing was recorded at all. TEMP- numbers
+        // are deliberately not matched: they encode no land use.
+        $fileNoForPrefix = "COALESCE(NULLIF(raw_stats.mlsFNo, ''), raw_stats.fileno)";
+        $prefixLandUse = "CASE
+                              WHEN $fileNoForPrefix LIKE 'RES-%' THEN 'RESIDENTIAL'
+                              WHEN $fileNoForPrefix LIKE 'COM-%' THEN 'COMMERCIAL'
+                              WHEN $fileNoForPrefix LIKE 'IND-%' THEN 'INDUSTRIAL'
+                              WHEN $fileNoForPrefix LIKE 'AGR-%' THEN 'AGRICULTURAL'
+                          END";
+
         $statsBaseQuery = DB::connection('sqlsrv')
             ->table(DB::raw("(
-                SELECT prop_id, land_use, mlsFNo, fileno
-                FROM pra
-                WHERE system_source = 'OSSOPCHANGEOFNAME'
-                  AND prop_id IS NOT NULL AND prop_id != ''
-                  AND (is_deleted IS NULL OR is_deleted = 0)
-                  $instrumentFilter
-                
-                " . (!$isChangeOfName ? "
-                UNION ALL
-                SELECT prop_id, land_use, mlsFNo, NULL as fileno
-                FROM instrument_capture
-                WHERE instrument_type = 'Occupancy Permit (OP)'
-                  AND prop_id IS NOT NULL AND prop_id != 0
-                  AND (is_deleted IS NULL OR is_deleted = 0)
-                  AND id NOT IN (SELECT CAST(source_op_id AS INT) FROM pra WHERE source_op_table = 'instrument_capture' AND source_op_id IS NOT NULL)
-                " : "") . "
+                SELECT raw_stats.prop_id,
+                       COALESCE(
+                           NULLIF(LTRIM(RTRIM(raw_stats.land_use)), ''),
+                           NULLIF(LTRIM(RTRIM(mfn_lu.land_use)), ''),
+                           NULLIF(LTRIM(RTRIM(sib_lu.land_use)), ''),
+                           $prefixLandUse
+                       ) as land_use,
+                       raw_stats.mlsFNo,
+                       raw_stats.fileno
+                FROM (
+                    SELECT prop_id, land_use, mlsFNo, fileno
+                    FROM pra
+                    WHERE system_source = 'OSSOPCHANGEOFNAME'
+                      AND prop_id IS NOT NULL AND prop_id != ''
+                      AND (is_deleted IS NULL OR is_deleted = 0)
+                      $instrumentFilter
+
+                    " . (!$isChangeOfName ? "
+                    UNION ALL
+                    SELECT prop_id, land_use, mlsFNo, NULL as fileno
+                    FROM instrument_capture
+                    WHERE instrument_type = 'Occupancy Permit (OP)'
+                      AND prop_id IS NOT NULL AND prop_id != 0
+                      AND (is_deleted IS NULL OR is_deleted = 0)
+                      AND id NOT IN (SELECT CAST(source_op_id AS INT) FROM pra WHERE source_op_table = 'instrument_capture' AND source_op_id IS NOT NULL)
+                    " : "") . "
+                ) as raw_stats
+                LEFT JOIN mls_file_no as mfn_lu
+                       ON mfn_lu.full_file_number = COALESCE(NULLIF(raw_stats.mlsFNo, ''), raw_stats.fileno)
+                LEFT JOIN (
+                    SELECT CAST(prop_id AS nvarchar(100)) as prop_id, MAX(land_use) as land_use
+                    FROM pra
+                    WHERE prop_id IS NOT NULL AND prop_id != ''
+                      AND LTRIM(RTRIM(COALESCE(land_use, ''))) != ''
+                      AND (is_deleted IS NULL OR is_deleted = 0)
+                    GROUP BY CAST(prop_id AS nvarchar(100))
+                ) as sib_lu
+                       ON sib_lu.prop_id = CAST(raw_stats.prop_id AS nvarchar(100))
             ) as stats_source"));
 
         if ($recordType === 'fc') {
@@ -804,13 +844,22 @@ class OpResettlementApplicationController extends Controller
             })->whereNull('mfn_stat.full_file_number');
         }
 
+        // Normalise once so the bucket tests are collation-independent, and so the
+        // "Unclassified" bucket is the exact complement of the other four.
+        $luExpr = "UPPER(LTRIM(RTRIM(COALESCE(stats_source.land_use, ''))))";
+
         $cardCountRows = $statsBaseQuery
             ->selectRaw("
                 COUNT(DISTINCT stats_source.prop_id) as total_count,
-                COUNT(DISTINCT CASE WHEN stats_source.land_use LIKE '%RES%' OR stats_source.land_use LIKE '%res%' THEN stats_source.prop_id END) as res_count,
-                COUNT(DISTINCT CASE WHEN stats_source.land_use LIKE '%COM%' OR stats_source.land_use LIKE '%com%' THEN stats_source.prop_id END) as com_count,
-                COUNT(DISTINCT CASE WHEN stats_source.land_use LIKE '%IND%' OR stats_source.land_use LIKE '%ind%' THEN stats_source.prop_id END) as ind_count,
-                COUNT(DISTINCT CASE WHEN stats_source.land_use LIKE '%AGR%' OR stats_source.land_use LIKE '%agr%' THEN stats_source.prop_id END) as agr_count
+                COUNT(DISTINCT CASE WHEN $luExpr LIKE '%RES%' THEN stats_source.prop_id END) as res_count,
+                COUNT(DISTINCT CASE WHEN $luExpr LIKE '%COM%' THEN stats_source.prop_id END) as com_count,
+                COUNT(DISTINCT CASE WHEN $luExpr LIKE '%IND%' THEN stats_source.prop_id END) as ind_count,
+                COUNT(DISTINCT CASE WHEN $luExpr LIKE '%AGR%' THEN stats_source.prop_id END) as agr_count,
+                COUNT(DISTINCT CASE WHEN $luExpr NOT LIKE '%RES%'
+                                     AND $luExpr NOT LIKE '%COM%'
+                                     AND $luExpr NOT LIKE '%IND%'
+                                     AND $luExpr NOT LIKE '%AGR%'
+                                    THEN stats_source.prop_id END) as unclassified_count
             ")
             ->first();
 
@@ -819,6 +868,7 @@ class OpResettlementApplicationController extends Controller
             'Commercial' => (int) ($cardCountRows->com_count ?? 0),
             'Industrial' => (int) ($cardCountRows->ind_count ?? 0),
             'Agriculture' => (int) ($cardCountRows->agr_count ?? 0),
+            'Unclassified' => (int) ($cardCountRows->unclassified_count ?? 0),
         ];
 
         $totalCommissioned = (int) ($cardCountRows->total_count ?? array_sum($cardCounts));
@@ -4349,12 +4399,25 @@ class OpResettlementApplicationController extends Controller
             $fileNumberRow = $db->table('fileNumber')->where('mlsfNo', $mlsFNo)->first();
             $currentHolder = $fileNumberRow ? ($fileNumberRow->FileName ?? '') : '';
         }
+        // Grantee/party_2 may be an empty string rather than NULL, so ?? is not enough
+        // here — an empty Grantee must still fall through to party_2.
+        $opAllottee = trim((string) ($opRow->Grantee ?? '')) ?: trim((string) ($opRow->party_2 ?? ''));
+
         if ($currentHolder === '') {
-            $currentHolder = $opRow->Grantee ?? $opRow->party_2 ?? '';
+            $currentHolder = $opAllottee;
         }
 
         // The allottee is the OP's Grantee (party_2), or the override value if provided
-        $allottee = ($overrideAllottee !== '') ? $overrideAllottee : ($opRow->Grantee ?? $opRow->party_2 ?? '');
+        $allottee = ($overrideAllottee !== '') ? $overrideAllottee : $opAllottee;
+
+        // Without an allottee the ToT's Part 1 would be written blank, which is the
+        // state this flow exists to populate. Fail loudly instead of creating it empty.
+        if (trim($allottee) === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'That OP has no allottee name (Grantee/Part 2), so the Transfer of Title Part 1 cannot be set from it.',
+            ], 422);
+        }
 
         try {
             $result = $db->transaction(function () use ($db, $praService, $praId, $opRow, $mlsFNo, $allottee, $currentHolder, $userId, $overrideHolder) {

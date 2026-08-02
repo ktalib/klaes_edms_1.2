@@ -256,6 +256,20 @@ class LegalSearchService
                 }
             }
 
+            // Allow resolved active and ancestor property IDs to pass the contamination guard
+            foreach ($activePropIds as $pid) {
+                if (trim($pid) !== '') {
+                    $searchedPropIds[trim($pid)] = true;
+                }
+            }
+            if (isset($ancestorPropIds)) {
+                foreach ($ancestorPropIds as $pid) {
+                    if (trim($pid) !== '') {
+                        $searchedPropIds[trim($pid)] = true;
+                    }
+                }
+            }
+
             // The searched file's explicit lineage set (SME siblings derived from related_fileno).
             // These are legitimately linked files (e.g. a merger's source files) and must survive
             // the contamination guard even when their prop_id was never linked/remapped to the
@@ -486,7 +500,14 @@ class LegalSearchService
         foreach ($all as &$_row) {
             $_type = strtolower((string) ($_row['transaction_type'] ?? ''));
             if (str_contains($_type, 'recertification')) {
-                $_row['party_1'] = (str_contains($_type, 'ministry') || str_contains($_type, 'physical planning'))
+                // 'land recertification' is required here: fetchRelatedRecertificationRows() has
+                // already rewritten a Ministry recert's type via recertDisplayLabel() to
+                // "Land Recertification (File Commissioning)", which contains neither 'ministry'
+                // nor 'physical planning' — without this token every Ministry recertification
+                // would be credited to KANGIS (and contradict makePrintMinistryRecertRow()).
+                $_row['party_1'] = (str_contains($_type, 'ministry')
+                        || str_contains($_type, 'physical planning')
+                        || str_contains($_type, 'land recertification'))
                     ? 'Kano State Ministry of Land and Physical Planning'
                     : 'Kano Geographic Information Service';
             } elseif (str_contains($_type, 'change of purpose') || str_contains($_type, 'subdivision')) {
@@ -1446,6 +1467,18 @@ class LegalSearchService
             }
 
             $txDate = $relIsManualLinkage ? '-' : $displayDate;
+
+            // A KANGIS Recertification's true date is NOT recorded anywhere: related_file_number
+            // stores only the link, and "KANGIS Recertification" is not a pra transaction type, so
+            // the resolution above can never find a real per-endpoint date for it. It therefore
+            // falls through to $familyMaxSort — the family's most recent transaction — which prints
+            // a confident but invented date (typically the KANGIS C of O's, making the two rows look
+            // like one event). Print a dash instead: unknown must read as unknown. sort_date is left
+            // intact so the row keeps its timeline position.
+            if (stripos($txType, 'KANGIS Recertification') !== false) {
+                $txDate = '-';
+            }
+
             if ($txType === 'Land Recertification (File Commissioning)' && ($txDate === '-' || trim($txDate) === '')) {
                 if (preg_match('/(?:^|[-_\/ ])(19\d{2}|20\d{2})(?:[-_\/ ]|$)/', $relNo, $matches)) {
                     $txDate = $matches[1];
@@ -1848,11 +1881,11 @@ class LegalSearchService
                     'mlsFNo'            => $oldNo,
                     'fileno'            => $oldNo,
                     'transaction_type'  => 'File Commissioning',
-                    'transaction_date'  => '-',
+                    'transaction_date'  => $commDate !== '' ? $commDate : '-',
                     'sort_date'         => $sortDate,
                     'party_1'           => 'Kano State Ministry of Land and Physical Planning',
                     'party_2'           => $commHolder,
-                    'comments'          => $commDate !== '' ? 'Commissioned ' . $commDate : '-',
+                    'comments'          => '-',
                     'source_table'      => 'Related Fileno',
                     'parent_file_number' => $fileNo,
                 ]);
@@ -4405,7 +4438,111 @@ class LegalSearchService
             }
         }
 
-        return $result;
+        return $this->orderRecertGenerations($result);
+    }
+
+    /**
+     * Lifecycle-transaction rule: recertification exercises print in generation order —
+     * First KANGIS Recertification (old KNML/MLKN/KNGP, 2014–2024) before Second KANGIS
+     * Recertification (new KN, 2025–present) — and each generation's Certificate of
+     * Occupancy stays with its own recertification.
+     *
+     * The date sort alone gets this wrong: a Second Recertification usually has no C of O
+     * of its own, so placeKangisRecertBeforeCofo() leaves it wherever it landed, which can
+     * be ABOVE the First Recertification / C of O pair it must follow.
+     *
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function orderRecertGenerations(array $rows): array
+    {
+        $typeOf = function (array $row): string {
+            return strtolower((string) ($row['transaction_type'] ?? ($row['instrument_type'] ?? '')));
+        };
+        $isCofo = fn(array $row): bool => str_contains($typeOf($row), 'certificate of occupanc');
+        $isRecert = fn(array $row): bool => str_contains($typeOf($row), 'recertification');
+
+        // 0 = not a generational KANGIS recert (e.g. the Ministry recertification, which is
+        // hoisted under File Commissioning by its own rule and must not be reordered here).
+        $genOf = function (array $row) use ($typeOf, $isRecert): int {
+            if (!$isRecert($row)) {
+                return 0;
+            }
+            $t = $typeOf($row);
+            if (str_contains($t, 'second')) {
+                return 2;
+            }
+            return str_contains($t, 'first') ? 1 : 0;
+        };
+
+        // A KANGIS C of O inherits the generation of the recertification sharing its file key,
+        // so it travels with that generation instead of being stranded.
+        $genByKey = [];
+        foreach ($rows as $row) {
+            $g = $genOf($row);
+            if ($g > 0) {
+                $key = $this->extractKangisLifecycleKey($row);
+                if ($key !== '') {
+                    $genByKey[$key] = $g;
+                }
+            }
+        }
+
+        $gens = [];
+        foreach ($rows as $i => $row) {
+            $g = $genOf($row);
+            if ($g === 0 && $isCofo($row)) {
+                $key = $this->extractKangisLifecycleKey($row);
+                $g = ($key !== '' && isset($genByKey[$key])) ? $genByKey[$key] : 0;
+            }
+            $gens[$i] = $g;
+        }
+
+        // Each recertification plus the C of O rows already parked directly beneath it forms
+        // one indivisible block. Blocks are reordered among themselves; every other row keeps
+        // its position, so nothing escapes the lifecycle group.
+        $blocks = [];
+        $slots = [];
+        $n = count($rows);
+        for ($i = 0; $i < $n;) {
+            if ($gens[$i] === 0) {
+                $i++;
+                continue;
+            }
+            $gen = $gens[$i];
+            $block = [$rows[$i]];
+            $slots[] = $i;
+            $j = $i + 1;
+            while ($j < $n && $gens[$j] === $gen && $isCofo($rows[$j])) {
+                $block[] = $rows[$j];
+                $slots[] = $j;
+                $j++;
+            }
+            $blocks[] = ['gen' => $gen, 'rows' => $block];
+            $i = $j;
+        }
+
+        if (count($blocks) < 2) {
+            return $rows;
+        }
+
+        $order = array_keys($blocks);
+        usort($order, function (int $a, int $b) use ($blocks): int {
+            return ($blocks[$a]['gen'] <=> $blocks[$b]['gen']) ?: ($a <=> $b);
+        });
+
+        $flat = [];
+        foreach ($order as $b) {
+            foreach ($blocks[$b]['rows'] as $r) {
+                $flat[] = $r;
+            }
+        }
+
+        foreach ($slots as $k => $idx) {
+            $rows[$idx] = $flat[$k];
+        }
+
+        return $rows;
     }
 
     /**
@@ -4458,9 +4595,19 @@ class LegalSearchService
             return 'mls';
         }
 
-        if (preg_match('/^[A-Z]{4}\s?\d{3,6}$/i', $cleanFileNo))
+        // Legacy KANGIS. The prefix is enumerated rather than [A-Z]{4} so unrelated 4-letter
+        // numbers cannot be swept in, and the shape is deliberately permissive about what the
+        // registry actually stores:
+        //   - 1-6 digits: "MLKN 42", "KNML 66" are real files; requiring 3 digits stranded 79
+        //     recertification links, whose rows were then dropped as untyped "Related File".
+        //   - optional unit suffix: "MLKN 2280-1", "KNML 3855_3" (130 further links).
+        if (preg_match('/^(MLKN|KNML|KNGP)\s?\d{1,6}([-_]\d{1,3})?$/i', $cleanFileNo))
             return 'kangis';
-        if (preg_match('/^KN\d{2,6}$/i', $cleanFileNo))
+        // New KANGIS. A separator is tolerated ("KN 2690") because the registry writes both
+        // forms; note this must stay disjoint from the old-MLS "KN 1234" files matched by
+        // isOldMlsKnFileNo(), which are Ministry recertifications, not KANGIS ones — those are
+        // distinguished downstream by the link's stored transaction_type, not by shape.
+        if (preg_match('/^KN[\s-]?\d{2,6}$/i', $cleanFileNo))
             return 'new_kangis';
 
         return 'unknown';
@@ -5104,6 +5251,21 @@ class LegalSearchService
 
         $tc = fn($v) => $v && $v !== '-' ? mb_convert_case(mb_strtolower($v), MB_CASE_TITLE, 'UTF-8') : '-';
 
+        // Title-casing a FILE NUMBER corrupts it ("KN2690" -> "Kn2690", "MLKN 3673" -> "Mlkn 3673").
+        // A recertification row's Comment column holds exactly that — the bare KANGIS number — so
+        // comments are passed through $tcComment, which leaves a recognisable file number alone
+        // and title-cases genuine prose as before.
+        $tcComment = function ($v) use ($tc) {
+            $s = trim((string) $v);
+            if ($s === '' || $s === '-') {
+                return '-';
+            }
+            if (preg_match('/^((MLKN|KNML|KNGP)\s?\d{1,6}([-_]\d{1,3})?|KN[\s-]?\d{2,6}|(CON-)?(RES|COM|IND|AG)(-RC)?-\d{4}-\d+)$/i', $s)) {
+                return strtoupper($s);
+            }
+            return $tc($s);
+        };
+
         $fileNumber = $searchedFileNo ?: (($first['fileno'] ?? null) ?: (($first['file_number'] ?? null) ?: (($first['mlsFNo'] ?? null) ?: '-')));
         $kangisNumber = $first['kangisFileNo'] ?? null;
         if ($kangisNumber === '-')
@@ -5327,7 +5489,7 @@ class LegalSearchService
                 'reg_no' => $regNoDisplay,
                 'size' => $t['size'] ?: '-',
                 'caveat' => $t['caveat'] ?: '-',
-                'comments' => $t['is_caveated'] ? $tc($t['caveated_comment'] ?: ($t['comments'] ?: '-')) : $tc($t['comments'] ?: '-'),
+                'comments' => $t['is_caveated'] ? $tcComment($t['caveated_comment'] ?: ($t['comments'] ?: '-')) : $tcComment($t['comments'] ?: '-'),
                 // Extra metadata (ignored by the print slip) so consumers that render
                 // the same LS-weighed timeline on-screen — e.g. the PHS portal —
                 // can show source badges and location identically to the slip.
@@ -6236,14 +6398,19 @@ class LegalSearchService
     private function resolveKangisCanonical($conn, string $fileNo): ?string
     {
         $fileNo = trim($fileNo);
-        // Only attempt for KANGIS legacy prefixes; normal MLS searches short-circuit here.
-        if ($fileNo === '' || !preg_match('/^(MLKN|KNML|KNGP)\s?\d{1,6}$/i', $fileNo)) {
+        // Only attempt for KANGIS numbers; normal MLS searches short-circuit here.
+        // Accepts BOTH generations: legacy MLKN/KNML/KNGP (optionally unit-suffixed, e.g.
+        // "MLKN 2280-1") and new-KANGIS "KN…". The new-KANGIS form was previously absent,
+        // so every Second-Recertification file failed to resolve to its land file.
+        if ($fileNo === '' || !preg_match('/^((MLKN|KNML|KNGP)\s?\d{1,6}([-_]\d{1,3})?|KN[\s-]?\d{2,6})$/i', $fileNo)) {
             return null;
         }
 
         $key = strtoupper(preg_replace('/\s+/', '', $fileNo));                 // "MLKN2455"
         $keyNoZero = preg_replace('/^([A-Z]+)0*(\d+)$/', '$1$2', $key);         // strip zero-pad
-        $isKangis = fn ($v) => (bool) preg_match('/^(MLKN|KNML|KNGP)\s?\d/i', trim((string) $v));
+        // Must recognise BOTH generations, otherwise $pickMls below can hand back a new-KANGIS
+        // number ("KN2690") as though it were the land file's MLS number.
+        $isKangis = fn ($v) => (bool) preg_match('/^((MLKN|KNML|KNGP)\s?\d|KN[\s-]?\d)/i', trim((string) $v));
 
         $pickMls = function ($candidates) use ($isKangis, $fileNo): ?string {
             foreach ($candidates as $cand) {
@@ -6255,10 +6422,16 @@ class LegalSearchService
             return null;
         };
 
-        // 1) PropID_Master — mother row carrying this KANGIS alias.
+        // 1) PropID_Master — mother row carrying this KANGIS alias. Both alias columns must be
+        //    searched: the columns are routinely mis-slotted (e.g. prop_id 147163 stores the MLS
+        //    number in kangisFileNo and the OLD KANGIS number "MLKN 3673" in NewKANGISFileno), so
+        //    matching kangisFileNo alone silently fails to canonicalise.
         try {
             $pm = $conn->table('PropID_Master')
-                ->whereRaw("UPPER(REPLACE(LTRIM(RTRIM(ISNULL(kangisFileNo,''))),' ','')) IN (?, ?)", [$key, $keyNoZero])
+                ->where(function ($q) use ($key, $keyNoZero) {
+                    $q->whereRaw("UPPER(REPLACE(LTRIM(RTRIM(ISNULL(kangisFileNo,''))),' ','')) IN (?, ?)", [$key, $keyNoZero])
+                      ->orWhereRaw("UPPER(REPLACE(LTRIM(RTRIM(ISNULL(NewKANGISFileno,''))),' ','')) IN (?, ?)", [$key, $keyNoZero]);
+                })
                 ->first(['mlsFNo', 'primary_file_number']);
             if ($pm) {
                 $mls = $pickMls([$pm->mlsFNo ?? null, $pm->primary_file_number ?? null]);
@@ -6281,6 +6454,48 @@ class LegalSearchService
                 $mls = $pickMls([$l->file_number ?? null, $l->related_fileno ?? null]);
                 if ($mls !== null) {
                     return $mls;
+                }
+            }
+        } catch (\Throwable $e) { /* fail-open */ }
+
+        // 3) parent_prop_id walk — the canonical Option A shape: Land / Old KANGIS / New KANGIS
+        //    each hold their OWN prop_id and point UPWARD via parent_prop_id. A new-KANGIS file
+        //    created that way (e.g. KN2690 -> parent 147163) has no related_fileno of its own and
+        //    no recertification link, so paths 1 and 2 both miss it. Resolve the parent prop_id to
+        //    its land file number instead. Restricted to a NON-KANGIS parent number so an alias
+        //    can never canonicalise to another alias.
+        try {
+            $ownRow = $conn->table('file_indexings')
+                ->whereRaw("UPPER(REPLACE(LTRIM(RTRIM(ISNULL(file_number,''))),' ','')) IN (?, ?)", [$key, $keyNoZero])
+                ->whereNull('deleted_at')
+                ->whereNotNull('parent_prop_id')
+                ->first(['prop_id', 'parent_prop_id']);
+
+            if ($ownRow && trim((string) $ownRow->parent_prop_id) !== '') {
+                foreach (array_filter(array_map('trim', explode(',', (string) $ownRow->parent_prop_id))) as $parentPid) {
+                    // Never resolve to the file's own parcel — that is a self-reference, not a parent.
+                    if ($parentPid === trim((string) $ownRow->prop_id)) {
+                        continue;
+                    }
+
+                    $pm = $conn->table('PropID_Master')
+                        ->where('prop_id', $parentPid)
+                        ->first(['mlsFNo', 'primary_file_number']);
+                    $mls = $pm ? $pickMls([$pm->mlsFNo ?? null, $pm->primary_file_number ?? null]) : null;
+
+                    if ($mls === null) {
+                        // Fall back to the parent parcel's own LAND-registry indexing row.
+                        $parentFile = $conn->table('file_indexings')
+                            ->where('prop_id', $parentPid)
+                            ->whereNull('deleted_at')
+                            ->where('registry', '<>', 'KANGIS')
+                            ->value('file_number');
+                        $mls = $pickMls([$parentFile]);
+                    }
+
+                    if ($mls !== null) {
+                        return $mls;
+                    }
                 }
             }
         } catch (\Throwable $e) { /* fail-open */ }

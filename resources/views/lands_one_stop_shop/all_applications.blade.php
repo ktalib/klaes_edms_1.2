@@ -166,12 +166,12 @@
         $isChangeOfName = ($isChangeOfNamePage ?? false) || request()->query('type') === 'change-of-name';
         $isNoChangeOfName = ($isNoChangeOfNamePage ?? false) || request()->query('type') === 'no-change-of-name';
         $dynamicPageTitle = $isChangeOfName
-            ? 'Applications (Change of Name)'
-            : ($isNoChangeOfName ? 'Applications (No Change of Name)' : 'Applications');
+            ? 'Applications (Change of Ownership)'
+            : ($isNoChangeOfName ? 'Applications (No Change of Ownership)' : 'Applications');
         $dynamicPageDescription = $isChangeOfName
-            ? 'Land One Stop Shop - Change of Name applications.'
+            ? 'Land One Stop Shop - Change of Ownership applications.'
             : ($isNoChangeOfName
-                ? 'Land One Stop Shop - No Change of Name applications.'
+                ? 'Land One Stop Shop - No Change of Ownership applications.'
                 : 'Land One Stop Shop - all captured applications.');
     @endphp
     @include('admin.header', [

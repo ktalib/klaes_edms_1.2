@@ -12,6 +12,7 @@ use App\Models\OtherReceivingOfficer;
 use App\Models\Notification;
 use App\Services\EBulkSmsService;
 use App\Services\BulkSmsNigeriaService;
+use App\Services\FileCommissioningTrackingService;
 use App\Services\FileLocationResolver;
 use App\Services\UserNotificationService;
 use Exception;
@@ -765,6 +766,15 @@ class CreateFileTrackerController extends Controller
                 'submitted' => (clone $statsBase)->where('file_request_type', 'SUBMITTED')->count(),
             ];
 
+            // DIIT files are active by definition (in process at the File Commissioning
+            // Office), so they count towards the Active badge — otherwise the badge
+            // disagrees with the "N files found" total of the list it labels. They are
+            // never Completed, and they belong to neither request-type tab.
+            if ($moduleFilter === '') {
+                $stats['diit'] = app(FileCommissioningTrackingService::class)->untrackedQuery()->count();
+                $stats['active'] += $stats['diit'];
+            }
+
             // Extra new_kangis dashboard metrics:
             //   - tracked_today      : trackers created today
             //   - total_tracked      : total trackers in this module
@@ -887,8 +897,7 @@ class CreateFileTrackerController extends Controller
 
             // Sorting
             $sortBy = $request->get('sort_by', 'created_at');
-            $sortOrder = $request->get('sort_order', 'desc');
-            $query->orderBy($sortBy, $sortOrder);
+            $sortOrder = strtolower($request->get('sort_order', 'desc')) === 'asc' ? 'asc' : 'desc';
 
             $perPage = (int) $request->get('per_page', 20);
             $perPage = max(1, min($perPage, 500));
@@ -896,14 +905,35 @@ class CreateFileTrackerController extends Controller
             $requestedPage = (int) $request->get('page', 1);
             $page = max(1, $requestedPage);
 
-            // Get total filtered count for pagination UI
-            $totalFiltered = $query->count();
-            $totalPages = ceil($totalFiltered / $perPage);
+            // Default In-process In-transit Tracking — commissioned files that have
+            // never been logged out have no tracker row of their own, so they are
+            // listed from the commissioning register alongside the real trackers.
+            $diitQuery = $this->diitListQuery($request, $moduleFilter);
 
-            $results = $query
-                ->skip(($page - 1) * $perPage)
-                ->take($perPage)
-                ->get();
+            if ($diitQuery === null) {
+                $query->orderBy($sortBy, $sortOrder);
+
+                // Get total filtered count for pagination UI
+                $totalFiltered = $query->count();
+                $totalPages = ceil($totalFiltered / $perPage);
+
+                $results = $query
+                    ->skip(($page - 1) * $perPage)
+                    ->take($perPage)
+                    ->get();
+            } else {
+                $totalFiltered = $query->count() + (clone $diitQuery)->count();
+                $totalPages = ceil($totalFiltered / $perPage);
+
+                $results = $this->paginateTrackersWithDiit(
+                    $query,
+                    $diitQuery,
+                    $sortBy,
+                    $sortOrder,
+                    ($page - 1) * $perPage,
+                    $perPage
+                );
+            }
 
             // Bulk pre-load the movement history for every file number on this page so
             // decorateTrackerForResponse() resolves prior_movements from cache instead of
@@ -920,6 +950,11 @@ class CreateFileTrackerController extends Controller
             // for every file number on this page in one indexed query instead of a
             // 130k-row scan per row.
             $this->primeIndexingCreatedAtCache($results->pluck('file_number'));
+
+            // Bulk pre-load the commissioning register so every card on the page can
+            // carry its default "File Commissioning" line (and the location resolver
+            // can answer DIIT questions) without a query per row.
+            app(FileCommissioningTrackingService::class)->prime($results->pluck('file_number'));
 
             $collection = $results->map(function ($tracker) {
                 return $this->decorateTrackerForResponse($tracker);
@@ -949,6 +984,204 @@ class CreateFileTrackerController extends Controller
         }
     }
 
+    /**
+     * Iterate several traversables as one stream, without loading any of them
+     * into memory — the exports read a database cursor followed by a generator.
+     */
+    protected function chain(iterable ...$sources): \Generator
+    {
+        foreach ($sources as $source) {
+            foreach ($source as $item) {
+                yield $item;
+            }
+        }
+    }
+
+    /**
+     * The commissioned-but-never-tracked files an export should include, under the
+     * export's own date/module filters. Null when the export is scoped to a module
+     * (mls_file_no is Land-only, so a module export has no DIIT rows).
+     */
+    protected function diitExportQuery(?string $dateFrom, ?string $dateTo, string $module): ?\Illuminate\Database\Query\Builder
+    {
+        if ($module !== '') {
+            return null;
+        }
+
+        $query = app(FileCommissioningTrackingService::class)->untrackedQuery();
+        $commissionedAt = $this->diitCommissionedAtExpr();
+
+        if ($dateFrom) {
+            $query->whereRaw("CAST({$commissionedAt} AS date) >= ?", [$dateFrom]);
+        }
+        if ($dateTo) {
+            $query->whereRaw("CAST({$commissionedAt} AS date) <= ?", [$dateTo]);
+        }
+
+        return $query;
+    }
+
+    /**
+     * The same rows as FileTracker instances, streamed one at a time so an export
+     * of thousands of commissioned files stays flat in memory.
+     */
+    protected function diitExportTrackers(?string $dateFrom, ?string $dateTo, string $module): \Generator
+    {
+        $query = $this->diitExportQuery($dateFrom, $dateTo, $module);
+
+        if ($query === null) {
+            return;
+        }
+
+        $service = app(FileCommissioningTrackingService::class);
+
+        foreach ($query->orderByRaw($this->diitCommissionedAtExpr() . ' DESC')->cursor() as $row) {
+            yield $service->syntheticTracker($service->hydrate($row));
+        }
+    }
+
+    /**
+     * SQL Server expression for the moment a file was commissioned — the stored
+     * commissioning date/time, falling back to the register row's created_at.
+     * Mirrors FileCommissioningTrackingService::commissionedAt() so the list sorts
+     * on exactly the date the DIIT line shows.
+     */
+    protected function diitCommissionedAtExpr(): string
+    {
+        return "ISNULL(TRY_CONVERT(datetime2, CONVERT(varchar(10), mls_file_no.commissioning_date, 23)"
+            . " + ' ' + LEFT(CONVERT(varchar(16), ISNULL(mls_file_no.commissioning_time, '00:00:00')), 8)),"
+            . " mls_file_no.created_at)";
+    }
+
+    /**
+     * The commissioning-register rows that should be listed as DIIT cards for this
+     * request, or null when this view does not show them.
+     *
+     * DIIT rows only appear on the Land file log: mls_file_no holds Land/MLS file
+     * numbers, so the KANGIS / New KANGIS / DG / DGIS views are untouched. They are
+     * also skipped for the tabs they cannot belong to — Completed (a DIIT file has
+     * never been logged back in), the officer tabs (no receiving officer), a
+     * priority filter (no priority) and the In-transit/Submitted request-type tabs
+     * (a commissioning is neither kind of request).
+     */
+    protected function diitListQuery(Request $request, string $moduleFilter): ?\Illuminate\Database\Query\Builder
+    {
+        if ($moduleFilter !== '') {
+            return null;
+        }
+
+        $status = (string) $request->input('status', '');
+        if (!in_array($status, ['', 'all', 'not-completed'], true)) {
+            return null;
+        }
+
+        $priority = (string) $request->input('priority', '');
+        if ($priority !== '' && $priority !== 'all') {
+            return null;
+        }
+
+        if (in_array(strtoupper(trim((string) $request->input('file_request_type', ''))), ['MANUAL', 'SUBMITTED'], true)) {
+            return null;
+        }
+
+        $query = app(FileCommissioningTrackingService::class)->untrackedQuery();
+
+        if ($request->filled('search')) {
+            $search = $request->input('search');
+            $query->where(function ($q) use ($search) {
+                $q->where('full_file_number', 'LIKE', "%{$search}%")
+                    ->orWhere('file_name', 'LIKE', "%{$search}%")
+                    ->orWhere('tracking_id', 'LIKE', "%{$search}%");
+            });
+        }
+
+        // The list's date range filters on when tracking started, which for a DIIT
+        // row is the commissioning date.
+        $commissionedAt = $this->diitCommissionedAtExpr();
+        if ($request->filled('date_from')) {
+            $query->whereRaw("CAST({$commissionedAt} AS date) >= ?", [$request->get('date_from')]);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereRaw("CAST({$commissionedAt} AS date) <= ?", [$request->get('date_to')]);
+        }
+
+        return $query;
+    }
+
+    /**
+     * Page through the two sources as one ordered list.
+     *
+     * Real trackers and DIIT rows interleave by date, so they cannot be paged
+     * one after the other. Union just the identifiers + the sort key (cheap), let
+     * SQL Server order and slice that, then load only the page's rows from each
+     * source and rebuild the collection in the union's order. Both kinds come back
+     * as FileTracker instances, so decorateTrackerForResponse() and the front end
+     * stay unaware of the difference.
+     */
+    protected function paginateTrackersWithDiit(
+        $trackerQuery,
+        \Illuminate\Database\Query\Builder $diitQuery,
+        string $sortBy,
+        string $sortOrder,
+        int $skip,
+        int $take
+    ) {
+        $commissioningService = app(FileCommissioningTrackingService::class);
+
+        // Only columns both sources can express are sortable across the union.
+        $sortable = ['created_at', 'date_created', 'file_number', 'priority', 'status'];
+        $sortBy = in_array($sortBy, $sortable, true) ? $sortBy : 'created_at';
+
+        $commissionedAt = $this->diitCommissionedAtExpr();
+        $diitSortExpr = match ($sortBy) {
+            'file_number' => 'mls_file_no.full_file_number',
+            'priority'    => "'" . FileTracker::PRIORITY_MEDIUM . "'",
+            'status'      => "'" . FileTracker::STATUS_ACTIVE . "'",
+            default       => $commissionedAt,
+        };
+
+        $trackerKeys = (clone $trackerQuery)->toBase()->select([
+            DB::raw("'T' as src"),
+            'file_tracker.id as row_id',
+            DB::raw("file_tracker.{$sortBy} as sort_key"),
+        ]);
+
+        $diitKeys = (clone $diitQuery)->select([
+            DB::raw("'D' as src"),
+            'mls_file_no.id as row_id',
+            DB::raw("{$diitSortExpr} as sort_key"),
+        ]);
+
+        $keys = DB::connection('sqlsrv')->query()
+            ->fromSub($trackerKeys->unionAll($diitKeys), 'u')
+            ->orderBy('sort_key', $sortOrder)
+            ->orderBy('row_id', $sortOrder)
+            ->skip($skip)
+            ->take($take)
+            ->get();
+
+        $trackerIds = $keys->where('src', 'T')->pluck('row_id')->all();
+        $diitIds    = $keys->where('src', 'D')->pluck('row_id')->all();
+
+        $trackers = empty($trackerIds)
+            ? collect()
+            : FileTracker::whereIn('id', $trackerIds)->get()->keyBy('id');
+
+        $diitRows = empty($diitIds)
+            ? collect()
+            : $commissioningService->baseQuery()->whereIn('id', $diitIds)->get()->keyBy('id');
+
+        return $keys->map(function ($key) use ($trackers, $diitRows, $commissioningService) {
+            if ($key->src === 'T') {
+                return $trackers->get($key->row_id);
+            }
+
+            $row = $diitRows->get($key->row_id);
+
+            return $row ? $commissioningService->syntheticTracker($commissioningService->hydrate($row)) : null;
+        })->filter()->values();
+    }
+
     public function exportCsv(Request $request)
     {
         ini_set('memory_limit', '256M');
@@ -976,13 +1209,14 @@ class CreateFileTrackerController extends Controller
 
         // cursor() streams one row at a time — memory stays constant regardless of record count
         $cursor = $query->orderByDesc('created_at')->cursor();
+        $diitCursor = $this->diitExportTrackers($dateFrom, $dateTo, $module);
 
         $headers = [
             'Content-Type'        => 'text/csv; charset=UTF-8',
             'Content-Disposition' => 'attachment; filename="file-trackers-' . ($dateFrom ?? 'all') . '-to-' . ($dateTo ?? 'all') . '.csv"',
         ];
 
-        $callback = function () use ($cursor) {
+        $callback = function () use ($cursor, $diitCursor) {
             $handle = fopen('php://output', 'w');
             fprintf($handle, chr(0xEF) . chr(0xBB) . chr(0xBF)); // UTF-8 BOM for Excel
 
@@ -993,7 +1227,10 @@ class CreateFileTrackerController extends Controller
             ]);
 
             $row = 0;
-            foreach ($cursor as $tracker) {
+            // Real trackers first, then the commissioned files whose only line is the
+            // default commissioning one (DIIT) — the same two sources the File Log
+            // Table lists, so an export is not missing half the files on screen.
+            foreach ($this->chain($cursor, $diitCursor) as $tracker) {
                 $row++;
                 $log      = is_array($tracker->movement_log) ? $tracker->movement_log : json_decode($tracker->movement_log ?? '[]', true);
                 $first    = $log[0] ?? [];
@@ -1059,7 +1296,8 @@ class CreateFileTrackerController extends Controller
             $query->whereRaw("LOWER(LTRIM(RTRIM(ISNULL(module, '')))) = ?", [$module]);
         }
 
-        $totalCount  = (clone $query)->count();
+        $diitQuery   = $this->diitExportQuery($dateFrom, $dateTo, $module);
+        $totalCount  = (clone $query)->count() + ($diitQuery ? $diitQuery->count() : 0);
         $generated   = now()->format('d M Y H:i');
         $moduleLabel = $module ? strtoupper($module) : 'ALL MODULES';
         $periodLabel = ($dateFrom ?? 'All dates') . ' — ' . ($dateTo ?? 'present');
@@ -1068,9 +1306,10 @@ class CreateFileTrackerController extends Controller
         // and the user prints to PDF via the browser's native print dialog.
         // This avoids DomPDF's in-memory DOM which exhausts RAM on large datasets.
         $cursor = $query->orderByDesc('created_at')->cursor();
+        $diitCursor = $this->diitExportTrackers($dateFrom, $dateTo, $module);
 
         return response()->stream(
-            function () use ($cursor, $totalCount, $generated, $moduleLabel, $periodLabel) {
+            function () use ($cursor, $diitCursor, $totalCount, $generated, $moduleLabel, $periodLabel) {
                 while (ob_get_level() > 0) {
                     ob_end_clean();
                 }
@@ -1079,7 +1318,9 @@ class CreateFileTrackerController extends Controller
                 flush();
 
                 $row = 0;
-                foreach ($cursor as $tracker) {
+                // Real trackers, then commissioned files carrying only the default
+                // commissioning line — see exportCsv() for the rationale.
+                foreach ($this->chain($cursor, $diitCursor) as $tracker) {
                     $row++;
                     echo $this->exportPdfRow($row, $tracker);
                     if ($row % 150 === 0) {
@@ -2890,7 +3131,21 @@ HTML;
         // renders these read-only between the Archive home row and this tracker's own
         // rows so a file that is re-tracked after being logged back into the registry
         // shows one continuous timeline instead of a fresh, disconnected log.
-        $tracker->setAttribute('prior_movements', $this->getPriorMovements($tracker));
+        // The DIIT "File Commissioning" line is prepended here, so a commissioned
+        // file's timeline always opens where the file actually began.
+        $tracker->setAttribute('prior_movements', $this->withCommissioningLine($tracker));
+
+        // DIIT flags for the front end:
+        //   is_commissioned — the file was commissioned through KLAES, so its history
+        //                     opens with the File Commissioning line and the synthetic
+        //                     "Registry / Archive" home row is dropped.
+        //   is_diit         — this whole card is the default commissioning line (no
+        //                     tracker row exists yet), so the id-based actions are hidden.
+        $commissioning = app(FileCommissioningTrackingService::class)->infoFor($tracker->file_number);
+        $tracker->setAttribute('is_commissioned', $commissioning !== null);
+        $tracker->setAttribute('is_diit', (bool) $tracker->getAttribute('is_diit'));
+        $tracker->setAttribute('commissioned_at', $commissioning ? $commissioning['commissioned_at']->toIso8601String() : null);
+        $tracker->setAttribute('commissioned_by', $commissioning['commissioned_by'] ?? null);
 
         // Add workflow progress if this is a 3-step tracker
         if ($tracker->isKangis3Step()) {
@@ -4029,6 +4284,57 @@ HTML;
         usort($priorMovements, function ($a, $b) {
             return $this->movementSortTimestamp($a) <=> $this->movementSortTimestamp($b);
         });
+
+        return $priorMovements;
+    }
+
+    /**
+     * Prior movements with the Default In-process In-transit Tracking line in front.
+     *
+     * Every file commissioned through KLAES starts life at the File Commissioning
+     * Office, so that is the first line of its history — above any log it already
+     * has. The line is PINNED first rather than left to the chronological sort: a
+     * legacy file recommissioned into KLAES can carry movements older than its
+     * commissioning date, and the line must still open the timeline.
+     *
+     * Skipped for a synthetic DIIT card, whose own movement_log is that line.
+     *
+     * @return array<int, array<string,mixed>>
+     */
+    protected function withCommissioningLine(FileTracker $tracker): array
+    {
+        $priorMovements = $this->getPriorMovements($tracker);
+
+        if ($tracker->getAttribute('is_diit')) {
+            return $priorMovements;
+        }
+
+        $service = app(FileCommissioningTrackingService::class);
+        $commissioning = $service->infoFor($tracker->file_number);
+
+        if ($commissioning === null) {
+            return $priorMovements;
+        }
+
+        // The file left the commissioning office when it was first logged anywhere,
+        // which closes the line; with no movement at all it is still in process there.
+        $ownLog = is_array($tracker->movement_log) ? $tracker->movement_log : [];
+        $timestamps = [];
+        foreach (array_merge($priorMovements, $ownLog) as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $stamp = $this->movementSortTimestamp($entry);
+            if ($stamp < PHP_FLOAT_MAX) {
+                $timestamps[] = $stamp;
+            }
+        }
+
+        $closedAt = empty($timestamps)
+            ? null
+            : \Carbon\Carbon::createFromTimestamp((int) min($timestamps));
+
+        array_unshift($priorMovements, $service->movementEntry($commissioning, $closedAt));
 
         return $priorMovements;
     }

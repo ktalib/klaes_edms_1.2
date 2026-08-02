@@ -27,7 +27,7 @@
         return false;
     };
 @endphp
-<div class="sidebar border-r border-gray-200 bg-white">
+<div class="sidebar border-r border-gray-200 bg-white transition-all duration-300 ease-in-out">
   <!-- Sidebar Header -->
   @include('admin.menu.partials.sidebar_header')
 
@@ -49,6 +49,7 @@
     @include('admin.menu.partials.modules.physical_planning')
     @include('admin.menu.partials.modules.survey')
     @include('admin.menu.partials.modules.cadastral')
+    @include('admin.menu.partials.modules.prs_management')
     @include('admin.menu.partials.modules.gis')
     @include('admin.menu.partials.modules.sectional_titling')
     @include('admin.menu.partials.modules.sltr')

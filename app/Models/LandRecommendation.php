@@ -21,6 +21,7 @@ class LandRecommendation extends Model
 
     protected $fillable = [
         'file_number',
+        'old_file_number',
         'applicant_name',
         'purpose_of_clause',
         'location',
@@ -28,6 +29,7 @@ class LandRecommendation extends Model
         'area_sqm',
         'term',
         'cofo_year',
+        'selected_year',
         'ground_rent',
         'effective_date',
         'premium',
@@ -69,6 +71,10 @@ class LandRecommendation extends Model
         'land_rofo_serial_no',
         'type',
         'application_type',
+        'use_standard_template',
+        'is_reissuance',
+        'reissuance_source',
+        'reissued_from_id',
         'num_plots',
         'file_title',
         'premium_words',
@@ -101,6 +107,8 @@ class LandRecommendation extends Model
         'approved_at' => 'datetime',
         'rofo_generated_at' => 'datetime',
         'application_date' => 'date',
+        'use_standard_template' => 'boolean',
+        'is_reissuance' => 'boolean',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

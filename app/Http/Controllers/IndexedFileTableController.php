@@ -1334,6 +1334,60 @@ class IndexedFileTableController extends Controller
     }
 
     /**
+     * What "Move to Indexing Duplicates" would do to this record: the tables it
+     * deletes from with row counts, the record/transaction tables it leaves alone
+     * (PRA, CofO, file history, file tracker, commissioning register) with their
+     * counts, and anything that blocks the move outright.
+     *
+     * Read-only — the confirmation dialog calls this before the operator commits.
+     */
+    public function previewIndexingDuplicateMove($id, IndexingDuplicateService $service): JsonResponse
+    {
+        $fileId = (int) $id;
+        if ($fileId <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid file ID.',
+            ], 422);
+        }
+
+        try {
+            $preview = $service->preview($fileId);
+        } catch (\Throwable $e) {
+            Log::error('Failed to preview indexing duplicate move', [
+                'file_indexing_id' => $fileId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Could not check what this move would delete: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        if ($preview['status'] === 'not_found') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Indexed file not found.',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'blocked' => $preview['status'] === 'blocked',
+            'preview' => [
+                'file_number'       => $preview['file_number'],
+                'file_title'        => $preview['file_title'],
+                'matched_numbers'   => $preview['matched_numbers'],
+                'blocking'          => $preview['blocking'],
+                'deletions'         => $preview['deletions'],
+                'retained'          => $preview['retained'],
+                'transaction_total' => $preview['transaction_total'],
+            ],
+        ]);
+    }
+
+    /**
      * Move an indexed file into indexing_duplicates and remove it from the live
      * tables (file_indexings, fileNumber, customers_staging, entities_staging).
      *

@@ -167,6 +167,22 @@ document.addEventListener('DOMContentLoaded', function () {
                             }
                             if (trackingInput) trackingInput.value = record.tracking_id || '';
 
+                            // Default the Prevailing Year to the year in the file number, fallback to commissioning date
+                            let fileYear = null;
+                            const fileNoVal = (fileNoInput ? fileNoInput.value : '') || record.mlsfNo || record.kangisFileNo || record.NewKANGISFileNo || record.st_file_no || '';
+                            if (fileNoVal) {
+                                const yearMatch = fileNoVal.match(/(?:^|[^0-9])(19\d{2}|20\d{2})(?:[^0-9]|$)/);
+                                if (yearMatch) {
+                                    fileYear = parseInt(yearMatch[1]);
+                                }
+                            }
+                            if (!fileYear && record.commissioning_date) {
+                                fileYear = new Date(record.commissioning_date).getFullYear();
+                            }
+                            if (fileYear && cofoYearInput) {
+                                cofoYearInput.value = fileYear;
+                            }
+
                             // Auto-populate Land Use (and trigger purpose load)
                             applyLandUse(record);
 
@@ -242,6 +258,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function warnDuplicate(dup) {
         if (!dup || typeof Swal === 'undefined') return;
+        // A re-issuance is a deliberate second record for the same file number.
+        if (window._reissuanceMode) return;
         Swal.fire({
             icon: 'warning',
             title: 'Possible Duplicate',
@@ -333,7 +351,9 @@ document.addEventListener('DOMContentLoaded', function () {
             // Always re-check on submit rather than trusting `lastDuplicate`: the
             // file number may have been set without going through the picker, or an
             // earlier check may have failed silently. The server enforces this too.
-            if (!dupConfirmed) {
+            // A re-issuance deliberately repeats an existing file number, so it is
+            // exempt (the server skips its guard for the same reason).
+            if (!dupConfirmed && !window._reissuanceMode) {
                 e.preventDefault();
                 checkDuplicateFileNo(fileNoInput.value).then(dup => {
                     if (dup) {
@@ -449,25 +469,98 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Residual Term: shown inside the Term (Years) field when CoFO year is entered
     const cofoYearInput = document.getElementById('cofo_year');
-    const THIS_YEAR     = new Date().getFullYear();
+    const selectedYearSelect = document.getElementById('selected_year');
+    const appTypeHidden = document.getElementById('application-type-hidden');
+    const termInput = document.getElementById('term_input');
+    const termHint  = document.getElementById('term_hint');
 
+    function setTermHint(text) {
+        if (termHint) termHint.textContent = text || '';
+    }
+
+    // Recomputes the residual term from the CoFO year.
     function calcResidualTerm() {
-        const termEl     = document.getElementById('term_input');
+        const termEl     = termInput || document.getElementById('term_input');
         const baseTermEl = document.getElementById('base_term');
         if (!cofoYearInput || !termEl) return;
-        const year     = parseInt(cofoYearInput.value) || 0;
+        const prevailingYear = parseInt(cofoYearInput.value) || 0;
+        const selectedYear   = parseInt(selectedYearSelect ? selectedYearSelect.value : new Date().getFullYear()) || new Date().getFullYear();
         const baseTerm = parseInt(baseTermEl ? baseTermEl.value : termEl.value) || 0;
-        if (year >= 1900 && year <= THIS_YEAR && baseTerm > 0) {
-            const residual = baseTerm - (THIS_YEAR - year);
-            termEl.value = residual > 0 ? residual : 0;
+        const appType  = (appTypeHidden ? appTypeHidden.value : '').trim();
+
+        // Automate the term calculation for subdivisions, mergers, plot extensions
+        const automateTypes = ['Plot Subdivision', 'Plot Merger', 'Plot Extension'];
+        const shouldAutomate = automateTypes.includes(appType);
+
+        if (shouldAutomate) {
+            if (prevailingYear >= 1900 && selectedYear >= prevailingYear && baseTerm > 0) {
+                const residual = baseTerm - (selectedYear - prevailingYear);
+                termEl.value = residual > 0 ? residual : 0;
+                setTermHint(`Automated residual: ${baseTerm} - (${selectedYear} - ${prevailingYear}) = ${termEl.value} years.`);
+                termEl.readOnly = true;
+                termEl.classList.add('bg-slate-50', 'text-slate-500', 'cursor-not-allowed');
+            } else {
+                termEl.value = baseTerm || '';
+                setTermHint('Ensure Prevailing Year and Year are filled correctly to calculate the residual.');
+                termEl.readOnly = false;
+                termEl.classList.remove('bg-slate-50', 'text-slate-500', 'cursor-not-allowed');
+            }
         } else {
-            termEl.value = baseTerm || '';
+            termEl.readOnly = false;
+            termEl.classList.remove('bg-slate-50', 'text-slate-500', 'cursor-not-allowed');
+            
+            if (prevailingYear >= 1900 && selectedYear >= prevailingYear && baseTerm > 0) {
+                const residual = baseTerm - (selectedYear - prevailingYear);
+                termEl.value = residual > 0 ? residual : 0;
+                setTermHint(`Residual: ${baseTerm} - (${selectedYear} - ${prevailingYear}) = ${termEl.value} years (Overrideable).`);
+            } else {
+                termEl.value = baseTerm || '';
+                setTermHint('Enter Prevailing Year and select Year to auto-calculate the residual term.');
+            }
         }
+        termEl.dataset.manual = '0';
     }
     window._calcResidualTerm = calcResidualTerm;
 
-    if (cofoYearInput) cofoYearInput.addEventListener('input', calcResidualTerm);
-    calcResidualTerm();
+    if (termInput) {
+        termInput.addEventListener('input', function() {
+            this.dataset.manual = '1';
+            setTermHint('Manually entered term. Change the Prevailing Year or selected Year to recalculate.');
+        });
+    }
+
+    if (cofoYearInput) {
+        cofoYearInput.addEventListener('input', calcResidualTerm);
+        cofoYearInput.addEventListener('change', calcResidualTerm);
+    }
+    if (selectedYearSelect) {
+        selectedYearSelect.addEventListener('change', calcResidualTerm);
+    }
+
+    if (fileNoInput) {
+        const updatePrevailingYearFromFileNo = () => {
+            const fileNoStr = fileNoInput.value;
+            if (fileNoStr) {
+                const match = fileNoStr.match(/(?:^|[^0-9])(19\d{2}|20\d{2})(?:[^0-9]|$)/);
+                if (match) {
+                    const fileYear = parseInt(match[1]);
+                    if (fileYear && cofoYearInput) {
+                        cofoYearInput.value = fileYear;
+                        calcResidualTerm();
+                    }
+                }
+            }
+        };
+        fileNoInput.addEventListener('input', updatePrevailingYearFromFileNo);
+        fileNoInput.addEventListener('change', updatePrevailingYearFromFileNo);
+    }
+
+    // On load, keep a term that was already saved on the record; otherwise derive it.
+    if (!termInput || termInput.dataset.saved !== '1' || !termInput.value) {
+        calcResidualTerm();
+    } else if (cofoYearInput && cofoYearInput.value) {
+        setTermHint(`Saved term for Prevailing Year ${cofoYearInput.value}. Change the year to recalculate.`);
+    }
 
     if (window.lucide) {
         window.lucide.createIcons();

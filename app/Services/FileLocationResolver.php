@@ -21,6 +21,8 @@ use Illuminate\Support\Facades\Schema;
  *   2. Manual override (location_status_manual + tracking_status on the indexing row).
  *   3. file_tracker.status = COMPLETED -> logged in -> IN_ARCHIVE
  *        - file_tracker.status = CANCELLED -> ignore, fall through
+ *   3b. Never tracked but commissioned in KLAES (mls_file_no) -> IN_TRANSIT at the
+ *       File Commissioning Office (DIIT — see FileCommissioningTrackingService).
  *   4. No active tracker -> parse prefix + year, match config/file_ranges.php
  *        - zone=archive + scanned/indexed -> IN_ARCHIVE
  *        - zone=archive + not scanned      -> FILE_NOT_FOUND (archive-missing)
@@ -150,6 +152,37 @@ class FileLocationResolver
                 'tracker'          => $tracker,
                 'indexing'         => $indexing,
             ], $this->actionMetaFor(self::STATUS_IN_ARCHIVE, $registry, $this->isDcivFile($indexing))));
+        }
+
+        // ── 2b. Default In-process In-transit Tracking (DIIT) ──
+        //        A file commissioned through KLAES that has never been tracked is a NEW
+        //        file: it was created at the File Commissioning Office and is moving from
+        //        office to office for processing and documentation, so it cannot be in the
+        //        archive yet. Report it as in transit at the commissioning office, with the
+        //        clock running from its commissioning date. Placed AFTER the tracker
+        //        branches on purpose: the file's first real tracking record ends the DIIT
+        //        state and takes over the location from there.
+        if ($tracker === null) {
+            $commissioning = app(FileCommissioningTrackingService::class)->infoFor($fileNumber);
+
+            if ($commissioning !== null) {
+                $heldSince = $commissioning['commissioned_at'];
+
+                return $this->result($fileNumber, self::STATUS_IN_TRANSIT, [
+                    'registry'         => FileCommissioningTrackingService::OFFICE_NAME,
+                    'current_location' => FileCommissioningTrackingService::OFFICE_NAME,
+                    // The file's assigned home shelf still applies — it is where the file
+                    // will be filed once processing is done.
+                    'rack_shelf'       => $this->getRackShelf($fileNumber, $indexing),
+                    'indexing'         => $indexing,
+                    'next_action'      => 'Print Tracking Confirmation Slip',
+                    'slip_variant'     => 'tracking_confirmation',
+                    'held_since'           => $heldSince->format('Y-m-d g:i A'),
+                    'days_with_holder'     => $this->daysWithHolder($heldSince),
+                    'duration_with_holder' => $this->durationLabel($heldSince),
+                    'is_diit'              => true,
+                ]);
+            }
         }
 
         // ── 3. Not indexed at all -> Pending File (blind request) ──
@@ -364,6 +397,10 @@ class FileLocationResolver
             // file is a standalone record (see variants()); the UI badges it.
             'is_temp_file'     => (bool) preg_match('/\(\s*T\s*\)\s*$/i', trim($fileNumber)),
             'is_missing_file'  => false,
+            // Default In-process In-transit Tracking: the file is at the File
+            // Commissioning Office purely because it was commissioned in KLAES and
+            // has not been tracked yet (no real movement recorded).
+            'is_diit'          => false,
             'superseded_by'    => null,
             'superseded_reason' => null,
             // Holder-duration fields — only populated on the IN_TRANSIT outcome.

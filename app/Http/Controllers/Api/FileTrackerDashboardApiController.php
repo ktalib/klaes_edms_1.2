@@ -93,6 +93,10 @@ class FileTrackerDashboardApiController extends Controller
             ->limit($limit)
             ->get();
 
+        // One query for the page's titles: file_title reads file_indexings
+        // per row otherwise (see FileTracker::primeFileTitles).
+        FileTracker::primeFileTitles($trackers->pluck('file_number'));
+
         $officeCodesNeeded = [];
 
         foreach ($trackers as $tracker) {
@@ -154,8 +158,8 @@ class FileTrackerDashboardApiController extends Controller
                 'currentOfficeId' => $currentOfficeCode,
                 'currentOfficeDepartment' => $office->department ?? null,
                 'logEntries' => $movementLog,
-                'createdAt' => optional($tracker->created_at)->toIso8601String(),
-                'updatedAt' => optional($tracker->updated_at)->toIso8601String(),
+                'createdAt' => $this->toIso($tracker->created_at),
+                'updatedAt' => $this->toIso($tracker->updated_at),
             ];
         }
 
@@ -313,6 +317,10 @@ class FileTrackerDashboardApiController extends Controller
             ->limit($limit)
             ->get();
 
+        // One query for the page's titles: file_title reads file_indexings
+        // per row otherwise (see FileTracker::primeFileTitles).
+        FileTracker::primeFileTitles($trackers->pluck('file_number'));
+
         $officeCodesNeeded = [];
 
         foreach ($trackers as $tracker) {
@@ -386,6 +394,9 @@ class FileTrackerDashboardApiController extends Controller
                 'department' => $tracker->department,
                 'caseType' => $tracker->file_type ?? $tracker->request_purpose_name,
                 'applicant' => $tracker->created_by_name,
+                // The requester of record is the officer the file is requested
+                // for (receiving_officer_name), not the clerk who keyed it in.
+                'requester' => $tracker->receiving_officer_name,
                 'originOffice' => $tracker->origin_office_name,
                 'originOfficeCode' => $tracker->origin_office_code,
                 'receivingOfficer' => $tracker->receiving_officer_name,
@@ -403,8 +414,8 @@ class FileTrackerDashboardApiController extends Controller
                 'requestedDate' => optional($tracker->date_requested)->toIso8601String() ?? optional($tracker->created_at)->toIso8601String(),
                 'requestDate' => optional($tracker->date_requested)->toIso8601String() ?? optional($tracker->created_at)->toIso8601String(),
                 'logEntries' => $movementLog,
-                'createdAt' => optional($tracker->created_at)->toIso8601String(),
-                'updatedAt' => optional($tracker->updated_at)->toIso8601String(),
+                'createdAt' => $this->toIso($tracker->created_at),
+                'updatedAt' => $this->toIso($tracker->updated_at),
             ];
         }
 
@@ -480,6 +491,10 @@ class FileTrackerDashboardApiController extends Controller
                 'file_request_type',
                 'date_requested',
                 'movement_log',
+                'receiving_officer_id',
+                'receiving_officer_name',
+                'created_by',
+                'created_by_name',
                 'created_at',
                 'updated_at',
             ])
@@ -487,6 +502,10 @@ class FileTrackerDashboardApiController extends Controller
             ->orderByDesc('id')
             ->forPage($page, $perPage)
             ->get();
+
+        // One query for the page's titles: file_title reads file_indexings
+        // per row otherwise (see FileTracker::primeFileTitles).
+        FileTracker::primeFileTitles($trackers->pluck('file_number'));
 
         $officeCodesNeeded = [];
 
@@ -523,6 +542,7 @@ class FileTrackerDashboardApiController extends Controller
         $files = $trackers->map(function (FileTracker $tracker) use ($officeMetadata) {
             $office = $officeMetadata->get($tracker->current_office_code);
             $requestedDate = $tracker->date_requested ?: $tracker->created_at;
+            $requestedIso = $this->toIso($requestedDate);
 
             return [
                 'id' => $tracker->id,
@@ -540,16 +560,20 @@ class FileTrackerDashboardApiController extends Controller
                 'originOffice' => $tracker->origin_office_name,
                 'requestPurpose' => $tracker->request_purpose_name,
                 'caseType' => $tracker->request_purpose_name,
+                'requester' => $tracker->receiving_officer_name,
+                'requesterId' => $tracker->receiving_officer_id,
+                'createdByName' => $tracker->created_by_name,
+                'applicant' => $tracker->created_by_name,
                 'movementStatus' => 'in_transit',
                 'isInTransit' => true,
                 'isRequested' => false,
                 'isReturned' => false,
                 'isCanceled' => false,
                 'logEntries' => $this->normaliseMovementLog((array) $tracker->movement_log, $officeMetadata),
-                'requestedDate' => $requestedDate ? Carbon::parse($requestedDate)->toIso8601String() : null,
-                'requestDate' => $requestedDate ? Carbon::parse($requestedDate)->toIso8601String() : null,
-                'createdAt' => optional($tracker->created_at)->toIso8601String(),
-                'updatedAt' => optional($tracker->updated_at)->toIso8601String(),
+                'requestedDate' => $requestedIso,
+                'requestDate' => $requestedIso,
+                'createdAt' => $this->toIso($tracker->created_at),
+                'updatedAt' => $this->toIso($tracker->updated_at),
             ];
         })->values();
 
@@ -633,7 +657,9 @@ class FileTrackerDashboardApiController extends Controller
             $query->where(function ($inner) use ($like) {
                 $inner->where('file_number', 'like', $like)
                     ->orWhere('file_title', 'like', $like)
-                    ->orWhere('tracking_id', 'like', $like);
+                    ->orWhere('tracking_id', 'like', $like)
+                    // The requester is a visible column, so it is searchable too.
+                    ->orWhere('receiving_officer_name', 'like', $like);
             });
         }
 
@@ -657,13 +683,19 @@ class FileTrackerDashboardApiController extends Controller
         $departmentExpression = "ISNULL(NULLIF(LTRIM(RTRIM(department)), ''), 'Unassigned')";
 
         $groups = (clone $baseQuery)
-            ->selectRaw($departmentExpression . ' as department_group, COUNT(*) as total')
+            ->selectRaw(
+                $departmentExpression . ' as department_group, COUNT(*) as total,'
+                . " SUM(CASE WHEN UPPER(ISNULL(priority, '')) = 'HIGH' THEN 1 ELSE 0 END) as high_total"
+            )
             ->groupBy(DB::raw($departmentExpression))
             ->orderByRaw($departmentExpression)
             ->get()
             ->map(fn ($row) => [
                 'department' => $row->department_group,
                 'totalFiles' => (int) $row->total,
+                // Lets a collapsed group header show its urgency without
+                // fetching any of its rows.
+                'highFiles' => (int) $row->high_total,
             ])
             ->values();
 
@@ -752,6 +784,10 @@ class FileTrackerDashboardApiController extends Controller
                 'date_requested',
                 'current_office_code',
                 'movement_log',
+                'receiving_officer_id',
+                'receiving_officer_name',
+                'created_by',
+                'created_by_name',
                 'created_at',
                 'updated_at',
             ])
@@ -764,6 +800,10 @@ class FileTrackerDashboardApiController extends Controller
             ->orderByDesc('id')
             ->forPage($page, $perPage)
             ->get();
+
+        // One query for the page's titles: file_title reads file_indexings
+        // per row otherwise (see FileTracker::primeFileTitles).
+        FileTracker::primeFileTitles($trackers->pluck('file_number'));
 
         // Office metadata for the movement log of just this page of rows.
         $officeCodesNeeded = [];
@@ -787,6 +827,7 @@ class FileTrackerDashboardApiController extends Controller
 
         $files = $trackers->map(function (FileTracker $tracker) use ($officeMetadata) {
             $requestedDate = $tracker->date_requested ?: $tracker->created_at;
+            $requestedIso = $this->toIso($requestedDate);
             $office = $officeMetadata->get($tracker->current_office_code);
 
             return [
@@ -803,6 +844,12 @@ class FileTrackerDashboardApiController extends Controller
                 'originOffice' => $tracker->origin_office_name,
                 'requestPurpose' => $tracker->request_purpose_name,
                 'caseType' => $tracker->request_purpose_name,
+                // The requester of record is the officer the file is requested
+                // for (receiving_officer_name), not the clerk who keyed it in.
+                'requester' => $tracker->receiving_officer_name,
+                'requesterId' => $tracker->receiving_officer_id,
+                'createdByName' => $tracker->created_by_name,
+                'applicant' => $tracker->created_by_name,
                 // The commissioner tabs share the same row/detail renderers, so the
                 // workflow flags they expect are emitted here too.
                 'movementStatus' => 'logout',
@@ -811,10 +858,10 @@ class FileTrackerDashboardApiController extends Controller
                 'isReturned' => false,
                 'isCanceled' => false,
                 'logEntries' => $this->normaliseMovementLog((array) $tracker->movement_log, $officeMetadata),
-                'requestedDate' => $requestedDate ? Carbon::parse($requestedDate)->toIso8601String() : null,
-                'requestDate' => $requestedDate ? Carbon::parse($requestedDate)->toIso8601String() : null,
-                'createdAt' => optional($tracker->created_at)->toIso8601String(),
-                'updatedAt' => optional($tracker->updated_at)->toIso8601String(),
+                'requestedDate' => $requestedIso,
+                'requestDate' => $requestedIso,
+                'createdAt' => $this->toIso($tracker->created_at),
+                'updatedAt' => $this->toIso($tracker->updated_at),
             ];
         })->values();
 
@@ -1007,8 +1054,8 @@ class FileTrackerDashboardApiController extends Controller
                 'hasTracker' => (bool) $tracker,
                 'isReturned' => $hasReturned,
                 'statusLabel' => $hasReturned ? 'Returned' : 'Indexed',
-                'createdAt' => $row->created_at ? Carbon::parse($row->created_at)->toIso8601String() : null,
-                'updatedAt' => $row->updated_at ? Carbon::parse($row->updated_at)->toIso8601String() : null,
+                'createdAt' => $this->toIso($row->created_at),
+                'updatedAt' => $this->toIso($row->updated_at),
             ];
         })->values();
 
@@ -1151,6 +1198,22 @@ class FileTrackerDashboardApiController extends Controller
      * @param  \Illuminate\Support\Collection  $officeMetadata
      * @return array
      */
+    /**
+     * Date columns are cast to Carbon already, so Carbon::parse() on one costs a
+     * full string re-parse (~1.5ms) for nothing. At 1,000 rows × several dates
+     * that was the single biggest cost in building the request sheet.
+     */
+    protected function toIso($value): ?string
+    {
+        if (!$value) {
+            return null;
+        }
+
+        return $value instanceof \DateTimeInterface
+            ? $value->format('c')
+            : Carbon::parse($value)->toIso8601String();
+    }
+
     protected function normaliseMovementLog(array $movementLog, Collection $officeMetadata): array
     {
         $prepared = [];

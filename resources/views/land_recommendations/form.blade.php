@@ -1,6 +1,13 @@
 @extends('layouts.app')
 
 @section('content')
+@php
+    // The re-issuance flow renders this form with a prefilled (unsaved) model,
+    // so "is there a \$recommendation" no longer means "this is an edit".
+    $isEdit           = $isEdit ?? isset($recommendation);
+    $reissuanceSource = $reissuanceSource ?? null;
+    $reissuedFromId   = $reissuedFromId ?? null;
+@endphp
 <div class="flex-1 overflow-auto bg-slate-50/60">
     @include('admin.header')
     
@@ -19,12 +26,42 @@
                 </div>
             </div>
 
-            <form id="land-recommendation-form" action="{{ isset($recommendation) ? route('land-recommendations.update', $recommendation->id) : route('land-recommendations.store') }}" method="POST" class="p-8 space-y-8"
+            <form id="land-recommendation-form" action="{{ $isEdit ? route('land-recommendations.update', $recommendation->id) : route('land-recommendations.store') }}" method="POST" class="p-8 space-y-8"
                 data-dupcheck-url="{{ route('land-recommendations.check-duplicate') }}"
                 data-record-id="{{ $recommendation->id ?? '' }}">
                 @csrf
-                @if(isset($recommendation))
+                @if($isEdit)
                     @method('PUT')
+                @endif
+
+                {{-- RofO Re-issuance: this record replaces a letter already issued for the
+                     same file number, so it is flagged and skips the duplicate guard. --}}
+                @if($reissuanceSource)
+                    <input type="hidden" name="is_reissuance" value="1">
+                    <input type="hidden" name="reissuance_source" value="{{ $reissuanceSource }}">
+                    @if($reissuedFromId)
+                        <input type="hidden" name="reissued_from_id" value="{{ $reissuedFromId }}">
+                    @endif
+                    <div class="bg-amber-50 border border-amber-300 rounded-xl p-4 flex items-start gap-3">
+                        <i data-lucide="refresh-ccw" class="h-5 w-5 text-amber-600 mt-0.5"></i>
+                        <div class="text-sm">
+                            <p class="font-bold text-amber-900">
+                                RofO Re-issuance &mdash;
+                                {{ $reissuanceSource === 'klaes' ? 'KLAES-Generated RofO' : 'Pre-KLAES (Legacy) RofO' }}
+                            </p>
+                            <p class="text-amber-800 text-xs mt-0.5">
+                                @if($reissuanceSource === 'klaes')
+                                    Details were copied from the existing RofO record. Adjust them as needed —
+                                    saving creates a new re-issued RofO for this file number.
+                                @else
+                                    The original letter pre-dates KLAES. Enter its details below —
+                                    saving creates the re-issued RofO for this file number.
+                                @endif
+                                It goes straight to the RofO table, ready to print.
+                            </p>
+                        </div>
+                    </div>
+                    <script>window._reissuanceMode = true;</script>
                 @endif
 
                 @if(request('edit_reason'))
@@ -42,7 +79,7 @@
                         </div>
                     </div>
                     <input type="hidden" name="edit_reason" value="{{ request('edit_reason') }}">
-                @elseif(isset($recommendation) && $recommendation->edit_reason)
+                @elseif($isEdit && $recommendation->edit_reason)
                     <div class="bg-slate-50 border-l-4 border-slate-300 p-4 mb-6">
                         <div class="flex">
                             <div class="flex-shrink-0">
@@ -88,16 +125,21 @@
                         $savedAppType = old('application_type', $recommendation->application_type ?? '');
                         $hasAppType   = $savedAppType !== '';
                         $savedRecType = old('type', $recommendation->type ?? 'Direct');
+                        // "Standard template" override: the application type is still captured
+                        // (extra fields, old file number) but printing uses the Direct /
+                        // Conversion template instead of the application-type template.
+                        $useStandardTemplate = (bool) old('use_standard_template', $recommendation->use_standard_template ?? false);
+                        $lockRecType  = $hasAppType && !$useStandardTemplate;
                     @endphp
 
                     <!-- Recommendation Type Selection -->
-                    <div id="recommendation-type-block" class="bg-blue-50/30 border border-blue-100 rounded-xl p-6 col-span-2 transition-opacity {{ $hasAppType ? 'opacity-40 pointer-events-none' : '' }}">
+                    <div id="recommendation-type-block" class="bg-blue-50/30 border border-blue-100 rounded-xl p-6 col-span-2 transition-opacity {{ $lockRecType ? 'opacity-40 pointer-events-none' : '' }}">
                         <label class="block text-xs font-bold text-blue-700 uppercase tracking-wider mb-3">Recommendation Type</label>
                         <div class="flex flex-col sm:flex-row gap-4">
                             <label class="flex items-center gap-3 cursor-pointer p-4 bg-white border border-blue-200 rounded-xl hover:border-blue-500 transition shadow-sm flex-1 group">
                                 <input type="radio" id="rec-direct" name="type" value="Direct"
-                                    {{ $savedRecType == 'Direct' && !$hasAppType ? 'checked' : '' }}
-                                    {{ $hasAppType ? 'disabled' : '' }}
+                                    {{ $savedRecType == 'Direct' && !$lockRecType ? 'checked' : '' }}
+                                    {{ $lockRecType ? 'disabled' : '' }}
                                     class="w-5 h-5 text-blue-600 focus:ring-blue-500 border-slate-300">
                                 <div>
                                     <span class="block text-sm font-bold text-slate-900 group-hover:text-blue-700 transition">Direct</span>
@@ -105,8 +147,8 @@
                             </label>
                             <label class="flex items-center gap-3 cursor-pointer p-4 bg-white border border-blue-200 rounded-xl hover:border-amber-500 transition shadow-sm flex-1 group">
                                 <input type="radio" id="rec-conversion" name="type" value="Conversion"
-                                    {{ $savedRecType == 'Conversion' && !$hasAppType ? 'checked' : '' }}
-                                    {{ $hasAppType ? 'disabled' : '' }}
+                                    {{ $savedRecType == 'Conversion' && !$lockRecType ? 'checked' : '' }}
+                                    {{ $lockRecType ? 'disabled' : '' }}
                                     class="w-5 h-5 text-amber-600 focus:ring-amber-500 border-slate-300">
                                 <div>
                                     <span class="block text-sm font-bold text-slate-900 group-hover:text-amber-700 transition">Conversion</span>
@@ -135,6 +177,7 @@
                                 @foreach([
                                     'Private Layout',
                                     'Plot Subdivision',
+                                    'Plot Merger',
                                     'Plot Extension',
                                     'Temporary File No',
                                     'Ministry of Works',
@@ -148,6 +191,21 @@
                                 </label>
                                 @endforeach
                             </div>
+
+                            {{-- Override: keep the application type (extra fields / old file
+                                 number) but print the standard Direct / Conversion document. --}}
+                            <label class="mt-4 flex items-start gap-3 cursor-pointer p-3 bg-white border border-slate-200 rounded-xl hover:border-blue-400 transition">
+                                <input type="checkbox" name="use_standard_template" id="use-standard-template" value="1"
+                                    {{ $useStandardTemplate ? 'checked' : '' }}
+                                    class="mt-0.5 w-4 h-4 text-blue-600 focus:ring-blue-500 border-slate-300 rounded">
+                                <span class="text-sm text-slate-700 leading-snug">
+                                    <span class="font-semibold text-slate-900">Print the standard Recommendation Type document</span>
+                                    <span class="block text-xs text-slate-500">
+                                        Keeps the application type (and its Old File Number / extra fields) on the record,
+                                        but prints the Direct / Conversion template instead of the application-type template.
+                                    </span>
+                                </span>
+                            </label>
                         </div>
                     </div>
 
@@ -161,31 +219,55 @@
                         const recConv   = document.getElementById('rec-conversion');
                         const appRadios = document.querySelectorAll('.app-type-radio');
 
+                        const stdTemplate = document.getElementById('use-standard-template');
+
+                        // Recommendation Type is locked while an application type drives the
+                        // printed document. The "standard template" override releases it, so
+                        // the app type is still captured but Direct / Conversion is printed.
+                        function syncRecType() {
+                            const locked = toggle.checked && !(stdTemplate && stdTemplate.checked);
+                            if (locked) {
+                                recBlock.classList.add('opacity-40', 'pointer-events-none');
+                                recDirect.checked  = false;
+                                recConv.checked    = false;
+                                recDirect.disabled = true;
+                                recConv.disabled   = true;
+                            } else {
+                                recBlock.classList.remove('opacity-40', 'pointer-events-none');
+                                recDirect.disabled = false;
+                                recConv.disabled   = false;
+                                if (!recDirect.checked && !recConv.checked) recDirect.checked = true;
+                            }
+                            // Programmatic checks don't fire `change`, so push the survey
+                            // method sync manually.
+                            if (window._syncSurveyMethod) window._syncSurveyMethod();
+                        }
+
                         function applyState(enabled) {
                             if (enabled) {
                                 panel.classList.remove('hidden');
-                                recBlock.classList.add('opacity-40', 'pointer-events-none');
-                                recDirect.checked = false;
-                                recConv.checked   = false;
-                                recDirect.disabled = true;
-                                recConv.disabled   = true;
                                 const checked = document.querySelector('.app-type-radio:checked');
                                 hidden.value = checked ? checked.value : '';
                             } else {
                                 panel.classList.add('hidden');
-                                recBlock.classList.remove('opacity-40', 'pointer-events-none');
-                                recDirect.disabled = false;
-                                recConv.disabled   = false;
-                                recDirect.checked  = true;
                                 appRadios.forEach(r => r.checked = false);
                                 hidden.value = '';
+                                if (stdTemplate) stdTemplate.checked = false;
+                            }
+                            syncRecType();
+                            if (typeof window._calcResidualTerm === 'function') {
+                                window._calcResidualTerm();
                             }
                         }
 
                         toggle.addEventListener('change', () => applyState(toggle.checked));
+                        if (stdTemplate) stdTemplate.addEventListener('change', syncRecType);
 
                         appRadios.forEach(r => r.addEventListener('change', () => {
                             hidden.value = r.value;
+                            if (typeof window._calcResidualTerm === 'function') {
+                                window._calcResidualTerm();
+                            }
                         }));
 
                         // Sync hidden field on load if toggle is already on
@@ -195,6 +277,27 @@
                         }
                     })();
                     </script>
+
+                    {{-- Old File Number — its own section for application types that derive from an existing file --}}
+                    <div id="atx-old-fileno-row" class="hidden col-span-2 bg-amber-50/40 border border-amber-200 rounded-xl p-6">
+                        <div class="flex items-center gap-2 mb-3">
+                            <i data-lucide="folder-input" class="h-4 w-4 text-amber-600"></i>
+                            <h3 class="text-sm font-bold text-amber-900 uppercase tracking-tight">Old File Number <span class="text-red-500">*</span></h3>
+                        </div>
+                        <div class="flex gap-2 items-center">
+                            <input type="text" name="old_file_number" id="old_file_number" readonly
+                                value="{{ old('old_file_number', $recommendation->old_file_number ?? '') }}"
+                                placeholder="No old file number selected"
+                                class="w-64 border border-amber-200 rounded-lg px-3 py-2.5 bg-white font-mono text-sm outline-none shadow-sm">
+                            <button type="button" id="atx-old-fileno-pick"
+                                class="px-4 py-2.5 text-xs font-semibold bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition whitespace-nowrap">
+                                Select File Number
+                            </button>
+                        </div>
+                        <p class="mt-2 text-[11px] text-slate-500">
+                            The parent / previous file this <span id="atx-old-fileno-context">application</span> derives from.
+                        </p>
+                    </div>
 
                     {{-- ── Application Type: Conditional Extra Fields ── --}}
                     @php $savedAppType = old('application_type', $recommendation->application_type ?? ''); @endphp
@@ -275,6 +378,38 @@
                                 <label class="block text-xs font-semibold text-slate-500 uppercase mb-2">Plot Dimensions <span class="text-slate-400 normal-case font-normal">(Length × Width)</span></label>
                                 <div id="plot-sizes-rows-sub" class="space-y-2 mb-2"></div>
                                 <button type="button" onclick="addPlotSizeRow('sub', null, false)"
+                                    class="px-4 py-1.5 text-xs font-semibold bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-lg transition">
+                                    + Add Dimension Row
+                                </button>
+                            </div>
+                        </div>
+
+                        {{-- PANEL: Plot Merger (no count) --}}
+                        <div id="atx-panel-merger" class="atx-panel {{ $savedAppType === 'Plot Merger' ? '' : 'hidden' }} space-y-4">
+                            <div class="grid grid-cols-4 gap-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Number of Plots Merged</label>
+                                    <input type="number" name="num_plots" min="1"
+                                        value="{{ old('num_plots', $recommendation->num_plots ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Auth. Memo Page</label>
+                                    <input type="number" name="page_2" min="1"
+                                        value="{{ old('page_2', $recommendation->page_2 ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Site Plan Page</label>
+                                    <input type="number" name="page_3" min="1"
+                                        value="{{ old('page_3', $recommendation->page_3 ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-2">Merged Plot Dimensions <span class="text-slate-400 normal-case font-normal">(Length × Width)</span></label>
+                                <div id="plot-sizes-rows-mrg" class="space-y-2 mb-2"></div>
+                                <button type="button" onclick="addPlotSizeRow('mrg', null, false)"
                                     class="px-4 py-1.5 text-xs font-semibold bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-lg transition">
                                     + Add Dimension Row
                                 </button>
@@ -403,6 +538,7 @@
                         var panelMap = {
                             'Private Layout':               'atx-panel-private-layout',
                             'Plot Subdivision':             'atx-panel-subdivision',
+                            'Plot Merger':                  'atx-panel-merger',
                             'Plot Extension':               'atx-panel-extension',
                             'Temporary File No':            'atx-panel-temp',
                             'Ministry of Works':            'atx-panel-premium',
@@ -499,7 +635,7 @@
                                 </div>
                                 <div>
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Application Date</label>
-                                    <input type="date" name="application_date" id="application_date" required value="{{ old('application_date', (isset($recommendation) && $recommendation->application_date) ? $recommendation->application_date->format('Y-m-d') : '') }}"
+                                    <input type="date" name="application_date" id="application_date" required value="{{ old('application_date', ($isEdit && $recommendation->application_date) ? $recommendation->application_date->format('Y-m-d') : '') }}"
                                         class="w-full border @error('application_date') border-red-500 @else border-slate-200 @enderror rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
                                     @error('application_date')
                                         <p class="text-red-500 text-[10px] mt-1 font-semibold uppercase">{{ $message }}</p>
@@ -536,7 +672,7 @@
 
                                 @php
                                     $defaultPurposeId = old('purpose_id', $recommendation->purpose_id ?? '');
-                                    if (isset($recommendation) && !$recommendation->purpose_id && $recommendation->purpose_of_clause) {
+                                    if (isset($recommendation) && $recommendation && !$recommendation->purpose_id && $recommendation->purpose_of_clause) {
                                         $defaultPurposeId = 'other';
                                     }
                                     if (old('purpose_id') === 'other') {
@@ -654,19 +790,35 @@
                         </div>
                         <div class="space-y-4">
                             <input type="hidden" id="base_term" value="{{ old('term', $recommendation->term ?? '99') }}">
-                            <div class="grid grid-cols-2 gap-4">
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                 <div>
-                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Year of CoFO</label>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Prevailing Year</label>
                                     <input type="number" name="cofo_year" id="cofo_year"
                                         value="{{ old('cofo_year', $recommendation->cofo_year ?? '') }}"
                                         min="1900" max="{{ date('Y') }}" placeholder="{{ date('Y') }}"
                                         class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
                                 </div>
                                 <div>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Year</label>
+                                    @php
+                                        $currentYear = (int) date('Y');
+                                        $savedSelectedYear = old('selected_year', $recommendation->selected_year ?? $currentYear);
+                                    @endphp
+                                    <select name="selected_year" id="selected_year"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                        <option value="">Select Year</option>
+                                        @for($y = $currentYear + 10; $y >= 1990; $y--)
+                                            <option value="{{ $y }}" {{ $savedSelectedYear == $y ? 'selected' : '' }}>{{ $y }}</option>
+                                        @endfor
+                                    </select>
+                                </div>
+                                <div>
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Term (Years):</label>
-                                    <input type="text" name="term" id="term_input"
-                                        value="{{ old('term', $recommendation->term ?? '99') }}" readonly
-                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-slate-100 text-slate-500 cursor-not-allowed outline-none">
+                                    <input type="number" name="term" id="term_input" min="0" max="999" step="1"
+                                        value="{{ old('term', $recommendation->term ?? '99') }}"
+                                        data-saved="{{ old('term', $recommendation->term ?? '') !== '' ? '1' : '0' }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                    <p id="term_hint" class="mt-1 text-[11px] text-slate-400"></p>
                                 </div>
                             </div>
                             <div>
@@ -778,13 +930,13 @@
                                 <span class="block text-xs font-bold text-slate-500 uppercase mb-3">Survey Method (Select One)</span>
                                 <div class="space-y-3">
                                     <label class="flex items-center gap-3 cursor-pointer p-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition">
-                                        <input type="radio" name="rofo_survey_method" value="DIRECTOR"
+                                        <input type="radio" name="rofo_survey_method" value="DIRECTOR" id="rofo-survey-director"
                                             {{ old('rofo_survey_method', ($recommendation->rofo_director_survey ?? '') === 'YES' ? 'DIRECTOR' : (($recommendation->rofo_licensed_surveyor ?? '') === 'YES' ? 'LICENSED' : '')) === 'DIRECTOR' ? 'checked' : '' }}
                                             class="w-5 h-5 text-green-600 border-slate-300 focus:ring-green-500">
                                         <span class="text-sm font-medium text-slate-700">Require <strong>Director Survey</strong> to carry out survey</span>
                                     </label>
                                     <label class="flex items-center gap-3 cursor-pointer p-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition">
-                                        <input type="radio" name="rofo_survey_method" value="LICENSED"
+                                        <input type="radio" name="rofo_survey_method" value="LICENSED" id="rofo-survey-licensed"
                                             {{ old('rofo_survey_method', ($recommendation->rofo_director_survey ?? '') === 'YES' ? 'DIRECTOR' : (($recommendation->rofo_licensed_surveyor ?? '') === 'YES' ? 'LICENSED' : '')) === 'LICENSED' ? 'checked' : '' }}
                                             class="w-5 h-5 text-green-600 border-slate-300 focus:ring-green-500">
                                         <span class="text-sm font-medium text-slate-700">Require <strong>Licensed Surveyor</strong> to carry out survey</span>
@@ -793,6 +945,36 @@
                             </div>
                         </div>
                     </div>
+
+                    <script>
+                    // Survey method follows the Recommendation Type:
+                    //   Direct     → Director Survey
+                    //   Conversion → Licensed Surveyor
+                    // Still manually overridable after the fact.
+                    (function () {
+                        var director  = document.getElementById('rofo-survey-director');
+                        var licensed  = document.getElementById('rofo-survey-licensed');
+                        var recDirect = document.getElementById('rec-direct');
+                        var recConv   = document.getElementById('rec-conversion');
+                        if (!director || !licensed) return;
+
+                        function syncSurveyMethod() {
+                            if (recConv && recConv.checked) {
+                                licensed.checked = true;
+                            } else if (recDirect && recDirect.checked) {
+                                director.checked = true;
+                            }
+                        }
+                        window._syncSurveyMethod = syncSurveyMethod;
+
+                        [recDirect, recConv].forEach(function (radio) {
+                            if (radio) radio.addEventListener('change', syncSurveyMethod);
+                        });
+
+                        // Only derive on load when nothing was saved/selected yet
+                        if (!director.checked && !licensed.checked) syncSurveyMethod();
+                    })();
+                    </script>
 
                     <!-- Section 3: Recommendation & Reasons -->
                     <div class="bg-slate-50 border border-slate-100 rounded-xl p-6 space-y-4 col-span-2">
@@ -817,20 +999,20 @@
 
                             <div>
                                 <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Time Generated</label>
-                                <input type="text" readonly value="{{ (isset($recommendation) && $recommendation->created_at) ? $recommendation->created_at->format('h:i:s A') : now()->format('h:i:s A') }}"
+                                <input type="text" readonly value="{{ ($isEdit && $recommendation->created_at) ? $recommendation->created_at->format('h:i:s A') : now()->format('h:i:s A') }}"
                                     class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-slate-100 text-slate-500 outline-none transition shadow-sm cursor-not-allowed">
                             </div>
 
                             
                             <div>
                                 <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Date Generated</label>
-                                <input type="text" readonly value="{{ (isset($recommendation) && $recommendation->created_at) ? $recommendation->created_at->format('Y-m-d') : now()->format('Y-m-d') }}"
+                                <input type="text" readonly value="{{ ($isEdit && $recommendation->created_at) ? $recommendation->created_at->format('Y-m-d') : now()->format('Y-m-d') }}"
                                     class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-slate-100 text-slate-500 outline-none transition shadow-sm cursor-not-allowed">
                             </div>
                           
                             <div class="col-span-2">
                                 <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Generated By</label>
-                                <input type="text" readonly value="{{ isset($recommendation) ? ($recommendation->creator->name ?? 'System') : auth()->user()->name }}"
+                                <input type="text" readonly value="{{ $isEdit ? ($recommendation->creator->name ?? 'System') : auth()->user()->name }}"
                                     class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-slate-100 text-slate-500 outline-none transition shadow-sm cursor-not-allowed">
                             </div>
                         </div>
@@ -840,13 +1022,51 @@
                 <!-- Action Footer -->
                 <div class="pt-8 border-t border-slate-100 flex justify-end gap-3">
                     <button type="submit" class="px-8 py-3 bg-slate-900 text-white font-bold rounded-lg hover:bg-slate-800 transition shadow-lg">
-                        {{ isset($recommendation) ? 'Update' : 'Generate Recommendation' }}
+                        {{ $isEdit ? 'Update' : ($reissuanceSource ? 'Save Re-issuance' : 'Generate Recommendation') }}
                     </button>
                 </div>
             </form>
         </div>
     </div>
     @include('admin.footer')
+</div>
+
+{{-- Old File Number prompt — shown when an application type derives from an existing file --}}
+<div id="atx-old-fileno-modal" class="fixed inset-0 bg-black/60 z-[1000000] hidden items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+        <div class="px-6 py-4 bg-gradient-to-br from-amber-500 to-amber-600 text-white flex items-center gap-3">
+            <i data-lucide="folder-input" class="w-5 h-5"></i>
+            <h3 class="text-base font-bold">Old File Number Required</h3>
+        </div>
+        <div class="px-6 py-5 space-y-4">
+            <p class="text-sm text-slate-600">
+                <span id="atx-old-fileno-modal-type" class="font-semibold text-slate-900">This application</span>
+                derives from an existing file. Select the old (parent) file number from the file number selector.
+            </p>
+            <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Old File Number</label>
+                <div class="flex gap-2">
+                    <input type="text" id="atx-old-fileno-modal-value" readonly
+                        placeholder="Nothing selected yet"
+                        class="flex-1 border border-slate-200 rounded-lg px-4 py-2.5 bg-slate-50 font-mono text-sm outline-none">
+                    <button type="button" id="atx-old-fileno-modal-pick"
+                        class="px-4 py-2.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition whitespace-nowrap">
+                        Open Selector
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+            <button type="button" id="atx-old-fileno-modal-cancel"
+                class="px-4 py-2 text-sm border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-100 transition">
+                Cancel
+            </button>
+            <button type="button" id="atx-old-fileno-modal-confirm" disabled
+                class="px-5 py-2 text-sm font-semibold bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                Use This File Number
+            </button>
+        </div>
+    </div>
 </div>
 
 @include('components.global-fileno-modal')
@@ -907,6 +1127,140 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 <script src="{{ asset('js/land_recommendations.js') }}?v={{ time() + 1 }}"></script>
+<script>
+// ── Old File Number capture for derived application types ──────────────────
+// Plot Subdivision / Plot Merger / Change of Purpose always come off an existing
+// file, so selecting one of those types prompts for the parent file number.
+document.addEventListener('DOMContentLoaded', function () {
+    var TYPES_NEEDING_OLD_FILENO = ['Plot Subdivision', 'Plot Merger', 'Change of Purpose'];
+
+    var row          = document.getElementById('atx-old-fileno-row');
+    var field        = document.getElementById('old_file_number');
+    var contextLabel = document.getElementById('atx-old-fileno-context');
+    var rowPickBtn   = document.getElementById('atx-old-fileno-pick');
+
+    var modal        = document.getElementById('atx-old-fileno-modal');
+    var modalType    = document.getElementById('atx-old-fileno-modal-type');
+    var modalValue   = document.getElementById('atx-old-fileno-modal-value');
+    var modalPick    = document.getElementById('atx-old-fileno-modal-pick');
+    var modalCancel  = document.getElementById('atx-old-fileno-modal-cancel');
+    var modalConfirm = document.getElementById('atx-old-fileno-modal-confirm');
+
+    if (!row || !field || !modal) return;
+
+    function currentAppType() {
+        var toggle  = document.getElementById('app-type-toggle');
+        var checked = document.querySelector('.app-type-radio:checked');
+        if (toggle && !toggle.checked) return '';
+        return checked ? checked.value : '';
+    }
+
+    function requiresOldFileNo(appType) {
+        return TYPES_NEEDING_OLD_FILENO.indexOf(appType) !== -1;
+    }
+
+    function openModal(appType) {
+        if (modalType) modalType.textContent = appType;
+        if (modalValue) modalValue.value = field.value || '';
+        if (modalConfirm) modalConfirm.disabled = !field.value;
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        if (window.lucide) window.lucide.createIcons();
+    }
+
+    function closeModal() {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+
+    function openSelector(onPicked) {
+        if (!window.GlobalFileNoModal) {
+            alert('File number selector is not available on this page.');
+            return;
+        }
+        window.GlobalFileNoModal.open({
+            // The selector auto-fills any [name="file_number"] input by default, which
+            // would clobber the recommendation's own file number — this picker must only
+            // ever write to the old file number field.
+            autoPopulateGenericFields: false,
+            targetFields: [],
+            callback: function (data) {
+                onPicked((data && data.fileNumber) ? data.fileNumber : '');
+            }
+        });
+    }
+
+    function syncRow(appType) {
+        if (requiresOldFileNo(appType)) {
+            row.classList.remove('hidden');
+            if (contextLabel) contextLabel.textContent = appType;
+        } else {
+            row.classList.add('hidden');
+            field.value = '';
+        }
+    }
+
+    // Radio / toggle changes
+    document.querySelectorAll('.app-type-radio').forEach(function (radio) {
+        radio.addEventListener('change', function () {
+            if (!this.checked) return;
+            syncRow(this.value);
+            if (requiresOldFileNo(this.value) && !field.value) openModal(this.value);
+        });
+    });
+
+    var appToggle = document.getElementById('app-type-toggle');
+    if (appToggle) {
+        appToggle.addEventListener('change', function () {
+            syncRow(currentAppType());
+        });
+    }
+
+    if (rowPickBtn) {
+        rowPickBtn.addEventListener('click', function () {
+            openSelector(function (fileNumber) {
+                if (fileNumber) field.value = fileNumber;
+            });
+        });
+    }
+
+    if (modalPick) {
+        modalPick.addEventListener('click', function () {
+            openSelector(function (fileNumber) {
+                if (!fileNumber) return;
+                modalValue.value = fileNumber;
+                modalConfirm.disabled = false;
+            });
+        });
+    }
+
+    if (modalConfirm) {
+        modalConfirm.addEventListener('click', function () {
+            field.value = modalValue.value || '';
+            closeModal();
+        });
+    }
+
+    if (modalCancel) modalCancel.addEventListener('click', closeModal);
+    modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+
+    // Block submission when a derived type has no old file number
+    var recForm = document.getElementById('land-recommendation-form');
+    if (recForm) {
+        recForm.addEventListener('submit', function (e) {
+            var appType = currentAppType();
+            if (requiresOldFileNo(appType) && !field.value.trim()) {
+                e.preventDefault();
+                e.stopPropagation();
+                openModal(appType);
+            }
+        });
+    }
+
+    // Initial state (edit mode / validation redisplay)
+    syncRow(currentAppType());
+});
+</script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         // TP No Select2 — lazy search against tp_lookups (200k+ rows)
@@ -1161,9 +1515,11 @@
             var activeSuffix = null;
             var plPanel  = document.getElementById('atx-panel-private-layout');
             var subPanel = document.getElementById('atx-panel-subdivision');
+            var mrgPanel = document.getElementById('atx-panel-merger');
             var extPanel = document.getElementById('atx-panel-extension');
             if (plPanel  && !plPanel.classList.contains('hidden'))  activeSuffix = 'pl';
             if (subPanel && !subPanel.classList.contains('hidden')) activeSuffix = 'sub';
+            if (mrgPanel && !mrgPanel.classList.contains('hidden')) activeSuffix = 'mrg';
             if (extPanel && !extPanel.classList.contains('hidden')) activeSuffix = 'ext';
             if (!activeSuffix) return;
             var rows  = document.querySelectorAll('#plot-sizes-rows-' + activeSuffix + ' .plot-size-row');
@@ -1186,6 +1542,7 @@
             var suffix = null, showCount = true;
             if (savedAppType === 'Private Layout')    { suffix = 'pl';  showCount = true; }
             else if (savedAppType === 'Plot Subdivision') { suffix = 'sub'; showCount = false; }
+            else if (savedAppType === 'Plot Merger')      { suffix = 'mrg'; showCount = false; }
             else if (savedAppType === 'Plot Extension')   { suffix = 'ext'; showCount = false; }
             if (!suffix) return;
             var sizes;

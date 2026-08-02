@@ -631,7 +631,12 @@
 
             container.innerHTML = `<div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-500">Loading movement history for <strong>${esc(fileNumber)}</strong>…</div>`;
 
-            const archiveHomeRow = `
+            // A file commissioned through KLAES has not reached the archive yet — its
+            // DIIT "File Commissioning" line opens the timeline instead of this row.
+            // Set from the response below (is_commissioned).
+            let isCommissionedFile = false;
+
+            const archiveHomeRowHtml = `
                 <div class="relative pl-6 pb-3">
                     <span class="absolute left-[6px] top-0 bottom-0 w-0.5 bg-gray-200"></span>
                     <span class="absolute left-0 top-px h-[15px] w-[15px] rounded-full bg-emerald-500 border-2 border-gray-200 flex items-center justify-center">
@@ -646,23 +651,26 @@
                     </div>
                 </div>`;
 
+            const homeRow = () => (isCommissionedFile ? '' : archiveHomeRowHtml);
+
             try {
                 const res  = await fetch(`${TRACK_URL}/${encodeURIComponent(fileNumber)}`, { headers: { 'Accept': 'application/json' } });
                 const json = await res.json().catch(() => null);
+                isCommissionedFile = Boolean(json && json.data && json.data.is_commissioned);
                 // A 404 just means the file has never been tracked — that is an empty
                 // history, not a failure. Only a real error (500 / unparseable body)
                 // should surface the red "could not load" state.
                 const neverTracked = res.status === 404 || (json && json.success === false && /not found/i.test(String(json.message || '')));
                 if (neverTracked) {
-                    container.innerHTML = `${archiveHomeRow}<div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-500">No movement history available for this file.</div>`;
+                    container.innerHTML = `${homeRow()}<div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-500">No movement history available for this file.</div>`;
                 } else if (!json || !json.success || !json.data) {
-                    container.innerHTML = `${archiveHomeRow}<div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-600">Could not load movement history.</div>`;
+                    container.innerHTML = `${homeRow()}<div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-600">Could not load movement history.</div>`;
                 } else {
                     const currentLogs = Array.isArray(json.data.movement_history) ? json.data.movement_history : [];
                     const priorLogs   = Array.isArray(json.data.prior_movements) ? json.data.prior_movements : [];
                     const allLogs     = [...priorLogs, ...currentLogs].sort(compareMovementEntries);
                     if (!allLogs.length) {
-                        container.innerHTML = `${archiveHomeRow}<div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-500">No movement history available for this file.</div>`;
+                        container.innerHTML = `${homeRow()}<div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-500">No movement history available for this file.</div>`;
                     } else {
                         const approvalPurposes = ['recommendation', 'approval'];
                         const movementLogs = allLogs.filter(e => !approvalPurposes.includes(String(e.purpose || '').toLowerCase()));
@@ -679,7 +687,7 @@
                         container.innerHTML = `
                             ${priorLogs.length ? `<div class="mb-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-500">Tracking cycles for this file.</div>` : ''}
                             <div>
-                                ${archiveHomeRow}
+                                ${homeRow()}
                                 ${movementLogs.length ? movementLogs.map(e => renderMovementRow(e, trackerMeta)).join('') : `<div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-500">No physical movement entries found. Approval steps may still be present below.</div>`}
                             </div>
                             ${approvalLogs.length ? `

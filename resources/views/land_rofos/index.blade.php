@@ -24,9 +24,7 @@
                         @if($ossViewOnly)
                             <input type="hidden" name="view" value="only">
                         @endif
-                        @if(!$ossViewOnly)
-                            <input type="hidden" name="tab" value="{{ $tab }}">
-                        @endif
+                        <input type="hidden" name="tab" value="{{ $tab }}">
                         <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors"></i>
                         <input type="text"
                                name="search"
@@ -42,6 +40,10 @@
                     <button type="button" onclick="openBatchPrintModal()"
                         class="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 whitespace-nowrap text-sm">
                         <i data-lucide="printer" class="h-4 w-4"></i> Batch Print RofO
+                    </button>
+                    <button type="button" onclick="openReissuanceModal()"
+                        class="inline-flex items-center gap-2 px-5 py-2.5 bg-amber-600 text-white font-bold rounded-xl hover:bg-amber-700 transition shadow-lg shadow-amber-200 whitespace-nowrap text-sm">
+                        <i data-lucide="refresh-ccw" class="h-4 w-4"></i> Re-issuance
                     </button>
                     @endif
                 </div>
@@ -157,31 +159,28 @@
                 </div>
             </div>
 
-            @if(!$ossViewOnly)
+            @php $tabBaseParams = array_filter(['search' => request('search'), 'view' => $ossViewOnly ? 'only' : null]); @endphp
             <div class="flex items-center gap-2 mb-4 bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm w-full sm:w-max">
-                <a href="{{ route('land-rofos.index', array_filter(['tab' => 'not_printed', 'search' => request('search')])) }}"
+                <a href="{{ route('land-rofos.index', $tabBaseParams + ['tab' => 'not_printed']) }}"
                    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'not_printed' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100' }}">
                     <i data-lucide="file-clock" class="h-4 w-4"></i>
                     Not Printed
                     <span class="px-2 py-0.5 rounded-full text-[10px] font-black {{ $tab === 'not_printed' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500' }}">{{ number_format($stats['not_printed']) }}</span>
                 </a>
-                <a href="{{ route('land-rofos.index', array_filter(['tab' => 'printed', 'search' => request('search')])) }}"
+                <a href="{{ route('land-rofos.index', $tabBaseParams + ['tab' => 'printed']) }}"
                    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'printed' ? 'bg-green-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100' }}">
                     <i data-lucide="printer-check" class="h-4 w-4"></i>
                     Printed
                     <span class="px-2 py-0.5 rounded-full text-[10px] font-black {{ $tab === 'printed' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500' }}">{{ number_format($stats['printed']) }}</span>
                 </a>
             </div>
-            @endif
 
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between">
                     <h3 class="font-bold text-slate-800 uppercase tracking-wider text-xs flex items-center gap-2">
                         <i data-lucide="shield" class="h-4 w-4 text-blue-600"></i>
                         RoFO Management Records
-                        @if(!$ossViewOnly)
                         <span class="text-slate-400 normal-case tracking-normal font-medium">· {{ $tab === 'printed' ? 'Printed' : 'Not Printed' }}</span>
-                        @endif
                     </h3>
                 </div>
                 <div class="overflow-x-auto">
@@ -209,9 +208,7 @@
                                 <th class="px-6 py-4 whitespace-nowrap">Security Paper Code</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Date Generated</th>
                                 <th class="px-6 py-4 whitespace-nowrap text-green-600">Print Date</th>
-                                @if(!$ossViewOnly)
                                 <th class="px-6 py-4 text-right sticky right-0 bg-slate-50 border-l border-slate-200 z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap">Actions</th>
-                                @endif
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 text-sm">
@@ -221,7 +218,7 @@
                                 <td class="px-4 py-2 text-center text-slate-500 whitespace-nowrap">{{ ($recommendations->currentPage() - 1) * $recommendations->perPage() + $loop->iteration }}</td>
                                 <td class="px-4 py-2 font-mono font-bold text-slate-900 whitespace-nowrap">
                                     <div>{{ $rec->file_number }}</div>
-                                    @if(!$isOssRec && isset($rofoSerials[$rec->id]))
+                                    @if(isset($rofoSerials[$rec->id]))
                                         @php $rofoSc = $rofoSerials[$rec->id]; @endphp
                                         <div style="display:flex; align-items:center; gap:5px; margin-top:3px; letter-spacing:normal;" title="Security Serial No.">
                                             <span style="line-height:1; color:#059669; display:inline-flex; flex-direction:column; align-items:center; font-weight:900; font-family:Arial, sans-serif;">
@@ -231,7 +228,7 @@
                                             <span style="font-size:18px; font-weight:900; letter-spacing:0.1em; color:#059669; font-family:'Courier New', monospace;">{{ $rofoSc['digits_end'] }}</span>
                                         </div>
                                     @endif
-                                    @if(!$isOssRec && $rec->land_rofo_serial_no)
+                                    @if($rec->land_rofo_serial_no)
                                         <div style="margin-top:3px; font-size:18px; font-weight:900; letter-spacing:0.1em; color:#dc2626; font-family:'Courier New', monospace;" title="Security Paper Code">
                                             {{ $rec->land_rofo_serial_no }}
                                         </div>
@@ -247,6 +244,12 @@
                                             <i data-lucide="file" class="h-3 w-3"></i> Land
                                         </span>
                                     @endif
+                                    @if($rec->is_reissuance)
+                                        <span class="inline-flex items-center gap-1 px-2.5 py-0.5 mt-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800"
+                                              title="{{ $rec->reissuance_source === 'legacy' ? 'Pre-KLAES (Legacy) RofO' : 'KLAES-Generated RofO' }}">
+                                            <i data-lucide="refresh-ccw" class="h-3 w-3"></i> Re-issuance
+                                        </span>
+                                    @endif
                                 </td>
                                 <td class="px-4 py-2 text-slate-700 whitespace-nowrap">{{ $rec->applicant_name }}</td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->purpose_of_clause }}</td>
@@ -260,7 +263,7 @@
                                 <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">₦{{ number_format($rec->development_value, 2) }}</td>
                                 <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">{{ is_numeric($rec->development_charge) ? '₦'.number_format($rec->development_charge, 2) : ($rec->development_charge ?: '₦0.00') }}</td>
                                 <td class="px-4 py-2 text-center whitespace-nowrap">
-                                    @if(!$ossViewOnly && $tab === 'printed')
+                                    @if($tab === 'printed')
                                         <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-800">
                                             <i data-lucide="printer-check" class="h-3 w-3"></i> PRINTED
                                         </span>
@@ -283,9 +286,7 @@
                                 </td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->creator->name ?? 'System' }}</td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">
-                                    @if($isOssRec)
-                                        <span class="text-slate-400 italic text-xs">N/A</span>
-                                    @elseif($rec->land_rofo_serial_no)
+                                    @if($rec->land_rofo_serial_no)
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-800 border border-slate-200">
                                             {{ $rec->land_rofo_serial_no }}
                                         </span>
@@ -300,7 +301,6 @@
                                 <td class="px-4 py-2 text-xs whitespace-nowrap {{ $printedAt ? 'text-green-700 font-semibold' : 'text-slate-400 italic' }}">
                                     {{ $printedAt ? \Carbon\Carbon::parse($printedAt)->format('Y-m-d h:i A') : 'Not printed' }}
                                 </td>
-                                @if(!$ossViewOnly)
                                 <td class="px-4 py-2 text-right sticky right-0 bg-white shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] border-l border-slate-100 z-10 whitespace-nowrap">
                                     <div x-data="{
                                         open: false,
@@ -339,11 +339,14 @@
                                              class="min-w-[13rem] w-max rounded-xl shadow-2xl bg-white ring-1 ring-black ring-opacity-5 overflow-hidden"
                                              style="display: none;">
                                             <div class="py-1">
+                                                {{-- The OSS view is read-only for the record itself; only serial + print actions apply there. --}}
+                                                @if(!$ossViewOnly)
                                                 <button type="button" onclick="editRofORecord('{{ $rec->id }}', '{{ route('land-recommendations.edit', $rec->id) }}')" class="flex w-full items-center px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition gap-2">
                                                     <i data-lucide="edit-3" class="h-4 w-4"></i> Edit Record
                                                 </button>
 
                                                 <div class="border-t border-slate-100 my-1"></div>
+                                                @endif
 
                                                 @if($rec->land_rofo_serial_no)
                                                 <button type="button" disabled class="flex w-full items-center px-4 py-2.5 text-sm text-slate-300 gap-2 font-bold cursor-not-allowed" title="Security paper code already assigned">
@@ -360,31 +363,38 @@
 
                                                 <div class="border-t border-slate-100 my-1"></div>
 
-                                                <button type="button"
-                                                        onclick="SmartPrintManager.open('{{ $rec->file_number }}', 'Land RofO', '{{ route('land-rofos.print', $rec->id) }}')"
-                                                        class="flex w-full items-center px-4 py-2.5 text-sm text-blue-700 hover:bg-blue-50 transition gap-2 font-bold">
-                                                    <i data-lucide="printer" class="h-4 w-4"></i> Print Manager
-                                                </button>
+                                                @if($rec->is_reissuance)
+                                                    {{-- Re-issued RofOs print only the watermarked re-issuance
+                                                         letter, so this replaces the plain Print Manager entry. --}}
+                                                    <button type="button"
+                                                            onclick="printReissuance('{{ $rec->id }}', @js($rec->file_number))"
+                                                            class="flex w-full items-center px-4 py-2.5 text-sm text-amber-700 hover:bg-amber-50 transition gap-2 font-bold">
+                                                        <i data-lucide="printer" class="h-4 w-4"></i> Print Re-issuance
+                                                    </button>
+                                                @else
+                                                    <button type="button"
+                                                            onclick="SmartPrintManager.open('{{ $rec->file_number }}', 'Land RofO', '{{ route('land-rofos.print', $rec->id) }}')"
+                                                            class="flex w-full items-center px-4 py-2.5 text-sm text-blue-700 hover:bg-blue-50 transition gap-2 font-bold">
+                                                        <i data-lucide="printer" class="h-4 w-4"></i> Print Manager
+                                                    </button>
+                                                @endif
                                             </div>
                                         </div>
                                     </div>
                                 </td>
-                                @endif
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="19" class="px-8 py-12 text-center">
+                                <td colspan="21" class="px-8 py-12 text-center">
                                     <div class="flex flex-col items-center">
                                         <div class="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 mb-4">
                                             <i data-lucide="file-text" class="h-6 w-6"></i>
                                         </div>
                                         <p class="text-slate-500 font-medium">
-                                            @if(!$ossViewOnly && $tab === 'printed')
-                                                No RofOs have been printed yet.
-                                            @elseif(!$ossViewOnly)
-                                                No RofOs awaiting print.
+                                            @if($tab === 'printed')
+                                                No {{ $ossViewOnly ? 'OSS ' : '' }}RofOs have been printed yet.
                                             @else
-                                                No approved recommendations ready for RofO.
+                                                No {{ $ossViewOnly ? 'OSS ' : '' }}RofOs awaiting print.
                                             @endif
                                         </p>
                                     </div>
@@ -507,7 +517,352 @@
     </div>
 </div>
 
+<!-- ═══════════════════════ Re-issuance Modal ═══════════════════════ -->
+<div id="reissuanceModal" class="fixed inset-0 z-[1000090] hidden bg-slate-900/60 p-4 overflow-y-auto">
+    <div class="mx-auto mt-16 w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <!-- Header -->
+        <div class="flex items-center justify-between gap-4 bg-gradient-to-r from-amber-700 to-amber-500 px-6 py-4 rounded-t-2xl">
+            <div>
+                <h3 class="text-lg font-extrabold text-white flex items-center gap-2">
+                    <i data-lucide="refresh-ccw" class="h-5 w-5 text-amber-200"></i> RofO Re-issuance
+                </h3>
+                <p class="text-amber-100 text-xs mt-0.5">Re-issue a Right of Occupancy offer letter</p>
+            </div>
+            <button type="button" onclick="closeReissuanceModal()" class="text-white/80 hover:text-white transition">
+                <i data-lucide="x" class="h-5 w-5"></i>
+            </button>
+        </div>
+
+        <!-- Step indicator -->
+        <div class="flex items-center gap-2 px-6 pt-5 text-[11px] font-bold uppercase tracking-widest">
+            <span id="reiStepBadge1" class="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800">1. Origin of RofO</span>
+            <i data-lucide="chevron-right" class="h-3 w-3 text-slate-300"></i>
+            <span id="reiStepBadge2" class="px-2.5 py-1 rounded-full bg-slate-100 text-slate-400">2. Select File Number</span>
+        </div>
+
+        <!-- STEP 1: where was the original RofO produced? -->
+        <div id="reiStep1" class="px-6 py-6 space-y-3">
+            <p class="text-sm text-slate-600">Which RofO is being re-issued?</p>
+
+            <button type="button" onclick="reissuanceSelectSource('klaes')"
+                class="w-full text-left p-4 rounded-xl border-2 border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/40 transition group">
+                <div class="flex items-start gap-3">
+                    <div class="p-2 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100">
+                        <i data-lucide="monitor-check" class="h-5 w-5"></i>
+                    </div>
+                    <div>
+                        <span class="block text-sm font-bold text-slate-900 group-hover:text-emerald-700">KLAES-Generated RofO</span>
+                        <span class="block text-xs text-slate-500 mt-0.5">
+                            The original was generated and printed from KLAES, so its issue date is on record.
+                        </span>
+                    </div>
+                </div>
+            </button>
+
+            <button type="button" onclick="reissuanceSelectSource('legacy')"
+                class="w-full text-left p-4 rounded-xl border-2 border-slate-200 hover:border-amber-500 hover:bg-amber-50/40 transition group">
+                <div class="flex items-start gap-3">
+                    <div class="p-2 rounded-xl bg-amber-50 text-amber-600 border border-amber-100">
+                        <i data-lucide="archive" class="h-5 w-5"></i>
+                    </div>
+                    <div>
+                        <span class="block text-sm font-bold text-slate-900 group-hover:text-amber-700">Pre-KLAES (Legacy) RofO</span>
+                        <span class="block text-xs text-slate-500 mt-0.5">
+                            The original was issued before KLAES — no generation record exists, so the issue date is entered by hand.
+                        </span>
+                    </div>
+                </div>
+            </button>
+        </div>
+
+        <!-- STEP 2: pick the file number being re-issued -->
+        <div id="reiStep2" class="hidden px-6 py-6 space-y-4">
+            <div id="reiSourceSummary" class="flex items-center gap-2 text-xs font-bold px-3 py-2 rounded-lg"></div>
+
+            {{-- KLAES-generated: choose from the RofO table --}}
+            <div id="reiPanelKlaes" class="hidden">
+                <label class="block text-xs font-bold text-slate-500 uppercase mb-1.5">RofO File Number</label>
+                <select id="reiKlaesSelect" class="w-full"></select>
+                <p class="mt-1 text-[11px] text-slate-500">
+                    Search the file numbers already on the RofO table. The recommendation and RofO
+                    were captured in KLAES, so re-issuing only flags this record — nothing is re-entered.
+                </p>
+                <div id="reiKlaesDetails" class="hidden mt-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 space-y-1"></div>
+            </div>
+
+            {{-- Pre-KLAES: pick through the global file number selector --}}
+            <div id="reiPanelLegacy" class="hidden">
+                <label class="block text-xs font-bold text-slate-500 uppercase mb-1.5">File Number</label>
+                <div class="flex gap-2">
+                    <input type="text" id="reiLegacyFileNo" readonly placeholder="No file number selected"
+                        class="flex-1 border border-slate-200 rounded-xl px-4 py-2.5 bg-slate-50 font-mono text-sm outline-none">
+                    <button type="button" onclick="reissuancePickLegacyFileNo()"
+                        class="px-4 py-2.5 text-xs font-bold bg-slate-800 text-white rounded-xl hover:bg-slate-900 transition whitespace-nowrap">
+                        Select File Number
+                    </button>
+                </div>
+                <p class="mt-1 text-[11px] text-slate-500">
+                    The original letter pre-dates KLAES, so its details are captured on the next screen.
+                </p>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex items-center justify-end gap-3 bg-slate-50 px-6 py-4 rounded-b-2xl border-t border-slate-200">
+            <button type="button" id="reiBackBtn" onclick="reissuanceBack()"
+                class="hidden px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-xl transition">Back</button>
+            <button type="button" onclick="closeReissuanceModal()"
+                class="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-xl transition">Cancel</button>
+            <button type="button" id="reiNextBtn" onclick="reissuanceNext()" disabled
+                class="hidden inline-flex items-center gap-2 px-6 py-2.5 bg-amber-600 text-white font-bold rounded-xl hover:bg-amber-700 transition text-sm disabled:opacity-40 disabled:cursor-not-allowed">
+                <span id="reiNextBtnLabel">Next</span> <i data-lucide="arrow-right" class="h-4 w-4"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+{{-- Used by the Re-issuance dialog: the pre-KLAES path picks its file number here.
+     The component also pulls in Select2, which the KLAES path's dropdown uses. --}}
+@include('components.global-fileno-modal')
+<script src="{{ asset('js/global-fileno-modal.js') }}"></script>
+
 <script>
+// ── RofO Re-issuance ────────────────────────────────────────────
+// Step 1 records where the original letter came from, step 2 picks the file
+// number — from the RofO table for a KLAES-generated letter, or through the
+// global file number selector for a pre-KLAES one. Next opens the recommendation
+// form in re-issuance mode; saving there returns to this table.
+var _reiSource       = null;   // 'klaes' | 'legacy'
+var _reiKlaesId      = null;   // selected recommendation id (klaes path)
+var _reiKlaesLabel   = '';     // its file number, for the confirmation prompt
+var _reiLegacyFileNo = '';     // selected file number (legacy path)
+
+function openReissuanceModal() {
+    _reiSource       = null;
+    _reiKlaesId      = null;
+    _reiLegacyFileNo = '';
+
+    document.getElementById('reiLegacyFileNo').value = '';
+    document.getElementById('reiKlaesDetails').classList.add('hidden');
+    if (window.jQuery && jQuery('#reiKlaesSelect').data('select2')) {
+        jQuery('#reiKlaesSelect').val(null).trigger('change');
+    }
+
+    reissuanceShowStep(1);
+    document.getElementById('reissuanceModal').classList.remove('hidden');
+    if (window.lucide) window.lucide.createIcons();
+}
+
+function closeReissuanceModal() {
+    document.getElementById('reissuanceModal').classList.add('hidden');
+}
+
+function reissuanceShowStep(step) {
+    var onStep2 = step === 2;
+    document.getElementById('reiStep1').classList.toggle('hidden', onStep2);
+    document.getElementById('reiStep2').classList.toggle('hidden', !onStep2);
+    document.getElementById('reiBackBtn').classList.toggle('hidden', !onStep2);
+    document.getElementById('reiNextBtn').classList.toggle('hidden', !onStep2);
+
+    document.getElementById('reiStepBadge1').className = 'px-2.5 py-1 rounded-full ' +
+        (onStep2 ? 'bg-slate-100 text-slate-400' : 'bg-amber-100 text-amber-800');
+    document.getElementById('reiStepBadge2').className = 'px-2.5 py-1 rounded-full ' +
+        (onStep2 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-400');
+}
+
+function reissuanceSelectSource(source) {
+    _reiSource = source;
+
+    var summary = document.getElementById('reiSourceSummary');
+    var isKlaes = source === 'klaes';
+
+    summary.className = 'flex items-center gap-2 text-xs font-bold px-3 py-2 rounded-lg border ' +
+        (isKlaes ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                 : 'bg-amber-50 text-amber-800 border-amber-200');
+    summary.innerHTML = isKlaes
+        ? '<i data-lucide="monitor-check" class="h-4 w-4"></i> KLAES-Generated RofO'
+        : '<i data-lucide="archive" class="h-4 w-4"></i> Pre-KLAES (Legacy) RofO';
+
+    document.getElementById('reiPanelKlaes').classList.toggle('hidden', !isKlaes);
+    document.getElementById('reiPanelLegacy').classList.toggle('hidden', isKlaes);
+
+    // KLAES records are already captured, so that path flags the existing RofO
+    // instead of walking through the recommendation form.
+    document.getElementById('reiNextBtnLabel').textContent = isKlaes ? 'Re-issue RofO' : 'Next';
+
+    if (isKlaes) reissuanceInitKlaesSelect();
+
+    reissuanceShowStep(2);
+    reissuanceUpdateNextBtn();
+    if (window.lucide) window.lucide.createIcons();
+}
+
+function reissuanceBack() {
+    reissuanceShowStep(1);
+}
+
+function reissuanceUpdateNextBtn() {
+    var ready = (_reiSource === 'klaes' && _reiKlaesId) ||
+                (_reiSource === 'legacy' && _reiLegacyFileNo);
+    document.getElementById('reiNextBtn').disabled = !ready;
+}
+
+// Select2 over the RofO table's file numbers (server-side search)
+function reissuanceInitKlaesSelect() {
+    if (!window.jQuery || !jQuery.fn.select2) return;
+    var $sel = jQuery('#reiKlaesSelect');
+    if ($sel.data('select2')) return;
+
+    $sel.select2({
+        dropdownParent: jQuery('#reissuanceModal'),
+        placeholder: 'Search file number or applicant...',
+        allowClear: true,
+        width: '100%',
+        ajax: {
+            url: '{{ route('land-rofos.reissuance-search') }}',
+            dataType: 'json',
+            delay: 250,
+            data: function (params) { return { q: params.term }; },
+            processResults: function (data) { return { results: data.results || [] }; },
+            cache: true
+        },
+        templateResult: function (item) {
+            if (!item.id) return item.text;
+            return jQuery(
+                '<div><div style="font-family:monospace;font-weight:700">' + item.text + '</div>' +
+                '<div style="font-size:11px;color:#64748b">' + (item.applicant || '—') + '</div></div>'
+            );
+        }
+    });
+
+    $sel.on('select2:select', function (e) {
+        var d = e.params.data || {};
+        _reiKlaesId    = d.id || null;
+        _reiKlaesLabel = d.text || '';
+
+        var box = document.getElementById('reiKlaesDetails');
+        box.innerHTML =
+            '<div><strong>Applicant:</strong> ' + (d.applicant || '—') + '</div>' +
+            '<div><strong>Location:</strong> ' + (d.location || '—') + '</div>' +
+            '<div><strong>Issued on:</strong> ' + (d.issued_on || '—') + '</div>';
+        box.classList.remove('hidden');
+        reissuanceUpdateNextBtn();
+    });
+
+    $sel.on('select2:clear', function () {
+        _reiKlaesId    = null;
+        _reiKlaesLabel = '';
+        document.getElementById('reiKlaesDetails').classList.add('hidden');
+        reissuanceUpdateNextBtn();
+    });
+}
+
+// Pre-KLAES path uses the shared global file number selector
+function reissuancePickLegacyFileNo() {
+    if (!window.GlobalFileNoModal) {
+        alert('File number selector is not available on this page.');
+        return;
+    }
+    window.GlobalFileNoModal.open({
+        autoPopulateGenericFields: false,
+        targetFields: [],
+        callback: function (data) {
+            _reiLegacyFileNo = (data && data.fileNumber) ? data.fileNumber : '';
+            document.getElementById('reiLegacyFileNo').value = _reiLegacyFileNo;
+            reissuanceUpdateNextBtn();
+        }
+    });
+}
+
+// Print an already-flagged re-issuance through the Print Manager. The doc type
+// carries "Re-issuance" so the manager badges itself accordingly and collapses to
+// the single Original step, and ?supersede=1 gives the watermarked letter.
+function printReissuance(id, fileNumber) {
+    SmartPrintManager.open(
+        fileNumber,
+        'Land RofO Re-issuance',
+        '{{ url('land-rofos') }}/' + id + '/print?supersede=1'
+    );
+}
+
+function reissuanceNext() {
+    if (_reiSource === 'klaes') {
+        reissuanceConfirmKlaes();
+        return;
+    }
+
+    // Pre-KLAES: nothing is on record, so the details are captured on the
+    // recommendation form in re-issuance mode.
+    if (!_reiLegacyFileNo) return;
+    window.location.href = '{{ route('land-recommendations.create') }}'
+        + '?reissuance=legacy&file_number=' + encodeURIComponent(_reiLegacyFileNo);
+}
+
+// KLAES path: the recommendation and RofO already exist, so this only flags the
+// existing record as re-issued — no new record, no form.
+function reissuanceConfirmKlaes() {
+    if (!_reiKlaesId) return;
+    var label = _reiKlaesLabel || 'this RofO';
+
+    if (typeof Swal === 'undefined') {
+        if (confirm('Mark ' + label + ' as a re-issued RofO?')) reissuanceSubmitKlaes();
+        return;
+    }
+
+    Swal.fire({
+        icon: 'question',
+        title: 'Re-issue RofO?',
+        html: 'Mark <strong>' + label + '</strong> as a re-issued RofO.<br>' +
+              '<span style="font-size:0.85rem;color:#64748b">The recommendation and RofO are already captured — ' +
+              'only the re-issuance details are updated.</span>',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, re-issue',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#d97706',
+        cancelButtonColor: '#64748b',
+    }).then(function (result) {
+        if (result.isConfirmed) reissuanceSubmitKlaes();
+    });
+}
+
+function reissuanceSubmitKlaes() {
+    var btn = document.getElementById('reiNextBtn');
+    btn.disabled = true;
+
+    fetch('{{ url('land-rofos') }}/' + _reiKlaesId + '/reissue', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+        },
+        body: JSON.stringify({ reissuance_source: 'klaes' })
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (res) {
+        if (!res.success) throw new Error(res.message || 'Request failed');
+        closeReissuanceModal();
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                icon: 'success',
+                title: 'RofO Re-issued',
+                text: res.message,
+                confirmButtonColor: '#d97706'
+            }).then(function () { window.location.reload(); });
+        } else {
+            window.location.reload();
+        }
+    })
+    .catch(function (err) {
+        btn.disabled = false;
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({ icon: 'error', title: 'Could not re-issue', text: err.message });
+        } else {
+            alert(err.message);
+        }
+    });
+}
+
 var _bpmRecords    = [];   // all unprinted records
 var _bpmSelected   = [];   // ids selected for this batch
 var _bpmPrintWin   = null;

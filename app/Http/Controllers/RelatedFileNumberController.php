@@ -93,7 +93,11 @@ class RelatedFileNumberController extends Controller
                 $q->where('transaction_type', 'KANGIS Recertification');
                 break;
             case 'mlpp':
-                $q->where('transaction_type', 'Land & Physical Planning Recertification');
+                // Two spellings exist in the wild: the register rebuild writes
+                // "Ministry of Land & Physical Planning Recertification" (852 rows) while
+                // MlsFileNoController writes the short "Land & Physical Planning
+                // Recertification". Match the common suffix so both are covered.
+                $q->where('transaction_type', 'like', '%Physical Planning Recertification');
                 break;
             case 'merger':
                 $q->where('transaction_type', 'Merger');

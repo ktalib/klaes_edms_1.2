@@ -157,10 +157,17 @@
           <a href="{{ route('lands-one-stop-shop.all-applications.index', ['type' => 'change-of-name']) }}"
             class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('lands-one-stop-shop.all-applications.index') && request()->query('type') === 'change-of-name' ? 'active' : '' }}">
             <i data-lucide="users" class="h-3.5 w-3.5 text-orange-400"></i>
-            <span>New Applications (Existing OP Change of Name)</span>
+            <span>New Applications (Existing OP Change of Ownership)</span>
           </a>
 
-          <!-- iii. Bill -->
+          <!-- iii. OP Verification -->
+          <a href="{{ route('oss-verifications.index') }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('oss-verifications.index') ? 'active' : '' }}">
+            <i data-lucide="check-square" class="h-3.5 w-3.5 text-orange-400"></i>
+            <span>OP Verification</span>
+          </a>
+
+          <!-- iv. Bill -->
           <a href="{{ route('lands-one-stop-shop.bill.index') }}"
             class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('lands-one-stop-shop.bill.index') && !request()->has('type') ? 'active' : '' }}">
             <i data-lucide="receipt" class="h-3.5 w-3.5 text-orange-400"></i>
@@ -441,6 +448,13 @@
             class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('title-status.index') && request('url') === 'land' ? 'active' : '' }}">
             <i data-lucide="badge-check" class="h-3.5 w-3.5 text-orange-400"></i>
             <span>Title Status Update</span>
+          </a>
+
+          <!-- iv. Re-grant Management -->
+          <a href="{{ route('regrant.index') }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('regrant.index') ? 'active' : '' }}">
+            <i data-lucide="refresh-cw" class="h-3.5 w-3.5 text-indigo-400"></i>
+            <span>Re-grant</span>
           </a>
         </div>
       @endif

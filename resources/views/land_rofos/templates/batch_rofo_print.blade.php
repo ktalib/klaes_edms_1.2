@@ -182,11 +182,20 @@
                     if ($printLocation !== '') {
                         $printLocation = mb_strtoupper($printLocation, 'UTF-8');
                     }
+
+                    // Applications derived from an existing file (Plot Subdivision / Plot
+                    // Merger / Change of Purpose) cite the parent file number in place of
+                    // the plan number, so the PLOT/PLAN No. box drops the plan part and
+                    // shows only the plot no (blank when there isn't one).
+                    $oldFileNumber = trim((string) ($recommendation->old_file_number ?? ''));
+                    $layoutPlanNo  = trim((string) ($recommendation->layout_plan_no ?? ''));
+                    $planNoRef     = $oldFileNumber !== '' ? $oldFileNumber : $layoutPlanNo;
+                    $plotPlanNo    = $oldFileNumber !== '' ? $plotNo : $plotNo . ' / ' . $layoutPlanNo;
                 @endphp
                 <div>
                     <div class="bordered-section">
                         <div class="row">R of O No:<span class="inline-data" style="min-width:235px">{{ $recommendation->file_number }}</span></div>
-                        <div class="row">PLOT/PLAN No:<span class="inline-data" style="min-width:190px;margin-top:10px">{{ $recommendation->plot_number }} / {{ $recommendation->layout_plan_no }}</span></div>
+                        <div class="row">PLOT/PLAN No:<span class="inline-data" style="min-width:190px;margin-top:10px">{{ $plotPlanNo }}</span></div>
                         <div class="row">LOCATION:<span class="inline-data" style="min-width:220px;margin-top:10px">{{ $printLocation }}</span></div>
                         <div class="row">DATE OF ISSUE:<span class="inline-data" style="min-width:190px;margin-top:10px">{{ $recommendation->rofo_generated_at ? $recommendation->rofo_generated_at->format('Y-m-d') : now()->format('Y-m-d') }}</span></div>
                     </div>
@@ -201,7 +210,7 @@
                     I am directed to inform you that the Governor of Kano State has approved the grant of a Right of Occupancy to you over piece of land/plot No
                     <span class="inline-data" style="min-width:40px">{{ $recommendation->plot_number }}</span>
                     situated at <span class="inline-data" style="min-width:150px">{{ $printLocation }}</span>
-                    as per plan No. <span class="inline-data" style="min-width:50px">{{ $recommendation->layout_plan_no }}</span> on following the conditions:
+                    as per plan No. <span class="inline-data" style="min-width:50px">{{ $planNoRef }}</span> on following the conditions:
                 </p>
                 <div class="condition-item">
                     <strong>1. Payment of:</strong>

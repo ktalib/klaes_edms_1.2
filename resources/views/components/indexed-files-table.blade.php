@@ -23,6 +23,13 @@
 
     $mergedConfig = array_merge($defaultConfig, $config);
 
+    // "Move to Indexing Duplicates" is hidden unless assign_role is Supper Admin.
+    $tableUser = auth()->user();
+    $tableAssignRoles = $tableUser && is_array($tableUser->assign_role)
+        ? $tableUser->assign_role
+        : array_filter(array_map('trim', explode(',', (string) ($tableUser->assign_role ?? ''))));
+    $mergedConfig['canMoveToIndexingDuplicates'] = in_array('Supper Admin', $tableAssignRoles, true);
+
     $hiddenColumns = $mergedConfig['hiddenColumns'] ?? [];
     $columnLabels = $mergedConfig['columnLabels'] ?? [];
     $hideActions = $mergedConfig['hideActions'] ?? false;

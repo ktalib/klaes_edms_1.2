@@ -220,9 +220,14 @@ class FileDecommissioningController extends Controller
             // UNION both sources
             $unionQuery = $archiveQuery->unionAll($fileNumberQuery);
 
-            // Wrap in a subquery for counting/searching/pagination
+            // Wrap in a subquery for counting/searching/pagination.
+            // The union's bindings must live in the "from" slot, not be merged type-by-type:
+            // mergeBindings() would drop the second SELECT's values into the outer query's
+            // "union" bucket, which Laravel flattens *after* the outer "where" bucket. Any
+            // search term added below would then bind to fileNumber.is_decommissioned (a bit
+            // column) and blow up with "Conversion failed ... '%44%' to data type bit".
             $baseQuery = $conn->table(\Illuminate\Support\Facades\DB::raw("({$unionQuery->toSql()}) as combined"))
-                ->mergeBindings($unionQuery);
+                ->addBinding($unionQuery->getBindings(), 'from');
 
             // Total count (before search)
             $totalRecords = $baseQuery->count();

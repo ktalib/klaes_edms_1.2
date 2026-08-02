@@ -11,10 +11,101 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class TitleStatusController extends Controller
 {
+    /**
+     * Where fileInfo() looks up a file's property details, in priority order. Each source
+     * fills only the fields still empty after the sources above it, so `file_indexings`
+     * wins on everything it holds and the later registries top up what it cannot supply
+     * (it has no house_no and no state column at all).
+     *
+     * `map` is field => column, or field => [column, fallback column]. Column names are
+     * NOT consistent across these tables — `pra`/`CofO_staging` use districtName/streetName,
+     * `fileNumber` is all lowercase, `file_indexings` uses plot_number/land_use_type.
+     * A wrong name silently yields null, so verify against the real schema before editing.
+     */
+    private const DETAIL_SOURCES = [
+        [
+            'table' => 'file_indexings',
+            'key'   => 'file_number',
+            'map'   => [
+                'file_title'     => 'file_title',
+                'current_holder' => ['current_holder', 'original_holder'],
+                'plot_no'        => 'plot_number',
+                'street_name'    => 'street_name',
+                'district'       => 'district',
+                'lga'            => 'lga',
+                'location'       => 'location',
+                'land_use'       => 'land_use_type',
+                'plot_size'      => 'plot_size',
+                'serial_no'      => 'serial_no',
+            ],
+        ],
+        [
+            // The commissioning table — the only source carrying `state`.
+            'table' => 'mls_file_no',
+            'key'   => 'full_file_number',
+            'map'   => [
+                'file_title'     => 'file_name',
+                'current_holder' => 'file_name',
+                'plot_no'        => 'plot_no',
+                'district'       => 'district',
+                'lga'            => 'lga',
+                'state'          => 'state',
+                'location'       => 'location',
+                'land_use'       => 'land_use',
+            ],
+        ],
+        [
+            'table' => 'fileNumber',
+            'key'   => 'mlsfNo',
+            'map'   => [
+                'file_title'     => 'FileName',
+                'current_holder' => 'FileName',
+                'plot_no'        => 'plot_no',
+                'district'       => 'district',
+                'lga'            => 'lga',
+                'location'       => 'location',
+            ],
+        ],
+        [
+            // Deed/instrument registry — the only sources carrying house_no.
+            'table' => 'pra',
+            'key'   => 'mlsFNo',
+            'map'   => [
+                'plot_no'     => 'plot_no',
+                'house_no'    => 'house_no',
+                'street_name' => 'streetName',
+                'district'    => 'districtName',
+                'location'    => 'location',
+                'land_use'    => 'land_use',
+                'plot_size'   => 'plot_size',
+            ],
+        ],
+        [
+            'table' => 'CofO_staging',
+            'key'   => 'mlsFNo',
+            'map'   => [
+                'plot_no'     => 'plot_no',
+                'house_no'    => 'house_no',
+                'street_name' => 'streetName',
+                'district'    => 'districtName',
+                'location'    => 'location',
+                'land_use'    => 'land_use',
+                'plot_size'   => 'plot_size',
+            ],
+        ],
+    ];
+
+    /** Every property detail fileInfo() resolves. Kept in sync with the form's hidden inputs. */
+    private const DETAIL_FIELDS = [
+        'file_title', 'current_holder', 'plot_no', 'house_no', 'street_name',
+        'district', 'lga', 'state', 'location', 'land_use', 'plot_size', 'serial_no',
+    ];
+
     public function __construct(
         protected TitleStatusService $titleStatusService,
         protected TitleStatusParcelRouter $parcelRouter
@@ -219,56 +310,239 @@ class TitleStatusController extends Controller
             return response()->json(['success' => false, 'message' => 'File number required.'], 422);
         }
 
-        $record = DB::connection('sqlsrv')
-            ->table('file_indexings')
-            ->where('file_number', $fileNo)
-            ->first();
+        $data = $this->resolveFileDetails($fileNo);
 
-        if (!$record) {
-            // Try fileNumber table as fallback
-            $fn = DB::connection('sqlsrv')
-                ->table('fileNumber')
-                ->where('mlsfNo', $fileNo)
-                ->first();
-
-            if (!$fn) {
-                return response()->json(['success' => false, 'message' => 'File not found.'], 404);
-            }
-
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'source_table'   => 'fileNumber',
-                    'source_id'      => $fn->id ?? null,
-                    'file_no'        => $fileNo,
-                    'file_title'     => $fn->FileName ?? null,
-                    'current_holder' => $fn->FileName ?? null,
-                    'plot_no'        => $fn->PlotNo ?? null,
-                    'location'       => $fn->Location ?? null,
-                    'land_use'       => $fn->LandUse ?? null,
-                    'district'       => $fn->District ?? null,
-                    'lga'            => $fn->LGA ?? null,
-                ],
-            ]);
+        if ($data === null) {
+            return response()->json(['success' => false, 'message' => 'File not found.'], 404);
         }
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'source_table'   => 'file_indexings',
-                'source_id'      => $record->id ?? null,
-                'file_no'        => $fileNo,
-                'file_title'     => $record->file_title ?? null,
-                'current_holder' => $record->current_holder ?? $record->original_holder ?? null,
-                'plot_no'        => $record->plot_number ?? null,
-                'location'       => $record->location ?? null,
-                'land_use'       => $record->land_use_type ?? null,
-                'district'       => $record->district ?? null,
-                'lga'            => $record->lga ?? null,
-                'plot_size'      => $record->plot_size ?? null,
-                'serial_no'      => $record->serial_no ?? null,
-            ],
-        ]);
+        return response()->json(['success' => true, 'data' => $data]);
+    }
+
+    /**
+     * Resolve every property detail we can find for a file number by walking
+     * {@see self::DETAIL_SOURCES} in priority order.
+     *
+     * Each field is claimed by the first source that actually has a value for it, so a
+     * later registry can top up a gap without overwriting better data from a higher
+     * priority one. `source_table`/`source_id` record the first table holding the file,
+     * which is what the application row links back to.
+     *
+     * @return array<string,mixed>|null Null when the file is in none of the sources.
+     */
+    private function resolveFileDetails(string $fileNo): ?array
+    {
+        $out = array_fill_keys(self::DETAIL_FIELDS, null);
+        $out['file_no']      = $fileNo;
+        $out['source_table'] = null;
+        $out['source_id']    = null;
+
+        $schema = DB::connection('sqlsrv')->getSchemaBuilder();
+
+        foreach (self::DETAIL_SOURCES as $source) {
+            // Nothing left to fill — skip the remaining (and heaviest) lookups.
+            if (!$this->hasEmptyField($out) && $out['source_table'] !== null) {
+                break;
+            }
+
+            try {
+                if (!$schema->hasTable($source['table'])) {
+                    continue;
+                }
+
+                $row = DB::connection('sqlsrv')->table($source['table'])
+                    ->where($source['key'], $fileNo)
+                    ->first();
+
+                if (!$row) {
+                    continue;
+                }
+
+                if ($out['source_table'] === null) {
+                    $out['source_table'] = $source['table'];
+                    $out['source_id']    = $row->id ?? null;
+                }
+
+                foreach ($source['map'] as $field => $columns) {
+                    if ($this->detailValue($out[$field]) !== null) {
+                        continue; // already claimed by a higher-priority source
+                    }
+                    foreach ((array) $columns as $column) {
+                        $value = $this->detailValue($row->$column ?? null);
+                        if ($value !== null) {
+                            $out[$field] = $value;
+                            break;
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::warning("TitleStatus fileInfo: {$source['table']} lookup failed for {$fileNo}: " . $e->getMessage());
+            }
+        }
+
+        // Last resort: the composite `location` string still holds the address parts that
+        // no registry column carries. Fills gaps only — never overrides a real column.
+        foreach ($this->parseLocation($out['location']) as $field => $value) {
+            if ($out[$field] === null) {
+                $out[$field] = $value;
+            }
+        }
+
+        return $out['source_table'] === null ? null : $out;
+    }
+
+    /**
+     * Split the composite `location` string into its address components.
+     *
+     * `file_indexings.location` is stored as "{plot}, {street}, {district}, {lga}, {state}"
+     * (segments are frequently omitted), and it is the only place several of these values
+     * exist at all — no registry table has a usable `state` column, and `file_indexings`
+     * has no `house_no` column.
+     *
+     * Strategy is the one proven by {@see \App\Console\Commands\BackfillValuationReportAddressParts}:
+     * anchor on the segment matching a known LGA and read outwards. Anchoring beats reading
+     * fixed positions because segments are routinely missing, and it resolves the
+     * "Nasarawa" trap — Nasarawa is both a Kano LGA and a Nigerian state, so taking the
+     * last segment as the state mislabels every 3-segment Nasarawa address. Anchored, it
+     * is consumed as the LGA and only a segment *after* it can become the state.
+     *
+     * Every component is validated against its lookup table, so an unrecognised segment
+     * yields null instead of a guess.
+     *
+     * Note the leading segment is the PLOT number, not a house number — `location` is
+     * built as "{plot_no}, [street,] {district}, {lga}, {state}". There is no house-number
+     * component to recover here; `house_no` only ever comes from pra/CofO_staging.
+     *
+     * @return array{plot_no:?string,street_name:?string,district:?string,lga:?string,state:?string}
+     */
+    private function parseLocation(?string $location): array
+    {
+        $empty = ['plot_no' => null, 'street_name' => null, 'district' => null, 'lga' => null, 'state' => null];
+
+        $location = $this->detailValue($location);
+        if ($location === null) {
+            return $empty;
+        }
+
+        $tokens = array_values(array_filter(
+            array_map('trim', explode(',', $location)),
+            fn ($token) => $token !== ''
+        ));
+
+        if (count($tokens) < 2) {
+            return $empty;
+        }
+
+        [$lgaNames, $districtNames, $stateNames] = $this->locationLookups();
+
+        // Anchor on the LGA, scanning from the right since the state trails it.
+        $lgaIndex = null;
+        for ($i = count($tokens) - 1; $i >= 1; $i--) {
+            if (isset($lgaNames[mb_strtoupper($tokens[$i])])) {
+                $lgaIndex = $i;
+                break;
+            }
+        }
+
+        if ($lgaIndex === null) {
+            return $empty;
+        }
+
+        $parsed        = $empty;
+        $parsed['lga'] = $tokens[$lgaIndex];
+
+        // Anything after the LGA is the state, if it names one. "Kano State" and "Kano"
+        // are both written; normalise to the canonical name from the lookup.
+        if (isset($tokens[$lgaIndex + 1])) {
+            $candidate = trim((string) preg_replace('/\s+state$/i', '', $tokens[$lgaIndex + 1]));
+            $parsed['state'] = $stateNames[mb_strtoupper($candidate)] ?? null;
+        }
+
+        // The segment before the LGA is the district — but only when it really is one.
+        // On short addresses that slot holds street text instead.
+        $streetEnd = $lgaIndex;
+        if ($lgaIndex >= 1 && isset($districtNames[mb_strtoupper($tokens[$lgaIndex - 1])])) {
+            $parsed['district'] = $tokens[$lgaIndex - 1];
+            $streetEnd = $lgaIndex - 1;
+        }
+
+        // What remains to the left is the plot number, optionally followed by a street.
+        // Never split a single segment: "136 & 138" and "PIECE OF LAND" are whole plot
+        // values, and chopping them scatters one field across two.
+        $head = array_slice($tokens, 0, $streetEnd);
+
+        if (!empty($head)) {
+            $parsed['plot_no'] = array_shift($head);
+        }
+        if (!empty($head)) {
+            $parsed['street_name'] = trim(implode(', ', $head)) ?: null;
+        }
+
+        return $parsed;
+    }
+
+    /**
+     * Lookup sets for {@see self::parseLocation()}, keyed upper-case for O(1) matching.
+     * Read once per request; the district list alone is ~1,800 rows.
+     *
+     * @return array{0:array<string,true>,1:array<string,true>,2:array<string,string>}
+     */
+    private function locationLookups(): array
+    {
+        static $cache = null;
+
+        if ($cache === null) {
+            $lgas = $districts = $states = [];
+
+            try {
+                foreach (DB::connection('sqlsrv')->table('StatLGAs')->pluck('LGAName') as $name) {
+                    $name = trim((string) $name);
+                    if ($name !== '') {
+                        $lgas[mb_strtoupper($name)] = true;
+                    }
+                }
+                foreach (DB::connection('sqlsrv')->table('districts')->pluck('name') as $name) {
+                    $name = trim((string) $name);
+                    if ($name !== '') {
+                        $districts[mb_strtoupper($name)] = true;
+                    }
+                }
+                foreach (DB::connection('sqlsrv')->table('States')->pluck('StateName') as $name) {
+                    $name = trim((string) $name);
+                    if ($name !== '') {
+                        $states[mb_strtoupper($name)] = $name;
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::warning('TitleStatus fileInfo: location lookups failed: ' . $e->getMessage());
+            }
+
+            $cache = [$lgas, $districts, $states];
+        }
+
+        return $cache;
+    }
+
+    private function hasEmptyField(array $out): bool
+    {
+        foreach (self::DETAIL_FIELDS as $field) {
+            if ($this->detailValue($out[$field] ?? null) === null) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** Normalise a looked-up value: null, and blank strings, both count as "not supplied". */
+    private function detailValue($value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $value = trim((string) $value);
+
+        return $value === '' ? null : $value;
     }
 
     public function printCertificate(int $id): \Illuminate\Contracts\View\View

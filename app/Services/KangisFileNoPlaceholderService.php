@@ -33,6 +33,123 @@ class KangisFileNoPlaceholderService
     }
 
     /**
+     * Work out the file_number a NEW variant record must be inserted with, and
+     * clear the way for it — used BEFORE the insert.
+     *
+     * resolveAndSave() below cannot serve this case: it needs the row to already
+     * exist so it can rename it, but file_indexings.file_number carries a unique
+     * index (UX_file_indexings_file_number), so inserting the bare number first
+     * fails outright whenever that number is already taken. The suffix therefore
+     * has to be decided up front.
+     *
+     * Case B (bare exists, no suffixed variants) still renames the incumbent to
+     * _1 here, exactly as resolveAndSave does, because that rename is what makes
+     * the _1/_2 pair consistent.
+     *
+     * @return array{resolved:string, siblings:array, selected_file_number:string}
+     */
+    public function resolveForNewRecord(string $selectedFileNumber): array
+    {
+        $selectedFileNumber = trim($selectedFileNumber);
+
+        if ($selectedFileNumber === '' || $this->normalize($selectedFileNumber) === '') {
+            return ['resolved' => $selectedFileNumber, 'siblings' => [], 'selected_file_number' => $selectedFileNumber];
+        }
+
+        $bareRecord = DB::connection('sqlsrv')
+            ->table('file_indexings')
+            ->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = UPPER(?)', [$selectedFileNumber])
+            ->first(['id', 'file_number']);
+
+        $highestSuffix = $this->highestSuffix($selectedFileNumber);
+
+        // No incumbent at all — the first record keeps the bare number.
+        if (!$bareRecord && $highestSuffix === 0) {
+            return [
+                'resolved'             => $selectedFileNumber,
+                'siblings'             => [],
+                'selected_file_number' => $selectedFileNumber,
+            ];
+        }
+
+        $siblings = [];
+
+        // First collision: the incumbent becomes _1 so the new record can be _2.
+        if ($bareRecord && $highestSuffix === 0) {
+            $renamedBare = $selectedFileNumber . '_1';
+
+            DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->where('id', $bareRecord->id)
+                ->update([
+                    'file_number'            => $renamedBare,
+                    'kangis_fileno_resolved' => $renamedBare,
+                ]);
+
+            $this->syncFileNumberRename($selectedFileNumber, $renamedBare);
+            $this->syncKangisGroupingRename($selectedFileNumber, $renamedBare);
+
+            $siblings[] = ['id' => $bareRecord->id, 'file_number' => $renamedBare];
+            $highestSuffix = 1;
+        }
+
+        return [
+            'resolved'             => $selectedFileNumber . '_' . ($highestSuffix + 1),
+            'siblings'             => $siblings,
+            'selected_file_number' => $selectedFileNumber,
+        ];
+    }
+
+    /**
+     * Highest existing _N on this base number in file_indexings.
+     *
+     * The MAXIMUM, not the count: counting repeats a suffix as soon as the
+     * sequence has a gap (_1 and _3 present would hand out _3 again).
+     *
+     * Only file_indexings is consulted — that is where the numbering lives. A
+     * stale kangis_grouping clone from a failed attempt must not push the number
+     * forward; the caller reuses such a row instead.
+     */
+    private function highestSuffix(string $selectedFileNumber): int
+    {
+        $like = str_replace('_', '[_]', $selectedFileNumber) . '[_]%';
+        $prefixLength = strlen($selectedFileNumber) + 1;
+
+        $candidates = DB::connection('sqlsrv')
+            ->table('file_indexings')
+            ->where('file_number', 'like', $like)
+            ->pluck('file_number');
+
+        $highest = 0;
+        foreach ($candidates as $candidate) {
+            $suffix = substr(trim((string) $candidate), $prefixLength);
+            if ($suffix !== '' && ctype_digit($suffix)) {
+                $highest = max($highest, (int) $suffix);
+            }
+        }
+
+        return $highest;
+    }
+
+    /**
+     * Record the placeholder against a variant whose file_number was already
+     * settled by resolveForNewRecord() — the insert used the final value, so
+     * there is nothing left to rename.
+     */
+    public function finalizeResolved(string $rawPlaceholder, int $fileIndexingId, string $selectedFileNumber, string $resolved): void
+    {
+        DB::connection('sqlsrv')
+            ->table('file_indexings')
+            ->where('id', $fileIndexingId)
+            ->update([
+                'kangis_fileno_placeholder' => $rawPlaceholder,
+                'kangis_fileno_resolved'    => $resolved,
+            ]);
+
+        $this->syncToFileNumber($selectedFileNumber, $rawPlaceholder, $resolved);
+    }
+
+    /**
      * Resolve and persist the KANGIS placeholder for a newly created
      * file_indexings record.
      *

@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
- 
+
 class ActionsController extends Controller
 {
     private function getApplication($id)
@@ -29,7 +29,7 @@ class ActionsController extends Controller
     {
         $PageTitle = 'OTHER DEPARTMENTS';
         $PageDescription = '';
-        
+
         $application = $this->getApplication($d);
         if ($application instanceof \Illuminate\Http\JsonResponse) {
             return $application;
@@ -42,7 +42,7 @@ class ActionsController extends Controller
     {
         $PageTitle = 'Bill';
         $PageDescription = '';
-        
+
         $application = $this->getApplication($d);
         if ($application instanceof \Illuminate\Http\JsonResponse) {
             return $application;
@@ -55,7 +55,7 @@ class ActionsController extends Controller
     {
         $PageTitle = 'Payment';
         $PageDescription = '';
-        
+
         $application = $this->getApplication($d);
         if ($application instanceof \Illuminate\Http\JsonResponse) {
             return $application;
@@ -63,12 +63,12 @@ class ActionsController extends Controller
 
         return view('actions.payments', compact('application', 'PageTitle', 'PageDescription'));
     }
-    
+
     public function Recommendation($d)
     {
         $PageTitle = 'PLANNING RECOMMENDATION';
         $PageDescription = '';
-        
+
         $application = $this->getApplication($d);
         if ($application instanceof \Illuminate\Http\JsonResponse) {
             return $application;
@@ -84,14 +84,14 @@ class ActionsController extends Controller
     public function FinalConveyance($d)
     {
         return app(PrimaryActionsController::class)->finalConveyance($d);
-    }  
-    
-    
-    public function  BuyersList($d)
+    }
+
+
+    public function BuyersList($d)
     {
-    $PageTitle = 'Add/Edit List of Buyers';
+        $PageTitle = 'Add/Edit List of Buyers';
         $PageDescription = '';
-        
+
         $application = $this->getApplication($d);
         if ($application instanceof \Illuminate\Http\JsonResponse) {
             return $application;
@@ -117,23 +117,23 @@ class ActionsController extends Controller
 
     public function DirectorApproval($d)
     {
-    
+
         $PageTitle = 'Directors Approval';
         $PageDescription = 'This page is for directors to approve the application.';
-        
+
         $application = $this->getApplication($d);
         if ($application instanceof \Illuminate\Http\JsonResponse) {
             return $application;
         }
 
-       return view('actions.director_approval', compact('application', 'PageTitle', 'PageDescription'));
+        return view('actions.director_approval', compact('application', 'PageTitle', 'PageDescription'));
     }
 
     public function BettermentBill($d)
     {
         $PageTitle = 'Betterment Bill';
         $PageDescription = 'Generate and manage betterment bill for sectional title';
-        
+
         $application = $this->getApplication($d);
         if ($application instanceof \Illuminate\Http\JsonResponse) {
             return $application;
@@ -147,28 +147,28 @@ class ActionsController extends Controller
         $request->validate([
             'architectural_design' => 'required|file|mimes:jpeg,png,jpg,pdf|max:10240',
         ]);
-    
+
         try {
             // Get the current application from the SQL Server database
             $application = DB::connection('sqlsrv')
                 ->table('mother_applications')
                 ->where('id', $applicationId)
                 ->first();
-                
+
             if (!$application) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Application not found.'
                 ], 404);
             }
-            
+
             // Parse the existing documents JSON
             $documents = json_decode($application->documents, true) ?? [];
-            
+
             // Upload the new file
             $file = $request->file('architectural_design');
             $path = $file->store('documents', 'public');
-            
+
             // Update only the architectural_design portion of the JSON
             $documents['architectural_design'] = [
                 'path' => $path,
@@ -176,7 +176,7 @@ class ActionsController extends Controller
                 'type' => $file->getClientOriginalExtension(),
                 'uploaded_at' => now()->format('Y-m-d H:i:s')
             ];
-            
+
             // Update the application in the SQL Server database
             DB::connection('sqlsrv')
                 ->table('mother_applications')
@@ -185,7 +185,7 @@ class ActionsController extends Controller
                     'documents' => json_encode($documents),
                     'updated_at' => now()
                 ]);
-            
+
             return response()->json([
                 'success' => true,
                 'message' => 'Architectural design has been updated successfully.',
@@ -197,7 +197,7 @@ class ActionsController extends Controller
             ]);
         } catch (\Exception $e) {
             \Log::error('Error updating architectural design: ' . $e->getMessage());
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error updating architectural design. Please try again.'
@@ -268,7 +268,7 @@ class ActionsController extends Controller
 
         } catch (\Exception $e) {
             \Log::error('Error generating action sheet: ' . $e->getMessage());
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error generating action sheet. Please try again.'
@@ -305,7 +305,7 @@ class ActionsController extends Controller
                     ->first();
 
                 if ($jointInspection) {
-                    $isApproved = (int)($jointInspection->is_approved ?? 0) === 1;
+                    $isApproved = (int) ($jointInspection->is_approved ?? 0) === 1;
                     if ($isApproved) {
                         $application->oss_inspection_status = 'Approved';
                     } elseif (!is_null($jointInspection->is_approved)) {
@@ -385,24 +385,24 @@ class ActionsController extends Controller
             $application->computed_generated_at = $generatedAtDisplay ?? now()->format('d/m/Y H:i');
 
             $PageTitle = 'Director\'s Action Sheet - ' . ($application->np_fileno ?? $application->fileno);
-            
-                                $directorDecision = $application->application_status ?? 'Approved';
-                                if (Schema::connection('sqlsrv')->hasTable('action_sheet_decisions')) {
-                                    $decisionRecord = DB::connection('sqlsrv')->table('action_sheet_decisions')
-                                        ->where('mother_application_id', $application->id)
-                                        ->orderByDesc('decided_at')
-                                        ->orderByDesc('id')
-                                        ->first();
 
-                                    if ($decisionRecord && !empty($decisionRecord->decision)) {
-                                        $directorDecision = $decisionRecord->decision;
-                                    }
-                                }
+            $directorDecision = $application->application_status ?? 'Approved';
+            if (Schema::connection('sqlsrv')->hasTable('action_sheet_decisions')) {
+                $decisionRecord = DB::connection('sqlsrv')->table('action_sheet_decisions')
+                    ->where('mother_application_id', $application->id)
+                    ->orderByDesc('decided_at')
+                    ->orderByDesc('id')
+                    ->first();
 
-                                $directorDecisionNormalized = strtoupper(trim((string) $directorDecision));
-                                $application->computed_director_decision = in_array($directorDecisionNormalized, ['APPROVED', 'DECLINED'], true)
-                                    ? $directorDecisionNormalized
-                                    : 'APPROVED';
+                if ($decisionRecord && !empty($decisionRecord->decision)) {
+                    $directorDecision = $decisionRecord->decision;
+                }
+            }
+
+            $directorDecisionNormalized = strtoupper(trim((string) $directorDecision));
+            $application->computed_director_decision = in_array($directorDecisionNormalized, ['APPROVED', 'DECLINED'], true)
+                ? $directorDecisionNormalized
+                : 'APPROVED';
             return view('actions.action_sheet_standalone', compact('application', 'PageTitle'));
 
         } catch (\Exception $e) {
@@ -420,9 +420,9 @@ class ActionsController extends Controller
 
         $ownerName = $this->formatOwnerName($application);
 
-    // Site Plan status defaults to pending until a document is uploaded
-    $sitePlanStatus = 'PENDING';
-    $sitePlanDetails = 'No site plan uploaded';
+        // Site Plan status defaults to pending until a document is uploaded
+        $sitePlanStatus = 'PENDING';
+        $sitePlanDetails = 'No site plan uploaded';
         if (Schema::connection('sqlsrv')->hasTable('recommended_site_plans')) {
             $recommendedPlan = DB::connection('sqlsrv')->table('recommended_site_plans')
                 ->where('application_id', $id)
@@ -431,7 +431,7 @@ class ActionsController extends Controller
                 ->first();
 
             if ($recommendedPlan) {
-                $planStatus = strtolower((string)($recommendedPlan->status ?? ''));
+                $planStatus = strtolower((string) ($recommendedPlan->status ?? ''));
                 $timestamp = $recommendedPlan->updated_at ?? $recommendedPlan->created_at ?? null;
                 $formattedTimestamp = $timestamp ? Carbon::parse($timestamp)->format('d M Y H:i') : null;
 
@@ -461,7 +461,7 @@ class ActionsController extends Controller
                 ->first();
 
             if ($jointInspection) {
-                $isApproved = (int)($jointInspection->is_approved ?? 0) === 1;
+                $isApproved = (int) ($jointInspection->is_approved ?? 0) === 1;
                 $ossStatus = $isApproved ? 'PASSED' : 'PENDING';
                 $ossDetails = $isApproved ? 'Approved by OSS' : 'Pending OSS approval';
 
@@ -473,9 +473,9 @@ class ActionsController extends Controller
         }
 
         // Planning Advice
-        $planningStatusRaw = strtolower((string)($application->planning_recommendation_status ?? ''));
+        $planningStatusRaw = strtolower((string) ($application->planning_recommendation_status ?? ''));
         $planningStatus = $planningStatusRaw === 'approved' ? 'PASSED' : 'DECLINED';
-    $planningDetails = ($application->planning_recommendation_status ?? 'N/A');
+        $planningDetails = ($application->planning_recommendation_status ?? 'N/A');
 
         // Outstanding Land Use Charges
         $landUseChargeStatus = 'NOT PAID';

@@ -247,10 +247,13 @@ function tsFetchFileInfo(fileNo) {
         document.getElementById('ts-file_title').value     = d.file_title || '';
         document.getElementById('ts-applicant_name').value = d.current_holder || d.file_title || '';
         document.getElementById('ts-plot_no').value        = d.plot_no || '';
+        document.getElementById('ts-house_no').value       = d.house_no || '';
+        document.getElementById('ts-street_name').value    = d.street_name || '';
         document.getElementById('ts-location').value       = d.location || '';
         document.getElementById('ts-land_use').value       = d.land_use || '';
         document.getElementById('ts-district').value       = d.district || '';
         document.getElementById('ts-lga').value            = d.lga || '';
+        document.getElementById('ts-state').value          = d.state || '';
         document.getElementById('ts-source_table').value   = d.source_table || '';
         document.getElementById('ts-source_id').value      = d.source_id || '';
 
@@ -281,8 +284,9 @@ function tsFetchFileInfo(fileNo) {
 
 function tsClearFileSelection(event) {
     event.stopPropagation();
-    ['ts-file_no','ts-file_title','ts-applicant_name','ts-plot_no',
-     'ts-location','ts-land_use','ts-district','ts-lga','ts-source_table','ts-source_id']
+    ['ts-file_no','ts-file_title','ts-applicant_name','ts-plot_no','ts-house_no',
+     'ts-street_name','ts-location','ts-land_use','ts-district','ts-lga','ts-state',
+     'ts-source_table','ts-source_id']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
 
     document.getElementById('ts-file-placeholder').classList.remove('hidden');
@@ -373,9 +377,16 @@ function tsOpenEdit(btn) {
     setVal('ts-title_no',            record.title_no);
     setVal('ts-reg_page',            record.reg_page);
     setVal('ts-reg_volume',          record.reg_volume);
+    // Every property field the form submits must be restored here — an unset hidden
+    // input submits as blank and would wipe the stored value on update.
     setVal('ts-plot_no',             record.plot_no);
+    setVal('ts-house_no',            record.house_no);
+    setVal('ts-street_name',         record.street_name);
     setVal('ts-location',            record.location);
     setVal('ts-land_use',            record.land_use);
+    setVal('ts-district',            record.district);
+    setVal('ts-lga',                 record.lga);
+    setVal('ts-state',               record.state);
     setVal('ts-date_of_issue',       record.date_of_issue ? String(record.date_of_issue).substring(0, 10) : '');
     setVal('ts-date_of_expiry',      record.date_of_expiry);
     setVal('ts-initiated_by',        record.initiated_by);
@@ -461,10 +472,13 @@ function tsSubmit() {
         file_title:      g('ts-file_title'),
         applicant_name:  g('ts-applicant_name'),
         plot_no:         g('ts-plot_no'),
+        house_no:        g('ts-house_no'),
+        street_name:     g('ts-street_name'),
         location:        g('ts-location'),
         land_use:        g('ts-land_use'),
         district:        g('ts-district'),
         lga:             g('ts-lga'),
+        state:           g('ts-state'),
         cofo_number:     g('ts-cofo_number'),
         title_no:        g('ts-title_no'),
         reg_page:        g('ts-reg_page'),

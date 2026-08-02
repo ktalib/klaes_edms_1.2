@@ -233,6 +233,9 @@ class IndexingDuplicateController extends Controller
             'tables' => $tables,
             'child_rows' => $childRows,
             'retained_references' => $snapshot['retained_references'] ?? [],
+            // Dealings that were registered against this file number and stayed
+            // in place — only present on records moved after this was recorded.
+            'transaction_references' => $snapshot['transaction_references'] ?? [],
         ]);
     }
 

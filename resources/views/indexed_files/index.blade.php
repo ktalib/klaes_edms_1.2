@@ -463,6 +463,8 @@
             deleteUrlTemplate: @json(route('fileindex.destroy', ['fileindex' => '__ID__'])),
             trackingUrlTemplate: @json(route('fileindexing.batch-tracking-sheet') . '?files=__ID__'),
             canManageActions: @json($canIndexFiles),
+            // "Move to Indexing Duplicates" is hidden unless assign_role is Supper Admin.
+            canMoveToIndexingDuplicates: @json($hasSuperRole),
         };
     </script>
     <script>
@@ -939,6 +941,6 @@
 
 
 
-    <script type="module" src="{{ asset('js/indexed-files/index.js') }}"></script>
+    <script type="module" src="{{ asset('js/indexed-files/index.js') }}?v={{ filemtime(public_path('js/indexed-files/index.js')) }}"></script>
     <script type="module" src="{{ asset('js/indexed-files/view-indexing.js') }}"></script>
 @endsection

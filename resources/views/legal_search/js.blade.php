@@ -1268,13 +1268,13 @@ const executeSearchAjax = (filters, searchData) => {
       return 'mls';
     }
     
-    // KANGIS File Number patterns: allow 3-6 digits after 4-letter prefix
-    if (/^[A-Z]{4}\s?\d{3,6}$/i.test(cleanValue)) {
+    // KANGIS File Number patterns: allow 1-6 digits after 4-letter prefix and optional unit suffix
+    if (/^(MLKN|KNML|KNGP)\s?\d{1,6}([-_]\d{1,3})?$/i.test(cleanValue)) {
       return 'kangis';
     }
     
-    // New KANGIS File Number patterns: KN followed by 2-6 digits
-    if (/^KN\d{2,6}$/i.test(cleanValue)) {
+    // New KANGIS File Number patterns: KN followed by 2-6 digits, tolerating space/dash
+    if (/^KN[\s-]?\d{2,6}$/i.test(cleanValue)) {
       return 'new_kangis';
     }
     
@@ -2067,6 +2067,16 @@ const executeSearchAjax = (filters, searchData) => {
     return (termYears - (nowYear - commencementYear)) + ' Years';
   };
 
+  // Set the Residual Term display and colour it red when the term is negative
+  // (expired, e.g. "-34 Years") so an elapsed title stands out at a glance.
+  const lsSetResidualDisplay = (el, text) => {
+    const value = String(text ?? '');
+    el.textContent = value;
+    const isNegative = /^\s*-\s*\d/.test(value);
+    el.style.color = isNegative ? '#dc2626' : '';
+    el.style.fontWeight = isNegative ? '600' : '';
+  };
+
   // Expiry date of the R of O term = commencement date + term years, as an
   // ISO yyyy-mm-dd string. Returns '' when either part is unknown/invalid.
   const lsComputeExpiryIso = (isoDate, termYears) => {
@@ -2109,7 +2119,7 @@ const executeSearchAjax = (filters, searchData) => {
       input.dataset.autoValue = computed;
     }
     const display = document.getElementById('residual-term-value');
-    if (display) display.textContent = (input?.value || computed || '-');
+    if (display) lsSetResidualDisplay(display, (input?.value || computed || '-'));
     const dateDisplay = document.getElementById('commencement-date-value');
     if (dateDisplay) dateDisplay.textContent = lsFormatCommencementDate(isoDate) || '-';
 
@@ -2494,7 +2504,7 @@ const executeSearchAjax = (filters, searchData) => {
   document.addEventListener('input', (e) => {
     if (e.target && e.target.id === 'residual-term-input') {
       const disp = document.getElementById('residual-term-value');
-      if (disp) disp.textContent = e.target.value.trim() || '-';
+      if (disp) lsSetResidualDisplay(disp, e.target.value.trim() || '-');
     }
   });
 
@@ -3504,7 +3514,82 @@ const executeSearchAjax = (filters, searchData) => {
       }
     });
 
-    return out;
+    return orderRecertGenerations(out);
+  };
+
+  // Lifecycle-transaction rule mirrored from LegalSearchService::orderRecertGenerations().
+  // Recertification exercises print in generation order — First KANGIS Recertification (old
+  // KNML/MLKN/KNGP, 2014–2024) before Second KANGIS Recertification (new KN, 2025–present) —
+  // and each generation's C of O stays with its own recertification.
+  //
+  // The weight/date sort alone gets this wrong: both recerts share weight 8, and a Second
+  // Recertification usually has no C of O of its own, so placeKangisRecertBeforeCofo() leaves
+  // it wherever it landed — which can be ABOVE the First Recertification / C of O pair.
+  const orderRecertGenerations = (rows) => {
+    const typeOf = (r) => String(r?.transaction_type || r?.instrument_type || '').toLowerCase();
+    const isCofo = (r) => typeOf(r).includes('certificate of occupanc');
+    const isRecert = (r) => typeOf(r).includes('recertification');
+
+    // 0 = not a generational KANGIS recert (e.g. the Ministry recertification, which is
+    // hoisted under File Commissioning by Rule 4 and must not be reordered here).
+    const genOf = (r) => {
+      if (!isRecert(r)) return 0;
+      const t = typeOf(r);
+      if (t.includes('second')) return 2;
+      return t.includes('first') ? 1 : 0;
+    };
+
+    // A KANGIS C of O inherits the generation of the recertification sharing its file key,
+    // so it travels with that generation instead of being stranded.
+    const genByKey = new Map();
+    rows.forEach((r) => {
+      const g = genOf(r);
+      if (!g) return;
+      const key = extractKangisLifecycleKey(r);
+      if (key) genByKey.set(key, g);
+    });
+
+    const gens = rows.map((r) => {
+      const g = genOf(r);
+      if (g) return g;
+      if (isCofo(r)) {
+        const key = extractKangisLifecycleKey(r);
+        if (key && genByKey.has(key)) return genByKey.get(key);
+      }
+      return 0;
+    });
+
+    // Each recertification plus the C of O rows already parked directly beneath it forms one
+    // indivisible block. Blocks are reordered among themselves; every other row keeps its
+    // position, so nothing escapes the lifecycle group.
+    const blocks = [];
+    const slots = [];
+    for (let i = 0; i < rows.length;) {
+      if (!gens[i]) { i++; continue; }
+      const gen = gens[i];
+      const block = [rows[i]];
+      slots.push(i);
+      let j = i + 1;
+      while (j < rows.length && gens[j] === gen && isCofo(rows[j])) {
+        block.push(rows[j]);
+        slots.push(j);
+        j++;
+      }
+      blocks.push({ gen, rows: block });
+      i = j;
+    }
+
+    if (blocks.length < 2) return rows;
+
+    const order = blocks.map((_, i) => i);
+    order.sort((a, b) => (blocks[a].gen - blocks[b].gen) || (a - b));
+
+    const flat = [];
+    order.forEach((b) => blocks[b].rows.forEach((r) => flat.push(r)));
+
+    const out2 = rows.slice();
+    slots.forEach((idx, k) => { out2[idx] = flat[k]; });
+    return out2;
   };
 
   // Business rule: a Mortgage (Deed of Mortgage / Tripartite Mortgage) is later discharged by a

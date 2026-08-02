@@ -176,21 +176,40 @@
       table-layout: fixed;
     }
 
+    table.files-grid th,
     table.files-grid td {
       border: 1px solid var(--grid);
       border-top: none;
       border-left: none;
-      padding: 2px 4px;
+      padding: 2px 5px;
       font-size: 8.5pt;
       text-align: center;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      word-break: break-word;
     }
 
+    table.files-grid thead th {
+      background: #f1f1e0;
+      font-weight: 700;
+      font-size: 7.5pt;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    /* Names read better ranged left; the codes stay centred. */
+    table.files-grid th:nth-child(3),
+    table.files-grid td:nth-child(3) {
+      text-align: left;
+      padding-left: 8px;
+    }
+
+    table.files-grid col.f-sn    { width: 8%; }
+    table.files-grid col.f-no    { width: 24%; }
+    table.files-grid col.f-title { width: 42%; }
+    table.files-grid col.f-shelf { width: 26%; }
+
+    table.files-grid tr th:last-child,
     table.files-grid tr td:last-child { border-right: none; }
-    table.files-grid tr:last-child td { border-bottom: none; }
-    table.files-grid td.blank { background: #f4f4f4; }
+    table.files-grid tbody tr:last-child td { border-bottom: none; }
 
     .empty {
       border: 1px dashed #94a3b8;
@@ -325,9 +344,6 @@
       }
 
       $totalFiles = collect($rows)->sum('file_count');
-
-      // File numbers per line in the nested grid under each batch row.
-      $filesPerRow = 6;
   @endphp
 
   <div class="toolbar no-print">
@@ -390,29 +406,35 @@
               <td>{{ $row['shelf'] !== '' ? $row['shelf'] : '—' }}</td>
               <td class="strong">{{ $row['shelf_rack'] !== '' ? $row['shelf_rack'] : '—' }}</td>
             </tr>
-            @if (!empty($row['file_numbers']))
-              @php
-                  // Grid the file numbers row-major, 6 per line, padding the last
-                  // line so the sub-table keeps its column rhythm.
-                  $chunks  = array_chunk($row['file_numbers'], $filesPerRow);
-                  $lastPad = $filesPerRow - count(end($chunks));
-              @endphp
+            @if (!empty($row['files']))
               <tr class="files-row">
                 <td class="files" colspan="7">
-                  <span class="files-label">File Nos ({{ count($row['file_numbers']) }})</span>
+                  <span class="files-label">Files in Batch ({{ count($row['files']) }})</span>
                   <table class="files-grid">
-                    @foreach ($chunks as $chunkIndex => $chunk)
+                    <colgroup>
+                      <col class="f-sn">
+                      <col class="f-no">
+                      <col class="f-title">
+                      <col class="f-shelf">
+                    </colgroup>
+                    <thead>
                       <tr>
-                        @foreach ($chunk as $number)
-                          <td>{{ $number }}</td>
-                        @endforeach
-                        @if ($chunkIndex === count($chunks) - 1)
-                          @for ($i = 0; $i < $lastPad; $i++)
-                            <td class="blank"></td>
-                          @endfor
-                        @endif
+                        <th>SN</th>
+                        <th>FileNo</th>
+                        <th>File Title</th>
+                        <th>Shelf/Rack Location</th>
                       </tr>
-                    @endforeach
+                    </thead>
+                    <tbody>
+                      @foreach ($row['files'] as $fileIndex => $file)
+                        <tr>
+                          <td>{{ $fileIndex + 1 }}</td>
+                          <td>{{ $file['file_number'] }}</td>
+                          <td>{{ $file['file_title'] !== '' ? $file['file_title'] : '—' }}</td>
+                          <td>{{ $file['shelf_location'] !== '' ? $file['shelf_location'] : ($row['shelf_rack'] !== '' ? $row['shelf_rack'] : '—') }}</td>
+                        </tr>
+                      @endforeach
+                    </tbody>
                   </table>
                 </td>
               </tr>

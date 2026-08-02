@@ -20,7 +20,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register()
     {
-        //
+        // Default In-process In-transit Tracking. Shared for the whole request so
+        // the commissioning register is read once per page (the list endpoint primes
+        // it) instead of once per row by every caller — the location resolver and
+        // the tracker decoration both ask it about the same file numbers.
+        $this->app->singleton(\App\Services\FileCommissioningTrackingService::class);
     }
 
     /**

@@ -1516,16 +1516,39 @@ class FileTrackerApiController extends Controller
                                  ->orderByDesc('id')
                                  ->first();
 
+            $commissioningService = app(\App\Services\FileCommissioningTrackingService::class);
+
             if (!$tracker) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'File tracker not found'
-                ], 404);
+                // Never tracked, but commissioned through KLAES: the file is in process
+                // at the File Commissioning Office (DIIT), so it has a history of one
+                // line rather than none.
+                $commissioning = $commissioningService->infoFor((string) $identifier);
+
+                if ($commissioning === null) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'File tracker not found'
+                    ], 404);
+                }
+
+                $tracker = $commissioningService->syntheticTracker($commissioning);
             }
 
             $movementLog = is_array($tracker->movement_log)
                 ? $tracker->movement_log
                 : (json_decode((string) $tracker->movement_log, true) ?? []);
+
+            // The commissioning line always opens the timeline of a commissioned file.
+            $priorMovements = $tracker->getAttribute('is_diit')
+                ? []
+                : $this->getPriorMovements($tracker);
+            $commissioning = $commissioningService->infoFor($tracker->file_number);
+            if ($commissioning !== null && !$tracker->getAttribute('is_diit')) {
+                array_unshift($priorMovements, $commissioningService->movementEntry(
+                    $commissioning,
+                    $this->firstMovementMoment($priorMovements, $movementLog)
+                ));
+            }
 
             return response()->json([
                 'success' => true,
@@ -1549,7 +1572,12 @@ class FileTrackerApiController extends Controller
                     'request_purpose_name' => $tracker->request_purpose_name,
                     'completion_percentage' => $tracker->completion_percentage,
                     'movement_history' => $movementLog,
-                    'prior_movements' => $this->getPriorMovements($tracker),
+                    'prior_movements' => $priorMovements,
+                    // DIIT: the file was commissioned through KLAES, so the caller drops
+                    // its synthetic "Registry / Archive" home row — the commissioning line
+                    // opens the history instead.
+                    'is_commissioned' => $commissioning !== null,
+                    'is_diit' => (bool) $tracker->getAttribute('is_diit'),
                     'notes' => $tracker->notes
                 ],
                 'message' => 'File tracker retrieved successfully'
@@ -1561,6 +1589,36 @@ class FileTrackerApiController extends Controller
                 'message' => 'Error tracking file: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * When the file first left the File Commissioning Office — the earliest log-in
+     * across every movement it has. Null when it has never been logged anywhere, in
+     * which case the commissioning line stays open (still in process there).
+     */
+    protected function firstMovementMoment(array ...$logs): ?\Carbon\Carbon
+    {
+        $earliest = null;
+
+        foreach ($logs as $log) {
+            foreach ($log as $entry) {
+                if (!is_array($entry) || empty($entry['log_in_date'])) {
+                    continue;
+                }
+
+                $moment = rescue(
+                    fn () => \Carbon\Carbon::parse(trim($entry['log_in_date'] . ' ' . ($entry['log_in_time'] ?? '00:00'))),
+                    null,
+                    false
+                );
+
+                if ($moment && ($earliest === null || $moment->lessThan($earliest))) {
+                    $earliest = $moment;
+                }
+            }
+        }
+
+        return $earliest;
     }
 
     protected function getPriorMovements(FileTracker $tracker): array

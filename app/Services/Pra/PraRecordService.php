@@ -475,9 +475,51 @@ class PraRecordService
             $payload['serialNo'] = '0';
             $payload['pageNo'] = '0';
             $payload['volumeNo'] = '0';
+
+            $this->assertTransferOfTitleHasPartyOne($payload);
         }
 
         return $payload;
+    }
+
+    /**
+     * A Transfer of Title (OP) records a change of holder, so its Party 1 is the
+     * previous holder — the one fact the row exists to capture. Several callers have
+     * historically written it blank (an empty-string Grantee slipping through a ??
+     * fallback, a missing mother-OP lookup), producing rows that render "—" as the
+     * original holder and read as an ownerless dealing in Legal Search.
+     *
+     * Guarding here rather than in each caller because every creation path — FFR
+     * capture, Match OP, batch commissioning — funnels through createRecord(), and
+     * new callers get the check for free.
+     *
+     * Fails loudly instead of defaulting: there is no safe value to invent for a
+     * prior owner, and a wrong name is worse than a rejected write.
+     */
+    private function assertTransferOfTitleHasPartyOne(array $payload): void
+    {
+        $partyOne = trim((string) ($payload['party_1'] ?? $payload['Grantor'] ?? ''));
+
+        if ($partyOne !== '') {
+            return;
+        }
+
+        Log::error('PRA create blocked: Transfer of Title (OP) has no Party 1 / Grantor', [
+            'mlsFNo' => $payload['mlsFNo'] ?? null,
+            'fileno' => $payload['fileno'] ?? null,
+            'temp_fileno' => $payload['temp_fileno'] ?? null,
+            'prop_id' => $payload['prop_id'] ?? null,
+            'parent_prop_id' => $payload['parent_prop_id'] ?? null,
+            'source' => $payload['source'] ?? null,
+            'party_2' => $payload['party_2'] ?? $payload['Grantee'] ?? null,
+        ]);
+
+        throw ValidationException::withMessages([
+            'party_1' => [
+                'A Transfer of Title (OP) requires Party 1 (the previous holder). '
+                . 'It could not be resolved from the source Occupancy Permit — set it explicitly and retry.',
+            ],
+        ]);
     }
 
     private function isOssTransferOfTitleOp(array $payload): bool

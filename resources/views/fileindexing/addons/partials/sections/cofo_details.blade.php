@@ -203,6 +203,13 @@
                 if (toggle && !toggle.checked) return null;
                 if (container && container.classList.contains('hidden')) return null;
 
+                // A KANGIS physical variant is saved under its own _N file number,
+                // so the base file's CofO is not a duplicate of what is being
+                // captured here — checking it would block a legitimate save.
+                if (typeof window.isKangisVariantMode === 'function' && window.isKangisVariantMode()) {
+                    return null;
+                }
+
                 const fileNumber = val('fileno') || val('file-number-display');
                 return {
                     file_number: fileNumber,

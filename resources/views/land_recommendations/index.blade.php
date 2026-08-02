@@ -16,15 +16,28 @@
                     @endif
                 </div>
                 <div class="flex items-center gap-3 w-full md:w-auto">
-                    <form action="{{ route('land-recommendations.index') }}" method="GET" class="relative group flex-1 md:w-80">
+                    <form action="{{ route('land-recommendations.index') }}" method="GET" class="flex items-center gap-3 flex-1 md:w-auto">
                         <input type="hidden" name="type" value="{{ !empty($isOssView) ? 'OSS' : 'ROFO' }}">
                         <input type="hidden" name="tab" value="{{ $tab ?? 'not_printed' }}">
-                        <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors"></i>
-                        <input type="text" 
-                               name="search" 
-                               value="{{ request('search') }}"
-                               placeholder="Search file, applicant, or location..." 
-                               class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all shadow-sm">
+                        
+                        <select name="user_id" onchange="this.form.submit()" 
+                                class="pl-3 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all shadow-sm cursor-pointer font-medium text-slate-700">
+                            <option value="all" {{ request('user_id') === 'all' ? 'selected' : '' }}>All Users</option>
+                            @foreach($filterUsers as $fUser)
+                                <option value="{{ $fUser->id }}" {{ (request('user_id', Auth::id()) == $fUser->id && request('user_id') !== 'all') ? 'selected' : '' }}>
+                                    {{ $fUser->name }}
+                                </option>
+                            @endforeach
+                        </select>
+
+                        <div class="relative group flex-1 md:w-80">
+                            <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors"></i>
+                            <input type="text" 
+                                   name="search" 
+                                   value="{{ request('search') }}"
+                                   placeholder="Search file, applicant, or location..." 
+                                   class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all shadow-sm">
+                        </div>
                     </form>
                     <button type="button" onclick="openRecordsExportModal()"
                         class="inline-flex items-center gap-2 px-5 py-3 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 whitespace-nowrap">
@@ -106,13 +119,13 @@
             {{-- Printed / Not-Printed tabs --}}
             @php $tab = $tab ?? 'not_printed'; @endphp
             <div class="flex items-center gap-2 mb-4 bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm w-full sm:w-max">
-                <a href="{{ route('land-recommendations.index', array_filter(['type' => !empty($isOssView) ? 'OSS' : 'ROFO', 'tab' => 'not_printed', 'search' => request('search')])) }}"
+                <a href="{{ route('land-recommendations.index', array_filter(['type' => !empty($isOssView) ? 'OSS' : 'ROFO', 'tab' => 'not_printed', 'search' => request('search'), 'user_id' => request('user_id')])) }}"
                    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'not_printed' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100' }}">
                     <i data-lucide="file-clock" class="h-4 w-4"></i>
                     Not Printed
                     <span class="px-2 py-0.5 rounded-full text-[10px] font-black {{ $tab === 'not_printed' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500' }}">{{ number_format($stats['not_printed']) }}</span>
                 </a>
-                <a href="{{ route('land-recommendations.index', array_filter(['type' => !empty($isOssView) ? 'OSS' : 'ROFO', 'tab' => 'printed', 'search' => request('search')])) }}"
+                <a href="{{ route('land-recommendations.index', array_filter(['type' => !empty($isOssView) ? 'OSS' : 'ROFO', 'tab' => 'printed', 'search' => request('search'), 'user_id' => request('user_id')])) }}"
                    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'printed' ? 'bg-green-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100' }}">
                     <i data-lucide="printer-check" class="h-4 w-4"></i>
                     Printed
@@ -178,7 +191,22 @@
                                 </td>
                                 @endif
                                 <td class="px-4 py-2 text-center text-slate-500 whitespace-nowrap">{{ ($recommendations->currentPage() - 1) * $recommendations->perPage() + $loop->iteration }}</td>
-                                <td class="px-4 py-2 font-mono font-bold text-slate-900 whitespace-nowrap">{{ $rec->file_number }}</td>
+                                <td class="px-4 py-2 font-mono font-bold text-slate-900 whitespace-nowrap">
+                                    <div>{{ $rec->file_number }}</div>
+                                    {{-- The recommendation's own Serial No., which exists only once it has
+                                         been printed. land_rofo_serial_no is deliberately not shown here:
+                                         it is the RofO's security paper code, not a recommendation serial. --}}
+                                    @php $recSc = $recSerials[strtoupper(trim((string) $rec->file_number))] ?? null; @endphp
+                                    @if($recSc)
+                                        <div style="display:flex; align-items:center; gap:5px; margin-top:3px; letter-spacing:normal;" title="Serial No.">
+                                            <span style="line-height:1; color:#dc2626; display:inline-flex; flex-direction:column; align-items:center; font-weight:900; font-family:Arial, sans-serif;">
+                                                <span style="border-bottom:1.5px solid #dc2626; padding-bottom:1px; font-size:11px;">{{ $recSc['alphabet'] }}</span>
+                                                <span style="padding-top:1px; font-size:11px;">{{ $recSc['digits_start'] }}</span>
+                                            </span>
+                                            <span style="font-size:18px; font-weight:900; letter-spacing:0.1em; color:#dc2626; font-family:'Courier New', monospace;">{{ $recSc['digits_end'] }}</span>
+                                        </div>
+                                    @endif
+                                </td>
                                 <td class="px-4 py-2 text-slate-700 whitespace-nowrap uppercase font-bold text-blue-900">{{ $rec->applicant_name }}</td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->purpose_of_clause }}</td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap uppercase">{{ $rec->display_location }}</td>

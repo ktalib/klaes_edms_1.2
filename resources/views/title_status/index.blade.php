@@ -320,10 +320,13 @@
                 <input type="hidden" id="ts-file_no"       name="file_no">
                 <input type="hidden" id="ts-file_title"    name="file_title">
                 <input type="hidden" id="ts-plot_no"       name="plot_no">
+                <input type="hidden" id="ts-house_no"      name="house_no">
+                <input type="hidden" id="ts-street_name"   name="street_name">
                 <input type="hidden" id="ts-location"      name="location">
                 <input type="hidden" id="ts-land_use"      name="land_use">
                 <input type="hidden" id="ts-district"      name="district">
                 <input type="hidden" id="ts-lga"           name="lga">
+                <input type="hidden" id="ts-state"         name="state">
                 <input type="hidden" id="ts-source_table"  name="source_table">
                 <input type="hidden" id="ts-source_id"     name="source_id">
 

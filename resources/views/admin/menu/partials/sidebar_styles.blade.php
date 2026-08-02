@@ -177,4 +177,108 @@
 .sidebar-content[data-scroll="middle"] {
   border-left-color: #3b82f6;
 }
+
+/* --- Responsive & Collapsible Sidebar Overrides --- */
+
+/* Transition for layout elements */
+.sidebar, .sidebar-header, #sidebar-logo, .sidebar-item, .sidebar-module-header, .sidebar-submodule-header, #sidebar-backdrop {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Collapsed Desktop State (HTML class sidebar-collapsed) */
+@media (min-width: 1024px) {
+  html.sidebar-collapsed .sidebar {
+    width: 72px;
+  }
+
+  html.sidebar-collapsed .sidebar-header {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    justify-content: center;
+  }
+
+  html.sidebar-collapsed #sidebar-logo {
+    height: 28px;
+    width: auto;
+  }
+
+  /* Hide toggle button unless hovered */
+  html.sidebar-collapsed #sidebar-collapse-toggle {
+    position: absolute;
+    right: 8px;
+    background: white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e2e8f0;
+    display: none;
+    z-index: 50;
+  }
+
+  html.sidebar-collapsed .sidebar-header:hover #sidebar-collapse-toggle {
+    display: flex;
+  }
+
+  /* Hide labels, badges, and chevrons */
+  html.sidebar-collapsed .sidebar-item span,
+  html.sidebar-collapsed .sidebar-module-header span,
+  html.sidebar-collapsed .sidebar-submodule-header span,
+  html.sidebar-collapsed .sidebar-module-header i[data-chevron],
+  html.sidebar-collapsed .sidebar-submodule-header i[data-chevron],
+  html.sidebar-collapsed .sidebar-badge {
+    display: none !important;
+  }
+
+  /* Align icons in center */
+  html.sidebar-collapsed .sidebar-item,
+  html.sidebar-collapsed .sidebar-module-header,
+  html.sidebar-collapsed .sidebar-submodule-header {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+    margin-left: 4px;
+    margin-right: 4px;
+    height: 40px;
+  }
+
+  html.sidebar-collapsed .sidebar-item i,
+  html.sidebar-collapsed .sidebar-module-header i:not([data-chevron]),
+  html.sidebar-collapsed .sidebar-submodule-header i:not([data-chevron]) {
+    margin-right: 0 !important;
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  /* Hide nested content when collapsed */
+  html.sidebar-collapsed .sidebar-content [data-content] {
+    display: none !important;
+  }
+
+  /* Rotate chevron icon when collapsed */
+  html.sidebar-collapsed #collapse-chevron {
+    transform: rotate(180deg);
+  }
+}
+
+/* Mobile Sidebar Drawer State (Width < 1024px) */
+@media (max-width: 1023px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 40;
+    transform: translateX(-100%);
+    width: 280px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.15);
+  }
+
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+
+  /* Overlay Backdrop Active State */
+  #sidebar-backdrop.active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
 </style>

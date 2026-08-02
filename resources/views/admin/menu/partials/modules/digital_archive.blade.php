@@ -52,7 +52,7 @@
       <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md" data-section="digitalFilesEdmsUpdate">
         <div class="flex items-center gap-2">
         <i data-lucide="refresh-cw" class="h-4 w-4 text-blue-500"></i>
-        <span>EDMS Update</span>
+        <span>DMS Update</span>
         </div>
         <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200" data-chevron="digitalFilesEdmsUpdate"></i>
       </div>

@@ -405,6 +405,51 @@
             text-align: center;
             padding-top: 5px;
         }
+
+        /* ── Re-issuance only ──────────────────────────────────────────────
+           Superseding notice: sits above the coat of arms and stops short of the
+           right edge so it cannot run under the absolutely-positioned version /
+           security-code block. */
+        .supersede-notice {
+            /* Matches docs/templates/land/rofo_supersede.html: full-width so it centres
+               on the page, and lifted above the ORIGINAL / security-code block (which
+               starts at top: 10px inside .inner-content) so the two never collide. */
+            position: absolute;
+            top: -10px;
+            left: 0;
+            right: 0;
+            margin: 0;
+            font-size: 14.5px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.2px;
+            line-height: 20px;
+            color: #000;
+            text-align: center;
+            white-space: nowrap;   /* must stay on one line */
+            z-index: 2;
+        }
+
+        /* RE-ISSUANCE watermark, on both pages. It sits ABOVE the letter (z-index 5):
+           the content wrapper and its ornate border paint over anything lower, which
+           left the watermark showing only in the page margin. The low alpha keeps the
+           text underneath perfectly readable. */
+        .reissuance-watermark {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-30deg);
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 72px;
+            font-weight: 900;
+            letter-spacing: 8px;
+            color: rgba(190, 24, 24, 0.15);
+            white-space: nowrap;
+            pointer-events: none;
+            z-index: 5;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
     </style>
 </head>
 <body spellcheck="false">
@@ -413,8 +458,23 @@
     </div>
 
     @php
+        // Re-issuance (?supersede=1): same letter, plus the superseding notice and
+        // the RE-ISSUANCE watermark — and it is issued as the ORIGINAL copy only,
+        // never the duplicate/triplicate set.
+        $isReissuance = request()->boolean('supersede');
+
         $requestedStatus = request('status', 'Original');
-        $printVersions = ($requestedStatus === 'Batch') ? ['Original', 'Duplicate', 'Triplicate'] : [$requestedStatus];
+        $printVersions = $isReissuance
+            ? ['Original']
+            : (($requestedStatus === 'Batch') ? ['Original', 'Duplicate', 'Triplicate'] : [$requestedStatus]);
+
+        // Date the superseded letter was issued. Passed in via ?superseded_date=...,
+        // else the record's own issue date — the same value DATE OF ISSUE prints,
+        // which is when the previous letter went out.
+        $supersedeOn = trim((string) ($supersededDate ?? ''));
+        if ($isReissuance && $supersedeOn === '') {
+            $supersedeOn = optional($recommendation->rofo_generated_at ?? $recommendation->created_at)->format('jS F, Y');
+        }
 
         $versionColors = [
             'Original' => '#ff0000',
@@ -427,10 +487,14 @@
     <!-- PAGE 1 – Signature line uses exact CSS technique, no double lines -->
         {{-- <div class="page-container" id="page1-{{ $index }}" style="{{ $index > 0 ? 'page-break-before: always;' : '' }} background-image: url('/assets/images/pages/backgrand.jpg'); background-size: cover; background-position: center; background-repeat: no-repeat;">     --}}
 
-                 <div class="page-container" id="page1-{{ $index }}">     
+                 <div class="page-container" id="page1-{{ $index }}">
 
 
         <div class="security-bg"></div>
+
+        @if($isReissuance)
+            <div class="reissuance-watermark">RE-ISSUANCE</div>
+        @endif
 
         <!-- @if($recommendation->land_rofo_serial_no)
             <div style="position: absolute; top: 15mm; right: 25mm; font-family: 'Arial', sans-serif; font-weight: 900; font-size: 16pt; color: #c90202; z-index: 50; letter-spacing: 2px;">
@@ -467,6 +531,13 @@
                     @endif
                 </div>
 
+                @if($isReissuance)
+                    <!-- Superseding notice — replaces the handwritten line on the reissued letter. -->
+                    <div class="supersede-notice">
+                        This letter of grant supersedes the previous one issued on {{ $supersedeOn }}
+                    </div>
+                @endif
+
                 <!-- Header: Coat of Arms centered, QR on the left -->
                 <div style="position: relative; margin-bottom: 4px; margin-top: 10px; min-height: 110px;">
                     <div style="text-align: center;">
@@ -497,6 +568,15 @@
                     if ($printLocation !== '') {
                         $printLocation = mb_strtoupper($printLocation, 'UTF-8');
                     }
+
+                    // Applications derived from an existing file (Plot Subdivision / Plot
+                    // Merger / Change of Purpose) cite the parent file number in place of
+                    // the plan number, so the PLOT/PLAN No. box drops the plan part and
+                    // shows only the plot no (blank when there isn't one).
+                    $oldFileNumber = trim((string) ($recommendation->old_file_number ?? ''));
+                    $layoutPlanNo  = trim((string) ($recommendation->layout_plan_no ?? ''));
+                    $planNoRef     = $oldFileNumber !== '' ? $oldFileNumber : $layoutPlanNo;
+                    $plotPlanNo    = $oldFileNumber !== '' ? $plotNo : $plotNo . ' / ' . $layoutPlanNo;
                 @endphp
                 <!-- REF-GRID SECTION -->
                 <div class="ref-grid">
@@ -518,7 +598,7 @@
                                 R of O No:<span class="inline-data" style="min-width: 235px">{{ $recommendation->file_number }}</span>
                             </div>
                             <div class="row">
-                                PLOT/PLAN No:<span class="inline-data" style="min-width: 190px; margin-top: 10px">{{ $recommendation->plot_number }} / {{ $recommendation->layout_plan_no }}</span>
+                                PLOT/PLAN No:<span class="inline-data" style="min-width: 190px; margin-top: 10px">{{ $plotPlanNo }}</span>
                             </div>
                             <div class="row">
                                 LOCATION:<span class="inline-data" style="min-width: 220px; margin-top: 10px">{{ $printLocation }}</span>
@@ -552,7 +632,7 @@
                   
 
 
-                     as per plan No.  <span class="inline-data" style="min-width: 50px">{{ $recommendation->layout_plan_no }}</span> on following the conditions:   </p>
+                     as per plan No.  <span class="inline-data" style="min-width: 50px">{{ $planNoRef }}</span> on following the conditions:   </p>
                     <div class="condition-item">
                         <strong>1. Payment of:</strong>
                         <div class="sub-item">
@@ -657,7 +737,11 @@
     <!-- PAGE 2 – Acceptance Letter -->
     <div class="page-container" id="page2-{{ $index }}" style="page-break-before: always;">
         <div class="security-bg"></div>
-        
+
+        @if($isReissuance)
+            <div class="reissuance-watermark">RE-ISSUANCE</div>
+        @endif
+
         <div class="content-wrapper simple-margin">
             <div class="inner-content">
                 <div class="applicant-address-block">

@@ -846,6 +846,19 @@
 
                     // Try to parse address for components if editing
                     this.parseAddress(this.formData.address);
+
+                    // Stored columns win over whatever was parsed out of the address string
+                    if (this.formData.property_no) this.formData.addr_house_no = this.formData.property_no;
+                    if (this.formData.street_name) this.formData.addr_street = this.formData.street_name;
+                    if (this.formData.lga) this.formData.addr_lga = this.formData.lga;
+                    if (this.formData.town_city) {
+                        this.formData.addr_district = this.districts.includes(this.formData.town_city)
+                            ? this.formData.town_city
+                            : 'Other';
+                        if (this.formData.addr_district === 'Other') {
+                            this.formData.custom_district = this.formData.town_city;
+                        }
+                    }
                 } else {
                     this.isEdit = false;
                     this.resetForm();
@@ -898,6 +911,14 @@
                 if (this.formData.addr_lga) addr += `, ${this.formData.addr_lga}`;
                 if (this.formData.addr_state) addr += `, ${this.formData.addr_state}`;
                 this.formData.address = addr.trim();
+
+                // Mirror the address components onto the persisted columns the
+                // report template prints as c) Plot/Prop No, d) Street Name,
+                // g) Town/City and h) L.G.A — without this they save empty.
+                this.formData.property_no = this.formData.addr_house_no || '';
+                this.formData.street_name = this.formData.addr_street || '';
+                this.formData.town_city = district || '';
+                this.formData.lga = this.formData.addr_lga || '';
             },
 
             closeModal() {

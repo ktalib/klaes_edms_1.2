@@ -3689,43 +3689,38 @@ class FileIndexingController extends Controller
             // the original grouping entry is updated in-place inside the transaction.
             $kangisGroupingCloned = false;
             $groupingTable = null;
+            $kangisResolvedFileNo = null;
+            $kangisBaseFileNo = null;
             if ($isKangisVariant) {
                 $groupingService = app(\App\Services\GroupingFileNumberService::class);
                 $groupingTable = $groupingService->getTableName($registryContext);
                 $baseFileNo = $grouping->mls_fileno ?? $grouping->awaiting_fileno ?? null;
 
-                // Collision check: does the bare file number already exist?
-                $bareAlreadyIndexed = $baseFileNo && DB::connection('sqlsrv')
-                    ->table('file_indexings')
-                    ->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = UPPER(?)', [trim((string) $baseFileNo)])
-                    ->exists();
+                // Settle the variant's own file number BEFORE the insert, and retro-rename
+                // the incumbent to _1 when this is the first collision. file_indexings.
+                // file_number is uniquely indexed, so inserting the bare number and
+                // renaming afterwards (what resolveAndSave does) fails on the INSERT.
+                $kangisBaseFileNo = trim((string) ($baseFileNo ?? ''));
+                if ($kangisBaseFileNo !== '') {
+                    $kangisPreResolve = app(KangisFileNoPlaceholderService::class)
+                        ->resolveForNewRecord($kangisBaseFileNo);
+                    $kangisResolvedFileNo = $kangisPreResolve['resolved'];
+                    $validated['file_number'] = $kangisResolvedFileNo;
 
-                // Count existing _N suffixed variants.
-                $suffixedExistingCount = $baseFileNo ? DB::connection('sqlsrv')
-                    ->table('file_indexings')
-                    ->where('file_number', 'like', str_replace('_', '[_]', $baseFileNo) . '[_]%')
-                    ->pluck('file_number')
-                    ->filter(function ($fn) use ($baseFileNo) {
-                        $suffix = substr(trim((string) $fn), strlen($baseFileNo) + 1);
-                        return ctype_digit($suffix) && $suffix !== '';
-                    })
-                    ->count() : 0;
+                    Log::info('FileIndexing::store - KANGIS variant: file number resolved pre-insert', [
+                        'base_file_no' => $kangisBaseFileNo,
+                        'resolved' => $kangisResolvedFileNo,
+                        'renamed_siblings' => $kangisPreResolve['siblings'],
+                    ]);
+                }
 
-                // Clone the grouping whenever any collision exists (bare OR suffixed variants).
-                // Case B (bare exists, no suffixed): service will rename bare→_1, new record→_2
-                // Case C/D (suffixed exist): service will assign _(count+1)
-                $anyCollision = $bareAlreadyIndexed || $suffixedExistingCount > 0;
+                // Clone the grouping whenever the variant ended up with a suffix — a bare
+                // resolution means this is the first record for the number and the original
+                // grouping row is updated in place inside the transaction instead.
+                $anyCollision = $kangisResolvedFileNo !== null && $kangisResolvedFileNo !== $kangisBaseFileNo;
 
                 if ($anyCollision) {
-                    // Determine the suffix the service will assign to the new record.
-                    if ($bareAlreadyIndexed && $suffixedExistingCount === 0) {
-                        // First collision: bare→_1 (retroactive), new record→_2
-                        $variantSuffix = 2;
-                    } else {
-                        // Subsequent collision: next after existing suffixed variants
-                        $variantSuffix = $suffixedExistingCount + 1;
-                    }
-                    $suffixedFileNo = $baseFileNo . '_' . $variantSuffix;
+                    $suffixedFileNo = $kangisResolvedFileNo;
 
                     $newTrackingId = 'TRK-' . strtoupper(substr(bin2hex(random_bytes(5)), 0, 8))
                         . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
@@ -3778,9 +3773,35 @@ class FileIndexingController extends Controller
                         ];
                     }
 
-                    $clonedGroupingId = DB::connection('sqlsrv')
-                        ->table($groupingTable)
-                        ->insertGetId($groupingCloneData);
+                    // The clone lands outside the save transaction, so an attempt that
+                    // fails later leaves the row behind. kangis_awaiting_fileno is
+                    // uniquely indexed (UX_KANGIS_FileNo), which turned that leftover
+                    // into a hard duplicate-key error on the retry — reuse it instead.
+                    $existingClone = $groupingTable === 'kangis_grouping'
+                        ? DB::connection('sqlsrv')
+                            ->table('kangis_grouping')
+                            ->whereRaw('UPPER(LTRIM(RTRIM(kangis_awaiting_fileno))) = UPPER(?)', [$suffixedFileNo])
+                            ->first(['id', 'tracking_id'])
+                        : null;
+
+                    if ($existingClone) {
+                        $clonedGroupingId = $existingClone->id;
+                        $newTrackingId = $existingClone->tracking_id ?: $newTrackingId;
+
+                        DB::connection('sqlsrv')
+                            ->table('kangis_grouping')
+                            ->where('id', $clonedGroupingId)
+                            ->update(array_merge($groupingCloneData, ['tracking_id' => $newTrackingId]));
+
+                        Log::info('FileIndexing::store - KANGIS variant: reused orphaned grouping clone', [
+                            'grouping_id' => $clonedGroupingId,
+                            'file_no' => $suffixedFileNo,
+                        ]);
+                    } else {
+                        $clonedGroupingId = DB::connection('sqlsrv')
+                            ->table($groupingTable)
+                            ->insertGetId($groupingCloneData);
+                    }
 
                     // Reload using the service so aliases are applied consistently
                     $grouping = $groupingService->findById($registryContext, $clonedGroupingId);
@@ -3794,7 +3815,7 @@ class FileIndexingController extends Controller
                         'cloned_grouping_id' => $clonedGroupingId,
                         'new_tracking_id' => $newTrackingId,
                         'kangis_placeholder' => $request->input('kangis_fileno_placeholder'),
-                        'variant_suffix' => $variantSuffix,
+                        'resolved_file_no' => $kangisResolvedFileNo,
                     ]);
                 } else {
                     // No collision: first time this file number is indexed with a placeholder.
@@ -3997,7 +4018,7 @@ class FileIndexingController extends Controller
                 }
             }
 
-            DB::connection('sqlsrv')->transaction(function () use (&$fileIndexing, &$grouping, &$kangisPlaceholderResult, $isKangisVariant, $kangisGroupingCloned, $groupingTable, $persistableData, $groupingIdValue, $groupingSyncPayload, $sourceFileId, $fileNumberForUpdate, $trackingId, $resolvedTestControl, $validated, $indexingType, $rawFileTitles, $relatedFileNos, $relatedDetails, $request, $resolvedDistrictInput, $existingTempRecord) {
+            DB::connection('sqlsrv')->transaction(function () use (&$fileIndexing, &$grouping, &$kangisPlaceholderResult, $isKangisVariant, $kangisGroupingCloned, $groupingTable, $kangisResolvedFileNo, $kangisBaseFileNo, $persistableData, $groupingIdValue, $groupingSyncPayload, $sourceFileId, $fileNumberForUpdate, $trackingId, $resolvedTestControl, $validated, $indexingType, $rawFileTitles, $relatedFileNos, $relatedDetails, $request, $resolvedDistrictInput, $existingTempRecord) {
                 // Create Main Record or Update Existing Temporary Record
                 if ($existingTempRecord) {
                     $fileIndexing = $existingTempRecord;
@@ -4015,7 +4036,21 @@ class FileIndexingController extends Controller
                 if ($rawKangisPlaceholder !== '') {
                     try {
                         $kangisService = app(KangisFileNoPlaceholderService::class);
-                        $kangisPlaceholderResult = $kangisService->resolveAndSave($rawKangisPlaceholder, $fileIndexing->id);
+
+                        if ($kangisResolvedFileNo !== null) {
+                            // Already settled before the insert (and any incumbent already
+                            // renamed to _1) — resolveAndSave would re-derive a suffix from
+                            // the row's own suffixed number and get it wrong.
+                            $kangisService->finalizeResolved(
+                                $rawKangisPlaceholder,
+                                $fileIndexing->id,
+                                $kangisBaseFileNo,
+                                $kangisResolvedFileNo
+                            );
+                            $kangisPlaceholderResult = ['resolved' => $kangisResolvedFileNo, 'siblings' => []];
+                        } else {
+                            $kangisPlaceholderResult = $kangisService->resolveAndSave($rawKangisPlaceholder, $fileIndexing->id);
+                        }
                     } catch (\Throwable $e) {
                         Log::warning('KangisFileNoPlaceholderService failed', [
                             'file_id' => $fileIndexing->id,

@@ -1,8 +1,16 @@
 <div class="sidebar-footer border-t border-gray-200 p-4">
   <div class="flex items-center gap-3">
     <div class="relative">
-      <div class="h-10 w-10 rounded-full border-2 border-blue-600 cursor-pointer hover:scale-105 transition-transform overflow-hidden">
-        <img src="https://img.freepik.com/free-vector/blue-circle-with-white-user_78370-4707.jpg?semt=ais_hybrid&w=740" alt="User" class="h-full w-full object-cover" />
+      <div class="h-10 w-10 rounded-full border-2 border-blue-600 cursor-pointer hover:scale-105 transition-transform overflow-hidden flex items-center justify-center bg-gray-100">
+        @if(auth()->user()->profile)
+          <img src="{{ asset('storage') . '/' . auth()->user()->profile }}" alt="User" class="h-full w-full object-cover" />
+        @else
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-500" fill="none" viewBox="0 0 24 24"
+            stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          </svg>
+        @endif
       </div>
     </div>
     <div class="flex flex-col">

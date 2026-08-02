@@ -11,6 +11,28 @@ use App\Models\PrintLog;
 
 class LandRofoController extends Controller
 {
+    /**
+     * SQL predicate for "this RofO counts as printed".
+     *
+     * rofo_print_count on its own is not enough for OSS. A batch of OSS rows was
+     * marked printed by a backfill without ever being issued a Security Serial No.
+     * (no security_codes row of document_type 'Land ROFO'), so they sat under the
+     * Printed tab while the paper in the applicant's hand carries no serial.
+     * Requiring the serial for OSS drops those back into Not Printed, where they
+     * can be reprinted through the system and pick up a real serial.
+     *
+     * Land rows are exempt: print() always mints a serial, so the extra EXISTS
+     * would only penalise legacy rows this rule is not aimed at.
+     */
+    private function printedPredicateSql(): string
+    {
+        return "(ISNULL(rofo_print_count, 0) > 0
+                 AND (UPPER(ISNULL(type, '')) <> 'OSS'
+                      OR EXISTS (SELECT 1 FROM security_codes sc
+                                 WHERE sc.document_id   = land_recommendations.id
+                                   AND sc.document_type = 'Land ROFO')))";
+    }
+
     public function index(Request $request)
     {
         $ossViewOnly = $request->query('view') === 'only';
@@ -24,6 +46,7 @@ class LandRofoController extends Controller
                 'survey_fees', 'development_value', 'development_charge', 'type',
                 'rofo_status', 'status', 'approved_at', 'land_rofo_serial_no',
                 'created_at', 'created_by', 'land_use', 'land_use_id', 'purpose_id',
+                'is_reissuance', 'reissuance_source',
             ]);
 
         if ($ossViewOnly) {
@@ -35,22 +58,20 @@ class LandRofoController extends Controller
             });
         }
 
-        // Tab filter: "printed" vs "not_printed". rofo_print_count is the authoritative
-        // "actually printed" flag — it is incremented only by a real individual/batch
-        // print, so unlike the mere presence of a security code it excludes both
-        // preview-only serials and the bulk-backfilled serials (assigned_by 101563,
-        // 2026-05-21) that were never printed. The OSS-only view is a separate flow,
-        // so tabs apply to the main view.
+        // Tab filter: "printed" vs "not_printed", both driven by printedPredicateSql()
+        // — rofo_print_count (incremented only by a real individual/batch print, so it
+        // excludes preview-only serials and the bulk-backfilled serials assigned_by
+        // 101563 on 2026-05-21) AND, for OSS, an actual Security Serial No. Tabs apply
+        // to both the main view and the OSS-only view (each scoped to its own record
+        // set, see counts below).
         $tab = $request->query('tab', 'not_printed');
         if (!in_array($tab, ['printed', 'not_printed'], true)) {
             $tab = 'not_printed';
         }
-        if (!$ossViewOnly) {
-            if ($tab === 'printed') {
-                $query->whereRaw('ISNULL(rofo_print_count, 0) > 0');
-            } else { // not_printed
-                $query->whereRaw('ISNULL(rofo_print_count, 0) = 0');
-            }
+        if ($tab === 'printed') {
+            $query->whereRaw($this->printedPredicateSql());
+        } else { // not_printed
+            $query->whereRaw('NOT ' . $this->printedPredicateSql());
         }
 
         if ($request->filled('search')) {
@@ -78,14 +99,21 @@ class LandRofoController extends Controller
             ISNULL(SUM(CASE WHEN UPPER(ISNULL(type,'')) <> 'OSS' AND ISNULL(rofo_status,'') = 'generated' THEN ISNULL(rofo_dev_charge,0) ELSE 0 END), 0) AS total_dev_charge
         ")->first();
 
-        // Printed / Not-Printed counts — rofo_print_count is the actually-printed flag.
-        $rofoScopeQuery = DB::connection('sqlsrv')->table('land_recommendations')
-            ->where(function ($q) {
+        // Printed / Not-Printed counts — same printedPredicateSql() the tabs use, so the
+        // card totals cannot disagree with the rows listed. Scoped to the same record set
+        // the tabs filter, so the OSS-only view counts OSS rows alone rather than the
+        // whole RofO register.
+        $rofoScopeQuery = DB::connection('sqlsrv')->table('land_recommendations');
+        if ($ossViewOnly) {
+            $rofoScopeQuery->whereRaw("UPPER(ISNULL(type,'')) = 'OSS'");
+        } else {
+            $rofoScopeQuery->where(function ($q) {
                 $q->whereRaw("status = 'approved' AND UPPER(ISNULL(type,'')) <> 'OSS'")
                   ->orWhereRaw("UPPER(ISNULL(type,'')) = 'OSS'");
             });
-        $printedCount    = (clone $rofoScopeQuery)->whereRaw('ISNULL(rofo_print_count, 0) > 0')->count();
-        $notPrintedCount = (clone $rofoScopeQuery)->whereRaw('ISNULL(rofo_print_count, 0) = 0')->count();
+        }
+        $printedCount    = (clone $rofoScopeQuery)->whereRaw($this->printedPredicateSql())->count();
+        $notPrintedCount = (clone $rofoScopeQuery)->whereRaw('NOT ' . $this->printedPredicateSql())->count();
 
         // Count OSS Applications from the authoritative source (oss_applications) so
         // the stat matches the Change of Name page instead of counting type='OSS' rows
@@ -143,14 +171,15 @@ class LandRofoController extends Controller
             }
         }
 
-        // Batch-load the "Print Date" per record (keyed by record id) — ONLY for
-        // records that were actually printed (rofo_print_count > 0), so a backfilled
-        // serial never shows a date on a not-printed row. The date is the serial's
-        // date, with an actual print_log taking precedence. No N+1.
+        // Batch-load the "Print Date" per record (keyed by record id) — ONLY for records
+        // that count as printed under printedPredicateSql(), so a backfilled serial never
+        // shows a date on a not-printed row, and a serial-less OSS row reads "Not printed"
+        // to match the tab it now sits in. The date is the serial's date, with an actual
+        // print_log taking precedence. No N+1.
         $printDates = [];
         $printedIds = empty($recIds) ? [] : DB::connection('sqlsrv')->table('land_recommendations')
             ->whereIn('id', $recIds)
-            ->whereRaw('ISNULL(rofo_print_count, 0) > 0')
+            ->whereRaw($this->printedPredicateSql())
             ->pluck('id')->all();
         if (!empty($printedIds)) {
             // Serial date per printed record id.
@@ -560,11 +589,92 @@ class LandRofoController extends Controller
             'Land ROFO'
         );
 
-        if (!$isCTC && $recommendation->rofo_print_count >= 2) {
+        // ?supersede=1 switches the single RofO template into re-issuance mode: the
+        // same letter plus the "supersedes the previous one issued on ..." notice,
+        // a RE-ISSUANCE watermark, and the Original copy only.
+        // ?superseded_date=... fills that notice; omitted, the template falls back
+        // to the record's own issue date.
+        $supersedeView   = $request->boolean('supersede');
+        $supersededDate  = trim((string) $request->query('superseded_date', ''));
+
+        // The re-issuance dialog sends an ISO date (Y-m-d); the letter reads
+        // "issued on 31st July, 2026". Anything unparseable prints verbatim.
+        if ($supersededDate !== '') {
+            try {
+                $supersededDate = \Carbon\Carbon::parse($supersededDate)->format('jS F, Y');
+            } catch (\Throwable $e) {
+                // keep the raw value
+            }
+        }
+
+        // A re-issuance is by definition a further print of an already-issued
+        // letter, so it is exempt from the two-print cap (same as a CTC).
+        if (!$isCTC && !$supersedeView && $recommendation->rofo_print_count >= 2) {
             abort(403, 'Maximum ROFO print limit reached.');
         }
 
-        return view('land_rofos.templates.rofo_print', compact('recommendation', 'securityCode'));
+        // One template for both: it reads ?supersede=1 itself to switch modes.
+        return view(
+            'land_rofos.templates.rofo_print',
+            compact('recommendation', 'securityCode', 'supersededDate')
+        );
+    }
+
+    /**
+     * Select2 feed for the Re-issuance dialog (KLAES-generated option): the file
+     * numbers that appear on the RofO table — approved land records plus OSS.
+     */
+    public function reissuanceSearch(Request $request)
+    {
+        $term = trim((string) $request->query('q', ''));
+
+        $query = LandRecommendation::select([
+                'id', 'file_number', 'applicant_name', 'location', 'rofo_generated_at', 'created_at',
+            ])
+            ->where(function ($q) {
+                $q->where('status', LandRecommendation::STATUS_APPROVED)
+                  ->orWhereRaw("UPPER(ISNULL(type, '')) = 'OSS'");
+            });
+
+        if ($term !== '') {
+            $query->where(function ($q) use ($term) {
+                $q->where('file_number', 'LIKE', "%{$term}%")
+                  ->orWhere('applicant_name', 'LIKE', "%{$term}%");
+            });
+        }
+
+        $results = $query->orderByDesc('created_at')
+            ->limit(30)
+            ->get()
+            ->map(fn ($rec) => [
+                'id'        => $rec->id,
+                'text'      => $rec->file_number,
+                'applicant' => $rec->applicant_name,
+                'location'  => $rec->location,
+                'issued_on' => optional($rec->rofo_generated_at ?? $rec->created_at)->format('Y-m-d'),
+            ]);
+
+        return response()->json(['results' => $results]);
+    }
+
+    /**
+     * Re-issue a RofO that was generated in KLAES. The recommendation and the RofO
+     * are already captured, so this only stamps the re-issuance fields on the
+     * existing record — nothing is re-entered and no new record is created.
+     */
+    public function reissue(Request $request, $id)
+    {
+        $recommendation = LandRecommendation::findOrFail($id);
+
+        $recommendation->is_reissuance     = true;
+        $recommendation->reissuance_source = 'klaes';
+        $recommendation->updated_by        = Auth::id();
+        $recommendation->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => $recommendation->file_number . ' is now marked as a re-issued RofO.',
+        ]);
     }
 
     public function unprintedJson()
@@ -656,8 +766,12 @@ class LandRofoController extends Controller
         $status = $request->query('status', 'Original');
         $isCTC = $status === 'CTC' || $request->query('isCTC') == 1;
 
+        // A re-issuance replaces a letter that was already issued, so like a CTC it
+        // sits outside the two-print allowance and does not consume it.
+        $isReissuance = $status === 'Re-issuance';
+
         // Only enforce limits for non-CTC prints
-        if (!$isCTC && $recommendation->rofo_print_count >= 2) {
+        if (!$isCTC && !$isReissuance && $recommendation->rofo_print_count >= 2) {
             return response()->json([
                 'success' => false,
                 'message' => 'Maximum ROFO print limit reached.'
@@ -674,8 +788,8 @@ class LandRofoController extends Controller
                 'user_id' => Auth::id()
             ]);
 
-            // Only increment count for non-CTC prints
-            if ($status !== 'CTC') {
+            // Only increment count for non-CTC, non-re-issuance prints
+            if (!$isCTC && !$isReissuance) {
                 $recommendation->increment('rofo_print_count');
             }
 

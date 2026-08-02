@@ -527,10 +527,13 @@ function buildActionsMenu(row, viewUrl) {
         </button>`;
 
   // Destructive: archives the record to indexing_duplicates and deletes it from
-  // file_indexings, fileNumber, customers_staging and entities_staging.
-  const moveToDuplicatesButton = `<button type="button" class="move-indexing-duplicate-btn block w-full text-left px-4 py-2.5 text-sm text-rose-700 hover:bg-rose-50 transition-colors" data-file-id="${id}" data-file-number="${safeFileNumber}">
-          <i data-lucide="folder-minus" class="h-4 w-4 mr-2.5 inline text-rose-600"></i>
-          Move to Indexing Duplicates
+  // file_indexings, fileNumber, customers_staging and entities_staging. Kept out
+  // of the menu entirely unless assign_role is Supper Admin.
+  // flex + shrink-0 icon so the two-word-longer label wraps inside the menu
+  // instead of being clipped by its overflow-hidden rounded corners.
+  const moveToDuplicatesButton = !config.canMoveToIndexingDuplicates ? '' : `<button type="button" class="move-indexing-duplicate-btn flex items-start gap-2.5 w-full text-left px-4 py-2.5 text-sm text-rose-700 hover:bg-rose-50 transition-colors" data-file-id="${id}" data-file-number="${safeFileNumber}">
+          <i data-lucide="folder-minus" class="h-4 w-4 mt-0.5 shrink-0 text-rose-600"></i>
+          <span class="leading-snug">Move to Indexing Duplicates</span>
         </button>`;
 
   const duplicateCallupButton = `<button type="button" class="duplicate-callup-btn block w-full text-left px-4 py-2.5 text-sm ${row.has_duplicate ? 'text-rose-700 hover:bg-rose-50' : 'text-gray-400 cursor-not-allowed opacity-40'} transition-colors" data-file-id="${id}" data-file-number="${safeFileNumber}" ${row.has_duplicate ? '' : 'disabled="disabled"'}>
@@ -579,15 +582,14 @@ function buildActionsMenu(row, viewUrl) {
         <button type="button" class="actions-dropdown-btn inline-flex items-center justify-center w-10 h-10 rounded-xl border border-slate-200 bg-white text-slate-400 hover:text-blue-600 hover:border-blue-200 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all shadow-sm" data-file-id="${id}">
           <i data-lucide="more-horizontal" class="h-5 w-5"></i>
         </button>
-        <div class="actions-dropdown-menu hidden absolute right-0 z-30 mt-2 w-56 origin-top-right rounded-2xl border border-slate-100 bg-white shadow-xl ring-1 ring-black/5 focus:outline-none overflow-hidden" data-menu-for="${id}">
+        <div class="actions-dropdown-menu hidden absolute right-0 z-30 mt-2 w-64 origin-top-right rounded-2xl border border-slate-100 bg-white shadow-xl ring-1 ring-black/5 focus:outline-none overflow-hidden" data-menu-for="${id}">
           <div class="py-1.5">
             <div class="px-4 py-2 border-b border-slate-50 mb-1">
                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">File Actions</p>
             </div>
             ${trackingButton}
             ${updatePlaceholderButton}
-            <div class="border-t border-slate-50 my-1.5"></div>
-            ${moveToDuplicatesButton}
+            ${moveToDuplicatesButton ? '<div class="border-t border-slate-50 my-1.5"></div>' + moveToDuplicatesButton : ''}
           </div>
         </div>
       </div>
@@ -599,7 +601,7 @@ function buildActionsMenu(row, viewUrl) {
       <button type="button" class="actions-dropdown-btn inline-flex items-center justify-center w-10 h-10 rounded-xl border border-slate-200 bg-white text-slate-400 hover:text-blue-600 hover:border-blue-200 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all shadow-sm" data-file-id="${id}">
         <i data-lucide="more-horizontal" class="h-5 w-5"></i>
       </button>
-      <div class="actions-dropdown-menu hidden absolute right-0 z-30 mt-2 w-56 origin-top-right rounded-2xl border border-slate-100 bg-white shadow-xl ring-1 ring-black/5 focus:outline-none overflow-hidden" data-menu-for="${id}">
+      <div class="actions-dropdown-menu hidden absolute right-0 z-30 mt-2 w-64 origin-top-right rounded-2xl border border-slate-100 bg-white shadow-xl ring-1 ring-black/5 focus:outline-none overflow-hidden" data-menu-for="${id}">
         <div class="py-1.5">
           <div class="px-4 py-2 border-b border-slate-50 mb-1">
              <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">File Actions</p>
@@ -2148,9 +2150,96 @@ async function handleMarkDuplicate(button) {
 }
 
 /**
+ * Render one preview section as a table of source table => row count.
+ */
+function renderMovePreviewTable(title, rows, tone) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return '';
+  }
+
+  const palette = {
+    delete: { head: 'text-rose-700', count: 'text-rose-700', border: 'border-rose-100' },
+    keep: { head: 'text-slate-600', count: 'text-slate-700', border: 'border-slate-100' },
+    block: { head: 'text-amber-700', count: 'text-amber-700', border: 'border-amber-100' }
+  }[tone] || { head: 'text-slate-600', count: 'text-slate-700', border: 'border-slate-100' };
+
+  const body = rows.map(row => `
+    <tr class="border-t ${palette.border}">
+      <td class="py-1 pr-3 text-left font-mono text-[11px] text-slate-500">${escapeHtml(row.table)}</td>
+      <td class="py-1 pr-3 text-left">${escapeHtml(row.label)}</td>
+      <td class="py-1 text-right font-semibold ${palette.count}">${Number(row.count).toLocaleString()}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="mt-3">
+      <p class="text-[11px] font-bold uppercase tracking-wider ${palette.head} text-left">${escapeHtml(title)}</p>
+      <table class="w-full text-xs mt-1">
+        <tbody>${body}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+/**
+ * Plain-text equivalent of the preview, for the no-SweetAlert fallback.
+ */
+function movePreviewToText(rows) {
+  return rows.map(row => `  - ${row.table}: ${row.count} (${row.label})`).join('\n');
+}
+
+/**
+ * Open the shared file number selector and resolve with the chosen number, or
+ * null if the operator closed it without applying one.
+ *
+ * The selector is a full-screen modal of its own, so it is never stacked inside
+ * the SweetAlert card — the caller closes the card first and re-opens it after.
+ * Closing is watched on the modal's own class list, because the plugin gives no
+ * cancel callback.
+ */
+function pickDuplicateOfFileNumber() {
+  return new Promise(resolve => {
+    if (typeof window.GlobalFileNoModal === 'undefined') {
+      resolve((window.prompt('Duplicate of — file number this record duplicates:') || '').trim() || null);
+      return;
+    }
+
+    const modalEl = document.getElementById('global-fileno-modal');
+    let settled = false;
+    let observer = null;
+
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      if (observer) observer.disconnect();
+      resolve(value);
+    };
+
+    window.GlobalFileNoModal.open({
+      initialTab: 'mls',
+      autoPopulateGenericFields: false,
+      callback: selection => finish((selection && selection.fileNumber ? String(selection.fileNumber) : '').trim() || null)
+    });
+
+    // Dismissed without applying — the modal re-hides itself.
+    if (modalEl && typeof MutationObserver !== 'undefined') {
+      observer = new MutationObserver(() => {
+        if (modalEl.classList.contains('hidden')) {
+          finish(null);
+        }
+      });
+      observer.observe(modalEl, { attributes: true, attributeFilter: ['class'] });
+    }
+  });
+}
+
+/**
  * Move an indexed file to indexing_duplicates. This deletes the record from the
- * indexing, file number, customer and entity tables, so the confirmation spells
- * out what is removed and requires a typed reason.
+ * indexing, file number, customer and entity tables, so the confirmation first
+ * asks the server exactly which tables lose rows — and which record/transaction
+ * tables (PRA, CofO, file history, file tracker) still reference the file and are
+ * left untouched — before anything is removed. The operator must also pick the
+ * file this one duplicates, via the shared file number selector.
  */
 async function handleMoveToIndexingDuplicates(button) {
   const fileId = button.getAttribute('data-file-id');
@@ -2162,31 +2251,191 @@ async function handleMoveToIndexingDuplicates(button) {
 
   const hasSwal = typeof window.Swal !== 'undefined' && typeof window.Swal.fire === 'function';
 
-  if (hasSwal) {
-    const confirmation = await window.Swal.fire({
-      title: 'Move to Indexing Duplicates?',
-      html: `
-        <p class="text-sm text-slate-600">
-          <strong>${escapeHtml(fileNumber)}</strong> will be moved to indexing duplicates.
-        </p>
-      `,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonText: 'Yes, move it',
-      cancelButtonText: 'Cancel',
-      confirmButtonColor: '#e11d48'
-    });
+  // First gate: a plain yes/no. The detailed impact card (what gets deleted, and
+  // which file this duplicates) is the second confirmation, after the preview
+  // call — no point costing that request for a misclicked menu item.
+  const proceed = hasSwal
+    ? (await window.Swal.fire({
+        title: 'Move to Indexing Duplicates?',
+        text: `Are you sure you want to move ${fileNumber} to indexing duplicates?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Yes',
+        cancelButtonText: 'No',
+        confirmButtonColor: '#e11d48',
+        reverseButtons: true
+      })).isConfirmed
+    : window.confirm(`Move ${fileNumber} to indexing duplicates?`);
 
-    if (!confirmation.isConfirmed) {
+  if (!proceed) {
+    closeAllActionMenus();
+    return;
+  }
+
+  let preview = null;
+  try {
+    if (hasSwal) {
+      window.Swal.fire({
+        title: 'Checking impact…',
+        html: `<p class="text-sm text-slate-600">Counting the records attached to <strong>${escapeHtml(fileNumber)}</strong>.</p>`,
+        allowOutsideClick: false,
+        didOpen: () => window.Swal.showLoading()
+      });
+    }
+
+    const previewResponse = await fetch(
+      `${window.location.origin}/api/indexed-files/${encodeURIComponent(fileId)}/indexing-duplicate-preview`,
+      { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } }
+    );
+    const previewResult = await previewResponse.json().catch(() => ({}));
+
+    if (!previewResponse.ok || !previewResult.success) {
+      throw new Error(previewResult.message || 'Could not check what this move would delete.');
+    }
+
+    preview = previewResult.preview || {};
+    if (hasSwal) {
+      window.Swal.close();
+    }
+  } catch (error) {
+    console.error('Failed to preview indexing duplicate move:', error);
+    if (hasSwal) {
+      await window.Swal.fire({ icon: 'error', title: 'Failed', text: error.message });
+    } else {
+      alert(error.message);
+    }
+    return;
+  }
+
+  const deletions = preview.deletions || [];
+  const retained = preview.retained || [];
+  const blocking = preview.blocking || {};
+  const blockingRows = Object.keys(blocking).map(table => ({
+    table,
+    label: blocking[table],
+    count: parseInt(String(blocking[table]), 10) || 0
+  }));
+
+  // Blocked files never reach the confirm step — the move would be refused server
+  // side anyway, so show why instead of offering a button that cannot work.
+  if (blockingRows.length > 0) {
+    const message = `${fileNumber} cannot be moved — it still has attached work.`;
+    if (hasSwal) {
+      await window.Swal.fire({
+        icon: 'warning',
+        title: 'Cannot Move This File',
+        html: `
+          <p class="text-sm text-slate-600 text-left">${escapeHtml(message)}</p>
+          ${renderMovePreviewTable('Blocking references', blockingRows, 'block')}
+          <p class="text-xs text-slate-500 mt-3 text-left">Detach or delete those first.</p>
+        `
+      });
+    } else {
+      alert(`${message}\n\n${movePreviewToText(blockingRows)}`);
+    }
+    closeAllActionMenus();
+    return;
+  }
+
+  const transactionTotal = Number(preview.transaction_total || 0);
+  const transactionWarning = transactionTotal > 0
+    ? `<p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 mt-3 text-left">
+         This file number carries <strong>${transactionTotal.toLocaleString()}</strong> registered transaction record(s).
+         They are <strong>not</strong> deleted — but a file with real dealings is usually the original, not the duplicate.
+       </p>`
+    : '';
+
+  // The file this one duplicates, stored on the archive record so the indexing
+  // duplicates page can say what it was a duplicate of.
+  let duplicateOf = '';
+
+  if (hasSwal) {
+    const PICK = 'pick-file-number';
+    let confirmed = false;
+
+    // Re-opened after each trip to the file number selector, which is a
+    // full-screen modal and cannot be nested inside this card.
+    for (;;) {
+      const picked = duplicateOf
+        ? `<span class="font-semibold text-slate-800 break-all">${escapeHtml(duplicateOf)}</span>`
+        : '<span class="text-slate-400">No file number selected</span>';
+
+      const confirmation = await window.Swal.fire({
+        title: 'Move to Indexing Duplicates?',
+        html: `
+          <p class="text-sm text-slate-600 text-left">
+            <strong>${escapeHtml(fileNumber)}</strong> will be moved to indexing duplicates.
+            The rows below are deleted from the live tables (a full snapshot is archived).
+          </p>
+          ${renderMovePreviewTable('Will be deleted from', deletions, 'delete')}
+          ${renderMovePreviewTable('Kept — still references this file', retained, 'keep')}
+          ${transactionWarning}
+          <div class="mt-4 text-left">
+            <p class="text-[11px] font-bold uppercase tracking-wider text-slate-600">Duplicate of</p>
+            <div class="mt-1 flex items-center gap-2 rounded border border-slate-200 bg-slate-50 px-3 py-2">
+              <span class="flex-1 min-w-0 text-sm">${picked}</span>
+              <button type="button" id="move-pick-fileno"
+                      class="shrink-0 rounded bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800">
+                ${duplicateOf ? 'Change' : 'Select file number'}
+              </button>
+            </div>
+          </div>
+        `,
+        icon: 'warning',
+        width: 600,
+        showCancelButton: true,
+        confirmButtonText: 'Yes, move it',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#e11d48',
+        focusConfirm: false,
+        allowOutsideClick: false,
+        didOpen: () => {
+          const pickButton = document.getElementById('move-pick-fileno');
+          if (pickButton) {
+            pickButton.addEventListener('click', () => window.Swal.close({ isDismissed: true, dismiss: PICK }));
+          }
+        },
+        preConfirm: () => {
+          // The whole point of the archive is knowing which file this duplicated,
+          // so require it rather than storing an unattributed deletion.
+          if (duplicateOf === '') {
+            window.Swal.showValidationMessage('Select the file number this record duplicates.');
+            return false;
+          }
+          return true;
+        }
+      });
+
+      if (confirmation.dismiss === PICK) {
+        // Keep the previous choice when the selector is closed without applying.
+        duplicateOf = (await pickDuplicateOfFileNumber()) || duplicateOf;
+        continue;
+      }
+
+      confirmed = confirmation.isConfirmed;
+      break;
+    }
+
+    if (!confirmed) {
       closeAllActionMenus();
       return;
     }
-  } else if (!window.confirm(
-    `Move ${fileNumber} to indexing duplicates?\n\n` +
-    'It will be deleted from the indexing, file number, customer and entity tables.'
-  )) {
-    closeAllActionMenus();
-    return;
+  } else {
+    if (!window.confirm(
+      `Move ${fileNumber} to indexing duplicates?\n\n` +
+      `Will be deleted from:\n${movePreviewToText(deletions) || '  (nothing)'}\n\n` +
+      `Kept (still references this file):\n${movePreviewToText(retained) || '  (none)'}`
+    )) {
+      closeAllActionMenus();
+      return;
+    }
+
+    duplicateOf = (window.prompt('Duplicate of — file number this record duplicates:') || '').trim();
+    if (duplicateOf === '') {
+      alert('A "duplicate of" file number is required.');
+      closeAllActionMenus();
+      return;
+    }
   }
 
   const csrfToken = getCsrfToken();
@@ -2210,7 +2459,7 @@ async function handleMoveToIndexingDuplicates(button) {
           'X-CSRF-TOKEN': csrfToken,
           'X-Requested-With': 'XMLHttpRequest'
         },
-        body: JSON.stringify({})
+        body: JSON.stringify({ duplicate_of: duplicateOf })
       }
     );
 

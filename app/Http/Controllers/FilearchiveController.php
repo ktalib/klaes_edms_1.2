@@ -21,6 +21,44 @@ use Illuminate\Support\Str;
 
 class FilearchiveController extends Controller
 {
+    /**
+     * File numbers are <series>-<serial> ("RES-1981-100"). Ordering by the raw
+     * file_number string sorts the serial lexicographically, so "RES-1981-2"
+     * lands after "RES-1981-1999" and every 1-2 digit serial gets buried behind
+     * the 1000-block. These two expressions split the number so the serial can
+     * be compared as an integer.
+     *
+     * RTRIM guards trailing spaces: SQL Server's LEN() ignores them but
+     * REVERSE() does not, which would otherwise mis-slice the string.
+     */
+
+    /** "RES-1981-100" => "RES-1981" — everything before the final dash. */
+    private const SERIES_SORT_SQL =
+        "LEFT(RTRIM(file_number), LEN(file_number) - CHARINDEX('-', REVERSE(RTRIM(file_number))))";
+
+    /** "RES-1981-100" => 100, "RES-2003-537(T)" => 537, no trailing segment => NULL. */
+    private const SERIAL_SORT_SQL =
+        "CASE WHEN CHARINDEX('-', REVERSE(RTRIM(file_number))) > 1
+              THEN TRY_CAST(LEFT(
+                       RIGHT(RTRIM(file_number), CHARINDEX('-', REVERSE(RTRIM(file_number))) - 1),
+                       PATINDEX('%[^0-9]%',
+                           RIGHT(RTRIM(file_number), CHARINDEX('-', REVERSE(RTRIM(file_number))) - 1) + 'X') - 1
+                   ) AS int)
+         END";
+
+    /**
+     * Series then numeric serial. SQL Server sorts NULLs first on ASC, so the
+     * explicit null-check keeps unparseable serials at the tail of each series
+     * instead of floating them to the top.
+     */
+    private static function fileNumberOrderSql(string $direction = 'ASC'): string
+    {
+        return self::SERIES_SORT_SQL . " {$direction},
+                CASE WHEN " . self::SERIAL_SORT_SQL . " IS NULL THEN 1 ELSE 0 END ASC,
+                " . self::SERIAL_SORT_SQL . " {$direction},
+                file_number {$direction}";
+    }
+
     private function getModuleTheme(string $module): ?array
     {
         $normalized = strtolower(trim($module));
@@ -322,7 +360,7 @@ class FilearchiveController extends Controller
                     WHEN '3' THEN 3
                     ELSE 4
                 END ASC,
-                file_number ASC");
+                " . self::fileNumberOrderSql('ASC'));
                 break;
             case 'year_desc':
                 // Sort by year descending (newest files first: 2026, 2025, ...)
@@ -381,13 +419,13 @@ class FilearchiveController extends Controller
                     WHEN '3' THEN 3
                     ELSE 4
                 END ASC,
-                file_number ASC");
+                " . self::fileNumberOrderSql('DESC'));
                 break;
             case 'file_number_asc':
-                $completedFiles->orderBy('file_number', 'asc');
+                $completedFiles->orderByRaw(self::fileNumberOrderSql('ASC'));
                 break;
             case 'file_number_desc':
-                $completedFiles->orderBy('file_number', 'desc');
+                $completedFiles->orderByRaw(self::fileNumberOrderSql('DESC'));
                 break;
             case 'title_asc':
                 $completedFiles->orderBy('file_title', 'asc');

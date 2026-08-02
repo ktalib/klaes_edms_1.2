@@ -318,7 +318,8 @@
             </div>
 
             {{-- ── Summary Cards ── --}}
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-3 xl:gap-4">
+            @php $unclassifiedCount = (int) ($cardCounts['Unclassified'] ?? 0); @endphp
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 {{ $unclassifiedCount > 0 ? '2xl:grid-cols-7' : '2xl:grid-cols-6' }} gap-3 xl:gap-4">
 
                    {{-- Today's Count --}}
                 <div class="min-w-0 bg-white border border-slate-200 rounded-2xl shadow-sm p-4 flex items-center gap-3"
@@ -395,7 +396,22 @@
                         <p class="text-2xl font-extrabold text-slate-900 leading-tight">{{ number_format($cardCounts['Agriculture'] ?? 0) }}</p>
                     </div>
                 </div>
-          
+                {{-- Unclassified: records with no land use on the row, its file, or any sibling
+                     record for the same prop_id. Shown only when non-zero so the land-use cards
+                     always add up to Total Commissioned. --}}
+                @if($unclassifiedCount > 0)
+                <div class="min-w-0 bg-white border border-slate-200 rounded-2xl shadow-sm p-4 flex items-center gap-3"
+                     title="Commissioned OPs with no land use recorded anywhere — included in Total Commissioned">
+                    <div class="flex-shrink-0 w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center">
+                        <i data-lucide="help-circle" class="w-6 h-6 text-slate-500"></i>
+                    </div>
+                    <div>
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Unclassified</p>
+                        <p class="text-2xl font-extrabold text-slate-900 leading-tight">{{ number_format($unclassifiedCount) }}</p>
+                    </div>
+                </div>
+                @endif
+
             </div>
 
             {{-- ── OP→ToT Scenario Legend ── --}}

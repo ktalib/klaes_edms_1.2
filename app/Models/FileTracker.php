@@ -26,6 +26,7 @@ class FileTracker extends Model
         'request_purpose_id',
         'request_purpose_name',
         'file_request_type',
+        'seed_tag',
         'description',
         'status',
         'date_created',
@@ -70,6 +71,17 @@ class FileTracker extends Model
         'printed' => 'boolean',
         'in_digital_archive' => 'boolean',
     ];
+
+    /**
+     * The column is free text on every request form, which is how ~64 distinct
+     * strings accumulated for ~15 real departments and inflated the department
+     * counts on the commissioner dashboard. Fold job titles, synonyms and
+     * legacy values onto the canonical `departments` names on the way in.
+     */
+    public function setDepartmentAttribute($value): void
+    {
+        $this->attributes['department'] = \App\Support\DepartmentNormalizer::normalize($value);
+    }
 
     // Priority constants
     const PRIORITY_LOW = 'LOW';
@@ -581,18 +593,107 @@ class FileTracker extends Model
         return $progress;
     }
 
+    /**
+     * SQL Server hands back datetime2(7) values with seven fractional digits
+     * ("2025-11-07 12:44:27.2570000"), one more than the driver's declared
+     * format 'Y-m-d H:i:s.v' can read. Laravel's cast therefore threw
+     * "Trailing data" on every date and fell back to Carbon::parse() — ~2ms
+     * per value, which on a 1,000-row list request was several seconds of
+     * nothing but date parsing.
+     *
+     * Reading the fraction ourselves keeps the same Carbon result on the fast
+     * path and leaves writes (fromDateTime) untouched.
+     */
+    protected function asDateTime($value)
+    {
+        if (is_string($value) && preg_match('/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(?:\.(\d+))?$/', $value, $m)) {
+            $fraction = substr(str_pad($m[2] ?? '', 6, '0'), 0, 6);
+            $date = Carbon::createFromFormat('Y-m-d H:i:s.u', $m[1] . '.' . $fraction);
+
+            if ($date !== false) {
+                return $date;
+            }
+        }
+
+        return parent::asDateTime($value);
+    }
+
+    /**
+     * Resolved titles keyed by file number, memoised for the life of the
+     * request. The accessor below reads file_indexings on every access, which
+     * costs one query per row on any list screen — 1,000 rows on the
+     * commissioner request sheet meant 1,000 round trips. Null is cached too,
+     * so file numbers with no indexing row are not looked up twice.
+     *
+     * @var array<string, string|null>
+     */
+    protected static array $fileTitleCache = [];
+
+    /**
+     * Resolve the titles for a whole page of trackers in one query, before
+     * anything reads $tracker->file_title. Callers that list trackers should
+     * prime; everything else still works, just one query at a time.
+     */
+    public static function primeFileTitles(iterable $fileNumbers): void
+    {
+        $wanted = [];
+
+        foreach ($fileNumbers as $number) {
+            $number = trim((string) $number);
+            if ($number !== '' && !array_key_exists($number, static::$fileTitleCache)) {
+                $wanted[$number] = true;
+            }
+        }
+
+        if (empty($wanted)) {
+            return;
+        }
+
+        try {
+            // SQL Server caps a statement at 2,100 parameters.
+            foreach (array_chunk(array_keys($wanted), 1000) as $chunk) {
+                $titles = DB::connection('sqlsrv')
+                    ->table('file_indexings')
+                    ->whereIn('file_number', $chunk)
+                    ->pluck('file_title', 'file_number');
+
+                foreach ($chunk as $number) {
+                    static::$fileTitleCache[$number] = $titles[$number] ?? null;
+                }
+            }
+        } catch (\Exception $e) {
+            // Leave the cache alone; the accessor falls back to per-row lookups.
+        }
+    }
+
+    /** Drop the memo — for long-running commands that also write file_indexings. */
+    public static function flushFileTitleCache(): void
+    {
+        static::$fileTitleCache = [];
+    }
+
     public function getFileTitleAttribute($value)
     {
-        try {
-            $title = DB::connection('sqlsrv')
-                ->table('file_indexings')
-                ->where('file_number', $this->file_number)
-                ->value('file_title');
+        $number = trim((string) ($this->attributes['file_number'] ?? ''));
 
-            return $title !== null ? trim($title) : $value;
-        } catch (\Exception $e) {
+        if ($number === '') {
             return $value;
         }
+
+        if (!array_key_exists($number, static::$fileTitleCache)) {
+            try {
+                static::$fileTitleCache[$number] = DB::connection('sqlsrv')
+                    ->table('file_indexings')
+                    ->where('file_number', $number)
+                    ->value('file_title');
+            } catch (\Exception $e) {
+                return $value;
+            }
+        }
+
+        $title = static::$fileTitleCache[$number];
+
+        return $title !== null ? trim($title) : $value;
     }
 }
 

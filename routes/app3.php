@@ -54,6 +54,7 @@ use App\Http\Controllers\Deeds\ParcelUpdate\PlotSeparationController;
 use App\Http\Controllers\Deeds\ParcelUpdate\PlotMergerController;
 use App\Http\Controllers\ChangeOfPurpose\ChangeOfPurposeController;
 use App\Http\Controllers\TitleStatus\TitleStatusController;
+use App\Http\Controllers\RegrantController;
 use App\Http\Controllers\ChangeOfName\ChangeOfNameController;
 use App\Http\Controllers\OpsDashboardController;
 use App\Http\Controllers\RofoStagingDashboardController;
@@ -238,6 +239,9 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/data', [MasterDcivLinkController::class, 'data'])->name('data');
     });
 
+    Route::get('/oss-verifications', [\App\Http\Controllers\OssVerificationController::class, 'index'])->name('oss-verifications.index');
+    Route::post('/oss-verifications/{id}/verify', [\App\Http\Controllers\OssVerificationController::class, 'verify'])->name('oss-verifications.verify');
+
     Route::prefix('lands-one-stop-shop')->name('lands-one-stop-shop.')->group(function () {
         // Specific routes first (before {id} wildcard)
         Route::get('/applications/op-resettlement', [OpResettlementApplicationController::class, 'index'])->name('applications.index');
@@ -379,6 +383,12 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/{id}', [TitleStatusController::class, 'show'])->name('show')->where('id', '[0-9]+');
         Route::put('/{id}', [TitleStatusController::class, 'update'])->name('update')->where('id', '[0-9]+');
         Route::delete('/{id}', [TitleStatusController::class, 'destroy'])->name('destroy')->where('id', '[0-9]+');
+    });
+
+    // Re-grant management — register of all Re-grants + files whose term has expired.
+    Route::prefix('regrant')->name('regrant.')->group(function () {
+        Route::get('/', [RegrantController::class, 'index'])->name('index');
+        Route::post('/raise', [RegrantController::class, 'raise'])->name('raise');
     });
 
     Route::prefix('change-of-purpose')->name('change-of-purpose.')->group(function () {
@@ -740,6 +750,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/list', [IndexedFileTableController::class, 'list'])->name('list');
         Route::get('/view-list', [IndexedFileTableController::class, 'viewList'])->name('view-list');
         Route::post('/{id}/mark-duplicate', [IndexedFileTableController::class, 'markAsDuplicate'])->name('mark-duplicate');
+        Route::get('/{id}/indexing-duplicate-preview', [IndexedFileTableController::class, 'previewIndexingDuplicateMove'])->name('indexing-duplicate-preview');
         Route::post('/{id}/move-to-indexing-duplicates', [IndexedFileTableController::class, 'moveToIndexingDuplicates'])->name('move-to-indexing-duplicates');
         Route::post('/{id}/set-temp-file', [IndexedFileTableController::class, 'setTempFile'])->name('set-temp-file');
         Route::post('/{id}/match-correspondence', [IndexedFileTableController::class, 'matchCorrespondence'])->name('match-correspondence');
@@ -1000,6 +1011,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/', [\App\Http\Controllers\LandRofoController::class, 'index'])->name('index');
         Route::get('/export', [\App\Http\Controllers\LandRofoController::class, 'export'])->name('export');
         Route::get('/unprinted-json', [\App\Http\Controllers\LandRofoController::class, 'unprintedJson'])->name('unprinted-json');
+        Route::get('/reissuance-search', [\App\Http\Controllers\LandRofoController::class, 'reissuanceSearch'])->name('reissuance-search');
+        Route::post('/{id}/reissue', [\App\Http\Controllers\LandRofoController::class, 'reissue'])->name('reissue');
         Route::post('/batch-print', [\App\Http\Controllers\LandRofoController::class, 'batchPrint'])->name('batch-print');
         Route::post('/batch-print-log', [\App\Http\Controllers\LandRofoController::class, 'batchPrintLog'])->name('batch-print-log');
         Route::post('/{id}/generate', [\App\Http\Controllers\LandRofoController::class, 'generate'])->name('generate');
@@ -1178,6 +1191,11 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/api/batch/{id}/print', [DcivPrintLabelController::class, 'getBatchForPrinting'])->name('api.batch.print');
         Route::patch('/api/batch/{id}/print', [DcivPrintLabelController::class, 'markBatchAsPrinted'])->name('api.batch.mark-printed');
         Route::delete('/api/batch/{id}', [DcivPrintLabelController::class, 'deleteBatch'])->name('api.batch.delete');
+    });
+
+    // PRS Annual Progress Report (UI prototype — static sample data, no backend yet)
+    Route::prefix('prs-report')->name('prs-report.')->group(function () {
+        Route::get('/', [App\Http\Controllers\Prs\PrsAnnualReportController::class, 'index'])->name('index');
     });
 });
 

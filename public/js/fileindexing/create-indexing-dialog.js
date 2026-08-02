@@ -357,6 +357,21 @@
         shownFor: null,
     };
 
+    /**
+     * Which registry family the current file number came out of, as reported by
+     * GlobalFileNoModal (its `tab`: 'mls' | 'kangis' | 'newkangis' | …).
+     *
+     * KANGIS variant mode used to be inferred purely from the General Registry
+     * <select>, which starts empty on a fresh Create form — so picking a KANGIS
+     * file number before touching that dropdown ran the whole flow as a plain
+     * duplicate (edit-mode prompt + backfill of the existing record) instead of
+     * as a new physical variant destined for the _N suffix. Recording the source
+     * at selection time removes that ordering dependency.
+     */
+    const fileSelectionState = {
+        system: null,
+    };
+
     const editModeState = {
         isEditing: false,
         recordId: null,
@@ -1255,13 +1270,16 @@
     }
 
     /** Returns true when the user is working in KANGIS variant mode.
-     *  "soft" = KANGIS Registry is selected (placeholder fields visible).
+     *  "soft" = the file number is a KANGIS one (placeholder fields visible, or the
+     *           number was picked from the modal's KANGIS tab — the dropdown may not
+     *           have been set yet, and the guards must not depend on that ordering).
      *  "full" = prefix AND serial are both filled (ready to submit). */
     function isKangisVariantMode(level) {
         // In new_kn mode there is no placeholder variant — skip all KANGIS variant logic
         if (window.isNewKnMode) return false;
         const wrapper = document.getElementById('kangis-fileno-placeholder-wrapper');
-        const isKangisRegistry = wrapper && !wrapper.classList.contains('hidden');
+        const isKangisRegistry = (wrapper && !wrapper.classList.contains('hidden'))
+            || fileSelectionState.system === 'kangis';
         if (level === 'full') {
             if (!isKangisRegistry) return false;
             const prefix = (document.getElementById('kangis-fileno-prefix')?.value || '').trim();
@@ -1269,6 +1287,43 @@
             return prefix !== '' && serial !== '';
         }
         return !!isKangisRegistry;
+    }
+
+    // Exposed for the section partials rendered outside this module (cofo_details,
+    // property_transaction_modal) — they need the same "this is a new physical
+    // variant, not the same file" answer this module gates its own logic on.
+    window.isKangisVariantMode = isKangisVariantMode;
+
+    /**
+     * Point General Registry at KANGIS and fire `change`, so handleRegistryFieldToggling()
+     * reveals the KANGIS FileNo Placeholder fields. Without this the operator had to set
+     * the dropdown by hand before picking the file, and the placeholder — which is what
+     * makes the record a physical variant rather than a duplicate — was easy to miss.
+     *
+     * Skipped in new_kn mode (that mode selects KANGIS itself and has no placeholder)
+     * and when the dropdown already reads KANGIS.
+     */
+    function selectKangisGeneralRegistry() {
+        if (window.isNewKnMode) return false;
+
+        const select = document.getElementById('general-registry');
+        if (!select) return false;
+
+        if ((select.value || '').toUpperCase().includes('KANGIS')) {
+            return true;
+        }
+
+        const option = Array.from(select.options)
+            .find(o => (o.value || '').toUpperCase().includes('KANGIS'));
+        if (!option) {
+            // No KANGIS option on this form — the file-number-derived flag in
+            // isKangisVariantMode() still carries the guards.
+            return false;
+        }
+
+        select.value = option.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
     }
 
     async function checkTemporaryFileAssociationInline(fileNumber) {
@@ -2546,7 +2601,15 @@
             return;
         }
 
-        const trimmed = (fileNumber || '').trim();
+        // A new KANGIS physical variant is saved under its own _N number and owns no
+        // dealings yet, so the base file's transactions are not its history — loading
+        // them here is what made the form look like it had adopted the existing record.
+        // Editing an already-saved KANGIS record still loads that record's own history.
+        const isKangisVariantCreate = isKangisVariantMode()
+            && !editModeState.isEditing
+            && !window.isEditMode;
+
+        const trimmed = isKangisVariantCreate ? '' : (fileNumber || '').trim();
         const requestId = ++fileHistoryUI.lastRequestId;
 
         if (!trimmed) {
@@ -2568,7 +2631,9 @@
                 elements.error.textContent = '';
             }
             if (elements.empty) {
-                elements.empty.textContent = 'Select a file number to load historical transactions.';
+                elements.empty.textContent = isKangisVariantCreate
+                    ? 'New KANGIS physical file — it starts with no transactions of its own, so the existing file\'s history is not loaded.'
+                    : 'Select a file number to load historical transactions.';
                 elements.empty.classList.remove('hidden');
             }
             const propIdField = document.getElementById('prop-id-field');
@@ -3662,6 +3727,15 @@
 
     async function autoFillCofODetailsFromAPI(fileNumber) {
         const trimmed = (fileNumber || '').trim();
+
+        // A KANGIS physical variant saves under its own _N file number and starts
+        // life with no instruments of its own. Pulling the base file's CofO in here
+        // ticks "Has CofO" and fills the whole card with another record's details.
+        if (isKangisVariantMode()) {
+            cofoAutofillState.lastRequestId += 1;
+            setCofoAutofillStatus(null, '');
+            return null;
+        }
 
         if (trimmed === '') {
             cofoAutofillState.lastRequestId += 1;
@@ -6898,6 +6972,15 @@
 
                             const isEditing = editModeState.isEditing;
 
+                            // Record which tab the number came from, and mirror it into
+                            // General Registry, BEFORE anything below looks the file up —
+                            // isKangisVariantMode() gates the duplicate prompt and every
+                            // backfill, and both run further down this callback.
+                            fileSelectionState.system = (fileData.tab || '').toLowerCase() || null;
+                            if (!isEditing && fileSelectionState.system === 'kangis') {
+                                selectKangisGeneralRegistry();
+                            }
+
                             if (!isEditing) {
                                 clearArchiveFields();
                                 clearEntityCustomerFields({ silent: true });
@@ -7334,6 +7417,12 @@
         if (fileNumberInput) {
             // Add input event listener for real-time duplicate checking
             fileNumberInput.addEventListener('input', function (e) {
+                // Typing over the number drops the modal's KANGIS marker — but only for
+                // real keystrokes: setAutoFilledValue() dispatches a synthetic 'input'
+                // on this same field while applying a selection.
+                if (e.isTrusted) {
+                    fileSelectionState.system = null;
+                }
                 const fileNumber = e.target.value.trim();
                 if (fileNumber) {
                     console.log('Checking for duplicate file number:', fileNumber);
@@ -7363,6 +7452,9 @@
         // Also set up listener for archive file number field
         if (archiveFileNoInput) {
             archiveFileNoInput.addEventListener('input', function (e) {
+                if (e.isTrusted) {
+                    fileSelectionState.system = null;
+                }
                 const fileNumber = e.target.value.trim();
                 if (fileNumber) {
                     console.log('Checking archive file number for duplicates:', fileNumber);
@@ -7554,6 +7646,12 @@
                 if (regVal.includes('DCIV')) isDciv = true;
                 if (regVal.includes('KANGIS')) isKangis = true;
                 if (regVal.includes('SLTR')) isSltr = true;
+
+                // Deliberately moving off KANGIS overrides the marker the file number
+                // selection set, so the variant guards follow the operator's choice.
+                if (!isKangis) {
+                    fileSelectionState.system = null;
+                }
             }
             // Check Physical Registry (User specific request)
             if (physicalRegistrySelect && physicalRegistrySelect.value === 'DCIV Registry') {

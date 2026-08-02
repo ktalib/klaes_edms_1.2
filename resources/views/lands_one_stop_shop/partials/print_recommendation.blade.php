@@ -14,19 +14,72 @@
       body {
         font-family: Arial, Helvetica, sans-serif;
         background-color: #f0f0f0;
+        /* Column, not row: the acknowledgement sheet is a second page and must
+           stack under page 1, not sit beside it. */
         display: flex;
-        justify-content: center;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
         padding: 20px;
         color: #000;
       }
 
       .form-container {
         width: 210mm;
-        min-height: 297mm;
+        /* Fixed, not min-height: with a floor the box could grow past the sheet on
+           content-heavy records and spill the footer logos onto a page of their own,
+           which turned the 2-page print into 3. Capping it keeps page 1 to exactly
+           one sheet without touching the layout inside (296mm, not 297mm — a box
+           exactly equal to the page makes Chrome emit a trailing blank page). */
+        height: 296mm;
+        overflow: hidden;
         background: white;
         padding: 10mm 15mm;
         box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
         position: relative;
+      }
+
+      /* Page 2 (the acknowledgement sheet partial). It normally inherits its
+         margins from @page, but this template uses @page margin: 0 and pads the
+         page box instead, so match .form-container or the sheet bleeds to the
+         paper edge.
+
+         The partial sets min-height: 25.5cm assuming a content-box under @page
+         margins. Here `* { box-sizing: border-box }` applies, so that 25.5cm
+         would swallow the padding, the box would grow past the sheet, and the
+         absolutely-positioned footer logo would land on a third page. Pin the
+         height to one sheet instead (296mm, not 297mm — a box exactly equal to
+         the page makes Chrome emit a trailing blank page). */
+      .ack-page {
+        width: 210mm;
+        height: 296mm;
+        min-height: 0;
+        overflow: hidden;
+        background: white;
+        padding: 10mm 15mm;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        page-break-after: avoid;
+      }
+
+      /* The partial pins its footer logo with bottom/right: 0, which resolves
+         against the padding box — fine under @page margins, but here it would sit
+         flush against the paper edge and the printer would slice the logo. Inset
+         it to the page padding.
+
+         `body` prefix is load-bearing: the partial's own `.ack-page .footer` rule
+         has identical specificity and ships in a <style> inside the body, so it
+         comes later in source order and would otherwise win this tie. */
+      body .ack-page .footer {
+        bottom: 10mm;
+        right: 15mm;
+        line-height: 0;
+      }
+
+      body .ack-page .footer img {
+        height: 40px;
+        width: auto;
+        max-width: none;
+        display: block;
       }
 
       /* Branding Elements */
@@ -213,23 +266,11 @@
         font-size: 12px;
       }
 
-      /* Final Approval Row Fix */
-      .approval-container {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-end;
-        margin-top: 15px;
-      }
-
+      /* Final Approval Row — the grant clause and both options read as one line. */
       .status-options {
         font-weight: bold;
         font-size: 14px;
-        line-height: 2.8; 
-      }
-
-      .commissioner-block {
-        width: 300px;
-        text-align: center;
+        margin-bottom: 10px;
       }
 
       /* Footer */
@@ -256,11 +297,19 @@
         body {
           background: white;
           padding: 0;
+          /* Block, not flex — browsers ignore page-break-before on flex items,
+             which is what merged the two pages into one sheet. */
+          display: block;
+          gap: 0;
         }
         .form-container {
           box-shadow: none;
           width: 100%;
           border: none;
+        }
+        .ack-page {
+          width: 100%;
+          box-shadow: none;
         }
         @page {
           size: A4;
@@ -287,9 +336,14 @@
               return implode(', ', $parts);
           };
 
+          // The recommendation's Serial No. It is minted here, on first print, and
+          // keyed by file number alone (document_id 0) so the three controllers
+          // that render this template all resolve to the same row. This is NOT
+          // $record->rofo_serial_no — that column holds the RofO's security paper
+          // code, which a recommendation never carries.
           $securityCode = app(\App\Services\SecurityCodeService::class)->getOrGenerateForDocument(
-              (string) ($record->file_ref ?? ($record->tracking_id ?? ($record->id ?? ''))),
-              (int) ($record->id ?? 0),
+              (string) ($record->file_ref ?? ''),
+              0,
               'OSS Recomm'
           );
           $sc = app(\App\Services\SecurityCodeService::class)->formatForDisplay($securityCode->code);
@@ -441,32 +495,33 @@
           <div class="section-title">
             11. APPROVAL BY THE HONOURABLE COMMISSIONER
           </div>
-          <p style="font-weight: bold; margin-bottom: 10px">
+          <p class="status-options">
             The Grant of Right of Occupancy is hereby
+            @if($record->approval_status === 'approved')
+              <u>APPROVED</u><span style="color: #999;">/NOT APPROVED</span>
+            @elseif($record->approval_status === 'not_approved')
+              <span style="color: #999;">APPROVED/</span><u>NOT APPROVED</u>
+            @else
+              APPROVED/NOT APPROVED
+            @endif
           </p>
-
-          <div class="approval-container">
-            <div class="status-options">
-              @if($record->approval_status === 'approved')
-                <div><strong><u>APPROVED</u></strong></div>
-                <div style="margin-top: 10px; color: #999;">NOT APPROVED</div>
-              @elseif($record->approval_status === 'not_approved')
-                <div style="color: #999;">APPROVED</div>
-                <div style="margin-top: 10px"><strong><u>NOT APPROVED</u></strong></div>
-              @else
-                <div>APPROVED</div>
-                <div style="margin-top: 10px">NOT APPROVED</div>
-              @endif
+<br>
+          {{-- Same shape as the Permanent Secretary row in section 10: signature
+               line with the office name under it, Date alongside on the right. --}}
+          <div class="signature-row">
+            <div class="sig-line-container">
+              <div style="margin-top: 10px; text-align: left">
+                Sign: ________________________________
+              </div>
+              <div class="sig-label">
+                @if(!empty($record->commissioner_name))
+                  {{ $record->commissioner_name }}<br>
+                @endif
+                The Honourable Commissioner of Land
+              </div>
             </div>
-
-            <div class="commissioner-block">
-              <div class="sig-line"></div>
-              <div><strong>The Honourable</strong></div>
-              <div><strong>Commissioner of Land</strong></div>
-              @if(!empty($record->commissioner_name))
-                <div style="margin-top: 4px;">{{ $record->commissioner_name }}</div>
-              @endif
-              <div style="margin-top: 10px; padding-left: 27px; text-align: left">
+            <div style="width: 40%">
+              <div style="margin-top: 10px; text-align: left">
                 Date: {{ $record->commissioner_date ?: '________________________' }}
               </div>
             </div>
@@ -479,12 +534,18 @@
       </div>
       <div class="footer-logos">
         <img
-          src="http://app.klaes.ng/storage/upload/logo/logo.png"
+          src="http://app.klaes.ng/assets/logo/Left_Logo.png"
           alt="KLAES Logo"
         />
-        <img src="http://app.klaes.ng/assets/logo/las.jpg" alt="LAS Logo" />
+        <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="LAS Logo" />
       </div>
     </div>
+
+    {{-- Page 2: "Right of Occupancy — Collection of Letter of Grant", the same
+         acknowledgement sheet the Land Recommendation print carries. The partial
+         is fully static (no view variables) and scopes its CSS under .ack-page. --}}
+    @include('land_recommendations.templates._ack_sheet')
+
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script>

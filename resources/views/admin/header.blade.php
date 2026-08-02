@@ -5,9 +5,14 @@
   data-auto-logout-timeout="{{ (int) config('session.auto_logout_timeout', 180) }}"
   data-auto-logout-warning="{{ (int) config('session.auto_logout_warning', 30) }}" data-home-url="{{ url('/') }}">
   <div class="flex justify-between items-center">
-    <div>
-      <h1 class="text-2xl font-bold">{{ $PageTitle ?? '' }}</h1>
-      <p class="text-gray-500">{{ $PageDescription ?? '' }}</p>
+    <div class="flex items-center gap-3">
+      <button type="button" id="sidebar-mobile-toggle" class="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-md focus:outline-none lg:hidden" aria-label="Toggle Sidebar">
+        <i data-lucide="menu" class="w-6 h-6"></i>
+      </button>
+      <div>
+        <h1 class="text-2xl font-bold">{{ $PageTitle ?? '' }}</h1>
+        <p class="text-gray-500 text-sm hidden sm:block">{{ $PageDescription ?? '' }}</p>
+      </div>
     </div>
     <div class="flex items-center space-x-4">
       <!-- Back Button -->

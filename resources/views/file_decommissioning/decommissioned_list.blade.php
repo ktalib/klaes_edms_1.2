@@ -28,6 +28,89 @@
                     </div>
                 </div>
 
+                <!-- Quick Decommission Toggle -->
+                <div class="px-6 pt-6">
+                    <button id="toggleQuickDecommission" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        <i data-lucide="plus-circle" class="w-4 h-4 mr-2"></i>
+                        Show Quick Decommission
+                    </button>
+                </div>
+
+                <!-- Quick Decommission Section -->
+                <div id="quickDecommissionSection" class="px-6 py-6 border-b border-gray-200 hidden">
+                    <div class="bg-gradient-to-r from-red-50 to-pink-50 rounded-lg p-6 border border-red-200">
+                        <div class="flex items-center justify-between mb-4">
+                            <div>
+                                <h3 class="text-lg font-semibold text-gray-900">Quick File Decommissioning</h3>
+                                <p class="text-sm text-gray-600">Search and decommission files quickly</p>
+                            </div>
+                            <div class="text-right">
+                                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">
+                                    <i data-lucide="alert-triangle" class="w-4 h-4 mr-1"></i>
+                                    Decommission Action
+                                </span>
+                            </div>
+                        </div>
+
+                        <form id="quickDecommissionForm" class="space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="fileSearch" class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i data-lucide="search" class="w-4 h-4 inline mr-1"></i>
+                                        Search and Select File <span class="text-red-600">*</span>
+                                    </label>
+                                    <select id="fileSearch" name="file_id" class="w-full" required>
+                                        <option value="">Type to search for files...</option>
+                                    </select>
+                                    <p class="text-xs text-gray-500 mt-1">Search by MLS File No, Kangis File No, or File Name</p>
+                                </div>
+                                <div>
+                                    <label for="commissioningDate" class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i data-lucide="calendar" class="w-4 h-4 inline mr-1"></i>
+                                        Commissioning Date and Time
+                                    </label>
+                                    <input type="datetime-local" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500" id="commissioningDate" name="commissioning_date">
+                                    <p class="text-xs text-gray-500 mt-1">Optional - When the file was commissioned</p>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="decommissioningDate" class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i data-lucide="calendar-x" class="w-4 h-4 inline mr-1"></i>
+                                        Decommissioning Date and Time <span class="text-red-600">*</span>
+                                    </label>
+                                    <input type="datetime-local" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500" id="decommissioningDate" name="decommissioning_date" required>
+                                    <p class="text-xs text-gray-500 mt-1">Required - When the file is being decommissioned</p>
+                                </div>
+                                <div>
+                                    <label for="decommissioningReason" class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i data-lucide="message-square" class="w-4 h-4 inline mr-1"></i>
+                                        Reason for Decommissioning <span class="text-red-600">*</span>
+                                    </label>
+                                    <textarea class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500" id="decommissioningReason" name="decommissioning_reason" rows="3" required placeholder="Enter the reason for decommissioning this file..."></textarea>
+                                </div>
+                            </div>
+                            <div>
+                                <label for="decommissionedBy" class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i data-lucide="user" class="w-4 h-4 inline mr-1"></i>
+                                    Decommissioned By
+                                </label>
+                                <input type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100" id="decommissionedBy" name="decommissioned_by" value="{{ auth()->user()->first_name }} {{ auth()->user()->last_name }}" readonly>
+                            </div>
+                            <div class="flex items-center space-x-3">
+                                <button type="submit" class="inline-flex items-center px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                                    <i data-lucide="archive" class="w-4 h-4 mr-2"></i>
+                                    Decommission File
+                                </button>
+                                <button type="reset" class="inline-flex items-center px-4 py-2 bg-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                                    <i data-lucide="x" class="w-4 h-4 mr-2"></i>
+                                    Clear Form
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
                 <!-- Statistics Section -->
                 <div class="px-6 py-6 bg-gray-50 border-b border-gray-200">
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -252,6 +335,10 @@
         </div>
     </div>
 
+    <!-- Include Select2 CSS and JS (Quick Decommission file picker) -->
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
     <!-- Include DataTables -->
     <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.13.6/css/dataTables.tailwindcss.min.css">
     <script type="text/javascript" src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
@@ -261,6 +348,34 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
     <style>
+        /* Select2 Custom Styling */
+        .select2-container--default .select2-selection--single {
+            height: 42px;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            padding: 0.5rem 0.75rem;
+        }
+
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: 26px;
+            color: #374151;
+            font-size: 0.875rem;
+        }
+
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 40px;
+        }
+
+        .select2-dropdown {
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        .select2-container--default .select2-results__option--highlighted[aria-selected] {
+            background-color: #3b82f6;
+        }
+
         /* DataTables Custom Styling */
         .dataTables_wrapper .dataTables_length,
         .dataTables_wrapper .dataTables_filter,
@@ -305,6 +420,62 @@
         $(document).ready(function() {
             // Initialize Lucide icons
             lucide.createIcons();
+
+            // Quick Decommission: show/hide
+            $('#toggleQuickDecommission').on('click', function() {
+                const section = document.getElementById('quickDecommissionSection');
+                section.classList.toggle('hidden');
+                this.innerHTML = section.classList.contains('hidden')
+                    ? '<i data-lucide="plus-circle" class="w-4 h-4 mr-2"></i> Show Quick Decommission'
+                    : '<i data-lucide="minus-circle" class="w-4 h-4 mr-2"></i> Hide Quick Decommission';
+                lucide.createIcons();
+            });
+
+            // Default the decommissioning date to now (flatpickr may have taken over the input)
+            const nowValue = new Date().toISOString().slice(0, 16);
+            setDateField('decommissioningDate', nowValue);
+
+            function setDateField(id, value) {
+                const field = document.getElementById(id);
+                if (!field) return;
+                if (field._flatpickr) {
+                    field._flatpickr.setDate(value, false);
+                } else {
+                    field.value = value;
+                }
+            }
+
+            // Quick Decommission: file picker
+            $('#fileSearch').select2({
+                placeholder: 'Type to search for files...',
+                allowClear: true,
+                minimumInputLength: 2,
+                width: '100%',
+                ajax: {
+                    url: '{{ route("file-decommissioning.search") }}',
+                    dataType: 'json',
+                    delay: 250,
+                    data: function (params) {
+                        return { search: params.term };
+                    },
+                    processResults: function (data) {
+                        return { results: data };
+                    },
+                    cache: true
+                },
+                templateResult: function(option) {
+                    if (!option.id) return option.text;
+
+                    return $(
+                        '<div class="flex items-center justify-between p-2">' +
+                            '<div>' +
+                                '<div class="font-medium text-gray-900">' + option.text + '</div>' +
+                                '<div class="text-sm text-gray-500">' + (option.mlsfNo || 'N/A') + '</div>' +
+                            '</div>' +
+                        '</div>'
+                    );
+                }
+            });
 
             // Initialize DataTable for decommissioned files
             const decommissionedFilesTable = $('#decommissionedFilesTable').DataTable({
@@ -399,6 +570,87 @@
                     decommissionedFilesTable.columns.adjust();
                 }
                 lucide.createIcons();
+            });
+
+            // Quick Decommission: submit
+            $('#quickDecommissionForm').on('submit', function(e) {
+                e.preventDefault();
+
+                const formData = {
+                    file_id: $('#fileSearch').val(),
+                    commissioning_date: $('#commissioningDate').val(),
+                    decommissioning_date: $('#decommissioningDate').val(),
+                    decommissioning_reason: $('#decommissioningReason').val()
+                };
+
+                if (!formData.file_id) {
+                    Swal.fire({ icon: 'warning', title: 'Select a file', text: 'Please select a file to decommission.', confirmButtonColor: '#f59e0b' });
+                    return;
+                }
+
+                if (!formData.decommissioning_date) {
+                    Swal.fire({ icon: 'warning', title: 'Date required', text: 'Please enter the decommissioning date and time.', confirmButtonColor: '#f59e0b' });
+                    return;
+                }
+
+                if (!formData.decommissioning_reason.trim()) {
+                    Swal.fire({ icon: 'warning', title: 'Reason required', text: 'Please enter the reason for decommissioning.', confirmButtonColor: '#f59e0b' });
+                    return;
+                }
+
+                Swal.fire({
+                    title: 'Processing...',
+                    text: 'Decommissioning file, please wait...',
+                    allowOutsideClick: false,
+                    didOpen: () => { Swal.showLoading(); }
+                });
+
+                $.ajax({
+                    url: '{{ route("file-decommissioning.decommission") }}',
+                    type: 'POST',
+                    data: formData,
+                    headers: {
+                        'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Success!',
+                                text: 'File decommissioned successfully!',
+                                confirmButtonColor: '#10b981'
+                            });
+
+                            $('#quickDecommissionForm')[0].reset();
+                            $('#fileSearch').val(null).trigger('change');
+                            setDateField('decommissioningDate', new Date().toISOString().slice(0, 16));
+
+                            decommissionedFilesTable.ajax.reload();
+                            loadAdditionalStatistics();
+                        } else {
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Error!',
+                                text: response.message || 'Error decommissioning file',
+                                confirmButtonColor: '#ef4444'
+                            });
+                        }
+                    },
+                    error: function(xhr) {
+                        let message = 'Error decommissioning file';
+
+                        if (xhr.responseJSON) {
+                            if (xhr.responseJSON.message) {
+                                message = xhr.responseJSON.message;
+                            }
+                            if (xhr.responseJSON.errors) {
+                                message = Object.values(xhr.responseJSON.errors).flat().join(', ');
+                            }
+                        }
+
+                        Swal.fire({ icon: 'error', title: 'Error!', text: message, confirmButtonColor: '#ef4444' });
+                    }
+                });
             });
 
             // Load additional statistics

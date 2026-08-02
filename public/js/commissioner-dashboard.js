@@ -382,6 +382,11 @@
                 const isDepartmentQueue = /department\s*queue/i.test(office.name || '');
                 const officeName = isDepartmentQueue ? (office.department || office.name) : office.name;
                 const officeDepartment = isDepartmentQueue ? '' : (office.department || '');
+                // Same shape as the archive tab's "Last Updated": relative age on
+                // top, the formatted calendar date underneath.
+                const sinceStamp = activeEntry.createdAt || activeEntry.logInDate || null;
+                const timeInOffice = sinceStamp ? formatTimeDifference(sinceStamp) : 'N/A';
+                const timeInOfficeOn = sinceStamp ? formatDate(sinceStamp) : '';
 
                 return `
                 <tr class="file-row fade-in">
@@ -391,11 +396,10 @@
                                 <i data-lucide="file-text" class="h-5 w-5 text-blue-600"></i>
                             </div>
                             <div class="ml-4">
-                                <div class="text-sm font-medium text-gray-900">${tracker.fileName}</div>
-                                <div class="text-sm text-gray-500">
-                                    <span class="font-mono">${tracker.fileNo}</span> • 
-                                    <span class="font-mono text-xs">${tracker.trackingId}</span>
+                                <div>
+                                    <span class="file-no-badge file-no-badge-lead"><span class="dot"></span>${escapeHtml(tracker.fileNo)}</span>
                                 </div>
+                                <div class="file-title-sub mt-1">${escapeHtml(tracker.fileName)}</div>
                             </div>
                         </div>
                     </td>
@@ -411,8 +415,8 @@
                         </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm text-gray-900">${activeEntry.createdAt ? formatTimeDifference(activeEntry.createdAt) : 'N/A'}</div>
-                        <div class="text-xs text-gray-500">${activeEntry.logInDate ? 'Since ' + activeEntry.logInDate : 'Awaiting acceptance'}</div>
+                        <div class="text-sm text-gray-900">${timeInOffice}</div>
+                        <div class="text-xs text-gray-500">${timeInOfficeOn}</div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${priorityClass}">${priorityText}</span>
@@ -630,6 +634,49 @@
 
         // One row per department group; a group's files are rendered underneath it
         // once expanded (and fetched on first expand).
+        // Icon + accent per canonical department (App\Support\DepartmentNormalizer
+        // folds every free-text value onto one of these names). Keys are lowercased.
+        const DEPARTMENT_STYLES = {
+            'all':               { icon: 'layers',        accent: '#475569', soft: '#f1f5f9', border: '#e2e8f0' },
+            'csu':               { icon: 'headset',       accent: '#0891b2', soft: '#ecfeff', border: '#cffafe' },
+            'land':              { icon: 'map',           accent: '#16a34a', soft: '#f0fdf4', border: '#dcfce7' },
+            'survey':            { icon: 'ruler',         accent: '#a16207', soft: '#fefce8', border: '#fef08a' },
+            'gis':               { icon: 'globe',         accent: '#0d9488', soft: '#f0fdfa', border: '#ccfbf1' },
+            'gis/survey':        { icon: 'compass',       accent: '#0369a1', soft: '#f0f9ff', border: '#bae6fd' },
+            'kangis':            { icon: 'database',      accent: '#4f46e5', soft: '#eef2ff', border: '#e0e7ff' },
+            'account/finance':   { icon: 'wallet',        accent: '#059669', soft: '#ecfdf5', border: '#d1fae5' },
+            'deeds':             { icon: 'scroll-text',   accent: '#b45309', soft: '#fffbeb', border: '#fde68a' },
+            'physical planning': { icon: 'building-2',    accent: '#7c3aed', soft: '#f5f3ff', border: '#ede9fe' },
+            'cadastral':         { icon: 'grid-3x3',      accent: '#db2777', soft: '#fdf2f8', border: '#fbcfe8' },
+            'sectional titling': { icon: 'layers-3',      accent: '#c026d3', soft: '#fdf4ff', border: '#f5d0fe' },
+            'sltr':              { icon: 'land-plot',     accent: '#ea580c', soft: '#fff7ed', border: '#ffedd5' },
+            'ict':               { icon: 'cpu',           accent: '#2563eb', soft: '#eff6ff', border: '#dbeafe' },
+            'dciv':              { icon: 'shield-check',  accent: '#dc2626', soft: '#fef2f2', border: '#fee2e2' },
+            'unassigned':        { icon: 'circle-help',   accent: '#64748b', soft: '#f8fafc', border: '#e2e8f0' },
+        };
+
+        const DEPARTMENT_STYLE_FALLBACK = { icon: 'building-2', accent: '#64748b', soft: '#f8fafc', border: '#e2e8f0' };
+
+        // Display-only suffix: KANGIS is an agency and Unassigned is a placeholder,
+        // so neither reads as "… Department".
+        const DEPARTMENT_LABEL_EXCEPTIONS = new Set(['kangis', 'unassigned']);
+
+        function departmentLabel(department) {
+            const name = String(department || '').trim();
+            if (!name) return 'Unassigned';
+            const key = name.toLowerCase();
+            if (DEPARTMENT_LABEL_EXCEPTIONS.has(key) || key.endsWith('department')) return name;
+            return `${name} Department`;
+        }
+
+        function departmentStyle(department) {
+            return DEPARTMENT_STYLES[String(department || '').trim().toLowerCase()] || DEPARTMENT_STYLE_FALLBACK;
+        }
+
+        function departmentStyleVars(style) {
+            return `--dept-accent:${style.accent};--dept-soft:${style.soft};--dept-border:${style.border};`;
+        }
+
         function renderRequestedTable() {
             const tableBody = document.getElementById('requested-table-body');
             const noResults = document.getElementById('requested-no-results');
@@ -650,15 +697,29 @@
                 const rows = requestedState.rowsByDepartment[department];
                 const isLoading = requestedState.loadingDepartments.has(department);
 
+                const style = departmentStyle(department);
+                const styleVars = departmentStyleVars(style);
+                const high = group.highFiles || 0;
+
                 const header = `
-                <tr class="department-group-row ${expanded ? 'is-expanded' : ''}" data-dept-toggle="${groupIndex}" data-department="${escapeHtml(department)}" title="Click to ${expanded ? 'collapse' : 'expand'}">
-                    <td colspan="6" class="px-6 py-3">
-                        <div class="flex items-center gap-2">
-                            <i data-lucide="chevron-right" class="h-4 w-4 text-slate-500 department-group-chevron"></i>
-                            <i data-lucide="building-2" class="h-4 w-4 text-slate-500"></i>
-                            <span class="department-group-name">${escapeHtml(department)}</span>
-                            <span class="department-group-count">${total} file${total > 1 ? 's' : ''}</span>
-                            ${isLoading ? '<span class="department-group-note">loading…</span>' : ''}
+                <tr class="department-group-row ${expanded ? 'is-expanded' : ''}" style="${styleVars}" data-dept-toggle="${groupIndex}" data-department="${escapeHtml(department)}" aria-expanded="${expanded}" title="Click to ${expanded ? 'collapse' : 'expand'}">
+                    <td colspan="7" class="px-6 py-3">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="chevron-right" class="h-4 w-4 department-group-chevron"></i>
+                            <span class="department-group-icon">
+                                <i data-lucide="${style.icon}" class="h-4 w-4"></i>
+                            </span>
+                            <span class="department-group-name">${escapeHtml(departmentLabel(department))}</span>
+                            <span class="department-group-count">${total} file${total === 1 ? '' : 's'}</span>
+                            ${high > 0 ? `
+                            <span class="department-group-high">
+                                <i data-lucide="alert-triangle" class="h-3 w-3"></i>
+                                ${high} high
+                            </span>` : ''}
+                            <span class="flex-1"></span>
+                            ${isLoading
+                                ? '<span class="department-group-note">loading…</span>'
+                                : `<span class="department-group-hint">${expanded ? 'Hide files' : 'Show files'}</span>`}
                         </div>
                     </td>
                 </tr>
@@ -668,16 +729,16 @@
 
                 if (isLoading || !rows) {
                     return header + `
-                    <tr class="department-group-loading">
-                        <td colspan="6" class="px-6 py-4 text-center text-sm text-gray-500">
+                    <tr class="department-group-loading" style="${styleVars}">
+                        <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-500">
                             <i data-lucide="loader-2" class="h-4 w-4 inline animate-spin mr-1"></i>
-                            Loading ${escapeHtml(department)} files...
+                            Loading ${escapeHtml(departmentLabel(department))} files...
                         </td>
                     </tr>
                     `;
                 }
 
-                return header + rows.map(tracker => requestedRowHtml(tracker, groupIndex, true)).join('');
+                return header + rows.map(tracker => requestedRowHtml(tracker, groupIndex, true, styleVars)).join('');
             }).join('');
 
             setupDepartmentGroupToggles();
@@ -743,23 +804,40 @@
             });
         }
 
-        function requestedRowHtml(tracker, groupIndex, visible) {
+        // The officer the file is requested for (file_tracker.receiving_officer_name).
+        function requesterName(tracker) {
+            const name = (tracker.requester || '').trim();
+            // Older rows stored the dropdown placeholder as a real value.
+            if (!name || /^select receiving officer$/i.test(name)) return 'Unassigned';
+            return name;
+        }
+
+        function requesterInitials(name) {
+            if (name === 'Unassigned') return '?';
+            // Names often carry a bracketed posting, e.g. "… (SECRET REGISTRY)".
+            const parts = String(name).replace(/\(.*?\)/g, ' ').trim().split(/\s+/).filter(Boolean);
+            if (parts.length === 0) return '?';
+            return (parts[0][0] + (parts.length > 1 ? parts[1][0] : '')).toUpperCase();
+        }
+
+        function requestedRowHtml(tracker, groupIndex, visible, styleVars) {
             const priorityClass = `priority-${tracker.priority}`;
             const priorityText = tracker.priority.charAt(0) + tracker.priority.slice(1).toLowerCase();
             const statusInfo = getStatusInfo(tracker);
+            const requester = requesterName(tracker);
 
             return `
-                <tr class="file-row fade-in" data-dept-rows="${groupIndex}" ${visible ? '' : 'style="display:none;"'}>
+                <tr class="file-row fade-in" data-dept-rows="${groupIndex}" style="${styleVars || ''}${visible ? '' : 'display:none;'}">
                     <td class="px-6 py-4 whitespace-nowrap">
                         <div class="flex items-center">
-                            <div class="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                                <i data-lucide="file-text" class="h-5 w-5 text-blue-600"></i>
+                            <div class="department-group-icon department-group-icon-lg">
+                                <i data-lucide="file-text" class="h-5 w-5"></i>
                             </div>
                             <div class="ml-4">
-                                <div class="text-sm font-medium text-gray-900">${escapeHtml(tracker.fileName)}</div>
-                                <div class="mt-1">
-                                    <span class="file-no-badge"><span class="dot"></span>${escapeHtml(tracker.fileNo)}</span>
+                                <div>
+                                    <span class="file-no-badge file-no-badge-lead"><span class="dot"></span>${escapeHtml(tracker.fileNo)}</span>
                                 </div>
+                                <div class="file-title-sub mt-1">${escapeHtml(tracker.fileName)}</div>
                             </div>
                         </div>
                     </td>
@@ -770,7 +848,13 @@
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${priorityClass}">${priorityText}</span>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm text-gray-900">${escapeHtml(tracker.department || 'N/A')}</div>
+                        <div class="text-sm text-gray-900">${escapeHtml(departmentLabel(tracker.department))}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="flex items-center gap-2">
+                            <span class="requester-avatar">${escapeHtml(requesterInitials(requester))}</span>
+                            <span class="text-sm text-gray-900">${escapeHtml(requester)}</span>
+                        </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         <span class="status-badge ${statusInfo.class}">
@@ -858,8 +942,8 @@
                                         <span>${tracker.caseType || 'N/A'}</span>
                                     </div>
                                     <div class="flex justify-between">
-                                        <span class="text-gray-600">Applicant:</span>
-                                        <span>${tracker.applicant || 'N/A'}</span>
+                                        <span class="text-gray-600">Requester:</span>
+                                        <span class="font-medium">${requesterName(tracker)}</span>
                                     </div>
                                     <div class="flex justify-between">
                                         <span class="text-gray-600">Request Date:</span>
@@ -1143,31 +1227,123 @@
             lucide.createIcons();
         }
 
-        // Pull the whole requested set (not just the visible page) for the sheet.
-        // The period is applied server-side; custom ranges are trimmed afterwards.
-        async function fetchAllRequested(period) {
-            const serverPeriod = ['weekly', 'monthly', 'quarterly'].includes(period) ? period : 'all';
-            const params = new URLSearchParams({ page: 1, per_page: 1000, period: serverPeriod });
-            if (requestedState.search) params.set('search', requestedState.search);
+        // What the sheet was last generated with, so the department dropdown can
+        // regenerate over the same period without re-asking for it.
+        const sheetState = { period: 'all', customStart: null, customEnd: null, department: '' };
 
-            try {
+        // Identifies the newest generate run, so a slow one cannot overwrite a
+        // newer sheet when the user changes the department mid-fetch.
+        let sheetRunId = 0;
+
+        // The endpoint caps per_page at 1000. The sheet used to request a single
+        // page of that size and present it as the whole set — with ~20k requested
+        // files that silently dropped everything past the first department or two.
+        const SHEET_PAGE_SIZE = 1000;
+
+        // A print sheet that renders every row would be tens of thousands of table
+        // rows in one modal. Past this the sheet says so and asks for a department.
+        const SHEET_MAX_ROWS = 5000;
+
+        // Pull the whole requested set (not just the visible page) for the sheet,
+        // paging until the server says there is nothing left. The period is applied
+        // server-side; custom ranges are trimmed afterwards.
+        async function fetchAllRequested(period, department = '') {
+            const serverPeriod = ['weekly', 'monthly', 'quarterly'].includes(period) ? period : 'all';
+
+            const fetchPage = async page => {
+                const params = new URLSearchParams({ page, per_page: SHEET_PAGE_SIZE, period: serverPeriod });
+                if (requestedState.search) params.set('search', requestedState.search);
+                if (department) params.set('department', department);
+
                 const response = await fetch(`/api/file-tracker-dashboard/requested?${params.toString()}`);
                 const result = await response.json();
-                return result.success ? (result.data.files || []) : [];
+                return result.success ? result.data : null;
+            };
+
+            try {
+                // Page 1 also reports how many there are, so the rest can be
+                // fetched together instead of one round trip at a time.
+                const first = await fetchPage(1);
+                if (!first) return { files: [], truncated: false };
+
+                const lastPage = first.pagination?.lastPage || 1;
+                const maxPages = Math.min(lastPage, Math.ceil(SHEET_MAX_ROWS / SHEET_PAGE_SIZE));
+
+                const rest = [];
+                for (let page = 2; page <= maxPages; page++) rest.push(page);
+
+                const pages = await Promise.all(rest.map(fetchPage));
+
+                const files = [...(first.files || [])];
+                pages.forEach(data => files.push(...(data?.files || [])));
+
+                return { files, truncated: maxPages < lastPage };
             } catch (error) {
                 console.error('Error loading requested files for the sheet:', error);
-                return [];
+                return { files: [], truncated: false };
             }
         }
 
-        // Generate Request Sheet based on period
-        async function generateRequestSheet(period, customStart = null, customEnd = null) {
+        // The dropdown lists every department in the requested set, not just the
+        // ones on the current page of the table.
+        async function populateSheetDepartments() {
+            const select = document.getElementById('sheet-department');
+            if (!select) return;
+
+            // The counts are period-specific, so they are rebuilt whenever the
+            // sheet is generated for a different period.
+            const serverPeriod = ['weekly', 'monthly', 'quarterly'].includes(sheetState.period)
+                ? sheetState.period
+                : 'all';
+            if (select.dataset.loadedPeriod === serverPeriod) return;
+
+            try {
+                const params = new URLSearchParams({ page: 1, per_page: 200, period: serverPeriod });
+                const response = await fetch(`/api/file-tracker-dashboard/requested-departments?${params.toString()}`);
+                const result = await response.json();
+                if (!result.success) return;
+
+                const selected = select.value;
+                select.innerHTML = '<option value="">All departments</option>';
+
+                (result.data.departmentCounts || []).forEach(group => {
+                    const option = document.createElement('option');
+                    option.value = group.department;
+                    option.textContent = `${departmentLabel(group.department)} (${group.totalFiles})`;
+                    select.appendChild(option);
+                });
+
+                select.value = selected;
+                select.dataset.loadedPeriod = serverPeriod;
+            } catch (error) {
+                console.error('Error loading departments for the sheet:', error);
+            }
+        }
+
+        // Generate Request Sheet based on period, grouped by department.
+        async function generateRequestSheet(period, customStart = null, customEnd = null, department = null) {
             let requestedFiles = [];
             const now = new Date();
             let startDate, endDate;
             let periodLabel = '';
 
-            const allRequested = await fetchAllRequested(period);
+            sheetState.period = period;
+            sheetState.customStart = customStart;
+            sheetState.customEnd = customEnd;
+            if (department !== null) sheetState.department = department;
+
+            // Several pages may be fetched, so show the sheet as pending rather
+            // than leaving the button looking dead.
+            const token = ++sheetRunId;
+            document.getElementById('requestSheetContent').innerHTML =
+                '<div style="padding:3rem; text-align:center; color:#64748b;">Building sheet…</div>';
+            document.getElementById('requestSheetOverlay').classList.add('show');
+            populateSheetDepartments();
+
+            const { files: allRequested, truncated } = await fetchAllRequested(period, sheetState.department);
+
+            // A later run (e.g. the dropdown changed again) already owns the sheet.
+            if (token !== sheetRunId) return;
 
             if (period === 'weekly') {
                 startDate = new Date(now);
@@ -1212,12 +1388,31 @@
                 requestedFiles = allRequested;
             }
 
-            // Sort by request date (newest first)
-            requestedFiles.sort((a, b) => {
-                const dateA = new Date(a.requestedDate || a.requestDate);
-                const dateB = new Date(b.requestedDate || b.requestDate);
-                return dateB - dateA;
+            // Group by department, newest request first within each group.
+            // Departments read alphabetically; files with none sort last.
+            const groupOf = file => (file.department || '').trim() || 'Unassigned';
+
+            const grouped = new Map();
+            requestedFiles.forEach(file => {
+                const key = groupOf(file);
+                if (!grouped.has(key)) grouped.set(key, []);
+                grouped.get(key).push(file);
             });
+
+            const groups = [...grouped.entries()]
+                .sort(([a], [b]) => {
+                    if (a === 'Unassigned') return 1;
+                    if (b === 'Unassigned') return -1;
+                    return a.localeCompare(b);
+                })
+                .map(([name, files]) => ({
+                    name,
+                    files: files.sort((a, b) => {
+                        const dateA = new Date(a.requestedDate || a.requestDate);
+                        const dateB = new Date(b.requestedDate || b.requestDate);
+                        return dateB - dateA;
+                    }),
+                }));
 
             const totalFiles = requestedFiles.length;
             const highPriority = requestedFiles.filter(f => f.priority === 'HIGH').length;
@@ -1225,7 +1420,9 @@
             const lowPriority = requestedFiles.filter(f => f.priority === 'LOW').length;
             const activeFiles = requestedFiles.filter(f => !f.isReturned && !f.isCanceled).length;
             const completedFiles = requestedFiles.filter(f => f.isReturned).length;
-            const departments = [...new Set(requestedFiles.map(f => f.department).filter(Boolean))];
+            const scopeLabel = sheetState.department
+                ? `${sheetState.department} only`
+                : `${groups.length} department${groups.length === 1 ? '' : 's'}`;
 
             let html = `
                 <div class="header">
@@ -1235,9 +1432,21 @@
                         <span><strong>Period:</strong> ${periodLabel}</span>
                         <span><strong>Generated:</strong> ${new Date().toLocaleString()}</span>
                         <span><strong>Total Files:</strong> ${totalFiles}</span>
-                        <span><strong>Departments:</strong> ${departments.length}</span>
+                        <span><strong>Departments:</strong> ${scopeLabel}</span>
                     </div>
                 </div>
+`;
+
+            if (truncated) {
+                html += `
+                    <div style="margin-bottom:1rem; padding:0.6rem 0.8rem; border:1px solid #fcd34d; background:#fffbeb; color:#92400e; font-size:0.8rem; border-radius:4px;">
+                        Showing the first ${totalFiles.toLocaleString()} files only — the full set is larger than one sheet.
+                        Pick a department above to print a complete list for that department.
+                    </div>
+                `;
+            }
+
+            html += `
 
                 <div class="summary-stats">
                     <div class="stat-item">
@@ -1266,18 +1475,25 @@
                     </div>
                 </div>
 
+                ${groups.length > 1 ? `
+                    <div style="margin-bottom:0.9rem; font-size:0.75rem; color:#334155;">
+                        <strong style="display:block; margin-bottom:0.3rem;">Department breakdown</strong>
+                        ${groups.map(g => `<span style="display:inline-block; margin:0 0.9rem 0.2rem 0;">${departmentLabel(g.name)}: <strong>${g.files.length}</strong></span>`).join('')}
+                    </div>
+                ` : ''}
+
                 <table>
                     <thead>
                         <tr>
                             <th style="width:3%;">#</th>
-                            <th style="width:10%;">File No.</th>
-                            <th style="width:15%;">File Name</th>
-                            <th style="width:8%;">Priority</th>
-                            <th style="width:12%;">Department</th>
-                            <th style="width:10%;">Current Office</th>
+                            <th style="width:12%;">File No.</th>
+                            <th style="width:17%;">File Name</th>
+                            <th style="width:7%;">Priority</th>
+                            <th style="width:11%;">Requester</th>
+                            <th style="width:11%;">Current Office</th>
                             <th style="width:10%;">Requested Date</th>
                             <th style="width:8%;">Status</th>
-                            <th style="width:24%;">Movement History</th>
+                            <th style="width:21%;">Movement History</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1292,32 +1508,51 @@
                     </tr>
                 `;
             } else {
-                requestedFiles.forEach((file, index) => {
-                    const priorityClass = file.priority.toLowerCase();
-                    const statusInfo = getStatusInfo(file);
-                    const movement = getMovementHistory(file);
-                    const entries = file.logEntries || [];
-                    const lastEntry = entries[entries.length - 1];
-                    const currentOffice = officeData[file.currentOfficeId]?.name || file.currentOffice;
+                // The department is carried by the group header, so it is not
+                // repeated on every row.
+                groups.forEach(group => {
+                    const groupHigh = group.files.filter(f => f.priority === 'HIGH').length;
 
                     html += `
                         <tr>
-                            <td style="text-align:center; font-weight:600;">${index + 1}</td>
-                            <td><strong>${file.fileNo}</strong></td>
-                            <td>${file.fileName}</td>
-                            <td><span class="badge-priority ${priorityClass}">${file.priority}</span></td>
-                            <td>${file.department || '—'}</td>
-                            <td>${currentOffice}</td>
-                            <td>${file.requestedDate ? formatDate(file.requestedDate) : formatDate(file.requestDate)}</td>
-                            <td><span class="status-badge ${statusInfo.class}">${statusInfo.label}</span></td>
-                            <td>
-                                <div class="movement-history">
-                                    ${movement !== 'No movement recorded' ? movement : 'No movement recorded'}
-                                    ${lastEntry ? `<div style="margin-top:2px; font-size:0.65rem; color:#94a3b8;">Last: ${lastEntry.officeName} (${formatTimeDifference(lastEntry.createdAt)})</div>` : ''}
-                                </div>
+                            <td colspan="9" style="background:#eef2ff; border-top:2px solid #6366f1; font-weight:700; text-transform:uppercase; letter-spacing:0.03em; color:#312e81; padding:0.45rem 0.6rem;">
+                                ${departmentLabel(group.name)}
+                                <span style="float:right; font-weight:600; text-transform:none; letter-spacing:0; color:#4338ca;">
+                                    ${group.files.length} file${group.files.length === 1 ? '' : 's'} · ${groupHigh} high priority
+                                </span>
                             </td>
                         </tr>
                     `;
+
+                    // Numbering restarts per department so each group reads as its
+                    // own list when the sheet is split up and circulated.
+                    group.files.forEach((file, index) => {
+                        const priorityClass = file.priority.toLowerCase();
+                        const statusInfo = getStatusInfo(file);
+                        const movement = getMovementHistory(file);
+                        const entries = file.logEntries || [];
+                        const lastEntry = entries[entries.length - 1];
+                        const currentOffice = officeData[file.currentOfficeId]?.name || file.currentOffice;
+
+                        html += `
+                            <tr>
+                                <td style="text-align:center; font-weight:600;">${index + 1}</td>
+                                <td><strong>${file.fileNo}</strong></td>
+                                <td>${file.fileName}</td>
+                                <td><span class="badge-priority ${priorityClass}">${file.priority}</span></td>
+                                <td>${requesterName(file)}</td>
+                                <td>${currentOffice}</td>
+                                <td>${file.requestedDate ? formatDate(file.requestedDate) : formatDate(file.requestDate)}</td>
+                                <td><span class="status-badge ${statusInfo.class}">${statusInfo.label}</span></td>
+                                <td>
+                                    <div class="movement-history">
+                                        ${movement !== 'No movement recorded' ? movement : 'No movement recorded'}
+                                        ${lastEntry ? `<div style="margin-top:2px; font-size:0.65rem; color:#94a3b8;">Last: ${lastEntry.officeName} (${formatTimeDifference(lastEntry.createdAt)})</div>` : ''}
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    });
                 });
             }
 
@@ -1343,6 +1578,11 @@
 
             document.getElementById('requestSheetContent').innerHTML = html;
             document.getElementById('requestSheetOverlay').classList.add('show');
+
+            const departmentSelect = document.getElementById('sheet-department');
+            if (departmentSelect) departmentSelect.value = sheetState.department;
+            populateSheetDepartments();
+
             lucide.createIcons();
         }
 
@@ -1467,13 +1707,14 @@
                 loadRequested(1);
             });
             
-            // Generate requested sheet
+            // Generate requested sheet — opens on every department; the sheet's own
+            // dropdown narrows it from there.
             document.getElementById('generateRequestedSheet').addEventListener('click', () => {
                 const filter = document.getElementById('requested-filter').value;
                 if (filter === 'ALL') {
-                    generateRequestSheet('all');
+                    generateRequestSheet('all', null, null, '');
                 } else {
-                    generateRequestSheet(filter);
+                    generateRequestSheet(filter, null, null, '');
                 }
             });
             
@@ -1537,14 +1778,25 @@
                         if (!start) return;
                         const end = prompt('Enter end date (YYYY-MM-DD):');
                         if (!end) return;
-                        generateRequestSheet('custom', start, end);
+                        generateRequestSheet('custom', start, end, '');
                     } else {
-                        generateRequestSheet(period);
+                        generateRequestSheet(period, null, null, '');
                     }
                     document.getElementById('printDropdown').classList.remove('show');
                 });
             });
             
+            // Department filter inside the sheet — regenerates over the period the
+            // sheet was opened with, so the two filters compose.
+            document.getElementById('sheet-department')?.addEventListener('change', function () {
+                generateRequestSheet(
+                    sheetState.period,
+                    sheetState.customStart,
+                    sheetState.customEnd,
+                    this.value
+                );
+            });
+
             // Request sheet close
             document.getElementById('closeRequestSheet').addEventListener('click', () => {
                 document.getElementById('requestSheetOverlay').classList.remove('show');

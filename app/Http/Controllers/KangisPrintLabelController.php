@@ -939,7 +939,7 @@ $query = KangisPrintLabelBatch::with(['creator'])
                 'shelf_rack'        => $full,
                 'file_count'        => (int) $r->file_count,
                 'batch_count'       => (int) ($r->batch_count ?? 1),
-                'file_numbers'      => $r->file_numbers ?? [],
+                'files'             => $r->files ?? [],
                 'status'            => $r->status,
                 'created_at'        => $r->created_at,
             ];
@@ -961,43 +961,102 @@ $query = KangisPrintLabelBatch::with(['creator'])
             DB::connection('sqlsrv')
                 ->table('kangis_print_label_batch_items')
                 ->whereIn('batch_id', $chunk->all())
-                ->select(['batch_id', 'file_number', 'label_position'])
+                ->select(['batch_id', 'file_number', 'file_title', 'shelf_location', 'label_position'])
                 ->orderBy('batch_id')
                 ->orderBy('label_position')
                 ->get()
                 ->each(function ($item) use (&$byBatch) {
                     $number = trim((string) $item->file_number);
-                    if ($number !== '') {
-                        $byBatch[$item->batch_id][] = $number;
+                    if ($number === '') {
+                        return;
                     }
+
+                    // The batch item's own file_title column holds the KANGIS
+                    // file-no placeholder captured at batch time (see createBatch),
+                    // not a title — it is only the fallback below.
+                    $byBatch[$item->batch_id][] = [
+                        'file_number'    => $number,
+                        'file_title'     => '',
+                        'placeholder'    => trim((string) ($item->file_title ?? '')),
+                        'shelf_location' => trim((string) ($item->shelf_location ?? '')),
+                    ];
                 });
         }
 
+        // The real file title (owner / holder) lives on the indexing record.
+        $titles = $this->resolveFileTitles(
+            collect($byBatch)->flatten(1)->pluck('file_number')->unique()->values()
+        );
+
         foreach ($rows as $r) {
-            $r->file_numbers = $this->sortFileNumbersBySerial($byBatch[$r->id] ?? []);
+            $files = $byBatch[$r->id] ?? [];
+            foreach ($files as &$file) {
+                $file['file_title'] = $titles[strtoupper($file['file_number'])] ?? $file['placeholder'];
+            }
+            unset($file);
+
+            $r->files = $this->sortFilesBySerial($files);
         }
     }
 
     /**
-     * Order file numbers by their trailing serial ("MLKN 9" before "MLKN 10"),
+     * Look up file titles from file_indexings, keyed by upper-cased file number.
+     */
+    private function resolveFileTitles($fileNumbers): array
+    {
+        $titles = [];
+
+        foreach ($fileNumbers->chunk(1000) as $chunk) {
+            DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->whereIn('file_number', $chunk->all())
+                ->where(function ($q) {
+                    $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                })
+                ->whereNotNull('file_title')
+                ->where('file_title', '!=', '')
+                ->select(['file_number', 'file_title'])
+                ->get()
+                ->each(function ($r) use (&$titles) {
+                    $key = strtoupper(trim((string) $r->file_number));
+                    if ($key !== '' && !isset($titles[$key])) {
+                        $titles[$key] = trim((string) $r->file_title);
+                    }
+                });
+        }
+
+        return $titles;
+    }
+
+    /**
+     * Order member files by their trailing serial ("MLKN 9" before "MLKN 10"),
      * falling back to a plain string sort when no serial can be read.
      */
-    private function sortFileNumbersBySerial(array $numbers): array
+    private function sortFilesBySerial(array $files): array
     {
-        $numbers = array_values(array_unique($numbers));
+        // De-duplicate on the file number; a file listed twice in a batch is noise
+        // on an index sheet.
+        $unique = [];
+        foreach ($files as $file) {
+            $key = strtoupper($file['file_number']);
+            if (!isset($unique[$key])) {
+                $unique[$key] = $file;
+            }
+        }
+        $files = array_values($unique);
 
-        usort($numbers, function ($a, $b) {
-            $sa = preg_match('/(\d+)\s*$/', $a, $ma) ? (int) $ma[1] : null;
-            $sb = preg_match('/(\d+)\s*$/', $b, $mb) ? (int) $mb[1] : null;
+        usort($files, function ($a, $b) {
+            $sa = preg_match('/(\d+)\s*$/', $a['file_number'], $ma) ? (int) $ma[1] : null;
+            $sb = preg_match('/(\d+)\s*$/', $b['file_number'], $mb) ? (int) $mb[1] : null;
 
             if ($sa !== null && $sb !== null && $sa !== $sb) {
                 return $sa <=> $sb;
             }
 
-            return strcasecmp($a, $b);
+            return strcasecmp($a['file_number'], $b['file_number']);
         });
 
-        return $numbers;
+        return $files;
     }
 
     /**
@@ -1026,8 +1085,8 @@ $query = KangisPrintLabelBatch::with(['creator'])
                 $merged->batch_count = $group->count();
                 $merged->status      = $statuses->count() === 1 ? $statuses->first() : 'mixed';
                 $merged->created_at  = $group->pluck('created_at')->filter()->min();
-                $merged->file_numbers = $this->sortFileNumbersBySerial(
-                    $group->flatMap(fn($r) => $r->file_numbers ?? [])->all()
+                $merged->files = $this->sortFilesBySerial(
+                    $group->flatMap(fn($r) => $r->files ?? [])->all()
                 );
 
                 return $merged;

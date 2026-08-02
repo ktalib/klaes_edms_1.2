@@ -4226,7 +4226,9 @@
             purpose: log.purpose ?? null,
             // Reason for delay entered when logging the file back to Registry while
             // its timeline status was Amber/Red — see FileTrackerController::updateStatus().
-            delayReason: log.delay_reason ?? log.delayReason ?? null
+            delayReason: log.delay_reason ?? log.delayReason ?? null,
+            // The derived "File Commissioning" line (DIIT) rather than a logged movement.
+            isDiit: Boolean(log._diit)
         };
     }
 
@@ -4393,6 +4395,16 @@
             dateRequested: tracker.date_requested ?? tracker.dateRequested ?? null,
             fileRequestType: tracker.file_request_type ?? tracker.fileRequestType ?? null,
             fileIndexingCreatedAt: tracker.file_indexing_created_at || null,
+            // Default In-process In-transit Tracking (DIIT).
+            //   isCommissioned — commissioned through KLAES, so its history opens with
+            //                    the "File Commissioning" line instead of the synthetic
+            //                    Registry/Archive home row.
+            //   isDiit         — the card IS that default line; no tracker row exists yet,
+            //                    so the actions that need a tracker id are hidden.
+            isCommissioned: Boolean(tracker.is_commissioned ?? tracker.isCommissioned),
+            isDiit: Boolean(tracker.is_diit ?? tracker.isDiit),
+            commissionedAt: tracker.commissioned_at ?? tracker.commissionedAt ?? null,
+            commissionedBy: tracker.commissioned_by ?? tracker.commissionedBy ?? null,
             department: tracker.department,
             description: tracker.description,
             totalOffices: tracker.total_offices,
@@ -5879,7 +5891,8 @@
 
             const _urlParam = new URLSearchParams(window.location.search).get('url');
             const isRestrictedModule = _urlParam === 'kangis' || _urlParam === 'new_kangis';
-            const canDelete = !isRestrictedModule || isSupperAdmin;
+            // A DIIT card has no tracker row behind it, so there is nothing to delete.
+            const canDelete = (!isRestrictedModule || isSupperAdmin) && !tracker.isDiit;
 
             const isOwnedByCurrentUser = Boolean(
                 currentUserId &&
@@ -6335,7 +6348,11 @@
             const homeLogInCell = homeCreatedAt
                 ? `<div>${sanitize(homeCreatedAt.toLocaleDateString())}</div><div class="text-xs text-gray-500">${sanitize(homeCreatedAt.toLocaleTimeString())}</div>`
                 : '—';
-            const homeLocationRow = isKangisView ? '' : `
+            // A file commissioned through KLAES was created at the File Commissioning
+            // Office and is still moving between offices for processing — it has not
+            // reached the archive yet. Its DIIT "File Commissioning" line (delivered
+            // with the prior movements below) opens the timeline in place of this row.
+            const homeLocationRow = (isKangisView || tracker.isCommissioned) ? '' : `
                         <tr class="bg-indigo-50/40">
                             <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-gray-700">
                                 <div class="flex items-center gap-2">
@@ -6391,11 +6408,18 @@
                 const officerBadge = officerId ? sanitize(String(officerId)) : null;
                 const safeDelayReason = entry.delayReason ? sanitize(entry.delayReason) : '';
                 const clockedInLine = entry.acceptedByName ? `<div class="text-xs text-gray-400">Clocked in by ${sanitize(entry.acceptedByName)}</div>` : '';
+                // The DIIT commissioning line opens the timeline — tinted apart from the
+                // grey prior-cycle rows so it reads as the file's origin, not a past cycle.
+                const rowClass = entry.isDiit ? 'bg-indigo-50/40' : 'bg-gray-50/60';
+                const rowTitle = entry.isDiit
+                    ? 'File commissioned in KLAES — default in-process tracking (read-only)'
+                    : 'Earlier tracking cycle for this file (read-only)';
+                const dotClass = entry.isDiit ? 'bg-indigo-500' : 'bg-gray-300';
                 return `
-                        <tr class="bg-gray-50/60" title="Earlier tracking cycle for this file (read-only)">
+                        <tr class="${rowClass}" title="${rowTitle}">
                             <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-gray-500">
                                 <div class="flex items-center gap-2">
-                                    <span class="inline-block h-2 w-2 rounded-full bg-gray-300" title="Previous tracking cycle"></span>
+                                    <span class="inline-block h-2 w-2 rounded-full ${dotClass}" title="${rowTitle}"></span>
                                     <span>${sanitize(entry.logId)}</span>
                                 </div>
                             </td>
@@ -6467,6 +6491,25 @@
 
             const transferFooterHtml = (() => {
                 const isDgisOrDgView = ['dgis', 'dg'].includes(currentModuleCode);
+
+                // A DIIT card is the default commissioning line, not a tracker record —
+                // there is no tracker id to move, accept or delete. Tracking starts when
+                // the file is logged out for the first time from the form above.
+                if (tracker.isDiit) {
+                    return `
+                            <div class="space-y-1 rounded-lg border border-indigo-100 bg-indigo-50 p-3 text-indigo-900">
+                                <div class="flex items-center gap-2 text-sm font-semibold">
+                                    <i data-lucide="stamp" class="h-4 w-4"></i>
+                                    <span>In process at the File Commissioning Office</span>
+                                </div>
+                                <p class="text-xs text-indigo-700">
+                                    This file was commissioned in KLAES and has not been logged out yet.
+                                    Log it out using the File Details form above to start tracking its movements.
+                                </p>
+                            </div>
+                        `;
+                }
+
                 if (transferEligibility.allowed) {
                     // Build workflow-aware hint if this is a KANGIS approval tracker
                     const wfNext = typeof window.getWorkflowNextStep === 'function' ? window.getWorkflowNextStep(tracker) : null;
@@ -8347,6 +8390,12 @@
                                 </thead>
                                 <tbody>
                                     ${(() => {
+                                        // A KLAES-commissioned file opens with its DIIT
+                                        // "File Commissioning" line (printed with the prior
+                                        // entries below), not with the Registry / Archive row.
+                                        if (tracker.isCommissioned) {
+                                            return '';
+                                        }
                                         // Default "home location" row — the file's permanent
                                         // Registry / Archive, mirroring the on-screen table.
                                         const homeRegistryName = escapeHtml(tracker.originOffice?.name || tracker.originRegistry || tracker.originOfficeName || 'Registry / Archive');

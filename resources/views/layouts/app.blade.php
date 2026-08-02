@@ -61,6 +61,14 @@
   @stack('styles')
 
   @livewireStyles
+  <script>
+    (function() {
+      const state = localStorage.getItem('sidebar_state') || 'expanded';
+      if (state === 'collapsed') {
+        document.documentElement.classList.add('sidebar-collapsed');
+      }
+    })();
+  </script>
 </head>
 
 <body class="bg-gray-100 flex h-screen font-sans antialiased">
@@ -95,6 +103,9 @@
     });
   </script>
 
+
+  <!-- Mobile Sidebar Overlay Backdrop -->
+  <div id="sidebar-backdrop" class="fixed inset-0 bg-gray-900/50 z-30 opacity-0 pointer-events-none transition-opacity duration-300"></div>
 
   <!-- Sidebar Menu -->
   @include('admin.menu')

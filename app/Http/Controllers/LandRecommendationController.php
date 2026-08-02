@@ -91,13 +91,23 @@ class LandRecommendationController extends Controller
             });
         }
 
+        $selectedUserId = $request->get('user_id');
+
         if ($request->filled('search')) {
+            if ($selectedUserId && $selectedUserId !== 'all') {
+                $query->where('land_recommendations.created_by', $selectedUserId);
+            }
             $search = $request->search;
             $query->where(function($q) use ($search) {
                 $q->where('file_number', 'LIKE', "%{$search}%")
                   ->orWhere('applicant_name', 'LIKE', "%{$search}%")
                   ->orWhere('location', 'LIKE', "%{$search}%");
             });
+        } else {
+            $filterUserId = ($selectedUserId === 'all') ? null : ($selectedUserId ?? Auth::id());
+            if ($filterUserId) {
+                $query->where('land_recommendations.created_by', $filterUserId);
+            }
         }
 
         // Printed / Not-Printed tab filter. This uses the SAME source as the
@@ -105,11 +115,36 @@ class LandRecommendationController extends Controller
         // file number — so a record can never appear in "Not Printed" while
         // still showing a print date (print_logs has no recommendation id, only
         // the file number, and print_count diverges for CTC/duplicate-file cases).
-        $printedExists = function ($q) {
+        //
+        // Three document_type values land in print_logs for this document, and all
+        // three must count as printed:
+        //   'Land Recommendation'           — legacy logPrint() endpoint below
+        //   'Recommendation For Grant'      — SmartPrintManager, main view
+        //   'OSS Recommendation For Grant'  — SmartPrintManager, OSS view
+        // The last two are what index.blade.php passes to SmartPrintManager.open();
+        // matching only the first hid 105 already-printed OSS records (and 13 main-
+        // view ones) behind a permanently empty "Printed" tab.
+        $printedDocTypes = $isOssView
+            ? ['Land Recommendation', 'OSS Recommendation For Grant']
+            : ['Land Recommendation', 'Recommendation For Grant'];
+
+        $securityCodeDocTypes = $isOssView
+            ? ['OSS Recomm']
+            : ['Lands ROFO', 'Land Conversion'];
+
+        $printedExists = function ($q) use ($printedDocTypes, $securityCodeDocTypes) {
+            $unionQuery = DB::connection('sqlsrv')->table('print_logs')
+                ->selectRaw('reference_number as fn')
+                ->whereIn('document_type', $printedDocTypes)
+                ->unionAll(
+                    DB::connection('sqlsrv')->table('security_codes')
+                        ->selectRaw('file_number as fn')
+                        ->whereIn('document_type', $securityCodeDocTypes)
+                );
+
             $q->select(DB::raw('1'))
-              ->from('print_logs as pl')
-              ->where('pl.document_type', 'Land Recommendation')
-              ->whereRaw('UPPER(LTRIM(RTRIM(pl.reference_number))) = UPPER(LTRIM(RTRIM(land_recommendations.file_number)))');
+              ->fromSub($unionQuery, 'printed_records')
+              ->whereRaw('UPPER(LTRIM(RTRIM(printed_records.fn))) = UPPER(LTRIM(RTRIM(land_recommendations.file_number)))');
         };
 
         $tab = $request->query('tab', 'not_printed');
@@ -145,6 +180,17 @@ class LandRecommendationController extends Controller
             });
         }
 
+        if ($request->filled('search')) {
+            if ($selectedUserId && $selectedUserId !== 'all') {
+                $statsQuery->where('created_by', $selectedUserId);
+            }
+        } else {
+            $filterUserId = ($selectedUserId === 'all') ? null : ($selectedUserId ?? Auth::id());
+            if ($filterUserId) {
+                $statsQuery->where('created_by', $filterUserId);
+            }
+        }
+
         $stats = [
             'total' => (clone $statsQuery)->count(),
             'pending' => (clone $statsQuery)->where('status', LandRecommendation::STATUS_PENDING)->count(),
@@ -165,7 +211,7 @@ class LandRecommendationController extends Controller
             ->all();
         if (!empty($fileNumbers)) {
             $rows = DB::connection('sqlsrv')->table('print_logs')
-                ->where('document_type', 'Land Recommendation')
+                ->whereIn('document_type', $printedDocTypes)
                 ->whereRaw('UPPER(LTRIM(RTRIM(reference_number))) IN (' . implode(',', array_fill(0, count($fileNumbers), '?')) . ')', $fileNumbers)
                 ->selectRaw('UPPER(LTRIM(RTRIM(reference_number))) AS fn, MAX(created_at) AS last_printed')
                 ->groupByRaw('UPPER(LTRIM(RTRIM(reference_number)))')
@@ -175,7 +221,38 @@ class LandRecommendationController extends Controller
             }
         }
 
-        return view('land_recommendations.index', compact('recommendations', 'PageTitle', 'stats', 'isOssView', 'tab', 'printDates'));
+        // The recommendation's Serial No. `land_rofo_serial_no` is NOT it — that
+        // column carries the RofO's security paper code, which a recommendation
+        // never has. The real serial is the 'OSS Recomm' security_codes row the
+        // print template mints, keyed by file number, so it exists only once the
+        // recommendation has actually been printed. Batch-loaded and side-effect
+        // free: listing a record must never mint a serial.
+        $recSerials = [];
+        if (!empty($fileNumbers)) {
+            $codeService = app(\App\Services\SecurityCodeService::class);
+            $codes = DB::connection('sqlsrv')->table('security_codes')
+                ->whereIn('document_type', $securityCodeDocTypes)
+                ->whereRaw('UPPER(LTRIM(RTRIM(file_number))) IN (' . implode(',', array_fill(0, count($fileNumbers), '?')) . ')', $fileNumbers)
+                ->orderBy('id')
+                ->get(['file_number', 'code', 'created_at']);
+            foreach ($codes as $c) {
+                $fn = strtoupper(trim((string) $c->file_number));
+                // getOrGenerateForDocument returns the first unused row; mirror
+                // that by keeping the earliest code per file number.
+                if (!isset($recSerials[$fn])) {
+                    $recSerials[$fn] = $codeService->formatForDisplay($c->code);
+                }
+                if (!isset($printDates[$fn]) && !empty($c->created_at)) {
+                    $printDates[$fn] = $c->created_at;
+                }
+            }
+        }
+
+        $filterUsers = \App\Models\User::whereIn('id', LandRecommendation::select('created_by')->distinct())
+            ->orderBy('first_name')
+            ->get(['id', 'first_name', 'last_name']);
+
+        return view('land_recommendations.index', compact('recommendations', 'PageTitle', 'stats', 'isOssView', 'tab', 'printDates', 'recSerials', 'filterUsers'));
     }
 
     /**
@@ -394,11 +471,74 @@ class LandRecommendationController extends Controller
         return response()->streamDownload($callback, $filename, $headers);
     }
 
-    public function create()
+    public function create(Request $request)
     {
         $PageTitle ='Recommendation For Grant Of Statutory Right Of Occupancy';
         $landUses = LandUse::orderBy('landuse')->get();
-        return view('land_recommendations.form', compact('PageTitle', 'landUses'));
+
+        // RofO Re-issuance entry point (from the Land RofO page). The re-issued
+        // letter is captured as a NEW recommendation for the same file number:
+        //   klaes  — the original exists in KLAES, so its details are copied in
+        //   legacy — pre-KLAES original, so only the file number is carried over
+        $reissuance = strtolower(trim((string) $request->query('reissuance', '')));
+        if (!in_array($reissuance, ['klaes', 'legacy'], true)) {
+            return view('land_recommendations.form', compact('PageTitle', 'landUses'));
+        }
+
+        $source = null;
+        if ($reissuance === 'klaes' && $request->filled('source_id')) {
+            $source = LandRecommendation::find($request->query('source_id'));
+        }
+
+        if ($source) {
+            // replicate() gives an unsaved copy — the form treats it as prefill,
+            // not as an edit, because $isEdit is passed as false.
+            $recommendation = $source->replicate();
+            $recommendation->status            = LandRecommendation::STATUS_PENDING;
+            $recommendation->approved_at       = null;
+            $recommendation->rofo_status       = LandRecommendation::ROFO_PENDING;
+            $recommendation->rofo_generated_at = null;
+            $recommendation->rofo_print_count  = 0;
+            $recommendation->print_count       = 0;
+            $recommendation->land_rofo_serial_no = null;
+        } else {
+            $fileNo = (string) $request->query('file_number', '');
+            $cofoYear = null;
+            if ($fileNo !== '') {
+                if (preg_match('/(?:^|[^0-9])(19\d{2}|20\d{2})(?:[^0-9]|$)/', $fileNo, $matches)) {
+                    $cofoYear = (int)$matches[1];
+                } else {
+                    $commissioningDate = DB::connection('sqlsrv')
+                        ->table('fileNumber')
+                        ->where('mlsfNo', $fileNo)
+                        ->orWhere('kangisFileNo', $fileNo)
+                        ->orWhere('NewKANGISFileNo', $fileNo)
+                        ->orWhere('st_file_no', $fileNo)
+                        ->value('commissioning_date');
+                    if ($commissioningDate) {
+                        $cofoYear = \Carbon\Carbon::parse($commissioningDate)->year;
+                    }
+                }
+            }
+            $recommendation = new LandRecommendation([
+                'file_number' => $fileNo,
+                'cofo_year'   => $cofoYear,
+            ]);
+        }
+
+        $purposes = [];
+        if ($recommendation->land_use_id) {
+            $purposes = Purpose::where('landuseid', $recommendation->land_use_id)->orderBy('name')->get();
+        }
+
+        $isEdit           = false;
+        $reissuanceSource = $reissuance;
+        $reissuedFromId   = $source->id ?? null;
+
+        return view('land_recommendations.form', compact(
+            'PageTitle', 'landUses', 'purposes', 'recommendation',
+            'isEdit', 'reissuanceSource', 'reissuedFromId'
+        ));
     }
 
     /**
@@ -486,10 +626,19 @@ class LandRecommendationController extends Controller
 
     public function store(Request $request)
     {
-        $this->guardAgainstDuplicate($request);
+        // A re-issuance intentionally repeats the file number of the letter it
+        // replaces, so the duplicate guard does not apply to it.
+        $isReissuance = $request->boolean('is_reissuance');
+        if (!$isReissuance) {
+            $this->guardAgainstDuplicate($request);
+        }
 
         $validated = $request->validate([
             'file_number' => 'required|string',
+            'old_file_number' => 'nullable|string|max:100',
+            'is_reissuance' => 'nullable|boolean',
+            'reissuance_source' => 'nullable|string|in:klaes,legacy',
+            'reissued_from_id' => 'nullable|integer',
             'applicant_name' => 'required|string',
             'purpose_of_clause' => 'nullable|string',
             'purpose_id' => 'nullable|string',
@@ -497,6 +646,7 @@ class LandRecommendationController extends Controller
             'location' => 'nullable|string',
             'term' => 'nullable|string',
             'cofo_year' => 'nullable|integer|min:1900|max:' . date('Y'),
+            'selected_year' => 'nullable|integer|min:1900|max:' . (date('Y') + 10),
             'ground_rent' => 'nullable|numeric',
             'effective_date' => 'nullable|date',
             'premium' => 'nullable|numeric',
@@ -520,6 +670,7 @@ class LandRecommendationController extends Controller
             'applicant_address' => 'required|string',
             'type' => 'nullable|string',
             'application_type' => 'nullable|string',
+            'use_standard_template' => 'nullable|boolean',
             'page' => 'nullable|string',
             'page_survey_report' => 'nullable|string',
             'survey_report' => 'nullable|string',
@@ -548,6 +699,10 @@ class LandRecommendationController extends Controller
         $validated['rofo_licensed_surveyor'] = ($request->rofo_survey_method === 'LICENSED') ? 'YES' : 'NO';
         unset($validated['rofo_survey_method']);
 
+        // Unchecked checkboxes are absent from the request, so resolve the flag
+        // explicitly instead of leaving a previously-saved value in place.
+        $validated['use_standard_template'] = $request->boolean('use_standard_template');
+
         if ($request->filled('land_use_id')) {
             $lu = LandUse::find($request->land_use_id);
             if ($lu) $validated['land_use'] = $lu->landuse;
@@ -566,7 +721,23 @@ class LandRecommendationController extends Controller
         $validated['created_by'] = Auth::id();
         $validated['updated_by'] = Auth::id();
 
+        // A re-issuance replaces a letter that was already approved and issued, so
+        // it lands on the RofO table ready to print rather than re-entering the
+        // approval queue.
+        if ($isReissuance) {
+            $validated['is_reissuance'] = true;
+            $validated['status']        = LandRecommendation::STATUS_APPROVED;
+            $validated['approved_at']   = now();
+            $validated['rofo_status']   = LandRecommendation::ROFO_GENERATED;
+            $validated['rofo_generated_at'] = now();
+        }
+
         $recommendation = LandRecommendation::create($validated);
+
+        if ($isReissuance) {
+            return redirect()->route('land-rofos.index')
+                ->with('success', 'Re-issuance created for ' . $recommendation->file_number . '. It is now on the RofO table, ready to print.');
+        }
 
         return redirect()->route('land-recommendations.index', ['type' => 'ROFO'])
             ->with('success', 'Recommendation created successfully.');
@@ -624,6 +795,7 @@ class LandRecommendationController extends Controller
 
         $validated = $request->validate([
             'file_number' => 'required|string',
+            'old_file_number' => 'nullable|string|max:100',
             'applicant_name' => 'required|string',
             'purpose_of_clause' => 'nullable|string',
             'purpose_id' => 'nullable|string',
@@ -631,6 +803,7 @@ class LandRecommendationController extends Controller
             'location' => 'nullable|string',
             'term' => 'nullable|string',
             'cofo_year' => 'nullable|integer|min:1900|max:' . date('Y'),
+            'selected_year' => 'nullable|integer|min:1900|max:' . (date('Y') + 10),
             'ground_rent' => 'nullable|numeric',
             'effective_date' => 'nullable|date',
             'premium' => 'nullable|numeric',
@@ -665,6 +838,7 @@ class LandRecommendationController extends Controller
             'rofo_time_generated' => 'nullable|string',
             'type' => 'nullable|string',
             'application_type' => 'nullable|string',
+            'use_standard_template' => 'nullable|boolean',
             'premium' => 'nullable|numeric',
             'num_plots' => 'nullable|string',
             'file_title' => 'nullable|string',
@@ -682,6 +856,10 @@ class LandRecommendationController extends Controller
         $validated['rofo_director_survey']  = ($request->rofo_survey_method === 'DIRECTOR') ? 'YES' : 'NO';
         $validated['rofo_licensed_surveyor'] = ($request->rofo_survey_method === 'LICENSED') ? 'YES' : 'NO';
         unset($validated['rofo_survey_method']);
+
+        // Unchecked checkboxes are absent from the request, so resolve the flag
+        // explicitly instead of leaving a previously-saved value in place.
+        $validated['use_standard_template'] = $request->boolean('use_standard_template');
 
         if ($request->filled('land_use_id')) {
             $lu = LandUse::find($request->land_use_id);
@@ -782,8 +960,12 @@ class LandRecommendationController extends Controller
 
         // Print limit enforcement disabled for now.
 
-        // Route by Application Type first; fall back to Recommendation Type
-        $primaryAppType = $recommendation->application_type ?? null;
+        // Route by Application Type first; fall back to Recommendation Type.
+        // The "standard template" override keeps the application type on the record
+        // (extra fields / old file number) but prints Direct / Conversion instead.
+        $primaryAppType = $recommendation->use_standard_template
+            ? null
+            : ($recommendation->application_type ?? null);
 
         $appTypeTemplates = [
             'Private Layout'                                     => 'land_recommendations.templates.application_for_plot_merger',

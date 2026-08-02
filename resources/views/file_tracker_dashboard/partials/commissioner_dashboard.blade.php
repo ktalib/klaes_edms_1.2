@@ -20,75 +20,109 @@
             max-height: 90vh;
             overflow-y: auto;
         }
-        /* Report & Manual library link in the tab bar */
-        .documents-link {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
-            font-size: 0.875rem;
-            font-weight: 600;
-            color: #ffffff;
-            background: linear-gradient(135deg, #4f46e5 0%, #2563eb 100%);
-            box-shadow: 0 1px 2px rgba(37, 99, 235, 0.35);
-            white-space: nowrap;
-            transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
-        }
-        .documents-link:hover {
-            color: #ffffff;
-            filter: brightness(1.06);
-            transform: translateY(-1px);
-            box-shadow: 0 6px 14px rgba(37, 99, 235, 0.28);
-        }
-        .documents-link:active {
-            transform: translateY(0);
-            box-shadow: 0 1px 2px rgba(37, 99, 235, 0.35);
-        }
-        .documents-link:focus-visible {
-            outline: 2px solid #1d4ed8;
-            outline-offset: 2px;
-        }
-
-        /* Collapsible department grouping header inside the Requested Files table */
+        /* Collapsible department grouping header inside the Requested Files table.
+           Each row carries its department's accent as --dept-* custom properties,
+           set inline by the renderer, so one rule set covers every department. */
         .department-group-row {
-            background-color: #f8fafc;
-            border-top: 1px solid #e2e8f0;
-            border-bottom: 1px solid #e2e8f0;
+            --dept-accent: #64748b;
+            --dept-soft: #f8fafc;
+            --dept-border: #e2e8f0;
+            background: linear-gradient(90deg, var(--dept-soft) 0%, #ffffff 60%);
             cursor: pointer;
             user-select: none;
-            transition: background-color 0.15s ease;
+            transition: background 0.18s ease, box-shadow 0.18s ease;
+        }
+        .department-group-row > td {
+            /* The accent rail reads as a colour key down the left of the list */
+            border-left: 4px solid transparent;
+            border-top: 1px solid #eef2f7;
+            transition: border-color 0.18s ease;
+        }
+        .department-group-row:hover > td,
+        .department-group-row.is-expanded > td {
+            border-left-color: var(--dept-accent);
         }
         .department-group-row:hover {
-            background-color: #f1f5f9;
+            background: linear-gradient(90deg, var(--dept-soft) 0%, #ffffff 75%);
         }
         .department-group-row.is-expanded {
-            background-color: #eef2ff;
+            background: linear-gradient(90deg, var(--dept-soft) 0%, #ffffff 80%);
+            box-shadow: inset 0 -1px 0 var(--dept-border);
+        }
+        .department-group-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            width: 2rem;
+            height: 2rem;
+            border-radius: 0.6rem;
+            color: var(--dept-accent);
+            background-color: var(--dept-soft);
+            border: 1px solid var(--dept-border);
+        }
+        .department-group-icon-lg {
+            width: 2.5rem;
+            height: 2.5rem;
+            border-radius: 0.5rem;
         }
         .department-group-chevron {
-            transition: transform 0.15s ease;
+            color: #94a3b8;
+            transition: transform 0.18s ease, color 0.18s ease;
+        }
+        .department-group-row:hover .department-group-chevron {
+            color: var(--dept-accent);
         }
         .department-group-row.is-expanded .department-group-chevron {
             transform: rotate(90deg);
+            color: var(--dept-accent);
         }
         .department-group-note {
             font-size: 0.68rem;
             color: #94a3b8;
         }
         .department-group-name {
-            font-size: 0.75rem;
+            font-size: 0.8rem;
             font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.06em;
-            color: #334155;
+            letter-spacing: 0.05em;
+            color: #0f172a;
         }
         .department-group-count {
-            padding: 0.05rem 0.45rem;
+            padding: 0.1rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            color: var(--dept-accent);
+            background-color: var(--dept-soft);
+            border: 1px solid var(--dept-border);
+            white-space: nowrap;
+        }
+        /* Urgency chip on the right of a group header, shown only when the
+           department has high-priority requests waiting. */
+        .department-group-high {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.1rem 0.5rem;
             border-radius: 9999px;
             font-size: 0.68rem;
             font-weight: 600;
-            color: #475569;
-            background-color: #e2e8f0;
+            color: #b91c1c;
+            background-color: #fef2f2;
+            border: 1px solid #fecaca;
+            white-space: nowrap;
+        }
+        .department-group-hint {
+            font-size: 0.68rem;
+            font-weight: 500;
+            color: #94a3b8;
+            white-space: nowrap;
+        }
+        /* Rows of an expanded group sit under their department's accent rail,
+           tinted down so the header still reads as the strongest line */
+        .file-row[data-dept-rows] > td:first-child {
+            border-left: 4px solid var(--dept-border, transparent);
         }
 
         /* File number pill used in the file details column */
@@ -107,6 +141,17 @@
             border: 1px solid #bfdbfe;
             white-space: nowrap;
         }
+        /* The file number leads the File Details cell, so it outsizes the title */
+        .file-no-badge-lead {
+            font-size: 0.9rem;
+            font-weight: 700;
+            padding: 0.2rem 0.6rem;
+        }
+        .file-title-sub {
+            font-size: 0.78rem;
+            font-weight: 500;
+            color: #6b7280;
+        }
         .file-no-badge .dot {
             width: 5px;
             height: 5px;
@@ -124,6 +169,23 @@
             background-color: #f1f5f9;
             border: 1px solid #e2e8f0;
             white-space: nowrap;
+        }
+
+        /* Initials chip in the Requester column */
+        .requester-avatar {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            width: 1.75rem;
+            height: 1.75rem;
+            border-radius: 9999px;
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            color: #3730a3;
+            background-color: #eef2ff;
+            border: 1px solid #c7d2fe;
         }
 
         .priority-LOW { background-color: #10B981; color: white; }
@@ -514,11 +576,6 @@
             </button>
            
             <div class="flex-1"></div>
-            <a href="{{ route('documents.index') }}" class="documents-link">
-                <i data-lucide="book-open-text" class="h-4 w-4"></i>
-                <span>View Report &amp; Manual</span>
-                <i data-lucide="arrow-up-right" class="h-4 w-4 opacity-70"></i>
-            </a>
             <div class="relative">
                 <!-- <button id="printMenuBtn" class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
                     <i data-lucide="printer" class="h-4 w-4 mr-2"></i>
@@ -628,7 +685,7 @@
                     <div class="flex gap-2 items-center flex-wrap">
                         <div class="relative">
                             <i data-lucide="search" class="h-4 w-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
-                            <input type="text" id="requested-search" placeholder="Search file no. or title..."
+                            <input type="text" id="requested-search" placeholder="Search file no., title or requester..."
                                 class="pl-9 pr-3 py-2 w-56 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                         </div>
                         <select id="requested-filter" class="px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -662,6 +719,7 @@
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Request Date</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Requester</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                 <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                             </tr>
@@ -979,7 +1037,11 @@
         <div class="request-sheet-container">
             <div class="flex justify-between items-center mb-4 no-print">
                 <h2 class="text-xl font-bold text-gray-900">File Request Sheet</h2>
-                <div class="flex gap-2">
+                <div class="flex gap-2 items-center">
+                    <label for="sheet-department" class="text-sm font-medium text-gray-600">Department</label>
+                    <select id="sheet-department" class="border border-gray-300 rounded-md shadow-sm px-3 py-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">All departments</option>
+                    </select>
                     <button onclick="window.print()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
                         <i data-lucide="printer" class="h-4 w-4 mr-2"></i>
                         Print
