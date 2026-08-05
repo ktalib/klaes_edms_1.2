@@ -3053,7 +3053,8 @@ const executeSearchAjax = (filters, searchData) => {
   
   // Switch between tabs in the file details view
   const updateAddRecordButtonVisibility = (tabName) => {
-    const btn = document.getElementById('add-record-smart-btn');
+    // The "New" menu item carries data-target; the trigger button only opens the menu.
+    const btn = document.getElementById('add-record-new-btn') || document.getElementById('add-record-smart-btn');
     if (!btn) return;
     // Always visible — just point to the right table for the active tab
     btn.setAttribute('data-target', tabName === 'cofo' ? 'cofo_staging' : 'pra');
@@ -3250,6 +3251,37 @@ const executeSearchAjax = (filters, searchData) => {
       'Deed Registration': 'deed_registrations',
     };
     return map[label] || label;
+  };
+
+  // Compact encoder for the `timeline_order` / `excluded_keys` print params.
+  //
+  // Written out plainly ("file_history_staging:123,pra:456,…") a subdivision mother with
+  // 100+ children produced a few hundred keys and pushed the print URL past Apache's
+  // LimitRequestLine (8190 bytes) — the browser answered "Request-URI Too Long" and the
+  // report never opened. This names each table once and refers to it by index:
+  //
+  //     v2:<table>~<table>|<tableIdx>-<id>,<tableIdx>-<id>,…
+  //
+  // Rows with no database id keep an empty id ("0-"), so the server decodes exactly the
+  // same "<table>:<id>" keys as before — only the wire format is shorter.
+  // Decoder: LegalSearchService::decodeRowKeySpec().
+  const encodeRowKeySpec = (list, { requireId = false } = {}) => {
+    const tables = [];
+    const tableIdx = new Map();
+    const seq = [];
+    (list || []).forEach(t => {
+      const tbl = (typeof timelineSourceToDbTable === 'function')
+        ? timelineSourceToDbTable(t.source_table || '')
+        : (t.source_table || '');
+      const id = (t.id != null && t.id !== '') ? String(t.id) : '';
+      if (requireId && id === '') return;
+      if (!tableIdx.has(tbl)) {
+        tableIdx.set(tbl, tables.length);
+        tables.push(tbl);
+      }
+      seq.push(tableIdx.get(tbl) + '-' + id);
+    });
+    return seq.length ? `v2:${tables.join('~')}|${seq.join(',')}` : '';
   };
 
   const getTimelinePropId = () => String(selectedFile?.prop_id || '').trim();
@@ -4376,6 +4408,59 @@ const executeSearchAjax = (filters, searchData) => {
           _synthesized: true
         });
       }
+      // Rules 6/7: a land file that carries a KANGIS number WAS recertified — the KANGIS
+      // number is the product of the exercise. The line must show even when no
+      // related_file_number link records it: the alias is frequently known only from the
+      // KANGIS file_indexings row's related_fileno back-link, which yields KANGIS
+      // transaction rows (a C of O) but no recert link. Old KNML/MLKN/KNGP -> First,
+      // new KN -> Second. Mirrors LegalSearchService::ensureLifecycleSyntheticRows().
+      const isKangisRecertRow = (r) => {
+        const t = String(r?.transaction_type || r?.instrument_type || '');
+        if (!/recertification/i.test(t)) return false;
+        return !(/physical planning|ministry/i.test(t) || /land recertification/i.test(t));
+      };
+      // KANGIS endpoints already covered by a recert row on this lifecycle; '' means a
+      // recert row whose KANGIS endpoint could not be identified (suppresses all).
+      const recertedKangis = new Set();
+      let hasUnkeyedRecert = false;
+      for (const r of rows) {
+        if (!isKangisRecertRow(r)) continue;
+        const k = extractKangisLifecycleKey(r);
+        if (k) recertedKangis.add(k); else hasUnkeyedRecert = true;
+      }
+      if (!isKangisFileNo(fno) && !isSystemTempFileNo(fno) && !hasUnkeyedRecert) {
+        const aliases = new Set();
+        for (const r of rows) {
+          const k = extractKangisLifecycleKey(r);
+          if (k && !recertedKangis.has(k)) aliases.add(k);
+        }
+        for (const kangisNo of aliases) {
+          rows.push({
+            _is_recertification: true,
+            id: 'kangis-recert-' + kangisNo,
+            source_table: 'Related Fileno',
+            fileno: kangisNo, file_number: kangisNo, mlsFNo: kangisNo,
+            lifecycle_file_no: normalizeLifecycleFileNo(fno),
+            parent_file_number: fno,
+            transaction_type: identifyFileNumberType(kangisNo) === 'new_kangis'
+              ? 'Second KANGIS Recertification'
+              : 'First KANGIS Recertification',
+            instrument_type: identifyFileNumberType(kangisNo) === 'new_kangis'
+              ? 'Second KANGIS Recertification'
+              : 'First KANGIS Recertification',
+            party_1: 'Kano Geographic Information Service',
+            party_2: getHolderForFile(fno, rows), party_3: '-', party_4: '-',
+            serial_no: '', page_no: '', volume_no: '',
+            // A KANGIS recertification's true date is recorded nowhere — print a dash
+            // rather than borrow the KANGIS C of O's date.
+            transaction_date: '-', reg_date: '',
+            caveat: 'No', is_caveated: 0, prop_id: '',
+            comments: '-',
+            _synthesized: true
+          });
+        }
+      }
+
       const shouldHaveTemp = (meta?.is_temp === true) || isTempFileNo(fno);
       if (shouldHaveTemp && !hasTemp) {
         const holder = getHolderForFile(fno, rows);
@@ -7290,13 +7375,7 @@ const executeSearchAjax = (filters, searchData) => {
             ? window._timelineTransactions
             : (Array.isArray(window._preferredRelatedTransactions) ? window._preferredRelatedTransactions : []);
           if (tlSrc && tlSrc.length) {
-            const orderSpec = tlSrc.map(t => {
-              const tbl = (typeof timelineSourceToDbTable === 'function')
-                ? timelineSourceToDbTable(t.source_table || '')
-                : (t.source_table || '');
-              const id = (t.id != null ? t.id : '');
-              return `${tbl}:${id}`;
-            }).join(',');
+            const orderSpec = encodeRowKeySpec(tlSrc);
             if (orderSpec) q.set('timeline_order', orderSpec);
           }
         } catch (_e) { /* non-fatal: server falls back to default order */ }
@@ -7304,10 +7383,7 @@ const executeSearchAjax = (filters, searchData) => {
         // so the printed report hides exactly what the on-screen timeline hides.
         try {
           const exSet = Array.isArray(window._excludedRelatedTransactions) ? window._excludedRelatedTransactions : [];
-          const exSpec = exSet.map(t => {
-            const tbl = (typeof timelineSourceToDbTable === 'function') ? timelineSourceToDbTable(t.source_table || '') : (t.source_table || '');
-            return `${tbl}:${t.id != null ? t.id : ''}`;
-          }).filter(k => !k.endsWith(':')).join(',');
+          const exSpec = encodeRowKeySpec(exSet, { requireId: true });
           if (exSpec) q.set('excluded_keys', exSpec);
         } catch (_e) { /* non-fatal */ }
         // Include any active File Information overrides
@@ -7396,23 +7472,14 @@ const executeSearchAjax = (filters, searchData) => {
             ? window._timelineTransactions
             : (Array.isArray(window._preferredRelatedTransactions) ? window._preferredRelatedTransactions : []);
           if (tlSrc2 && tlSrc2.length) {
-            const orderSpec2 = tlSrc2.map(t => {
-              const tbl = (typeof timelineSourceToDbTable === 'function')
-                ? timelineSourceToDbTable(t.source_table || '')
-                : (t.source_table || '');
-              const id = (t.id != null ? t.id : '');
-              return `${tbl}:${id}`;
-            }).join(',');
+            const orderSpec2 = encodeRowKeySpec(tlSrc2);
             if (orderSpec2) q.set('timeline_order', orderSpec2);
           }
         } catch (_e) { /* non-fatal */ }
         // Mirror the print-report handler: hide the dedupe-excluded duplicates.
         try {
           const exSet2 = Array.isArray(window._excludedRelatedTransactions) ? window._excludedRelatedTransactions : [];
-          const exSpec2 = exSet2.map(t => {
-            const tbl = (typeof timelineSourceToDbTable === 'function') ? timelineSourceToDbTable(t.source_table || '') : (t.source_table || '');
-            return `${tbl}:${t.id != null ? t.id : ''}`;
-          }).filter(k => !k.endsWith(':')).join(',');
+          const exSpec2 = encodeRowKeySpec(exSet2, { requireId: true });
           if (exSpec2) q.set('excluded_keys', exSpec2);
         } catch (_e) { /* non-fatal */ }
         // Include any active File Information overrides
@@ -7470,9 +7537,307 @@ const executeSearchAjax = (filters, searchData) => {
     }
   });
 
+  // ── Add Record: New / Existing ───────────────────────────────────────────────
+  // The trigger opens a small menu. "New" delegates to the existing
+  // [data-role="legal-search-add-record"] handler in file-history.blade.php
+  // (unchanged capture path). "Existing" expands four source options, each of
+  // which opens the picker below.
+
+  const lsExistingSourceLabels = {
+    'pra': 'PRA',
+    'file_history_staging': 'File History',
+    'deed_registrations': 'Deeds Registration',
+    'CofO_staging': 'CofO',
+  };
+
+  const closeAddRecordMenu = () => {
+    const menu = document.getElementById('add-record-menu');
+    if (menu) menu.classList.add('hidden');
+    const sources = document.getElementById('add-record-existing-sources');
+    if (sources) sources.classList.add('hidden');
+    const chevron = document.getElementById('add-record-existing-chevron');
+    if (chevron) chevron.classList.remove('rotate-90');
+  };
+
+  document.addEventListener('click', (e) => {
+    const trigger = e.target.closest('#add-record-smart-btn');
+    const menu = document.getElementById('add-record-menu');
+    if (!menu) return;
+
+    if (trigger) {
+      e.preventDefault();
+      e.stopPropagation();
+      const wasHidden = menu.classList.contains('hidden');
+      closeAddRecordMenu();
+      if (wasHidden) menu.classList.remove('hidden');
+      return;
+    }
+
+    const existingToggle = e.target.closest('#add-record-existing-toggle');
+    if (existingToggle) {
+      e.preventDefault();
+      const sources = document.getElementById('add-record-existing-sources');
+      const chevron = document.getElementById('add-record-existing-chevron');
+      if (sources) sources.classList.toggle('hidden');
+      if (chevron) chevron.classList.toggle('rotate-90');
+      return;
+    }
+
+    const sourceBtn = e.target.closest('.ls-add-existing-btn');
+    if (sourceBtn) {
+      e.preventDefault();
+      closeAddRecordMenu();
+      openExistingRecordsPicker(sourceBtn.getAttribute('data-source') || 'pra');
+      return;
+    }
+
+    // "New" closes the menu; the capture-phase handler opens the dialog.
+    if (e.target.closest('#add-record-new-btn')) {
+      closeAddRecordMenu();
+      return;
+    }
+
+    // Any click outside the menu closes it.
+    if (!e.target.closest('#add-record-wrapper')) closeAddRecordMenu();
+  });
+
+  // ── "Existing" record picker ─────────────────────────────────────────────────
+
+  const lsExistingModal = () => document.getElementById('ls-existing-records-modal');
+  let _lsExistingSource = 'pra';
+
+  const closeExistingRecordsPicker = () => {
+    const modal = lsExistingModal();
+    if (modal) modal.classList.add('hidden');
+  };
+
+  const updateExistingSelectionCount = () => {
+    const boxes = document.querySelectorAll('#ls-existing-records-body .ls-existing-row-checkbox:checked');
+    const countEl = document.getElementById('ls-existing-selected-count');
+    if (countEl) countEl.textContent = boxes.length;
+    const attachBtn = document.getElementById('ls-existing-attach');
+    if (attachBtn) attachBtn.disabled = boxes.length === 0;
+  };
+
+  // Uids of everything currently rendered in the Timeline, so those rows can be
+  // locked in the picker. getRecordUid() already yields "<table>::<id>".
+  const lsTimelineUidSet = () => {
+    const set = new Set();
+    (window._timelineTransactions || []).forEach((item) => {
+      if (item && item.id !== undefined && item.id !== null) set.add(getRecordUid(item));
+    });
+    return set;
+  };
+
+  const renderExistingRecords = (records) => {
+    const body = document.getElementById('ls-existing-records-body');
+    const wrap = document.getElementById('ls-existing-table-wrap');
+    const empty = document.getElementById('ls-existing-empty');
+    if (!body) return;
+
+    body.innerHTML = '';
+
+    if (!records || records.length === 0) {
+      if (wrap) wrap.classList.add('hidden');
+      if (empty) empty.classList.remove('hidden');
+      updateExistingSelectionCount();
+      return;
+    }
+
+    if (empty) empty.classList.add('hidden');
+    if (wrap) wrap.classList.remove('hidden');
+
+    const inTimeline = lsTimelineUidSet();
+
+    records.forEach((item, index) => {
+      const uid = getRecordUid(item);
+      const locked = inTimeline.has(uid);
+
+      const fileNo = getMappedValue(item, 'fileNumber') || '-';
+      const transactionType = toProperCase(getMappedValue(item, 'transactionType')) || '-';
+      const party1 = toProperCase(item.party_1 || '-');
+      const party2 = toProperCase(item.party_2 || '-');
+      const regParticulars = formatRegParticulars(
+        getMappedValue(item, 'serialNo'),
+        getMappedValue(item, 'pageNo'),
+        getMappedValue(item, 'volumeNo')
+      );
+      const date = getMappedValue(item, 'date') || '-';
+      const propId = item.prop_id || '—';
+
+      const tr = document.createElement('tr');
+      tr.className = 'border-b border-gray-100 ' + (locked ? 'opacity-50 bg-gray-50' : 'hover:bg-blue-50/40');
+      tr.innerHTML = `
+        <td class="py-2">
+          <input type="checkbox" class="ls-existing-row-checkbox"
+                 data-id="${item.id}" data-table="${_lsExistingSource}"
+                 ${locked ? 'disabled' : 'checked'}>
+        </td>
+        <td class="py-2 text-gray-500">${index + 1}</td>
+        <td class="py-2 whitespace-nowrap text-gray-600">${fileNo}</td>
+        <td class="py-2">${transactionType}</td>
+        <td class="py-2">${party1}</td>
+        <td class="py-2">${party2}</td>
+        <td class="py-2">${regParticulars}</td>
+        <td class="py-2">${date}</td>
+        <td class="py-2 font-mono text-[11px] text-gray-500">${propId}</td>
+        <td class="py-2">
+          ${locked
+            ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-200 text-gray-600">In Timeline</span>'
+            : '<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700">Not in Timeline</span>'}
+        </td>
+      `;
+      body.appendChild(tr);
+    });
+
+    updateExistingSelectionCount();
+  };
+
+  const openExistingRecordsPicker = async (source) => {
+    _lsExistingSource = source;
+
+    const modal = lsExistingModal();
+    if (!modal) return;
+
+    const fileNumber = (window.__lsLastSearchedFileNumber || window._currentFileNumber || '').toString().trim();
+    if (!fileNumber) {
+      await swalAlert('Search for a file first.', 'warning', 'No File Selected');
+      return;
+    }
+
+    const labelEl = document.getElementById('ls-existing-source-label');
+    if (labelEl) labelEl.textContent = lsExistingSourceLabels[source] || source;
+    const fileEl = document.getElementById('ls-existing-file-display');
+    if (fileEl) fileEl.textContent = fileNumber;
+    const propIdEl = document.getElementById('ls-existing-target-propid');
+    if (propIdEl) propIdEl.textContent = window._currentPropId || '—';
+
+    const loading = document.getElementById('ls-existing-loading');
+    const wrap = document.getElementById('ls-existing-table-wrap');
+    const empty = document.getElementById('ls-existing-empty');
+    const errorEl = document.getElementById('ls-existing-error');
+    const selectAll = document.getElementById('ls-existing-select-all');
+    if (selectAll) selectAll.checked = false;
+    if (errorEl) errorEl.classList.add('hidden');
+    if (wrap) wrap.classList.add('hidden');
+    if (empty) empty.classList.add('hidden');
+    if (loading) loading.classList.remove('hidden');
+
+    modal.classList.remove('hidden');
+
+    try {
+      const res = await fetch('{{ route("legalsearch.existingRecords") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken, 'Accept': 'application/json' },
+        body: JSON.stringify({ file_number: fileNumber, source }),
+      });
+      const data = await res.json();
+      if (loading) loading.classList.add('hidden');
+
+      if (!res.ok || !data.success) {
+        if (errorEl) {
+          errorEl.textContent = data.message || 'Could not load records.';
+          errorEl.classList.remove('hidden');
+        }
+        return;
+      }
+
+      renderExistingRecords(data.records || []);
+    } catch (err) {
+      console.error('Existing records load failed:', err);
+      if (loading) loading.classList.add('hidden');
+      if (errorEl) {
+        errorEl.textContent = 'Network error while loading records.';
+        errorEl.classList.remove('hidden');
+      }
+    }
+  };
+
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('#ls-existing-close') || e.target.closest('#ls-existing-cancel') || e.target.closest('#ls-existing-records-backdrop')) {
+      closeExistingRecordsPicker();
+      return;
+    }
+
+    if (e.target.closest('#ls-existing-select-all')) {
+      const checked = document.getElementById('ls-existing-select-all').checked;
+      document.querySelectorAll('#ls-existing-records-body .ls-existing-row-checkbox:not(:disabled)')
+        .forEach(cb => { cb.checked = checked; });
+      updateExistingSelectionCount();
+      return;
+    }
+
+    if (e.target.closest('.ls-existing-row-checkbox')) {
+      updateExistingSelectionCount();
+    }
+  });
+
+  // Attach: match the selected records to this property's prop_id, then let the
+  // silent refresh re-derive the Timeline, tab counts and report from the server.
+  document.addEventListener('click', async (e) => {
+    if (!e.target.closest('#ls-existing-attach')) return;
+
+    const propId = (window._currentPropId || '').toString().trim();
+    if (!propId) {
+      await swalAlert('This file has no PropID, so records cannot be attached to it. Index or allocate a PropID for the file first.', 'error', 'No PropID');
+      return;
+    }
+
+    const ids = Array.from(document.querySelectorAll('#ls-existing-records-body .ls-existing-row-checkbox:checked'))
+      .map(cb => parseInt(cb.dataset.id, 10))
+      .filter(id => !Number.isNaN(id));
+
+    if (ids.length === 0) {
+      await swalAlert('Select at least one record to attach.', 'warning', 'No Selection');
+      return;
+    }
+
+    const label = lsExistingSourceLabels[_lsExistingSource] || _lsExistingSource;
+    const proceed = await swalConfirm(
+      `Attach ${ids.length} ${label} record(s) to PropID ${propId}?`,
+      'Confirm Attach',
+      'question'
+    );
+    if (!proceed) return;
+
+    const attachBtn = document.getElementById('ls-existing-attach');
+    if (attachBtn) { attachBtn.disabled = true; attachBtn.textContent = 'Attaching…'; }
+
+    try {
+      const resp = await cleanupAjax('/legal_search/match', {
+        table: _lsExistingSource,
+        ids,
+        prop_id: propId,
+      });
+
+      if (attachBtn) { attachBtn.disabled = false; attachBtn.textContent = 'Attach Selected'; }
+
+      if (!resp || resp.success !== true) {
+        await swalAlert((resp && resp.message) || 'Could not attach the selected records.', 'error', 'Attach Failed');
+        return;
+      }
+
+      closeExistingRecordsPicker();
+      await swalAlert(resp.message || `${ids.length} record(s) attached.`, 'success', 'Attached');
+
+      const refreshBtn = document.getElementById('refresh-history-btn');
+      if (refreshBtn) refreshBtn.click();
+    } catch (err) {
+      console.error('Attach existing records failed:', err);
+      if (attachBtn) { attachBtn.disabled = false; attachBtn.textContent = 'Attach Selected'; }
+      await swalAlert('Network error while attaching records.', 'error', 'Attach Failed');
+    }
+  });
+
   // Close modal when pressing Escape key
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      const existingModal = lsExistingModal();
+      if (existingModal && !existingModal.classList.contains('hidden')) {
+        closeExistingRecordsPicker();
+        return;
+      }
+      closeAddRecordMenu();
       if (searchModal) {
         searchModal.classList.add('hidden');
       }

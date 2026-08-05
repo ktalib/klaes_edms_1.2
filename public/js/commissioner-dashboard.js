@@ -25,10 +25,12 @@
         }
 
         // ---------------------------------------------------------------------
-        // "In Transit" tab — served page-by-page by
-        // /api/file-tracker-dashboard/in-transit. Search, priority and office
-        // filters are applied server-side so the counts cover the whole set
-        // rather than one capped page.
+        // "In Transit" tab — grouped by requester's office, the same way the
+        // Requested tab is grouped by department:
+        //   • /api/file-tracker-dashboard/in-transit-offices → one page of groups
+        //   • /api/file-tracker-dashboard/in-transit         → one group's rows
+        // Search, priority and office filters are applied server-side so the
+        // counts cover the whole set rather than one capped page.
         // ---------------------------------------------------------------------
         const transitState = {
             page: 1,
@@ -40,7 +42,14 @@
             lastPage: 1,
             from: 0,
             to: 0,
-            files: [],
+            // A "page" here is 25 offices, not 25 rows — the tab lists groups and
+            // pulls an office's rows only when it is expanded.
+            unit: 'offices',
+            offices: [],
+            rowsByOffice: {},
+            loadingOffices: new Set(),
+            // Offices start collapsed; only the ones opened by the user are listed.
+            expandedOffices: new Set(),
             stats: { total: 0, high: 0, medium: 0, low: 0, offices: 0 },
             officeDistribution: [],
             loaded: false,
@@ -49,6 +58,17 @@
         };
         let transitSearchTimer = null;
 
+        function buildTransitQuery(page, perPage) {
+            const params = new URLSearchParams({
+                page: page,
+                per_page: perPage,
+                priority: transitState.priority
+            });
+            if (transitState.search) params.set('search', transitState.search);
+            return params;
+        }
+
+        // Load one page of requester-office groups (counts only — no rows).
         async function loadInTransit(page = transitState.page) {
             const requestId = ++transitState.requestId;
             transitState.loading = true;
@@ -61,16 +81,14 @@
             noResults?.classList.add('hidden');
             pagination?.classList.add('hidden');
 
-            const params = new URLSearchParams({
-                page: page,
-                per_page: transitState.perPage,
-                priority: transitState.priority,
-                office: transitState.office
-            });
-            if (transitState.search) params.set('search', transitState.search);
+            const params = buildTransitQuery(page, transitState.perPage);
+            // The dropdown narrows the tab to a single office group.
+            if (transitState.office && transitState.office !== 'ALL') {
+                params.set('office', transitState.office);
+            }
 
             try {
-                const response = await fetch(`/api/file-tracker-dashboard/in-transit?${params.toString()}`);
+                const response = await fetch(`/api/file-tracker-dashboard/in-transit-offices?${params.toString()}`);
                 const result = await response.json();
 
                 // A newer request has already been fired — discard this response.
@@ -78,25 +96,19 @@
 
                 if (!result.success) throw new Error(result.message || 'Request failed');
 
-                transitState.files = result.data.files || [];
-                transitState.stats = result.data.stats;
+                transitState.offices = result.data.offices || [];
+                // Every office, even when the dropdown is narrowed to one, so the
+                // dropdown keeps its other options.
                 transitState.officeDistribution = result.data.officeDistribution || [];
+                transitState.stats = result.data.stats;
                 transitState.page = result.data.pagination.page;
                 transitState.lastPage = result.data.pagination.lastPage;
                 transitState.total = result.data.pagination.total;
                 transitState.from = result.data.pagination.from;
                 transitState.to = result.data.pagination.to;
                 transitState.loaded = true;
-
-                transitState.files.forEach(t => {
-                    if (t.currentOfficeId) {
-                        officeData[t.currentOfficeId] = {
-                            name: t.currentOffice,
-                            code: t.currentOfficeId,
-                            department: t.currentOfficeDepartment || t.department
-                        };
-                    }
-                });
+                // Cached rows belong to the previous filter/search, so drop them.
+                transitState.rowsByOffice = {};
 
                 updateDashboardStats();
                 populateOfficeFilter();
@@ -116,6 +128,42 @@
                     transitState.loading = false;
                     loadingEl?.classList.add('hidden');
                 }
+            }
+        }
+
+        // Fetch (and cache) every in-transit file for one requester office.
+        async function loadOfficeRows(officeCode) {
+            if (transitState.rowsByOffice[officeCode]
+                || transitState.loadingOffices.has(officeCode)) {
+                return;
+            }
+
+            transitState.loadingOffices.add(officeCode);
+
+            const params = buildTransitQuery(1, 1000);
+            params.set('office', officeCode);
+
+            try {
+                const response = await fetch(`/api/file-tracker-dashboard/in-transit?${params.toString()}`);
+                const result = await response.json();
+                const rows = result.success ? (result.data.files || []) : [];
+
+                rows.forEach(t => {
+                    if (t.currentOfficeId) {
+                        officeData[t.currentOfficeId] = {
+                            name: t.currentOffice,
+                            code: t.currentOfficeId,
+                            department: t.currentOfficeDepartment || t.department
+                        };
+                    }
+                });
+
+                transitState.rowsByOffice[officeCode] = rows;
+            } catch (error) {
+                console.error(`Error loading files for office ${officeCode}:`, error);
+                transitState.rowsByOffice[officeCode] = [];
+            } finally {
+                transitState.loadingOffices.delete(officeCode);
             }
         }
 
@@ -353,14 +401,14 @@
             }
         }
 
-        // Render the current page of in-transit files (filtering happens server-side).
+        // Render the current page of requester-office groups; a group's files are
+        // rendered underneath it once expanded (and fetched on first expand).
         function renderTransitTable() {
             const tableBody = document.getElementById('files-table-body');
             const noResults = document.getElementById('no-results');
+            const groups = transitState.offices || [];
 
-            filteredTrackers = transitState.files;
-
-            if (filteredTrackers.length === 0) {
+            if (groups.length === 0) {
                 tableBody.innerHTML = '';
                 noResults.classList.remove('hidden');
                 return;
@@ -368,28 +416,132 @@
 
             noResults.classList.add('hidden');
 
-            tableBody.innerHTML = filteredTrackers.map(tracker => {
-                // Falls back to the tracker itself when the movement log is empty,
-                // so a row is never silently dropped from the page.
-                const activeEntry = getCurrentOutEntry(tracker) || {};
+            filteredTrackers = Object.values(transitState.rowsByOffice).flat();
 
-                const priorityClass = `priority-${tracker.priority}`;
-                const priorityText = tracker.priority.charAt(0) + tracker.priority.slice(1).toLowerCase();
-                const office = officeData[tracker.currentOfficeId] || { name: tracker.currentOffice || 'Unknown', department: tracker.department || 'N/A' };
-                const statusInfo = getStatusInfo(tracker);
-                // "Department Queue" is a holding bucket rather than a real office, so
-                // show the owning department (e.g. DAGs Office) on its own instead.
-                const isDepartmentQueue = /department\s*queue/i.test(office.name || '');
-                const officeName = isDepartmentQueue ? (office.department || office.name) : office.name;
-                const officeDepartment = isDepartmentQueue ? '' : (office.department || '');
-                // Same shape as the archive tab's "Last Updated": relative age on
-                // top, the formatted calendar date underneath.
-                const sinceStamp = activeEntry.createdAt || activeEntry.logInDate || null;
-                const timeInOffice = sinceStamp ? formatTimeDifference(sinceStamp) : 'N/A';
-                const timeInOfficeOn = sinceStamp ? formatDate(sinceStamp) : '';
+            tableBody.innerHTML = groups.map(group => {
+                const code = group.officeCode;
+                const expanded = transitState.expandedOffices.has(code);
+                const rows = transitState.rowsByOffice[code];
+                const isLoading = transitState.loadingOffices.has(code);
+                const total = group.totalFiles;
+                const high = group.highFiles || 0;
 
-                return `
-                <tr class="file-row fade-in">
+                // Offices carry their department's accent, so a group reads the
+                // same way it does on the Requested tab.
+                const style = departmentStyle(group.department);
+                const styleVars = departmentStyleVars(style);
+
+                const header = `
+                <tr class="department-group-row ${expanded ? 'is-expanded' : ''}" style="${styleVars}" data-office-toggle="${escapeHtml(code)}" aria-expanded="${expanded}" title="Click to ${expanded ? 'collapse' : 'expand'}">
+                    <td colspan="6" class="px-6 py-3">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="chevron-right" class="h-4 w-4 department-group-chevron"></i>
+                            <span class="department-group-icon">
+                                <i data-lucide="${style.icon}" class="h-4 w-4"></i>
+                            </span>
+                            <span class="department-group-name">${escapeHtml(group.officeName || code)}</span>
+                            <span class="department-group-count">${total} file${total === 1 ? '' : 's'}</span>
+                            ${high > 0 ? `
+                            <span class="department-group-high">
+                                <i data-lucide="alert-triangle" class="h-3 w-3"></i>
+                                ${high} high
+                            </span>` : ''}
+                            ${group.department ? `<span class="department-group-note">${escapeHtml(group.department)}</span>` : ''}
+                            <span class="flex-1"></span>
+                            ${isLoading
+                                ? '<span class="department-group-note">loading…</span>'
+                                : `<span class="department-group-hint">${expanded ? 'Hide files' : 'Show files'}</span>`}
+                        </div>
+                    </td>
+                </tr>
+                `;
+
+                if (!expanded) return header;
+
+                if (isLoading || !rows) {
+                    // A group can be expanded with its rows dropped (a filter
+                    // reloaded the page), so re-fetch rather than spin forever.
+                    if (!isLoading) loadOfficeRows(code).then(renderTransitTable);
+
+                    return header + `
+                    <tr class="department-group-loading" style="${styleVars}">
+                        <td colspan="6" class="px-6 py-4 text-center text-sm text-gray-500">
+                            <i data-lucide="loader-2" class="h-4 w-4 inline animate-spin mr-1"></i>
+                            Loading ${escapeHtml(group.officeName || code)} files...
+                        </td>
+                    </tr>
+                    `;
+                }
+
+                return header + rows.map(tracker => transitRowHtml(tracker, styleVars, code)).join('');
+            }).join('');
+
+            setupOfficeGroupToggles();
+            setupViewDetailsButtons();
+            updateTransitGroupToggleLabel(groups);
+            lucide.createIcons();
+        }
+
+        function updateTransitGroupToggleLabel(groups) {
+            const label = document.getElementById('transit-toggle-groups-label');
+            if (!label) return;
+
+            const allExpanded = groups.length > 0
+                && groups.every(g => transitState.expandedOffices.has(g.officeCode));
+            label.textContent = allExpanded ? 'Collapse all' : 'Expand all';
+        }
+
+        // Toggle an office group open/closed, remembering the state so it survives
+        // re-renders within the session.
+        function setupOfficeGroupToggles() {
+            document.querySelectorAll('#files-table-body [data-office-toggle]').forEach(header => {
+                header.addEventListener('click', async function () {
+                    const code = this.dataset.officeToggle;
+
+                    if (transitState.expandedOffices.has(code)) {
+                        transitState.expandedOffices.delete(code);
+                        renderTransitTable();
+                        return;
+                    }
+
+                    transitState.expandedOffices.add(code);
+                    renderTransitTable();
+
+                    if (!transitState.rowsByOffice[code]) {
+                        await loadOfficeRows(code);
+                        renderTransitTable();
+                    }
+                });
+            });
+        }
+
+        function transitRowHtml(tracker, styleVars, officeCode) {
+            // Falls back to the tracker itself when the movement log is empty,
+            // so a row is never silently dropped from the page.
+            const activeEntry = getCurrentOutEntry(tracker) || {};
+
+            const priorityClass = `priority-${tracker.priority}`;
+            const priorityText = tracker.priority.charAt(0) + tracker.priority.slice(1).toLowerCase();
+            const statusInfo = getStatusInfo(tracker);
+            // The office the file was requested to (the receiving officer's
+            // posting). Read off the row itself rather than the shared
+            // officeData map, whose entries are keyed by office code and so
+            // cannot carry a per-file department for Department Queue rows.
+            const requesterOfficeName = tracker.requesterOffice || tracker.currentOffice || 'Unknown';
+            const requesterOfficeDepartment = tracker.requesterOfficeDepartment || tracker.department || '';
+            // "Department Queue" is a holding bucket rather than a real office, so
+            // show the owning department (e.g. DAGs Office) on its own instead.
+            const isDepartmentQueue = /department\s*queue/i.test(requesterOfficeName);
+            const officeName = isDepartmentQueue ? (requesterOfficeDepartment || requesterOfficeName) : requesterOfficeName;
+            const officeDepartment = isDepartmentQueue ? '' : requesterOfficeDepartment;
+            // Same shape as the archive tab's "Last Updated": relative age on
+            // top, the formatted calendar date underneath.
+            const sinceStamp = activeEntry.createdAt || activeEntry.logInDate || null;
+            const timeInOffice = sinceStamp ? formatTimeDifference(sinceStamp) : 'N/A';
+            const timeInOfficeOn = sinceStamp ? formatDate(sinceStamp) : '';
+
+            return `
+                <tr class="file-row fade-in" data-office-rows="${escapeHtml(officeCode || '')}" style="${styleVars || ''}">
                     <td class="px-6 py-4 whitespace-nowrap">
                         <div class="flex items-center">
                             <div class="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -434,11 +586,7 @@
                         </button>
                     </td>
                 </tr>
-                `;
-            }).join('');
-            
-            setupViewDetailsButtons();
-            lucide.createIcons();
+            `;
         }
 
         // Render the current page of indexed files that are not in transit.
@@ -884,9 +1032,11 @@
 
         // Show tracker details
         function showTrackerDetails(trackingId) {
-            // Requested rows come from their own paginated endpoint, so they are
-            // not necessarily part of the overview payload.
-            const tracker = transitState.files.find(t => t.trackingId === trackingId)
+            // Both grouped tabs fetch their rows a group at a time, so look through
+            // whichever groups are currently expanded.
+            const tracker = Object.values(transitState.rowsByOffice)
+                    .flat()
+                    .find(t => t.trackingId === trackingId)
                 || Object.values(requestedState.rowsByDepartment)
                     .flat()
                     .find(t => t.trackingId === trackingId);
@@ -1487,13 +1637,14 @@
                         <tr>
                             <th style="width:3%;">#</th>
                             <th style="width:12%;">File No.</th>
-                            <th style="width:17%;">File Name</th>
-                            <th style="width:7%;">Priority</th>
+                            <th style="width:14%;">File Name</th>
+                            <th style="width:6%;">Priority</th>
                             <th style="width:11%;">Requester</th>
-                            <th style="width:11%;">Current Office</th>
-                            <th style="width:10%;">Requested Date</th>
-                            <th style="width:8%;">Status</th>
-                            <th style="width:21%;">Movement History</th>
+                            <th style="width:10%;">Requester Office</th>
+                            <th style="width:10%;">Requester Department</th>
+                            <th style="width:9%;">Requested Date</th>
+                            <th style="width:7%;">Status</th>
+                            <th style="width:18%;">Movement History</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1502,20 +1653,20 @@
             if (requestedFiles.length === 0) {
                 html += `
                     <tr>
-                        <td colspan="9" style="text-align:center; padding:2rem; color:#94a3b8; font-size:1rem;">
+                        <td colspan="10" style="text-align:center; padding:2rem; color:#94a3b8; font-size:1rem;">
                             📭 No files have been requested during the selected period.
                         </td>
                     </tr>
                 `;
             } else {
-                // The department is carried by the group header, so it is not
-                // repeated on every row.
+                // Rows carry their own department column too — the group header
+                // is the grouping key, the column is the requester's posting.
                 groups.forEach(group => {
                     const groupHigh = group.files.filter(f => f.priority === 'HIGH').length;
 
                     html += `
                         <tr>
-                            <td colspan="9" style="background:#eef2ff; border-top:2px solid #6366f1; font-weight:700; text-transform:uppercase; letter-spacing:0.03em; color:#312e81; padding:0.45rem 0.6rem;">
+                            <td colspan="10" style="background:#eef2ff; border-top:2px solid #6366f1; font-weight:700; text-transform:uppercase; letter-spacing:0.03em; color:#312e81; padding:0.45rem 0.6rem;">
                                 ${departmentLabel(group.name)}
                                 <span style="float:right; font-weight:600; text-transform:none; letter-spacing:0; color:#4338ca;">
                                     ${group.files.length} file${group.files.length === 1 ? '' : 's'} · ${groupHigh} high priority
@@ -1532,7 +1683,18 @@
                         const movement = getMovementHistory(file);
                         const entries = file.logEntries || [];
                         const lastEntry = entries[entries.length - 1];
-                        const currentOffice = officeData[file.currentOfficeId]?.name || file.currentOffice;
+                        // Same rule as the In-Transit tab: show the office the file
+                        // was requested to, and fall back to the department when
+                        // that office is the "Department Queue" holding bucket.
+                        const requesterOfficeName = file.requesterOffice
+                            || officeData[file.currentOfficeId]?.name
+                            || file.currentOffice
+                            || 'Unknown';
+                        const requesterDepartment = file.requesterOfficeDepartment || file.department || '';
+                        const isDepartmentQueue = /department\s*queue/i.test(requesterOfficeName);
+                        const requesterOffice = isDepartmentQueue
+                            ? (requesterDepartment || requesterOfficeName)
+                            : requesterOfficeName;
 
                         html += `
                             <tr>
@@ -1541,7 +1703,8 @@
                                 <td>${file.fileName}</td>
                                 <td><span class="badge-priority ${priorityClass}">${file.priority}</span></td>
                                 <td>${requesterName(file)}</td>
-                                <td>${currentOffice}</td>
+                                <td>${requesterOffice}</td>
+                                <td>${requesterDepartment ? departmentLabel(requesterDepartment) : '—'}</td>
                                 <td>${file.requestedDate ? formatDate(file.requestedDate) : formatDate(file.requestDate)}</td>
                                 <td><span class="status-badge ${statusInfo.class}">${statusInfo.label}</span></td>
                                 <td>
@@ -1624,6 +1787,25 @@
             document.getElementById('transit-per-page')?.addEventListener('change', function () {
                 transitState.perPage = parseInt(this.value, 10) || 25;
                 loadInTransit(1);
+            });
+
+            // Expand / collapse every office group on the current page.
+            document.getElementById('transit-toggle-groups')?.addEventListener('click', async function () {
+                const codes = (transitState.offices || []).map(o => o.officeCode);
+                const allExpanded = codes.length > 0
+                    && codes.every(c => transitState.expandedOffices.has(c));
+
+                if (allExpanded) {
+                    codes.forEach(c => transitState.expandedOffices.delete(c));
+                    renderTransitTable();
+                    return;
+                }
+
+                codes.forEach(c => transitState.expandedOffices.add(c));
+                renderTransitTable();
+
+                await Promise.all(codes.map(c => loadOfficeRows(c)));
+                renderTransitTable();
             });
 
             document.getElementById('requested-search')?.addEventListener('input', function () {

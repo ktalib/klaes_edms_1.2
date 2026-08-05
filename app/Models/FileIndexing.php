@@ -11,6 +11,7 @@ use App\Models\PrintLabelBatchItem;
 use App\Models\User;
 use App\Models\Grouping;
 use App\Support\SltrDigitRank;
+use App\Services\GenderNormalizer;
 
 class FileIndexing extends Model
 {
@@ -33,6 +34,7 @@ class FileIndexing extends Model
         'file_number',
         'file_title',
         'gender',
+        'gender_source',
         'land_use_type',
         'plot_number',
         'plot_size',
@@ -98,6 +100,8 @@ class FileIndexing extends Model
         'new_kangis_file_no',
         'prop_id',
         'parent_prop_id',
+        // Root of the parent_prop_id chain — see App\Services\PropIdLineageService.
+        'ancestral_prop_id',
         'is_corresponding_file',
         'corresponding_fileno',
         'sub_prefix',
@@ -223,6 +227,7 @@ class FileIndexing extends Model
             'new_kangis_file_no',
             'prop_id',
             'parent_prop_id',
+            'ancestral_prop_id',
             'kn_grouping_id',
             'is_corresponding_file',
             'corresponding_fileno',
@@ -273,6 +278,32 @@ class FileIndexing extends Model
         static::saving(function (FileIndexing $model) {
             $model->digit_rank = SltrDigitRank::fromFileNumber($model->file_number);
         });
+
+        // Gender is required on the indexing form, but the form is not the only way
+        // a row gets here: commissioning auto-indexes through FileIndexingService,
+        // and batch paths never see a request. Those paths used to write null, which
+        // is how 133,773 of 133,779 rows ended up without a gender. Fall back to the
+        // same inference the backfill uses, and always record where the value
+        // came from. Creation only — never rewrite an existing row on update.
+        static::creating(function (FileIndexing $model) {
+            if ($model->gender !== null) {
+                $model->gender_source = $model->gender_source ?: GenderNormalizer::SOURCE_CAPTURED;
+
+                return;
+            }
+
+            $inferred = app(GenderNormalizer::class)->classify($model->file_title);
+
+            if ($inferred !== null) {
+                [$model->gender, $model->gender_source] = $inferred;
+            }
+        });
+    }
+
+    /** Every write path folds onto the client's four values. See GenderNormalizer. */
+    public function setGenderAttribute($value): void
+    {
+        $this->attributes['gender'] = app(GenderNormalizer::class)->normalize($value);
     }
 
     public function mainApplication()

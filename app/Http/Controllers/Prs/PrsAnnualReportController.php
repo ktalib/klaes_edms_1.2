@@ -3,31 +3,40 @@
 namespace App\Http\Controllers\Prs;
 
 use App\Http\Controllers\Controller;
-use App\Services\Prs\PrsSampleData;
+use App\Services\Prs\PrsReportAggregator;
 use Illuminate\Http\Request;
 
 /**
- * PRS Annual Progress Report — UI PROTOTYPE.
+ * PRS Annual Progress Report — LIVE.
  *
- * Serves the report shell from PrsSampleData (a static fixture transcribed from
- * the 2025 PRS reports). No aggregation, no database access — the data layer is
- * deliberately deferred until the source-data questions in
- * docs/prs-2025/11-implementation-plan.md are resolved.
+ * Serves from PrsReportAggregator, which queries the database directly. The
+ * static fixture (App\Services\Prs\PrsSampleData) is retained as the 2025
+ * reference transcription but is no longer wired to this page.
  *
- * When the aggregators land, swap PrsSampleData for PrsReportAggregator and the
- * views should not need to change.
+ * The year is data-driven, not hardcoded. KLAES holds almost no 2025 activity —
+ * commissioning, OSS and search all went live in 2026 — so offering 2025 would
+ * print a 74-100% shortfall against a report PRS already published. See
+ * docs/prs-2025/20-live-data-implementation.md §5.
  */
 class PrsAnnualReportController extends Controller
 {
-    public function __construct(private PrsSampleData $data)
+    public function __construct(private PrsReportAggregator $reports)
     {
     }
 
     public function index(Request $request)
     {
         $department = $request->query('dept', 'all');
+        $years      = $this->reports->availableYears();
 
-        $sections = $this->data->sections();
+        $year = (int) $request->query('year', 0);
+
+        if (!isset($years[$year])) {
+            $year = $this->reports->year();
+        }
+
+        $report   = $this->reports->forYear($year);
+        $sections = $report->sections();
 
         if ($department !== 'all') {
             $sections = array_values(array_filter(
@@ -37,10 +46,11 @@ class PrsAnnualReportController extends Controller
         }
 
         return view('prs.annual_report.index', [
-            'year'        => $this->data->year(),
+            'year'        => $year,
+            'years'       => array_keys($years),
             'sections'    => $sections,
-            'highlights'  => $this->data->highlights(),
-            'departments' => PrsSampleData::DEPARTMENTS,
+            'highlights'  => $report->highlights(),
+            'departments' => PrsReportAggregator::DEPARTMENTS,
             'department'  => $department,
         ]);
     }

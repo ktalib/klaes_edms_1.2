@@ -239,6 +239,14 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/data', [MasterDcivLinkController::class, 'data'])->name('data');
     });
 
+    // OP Verification (Deeds) — verify an OP by serial number against the OPs Dashboard record set
+    Route::prefix('op-verifications')->name('op-verifications.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\OpVerificationController::class, 'index'])->name('index');
+        Route::get('/table', [\App\Http\Controllers\OpVerificationController::class, 'table'])->name('table');
+        Route::get('/dashboard', [\App\Http\Controllers\OpVerificationController::class, 'dashboard'])->name('dashboard');
+        Route::post('/', [\App\Http\Controllers\OpVerificationController::class, 'store'])->name('store');
+    });
+
     Route::get('/oss-verifications', [\App\Http\Controllers\OssVerificationController::class, 'index'])->name('oss-verifications.index');
     Route::post('/oss-verifications/{id}/verify', [\App\Http\Controllers\OssVerificationController::class, 'verify'])->name('oss-verifications.verify');
 
@@ -1014,6 +1022,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/reissuance-search', [\App\Http\Controllers\LandRofoController::class, 'reissuanceSearch'])->name('reissuance-search');
         Route::post('/{id}/reissue', [\App\Http\Controllers\LandRofoController::class, 'reissue'])->name('reissue');
         Route::post('/batch-print', [\App\Http\Controllers\LandRofoController::class, 'batchPrint'])->name('batch-print');
+        // Every RofO in a batch, for the Batches tab — unpaginated on purpose.
+        Route::get('/batch/{batchId}/children', [\App\Http\Controllers\LandRofoController::class, 'batchChildren'])->name('batch-children');
         Route::post('/batch-print-log', [\App\Http\Controllers\LandRofoController::class, 'batchPrintLog'])->name('batch-print-log');
         Route::post('/{id}/generate', [\App\Http\Controllers\LandRofoController::class, 'generate'])->name('generate');
         Route::post('/{id}/assign-security-paper', [\App\Http\Controllers\LandRofoController::class, 'assignSecurityPaperCode'])->name('assign-security-paper');
@@ -1047,6 +1057,19 @@ Route::middleware(['auth'])->group(function () {
     Route::get('land-recommendations/export', [\App\Http\Controllers\LandRecommendationController::class, 'export'])->name('land-recommendations.export');
     // Duplicate check by file number — must also stay above the resource route
     Route::get('land-recommendations/check-duplicate', [\App\Http\Controllers\LandRecommendationController::class, 'checkDuplicate'])->name('land-recommendations.check-duplicate');
+    // Plot Subdivision batch capture — both must stay above the resource route
+    Route::get('land-recommendations/subdivision-mothers', [\App\Http\Controllers\LandRecommendationController::class, 'subdivisionMothers'])->name('land-recommendations.subdivision-mothers');
+    Route::get('land-recommendations/subdivision-children', [\App\Http\Controllers\LandRecommendationController::class, 'subdivisionChildren'])->name('land-recommendations.subdivision-children');
+    Route::post('land-recommendations/batch', [\App\Http\Controllers\LandRecommendationController::class, 'storeBatch'])->name('land-recommendations.store-batch');
+    // Batch capture autosave — a 100+ child subdivision outlives the session that
+    // keys it, so the form drafts itself here. Also above the resource route.
+    Route::get('land-recommendations/batch-drafts', [\App\Http\Controllers\LandRecommendationBatchDraftController::class, 'index'])->name('land-recommendations.batch-drafts.index');
+    Route::post('land-recommendations/batch-drafts', [\App\Http\Controllers\LandRecommendationBatchDraftController::class, 'store'])->name('land-recommendations.batch-drafts.store');
+    Route::get('land-recommendations/batch-drafts/{draftKey}', [\App\Http\Controllers\LandRecommendationBatchDraftController::class, 'show'])->name('land-recommendations.batch-drafts.show');
+    Route::delete('land-recommendations/batch-drafts/{draftKey}', [\App\Http\Controllers\LandRecommendationBatchDraftController::class, 'destroy'])->name('land-recommendations.batch-drafts.destroy');
+    Route::get('land-recommendations/batch/{batchId}/print', [\App\Http\Controllers\LandRecommendationController::class, 'printBatch'])->name('land-recommendations.batch-print');
+    // Every child of a batch, for the Batches tab — unpaginated on purpose.
+    Route::get('land-recommendations/batch/{batchId}/children', [\App\Http\Controllers\LandRecommendationController::class, 'batchChildren'])->name('land-recommendations.batch-children');
     Route::resource('land-recommendations', \App\Http\Controllers\LandRecommendationController::class);
     Route::post('land-recommendations/{id}/log-print', [\App\Http\Controllers\LandRecommendationController::class, 'logPrint'])->name('land-recommendations.log-print');
     Route::post('land-recommendations/{id}/approve', [\App\Http\Controllers\LandRecommendationController::class, 'approve'])->name('land-recommendations.approve');
@@ -1102,6 +1125,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/cofo-comment', [LegalSearchController::class, 'saveCofoComment'])->name('legalsearch.saveCofoComment');
         Route::post('/transfer-caveat', [LegalSearchController::class, 'transferCaveat'])->name('legalsearch.transferCaveat');
         Route::post('/create-record', [LegalSearchController::class, 'createRecord'])->name('legalsearch.createRecord');
+        Route::post('/existing-records', [LegalSearchController::class, 'existingRecords'])->name('legalsearch.existingRecords');
         Route::post('/update-file-indexing', [LegalSearchController::class, 'updateFileIndexing'])->name('legalsearch.updateFileIndexing');
     });
 

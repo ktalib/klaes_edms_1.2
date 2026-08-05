@@ -13,7 +13,7 @@
         <div class="p-6">
             <div class="bg-white rounded-lg shadow-sm" >
                 <!-- Page Header -->
-                <div class="border-b border-gray-200 px-6 py-4">
+                {{-- <div class="border-b border-gray-200 px-6 py-4">
                     <div class="flex items-center justify-between">
                         <div>
                             <h1 class="text-2xl font-bold text-gray-900">Decommissioned Files</h1>
@@ -26,7 +26,7 @@
                             </a>
                         </div>
                     </div>
-                </div>
+                </div> --}}
 
                 <!-- Quick Decommission Toggle -->
                 <div class="px-6 pt-6">
@@ -414,6 +414,29 @@
             background-color: #fee2e2;
             color: #991b1b;
         }
+
+        /* Reason column: truncated cells reveal the full text on hover */
+        .reason-truncated {
+            cursor: help;
+            border-bottom: 1px dotted #9ca3af;
+        }
+
+        #reasonTooltip {
+            position: absolute;
+            z-index: 10000;
+            max-width: 28rem;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.375rem;
+            background-color: #111827;
+            color: #f9fafb;
+            font-size: 0.75rem;
+            line-height: 1.15rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.25);
+            pointer-events: none;
+            display: none;
+        }
     </style>
 
     <script>
@@ -534,6 +557,46 @@
                     lucide.createIcons();
                 }
             });
+
+            // Reason cell: the server sends a 50-char preview plus the full text in
+            // data-reason — show the rest in a floating tooltip on hover so the column
+            // keeps its width. Tooltip lives on <body> so table overflow can't clip it.
+            const $reasonTooltip = $('<div id="reasonTooltip"></div>').appendTo('body');
+
+            function positionReasonTooltip(event) {
+                const margin = 12;
+                const width = $reasonTooltip.outerWidth();
+                const height = $reasonTooltip.outerHeight();
+
+                let left = event.pageX + 16;
+                let top = event.pageY + 16;
+
+                const maxLeft = $(window).scrollLeft() + $(window).width() - width - margin;
+                if (left > maxLeft) {
+                    left = Math.max($(window).scrollLeft() + margin, maxLeft);
+                }
+
+                const maxTop = $(window).scrollTop() + $(window).height() - height - margin;
+                if (top > maxTop) {
+                    top = Math.max($(window).scrollTop() + margin, event.pageY - height - 16);
+                }
+
+                $reasonTooltip.css({ left: left + 'px', top: top + 'px' });
+            }
+
+            $(document)
+                .on('mouseenter', '.reason-truncated', function (e) {
+                    const full = $(this).attr('data-reason');
+                    if (!full) return;
+                    $reasonTooltip.text(full).show();
+                    positionReasonTooltip(e);
+                })
+                .on('mousemove', '.reason-truncated', function (e) {
+                    if ($reasonTooltip.is(':visible')) positionReasonTooltip(e);
+                })
+                .on('mouseleave', '.reason-truncated', function () {
+                    $reasonTooltip.hide();
+                });
 
             // Related File cell: reveal the remaining file numbers when the "+N" pill is clicked
             $('#decommissionedFilesTable tbody').on('click', '.rel-more', function() {

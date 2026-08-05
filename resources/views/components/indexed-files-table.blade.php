@@ -87,6 +87,8 @@
         </div>
     </div>
 
+    @include('components.gender-legend')
+
     <div class="overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full text-sm" id="{{ $tableId }}">

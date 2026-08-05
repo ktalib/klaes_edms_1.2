@@ -40,7 +40,8 @@
                     </h3>
                     <p class="text-slate-400 text-xs mt-1 uppercase tracking-widest font-semibold flex items-center gap-1">
                         Ref: <span class="text-blue-300 font-mono" x-text="refNumber"></span>
-                        <span x-show="isReissuanceType" x-cloak class="text-amber-300">— Re-issued RofO (Original only)</span>
+                        <span x-show="isReissuanceType" x-cloak class="text-amber-300"
+                              x-text="isLegacyReissuanceType ? '— Re-issued RofO (Pre-KLAES · all 3 copies)' : '— Re-issued RofO (Original only)'"></span>
                     </p>
                 </div>
                 <button @click="closeModal()" class="relative z-10 p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-full transition-all">
@@ -321,14 +322,19 @@ document.addEventListener('alpine:init', () => {
             return this.moduleContext === 'oss';
         },
 
-        // A re-issued RofO is issued as the Original copy only, never the
-        // Original/Duplicate/Triplicate set.
         get isReissuanceType() {
             return String(this.docType || '').includes('Re-issuance');
         },
 
+        // A KLAES-generated RofO already had its Original/Duplicate/Triplicate set
+        // issued, so its re-issuance is the Original copy only. A pre-KLAES (legacy)
+        // one was never issued from here, so it prints the full set.
+        get isLegacyReissuanceType() {
+            return this.isReissuanceType && String(this.docType).includes('Legacy');
+        },
+
         get isSingleStepType() {
-            if (this.isReissuanceType) return true;
+            if (this.isReissuanceType) return !this.isLegacyReissuanceType;
             return ['Recommendation For Grant', 'ST CofO', 'Commissioning Sheet', 'Bill Balance',
                     'Legal Search Pay-Per-Search', 'Legal Search Online', 'Legal Search Official'].includes(this.docType);
         },

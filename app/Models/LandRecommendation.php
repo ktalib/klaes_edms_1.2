@@ -13,6 +13,26 @@ class LandRecommendation extends Model
     protected $table = 'land_recommendations';
     public $timestamps = true;
 
+    /**
+     * The completion time as it should read on a letter.
+     *
+     * The form captures a plain number of years, but the records keyed before it
+     * did that hold the unit in the text ("2 years", and a handful of "NIL").
+     * Printing the raw column would give the new records a bare "2" where every
+     * earlier letter says "2 years", so the unit is restored here — and anything
+     * that is not a bare number is left exactly as it was recorded.
+     */
+    public function getDevelopmentPeriodLabelAttribute(): string
+    {
+        $value = trim((string) ($this->development_period ?? ''));
+
+        if ($value === '' || !ctype_digit($value)) {
+            return $value;
+        }
+
+        return $value . ((int) $value === 1 ? ' year' : ' years');
+    }
+
     const STATUS_PENDING = 'pending';
     const STATUS_APPROVED = 'approved';
 
@@ -22,6 +42,9 @@ class LandRecommendation extends Model
     protected $fillable = [
         'file_number',
         'old_file_number',
+        'rofo_batch_id',
+        'batch_mother_file_no',
+        'batch_seq',
         'applicant_name',
         'purpose_of_clause',
         'location',
@@ -75,6 +98,7 @@ class LandRecommendation extends Model
         'is_reissuance',
         'reissuance_source',
         'reissued_from_id',
+        'reissuance_original_date',
         'num_plots',
         'file_title',
         'premium_words',
@@ -109,6 +133,7 @@ class LandRecommendation extends Model
         'application_date' => 'date',
         'use_standard_template' => 'boolean',
         'is_reissuance' => 'boolean',
+        'reissuance_original_date' => 'date',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

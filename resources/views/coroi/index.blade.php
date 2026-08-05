@@ -218,14 +218,17 @@
                 visibility: visible !important;
             }
 
+            /* The @page margin already provides the sheet border; any padding here
+               is subtracted from the space the 2x2 grid has to fit into. Height is
+               auto so each copy (multi-property mortgages) owns exactly one page. */
             .print-area {
                 position: absolute !important;
                 left: 0;
                 top: 0;
-                width: 100vw;
-                height: 100vh;
+                width: 100%;
+                height: auto !important;
                 margin: 0 !important;
-                padding: 15px !important;
+                padding: 0 !important;
                 box-shadow: none !important;
                 background: white !important;
                 z-index: 9999;
@@ -241,26 +244,34 @@
                 size: A4 portrait;
                 margin: 0.4in;
             }
+            /* 100vh is exactly the printable area of one sheet, so one copy of the
+               2x2 grid can never spill onto a second sheet. */
             .certificate-container {
                 max-width: 100% !important;
-                height: 100% !important;
+                width: 100% !important;
+                height: 100vh !important;
+                max-height: 100vh !important;
+                overflow: hidden !important;
                 padding: 0 !important;
                 margin: 0 !important;
-                display: flex !important;
-                align-items: center !important;
-                justify-content: center !important;
+                display: block !important;
+                page-break-inside: avoid;
+                break-inside: avoid;
             }
 
             .certificate-grid {
                 display: grid !important;
                 grid-template-columns: 1fr 1fr !important;
                 grid-template-rows: 1fr 1fr !important;
-                gap: 15px !important;
+                gap: 12px !important;
                 width: 100% !important;
                 height: 100% !important;
                 max-height: 100% !important;
+                min-height: 0 !important;
             }
 
+            /* min-height/overflow keep a long applicant name from stretching its
+               row past the 1fr the page can afford. */
             .certificate-item {
                 font-size: 9px !important;
                 line-height: 1.2 !important;
@@ -270,6 +281,8 @@
                 flex-direction: column !important;
                 justify-content: space-between !important;
                 height: 100% !important;
+                min-height: 0 !important;
+                overflow: hidden !important;
             }
 
             .certificate-item img {
@@ -284,7 +297,7 @@
 
             .title {
                 font-size: 11px !important;
-                margin-bottom: 6px !important;
+                margin-bottom: 4px !important;
             }
 
             .red-box-compact {
@@ -292,6 +305,14 @@
                 margin-bottom: 6px !important;
                 font-size: 10px !important;
                 line-height: 1.3 !important;
+            }
+
+            /* The certificate body carries inline font-size:14px/line-height:1.5,
+               which is what pushed the four certificates past one A4 sheet. Only
+               an !important rule can override an inline style. */
+            .red-box-compact p {
+                font-size: 12px !important;
+                line-height: 1.35 !important;
             }
 
             .footer-info {
@@ -639,13 +660,13 @@
                                         $isMortgage = isset($data) && isset($data->instrument_type)
                                             && stripos((string) $data->instrument_type, 'MORTGAGE') !== false;
 
-                                        // Mortgages are delivered by party 1 (the mortgagor)
+                                        // Mortgages are delivered by party 2 (the mortgagee)
                                         if ($isDeedOfAssignment) {
                                             $deliveryName = $data->solicitor_name ?? $data->Applicant_Name ?? 'APPLICANT NAME';
                                             $deliveryAddress = $data->solicitor_address ?? $data->party_2_address ?? null;
                                         } elseif ($isMortgage) {
-                                            $deliveryName = $data->party_1_name ?? $data->Applicant_Name ?? 'APPLICANT NAME';
-                                            $deliveryAddress = $data->party_1_address ?? null;
+                                            $deliveryName = $data->party_2_name ?? $data->Grantee ?? 'APPLICANT NAME';
+                                            $deliveryAddress = $data->party_2_address ?? null;
                                         } else {
                                             $deliveryName = $data->Applicant_Name ?? 'APPLICANT NAME';
                                             $deliveryAddress = $data->party_2_address ?? null;

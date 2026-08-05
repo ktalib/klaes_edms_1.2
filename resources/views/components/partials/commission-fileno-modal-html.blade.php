@@ -933,6 +933,8 @@
                     <div class="max-h-64 overflow-y-auto p-4" id="summaryLocationList"></div>
                 </div>
 
+                @include('generate_fileno.partials.summary_destination')
+
                 <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4">
                     <div class="flex">
                         <div class="flex-shrink-0">

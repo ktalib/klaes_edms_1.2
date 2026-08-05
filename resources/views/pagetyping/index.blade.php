@@ -569,7 +569,7 @@
           const serialNoInput = document.getElementById('serial-no');
           const processButton = document.querySelector('.process-all-pages');
 
-          // In BC+FC mode, disable ALL inputs except the process button
+          // In BC+FC mode, keep cover/page type locked but allow subtype selection (Old/New cover)
           const bcfcMode = state.typingState?.bcfcMode;
           
           if (coverTypeSelect) {
@@ -585,7 +585,7 @@
             pageTypeSelect.classList.toggle('opacity-50', !pageTypeEnabled);
           }
           if (pageSubtypeSelect) {
-            const subtypeEnabled = bcfcMode ? false : enabled;
+            const subtypeEnabled = enabled;
             pageSubtypeSelect.disabled = !subtypeEnabled;
             pageSubtypeSelect.classList.toggle('opacity-50', !subtypeEnabled);
           }
@@ -4343,7 +4343,7 @@
 
                           <div>
                             <label for="page-subtype" class="block text-sm font-medium mb-1.5">Page Subtype</label>
-                            <select id="page-subtype" class="input ${state.typingState.bcfcMode ? 'opacity-50 cursor-not-allowed' : ''}" ${state.typingState.bcfcMode ? 'disabled' : ''}>
+                            <select id="page-subtype" class="input">
                               ${(pageSubTypes[state.typingState.pageType] || pageSubTypes[parseInt(state.typingState.pageType)] || [])?.map(subtype =>
                                 `<option value="${subtype.id}" ${state.typingState.pageSubType == subtype.id ? 'selected' : ''}>
                                   ${subtype.name} (${subtype.code})

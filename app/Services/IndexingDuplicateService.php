@@ -75,6 +75,36 @@ class IndexingDuplicateService
     private const FILE_NUMBER_COLUMNS = ['mlsfNo', 'kangisFileNo', 'NewKANGISFileNo', 'st_file_no'];
 
     /**
+     * Record tables keyed by file number rather than by file_indexing_id that move
+     * WITH the record: their rows are snapshotted into the archive and deleted from
+     * the live tables, the same as the indexing row itself.
+     *
+     * pra and CofO_staging carry real dealings, so the confirmation counts them
+     * separately (`deleted_transaction_total`) — a file with registered
+     * transactions is usually the ORIGINAL rather than the duplicate, and the
+     * operator has to see that before committing.
+     *
+     * @var array<string,array{label:string,columns:array<int,string>,transaction:bool}>
+     */
+    private const FILE_NUMBER_DELETIONS = [
+        'pra' => [
+            'label'       => 'Property records (PRA)',
+            'columns'     => ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno'],
+            'transaction' => true,
+        ],
+        'CofO_staging' => [
+            'label'       => 'Certificates of Occupancy',
+            'columns'     => ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno'],
+            'transaction' => true,
+        ],
+        'file_indexing_staging' => [
+            'label'       => 'Staged indexing upload(s)',
+            'columns'     => ['file_number'],
+            'transaction' => false,
+        ],
+    ];
+
+    /**
      * Record / transaction tables keyed by file number rather than by
      * file_indexing_id. They are never touched by the move — a dealing that was
      * registered against the file stays registered — but the operator has to see
@@ -84,14 +114,6 @@ class IndexingDuplicateService
      * @var array<string,array{label:string,columns:array<int,string>}>
      */
     private const TRANSACTION_TABLES = [
-        'pra' => [
-            'label'   => 'Property records (PRA)',
-            'columns' => ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno'],
-        ],
-        'CofO_staging' => [
-            'label'   => 'Certificates of Occupancy',
-            'columns' => ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno'],
-        ],
         'file_history_staging' => [
             'label'   => 'File history (FH)',
             'columns' => ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno'],
@@ -133,6 +155,7 @@ class IndexingDuplicateService
         }
 
         $blocking = $this->countBlockingReferences($fileIndexingId);
+        /** @var array<int,object> $fileNumberRows */
         $fileNumberRows = [];
         $numbers = $this->resolveNumbers($row, $fileNumberRows);
 
@@ -159,6 +182,16 @@ class IndexingDuplicateService
                 $table,
                 $conn->table($table)->where('file_indexing_id', (string) $fileIndexingId)->count()
             );
+        }
+
+        // Record tables keyed by file number that move with the record.
+        $deletedTransactionTotal = 0;
+        foreach (self::FILE_NUMBER_DELETIONS as $table => $meta) {
+            $count = $this->countByFileNumber($table, $meta['columns'], $numbers);
+            $this->addPreviewRow($deletions, $table, $count, $meta['label']);
+            if ($meta['transaction']) {
+                $deletedTransactionTotal += $count;
+            }
         }
 
         // Kept on purpose. Trackers key off file_indexing_id; the transaction
@@ -188,14 +221,15 @@ class IndexingDuplicateService
         }
 
         return [
-            'status'            => empty($blocking) ? 'ok' : 'blocked',
-            'file_number'       => $row->file_number,
-            'file_title'        => $row->file_title ?? null,
-            'matched_numbers'   => $numbers,
-            'blocking'          => $blocking,
-            'deletions'         => array_values($deletions),
-            'retained'          => array_values($retained),
-            'transaction_total' => $transactionTotal,
+            'status'                    => empty($blocking) ? 'ok' : 'blocked',
+            'file_number'               => $row->file_number,
+            'file_title'                => $row->file_title ?? null,
+            'matched_numbers'           => $numbers,
+            'blocking'                  => $blocking,
+            'deletions'                 => array_values($deletions),
+            'retained'                  => array_values($retained),
+            'transaction_total'         => $transactionTotal,
+            'deleted_transaction_total' => $deletedTransactionTotal,
         ];
     }
 
@@ -206,8 +240,23 @@ class IndexingDuplicateService
      */
     private function countByFileNumber(string $table, array $columns, array $numbers): int
     {
+        $query = $this->fileNumberQuery($table, $columns, $numbers);
+
+        return $query ? $query->count() : 0;
+    }
+
+    /**
+     * The rows of $table carrying any of this file's numbers, or null when the
+     * table/columns are not present on this install.
+     *
+     * Rows already soft-deleted are excluded so the count shown in the
+     * confirmation, the snapshot written to the archive and the rows actually
+     * deleted are all the same set.
+     */
+    private function fileNumberQuery(string $table, array $columns, array $numbers): ?\Illuminate\Database\Query\Builder
+    {
         if (empty($numbers) || !Schema::connection('sqlsrv')->hasTable($table)) {
-            return 0;
+            return null;
         }
 
         $columns = array_values(array_filter(
@@ -216,7 +265,7 @@ class IndexingDuplicateService
         ));
 
         if (empty($columns)) {
-            return 0;
+            return null;
         }
 
         $query = DB::connection('sqlsrv')->table($table)
@@ -232,7 +281,32 @@ class IndexingDuplicateService
             });
         }
 
-        return $query->count();
+        return $query;
+    }
+
+    /**
+     * Snapshot of every row the file-number deletions will remove, taken before
+     * anything is deleted.
+     *
+     * @return array<string,array<int,array>>
+     */
+    private function collectFileNumberDeletionRows(array $numbers): array
+    {
+        $out = [];
+
+        foreach (self::FILE_NUMBER_DELETIONS as $table => $meta) {
+            $query = $this->fileNumberQuery($table, $meta['columns'], $numbers);
+            if (!$query) {
+                continue;
+            }
+
+            $rows = $query->get();
+            if ($rows->isNotEmpty()) {
+                $out[$table] = $rows->map(fn ($r) => (array) $r)->all();
+            }
+        }
+
+        return $out;
     }
 
     /** @param array<string,array{table:string,label:string,count:int}> $bucket */
@@ -297,6 +371,10 @@ class IndexingDuplicateService
         $cleanable    = $this->collectCleanableRows($fileIndexingId);
         $retained     = $this->countRetainedReferences($fileIndexingId);
 
+        // Record rows keyed by file number that move with the record. Snapshotted
+        // here, before the transaction deletes them.
+        $fileNumberRowsToDelete = $this->collectFileNumberDeletionRows($numbers);
+
         // Dealings registered against the file number. Left in place, but recorded
         // so the archive shows what the moved record was still attached to.
         $transactions = [];
@@ -315,7 +393,8 @@ class IndexingDuplicateService
 
         $archiveId = $conn->transaction(function () use (
             $conn, $row, $fileIndexingId, $numbers, $fileNumberRows, $customerRows,
-            $entityRows, $cleanable, $retained, $transactions, $retainedMls, $actor, $reason, $duplicateOf, &$counts
+            $entityRows, $cleanable, $fileNumberRowsToDelete, $retained, $transactions,
+            $retainedMls, $actor, $reason, $duplicateOf, &$counts
         ) {
             $snapshot = [
                 'file_indexing'     => (array) $row,
@@ -323,6 +402,9 @@ class IndexingDuplicateService
                 'customers_staging' => $customerRows->map(fn ($r) => (array) $r)->all(),
                 'entities_staging'  => $entityRows->map(fn ($r) => (array) $r)->all(),
                 'child_rows'        => $cleanable,
+                // pra / CofO_staging / file_indexing_staging — deleted with the
+                // record, full rows kept here so the move stays restorable.
+                'file_number_rows'  => $fileNumberRowsToDelete,
                 'matched_numbers'   => $numbers,
                 'mls_file_no_retained' => $retainedMls,
                 // Left in place on purpose — see RETAINED_REFERENCES.
@@ -371,12 +453,28 @@ class IndexingDuplicateService
                 }
             }
 
+            // Record rows keyed by file number. Deleted against the same query the
+            // snapshot was taken from, so nothing is removed that was not archived.
+            $fileNumberCounts = [];
+            foreach (self::FILE_NUMBER_DELETIONS as $table => $meta) {
+                $query = $this->fileNumberQuery($table, $meta['columns'], $numbers);
+                if (!$query) {
+                    continue;
+                }
+
+                $deleted = $query->delete();
+                if ($deleted > 0) {
+                    $fileNumberCounts[$table] = $deleted;
+                }
+            }
+
             $counts = [
                 'customers_staging' => empty($numbers) ? 0 : $conn->table('customers_staging')->whereIn('file_number', $numbers)->delete(),
                 'entities_staging'  => empty($numbers) ? 0 : $conn->table('entities_staging')->whereIn('file_number', $numbers)->delete(),
                 'fileNumber'        => 0,
                 'file_indexings'    => 0,
                 'child_rows'        => $childCounts,
+                'file_number_rows'  => $fileNumberCounts,
             ];
 
             $fileNumberIds = array_values(array_filter(array_map(fn ($r) => $r->id ?? null, $fileNumberRows)));

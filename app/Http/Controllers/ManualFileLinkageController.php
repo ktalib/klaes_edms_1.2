@@ -433,8 +433,25 @@ class ManualFileLinkageController extends Controller
             $decommReason = $workflowType === 'Subdivision'
                 ? 'Subdivision → ' . $successorFileNo
                 : "Manual Linkage: {$workflowType} → {$newFileNumber}";
+            // Anything the service could not retire is reported, never swallowed: it archives
+            // per file inside its own try/catch, so a failure here used to leave the source
+            // file live while the linkage still saved and the page still said "decommissioned".
+            $decommissionWarnings = [];
             if (($isFinalizeChain || !$useHoldingFile) && !empty($filesToDecommission)) {
-                $workflowService->decommissionFiles($filesToDecommission, $decommReason, $commissionedBy, $successorFileNo);
+                $decommSummary = $workflowService->decommissionFiles($filesToDecommission, $decommReason, $commissionedBy, $successorFileNo);
+                $missed = array_values(array_diff($filesToDecommission, $decommSummary['archived'] ?? []));
+                if (!empty($missed) || !empty($decommSummary['errors'])) {
+                    $decommissionWarnings = array_values(array_filter(array_merge(
+                        $missed ? ['Not decommissioned: ' . implode(', ', $missed)] : [],
+                        $decommSummary['errors'] ?? []
+                    )));
+                    Log::warning('Manual linkage decommission incomplete', [
+                        'workflow_type' => $workflowType,
+                        'requested'     => $filesToDecommission,
+                        'archived'      => $decommSummary['archived'] ?? [],
+                        'errors'        => $decommSummary['errors'] ?? [],
+                    ]);
+                }
             }
 
             $allocationService = app(PropertyIdAllocationService::class);
@@ -442,7 +459,23 @@ class ManualFileLinkageController extends Controller
 
             // ----------------------------------------------------------------
             if ($workflowType === 'Subdivision') {
+                // The mother's prop_id is what every child hangs off (parent_prop_id). When the
+                // mother was never indexed — or its indexing row carried no prop_id — this used
+                // to fall through as null and the whole subdivision lost its lineage: the
+                // children pointed at nothing and the mother showed a blank PropID on the
+                // Decommissioned Files list. Mint the mother a prop_id (and its PropID_Master
+                // row) instead, so the parcel it stands for keeps an identity after retirement.
                 $parentPropId = $oldPropIds[0] ?? null;
+                if ($parentPropId === null && $firstOldFile) {
+                    try {
+                        $parentPropId = $allocationService->allocateOrRetrievePropId($firstOldFile, $firstOldFile);
+                    } catch (\Throwable $e) {
+                        Log::warning('Manual linkage: could not allocate a parent prop_id for subdivision mother', [
+                            'mother_file' => $firstOldFile,
+                            'error'       => $e->getMessage(),
+                        ]);
+                    }
+                }
                 // Parent (subdividing) plot holder — becomes the Grantor on each child's PRA row.
                 $parentHolder = $oldIndexing->current_holder
                     ?? ($oldIndexing->file_title ?? null);
@@ -643,6 +676,12 @@ class ManualFileLinkageController extends Controller
                 $this->clearCache();
 
                 $childCount = count($children);
+                if (!empty($decommissionWarnings)) {
+                    return redirect()->route('admin.manual-linkage.index')
+                        ->with('warning', "Subdivision linkage saved: {$firstOldFile} → {$childCount} child plot(s) linked, "
+                            . 'but the parent file was NOT decommissioned — ' . implode('; ', $decommissionWarnings));
+                }
+
                 return redirect()->route('admin.manual-linkage.index')
                     ->with('success', "Subdivision linkage saved: {$firstOldFile} → {$childCount} child plot(s) decommissioned and linked.");
 
@@ -843,6 +882,12 @@ class ManualFileLinkageController extends Controller
 
                 DB::connection('sqlsrv')->commit();
                 $this->clearCache();
+
+                if (!empty($decommissionWarnings)) {
+                    return redirect()->route('admin.manual-linkage.index')
+                        ->with('warning', "Linkage saved for {$workflowType}, but not every source file was decommissioned — "
+                            . implode('; ', $decommissionWarnings));
+                }
 
                 return redirect()->route('admin.manual-linkage.index')
                     ->with('success', "Successfully linked manually processed files for {$workflowType}!");

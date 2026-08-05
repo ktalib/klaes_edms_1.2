@@ -37,6 +37,35 @@ class KangisParentLinkService
     private const TRANSACTION_TABLES = ['pra', 'CofO_staging'];
 
     /**
+     * Every write that changes parent_prop_id also refreshes ancestral_prop_id —
+     * the root of the chain — so the three-level cascade stays consistent without
+     * waiting for the next `propid:backfill-ancestral` sweep.
+     *
+     * Adds the column to $update only when the table has been migrated for it,
+     * so an un-migrated database keeps working unchanged.
+     */
+    private function withAncestral(string $table, array $update, ?string $mergedParents, $propId = null): array
+    {
+        try {
+            if (!Schema::connection(self::CONNECTION)->hasColumn($table, 'ancestral_prop_id')) {
+                return $update;
+            }
+
+            $update['ancestral_prop_id'] = app(PropIdLineageService::class)
+                ->resolveAncestralForRow($propId === null ? null : (string) $propId, $mergedParents);
+        } catch (\Throwable $e) {
+            // Fail-open: the parent link still gets written; the backfill will
+            // reconcile ancestral_prop_id later.
+            Log::warning('KangisParentLinkService: ancestral refresh skipped', [
+                'table' => $table,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $update;
+    }
+
+    /**
      * Legacy "Old KANGIS" number: a 4-letter prefix + serial (MLKN/KNML/KNGP/MNKL …),
      * optionally with a "_N" sibling suffix. This is the PARENT candidate.
      */
@@ -167,6 +196,12 @@ class KangisParentLinkService
                 $merged = $this->mergePropIdList($row->parent_prop_id, $parentPropId);
                 if ($merged !== (string) ($row->parent_prop_id ?? '')) {
                     $update['parent_prop_id'] = $merged;
+                    $update = $this->withAncestral(
+                        'file_indexings',
+                        $update,
+                        $merged,
+                        $update['prop_id'] ?? $row->prop_id ?? null
+                    );
                 }
             }
 
@@ -205,7 +240,10 @@ class KangisParentLinkService
                 $merged = $this->mergePropIdList($row->parent_prop_id, $parentPropId);
                 if ($merged !== (string) ($row->parent_prop_id ?? '')) {
                     $conn->table('file_indexings')->where('id', $row->id)
-                        ->update(['parent_prop_id' => $merged, 'updated_at' => now()]);
+                        ->update($this->withAncestral('file_indexings', [
+                            'parent_prop_id' => $merged,
+                            'updated_at' => now(),
+                        ], $merged));
                 }
             }
 
@@ -222,7 +260,10 @@ class KangisParentLinkService
                     $merged = $this->mergePropIdList($row->parent_prop_id, $parentPropId);
                     if ($merged !== (string) ($row->parent_prop_id ?? '')) {
                         $conn->table('fileNumber')->where('id', $row->id)
-                            ->update(['parent_prop_id' => $merged, 'updated_at' => now()]);
+                            ->update($this->withAncestral('fileNumber', [
+                                'parent_prop_id' => $merged,
+                                'updated_at' => now(),
+                            ], $merged));
                     }
                 }
             }
@@ -275,7 +316,10 @@ class KangisParentLinkService
                     $merged = $this->mergePropIdList($row->parent_prop_id, $parentPropId);
                     if ($merged !== (string) ($row->parent_prop_id ?? '')) {
                         $conn->table($table)->where('id', $row->id)
-                            ->update(['parent_prop_id' => $merged, 'updated_at' => now()]);
+                            ->update($this->withAncestral($table, [
+                                'parent_prop_id' => $merged,
+                                'updated_at' => now(),
+                            ], $merged));
                         $updated++;
                     }
                 }

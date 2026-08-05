@@ -1616,6 +1616,9 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'api/file-tracker-das
     Route::get('/in-transit', [FileTrackerDashboardApiController::class, 'inTransit'])
         ->name('web.api.file-tracker-dashboard.in-transit');
 
+    Route::get('/in-transit-offices', [FileTrackerDashboardApiController::class, 'inTransitOffices'])
+        ->name('web.api.file-tracker-dashboard.in-transit-offices');
+
     Route::get('/notifications', [FileTrackerDashboardApiController::class, 'notifications'])
         ->name('web.api.file-tracker-dashboard.notifications');
 });

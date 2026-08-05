@@ -26,6 +26,8 @@
             display: inline-block;
         }
 
+
+       
         /* Menu is opened by the click handler in mls_js.blade.php, which promotes it
            to position:fixed and writes inline left/top. Never open it on :hover --
            that rule outranks .hidden and re-opens closed menus at stale coordinates
@@ -1818,6 +1820,8 @@
                                     <!-- Location entries will be populated here -->
                                 </div>
                             </div>
+
+                            @include('generate_fileno.partials.summary_destination')
 
                             <!-- Warning Message -->
                             <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4">

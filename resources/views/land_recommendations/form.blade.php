@@ -5,10 +5,14 @@
     // The re-issuance flow renders this form with a prefilled (unsaved) model,
     // so "is there a \$recommendation" no longer means "this is an edit".
     $isEdit           = $isEdit ?? isset($recommendation);
-    $reissuanceSource = $reissuanceSource ?? null;
+    // Editing a saved re-issuance has no ?reissuance= in the URL, so fall back to
+    // the record's own flag — otherwise the re-issuance fields vanish on edit.
+    $reissuanceSource = $reissuanceSource
+        ?? (($recommendation->is_reissuance ?? false) ? $recommendation->reissuance_source : null);
     $reissuedFromId   = $reissuedFromId ?? null;
 @endphp
-<div class="flex-1 overflow-auto bg-slate-50/60">
+{{-- "relative" is load-bearing — see the .flex-1.overflow-auto rule in app-layout.css. --}}
+<div class="flex-1 overflow-auto bg-slate-50/60 relative">
     @include('admin.header')
     
     <div class="py-8 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
@@ -29,19 +33,27 @@
             <form id="land-recommendation-form" action="{{ $isEdit ? route('land-recommendations.update', $recommendation->id) : route('land-recommendations.store') }}" method="POST" class="p-8 space-y-8"
                 data-dupcheck-url="{{ route('land-recommendations.check-duplicate') }}"
                 data-record-id="{{ $recommendation->id ?? '' }}">
-                @csrf
-                @if($isEdit)
-                    @method('PUT')
-                @endif
+                {{-- Hidden inputs live inside a [hidden] wrapper on purpose: space-y-8 uses
+                     "> :not([hidden]) ~ :not([hidden])", and a bare <input type="hidden">
+                     has no hidden ATTRIBUTE, so it counts as a sibling and pushes the first
+                     visible block down by an extra 2rem on top of the form's p-8. --}}
+                <div hidden>
+                    @csrf
+                    @if($isEdit)
+                        @method('PUT')
+                    @endif
+                </div>
 
                 {{-- RofO Re-issuance: this record replaces a letter already issued for the
                      same file number, so it is flagged and skips the duplicate guard. --}}
                 @if($reissuanceSource)
-                    <input type="hidden" name="is_reissuance" value="1">
-                    <input type="hidden" name="reissuance_source" value="{{ $reissuanceSource }}">
-                    @if($reissuedFromId)
-                        <input type="hidden" name="reissued_from_id" value="{{ $reissuedFromId }}">
-                    @endif
+                    <div hidden>
+                        <input type="hidden" name="is_reissuance" value="1">
+                        <input type="hidden" name="reissuance_source" value="{{ $reissuanceSource }}">
+                        @if($reissuedFromId)
+                            <input type="hidden" name="reissued_from_id" value="{{ $reissuedFromId }}">
+                        @endif
+                    </div>
                     <div class="bg-amber-50 border border-amber-300 rounded-xl p-4 flex items-start gap-3">
                         <i data-lucide="refresh-ccw" class="h-5 w-5 text-amber-600 mt-0.5"></i>
                         <div class="text-sm">
@@ -61,6 +73,24 @@
                             </p>
                         </div>
                     </div>
+                    {{-- Legacy only: the original letter pre-dates KLAES, so nothing on record
+                         holds its issue date — but the re-issued letter has to print
+                         "supersedes the previous one issued on ...". The KLAES path already
+                         has that date on the existing record. --}}
+                    @if($reissuanceSource === 'legacy')
+                        <div class="bg-white border border-amber-200 rounded-xl p-4">
+                            <label for="reissuance_original_date" class="block text-xs font-bold text-amber-700 uppercase tracking-wider mb-2">
+                                Date the Original RofO Was Issued <span class="text-red-500">*</span>
+                            </label>
+                            <input type="date" name="reissuance_original_date" id="reissuance_original_date" required
+                                value="{{ old('reissuance_original_date', optional($recommendation->reissuance_original_date ?? null)->format('Y-m-d')) }}"
+                                class="w-full md:w-64 border border-slate-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none">
+                            <p class="mt-1 text-xs text-slate-500">
+                                Printed on the re-issued letter as &ldquo;supersedes the previous one issued on &hellip;&rdquo;.
+                            </p>
+                        </div>
+                    @endif
+
                     <script>window._reissuanceMode = true;</script>
                 @endif
 
@@ -95,8 +125,242 @@
                     </div>
                 @endif
 
+                {{-- ── Batch Mode ────────────────────────────────────────────────
+                     A Plot Subdivision produces many child files off one mother file.
+                     Batch mode captures a recommendation for every child in one pass:
+                     the common grant conditions are keyed once below, and only the
+                     values that differ per child go in the table. Edit mode is a
+                     single record by definition, so the switch is create-only. --}}
+                @unless($isEdit)
+                <div id="batch-mode-card" class="bg-violet-50/60 border border-violet-200 rounded-xl p-6">
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <label class="block text-sm font-extrabold text-slate-900 uppercase tracking-wider">Batch Mode</label>
+                            <span class="inline-flex items-center gap-1.5 mt-1.5 px-2.5 py-1 rounded-full bg-violet-50 border border-violet-200 text-violet-800">
+                                <i data-lucide="layers" class="h-3.5 w-3.5 flex-shrink-0"></i>
+                                <span class="text-xs font-semibold leading-none">Capture one recommendation per child of a subdivided mother file.</span>
+                            </span>
+                        </div>
+                        <label class="inline-flex items-center gap-3 cursor-pointer select-none bg-white border-2 border-slate-300 hover:border-violet-500 rounded-full pl-4 pr-2 py-1.5 shadow-sm transition-colors">
+                            <span class="text-sm font-extrabold text-slate-900 uppercase tracking-wider">Enable</span>
+                            <div class="relative">
+                                <input type="checkbox" id="batch-mode-toggle" class="sr-only peer">
+                                <div class="w-14 h-7 bg-rose-500 peer-checked:bg-violet-600 rounded-full transition-colors shadow-inner"></div>
+                                <span class="absolute inset-y-0 right-2 flex items-center text-[11px] font-extrabold text-white tracking-wider peer-checked:hidden">OFF</span>
+                                <span class="absolute inset-y-0 left-2.5 hidden items-center text-[11px] font-extrabold text-white tracking-wider peer-checked:flex">ON</span>
+                                <div class="absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform peer-checked:translate-x-7"></div>
+                            </div>
+                        </label>
+                    </div>
+                    <p id="batch-mode-hint" class="hidden mt-3 text-xs text-violet-900 bg-white/70 border border-violet-200 rounded-lg px-3 py-2">
+                        Pick <span class="font-bold">Plot Subdivision</span> below, then select the mother file &mdash;
+                        its children load into a table where you key only what differs between them.
+                    </p>
+
+                    {{-- ── Draft / autosave ──────────────────────────────────────────
+                         A subdivision of 100+ children takes longer to key than a
+                         session lives. Everything typed is written to a draft every
+                         few seconds, so a timeout, a 419, or a closed tab costs
+                         nothing — the capture is picked back up from the list below.
+                         Only shown once batch mode is on; outside a batch the single
+                         record form is short enough not to need it. --}}
+                    <div id="batch-draft-bar" class="hidden mt-3 rounded-lg border border-violet-200 bg-white/80 px-3 py-2.5">
+                        <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+                            <span class="inline-flex items-center gap-1.5 text-[11px] font-bold text-violet-900 uppercase tracking-wider">
+                                <i data-lucide="save" class="h-3.5 w-3.5"></i> Autosave
+                            </span>
+
+                            {{-- One line, three states: idle / saving / failed. The wording is
+                                 deliberately explicit about where the work is, because that is
+                                 the whole reassurance this bar exists to give. --}}
+                            <span id="batch-draft-status" class="text-[11px] font-semibold text-slate-500">Not started &mdash; keying anything starts a draft.</span>
+
+                            <div class="ml-auto flex items-center gap-2">
+                                <button type="button" id="batch-draft-save-now"
+                                    class="px-2.5 py-1 text-[11px] font-semibold bg-white border border-violet-300 text-violet-700 rounded-lg hover:bg-violet-50 transition inline-flex items-center gap-1.5">
+                                    <i data-lucide="save" class="h-3.5 w-3.5"></i> Save draft now
+                                </button>
+                                <button type="button" id="batch-draft-resume"
+                                    class="px-2.5 py-1 text-[11px] font-semibold bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition inline-flex items-center gap-1.5">
+                                    <i data-lucide="history" class="h-3.5 w-3.5"></i> Resume a draft
+                                    <span id="batch-draft-count" class="hidden px-1.5 py-0.5 rounded-full bg-violet-600 text-white text-[9px] font-bold">0</span>
+                                </button>
+                                <button type="button" id="batch-draft-discard"
+                                    class="hidden px-2.5 py-1 text-[11px] font-semibold bg-white border border-rose-300 text-rose-700 rounded-lg hover:bg-rose-50 transition inline-flex items-center gap-1.5">
+                                    <i data-lucide="trash-2" class="h-3.5 w-3.5"></i> Discard draft
+                                </button>
+                            </div>
+                        </div>
+
+                        {{-- Raised when a save is rejected because the session is gone. The
+                             work is still held in this tab (and in local storage), so the
+                             fix is to sign in again in a second tab and retry — never to
+                             reload, which is what would actually lose it. --}}
+                        <div id="batch-draft-session-warning" class="hidden mt-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-[11px] text-rose-800">
+                            <p class="font-bold flex items-center gap-1.5">
+                                <i data-lucide="alert-triangle" class="h-3.5 w-3.5"></i>
+                                Your session has expired &mdash; the draft could not be saved to the server.
+                            </p>
+                            <p class="mt-1">
+                                Nothing is lost: this page still holds everything you keyed, and a copy is kept in this
+                                browser. <span class="font-bold">Do not reload this page.</span>
+                                <a href="{{ url('/login') }}" target="_blank" rel="noopener" class="underline font-bold">Sign in again in a new tab</a>,
+                                come back here, then press
+                                <button type="button" id="batch-draft-retry" class="underline font-bold">Retry save</button>.
+                            </p>
+                        </div>
+
+                        {{-- Open drafts belonging to this user. Populated on demand — a list
+                             fetched on every page load would be a query nobody reads. --}}
+                        <div id="batch-draft-list" class="hidden mt-2 rounded-lg border border-slate-200 bg-white divide-y divide-slate-100 max-h-56 overflow-y-auto"></div>
+                    </div>
+                </div>
+
+                {{-- ── Batch: children of the mother file ────────────────────────────
+                     Sits directly under the Batch Mode switch so the captured rows stay
+                     at the top of the form. Only per-child values live here; everything
+                     else on the form (dates, term, fees, premium, recommendation text)
+                     is captured once and copied onto every child that is ticked. --}}
+                <div id="batch-children-card" class="hidden bg-white border-2 border-violet-200 rounded-xl shadow-sm overflow-hidden">
+                    {{-- The mother file the batch is keyed to. old_file_number carries the
+                         same value, but the batch endpoint validates this one explicitly —
+                         it is what groups the saved children together. Disabled outside
+                         batch mode so the single-record post never sees it. --}}
+                    <input type="hidden" name="batch_mother_file_no" id="batch-mother-file-no" disabled value="">
+                    {{-- Posted with the batch so storeBatch() can close the draft out once
+                         the recommendations are committed. Disabled alongside the mother
+                         field so the single-record post never carries it. --}}
+                    <input type="hidden" name="draft_key" id="batch-draft-key" disabled value="">
+                    {{-- How many children the browser actually posted. A 200-child batch is
+                         over 2,000 form fields, and PHP drops everything past
+                         max_input_vars without a word — the batch would save short and
+                         look successful. storeBatch() compares this against what arrived. --}}
+                    <input type="hidden" name="children_expected" id="batch-children-expected" disabled value="0">
+                    <div class="bg-violet-50 border-b border-violet-200 px-5 py-3.5">
+                        <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+                            <i data-lucide="git-fork" class="h-4 w-4 text-violet-600 flex-shrink-0"></i>
+                            <h3 class="text-sm font-bold text-violet-900 uppercase tracking-tight">Children of</h3>
+                            <span id="batch-mother-label" class="font-mono font-black text-slate-900 text-sm">&mdash;</span>
+                            <span id="batch-children-count"
+                                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-violet-600 text-white">0 selected</span>
+
+                            <div class="ml-auto flex items-center gap-2">
+                                {{-- Apply-to-all lives in the toolbar rather than as a row wedged
+                                     into the table body, which broke the row rhythm. --}}
+                                <button type="button" id="batch-apply-all" disabled
+                                    class="px-3 py-1.5 text-[11px] font-bold bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed transition inline-flex items-center gap-1.5">
+                                    <i data-lucide="arrow-down-to-line" class="h-3.5 w-3.5"></i>
+                                    Apply source row <span id="batch-apply-all-row" class="font-mono">#1</span> to all
+                                </button>
+                                <button type="button" id="batch-reload-children"
+                                    class="px-3 py-1.5 text-[11px] font-semibold bg-white border border-violet-300 text-violet-700 rounded-lg hover:bg-violet-50 transition inline-flex items-center gap-1.5">
+                                    <i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i> Reload
+                                </button>
+                            </div>
+                        </div>
+                        {{-- The columns are colour-banded by what Apply-to-all does to them,
+                             because the difference between "this gets overwritten" and "this
+                             is yours alone" is not something the user should have to find out
+                             by pressing the button. Same three colours on the headers and on
+                             the cells. --}}
+                        <p class="mt-2 text-[11px] text-violet-800/80">
+                            Pick the <span class="font-bold">source row</span> in the
+                            <span class="font-mono font-bold">SRC</span> column, then use Apply to all.
+                        </p>
+                        {{-- Two colours for the two banks of columns. The columns marked
+                             "if blank" under their heading are the exception within the
+                             copied bank, which is said in words rather than a third tint. --}}
+                        <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] font-semibold">
+                            <span class="inline-flex items-center gap-1.5 text-amber-900">
+                                <span class="w-3 h-3 rounded-sm bg-amber-100 border border-amber-300"></span>
+                                Left of the line &mdash; never copied
+                            </span>
+                            <span class="inline-flex items-center gap-1.5 text-sky-900">
+                                <span class="w-3 h-3 rounded-sm bg-sky-100 border border-sky-300"></span>
+                                Right of the line &mdash; copied from the source row
+                            </span>
+                        </div>
+                    </div>
+
+                    <div id="batch-children-status" class="hidden mx-5 mt-4 text-xs font-semibold rounded-lg px-3 py-2"></div>
+
+                    <div class="overflow-x-auto max-h-[32rem] overflow-y-auto">
+                        {{-- min-width must be at least the sum of the column widths below
+                             (1184px). Any less and table-fixed squeezes the columns under
+                             their declared widths on a narrow screen, which is what put
+                             "Applicant Address" on top of "Land Use". --}}
+                        <table class="w-full text-left min-w-[1184px] border-collapse table-fixed">
+                            {{-- Two banks of columns, split down the middle: everything on the
+                                 left belongs to that one plot and Apply-to-all never touches
+                                 it; everything on the right is what Apply-to-all copies. The
+                                 grouping is what makes the rule readable at a glance — the
+                                 colours only reinforce it. --}}
+                            <thead class="sticky top-0 z-10">
+                                <tr class="bg-slate-100 border-b border-slate-200 text-[9px] font-black uppercase tracking-widest">
+                                    <th class="bg-slate-100" colspan="3"></th>
+                                    <th class="px-2 py-2 bg-amber-100/80 text-amber-900 text-center whitespace-nowrap" colspan="5">
+                                        <span class="inline-flex items-center gap-1.5">
+                                            <i data-lucide="lock" class="h-3 w-3"></i> Never copied
+                                        </span>
+                                    </th>
+                                    <th class="px-2 py-2 bg-sky-100/80 text-sky-900 text-center whitespace-nowrap batch-group-split" colspan="3">
+                                        <span class="inline-flex items-center gap-1.5">
+                                            <i data-lucide="arrow-down-to-line" class="h-3 w-3"></i> Copied from the source row
+                                        </span>
+                                    </th>
+                                </tr>
+                                {{-- The column labels do NOT use whitespace-nowrap: this is a
+                                     table-fixed layout, so a label wider than its column does not
+                                     widen it — it simply runs over the next one. "Applicant
+                                     Address" did exactly that. Long labels wrap to a second line
+                                     instead, and the tracking is normal rather than widest so
+                                     they mostly do not need to. --}}
+                                <tr class="bg-slate-50 border-b-2 border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wide leading-tight">
+                                    <th class="px-2 py-3 text-center w-9 bg-slate-50">
+                                        <input type="checkbox" id="batch-select-all" checked
+                                            class="w-4 h-4 align-middle text-violet-600 border-slate-300 rounded focus:ring-violet-500 cursor-pointer">
+                                    </th>
+                                    <th class="px-1 py-3 text-center w-8 bg-slate-50">#</th>
+                                    <th class="px-1 py-3 text-center w-10 bg-slate-50 text-violet-700" title="Which row Apply-to-all copies from">Src</th>
+
+                                    {{-- Left bank: per-plot --}}
+                                    <th class="px-2 py-3 align-bottom w-[126px] bg-amber-50/70 text-amber-900">Child File No</th>
+                                    <th class="px-2 py-3 align-bottom w-[76px] bg-amber-50/70 text-amber-900">Plot No</th>
+                                    <th class="px-2 py-3 align-bottom w-[168px] bg-amber-50/70 text-amber-900">Applicant Address</th>
+                                    <th class="px-2 py-3 align-bottom w-[116px] bg-amber-50/70 text-amber-900">Land Use</th>
+                                    <th class="px-2 py-3 align-bottom w-[112px] bg-amber-50/70 text-amber-900">Purpose</th>
+
+                                    {{-- Right bank: copied. The two sky columns are copied only
+                                         into rows left blank, which the tint carries. --}}
+                                    <th class="px-2 py-3 align-bottom w-[146px] bg-sky-50/70 text-sky-900 batch-group-split">
+                                        Applicant Name
+                                        <span class="block font-medium normal-case tracking-normal text-[9px] text-sky-600">if blank</span>
+                                    </th>
+                                    <th class="px-2 py-3 align-bottom w-[146px] bg-sky-50/70 text-sky-900">
+                                        Location
+                                        <span class="block font-medium normal-case tracking-normal text-[9px] text-sky-600">if blank</span>
+                                    </th>
+                                    <th class="px-2 py-3 align-bottom w-[186px] bg-sky-50/70 text-sky-900">
+                                        Page Refs
+                                        <span class="block font-medium normal-case tracking-normal text-[9px] text-sky-600">page &middot; memo &middot; plan</span>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody id="batch-children-rows" class="text-sm"></tbody>
+                        </table>
+                    </div>
+
+                    <div class="bg-slate-50 border-t border-slate-200 px-5 py-2.5">
+                        <p class="text-[11px] text-slate-500">
+                            Untick any child that should not receive a recommendation. Every ticked row is saved as
+                            its own RofO recommendation, grouped under one batch.
+                        </p>
+                    </div>
+                </div>
+                @endunless
+
                 <!-- File Number Selector -->
-                <div class="bg-blue-50/50 rounded-xl p-6 border border-blue-100/50">
+                <div id="file-number-card" class="bg-blue-50/50 rounded-xl p-6 border border-blue-100/50">
                     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div class="flex-1">
                             <label class="block text-xs font-bold text-blue-700 uppercase tracking-wider mb-2">Selected File Number</label>
@@ -158,21 +422,44 @@
                     </div>
 
                     <!-- Application Type -->
-                    <div class="bg-slate-50/60 border border-slate-100 rounded-xl p-6 col-span-2">
-                        <div class="flex items-center justify-between mb-3">
-                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider">Application Type</label>
+                    <div id="application-type-card" class="bg-slate-50/60 border border-slate-200 rounded-xl p-6 col-span-2">
+                        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                            <div>
+                                <label class="block text-sm font-extrabold text-slate-900 uppercase tracking-wider">Application Type</label>
+                                <span class="inline-flex items-center gap-1.5 mt-1.5 px-2.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-800">
+                                    <i data-lucide="info" class="h-3.5 w-3.5 flex-shrink-0"></i>
+                                    <span class="text-xs font-semibold leading-none">Turn on to pick a specific application type instead of the standard document.</span>
+                                </span>
+                            </div>
                             <!-- Toggle switch -->
-                            <label class="inline-flex items-center gap-2 cursor-pointer select-none">
-                                <span class="text-xs text-slate-500 font-medium">Enable</span>
+                            <label class="inline-flex items-center gap-3 cursor-pointer select-none bg-white border-2 border-slate-300 hover:border-blue-500 rounded-full pl-4 pr-2 py-1.5 shadow-sm transition-colors">
+                                <span class="text-sm font-extrabold text-slate-900 uppercase tracking-wider">Enable</span>
                                 <div class="relative">
                                     <input type="checkbox" id="app-type-toggle" class="sr-only peer" {{ $hasAppType ? 'checked' : '' }}>
-                                    <div class="w-9 h-5 bg-slate-300 peer-checked:bg-blue-600 rounded-full transition-colors"></div>
-                                    <div class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-4"></div>
+                                    <div class="w-14 h-7 bg-rose-500 peer-checked:bg-emerald-500 rounded-full transition-colors shadow-inner"></div>
+                                    <span class="absolute inset-y-0 right-2 flex items-center text-[11px] font-extrabold text-white tracking-wider peer-checked:hidden">OFF</span>
+                                    <span class="absolute inset-y-0 left-2.5 hidden items-center text-[11px] font-extrabold text-white tracking-wider peer-checked:flex">ON</span>
+                                    <div class="absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform peer-checked:translate-x-7"></div>
                                 </div>
                             </label>
                         </div>
                         <input type="hidden" id="application-type-hidden" name="application_type" value="">
                         <div id="application-type-panel" class="{{ $hasAppType ? '' : 'hidden' }}">
+                            {{-- Override: keep the application type (extra fields / old file
+                                 number) but print the standard Direct / Conversion document. --}}
+                            <label class="mb-4 flex items-start gap-3 cursor-pointer p-3 bg-white border border-slate-200 rounded-xl hover:border-blue-400 transition">
+                                <input type="checkbox" name="use_standard_template" id="use-standard-template" value="1"
+                                    {{ $useStandardTemplate ? 'checked' : '' }}
+                                    class="mt-0.5 w-4 h-4 text-blue-600 focus:ring-blue-500 border-slate-300 rounded">
+                                <span class="text-sm text-slate-700 leading-snug">
+                                    <span class="font-semibold text-slate-900">Print the standard Recommendation Type document</span>
+                                    <span class="block text-xs text-slate-500">
+                                        Keeps the application type (and its Old File Number / extra fields) on the record,
+                                        but prints the Direct / Conversion template instead of the application-type template.
+                                    </span>
+                                </span>
+                            </label>
+
                             <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                 @foreach([
                                     'Private Layout',
@@ -191,21 +478,6 @@
                                 </label>
                                 @endforeach
                             </div>
-
-                            {{-- Override: keep the application type (extra fields / old file
-                                 number) but print the standard Direct / Conversion document. --}}
-                            <label class="mt-4 flex items-start gap-3 cursor-pointer p-3 bg-white border border-slate-200 rounded-xl hover:border-blue-400 transition">
-                                <input type="checkbox" name="use_standard_template" id="use-standard-template" value="1"
-                                    {{ $useStandardTemplate ? 'checked' : '' }}
-                                    class="mt-0.5 w-4 h-4 text-blue-600 focus:ring-blue-500 border-slate-300 rounded">
-                                <span class="text-sm text-slate-700 leading-snug">
-                                    <span class="font-semibold text-slate-900">Print the standard Recommendation Type document</span>
-                                    <span class="block text-xs text-slate-500">
-                                        Keeps the application type (and its Old File Number / extra fields) on the record,
-                                        but prints the Direct / Conversion template instead of the application-type template.
-                                    </span>
-                                </span>
-                            </label>
                         </div>
                     </div>
 
@@ -284,7 +556,7 @@
                             <i data-lucide="folder-input" class="h-4 w-4 text-amber-600"></i>
                             <h3 class="text-sm font-bold text-amber-900 uppercase tracking-tight">Old File Number <span class="text-red-500">*</span></h3>
                         </div>
-                        <div class="flex gap-2 items-center">
+                        <div class="flex gap-2 items-center" id="atx-old-fileno-manual">
                             <input type="text" name="old_file_number" id="old_file_number" readonly
                                 value="{{ old('old_file_number', $recommendation->old_file_number ?? '') }}"
                                 placeholder="No old file number selected"
@@ -294,14 +566,33 @@
                                 Select File Number
                             </button>
                         </div>
+
+                        {{-- Batch mode: only a handful of files have commissioned subdivision
+                             children, so the whole-register file picker is the wrong tool —
+                             the mother is chosen from that short list instead. The readonly
+                             input above stays in the DOM and is still what posts. --}}
+                        <div id="batch-mother-picker" class="hidden">
+                            <select id="batch-mother-select"
+                                class="w-full md:w-96 border border-amber-300 rounded-lg px-3 py-2.5 bg-white text-sm font-mono outline-none shadow-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition cursor-pointer">
+                                <option value="">Loading subdivided files…</option>
+                            </select>
+                        </div>
+
                         <p class="mt-2 text-[11px] text-slate-500">
-                            The parent / previous file this <span id="atx-old-fileno-context">application</span> derives from.
+                            <span id="atx-old-fileno-help">The parent / previous file this <span id="atx-old-fileno-context">application</span> derives from.</span>
+                            <span id="batch-mother-help" class="hidden">
+                                Only files that already have commissioned subdivision children are listed.
+                            </span>
                         </p>
                     </div>
 
+
                     {{-- ── Application Type: Conditional Extra Fields ── --}}
                     @php $savedAppType = old('application_type', $recommendation->application_type ?? ''); @endphp
-                    <div id="app-type-extra" class="{{ $savedAppType ? '' : 'hidden' }} col-span-2 bg-indigo-50/30 border border-indigo-100 rounded-xl p-6 space-y-5">
+                    {{-- Page numbers and the per-type panels are all per-child values in a
+                         subdivision batch (the table below carries them), so this whole
+                         block is stood down when batch mode is on. --}}
+                    <div id="app-type-extra" data-batch-child class="{{ $savedAppType ? '' : 'hidden' }} col-span-2 bg-indigo-50/30 border border-indigo-100 rounded-xl p-6 space-y-5">
                         <div class="flex items-center gap-2 mb-1">
                             <i data-lucide="settings-2" class="h-4 w-4 text-indigo-600"></i>
                             <h3 class="text-sm font-bold text-indigo-900 uppercase tracking-tight">
@@ -625,7 +916,7 @@
                         </div>
                         <div class="space-y-4">
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div class="md:col-span-2">
+                                <div class="md:col-span-2" data-batch-child>
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Name of Applicant</label>
                                     <input type="text" name="applicant_name" id="applicant_name" required value="{{ old('applicant_name', $recommendation->applicant_name ?? '') }}"
                                         class="w-full border @error('applicant_name') border-red-500 @else border-slate-200 @enderror rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
@@ -642,7 +933,7 @@
                                     @enderror
                                 </div>
                             </div>
-                            <div>
+                            <div data-batch-child>
                                 <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Applicant Address</label>
                                 <input type="text" name="applicant_address" id="applicant_address" required value="{{ old('applicant_address', $recommendation->applicant_address ?? '') }}"
                                     class="w-full border @error('applicant_address') border-red-500 @else border-slate-200 @enderror rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
@@ -651,7 +942,7 @@
                                 @enderror
                             </div>
                             <div class="grid grid-cols-2 gap-4">
-                       <div>
+                       <div data-batch-child>
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Land Use</label>
                                     <select name="land_use_id" id="land_use_id" required
                                         class="w-full border @error('land_use_id') border-red-500 @else border-slate-200 @enderror rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm text-slate-900">
@@ -679,7 +970,7 @@
                                         $defaultPurposeId = 'other';
                                     }
                                 @endphp
-                                <div>
+                                <div data-batch-child>
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">(b) Purpose Clause</label>
                                     <select name="purpose_id" id="purpose_id"
                                         data-selected="{{ $defaultPurposeId }}"
@@ -718,7 +1009,7 @@
                                 </div>
                             </div>
                             {{-- Location structured fields --}}
-                            <div class="grid grid-cols-3 gap-4">
+                            <div class="grid grid-cols-3 gap-4" data-batch-child>
                                 <div>
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">House No</label>
                                     <input type="text" name="house_no" id="house_no" value="{{ old('house_no', $recommendation->house_no ?? '') }}"
@@ -742,7 +1033,7 @@
                                         class="mt-2 w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition bg-amber-50" style="display:none;">
                                 </div>
                             </div>
-                            <div class="grid grid-cols-3 gap-4">
+                            <div class="grid grid-cols-3 gap-4" data-batch-child>
                                 <div>
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">District</label>
                                     @php $existingDistrict = old('district', $recommendation->district ?? ''); @endphp
@@ -774,7 +1065,7 @@
                                         class="loc-part w-full border border-slate-200 rounded-lg px-4 py-2.5 outline-none bg-slate-100 text-slate-400 cursor-not-allowed" disabled>
                                 </div>
                             </div>
-                            <div>
+                            <div data-batch-child>
                                 <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Full Location <span class="text-slate-400 normal-case font-normal">(auto-generated)</span></label>
                                 <input type="text" name="location" id="location" value="{{ old('location', $recommendation->location ?? '') }}"
                                     class="w-full border border-blue-200 rounded-lg px-4 py-2.5 bg-blue-50 focus:border-blue-500 outline-none transition shadow-sm font-medium" readonly>
@@ -828,8 +1119,29 @@
                             </div>
                             <div>
                                 <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Time for completion of proposed development: </label>
-                                <input type="text" name="development_period" value="{{ old('development_period', $recommendation->development_period ?? '2') }}"
-                                    class="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                @php
+                                    // A number of years, entered as a number. Most records on file
+                                    // were keyed through the old free-text box and hold "2 years"
+                                    // rather than "2" — a number input renders those as EMPTY and
+                                    // would quietly wipe them on the next save, so the leading
+                                    // number is pulled out for editing. The unit is put back at
+                                    // print time (see LandRecommendation::development_period_label).
+                                    $devPeriodRaw = old('development_period', $recommendation->development_period ?? '2');
+                                    $devPeriod = preg_match('/\d+/', (string) $devPeriodRaw, $m) ? $m[0] : '';
+                                @endphp
+                                <div class="relative">
+                                    <input type="number" min="0" step="1" inputmode="numeric" name="development_period"
+                                        value="{{ $devPeriod }}"
+                                        class="w-full border border-slate-200 rounded-lg pl-4 pr-16 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                    <span class="absolute inset-y-0 right-3 flex items-center text-xs font-semibold text-slate-400 pointer-events-none">years</span>
+                                </div>
+                                @if($devPeriodRaw !== '' && $devPeriod === '')
+                                    {{-- A legacy non-numeric value such as "NIL". Shown rather than
+                                         silently dropped, so whoever edits it decides. --}}
+                                    <p class="mt-1 text-[11px] text-amber-700">
+                                        Previously recorded as &ldquo;{{ $devPeriodRaw }}&rdquo; &mdash; enter a number of years to replace it.
+                                    </p>
+                                @endif
                             </div>
                             <div class="grid grid-cols-2 gap-4">
                                 <div>
@@ -1196,16 +1508,23 @@ document.addEventListener('DOMContentLoaded', function () {
             if (contextLabel) contextLabel.textContent = appType;
         } else {
             row.classList.add('hidden');
-            field.value = '';
+            if (field.value) setOldFileNo('');
         }
     }
+
+    // Batch mode has its own dropdown of subdivided files sitting right in the
+    // card, so the "pick a file number" modal would only be in the way.
+    function batchModeOn() {
+        return recFormEl && recFormEl.classList.contains('batch-mode');
+    }
+    var recFormEl = document.getElementById('land-recommendation-form');
 
     // Radio / toggle changes
     document.querySelectorAll('.app-type-radio').forEach(function (radio) {
         radio.addEventListener('change', function () {
             if (!this.checked) return;
             syncRow(this.value);
-            if (requiresOldFileNo(this.value) && !field.value) openModal(this.value);
+            if (requiresOldFileNo(this.value) && !field.value && !batchModeOn()) openModal(this.value);
         });
     });
 
@@ -1216,10 +1535,17 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    // The batch module listens on this field, and assigning .value never fires an
+    // event on its own — so every write goes through here.
+    function setOldFileNo(fileNumber) {
+        field.value = fileNumber || '';
+        field.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
     if (rowPickBtn) {
         rowPickBtn.addEventListener('click', function () {
             openSelector(function (fileNumber) {
-                if (fileNumber) field.value = fileNumber;
+                if (fileNumber) setOldFileNo(fileNumber);
             });
         });
     }
@@ -1236,7 +1562,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (modalConfirm) {
         modalConfirm.addEventListener('click', function () {
-            field.value = modalValue.value || '';
+            setOldFileNo(modalValue.value);
             closeModal();
         });
     }
@@ -1252,7 +1578,9 @@ document.addEventListener('DOMContentLoaded', function () {
             if (requiresOldFileNo(appType) && !field.value.trim()) {
                 e.preventDefault();
                 e.stopPropagation();
-                openModal(appType);
+                // In batch mode the batch module reports this inline against its
+                // own dropdown instead of opening the file-picker modal.
+                if (!batchModeOn()) openModal(appType);
             }
         });
     }
@@ -1261,6 +1589,1458 @@ document.addEventListener('DOMContentLoaded', function () {
     syncRow(currentAppType());
 });
 </script>
+
+@unless($isEdit)
+<style>
+    /* Values the batch table owns are suppressed on the main form while batch
+       mode is on. !important because the application-type script toggles the
+       `hidden` class on #app-type-extra independently. */
+    #land-recommendation-form.batch-mode [data-batch-child] { display: none !important; }
+
+    /* The row Apply-to-all copies from. A bar down the left edge rather than a row
+       background, because each column carries its own tint for what Apply-to-all
+       does to it and a row colour would sit under all of them. */
+    #batch-children-rows tr.batch-source-row > td:first-child { box-shadow: inset 3px 0 0 #7c3aed; }
+    #batch-children-rows tr.batch-row:hover > td { background-color: rgb(245 243 255 / 0.7); }
+
+    /* The line between the two banks of columns — the per-plot ones on the left,
+       the ones Apply-to-all copies on the right. Drawn on the first cell of the
+       right bank so it runs the full height of the table, header included. */
+    #batch-children-card .batch-group-split { border-left: 2px solid #7dd3fc; }
+
+    /* Three page numbers share one column, and the browser's spinner arrows were
+       taking most of the room from each — leaving a box too narrow to see what was
+       typed in it. Nobody steps a page reference up one at a time, so the arrows go
+       and the digits get the space. */
+    #batch-children-card input[type="number"]::-webkit-outer-spin-button,
+    #batch-children-card input[type="number"]::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
+    #batch-children-card input[type="number"] {
+        -moz-appearance: textfield;
+        appearance: textfield;
+    }
+</style>
+<script>
+// ── Plot Subdivision batch capture ─────────────────────────────────────────
+// One recommendation per child of the mother file. The rest of the form keeps
+// capturing the values common to the whole batch; only what differs per child
+// lives in the table, and the form posts to the batch endpoint instead.
+document.addEventListener('DOMContentLoaded', function () {
+    var BATCH_TYPE     = 'Plot Subdivision';
+    var MOTHERS_URL    = '{{ route('land-recommendations.subdivision-mothers') }}';
+    var CHILDREN_URL   = '{{ route('land-recommendations.subdivision-children') }}';
+    var BATCH_ACTION   = '{{ route('land-recommendations.store-batch') }}';
+    var PURPOSES_URL   = '{{ url('api/reference/purposes') }}';
+
+    var toggle      = document.getElementById('batch-mode-toggle');
+    var hint        = document.getElementById('batch-mode-hint');
+    var fileNoCard  = document.getElementById('file-number-card');
+    var fileNoInput = document.getElementById('file_number');
+    var appToggle   = document.getElementById('app-type-toggle');
+    var oldFileNo   = document.getElementById('old_file_number');
+    var card        = document.getElementById('batch-children-card');
+    var rowsBody    = document.getElementById('batch-children-rows');
+    var motherLabel = document.getElementById('batch-mother-label');
+    var countLabel  = document.getElementById('batch-children-count');
+    var statusBox   = document.getElementById('batch-children-status');
+    var selectAll   = document.getElementById('batch-select-all');
+    var reloadBtn   = document.getElementById('batch-reload-children');
+    var applyAllBtn = document.getElementById('batch-apply-all');
+    var motherPick  = document.getElementById('batch-mother-picker');
+    var motherSel   = document.getElementById('batch-mother-select');
+    var manualPick  = document.getElementById('atx-old-fileno-manual');
+    var motherHelp  = document.getElementById('batch-mother-help');
+    var manualHelp  = document.getElementById('atx-old-fileno-help');
+    var motherField = document.getElementById('batch-mother-file-no');
+    var mothersLoaded = false;
+
+    // Sections that move up under Batch Mode while it is on, in the order a batch is
+    // actually filled in: pick the type, pick the mother, then work the children.
+    // Outside a batch they belong where they are in the markup — Old File Number, for
+    // one, only makes sense after Application Type, which is what decides whether an
+    // old file number is needed at all — so each remembers its home and goes back.
+    var relocatable = ['recommendation-type-block', 'application-type-card', 'atx-old-fileno-row']
+        .map(function (id) { return { el: document.getElementById(id), home: null }; })
+        .filter(function (r) { return r.el; });
+    var recForm     = document.getElementById('land-recommendation-form');
+    var singleAction = recForm ? recForm.getAttribute('action') : '';
+
+    if (!toggle || !recForm) return;
+
+    var LAND_USES = @json(($landUses ?? collect())->map(fn ($lu) => ['id' => $lu->id, 'name' => $lu->landuse])->values());
+    var purposeCache = {};
+
+    function esc(v) {
+        return String(v == null ? '' : v)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function setStatus(message, tone) {
+        if (!statusBox) return;
+        if (!message) { statusBox.classList.add('hidden'); statusBox.textContent = ''; return; }
+        statusBox.className = 'mb-3 text-xs font-semibold rounded-lg px-3 py-2 ' + (
+            tone === 'error' ? 'bg-rose-50 border border-rose-200 text-rose-700'
+                             : 'bg-amber-50 border border-amber-200 text-amber-800'
+        );
+        statusBox.textContent = message;
+    }
+
+    function currentAppType() {
+        var checked = document.querySelector('.app-type-radio:checked');
+        return (appToggle && !appToggle.checked) ? '' : (checked ? checked.value : '');
+    }
+
+    // Fields the table now owns are hidden AND disabled — disabled inputs are not
+    // submitted, which also stands down their `required` so the browser cannot
+    // block the batch post on a field the user can no longer see.
+    //
+    // Hiding is done with a class on the form rather than per-element, because the
+    // application-type script re-shows #app-type-extra whenever a type is picked
+    // and would race a per-element toggle back open.
+    function standDownPerChildFields(on) {
+        recForm.classList.toggle('batch-mode', on);
+        document.querySelectorAll('[data-batch-child]').forEach(function (wrap) {
+            wrap.querySelectorAll('input, select, textarea').forEach(function (el) {
+                if (on) {
+                    if (el.dataset.batchWasDisabled === undefined) {
+                        el.dataset.batchWasDisabled = el.disabled ? '1' : '0';
+                    }
+                    el.disabled = true;
+                } else if (el.dataset.batchWasDisabled !== undefined) {
+                    el.disabled = el.dataset.batchWasDisabled === '1';
+                    delete el.dataset.batchWasDisabled;
+                }
+            });
+        });
+    }
+
+    function applyBatchMode(on) {
+        if (hint) hint.classList.toggle('hidden', !on);
+
+        // Autosave only exists for a batch — a single record is short enough that
+        // losing it to a timeout is an annoyance rather than a day's work.
+        if (draftBar) draftBar.classList.toggle('hidden', !on);
+        if (draftKeyInput) draftKeyInput.disabled = !on;
+        if (expectedInput) expectedInput.disabled = !on;
+        if (on) bootstrapDrafts();
+
+        // The batch has no single file number — each child carries its own.
+        if (fileNoCard) fileNoCard.classList.toggle('hidden', on);
+        if (fileNoInput) {
+            fileNoInput.disabled = on;
+            fileNoInput.required = !on;
+        }
+
+        // Batch mode only exists for an application type, so the type panel is
+        // forced open and held there.
+        if (appToggle) {
+            if (on && !appToggle.checked) {
+                appToggle.checked = true;
+                appToggle.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            appToggle.disabled = on;
+        }
+
+        standDownPerChildFields(on);
+        recForm.setAttribute('action', on ? BATCH_ACTION : singleAction);
+
+        // Only posted by the batch endpoint; a disabled input is never submitted.
+        if (motherField) {
+            motherField.disabled = !on;
+            motherField.value = (on && oldFileNo) ? oldFileNo.value.trim() : '';
+        }
+
+        // A batch letter is the standard Direct / Conversion document — the
+        // Plot Subdivision template describes the mother's split, not an individual
+        // child's grant. Ticking this also releases the Recommendation Type lock, so
+        // Direct / Conversion becomes selectable. The prior state is restored on the
+        // way out so switching batch mode off does not leave the box changed.
+        var stdTemplate = document.getElementById('use-standard-template');
+        if (stdTemplate) {
+            if (on) {
+                if (stdTemplate.dataset.batchPrevChecked === undefined) {
+                    stdTemplate.dataset.batchPrevChecked = stdTemplate.checked ? '1' : '0';
+                }
+                if (!stdTemplate.checked) {
+                    stdTemplate.checked = true;
+                    stdTemplate.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            } else if (stdTemplate.dataset.batchPrevChecked !== undefined) {
+                var was = stdTemplate.dataset.batchPrevChecked === '1';
+                delete stdTemplate.dataset.batchPrevChecked;
+                if (stdTemplate.checked !== was) {
+                    stdTemplate.checked = was;
+                    stdTemplate.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }
+        }
+
+        // Stack the three sections between Batch Mode and the children table, in
+        // array order (inserting each before the table preserves it).
+        if (card) {
+            relocatable.forEach(function (r) {
+                if (on) {
+                    if (!r.home) {
+                        r.home = { parent: r.el.parentNode, next: r.el.nextSibling };
+                    }
+                    card.parentNode.insertBefore(r.el, card);
+                } else if (r.home) {
+                    r.home.parent.insertBefore(r.el, r.home.next);
+                }
+            });
+        }
+
+        // Swap the whole-register file picker for the short list of files that
+        // actually have subdivision children.
+        if (motherPick) motherPick.classList.toggle('hidden', !on);
+        if (manualPick) manualPick.classList.toggle('hidden', on);
+        if (motherHelp) motherHelp.classList.toggle('hidden', !on);
+        if (manualHelp) manualHelp.classList.toggle('hidden', on);
+        if (on) loadMothers();
+
+        if (!on) {
+            card.classList.add('hidden');
+            rowsBody.innerHTML = '';
+            setStatus('');
+        } else {
+            syncForAppType();
+        }
+        if (window.lucide) window.lucide.createIcons();
+    }
+
+    // The table only makes sense for a subdivision; any other type in batch mode
+    // falls back to an empty table and a note rather than silently doing nothing.
+    function syncForAppType() {
+        if (!toggle.checked || suppressChildLoad) return;
+        var type = currentAppType();
+
+        if (type !== BATCH_TYPE) {
+            card.classList.add('hidden');
+            rowsBody.innerHTML = '';
+            setStatus(type ? 'Batch mode currently covers ' + BATCH_TYPE + ' only.' : '', 'warn');
+            return;
+        }
+
+        setStatus('');
+        card.classList.remove('hidden');
+        if (oldFileNo && oldFileNo.value.trim()) {
+            loadChildren(oldFileNo.value.trim());
+        } else {
+            rowsBody.innerHTML = '';
+            motherLabel.textContent = '—';
+            updateCount();
+            setStatus('Select the mother file number above to load its children.', 'warn');
+        }
+    }
+
+    function landUseOptions(selectedId) {
+        var out = '<option value="">Select</option>';
+        LAND_USES.forEach(function (lu) {
+            out += '<option value="' + lu.id + '"' + (String(lu.id) === String(selectedId) ? ' selected' : '') + '>' + esc(lu.name) + '</option>';
+        });
+        return out;
+    }
+
+    function rowHtml(child, index, sourceIndex) {
+        var i = index;
+        var cell = 'w-full border border-slate-200 rounded-md px-2.5 py-2 text-xs bg-white hover:border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none transition';
+        var pageCell = 'w-full min-w-0 border border-slate-200 rounded-md px-2 py-2 text-xs text-center bg-white hover:border-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none transition';
+
+        // Two tints, matching the two banks of columns: what Apply-to-all copies and
+        // what belongs to the plot alone. Whether a copied column overwrites or only
+        // fills a blank is said in words under its header, not in a third colour.
+        var copiedCell = 'px-2 py-2.5 bg-sky-50/40';
+        var ownCell    = 'px-2 py-2.5 bg-amber-50/40';
+
+        // The source row is the user's choice — row 1 only until they say otherwise.
+        var isSource = i === (sourceIndex || 0);
+
+        // A child that already has a recommendation starts unticked: the server
+        // rejects a batch containing one, so leaving it ticked would only produce a
+        // failed save. Its fields still show what was captured.
+        var alreadyDone = !!child.has_recommendation;
+
+        return ''
+            // The source row is marked with a bar down its left edge rather than a row
+            // background, which the column tints would sit on top of anyway.
+            + '<tr class="batch-row border-b border-slate-100 transition' + (isSource ? ' batch-source-row' : '') + '" data-index="' + i + '">'
+            + '<td class="px-2 py-2.5 text-center">'
+            +   '<input type="checkbox" class="batch-row-check w-4 h-4 text-violet-600 border-slate-300 rounded focus:ring-violet-500 cursor-pointer"'
+            +     ' data-had-rec="' + (alreadyDone ? '1' : '0') + '"'
+            +     ' data-existing-status="' + esc(child.existing_status || '') + '"'
+            +     (alreadyDone ? '' : ' checked') + '>'
+            + '</td>'
+            + '<td class="px-2 py-2.5 text-center text-xs font-bold text-slate-400">' + (i + 1) + '</td>'
+            + '<td class="px-1 py-2.5 text-center">'
+            +   '<input type="radio" class="batch-row-source w-4 h-4 text-violet-600 border-slate-300 focus:ring-violet-500 cursor-pointer"'
+            +     ' name="batch_source_row" value="' + i + '"' + (isSource ? ' checked' : '')
+            +     ' title="Copy this row\'s values into the others">'
+            + '</td>'
+            + '<td class="' + ownCell + '">'
+            +   '<div class="font-mono font-bold text-slate-900 text-xs whitespace-nowrap">' + esc(child.file_number) + '</div>'
+            +   '<span class="batch-source-badge mt-1 ' + (isSource ? 'inline-flex' : 'hidden') + ' items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-100 text-violet-700 uppercase tracking-wide">Source row</span>'
+            +   (alreadyDone
+                    ? '<span class="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-100 text-rose-700" title="' + esc(child.existing_status || '') + ' — already captured, so this row is excluded from the batch">Has a RofO</span>'
+                    : '')
+            +   '<input type="hidden" name="children[' + i + '][file_number]" value="' + esc(child.file_number) + '">'
+            +   '<input type="hidden" name="children[' + i + '][tracking_id]" value="' + esc(child.tracking_id) + '">'
+            + '</td>'
+            // Left bank — this plot alone.
+            + '<td class="' + ownCell + '"><input type="text" class="' + cell + ' batch-f font-mono" data-f="plot_number" name="children[' + i + '][plot_number]" value="' + esc(child.plot_number) + '" placeholder="Plot"></td>'
+            + '<td class="' + ownCell + '"><input type="text" required class="' + cell + ' batch-f" data-f="applicant_address" name="children[' + i + '][applicant_address]" value="' + esc(child.applicant_address) + '" placeholder="Applicant address"></td>'
+            + '<td class="' + ownCell + '"><select class="' + cell + ' batch-f batch-landuse cursor-pointer" data-f="land_use_id" name="children[' + i + '][land_use_id]">' + landUseOptions(child.land_use_id) + '</select></td>'
+            + '<td class="' + ownCell + '"><select class="' + cell + ' batch-f batch-purpose cursor-pointer" data-f="purpose_id" name="children[' + i + '][purpose_id]"><option value="">Select</option></select></td>'
+            // Right bank — copied from the source row.
+            + '<td class="' + copiedCell + ' batch-group-split"><input type="text" required class="' + cell + ' batch-f" data-f="applicant_name" name="children[' + i + '][applicant_name]" value="' + esc(child.applicant_name) + '" placeholder="Applicant name"></td>'
+            + '<td class="' + copiedCell + '"><input type="text" class="' + cell + ' batch-f" data-f="location" name="children[' + i + '][location]" value="' + esc(child.location) + '" placeholder="Location"></td>'
+            + '<td class="' + copiedCell + '">'
+            +   '<div class="flex items-center gap-1">'
+            +     '<input type="number" min="1" class="' + pageCell + ' batch-f" data-f="page"   name="children[' + i + '][page]"   value="' + esc(child.page) + '"   placeholder="Pg" title="Page No.">'
+            +     '<input type="number" min="1" class="' + pageCell + ' batch-f" data-f="page_2" name="children[' + i + '][page_2]" value="' + esc(child.page_2) + '" placeholder="Memo" title="Auth. Memo Page">'
+            +     '<input type="number" min="1" class="' + pageCell + ' batch-f" data-f="page_3" name="children[' + i + '][page_3]" value="' + esc(child.page_3) + '" placeholder="Plan" title="Site Plan Page">'
+            +   '</div>'
+            + '</td>'
+            + '</tr>';
+    }
+
+    // The chosen source row, or the first row if nothing is marked.
+    function sourceRow() {
+        var picked = rowsBody.querySelector('.batch-row-source:checked');
+        return picked ? picked.closest('tr') : rowsBody.querySelector('.batch-row');
+    }
+
+    // Move the left-edge bar and the "Source row" badge to the picked row, and
+    // name that row on the Apply button so it is unambiguous what will be copied.
+    function syncSourceLabel() {
+        var current = sourceRow();
+        rowsBody.querySelectorAll('.batch-row').forEach(function (tr) {
+            var isSrc = tr === current;
+            tr.classList.toggle('batch-source-row', isSrc);
+            var badge = tr.querySelector('.batch-source-badge');
+            if (badge) {
+                badge.classList.toggle('hidden', !isSrc);
+                badge.classList.toggle('inline-flex', isSrc);
+            }
+        });
+
+        var label = document.getElementById('batch-apply-all-row');
+        if (label) {
+            var idx = current ? (parseInt(current.dataset.index, 10) + 1) : 1;
+            label.textContent = '#' + (isNaN(idx) ? 1 : idx);
+        }
+    }
+
+    function updateCount() {
+        var n = rowsBody.querySelectorAll('.batch-row-check:checked').length;
+        var total = rowsBody.querySelectorAll('.batch-row').length;
+        countLabel.textContent = n + ' of ' + total + ' selected';
+        // Nothing to copy into with fewer than two rows.
+        if (applyAllBtn) applyAllBtn.disabled = total < 2;
+
+        // Keep the header box honest when rows arrive part-selected — children that
+        // already have a recommendation come back unticked.
+        if (selectAll) {
+            selectAll.checked = total > 0 && n === total;
+            selectAll.indeterminate = n > 0 && n < total;
+        }
+    }
+
+    function syncRowEnabled(tr) {
+        var on = tr.querySelector('.batch-row-check').checked;
+        // The source picker stays live on an unticked row: copying values out of a
+        // row that is not itself being saved is a perfectly reasonable thing to do.
+        tr.querySelectorAll('input:not(.batch-row-check):not(.batch-row-source), select').forEach(function (el) { el.disabled = !on; });
+        tr.classList.toggle('opacity-40', !on);
+    }
+
+    function loadPurposes(select, landUseId, selectedPurposeId) {
+        select.innerHTML = '<option value="">Select</option>';
+        if (!landUseId) return Promise.resolve();
+
+        var fetchList = purposeCache[landUseId]
+            ? Promise.resolve(purposeCache[landUseId])
+            : fetch(PURPOSES_URL + '?landuseid=' + encodeURIComponent(landUseId), { headers: { 'Accept': 'application/json' } })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    var list = Array.isArray(data) ? data : (data.data || data.purposes || []);
+                    purposeCache[landUseId] = list;
+                    return list;
+                })
+                .catch(function () { return []; });
+
+        return fetchList.then(function (list) {
+            var html = '<option value="">Select</option>';
+            list.forEach(function (p) {
+                var id = p.id != null ? p.id : p.value;
+                var name = p.name != null ? p.name : p.text;
+                html += '<option value="' + esc(id) + '"' + (String(id) === String(selectedPurposeId) ? ' selected' : '') + '>' + esc(name) + '</option>';
+            });
+            html += '<option value="other">Other</option>';
+            select.innerHTML = html;
+        });
+    }
+
+    // Short list of files that already have commissioned subdivision children.
+    // Fetched once per page — the set only changes when a subdivision is
+    // commissioned, which cannot happen while this form is open.
+    // Named for what it builds, not for the element it feeds — `motherLabel` is
+    // already the card-header node above, and a var assignment beats a hoisted
+    // function declaration, so reusing the name left this uncallable.
+    // The count is children still to be captured, not children in total — a file
+    // whose plots are half done should read as half done. Files with nothing left
+    // do not reach the picker at all.
+    function formatMotherOption(m) {
+        var label = m.file_number + ' — ' + m.children + ' ' + (m.children === 1 ? 'child' : 'children');
+        if (m.children_used) {
+            label += ' left of ' + m.children_total + ' (' + m.children_used + ' already done)';
+        }
+        return label;
+    }
+
+    // Searchable picker over the subdivided files. Searching server-side (rather
+    // than shipping the whole list and filtering in the browser) is what keeps this
+    // usable as more files are subdivided — same approach as the TP No. field.
+    function loadMothers() {
+        if (mothersLoaded || !motherSel) return;
+        mothersLoaded = true;
+
+        // Select2 needs jQuery; without it the plain <select> still works, just
+        // without a search box.
+        if (!window.jQuery || !jQuery.fn || !jQuery.fn.select2) {
+            loadMothersPlain();
+            return;
+        }
+
+        var $sel = jQuery(motherSel);
+        $sel.empty().append(new Option('', '', false, false));
+
+        $sel.select2({
+            placeholder: 'Search or select a subdivided file…',
+            allowClear: true,
+            width: '100%',
+            minimumInputLength: 0,
+            ajax: {
+                url: MOTHERS_URL,
+                dataType: 'json',
+                delay: 250,
+                data: function (params) { return { q: params.term || '' }; },
+                processResults: function (data) {
+                    var list = (data && data.mothers) || [];
+                    return {
+                        results: list.map(function (m) {
+                            return { id: m.file_number, text: formatMotherOption(m) };
+                        })
+                    };
+                },
+                cache: true
+            }
+            // No custom `language` block: Select2 4.x replaces the whole dictionary
+            // rather than merging, so overriding one message loses `searching`,
+            // `errorLoading` and the rest. The throw that follows is swallowed by
+            // jQuery 3's promise chain and the dropdown sits on "Searching…" forever.
+        });
+
+        // Select2 fires jQuery events, which native addEventListener handlers never
+        // see — so the pick is written through to the real field here.
+        $sel.on('select2:select select2:clear', function () {
+            if (!oldFileNo) return;
+            oldFileNo.value = $sel.val() || '';
+            oldFileNo.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+
+        // Keep a selection made before batch mode was switched on (or restored on a
+        // validation redisplay) — an AJAX Select2 has no option for it otherwise.
+        var current = oldFileNo ? oldFileNo.value.trim() : '';
+        if (current) {
+            $sel.append(new Option(current, current, true, true)).trigger('change.select2');
+        }
+    }
+
+    // No-jQuery fallback: one fetch, plain options, no search box.
+    function loadMothersPlain() {
+        fetch(MOTHERS_URL + '?limit=200', { headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                var current = oldFileNo ? oldFileNo.value.trim() : '';
+                var list = (data && data.mothers) || [];
+
+                if (!list.length) {
+                    motherSel.innerHTML = '<option value="">No subdivided files available</option>';
+                    setStatus('No file has commissioned subdivision children yet, so there is nothing to batch.', 'warn');
+                    return;
+                }
+
+                var html = '<option value="">Select a subdivided file…</option>';
+                list.forEach(function (m) {
+                    html += '<option value="' + esc(m.file_number) + '"'
+                        + (m.file_number === current ? ' selected' : '') + '>' + esc(formatMotherOption(m)) + '</option>';
+                });
+                motherSel.innerHTML = html;
+            })
+            .catch(function () {
+                mothersLoaded = false;   // let a retry happen on the next toggle
+                motherSel.innerHTML = '<option value="">Could not load subdivided files</option>';
+                setStatus('Network error while loading subdivided files.', 'error');
+            });
+    }
+
+    // Paint a set of child rows into the table. Shared by the live load from the
+    // server and by a draft restore, so a resumed capture is byte-for-byte the
+    // table the user left — the draft simply supplies the same row objects the
+    // children endpoint would have.
+    function renderChildren(children) {
+        // The source row is the user's, and it survives a re-render and a draft
+        // restore — falling back to the first row only when nothing is marked.
+        var sourceIndex = 0;
+        children.some(function (c, i) {
+            if (c.is_source) { sourceIndex = i; return true; }
+            return false;
+        });
+
+        rowsBody.innerHTML = children.map(function (child, i) {
+            return rowHtml(child, i, sourceIndex);
+        }).join('');
+        syncSourceLabel();
+
+        // Purpose options depend on the row's land use, so they are filled after
+        // render — passing the existing purpose so a row that already has a
+        // recommendation (or a restored draft row) shows the purpose captured.
+        rowsBody.querySelectorAll('.batch-row').forEach(function (tr, i) {
+            var child      = children[i] || {};
+            var landUseSel = tr.querySelector('.batch-landuse');
+            var purposeSel = tr.querySelector('.batch-purpose');
+            if (landUseSel && landUseSel.value) {
+                loadPurposes(purposeSel, landUseSel.value, child.purpose_id || null);
+            }
+            // A draft remembers which rows were ticked; a fresh load unticks the
+            // children that already have a recommendation. Either way an unticked
+            // row must come back disabled, or its inputs would still post.
+            if (child.checked === false) {
+                tr.querySelector('.batch-row-check').checked = false;
+            }
+            syncRowEnabled(tr);
+        });
+
+        updateCount();
+        if (window.lucide) window.lucide.createIcons();
+    }
+
+    // Every child load carries a ticket. A response only paints if its ticket is
+    // still the current one — anything else is a load that has been overtaken and
+    // whose rows would wipe whatever replaced them. That happens for real: a draft
+    // restore writes the mother file number in, and the load that fires off the
+    // back of it used to land a moment later and overwrite the whole restored
+    // table with blank registry rows.
+    var childLoadSeq = 0;
+
+    function loadChildren(mother) {
+        var ticket = ++childLoadSeq;
+
+        motherLabel.textContent = mother;
+        if (motherField) motherField.value = mother;
+        rowsBody.innerHTML = '<tr><td colspan="11" class="px-3 py-10 text-center text-xs text-slate-500">'
+            + '<i data-lucide="loader-2" class="h-5 w-5 mx-auto mb-2 text-violet-400 animate-spin"></i>Loading children…</td></tr>';
+        if (window.lucide) window.lucide.createIcons();
+        setStatus('');
+
+        fetch(CHILDREN_URL + '?mother_file_no=' + encodeURIComponent(mother), { headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (ticket !== childLoadSeq) return;
+                if (!data.success) {
+                    rowsBody.innerHTML = '';
+                    setStatus(data.message || 'Could not load children.', 'error');
+                    updateCount();
+                    return;
+                }
+                if (!data.children.length) {
+                    rowsBody.innerHTML = '<tr><td colspan="11" class="px-3 py-10 text-center text-xs text-slate-400">'
+                        + '<i data-lucide="folder-open" class="h-5 w-5 mx-auto mb-2 text-slate-300"></i>'
+                        + 'No commissioned subdivision children found for this file.</td></tr>';
+                    if (window.lucide) window.lucide.createIcons();
+                    setStatus(data.message || 'No subdivision children are linked to ' + mother + '.', 'warn');
+                    updateCount();
+                    return;
+                }
+
+                renderChildren(data.children);
+            })
+            .catch(function () {
+                if (ticket !== childLoadSeq) return;
+                rowsBody.innerHTML = '';
+                setStatus('Network error while loading children.', 'error');
+                updateCount();
+            });
+    }
+
+    // The children as the registry has them right now, without touching the table.
+    // Used by a draft restore to backfill blanks and to notice children that were
+    // commissioned after the draft was started.
+    function fetchChildren(mother) {
+        return fetch(CHILDREN_URL + '?mother_file_no=' + encodeURIComponent(mother), { headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) { return (data && data.success && data.children) ? data.children : []; })
+            .catch(function () { return []; });
+    }
+
+    // ── events ──
+    toggle.addEventListener('change', function () { applyBatchMode(toggle.checked); });
+
+    document.querySelectorAll('.app-type-radio').forEach(function (radio) {
+        radio.addEventListener('change', function () { if (toggle.checked) syncForAppType(); });
+    });
+
+    if (oldFileNo) {
+        oldFileNo.addEventListener('change', function () {
+            // A restore writes the mother in directly; re-fetching the children here
+            // would wipe the very values being restored.
+            if (!toggle.checked || suppressChildLoad || currentAppType() !== BATCH_TYPE) return;
+            var v = this.value.trim();
+            if (motherField) motherField.value = v;
+            if (v) { loadChildren(v); }
+            else { rowsBody.innerHTML = ''; motherLabel.textContent = '—'; updateCount(); }
+        });
+    }
+
+    // Picking a mother writes through to the real old_file_number field, whose
+    // change event is what triggers the child load.
+    if (motherSel) {
+        motherSel.addEventListener('change', function () {
+            if (!oldFileNo) return;
+            oldFileNo.value = this.value;
+            oldFileNo.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+    }
+
+    if (reloadBtn) {
+        reloadBtn.addEventListener('click', function () {
+            var v = oldFileNo ? oldFileNo.value.trim() : '';
+            if (!v) return;
+            // Reload re-fetches from the registry and repaints the table, which
+            // throws away everything keyed into it. On a 100-child batch that is
+            // an afternoon, so it is worth asking.
+            if (rowsBody.querySelectorAll('.batch-row').length
+                && !confirm('Reloading fetches the children again and discards everything keyed into the table. Continue?')) {
+                return;
+            }
+            loadChildren(v);
+        });
+    }
+
+    if (selectAll) {
+        selectAll.addEventListener('change', function () {
+            var on = this.checked;
+            rowsBody.querySelectorAll('.batch-row').forEach(function (tr) {
+                tr.querySelector('.batch-row-check').checked = on;
+                syncRowEnabled(tr);
+            });
+            updateCount();
+        });
+    }
+
+    rowsBody.addEventListener('change', function (e) {
+        if (e.target.classList.contains('batch-row-source')) {
+            syncSourceLabel();
+            return;
+        }
+        if (e.target.classList.contains('batch-row-check')) {
+            syncRowEnabled(e.target.closest('tr'));
+            updateCount();
+            return;
+        }
+        if (e.target.classList.contains('batch-landuse')) {
+            var purposeSel = e.target.closest('tr').querySelector('.batch-purpose');
+            loadPurposes(purposeSel, e.target.value, null);
+        }
+    });
+
+    if (applyAllBtn) applyAllBtn.addEventListener('click', function () {
+        var rows = Array.prototype.slice.call(rowsBody.querySelectorAll('.batch-row'));
+        if (rows.length < 2) return;
+
+        var src = sourceRow();
+        if (!src) return;
+
+        // The page references describe the grant, not the plot, so they are copied
+        // over whatever is in the other rows.
+        var COPY = ['page', 'page_2', 'page_3'];
+
+        // Applicant name and location are usually shared across a subdivision but
+        // not always, so they only fill rows left blank — copying over a filled cell
+        // would silently put the wrong name on a letter.
+        var FILL_IF_BLANK = ['applicant_name', 'location'];
+
+        // Deliberately copied by nothing: the child file number, applicant address,
+        // plot number, land use and purpose. Each identifies or describes that one
+        // plot — an address, a land use or a purpose carried across the batch is a
+        // wrong letter that reads as a correct one, which is the worst kind.
+
+        rows.forEach(function (tr) {
+            if (tr === src) return;
+
+            FILL_IF_BLANK.forEach(function (f) {
+                var from = src.querySelector('[data-f="' + f + '"]');
+                var dst  = tr.querySelector('[data-f="' + f + '"]');
+                if (from && dst && !dst.value.trim()) dst.value = from.value;
+            });
+
+            COPY.forEach(function (f) {
+                var from = src.querySelector('[data-f="' + f + '"]');
+                var dst  = tr.querySelector('[data-f="' + f + '"]');
+                if (from && dst) dst.value = from.value;
+            });
+        });
+
+        // The copy is real work, so it is drafted rather than waiting on the next
+        // keystroke — 100 rows changed at once is exactly what should not be lost.
+        scheduleSave();
+    });
+
+    // ── Draft autosave ─────────────────────────────────────────────────────
+    // A subdivision batch can run past a hundred children. Keying that many rows
+    // takes longer than the session lasts, and the whole capture used to die on a
+    // 419 at submit. Everything is now written to a server-side draft on a
+    // debounce, mirrored into local storage, and the periodic save doubles as the
+    // thing that keeps the session (and its CSRF token) alive while typing.
+    var DRAFT_STORE_URL = '{{ route('land-recommendations.batch-drafts.store') }}';
+    var DRAFT_LIST_URL  = '{{ route('land-recommendations.batch-drafts.index') }}';
+    var DRAFT_ONE_URL   = '{{ url('land-recommendations/batch-drafts') }}';
+
+    var DEBOUNCE_MS  = 2500;    // quiet period after the last keystroke
+    var HEARTBEAT_MS = 60000;   // ceiling on how much typing a crash can cost
+    var KEEPALIVE_MS = 300000;  // re-save an idle draft purely to hold the session
+
+    var draftBar     = document.getElementById('batch-draft-bar');
+    var draftStatus  = document.getElementById('batch-draft-status');
+    var draftKeyInput = document.getElementById('batch-draft-key');
+    var expectedInput = document.getElementById('batch-children-expected');
+    var draftSaveNow = document.getElementById('batch-draft-save-now');
+    var draftResume  = document.getElementById('batch-draft-resume');
+    var draftDiscard = document.getElementById('batch-draft-discard');
+    var draftList    = document.getElementById('batch-draft-list');
+    var draftCount   = document.getElementById('batch-draft-count');
+    var draftWarning = document.getElementById('batch-draft-session-warning');
+    var draftRetry   = document.getElementById('batch-draft-retry');
+
+    var draftKey     = null;
+    var draftDirty   = false;
+    var draftSaving  = false;
+    var sessionLost  = false;
+    var lastSavedAt  = null;
+    var debounceTimer = null;
+    var restoring    = false;   // suppresses autosave while a draft is painted back
+    var suppressChildLoad = false;
+
+    var LS_PREFIX = 'lr-batch-draft:';
+
+    function csrfToken() {
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        var field = recForm.querySelector('input[name="_token"]');
+        return (field && field.value) || (meta && meta.getAttribute('content')) || '';
+    }
+
+    // A save hands back a fresh token; writing it into both the form and the meta
+    // tag is what keeps the eventual batch POST from 419-ing after a long capture.
+    function adoptToken(token) {
+        if (!token) return;
+        var field = recForm.querySelector('input[name="_token"]');
+        if (field) field.value = token;
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        if (meta) meta.setAttribute('content', token);
+    }
+
+    function newDraftKey() {
+        if (window.crypto && crypto.randomUUID) return crypto.randomUUID().replace(/-/g, '').slice(0, 32);
+        return 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    }
+
+    function setDraftStatus(text, tone) {
+        if (!draftStatus) return;
+        draftStatus.textContent = text;
+        draftStatus.className = 'text-[11px] font-semibold ' + (
+            tone === 'error' ? 'text-rose-700'
+            : tone === 'ok'  ? 'text-emerald-700'
+            : tone === 'busy' ? 'text-violet-700'
+            : 'text-slate-500'
+        );
+    }
+
+    function clockLabel(date) {
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    // ── what a draft is ──
+    // Common fields come off the form by name; children come off the table so
+    // unticked rows are kept too (their values are real work — an unticked row is
+    // one the user decided against, not one they never filled in).
+    // Fields that describe the draft or the post rather than the capture. They are
+    // set from the live state on every save and every submit, so carrying stale
+    // copies through a restore could only ever point at the wrong draft.
+    // batch_source_row is a table control, not a form value — it rides with the
+    // children (as is_source) so it survives a re-render, and the batch endpoint
+    // ignores it entirely.
+    var NOT_CAPTURE = ['_token', '_method', 'draft_key', 'children_expected',
+                       'batch_mother_file_no', 'batch_source_row'];
+
+    function serializeCommon() {
+        var out = {};
+        Array.prototype.forEach.call(recForm.elements, function (el) {
+            var name = el.name;
+            if (!name || NOT_CAPTURE.indexOf(name) !== -1) return;
+            if (name.indexOf('children[') === 0) return;
+            if (el.type === 'file' || el.type === 'submit' || el.type === 'button') return;
+
+            if (el.type === 'checkbox' || el.type === 'radio') {
+                out[name] = out[name] || { type: el.type, values: [] };
+                if (el.checked) out[name].values.push(el.value);
+            } else if (el.multiple) {
+                out[name] = { type: 'multi', values: Array.prototype.map.call(el.selectedOptions, function (o) { return o.value; }) };
+            } else {
+                out[name] = { type: 'value', value: el.value };
+            }
+        });
+        return out;
+    }
+
+    // Children are stored in the exact shape the children endpoint returns, so a
+    // restore feeds renderChildren() the same objects a live load would.
+    function serializeChildren() {
+        return Array.prototype.map.call(rowsBody.querySelectorAll('.batch-row'), function (tr) {
+            function v(f) {
+                var el = tr.querySelector('[data-f="' + f + '"]');
+                return el ? el.value : '';
+            }
+            function hid(f) {
+                var el = tr.querySelector('input[name$="[' + f + ']"]');
+                return el ? el.value : '';
+            }
+            return {
+                file_number:       hid('file_number'),
+                tracking_id:       hid('tracking_id'),
+                applicant_name:    v('applicant_name'),
+                applicant_address: v('applicant_address'),
+                plot_number:       v('plot_number'),
+                location:          v('location'),
+                land_use_id:       v('land_use_id'),
+                purpose_id:        v('purpose_id'),
+                page:              v('page'),
+                page_2:            v('page_2'),
+                page_3:            v('page_3'),
+                checked:           tr.querySelector('.batch-row-check').checked,
+                // Which row Apply-to-all copies from is the user's choice, so it is
+                // part of the capture and comes back with a resumed draft.
+                is_source:         !!(tr.querySelector('.batch-row-source') || {}).checked,
+                // Carried through so a restored row keeps its "Has a RofO" flag
+                // without a second round trip to the children endpoint.
+                has_recommendation: tr.querySelector('.batch-row-check').dataset.hadRec === '1',
+                existing_status:    tr.querySelector('.batch-row-check').dataset.existingStatus || ''
+            };
+        });
+    }
+
+    function buildPayload() {
+        return {
+            version:          1,
+            application_type: currentAppType(),
+            mother_file_no:   oldFileNo ? oldFileNo.value.trim() : '',
+            common:           serializeCommon(),
+            children:         serializeChildren(),
+            saved_at:         new Date().toISOString()
+        };
+    }
+
+    // Local storage is the backstop for the one case the server cannot cover: the
+    // session is gone, so no request of ours will be accepted at all. It is never
+    // the source of truth — the server copy wins whenever there is one.
+    function writeLocal(payload) {
+        if (!draftKey) return;
+        try {
+            localStorage.setItem(LS_PREFIX + draftKey, JSON.stringify({
+                draft_key: draftKey,
+                payload:   payload,
+                pushed:    false,
+                stored_at: new Date().toISOString()
+            }));
+        } catch (e) { /* quota or private mode — the server copy still stands */ }
+    }
+
+    function markLocalPushed() {
+        if (!draftKey) return;
+        try {
+            var raw = localStorage.getItem(LS_PREFIX + draftKey);
+            if (!raw) return;
+            var obj = JSON.parse(raw);
+            obj.pushed = true;
+            localStorage.setItem(LS_PREFIX + draftKey, JSON.stringify(obj));
+        } catch (e) { /* nothing to do */ }
+    }
+
+    function clearLocal(key) {
+        try { localStorage.removeItem(LS_PREFIX + (key || draftKey)); } catch (e) { /* ignore */ }
+    }
+
+    function showSessionWarning(on) {
+        sessionLost = on;
+        if (draftWarning) draftWarning.classList.toggle('hidden', !on);
+    }
+
+    function saveDraft(reason) {
+        if (restoring || !toggle.checked) return Promise.resolve();
+        if (draftSaving) { draftDirty = true; return Promise.resolve(); }
+
+        // Nothing worth a row yet: no mother picked and no children on screen.
+        var childRows = rowsBody.querySelectorAll('.batch-row').length;
+        var mother = oldFileNo ? oldFileNo.value.trim() : '';
+        if (!draftKey && !mother && !childRows) return Promise.resolve();
+
+        if (!draftKey) {
+            draftKey = newDraftKey();
+            if (draftKeyInput) draftKeyInput.value = draftKey;
+            if (draftDiscard) draftDiscard.classList.remove('hidden');
+        }
+
+        var payload = buildPayload();
+        writeLocal(payload);
+
+        draftSaving = true;
+        draftDirty = false;
+        setDraftStatus('Saving draft…', 'busy');
+
+        var body = new FormData();
+        body.append('_token', csrfToken());
+        body.append('draft_key', draftKey);
+        body.append('application_type', payload.application_type || '');
+        body.append('mother_file_no', payload.mother_file_no || '');
+        body.append('children_total', String(payload.children.length));
+        body.append('children_selected', String(payload.children.filter(function (c) { return c.checked; }).length));
+        // Posted as one JSON string, not as nested form fields: a 100-child batch
+        // is thousands of inputs and PHP silently drops everything past
+        // max_input_vars (1000 by default), which would truncate the draft.
+        body.append('payload', JSON.stringify(payload));
+
+        return fetch(DRAFT_STORE_URL, {
+            method: 'POST',
+            body: body,
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(function (res) {
+                // 419 (token expired) and 401/403 (logged out) both mean the same
+                // thing to the user: the server will not take this work until they
+                // sign in again. The tab and local storage still hold all of it.
+                if (res.status === 419 || res.status === 401 || res.status === 403 || res.redirected) {
+                    throw { sessionLost: true };
+                }
+                if (!res.ok) throw { status: res.status };
+                return res.json();
+            })
+            .then(function (data) {
+                draftSaving = false;
+                if (!data || !data.success) throw { status: 'payload' };
+
+                adoptToken(data.csrf);
+                markLocalPushed();
+                showSessionWarning(false);
+                lastSavedAt = new Date();
+                setDraftStatus('Draft saved ' + clockLabel(lastSavedAt)
+                    + ' · ' + (data.draft ? data.draft.children_selected + ' of ' + data.draft.children_total + ' children' : ''), 'ok');
+
+                // Anything typed while the request was in flight.
+                if (draftDirty) scheduleSave();
+            })
+            .catch(function (err) {
+                draftSaving = false;
+                draftDirty = true;   // still unsaved, so keep trying
+
+                if (err && err.sessionLost) {
+                    showSessionWarning(true);
+                    setDraftStatus('Not saved — session expired. Your work is still here.', 'error');
+                    return;
+                }
+                setDraftStatus('Could not reach the server — retrying. Nothing lost.', 'error');
+            });
+    }
+
+    function scheduleSave() {
+        draftDirty = true;
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function () { saveDraft('debounce'); }, DEBOUNCE_MS);
+        if (!lastSavedAt) setDraftStatus('Unsaved changes…', 'busy');
+    }
+
+    // Typing anywhere in the form (common fields or the children table) drafts it.
+    // Capture phase, so it still fires for the table rows that are re-rendered.
+    ['input', 'change'].forEach(function (evt) {
+        recForm.addEventListener(evt, function (e) {
+            if (restoring || !toggle.checked) return;
+            if (e.target && (e.target.name === '_token' || e.target.id === 'batch-mode-toggle')) return;
+            scheduleSave();
+        }, true);
+    });
+
+    // Backstop for a browser or machine that dies between debounces, and the thing
+    // that keeps the session alive across a long capture — an idle draft is
+    // re-saved every few minutes purely so the session never ages out under it.
+    setInterval(function () {
+        if (!toggle.checked || restoring) return;
+        if (draftDirty) { saveDraft('heartbeat'); }
+    }, HEARTBEAT_MS);
+
+    setInterval(function () {
+        if (!toggle.checked || restoring || draftDirty || !draftKey) return;
+        saveDraft('keepalive');
+    }, KEEPALIVE_MS);
+
+    if (draftSaveNow) draftSaveNow.addEventListener('click', function () { saveDraft('manual'); });
+    if (draftRetry) draftRetry.addEventListener('click', function (e) {
+        e.preventDefault();
+        setDraftStatus('Retrying…', 'busy');
+        saveDraft('retry');
+    });
+
+    if (draftDiscard) draftDiscard.addEventListener('click', function () {
+        if (!draftKey) return;
+        if (!confirm('Discard this draft? Everything keyed in this batch will be thrown away.')) return;
+
+        var body = new FormData();
+        body.append('_token', csrfToken());
+        body.append('_method', 'DELETE');
+
+        fetch(DRAFT_ONE_URL + '/' + encodeURIComponent(draftKey), {
+            method: 'POST', body: body, credentials: 'same-origin',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+        }).finally(function () {
+            clearLocal(draftKey);
+            draftKey = null;
+            if (draftKeyInput) draftKeyInput.value = '';
+            draftDiscard.classList.add('hidden');
+            setDraftStatus('Draft discarded.', 'muted');
+        });
+    });
+
+    // ── resuming ──
+    function loadDraftList() {
+        if (!draftList) return;
+        draftList.innerHTML = '<div class="px-3 py-3 text-[11px] text-slate-500">Loading drafts…</div>';
+        draftList.classList.remove('hidden');
+
+        fetch(DRAFT_LIST_URL, {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                var drafts = (data && data.drafts) || [];
+                if (draftCount) {
+                    draftCount.textContent = drafts.length;
+                    draftCount.classList.toggle('hidden', !drafts.length);
+                }
+                if (!drafts.length) {
+                    draftList.innerHTML = '<div class="px-3 py-3 text-[11px] text-slate-500">No saved drafts.</div>';
+                    return;
+                }
+                draftList.innerHTML = drafts.map(function (d) {
+                    return '<div class="flex items-center gap-3 px-3 py-2">'
+                        + '<div class="min-w-0">'
+                        +   '<div class="font-mono text-xs font-bold text-slate-900 truncate">' + esc(d.mother_file_no || '(no mother file)') + '</div>'
+                        +   '<div class="text-[10px] text-slate-500">' + d.children_selected + ' of ' + d.children_total
+                        +     ' children · saved ' + esc(d.last_saved_human || '') + '</div>'
+                        + '</div>'
+                        + '<div class="ml-auto flex items-center gap-1.5">'
+                        +   '<button type="button" class="batch-draft-open px-2 py-1 text-[10px] font-bold bg-violet-600 text-white rounded hover:bg-violet-700" data-key="' + esc(d.draft_key) + '">Resume</button>'
+                        // Offered only when a save actually lost rows, which is the
+                        // one case going back a version is the right move.
+                        +   (d.has_previous
+                                ? '<button type="button" class="batch-draft-prev px-2 py-1 text-[10px] font-semibold border border-amber-300 text-amber-700 rounded hover:bg-amber-50" data-key="' + esc(d.draft_key) + '"'
+                                    + ' title="Go back to the copy saved ' + esc(d.previous_saved_human || '') + ', which had ' + (d.previous_children_total || 0) + ' children">Earlier version</button>'
+                                : '')
+                        +   '<button type="button" class="batch-draft-drop px-2 py-1 text-[10px] font-semibold border border-rose-300 text-rose-700 rounded hover:bg-rose-50" data-key="' + esc(d.draft_key) + '">Delete</button>'
+                        + '</div>'
+                        + '</div>';
+                }).join('');
+            })
+            .catch(function () {
+                draftList.innerHTML = '<div class="px-3 py-3 text-[11px] text-rose-700">Could not load drafts.</div>';
+            });
+    }
+
+    if (draftResume) draftResume.addEventListener('click', function () {
+        if (draftList && !draftList.classList.contains('hidden') && draftList.innerHTML.indexOf('Loading') === -1) {
+            draftList.classList.add('hidden');
+            return;
+        }
+        loadDraftList();
+    });
+
+    if (draftList) draftList.addEventListener('click', function (e) {
+        var open = e.target.closest('.batch-draft-open');
+        var prev = e.target.closest('.batch-draft-prev');
+        var drop = e.target.closest('.batch-draft-drop');
+
+        if (open || prev) {
+            if (draftDirty && !confirm('Resuming replaces what is on screen. Continue?')) return;
+            restoreDraft((open || prev).dataset.key, !!prev);
+            draftList.classList.add('hidden');
+            return;
+        }
+        if (drop) {
+            if (!confirm('Delete this draft?')) return;
+            var body = new FormData();
+            body.append('_token', csrfToken());
+            body.append('_method', 'DELETE');
+            fetch(DRAFT_ONE_URL + '/' + encodeURIComponent(drop.dataset.key), {
+                method: 'POST', body: body, credentials: 'same-origin',
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+            }).finally(function () { clearLocal(drop.dataset.key); loadDraftList(); });
+        }
+    });
+
+    function restoreDraft(key, wantPrevious) {
+        setDraftStatus(wantPrevious ? 'Loading the earlier version…' : 'Loading draft…', 'busy');
+
+        fetch(DRAFT_ONE_URL + '/' + encodeURIComponent(key) + (wantPrevious ? '?previous=1' : ''), {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data || !data.success) throw new Error('missing');
+                applyDraftPayload(key, (data.draft && data.draft.payload) || {});
+            })
+            .catch(function () {
+                // The local mirror only ever holds the current version, so it is no
+                // answer to a request for the earlier one.
+                if (wantPrevious) {
+                    setDraftStatus('That draft has no earlier version to go back to.', 'error');
+                    return;
+                }
+
+                // Fall back to the copy this browser kept — the reason it exists.
+                var local = null;
+                try { local = JSON.parse(localStorage.getItem(LS_PREFIX + key) || 'null'); } catch (e) { /* ignore */ }
+                if (local && local.payload) {
+                    applyDraftPayload(key, local.payload);
+                    setDraftStatus('Restored from this browser — save the draft to push it back.', 'error');
+                    draftDirty = true;
+                    return;
+                }
+                setDraftStatus('Could not load that draft.', 'error');
+            });
+    }
+
+    function applyDraftPayload(key, payload) {
+        // Held for the whole restore, not just the part that writes the mother
+        // file number. Restoring the common fields dispatches a change on
+        // Application Type and on Old File Number, and both of those are wired to
+        // reload the children — which is exactly what used to land a second later
+        // and overwrite every restored row with blank registry values.
+        restoring = true;
+        suppressChildLoad = true;
+        // Retire any child load already in flight, so one started before the
+        // restore cannot paint over it either.
+        childLoadSeq++;
+
+        draftKey = key;
+        if (draftKeyInput) draftKeyInput.value = key;
+        if (draftDiscard) draftDiscard.classList.remove('hidden');
+
+        var mother = payload.mother_file_no || '';
+
+        try {
+            // Batch mode first: it relocates sections and stands the per-child
+            // fields down, so restoring values before it would fight with it.
+            if (!toggle.checked) {
+                toggle.checked = true;
+                applyBatchMode(true);
+            }
+
+            restoreCommon(payload.common || {});
+
+            if (oldFileNo) oldFileNo.value = mother;
+            if (motherField) motherField.value = mother;
+            motherLabel.textContent = mother || '—';
+            if (mother && motherSel && window.jQuery && jQuery.fn.select2) {
+                jQuery(motherSel).append(new Option(mother, mother, true, true)).trigger('change.select2');
+            } else if (mother && motherSel) {
+                if (!motherSel.querySelector('option[value="' + mother.replace(/"/g, '\\"') + '"]')) {
+                    motherSel.appendChild(new Option(mother, mother, true, true));
+                }
+                motherSel.value = mother;
+            }
+
+            if (card) card.classList.remove('hidden');
+            // Painted immediately from the draft alone, so the work is on screen
+            // without waiting on the registry.
+            renderChildren(payload.children || []);
+            setStatus('');
+        } catch (e) {
+            restoring = false;
+            suppressChildLoad = false;
+            setDraftStatus('Draft could not be restored cleanly.', 'error');
+            throw e;
+        }
+
+        lastSavedAt = new Date();
+        setDraftStatus('Draft restored — backfilling from the registry…', 'busy');
+        if (window.lucide) window.lucide.createIcons();
+
+        // Autosave must not resume until the backfill has settled, or a save could
+        // capture the half-merged table. The timer is the safety net: if the
+        // registry never answers, autosave still comes back on.
+        var released = false;
+        function releaseRestore(message, tone) {
+            if (released) return;
+            released = true;
+            restoring = false;
+            suppressChildLoad = false;
+            setDraftStatus(message, tone);
+        }
+        setTimeout(function () { releaseRestore('Draft restored — autosave is on.', 'ok'); }, 15000);
+
+        if (!mother) {
+            releaseRestore('Draft restored — autosave is on.', 'ok');
+            return;
+        }
+
+        // Backfill: the draft is authoritative for everything the user keyed, and
+        // the registry fills the gaps around it — blank cells, plus any child
+        // commissioned since the draft was started.
+        fetchChildren(mother).then(function (fresh) {
+            var merged = mergeDraftWithRegistry(payload.children || [], fresh);
+            renderChildren(merged.children);
+            releaseRestore(
+                'Draft restored' + (merged.filled ? ' · ' + merged.filled + ' blank field(s) backfilled' : '')
+                    + (merged.added ? ' · ' + merged.added + ' new child file(s) added' : '')
+                    + ' — autosave is on.',
+                'ok'
+            );
+            // The merge is real work the draft does not yet hold, so it is pushed
+            // back rather than waiting for the next keystroke.
+            if (merged.filled || merged.added) saveDraft('post-restore-backfill');
+        });
+    }
+
+    // Draft wins over registry, field by field: anything the user keyed stays
+    // exactly as they left it, and only a blank takes the registry's value. Rows
+    // are keyed by child file number, so registry order changing between sessions
+    // cannot shuffle anybody's work onto the wrong plot.
+    function mergeDraftWithRegistry(draftChildren, freshChildren) {
+        var FIELDS = ['applicant_name', 'applicant_address', 'plot_number', 'location',
+                      'land_use_id', 'purpose_id', 'page', 'page_2', 'page_3', 'tracking_id'];
+
+        var freshByFile = {};
+        freshChildren.forEach(function (c) { freshByFile[String(c.file_number).trim()] = c; });
+
+        var filled = 0;
+        var seen = {};
+
+        var out = draftChildren.map(function (row) {
+            var merged = {};
+            Object.keys(row).forEach(function (k) { merged[k] = row[k]; });
+
+            var fresh = freshByFile[String(row.file_number).trim()];
+            seen[String(row.file_number).trim()] = true;
+            if (!fresh) return merged;
+
+            FIELDS.forEach(function (f) {
+                var have = merged[f];
+                var isBlank = have === '' || have === null || have === undefined;
+                var incoming = fresh[f];
+                if (isBlank && incoming !== '' && incoming !== null && incoming !== undefined) {
+                    merged[f] = incoming;
+                    filled++;
+                }
+            });
+
+            // Whether a child already carries a recommendation is the registry's
+            // call, never the draft's — one may have been captured elsewhere while
+            // this draft sat waiting.
+            merged.has_recommendation = !!fresh.has_recommendation;
+            merged.existing_status = fresh.existing_status || '';
+            if (merged.has_recommendation) merged.checked = false;
+
+            return merged;
+        });
+
+        // Children commissioned after the draft was started. Appended at the end
+        // and left ticked, so they are visible as new rather than folded silently
+        // into the middle of rows the user has already worked through.
+        var added = 0;
+        freshChildren.forEach(function (c) {
+            if (seen[String(c.file_number).trim()]) return;
+            var row = {};
+            Object.keys(c).forEach(function (k) { row[k] = c[k]; });
+            row.checked = !c.has_recommendation;
+            out.push(row);
+            added++;
+        });
+
+        return { children: out, filled: filled, added: added };
+    }
+
+    function restoreCommon(common) {
+        Object.keys(common).forEach(function (name) {
+            if (NOT_CAPTURE.indexOf(name) !== -1) return;
+            var entry = common[name];
+            var nodes = recForm.querySelectorAll('[name="' + name.replace(/"/g, '\\"') + '"]');
+            if (!nodes.length) return;
+
+            if (entry.type === 'checkbox' || entry.type === 'radio') {
+                Array.prototype.forEach.call(nodes, function (el) {
+                    var want = entry.values.indexOf(el.value) !== -1;
+                    if (el.checked !== want) {
+                        el.checked = want;
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+                return;
+            }
+            if (entry.type === 'multi') {
+                Array.prototype.forEach.call(nodes[0].options, function (o) {
+                    o.selected = entry.values.indexOf(o.value) !== -1;
+                });
+                nodes[0].dispatchEvent(new Event('change', { bubbles: true }));
+                return;
+            }
+
+            var el = nodes[0];
+            // flatpickr wraps every date input on this layout; writing .value on one
+            // leaves the visible field showing the old date (see admin/header).
+            if (el._flatpickr) {
+                el._flatpickr.setDate(entry.value || null, false);
+            } else {
+                el.value = entry.value;
+            }
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+
+        // Select2 fields submit through a hidden input, so the value is already
+        // back — but the visible picker has no option for it and would read blank.
+        if (window.jQuery && jQuery.fn && jQuery.fn.select2) {
+            [['#district', '#district_select'], ['#lga', '#lga_select'],
+             ['#street_name', '#street_name_select'], ['#layout_plan_no', null]].forEach(function (pair) {
+                var hidden = document.querySelector(pair[0]);
+                if (!hidden) return;
+                var val = pair[1] ? hidden.value : hidden.value;
+                var sel = pair[1] ? document.querySelector(pair[1]) : hidden;
+                if (!sel || !val) return;
+                jQuery(sel).append(new Option(val, val, true, true)).trigger('change.select2');
+            });
+        }
+    }
+
+    // Draft count for the Resume button, plus a sweep of local copies whose draft
+    // was submitted or deleted elsewhere, so this browser does not accumulate dead
+    // payloads. Runs the first time batch mode is opened rather than on every form
+    // load — the single-record form has no use for either.
+    var draftBootstrapped = false;
+    function bootstrapDrafts() {
+        if (draftBootstrapped) return;
+        draftBootstrapped = true;
+
+        fetch(DRAFT_LIST_URL, {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                var live = ((data && data.drafts) || []).map(function (d) { return d.draft_key; });
+                if (draftCount) {
+                    draftCount.textContent = live.length;
+                    draftCount.classList.toggle('hidden', !live.length);
+                }
+                for (var i = localStorage.length - 1; i >= 0; i--) {
+                    var k = localStorage.key(i);
+                    if (!k || k.indexOf(LS_PREFIX) !== 0) continue;
+                    var thisKey = k.slice(LS_PREFIX.length);
+                    if (live.indexOf(thisKey) === -1 && thisKey !== draftKey) localStorage.removeItem(k);
+                }
+            })
+            .catch(function () { /* offline — leave local copies exactly where they are */ });
+    }
+
+    // A draft can be opened straight from a link (?draft=KEY), which is how the
+    // "Resume" action on the RofO table hands one back to this form.
+    (function () {
+        var params = new URLSearchParams(window.location.search);
+        var key = params.get('draft');
+        if (!key) return;
+        bootstrapDrafts();
+        restoreDraft(key);
+    })();
+
+    // Leaving with work the server has not accepted is the one thing this feature
+    // exists to prevent, so it is worth the browser's confirm dialog.
+    window.addEventListener('beforeunload', function (e) {
+        if (!toggle.checked) return;
+        if (!draftDirty && !sessionLost) return;
+        e.preventDefault();
+        e.returnValue = '';
+    });
+
+    recForm.addEventListener('submit', function (e) {
+        if (!toggle.checked) return;
+
+        if (currentAppType() !== BATCH_TYPE) {
+            e.preventDefault(); e.stopPropagation();
+            setStatus('Batch mode covers ' + BATCH_TYPE + ' only — pick that type or switch batch mode off.', 'error');
+            return;
+        }
+        if (!oldFileNo || !oldFileNo.value.trim()) {
+            e.preventDefault(); e.stopPropagation();
+            setStatus('Select the subdivided (mother) file first.', 'error');
+            card.classList.remove('hidden');
+            if (motherSel) motherSel.focus();
+            return;
+        }
+        if (!rowsBody.querySelectorAll('.batch-row-check:checked').length) {
+            e.preventDefault(); e.stopPropagation();
+            setStatus('Tick at least one child to save a batch.', 'error');
+            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    });
+
+    // Last write before the page goes away. Registered after the validation
+    // handler above so it is skipped when that one blocks the submit.
+    //
+    // sendBeacon rather than fetch: the browser is about to navigate, and a normal
+    // request in flight at that moment is cancelled. This is the save that matters
+    // most — if the POST itself comes back 419, this draft is exactly what was on
+    // screen when the user pressed Save.
+    recForm.addEventListener('submit', function (e) {
+        if (!toggle.checked || e.defaultPrevented) return;
+
+        // Declare the row count so the server can tell a short POST from a short
+        // batch — see the note on #batch-children-expected.
+        if (expectedInput) {
+            expectedInput.value = String(rowsBody.querySelectorAll('.batch-row-check:checked').length);
+        }
+
+        if (draftKey && navigator.sendBeacon) {
+            var payload = buildPayload();
+            writeLocal(payload);
+
+            var body = new FormData();
+            body.append('_token', csrfToken());
+            body.append('draft_key', draftKey);
+            body.append('application_type', payload.application_type || '');
+            body.append('mother_file_no', payload.mother_file_no || '');
+            body.append('children_total', String(payload.children.length));
+            body.append('children_selected', String(payload.children.filter(function (c) { return c.checked; }).length));
+            body.append('payload', JSON.stringify(payload));
+            navigator.sendBeacon(DRAFT_STORE_URL, body);
+        }
+
+        // The submit is the intended way off this page, so the unload guard stands
+        // down — storeBatch() closes the draft out once the rows are committed.
+        draftDirty = false;
+        sessionLost = false;
+    });
+});
+</script>
+@endunless
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         // TP No Select2 — lazy search against tp_lookups (200k+ rows)

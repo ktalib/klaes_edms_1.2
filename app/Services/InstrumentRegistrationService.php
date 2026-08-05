@@ -574,6 +574,30 @@ class InstrumentRegistrationService
     }
 
     /**
+     * Build the base / "(T)" variants of a file number. A temporary "(T)" file and its base
+     * number are the same physical file, but different tables store different forms of it,
+     * so a lookup keyed to one form must also match the other.
+     *
+     * @return array<int,string>
+     */
+    private function fileNumberVariants(string $fileNo): array
+    {
+        $fileNo = trim($fileNo);
+        if ($fileNo === '') {
+            return [];
+        }
+
+        $variants = [$fileNo => $fileNo];
+        $base = trim((string) preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $fileNo));
+        if ($base !== '') {
+            $variants[$base] = $base;
+            $variants[$base . '(T)'] = $base . '(T)';
+        }
+
+        return array_values($variants);
+    }
+
+    /**
      * Synchronize party names (specifically party_2/Grantee) to core system tables.
      * Targeted at 'Deed of Gift' and 'Deed of Assignment' instruments.
      *
@@ -605,49 +629,72 @@ class InstrumentRegistrationService
             'new_name' => $party2Name
         ]);
 
+        // An instrument may be registered against a temporary "(T)" number while the file's
+        // core records are keyed to the base number (file_indexings holds the "(T)" in
+        // temp_file_no, not file_number) — or the reverse. Matching the literal number alone
+        // silently updated ZERO rows for every deed filed under a "(T)", leaving the file
+        // title showing the previous owner. Match all variants of the same physical file.
+        $fileNoVariants = $this->fileNumberVariants($fileNo);
+
         try {
-            return DB::transaction(function () use ($fileNo, $party2Name, &$result) {
+            return DB::transaction(function () use ($fileNoVariants, $party2Name, &$result) {
                 // Get old name for feedback (from file_indexings as primary source)
                 $result['old_name'] = DB::connection('sqlsrv')->table('file_indexings')
-                    ->where('file_number', $fileNo)
-                    ->orWhere('mls_file_no', $fileNo)
+                    ->where(function ($q) use ($fileNoVariants) {
+                        $q->whereIn('file_number', $fileNoVariants)
+                            ->orWhereIn('mls_file_no', $fileNoVariants)
+                            ->orWhereIn('temp_file_no', $fileNoVariants);
+                    })
                     ->value('file_title');
 
                 // 1. Update file_indexings.file_title
-                DB::connection('sqlsrv')->table('file_indexings')
-                    ->where('file_number', $fileNo)
-                    ->orWhere('mls_file_no', $fileNo)
+                $affected = DB::connection('sqlsrv')->table('file_indexings')
+                    ->where(function ($q) use ($fileNoVariants) {
+                        $q->whereIn('file_number', $fileNoVariants)
+                            ->orWhereIn('mls_file_no', $fileNoVariants)
+                            ->orWhereIn('temp_file_no', $fileNoVariants);
+                    })
                     ->update([
                         'file_title' => $party2Name,
                         'updated_at' => now()
                     ]);
 
                 // 2. Update customers_staging.customer_name
-                DB::connection('sqlsrv')->table('customers_staging')
-                    ->where('file_number', $fileNo)
+                $affected += DB::connection('sqlsrv')->table('customers_staging')
+                    ->whereIn('file_number', $fileNoVariants)
                     ->update([
                         'customer_name' => $party2Name,
                         'updated_at' => now()
                     ]);
 
                 // 3. Update entities_staging.entity_name
-                DB::connection('sqlsrv')->table('entities_staging')
-                    ->where('file_number', $fileNo)
+                $affected += DB::connection('sqlsrv')->table('entities_staging')
+                    ->whereIn('file_number', $fileNoVariants)
                     ->update([
                         'entity_name' => $party2Name,
                         'updated_at' => now()
                     ]);
 
                 // 4. Update fileNumber.FileName
-                DB::connection('sqlsrv')->table('fileNumber')
-                    ->where('mlsfNo', $fileNo)
-                    ->orWhere('kangisFileNo', $fileNo)
-                    ->orWhere('NewKANGISFileNo', $fileNo)
+                $affected += DB::connection('sqlsrv')->table('fileNumber')
+                    ->where(function ($q) use ($fileNoVariants) {
+                        $q->whereIn('mlsfNo', $fileNoVariants)
+                            ->orWhereIn('kangisFileNo', $fileNoVariants)
+                            ->orWhereIn('NewKANGISFileNo', $fileNoVariants);
+                    })
                     ->update([
                         'FileName' => $party2Name
                     ]);
 
-                $result['synced'] = true;
+                // Report the truth: matching nothing is a silent failure, not a sync.
+                $result['rows_updated'] = $affected;
+                $result['synced'] = $affected > 0;
+                if ($affected === 0) {
+                    Log::warning('syncPartyNames matched no core records', [
+                        'file_no_variants' => $fileNoVariants,
+                        'new_name' => $party2Name,
+                    ]);
+                }
                 return $result;
             });
         } catch (\Exception $e) {

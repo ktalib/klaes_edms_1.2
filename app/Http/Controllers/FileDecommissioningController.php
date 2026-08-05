@@ -21,10 +21,12 @@ class FileDecommissioningController extends Controller
             })
             ->count();
 
-        $decommissionedFromFileNumber = FileNumber::decommissioned()
-            ->where(function($q) {
-                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
-            })
+        $decommissionedFromFileNumber = $this->excludeArchivedDuplicates(
+                FileNumber::decommissioned()
+                    ->where(function($q) {
+                        $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                    })
+            )
             ->count();
 
         $decommissionedFromArchive = \Illuminate\Support\Facades\DB::connection('sqlsrv')
@@ -44,18 +46,30 @@ class FileDecommissioningController extends Controller
      */
     public function decommissionedIndex()
     {
-        $totalDecommissionedFiles = FileNumber::decommissioned()
-            ->where(function($q) {
-                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
-            })
-            ->count();
+        $conn = \Illuminate\Support\Facades\DB::connection('sqlsrv');
 
-        $recentDecommissioned = FileNumber::decommissioned()
-            ->where(function($q) {
-                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
-            })
-            ->where('decommissioning_date', '>=', now()->subDays(30))
-            ->count();
+        // Both sources the list itself unions, with the fileNumber rows that are also
+        // archived left out so the cards agree with the table's row count.
+        $fromFileNumber = $this->excludeArchivedDuplicates(
+            FileNumber::decommissioned()
+                ->where(function($q) {
+                    $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                })
+        );
+
+        $fromArchive = $conn->table('decommissioned_files')
+            ->where(function ($q) {
+                $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+            });
+
+        $totalDecommissionedFiles = (clone $fromFileNumber)->count() + (clone $fromArchive)->count();
+
+        $recentDecommissioned = (clone $fromFileNumber)
+                ->where('decommissioning_date', '>=', now()->subDays(30))
+                ->count()
+            + (clone $fromArchive)
+                ->where('decommissioning_date', '>=', now()->subDays(30))
+                ->count();
 
         return view('file_decommissioning.decommissioned_list', compact('totalDecommissionedFiles', 'recentDecommissioned'));
     }
@@ -190,11 +204,18 @@ class FileDecommissioningController extends Controller
                     \Illuminate\Support\Facades\DB::raw("'archive' as _source"),
                 ]);
 
-            // Query 2: From the fileNumber table (soft-decommissioned via is_decommissioned flag)
+            // Query 2: From the fileNumber table (soft-decommissioned via is_decommissioned flag).
+            // A file that was archived AND left flagged on fileNumber exists on both sides of the
+            // union; skip the fileNumber copy so it is listed once. The archive row is the better
+            // of the two — it carries the real decommissioning_date and the actor's name, where
+            // fileNumber only has a null date and a raw user id.
             $fileNumberQuery = $conn->table('fileNumber')
                 ->where('is_decommissioned', 1)
                 ->where(function ($q) {
                     $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                })
+                ->tap(function ($q) {
+                    $this->excludeArchivedDuplicates($q);
                 })
                 ->select([
                     'id',
@@ -294,9 +315,7 @@ class FileDecommissioningController extends Controller
                     'commissioning_date' => $row->commissioning_date ? Carbon::parse($row->commissioning_date)->format('d M Y, h:i A') : 'N/A',
                     'decommissioning_date' => $row->decommissioning_date ? Carbon::parse($row->decommissioning_date)->format('d M Y, h:i A') : 'N/A',
                     'decommissioned_by' => trim($row->decommissioned_by ?? '') ?: 'System',
-                    'decommissioning_reason' => strlen((string) ($row->decommissioning_reason ?? '')) > 50
-                        ? substr($row->decommissioning_reason, 0, 50) . '...'
-                        : ($row->decommissioning_reason ?? 'N/A'),
+                    'decommissioning_reason' => $this->renderReason($row->decommissioning_reason ?? null),
                     'action' => '<div class="flex justify-center space-x-2">
                         <button onclick="viewDecommissionedFile(' . $row->id . ', \'' . ($row->_source ?? 'archive') . '\')" 
                                 class="text-blue-600 hover:text-blue-800 text-sm px-2 py-1 rounded hover:bg-blue-50" title="View Details">
@@ -553,6 +572,56 @@ class FileDecommissioningController extends Controller
     }
 
     /**
+     * A file that was archived into decommissioned_files AND left flagged on fileNumber
+     * (is_decommissioned = 1) exists in both sources this screen reads, and would be listed
+     * and counted twice. Drop the fileNumber copy: the archive row is the better of the two,
+     * carrying the real decommissioning_date and the actor's name where fileNumber has only
+     * a null date and a raw user id.
+     *
+     * Applies to a query on the fileNumber table (query builder or Eloquent).
+     */
+    private function excludeArchivedDuplicates($query)
+    {
+        return $query->whereNotExists(function ($q) {
+            $q->select(\Illuminate\Support\Facades\DB::raw(1))
+                ->from('decommissioned_files as df')
+                // Same false_decommissioning filter the archive side uses: only suppress
+                // against archive rows that actually surface on this screen.
+                ->where(function ($w) {
+                    $w->where('df.false_decommissioning', 0)->orWhereNull('df.false_decommissioning');
+                })
+                // NULL/'' never matches (NULL = NULL is unknown in SQL), so a file number the
+                // fileNumber row doesn't carry can't accidentally pair up with a blank archive one.
+                ->whereRaw(
+                    "(NULLIF(LTRIM(RTRIM(df.mls_file_no)), '') = NULLIF(LTRIM(RTRIM(fileNumber.mlsfNo)), '')"
+                    . " OR NULLIF(LTRIM(RTRIM(df.kangis_file_no)), '') = NULLIF(LTRIM(RTRIM(fileNumber.kangisFileNo)), '')"
+                    . " OR NULLIF(LTRIM(RTRIM(df.new_kangis_file_no)), '') = NULLIF(LTRIM(RTRIM(fileNumber.NewKANGISFileNo)), ''))"
+                );
+        });
+    }
+
+    /**
+     * Reason cell: show a short preview, keep the full text on the element so the
+     * table's hover tooltip can reveal the rest without widening the column.
+     */
+    private function renderReason($reason): string
+    {
+        $reason = trim((string) ($reason ?? ''));
+        if ($reason === '') {
+            return 'N/A';
+        }
+
+        // mb_* so multibyte reasons ("… → CON-COM-2026-426") never get cut mid-character.
+        if (mb_strlen($reason) <= 50) {
+            return '<span class="reason-cell">' . e($reason) . '</span>';
+        }
+
+        return '<span class="reason-cell reason-truncated" data-reason="' . e($reason) . '">'
+            . e(mb_substr($reason, 0, 50)) . '…'
+            . '</span>';
+    }
+
+    /**
      * Get FALSE decommissioned files data for DataTables.
      * These are Title Status updates raised from File Indexing — the file is flagged but
      * NOT actually decommissioned (decommissioned_files.false_decommissioning = 1).
@@ -599,9 +668,7 @@ class FileDecommissioningController extends Controller
                     'file_name' => trim($row->file_name ?? '') ?: 'N/A',
                     'decommissioning_date' => $row->decommissioning_date ? Carbon::parse($row->decommissioning_date)->format('d M Y, h:i A') : 'N/A',
                     'decommissioned_by' => trim($row->decommissioned_by ?? '') ?: 'System',
-                    'decommissioning_reason' => strlen((string) ($row->decommissioning_reason ?? '')) > 50
-                        ? substr($row->decommissioning_reason, 0, 50) . '...'
-                        : ($row->decommissioning_reason ?? 'N/A'),
+                    'decommissioning_reason' => $this->renderReason($row->decommissioning_reason ?? null),
                     'action' => '<div class="flex justify-center space-x-2">
                         <button onclick="viewFalseDecommissionedFile(' . $row->id . ')"
                                 class="text-amber-600 hover:text-amber-800 text-sm px-2 py-1 rounded hover:bg-amber-50" title="View Details">
@@ -914,11 +981,14 @@ class FileDecommissioningController extends Controller
                 })
                 ->count();
 
-            // Count from both sources
-            $decommissionedFromFileNumber = FileNumber::decommissioned()
-                ->where(function($q) {
-                    $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
-                })
+            // Count from both sources (fileNumber rows that are also archived excluded,
+            // so the cards match the list)
+            $decommissionedFromFileNumber = $this->excludeArchivedDuplicates(
+                    FileNumber::decommissioned()
+                        ->where(function($q) {
+                            $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                        })
+                )
                 ->count();
 
             $decommissionedFromArchive = $conn->table('decommissioned_files')
@@ -934,10 +1004,12 @@ class FileDecommissioningController extends Controller
                 ->where('false_decommissioning', 1)
                 ->count();
 
-            $recentFromFileNumber = FileNumber::decommissioned()
-                ->where(function($q) {
-                    $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
-                })
+            $recentFromFileNumber = $this->excludeArchivedDuplicates(
+                    FileNumber::decommissioned()
+                        ->where(function($q) {
+                            $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                        })
+                )
                 ->where('decommissioning_date', '>=', now()->subDays(30))
                 ->count();
 

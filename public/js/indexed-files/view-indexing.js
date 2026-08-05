@@ -1,3 +1,5 @@
+import { genderAttr, genderRowClass } from './gender.js';
+
 const config = window.indexedFilesConfig || {};
 
 const state = {
@@ -145,7 +147,7 @@ function renderRows(rows) {
 
   const fragments = rows.map((row) => {
     return `
-      <tr class="hover:bg-gray-50">
+      <tr class="hover:bg-gray-50 ${genderRowClass(row.gender)}" data-gender="${escapeHtml(genderAttr(row.gender))}">
         <td class="p-3 whitespace-nowrap font-medium ${row.is_temp_fallback ? 'text-red-600 font-bold' : 'text-blue-600'}">${escapeHtml(row.file_number)}</td>
         <td class="${standardCellClass}">
           ${row.has_related_files ? `

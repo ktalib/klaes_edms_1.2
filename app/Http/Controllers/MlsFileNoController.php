@@ -1627,7 +1627,7 @@ class MlsFileNoController extends Controller
                 'commission_date' => 'nullable|date',
                 'commission_time' => 'nullable|string',
                 'customer_type' => 'required|string|in:Individual,Corporate,Multiple,Government',
-                'gender' => 'required|string|in:Male,Female,Corporate,Joint,Government',
+                'gender' => 'required|string|in:Male,Female,Corporate,Joint',
                 'existing_file_no' => 'nullable|string|max:50',
                 'existing_file_no_manual' => 'nullable|string|max:50',
                 'purpose_id' => 'nullable|integer',
@@ -2427,6 +2427,13 @@ class MlsFileNoController extends Controller
                         \Log::error('Failed to update parent file_indexings record with temporary file: ' . $e->getMessage());
                     }
                 }
+
+                // Open tracking for the new file. The commissioning screen asks where
+                // the file goes next, so it starts with two movement lines: the File
+                // Commissioning line and the onward trip to the chosen unit/office.
+                // Without a destination the file keeps the derived commissioning line
+                // (DIIT) until someone logs it out.
+                $this->startCommissioningTracking($request, $mlsRecord);
 
                 $parentPropId = null;
                 $relatedFileNumbers = null;
@@ -3499,6 +3506,83 @@ class MlsFileNoController extends Controller
      * file_indexings.related_fileno by the caller -- both stores are kept, since existing
      * lineage/PRA readers depend on the JSON column while the type only fits here.
      */
+    /**
+     * Start real tracking for a freshly commissioned file, using the "where does
+     * this file go next" department / unit-office picked on the Generation Summary.
+     *
+     * A tracking failure must never fail the commissioning itself — the file
+     * number is already issued, and a file without a tracker still shows its
+     * default commissioning line (DIIT).
+     *
+     * @param object $mlsRecord The mls_file_no row just created.
+     */
+    private function startCommissioningTracking(Request $request, $mlsRecord): void
+    {
+        try {
+            $service = app(\App\Services\FileCommissioningTrackingService::class);
+            $destination = $service->destinationFromRequest($request);
+
+            if (empty($destination)) {
+                return;
+            }
+
+            $service->startTracking($service->hydrate((object) [
+                'full_file_number'  => $mlsRecord->full_file_number,
+                'file_name'         => $mlsRecord->file_name,
+                'commissioning_date' => $mlsRecord->commissioning_date,
+                'commissioning_time' => $mlsRecord->commissioning_time,
+                'created_by'        => $mlsRecord->created_by,
+                'created_at'        => $mlsRecord->created_at,
+                'tracking_id'       => $mlsRecord->tracking_id,
+                'source'            => $mlsRecord->source,
+            ]), $destination);
+        } catch (\Throwable $e) {
+            \Log::warning('Failed to open commissioning tracking for file', [
+                'file_number' => $mlsRecord->full_file_number ?? null,
+                'error'       => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Batch counterpart of startCommissioningTracking(). The bulk insert returns no
+     * ids, so the register rows are re-read by file number — the same way the batch
+     * related-file linking above recovers them.
+     *
+     * @param array<int,string> $fileNumbers
+     */
+    private function startBatchCommissioningTracking(Request $request, array $fileNumbers): void
+    {
+        if (empty($fileNumbers)) {
+            return;
+        }
+
+        try {
+            $service = app(\App\Services\FileCommissioningTrackingService::class);
+            $destination = $service->destinationFromRequest($request);
+
+            if (empty($destination)) {
+                return;
+            }
+
+            // SQL Server caps a statement at 2,100 parameters.
+            foreach (array_chunk($fileNumbers, 1000) as $chunk) {
+                $rows = $service->baseQuery()
+                    ->whereIn('full_file_number', $chunk)
+                    ->get(['full_file_number', 'file_name', 'commissioning_date', 'commissioning_time', 'created_by', 'created_at', 'tracking_id', 'source']);
+
+                foreach ($rows as $row) {
+                    $service->startTracking($service->hydrate($row), $destination);
+                }
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('Failed to open commissioning tracking for batch', [
+                'count' => count($fileNumbers),
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     private function storeRelatedFileLinks(array $relatedFiles, string $fileNumber, ?string $fileTitle, ?string $propId, $sourceId = null): void
     {
         // source_id is NOT NULL, so without an indexing row there is nothing to anchor
@@ -4161,6 +4245,11 @@ class MlsFileNoController extends Controller
                 foreach (array_chunk($indexingData, 90) as $chunk) {
                     DB::connection('sqlsrv')->table('file_indexings')->insert($chunk);
                 }
+
+                // Open tracking for every file in the batch at the destination picked
+                // on the Batch Generation Summary — same two lines as a single
+                // commissioning (File Commissioning, then the onward movement).
+                $this->startBatchCommissioningTracking($request, $generatedFiles);
 
                 // Typed related-file links for every file in the batch. Re-queried rather
                 // than captured on insert because the bulk insert above returns no ids.

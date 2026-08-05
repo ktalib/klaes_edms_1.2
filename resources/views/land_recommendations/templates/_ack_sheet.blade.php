@@ -289,7 +289,7 @@
 
   <!-- Acknowledgment Title -->
   <div class="acknowledgment-title">
-    Original copy of acknowledgement letter was collected by me
+    Original copy of Right of Occupancy was collected by me
   </div>
 
   <!-- Fillable Form Fields -->

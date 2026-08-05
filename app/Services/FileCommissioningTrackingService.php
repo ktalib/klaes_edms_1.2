@@ -261,6 +261,28 @@ class FileCommissioningTrackingService
     }
 
     /**
+     * True when a movement log already carries the commissioning line.
+     *
+     * A file commissioned with a "next destination" has the line STORED as the
+     * first entry of its real tracker (see startTracking()), so callers must not
+     * prepend the derived one on top of it.
+     *
+     * @param iterable<mixed> ...$logs
+     */
+    public function logHasCommissioningLine(iterable ...$logs): bool
+    {
+        foreach ($logs as $log) {
+            foreach ($log as $entry) {
+                if (is_array($entry) && !empty($entry['_diit'])) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * An UNSAVED FileTracker carrying nothing but the commissioning line, so a
      * commissioned-but-never-logged-out file can be listed by the File Log Table
      * through exactly the same decoration/rendering path as a real tracker.
@@ -306,6 +328,144 @@ class FileCommissioningTrackingService
         $tracker->setAttribute('is_diit', true);
 
         return $tracker;
+    }
+
+    /**
+     * Open real tracking for a file at the moment it is commissioned.
+     *
+     * The commissioning screen asks where the file goes next, so a newly
+     * commissioned file starts with TWO lines rather than one:
+     *
+     *   1. File Commissioning — at the File Commissioning Office, opened at the
+     *      commissioning moment and closed as the file is handed on;
+     *   2. the onward movement — in transit to the chosen department/unit office,
+     *      awaiting acceptance there.
+     *
+     * This writes a real file_tracker row, which is exactly what ends the derived
+     * DIIT state: from here the file is tracked normally and the commissioning
+     * line lives on as the first entry of its movement history.
+     *
+     * @param array<string,mixed> $info        Commissioning info (see hydrate()).
+     * @param array<string,mixed> $destination department, office_code, office_name.
+     * @return FileTracker|null Null when no destination was chosen — the file then
+     *         keeps the derived commissioning line until it is first logged out.
+     */
+    public function startTracking(array $info, array $destination): ?FileTracker
+    {
+        $officeCode = trim((string) ($destination['office_code'] ?? ''));
+        $officeName = trim((string) ($destination['office_name'] ?? ''));
+        $department = trim((string) ($destination['department'] ?? ''));
+
+        if ($officeCode === '' && $officeName === '') {
+            return null;
+        }
+
+        /** @var Carbon $commissionedAt */
+        $commissionedAt = $info['commissioned_at'];
+        // The handover happens as the file is commissioned, so the two lines meet:
+        // the commissioning line closes exactly where the onward movement opens.
+        $handoverAt = Carbon::now()->lessThan($commissionedAt) ? $commissionedAt->copy() : Carbon::now();
+
+        $onward = [
+            'log_id'                 => 'LOG-' . $handoverAt->format('YmdHis') . '-' . str_pad((string) random_int(0, 999), 3, '0', STR_PAD_LEFT),
+            'office_code'            => $officeCode ?: $officeName,
+            'office_name'            => $officeName ?: $officeCode,
+            // A departure row records WHEN THE FILE WAS LOGGED OUT to this office in
+            // both fields, exactly as the File Details form writes a manual log-out
+            // (see CreateFileTrackerController::store()). The Log Out column reads
+            // log_out_*; log_in_* is only surfaced once the file comes back.
+            'log_in_date'            => $handoverAt->format('Y-m-d'),
+            'log_in_time'            => $handoverAt->format('H:i'),
+            'log_out_date'           => $handoverAt->format('Y-m-d'),
+            'log_out_time'           => $handoverAt->format('H:i'),
+            // No named receiving officer is chosen at commissioning, so the file is
+            // in transit to the office rather than pending a person's acceptance.
+            'status'                 => 'active',
+            'notes'                  => 'File dispatched from the File Commissioning Office at commissioning.',
+            'timestamp'              => $handoverAt->toIso8601String(),
+            'user_id'                => auth()->id(),
+            'user_name'              => auth()->user()->name ?? ($info['commissioned_by'] ?: 'System'),
+            'receiving_office_code'  => $officeCode ?: $officeName,
+            'receiving_office_name'  => $officeName ?: $officeCode,
+            'receiving_officer_id'   => null,
+            'receiving_officer_name' => null,
+            'origin_office_code'     => self::OFFICE_CODE,
+            'origin_office_name'     => self::OFFICE_NAME,
+            'origin_office_department' => self::OFFICE_DEPARTMENT,
+        ];
+
+        $tracker = new FileTracker();
+        $tracker->fill([
+            'tracking_id'           => FileTracker::generateTrackingId(),
+            'file_number'           => $info['file_number'],
+            'file_title'            => $info['file_title'],
+            'file_type'             => 'File',
+            'priority'              => FileTracker::PRIORITY_MEDIUM,
+            'status'                => FileTracker::STATUS_ACTIVE,
+            'department'            => $department ?: self::OFFICE_DEPARTMENT,
+            'destination'           => $officeName ?: $officeCode,
+            'created_by'            => auth()->id(),
+            'created_by_name'       => auth()->user()->name ?? ($info['commissioned_by'] ?: 'System'),
+            'description'           => 'File commissioned in KLAES and dispatched for processing.',
+            'file_request_type'     => 'MANUAL',
+            'date_created'          => $commissionedAt,
+            'date_requested'        => $commissionedAt,
+            'movement_log'          => [$this->movementEntry($info, $handoverAt), $onward],
+            'current_office_code'   => $officeCode ?: $officeName,
+            'current_office_name'   => $officeName ?: $officeCode,
+            'origin_office_code'    => self::OFFICE_CODE,
+            'origin_office_name'    => self::OFFICE_NAME,
+            'origin_office_department' => self::OFFICE_DEPARTMENT,
+            'receiving_office_code' => $officeCode ?: $officeName,
+            'receiving_office_name' => $officeName ?: $officeCode,
+            'total_offices'         => 2,
+            'completed_offices'     => 2,
+        ]);
+
+        $tracker->save();
+
+        // The file now has a real tracker, so any cached "commissioned, untracked"
+        // answer for it in this request is stale.
+        unset($this->cache[$this->key($info['file_number'])]);
+
+        return $tracker;
+    }
+
+    /**
+     * Resolve the "where does this file go next" selection posted by the
+     * commissioning screen into the shape startTracking() expects. Returns an
+     * empty array when nothing was chosen.
+     *
+     * @return array<string,string>
+     */
+    public function destinationFromRequest(\Illuminate\Http\Request $request): array
+    {
+        $officeCode = trim((string) $request->input('destination_office_code', ''));
+        $officeName = trim((string) $request->input('destination_office_name', ''));
+        $department = trim((string) $request->input('destination_department', ''));
+
+        if ($officeCode === '' && $officeName === '') {
+            return [];
+        }
+
+        // Trust the office table over the posted label.
+        if ($officeCode !== '') {
+            $office = DB::connection($this->connection)
+                ->table('offices')
+                ->where('office_code', $officeCode)
+                ->first(['office_name', 'department']);
+
+            if ($office) {
+                $officeName = trim((string) $office->office_name);
+                $department = $department ?: trim((string) $office->department);
+            }
+        }
+
+        return [
+            'office_code' => $officeCode,
+            'office_name' => $officeName,
+            'department'  => $department,
+        ];
     }
 
     /** Normalized cache key for a file number. */

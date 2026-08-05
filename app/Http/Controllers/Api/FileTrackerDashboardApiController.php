@@ -27,6 +27,15 @@ class FileTrackerDashboardApiController extends Controller
     ];
 
     /**
+     * The office a file was requested to: the receiving officer's posting,
+     * falling back to the current office for rows logged before the receiving
+     * office was captured. Used as the In-Transit tab's grouping key, so the
+     * group list, the row list and the office filter all agree.
+     */
+    protected const REQUESTER_OFFICE_SQL =
+        "ISNULL(NULLIF(LTRIM(RTRIM(receiving_office_code)), ''), ISNULL(NULLIF(LTRIM(RTRIM(current_office_code)), ''), 'UNASSIGNED'))";
+
+    /**
      * Return aggregated metrics and tracker data for the dashboard overview.
      */
     public function overview(Request $request): JsonResponse
@@ -430,12 +439,142 @@ class FileTrackerDashboardApiController extends Controller
     }
 
     /**
-     * Paginated list of files currently in transit — trackers logged out with an
-     * "In-Transit" purpose/type that have not been logged back in.
-     *
-     * Like the requested tab, this was previously filtered client-side out of the
-     * capped 500-row commissioner overview, so both the table and the summary
-     * cards silently topped out at the cap.
+     * Shared definition of an "in transit" file: logged out with an "In-Transit"
+     * purpose/type and not yet logged back in. Honours the priority and search
+     * parameters — but not the office, which is the grouping key — so the group
+     * list and the row list always agree.
+     */
+    protected function inTransitBaseQuery(Request $request)
+    {
+        $search = trim((string) $request->query('search', ''));
+        $priority = Str::upper(trim((string) $request->query('priority', 'ALL')));
+
+        $query = FileTracker::query()
+            ->whereRaw("UPPER(ISNULL(status, '')) NOT IN ('CANCELED', 'CANCELLED', 'COMPLETED')")
+            ->where(function ($inner) {
+                $inner->whereRaw("ISNULL(file_request_type, '') = 'In-Transit'")
+                    ->orWhereRaw("ISNULL(request_purpose_name, '') = 'In-Transit'");
+            });
+
+        if ($priority !== '' && $priority !== 'ALL') {
+            $query->whereRaw("UPPER(ISNULL(priority, '')) = ?", [$priority]);
+        }
+
+        if ($search !== '') {
+            $like = '%' . str_replace(['%', '_'], ['[%]', '[_]'], $search) . '%';
+            $query->where(function ($inner) use ($like) {
+                $inner->where('file_number', 'like', $like)
+                    ->orWhere('file_title', 'like', $like)
+                    ->orWhere('tracking_id', 'like', $like);
+            });
+        }
+
+        return $query;
+    }
+
+    /**
+     * The In-Transit tab's page unit: requester offices, not rows. Returns one
+     * page of office groups with their file counts, plus the whole-set summary
+     * for the tab's cards and charts. Rows are fetched per office by inTransit()
+     * only when a group is expanded, so collapsed groups cost nothing.
+     */
+    public function inTransitOffices(Request $request): JsonResponse
+    {
+        $perPage = (int) $request->query('per_page', 25);
+        $perPage = max(5, min($perPage, 200));
+
+        $page = max(1, (int) $request->query('page', 1));
+
+        $baseQuery = $this->inTransitBaseQuery($request);
+
+        $rawGroups = (clone $baseQuery)
+            ->selectRaw(
+                self::REQUESTER_OFFICE_SQL . ' as office_group, COUNT(*) as total_files,'
+                . " SUM(CASE WHEN UPPER(ISNULL(priority, '')) = 'HIGH' THEN 1 ELSE 0 END) as high_total"
+            )
+            ->groupBy(DB::raw(self::REQUESTER_OFFICE_SQL))
+            ->orderByDesc(DB::raw('COUNT(*)'))
+            ->get();
+
+        $officeMetadata = $rawGroups->isEmpty()
+            ? collect()
+            : Office::query()->whereIn('office_code', $rawGroups->pluck('office_group')->all())->get()->keyBy('office_code');
+
+        $groups = $rawGroups->map(function ($row) use ($officeMetadata) {
+            $office = $officeMetadata->get($row->office_group);
+
+            return [
+                'officeCode' => $row->office_group,
+                // Codes without an office row (e.g. DEPARTMENT_QUEUE) read better
+                // as words than as raw codes in the header, filter and chart.
+                'officeName' => $office->office_name ?? Str::title(str_replace('_', ' ', (string) $row->office_group)),
+                'department' => $office->department ?? null,
+                'totalFiles' => (int) $row->total_files,
+                // Lets a collapsed group header show its urgency without
+                // fetching any of its rows.
+                'highFiles' => (int) $row->high_total,
+            ];
+        })->values();
+
+        // The office dropdown narrows the tab to one group; the whole-set
+        // distribution below still lists every office so the dropdown keeps its
+        // other options.
+        $office = trim((string) $request->query('office', 'ALL'));
+        $pagedGroups = ($office !== '' && $office !== 'ALL')
+            ? $groups->where('officeCode', $office)->values()
+            : $groups;
+
+        $totalOffices = $pagedGroups->count();
+        $lastPage = max(1, (int) ceil($totalOffices / $perPage));
+        $page = min($page, $lastPage);
+
+        $priorityExpression = "UPPER(ISNULL(priority, ''))";
+
+        // Summary cards follow whatever is on screen, so they narrow with the
+        // office dropdown too.
+        $statsQuery = (clone $baseQuery);
+
+        if ($office !== '' && $office !== 'ALL') {
+            $statsQuery->whereRaw(self::REQUESTER_OFFICE_SQL . ' = ?', [$office]);
+        }
+
+        $priorityCounts = $statsQuery
+            ->selectRaw($priorityExpression . ' as priority_group, COUNT(*) as total')
+            ->groupBy(DB::raw($priorityExpression))
+            ->pluck('total', 'priority_group');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'In-transit requester offices retrieved successfully.',
+            'data' => [
+                'offices' => $pagedGroups->forPage($page, $perPage)->values(),
+                'stats' => [
+                    'total' => (int) $pagedGroups->sum('totalFiles'),
+                    'high' => (int) ($priorityCounts[FileTracker::PRIORITY_HIGH] ?? 0),
+                    'medium' => (int) ($priorityCounts[FileTracker::PRIORITY_MEDIUM] ?? 0),
+                    'low' => (int) ($priorityCounts[FileTracker::PRIORITY_LOW] ?? 0),
+                    'offices' => $totalOffices,
+                ],
+                // Whole-set distribution — drives the office filter and the chart.
+                'officeDistribution' => $groups,
+                'pagination' => [
+                    'page' => $page,
+                    'perPage' => $perPage,
+                    'total' => $totalOffices,
+                    'lastPage' => $lastPage,
+                    'from' => $totalOffices === 0 ? 0 : (($page - 1) * $perPage) + 1,
+                    'to' => min($page * $perPage, $totalOffices),
+                    'unit' => 'offices',
+                ],
+                'generatedAt' => now()->toIso8601String(),
+            ],
+        ]);
+    }
+
+    /**
+     * Rows for the In-Transit tab. Called with an `office` (a requester office
+     * code) to fill in one expanded group; without one it still returns a flat
+     * paginated list.
      */
     public function inTransit(Request $request): JsonResponse
     {
@@ -443,32 +582,15 @@ class FileTrackerDashboardApiController extends Controller
         $perPage = max(10, min($perPage, 1000));
 
         $page = max(1, (int) $request->query('page', 1));
-        $search = trim((string) $request->query('search', ''));
-        $priority = Str::upper(trim((string) $request->query('priority', 'ALL')));
+
+        $baseQuery = $this->inTransitBaseQuery($request);
+
+        // The table paginates by requester office and pulls one office's rows at
+        // a time, so a single group is never split across requests.
         $office = trim((string) $request->query('office', 'ALL'));
 
-        $baseQuery = FileTracker::query()
-            ->whereRaw("UPPER(ISNULL(status, '')) NOT IN ('CANCELED', 'CANCELLED', 'COMPLETED')")
-            ->where(function ($query) {
-                $query->whereRaw("ISNULL(file_request_type, '') = 'In-Transit'")
-                    ->orWhereRaw("ISNULL(request_purpose_name, '') = 'In-Transit'");
-            });
-
-        if ($priority !== '' && $priority !== 'ALL') {
-            $baseQuery->whereRaw('UPPER(ISNULL(priority, \'\')) = ?', [$priority]);
-        }
-
         if ($office !== '' && $office !== 'ALL') {
-            $baseQuery->where('current_office_code', $office);
-        }
-
-        if ($search !== '') {
-            $like = '%' . str_replace(['%', '_'], ['[%]', '[_]'], $search) . '%';
-            $baseQuery->where(function ($query) use ($like) {
-                $query->where('file_number', 'like', $like)
-                    ->orWhere('file_title', 'like', $like)
-                    ->orWhere('tracking_id', 'like', $like);
-            });
+            $baseQuery->whereRaw(self::REQUESTER_OFFICE_SQL . ' = ?', [$office]);
         }
 
         $total = (clone $baseQuery)->count();
@@ -491,6 +613,8 @@ class FileTrackerDashboardApiController extends Controller
                 'file_request_type',
                 'date_requested',
                 'movement_log',
+                'receiving_office_code',
+                'receiving_office_name',
                 'receiving_officer_id',
                 'receiving_officer_name',
                 'created_by',
@@ -514,6 +638,10 @@ class FileTrackerDashboardApiController extends Controller
                 $officeCodesNeeded[$tracker->current_office_code] = true;
             }
 
+            if ($tracker->receiving_office_code) {
+                $officeCodesNeeded[$tracker->receiving_office_code] = true;
+            }
+
             foreach ((array) $tracker->movement_log as $entry) {
                 $code = $this->extractOfficeCode($entry);
                 if ($code) {
@@ -522,17 +650,18 @@ class FileTrackerDashboardApiController extends Controller
             }
         }
 
-        // Whole-set office distribution — drives the summary card, the chart and
-        // the office filter, so it is computed before the office lookup.
+        // Distribution by requester office — the tab's grouping key. Computed
+        // before the office lookup so its codes get resolved to names too.
+        // The whole-set figures live in inTransitOffices(); this one is scoped by
+        // whatever filters this call carries.
         $officeDistributionRaw = (clone $baseQuery)
-            ->select('current_office_code', DB::raw('COUNT(*) as total_files'))
-            ->whereNotNull('current_office_code')
-            ->groupBy('current_office_code')
-            ->orderByDesc('total_files')
+            ->selectRaw(self::REQUESTER_OFFICE_SQL . ' as office_group, COUNT(*) as total_files')
+            ->groupBy(DB::raw(self::REQUESTER_OFFICE_SQL))
+            ->orderByDesc(DB::raw('COUNT(*)'))
             ->get();
 
         foreach ($officeDistributionRaw as $row) {
-            $officeCodesNeeded[$row->current_office_code] = true;
+            $officeCodesNeeded[$row->office_group] = true;
         }
 
         $officeMetadata = empty($officeCodesNeeded)
@@ -543,6 +672,12 @@ class FileTrackerDashboardApiController extends Controller
             $office = $officeMetadata->get($tracker->current_office_code);
             $requestedDate = $tracker->date_requested ?: $tracker->created_at;
             $requestedIso = $this->toIso($requestedDate);
+
+            // The office the file was requested to, i.e. the posting of the
+            // receiving officer. Falls back to the current office for older rows
+            // that were logged before the receiving office was captured.
+            $requesterOfficeCode = $tracker->receiving_office_code ?: $tracker->current_office_code;
+            $requesterOffice = $officeMetadata->get($requesterOfficeCode);
 
             return [
                 'id' => $tracker->id,
@@ -557,6 +692,10 @@ class FileTrackerDashboardApiController extends Controller
                 // "Department Queue" is not a real office row, so the tracker's own
                 // department is what identifies where the file actually sits.
                 'currentOfficeDepartment' => $office->department ?? $tracker->department,
+                'requesterOffice' => $requesterOffice->office_name
+                    ?? ($tracker->receiving_office_name ?: $tracker->current_office_name),
+                'requesterOfficeId' => $requesterOfficeCode,
+                'requesterOfficeDepartment' => $requesterOffice->department ?? $tracker->department,
                 'originOffice' => $tracker->origin_office_name,
                 'requestPurpose' => $tracker->request_purpose_name,
                 'caseType' => $tracker->request_purpose_name,
@@ -585,13 +724,13 @@ class FileTrackerDashboardApiController extends Controller
             ->pluck('total', 'priority_group');
 
         $officeDistribution = $officeDistributionRaw->map(function ($row) use ($officeMetadata) {
-            $office = $officeMetadata->get($row->current_office_code);
+            $office = $officeMetadata->get($row->office_group);
 
             return [
-                'officeCode' => $row->current_office_code,
+                'officeCode' => $row->office_group,
                 // Codes without an office row (e.g. DEPARTMENT_QUEUE) read better
                 // as words than as raw codes in the filter and chart.
-                'officeName' => $office->office_name ?? Str::title(str_replace('_', ' ', (string) $row->current_office_code)),
+                'officeName' => $office->office_name ?? Str::title(str_replace('_', ' ', (string) $row->office_group)),
                 'department' => $office->department ?? null,
                 'totalFiles' => (int) $row->total_files,
             ];
@@ -784,6 +923,8 @@ class FileTrackerDashboardApiController extends Controller
                 'date_requested',
                 'current_office_code',
                 'movement_log',
+                'receiving_office_code',
+                'receiving_office_name',
                 'receiving_officer_id',
                 'receiving_officer_name',
                 'created_by',
@@ -813,6 +954,10 @@ class FileTrackerDashboardApiController extends Controller
                 $officeCodesNeeded[$tracker->current_office_code] = true;
             }
 
+            if ($tracker->receiving_office_code) {
+                $officeCodesNeeded[$tracker->receiving_office_code] = true;
+            }
+
             foreach ((array) $tracker->movement_log as $entry) {
                 $code = $this->extractOfficeCode($entry);
                 if ($code) {
@@ -830,6 +975,12 @@ class FileTrackerDashboardApiController extends Controller
             $requestedIso = $this->toIso($requestedDate);
             $office = $officeMetadata->get($tracker->current_office_code);
 
+            // The office the file was requested to, i.e. the posting of the
+            // receiving officer. Falls back to the current office for older rows
+            // that were logged before the receiving office was captured.
+            $requesterOfficeCode = $tracker->receiving_office_code ?: $tracker->current_office_code;
+            $requesterOffice = $officeMetadata->get($requesterOfficeCode);
+
             return [
                 'id' => $tracker->id,
                 'fileNo' => $tracker->file_number,
@@ -841,6 +992,10 @@ class FileTrackerDashboardApiController extends Controller
                 'currentOffice' => $office->office_name ?? $tracker->current_office_name,
                 'currentOfficeId' => $tracker->current_office_code,
                 'currentOfficeDepartment' => $office->department ?? null,
+                'requesterOffice' => $requesterOffice->office_name
+                    ?? ($tracker->receiving_office_name ?: $tracker->current_office_name),
+                'requesterOfficeId' => $requesterOfficeCode,
+                'requesterOfficeDepartment' => $requesterOffice->department ?? $tracker->department,
                 'originOffice' => $tracker->origin_office_name,
                 'requestPurpose' => $tracker->request_purpose_name,
                 'caseType' => $tracker->request_purpose_name,

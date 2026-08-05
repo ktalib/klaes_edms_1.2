@@ -4319,6 +4319,12 @@ HTML;
         // The file left the commissioning office when it was first logged anywhere,
         // which closes the line; with no movement at all it is still in process there.
         $ownLog = is_array($tracker->movement_log) ? $tracker->movement_log : [];
+
+        // A file commissioned with a next destination already carries the line as a
+        // real logged movement — do not show it twice.
+        if ($service->logHasCommissioningLine($priorMovements, $ownLog)) {
+            return $priorMovements;
+        }
         $timestamps = [];
         foreach (array_merge($priorMovements, $ownLog) as $entry) {
             if (!is_array($entry)) {

@@ -20,7 +20,11 @@ class FileIndexingService
             'tracking_id' => $mlsFile->tracking_id,
             'file_number' => $mlsFile->full_file_number,
             'file_title' => $mlsFile->file_name,
+            // Carries the commissioning gender across with its provenance intact.
+            // When the commissioning row is itself blank, FileIndexing::creating
+            // infers from the title rather than writing another null.
             'gender' => $mlsFile->gender ?? null,
+            'gender_source' => $mlsFile->gender ? ($mlsFile->gender_source ?? 'pair') : null,
             'land_use_type' => $this->extractLandUseType($mlsFile->land_use),
             'plot_number' => $mlsFile->plot_no,
             'tp_no' => $mlsFile->tp_no,
@@ -80,6 +84,14 @@ class FileIndexingService
             'parent_prop_id' => $data['parent_prop_id'] ?? null,
             'related_fileno' => $data['related_fileno'] ?? null,
         ];
+
+        // Third lineage level: the root above the parent, so merged files that are
+        // more than two generations deep record their original parcel at index time
+        // rather than waiting for the propid:backfill-ancestral sweep.
+        if (!empty($indexingData['parent_prop_id'])) {
+            $indexingData['ancestral_prop_id'] = app(PropIdLineageService::class)
+                ->resolveAncestralForRow($data['prop_id'] ?? null, $indexingData['parent_prop_id']);
+        }
 
         $indexingData = $this->enrichWithCorrespondingFile($indexingData);
 

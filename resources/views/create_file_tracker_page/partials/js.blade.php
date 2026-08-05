@@ -3951,6 +3951,15 @@
         return null;
     }
 
+    // Tags the File Commissioning line as Default In-process In-transit Tracking, so
+    // it is not mistaken for an ordinary logged movement: the file was never logged
+    // out of a registry, it started life at the File Commissioning Office.
+    function diitMarker(entry) {
+        return entry && entry.isDiit
+            ? '<div class="mt-1 text-[10px] font-bold uppercase tracking-wider text-indigo-500" title="Default In-process In-transit Tracking">DIIT</div>'
+            : '';
+    }
+
     function resolveStatusDisplay(entry, fallbackStatus = '') {
         const toTrimmed = (value) => typeof value === 'string' ? value.trim() : '';
         const overrideRaw = entry
@@ -6263,6 +6272,7 @@
                                     <span class="mr-1 inline-flex h-2 w-2 rounded-full ${statusDotClass}"></span>
                                     ${entryStatusLabel}
                                 </span>
+                                ${diitMarker(entry)}
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">${isPrimaryDeparture ? requestPurposeCellHtml : emptyCell}</td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm">${isPrimaryDeparture ? timelineDisplayHtml : emptyCell}</td>
@@ -6453,6 +6463,7 @@
                                     <span class="mr-1 inline-flex h-2 w-2 rounded-full ${statusDotClass}"></span>
                                     ${entryStatusLabel}
                                 </span>
+                                ${diitMarker(entry)}
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600">${emptyCell}</td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm">${emptyCell}</td>

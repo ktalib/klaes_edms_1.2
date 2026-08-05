@@ -33,6 +33,48 @@ class LandRofoController extends Controller
                                    AND sc.document_type = 'Land ROFO')))";
     }
 
+    /**
+     * Every RofO in one batch, for the Batches tab's expanded view.
+     *
+     * Unpaginated by design — a batch shown in slices is exactly the confusion this
+     * tab exists to remove.
+     */
+    public function batchChildren(Request $request, string $batchId)
+    {
+        $children = LandRecommendation::where('rofo_batch_id', $batchId)
+            ->orderBy('batch_seq')
+            ->orderBy('id')
+            ->get([
+                'id', 'batch_seq', 'file_number', 'applicant_name', 'plot_number', 'location',
+                'purpose_of_clause', 'land_use', 'status', 'rofo_status', 'land_rofo_serial_no',
+                'rofo_print_count',
+            ]);
+
+        if ($children->isEmpty()) {
+            return response()->json(['success' => false, 'message' => 'Batch not found.'], 404);
+        }
+
+        return response()->json([
+            'success'  => true,
+            'batch_id' => $batchId,
+            'count'    => $children->count(),
+            'children' => $children->map(fn ($c, $i) => [
+                'id'             => $c->id,
+                'seq'            => $c->batch_seq ?: ($i + 1),
+                'file_number'    => $c->file_number,
+                'applicant_name' => $c->applicant_name,
+                'plot_number'    => $c->plot_number,
+                'location'       => $c->location,
+                'purpose'        => $c->purpose_of_clause ?: $c->land_use,
+                'status'         => $c->status,
+                'rofo_status'    => $c->rofo_status,
+                'serial_no'      => $c->land_rofo_serial_no,
+                'print_count'    => (int) ($c->rofo_print_count ?? 0),
+                'print_url'      => route('land-rofos.print', $c->id),
+            ])->values(),
+        ]);
+    }
+
     public function index(Request $request)
     {
         $ossViewOnly = $request->query('view') === 'only';
@@ -47,6 +89,7 @@ class LandRofoController extends Controller
                 'rofo_status', 'status', 'approved_at', 'land_rofo_serial_no',
                 'created_at', 'created_by', 'land_use', 'land_use_id', 'purpose_id',
                 'is_reissuance', 'reissuance_source',
+                'rofo_batch_id', 'batch_mother_file_no', 'batch_seq', 'application_type',
             ]);
 
         if ($ossViewOnly) {
@@ -65,13 +108,27 @@ class LandRofoController extends Controller
         // to both the main view and the OSS-only view (each scoped to its own record
         // set, see counts below).
         $tab = $request->query('tab', 'not_printed');
-        if (!in_array($tab, ['printed', 'not_printed'], true)) {
+        if (!in_array($tab, ['printed', 'not_printed', 'batches'], true)) {
             $tab = 'not_printed';
         }
-        if ($tab === 'printed') {
-            $query->whereRaw($this->printedPredicateSql());
-        } else { // not_printed
-            $query->whereRaw('NOT ' . $this->printedPredicateSql());
+        // The Batches tab pages over batches rather than over RofOs. On the main
+        // list a batch is one collapsed row and its children are spread across the
+        // pages behind it, so expanding it only ever reveals the handful that share
+        // the current page — which reads as the batch being that small.
+        if ($tab !== 'batches') {
+            if ($tab === 'printed') {
+                $query->whereRaw($this->printedPredicateSql());
+            } else { // not_printed
+                $query->whereRaw('NOT ' . $this->printedPredicateSql());
+            }
+
+            // Batched RofOs belong to the Batches tab and are kept out of this
+            // list — one subdivision could otherwise fill several pages of it.
+            // A search is the exception: a specific file number must be findable
+            // whether or not it was captured in a batch.
+            if (!$request->filled('search')) {
+                $query->whereNull('rofo_batch_id');
+            }
         }
 
         if ($request->filled('search')) {
@@ -83,7 +140,86 @@ class LandRofoController extends Controller
             });
         }
 
-        $recommendations = $query->latest()->paginate(20)->withQueryString();
+        // One row per batch, whole — see the note on the tab filter above.
+        $rofoBatches = null;
+        if ($tab === 'batches') {
+            $batchQuery = LandRecommendation::query()->whereNotNull('rofo_batch_id');
+
+            if ($ossViewOnly) {
+                $batchQuery->whereRaw("UPPER(ISNULL(type, '')) = 'OSS'");
+            } else {
+                $batchQuery->where(function ($q) {
+                    $q->where('status', LandRecommendation::STATUS_APPROVED)
+                      ->orWhereRaw("UPPER(ISNULL(type, '')) = 'OSS'");
+                });
+            }
+
+            if ($request->filled('search')) {
+                $search = $request->search;
+                // A hit on any child surfaces its whole batch.
+                $batchQuery->where(function ($q) use ($search) {
+                    $q->where('batch_mother_file_no', 'LIKE', "%{$search}%")
+                      ->orWhere('rofo_batch_id', 'LIKE', "%{$search}%")
+                      ->orWhere('file_number', 'LIKE', "%{$search}%")
+                      ->orWhere('applicant_name', 'LIKE', "%{$search}%");
+                });
+            }
+
+            $rofoBatches = $batchQuery
+                ->groupBy('rofo_batch_id')
+                ->selectRaw(
+                    'rofo_batch_id'
+                    . ', MAX(batch_mother_file_no) AS mother_file_no'
+                    . ', MAX(old_file_number) AS old_file_number'
+                    . ', MAX(application_type) AS application_type'
+                    . ', COUNT(*) AS total'
+                    . ", SUM(CASE WHEN rofo_status = 'generated' THEN 1 ELSE 0 END) AS generated_count"
+                    . ', SUM(CASE WHEN ISNULL(rofo_print_count, 0) > 0 THEN 1 ELSE 0 END) AS printed_count'
+                    . ', MIN(created_at) AS created_at'
+                    . ', MAX(created_by) AS created_by'
+                )
+                ->orderByRaw('MIN(created_at) DESC')
+                ->paginate(20)
+                ->withQueryString();
+        }
+
+        // Subdivision batches share one created_at, so batch_seq is what keeps their
+        // children in capture order and adjacent under the grouped batch row.
+        $recommendations = $query->latest()
+            ->orderBy('rofo_batch_id')
+            ->orderBy('batch_seq')
+            ->paginate(20)
+            ->withQueryString();
+
+        // Full child count per batch, so a batch split across two pages still
+        // reports its real size rather than "however many landed on this page".
+        $batchIdsOnPage = $recommendations->pluck('rofo_batch_id')->filter()->unique()->values();
+        $batchSizes = $batchIdsOnPage->isEmpty() ? collect() : LandRecommendation::query()
+            ->whereIn('rofo_batch_id', $batchIdsOnPage)
+            ->groupBy('rofo_batch_id')
+            ->selectRaw('rofo_batch_id, COUNT(*) AS total')
+            ->pluck('total', 'rofo_batch_id');
+
+        // Ids per batch for the grouped row's Print Batch action — the whole batch,
+        // not just the rows visible on this page.
+        //
+        // Only children whose RofO has actually been generated can be printed:
+        // batchPrint() filters on that status, so passing a pending child produces a
+        // sheet with nothing on it. The row carries the printable ids and the count
+        // still waiting on generation so it can say which it is.
+        $batchMemberIds = $batchIdsOnPage->isEmpty() ? collect() : LandRecommendation::query()
+            ->whereIn('rofo_batch_id', $batchIdsOnPage)
+            ->orderBy('batch_seq')
+            ->get(['id', 'rofo_batch_id', 'rofo_status'])
+            ->groupBy('rofo_batch_id')
+            ->map(function ($rows) {
+                $generated = $rows->where('rofo_status', LandRecommendation::ROFO_GENERATED);
+
+                return [
+                    'printable_ids' => $generated->pluck('id')->values()->all(),
+                    'not_generated' => $rows->count() - $generated->count(),
+                ];
+            });
 
         $PageTitle = $ossViewOnly ? 'OSS RofO' : 'Land RofO';
         $landUses = \App\Models\LandUse::orderBy('landuse')->get();
@@ -112,8 +248,14 @@ class LandRofoController extends Controller
                   ->orWhereRaw("UPPER(ISNULL(type,'')) = 'OSS'");
             });
         }
-        $printedCount    = (clone $rofoScopeQuery)->whereRaw($this->printedPredicateSql())->count();
-        $notPrintedCount = (clone $rofoScopeQuery)->whereRaw('NOT ' . $this->printedPredicateSql())->count();
+        // Same batched-record exclusion the list applies, so a tab badge can never
+        // promise rows the tab does not show.
+        $tabScope = fn () => $request->filled('search')
+            ? (clone $rofoScopeQuery)
+            : (clone $rofoScopeQuery)->whereNull('rofo_batch_id');
+
+        $printedCount    = $tabScope()->whereRaw($this->printedPredicateSql())->count();
+        $notPrintedCount = $tabScope()->whereRaw('NOT ' . $this->printedPredicateSql())->count();
 
         // Count OSS Applications from the authoritative source (oss_applications) so
         // the stat matches the Change of Name page instead of counting type='OSS' rows
@@ -216,7 +358,16 @@ class LandRofoController extends Controller
             }
         }
 
-        return view('land_rofos.index', compact('recommendations', 'PageTitle', 'landUses', 'stats', 'availableSerials', 'ossViewOnly', 'rofoSerials', 'tab', 'printDates'));
+        // Batch count for the tab badge, on the same record set the tabs filter.
+        $rofoBatchCount = (clone $rofoScopeQuery)->whereNotNull('rofo_batch_id')
+            ->distinct()->count('rofo_batch_id');
+
+        $rofoBatchCreators = $rofoBatches
+            ? \App\Models\User::whereIn('id', collect($rofoBatches->items())->pluck('created_by')->filter()->unique())
+                ->get(['id', 'first_name', 'last_name'])->keyBy('id')
+            : collect();
+
+        return view('land_rofos.index', compact('recommendations', 'PageTitle', 'landUses', 'stats', 'availableSerials', 'ossViewOnly', 'rofoSerials', 'tab', 'printDates', 'batchSizes', 'batchMemberIds', 'rofoBatches', 'rofoBatchCount', 'rofoBatchCreators'));
     }
 
     /**
@@ -533,32 +684,10 @@ class LandRofoController extends Controller
             if ($p) $validated['purpose_of_clause'] = $p->name;
         }
 
-        // Use stored values if the request is empty (quick-generate from index)
-        $mergedDate = $request->rofo_date_generated ?: $recommendation->rofo_date_generated;
-        $mergedTime = $request->rofo_time_generated ?: $recommendation->rofo_time_generated;
-
-        $generatedAt = now();
-        if ($mergedDate && $mergedTime) {
-            $generatedAt = \Carbon\Carbon::parse($mergedDate . ' ' . $mergedTime);
-        } elseif ($mergedDate) {
-            $generatedAt = \Carbon\Carbon::parse($mergedDate);
-        }
-
-        // Fill missing validated fields from stored record when quick-generating
-        if (empty($validated['rofo_director_survey']))  $validated['rofo_director_survey']  = $recommendation->rofo_director_survey;
-        if (empty($validated['rofo_licensed_surveyor'])) $validated['rofo_licensed_surveyor'] = $recommendation->rofo_licensed_surveyor;
-        if (empty($validated['rofo_survey_fees']))       $validated['rofo_survey_fees']       = $recommendation->survey_fees ?? $recommendation->preparation_fees;
-        if (empty($validated['rofo_dev_charge']))        $validated['rofo_dev_charge']        = $recommendation->development_charge;
-        if (empty($validated['rofo_land_use_category'])) $validated['rofo_land_use_category'] = $recommendation->land_use;
-
-        $recommendation->update(array_merge($validated, [
-            'rofo_status'        => LandRecommendation::ROFO_GENERATED,
-            'rofo_generated_at'  => $generatedAt,
-            'rofo_date_generated'=> $mergedDate,
-            'rofo_time_generated'=> $mergedTime,
-        ]));
-
-        app(RofoPraSyncer::class)->syncLand($recommendation->fresh());
+        // Anything the form left empty falls back to the stored record — that is what
+        // a quick-generate from the index does. Shared with the automatic generation
+        // on batch approval so both produce identically-shaped records.
+        app(\App\Services\LandRofoGenerator::class)->generate($recommendation, $validated);
 
         return response()->json(['success' => true]);
     }
@@ -651,7 +780,10 @@ class LandRofoController extends Controller
                 'text'      => $rec->file_number,
                 'applicant' => $rec->applicant_name,
                 'location'  => $rec->location,
-                'issued_on' => optional($rec->rofo_generated_at ?? $rec->created_at)->format('Y-m-d'),
+                // Only rofo_generated_at is a real issue date. created_at is when the
+                // recommendation was captured, so falling back to it made a RofO that
+                // was never generated look as though it were issued that day.
+                'issued_on' => optional($rec->rofo_generated_at)->format('Y-m-d'),
             ]);
 
         return response()->json(['results' => $results]);
@@ -708,21 +840,71 @@ class LandRofoController extends Controller
             ->where('rofo_status', LandRecommendation::ROFO_GENERATED)
             ->get();
 
-        // Use the same service the individual print uses so codes are consistent
-        $securityCodeService = app(\App\Services\SecurityCodeService::class);
-        $securityCodes = [];
-        foreach ($records as $rec) {
-            $sc = $securityCodeService->getOrGenerateForDocument(
-                $rec->file_number,
-                $rec->id,
-                'Land ROFO'
-            );
-            if ($sc) {
-                $securityCodes[$rec->id] = $sc;
-            }
+        // Only generated RofOs are printable, so a selection of pending ones would
+        // otherwise render the template shell with no letters in it — a blank page.
+        if ($records->isEmpty()) {
+            $requested = LandRecommendation::whereIn('id', $ids)->pluck('file_number');
+
+            abort(422, $requested->isEmpty()
+                ? 'No records were selected for printing.'
+                : 'None of these have a generated RofO yet, so there is nothing to print: '
+                    . $requested->implode(', ') . '. Generate the RofO first.');
         }
 
-        return view('land_rofos.templates.batch_rofo_print', compact('records', 'securityCodes'));
+        // Use the same service the individual print uses so codes are consistent
+        $securityCodeService = app(\App\Services\SecurityCodeService::class);
+
+        // The letter itself comes from rofo_print — the same template a single print
+        // uses. The old batch-specific copy of the letter had drifted from it (wrong
+        // frame, missing the ministry address line), which is exactly the failure mode
+        // a duplicated template invites.
+        //
+        // status=Batch makes each record emit its Original/Duplicate/Triplicate set,
+        // matching what batchPrintLog() records.
+        $request->merge(['status' => 'Batch']);
+
+        $views = $records->map(function ($rec) use ($securityCodeService) {
+            // Mirror the single print: fall back to the ids when the text columns are
+            // empty, or the letter prints a blank purpose / land use.
+            if (empty($rec->land_use) && $rec->land_use_id) {
+                $lu = \App\Models\LandUse::find($rec->land_use_id);
+                if ($lu) $rec->land_use = $lu->landuse;
+            }
+            if (empty($rec->purpose_of_clause) && $rec->purpose_id) {
+                $p = \App\Models\Purpose::find($rec->purpose_id);
+                if ($p) $rec->purpose_of_clause = $p->name;
+            }
+
+            return view('land_rofos.templates.rofo_print', [
+                'recommendation' => $rec,
+                'securityCode'   => $securityCodeService->getOrGenerateForDocument(
+                    $rec->file_number,
+                    $rec->id,
+                    'Land ROFO'
+                ),
+                'supersededDate' => '',
+            ]);
+        });
+
+        $stitched = app(\App\Services\StitchedBatchPrint::class)->stitch($views);
+
+        return view('print.stitched_batch', [
+            'head'     => $stitched['head'],
+            'bodies'   => $stitched['bodies'],
+            'title'    => 'Batch RofO Print (' . $records->count() . ' records)',
+            'subtitle' => $records->count() . ' ' . \Illuminate\Support\Str::plural('RofO', $records->count())
+                . ' — Original, Duplicate and Triplicate of each',
+            // Empty on purpose: the RofO list records the batch through
+            // batch-print-log before this page is opened, so logging here again
+            // would double-count every print.
+            'logUrls'  => [],
+            // rofo_print breaks between its own pages with
+            // `.page-container ~ .page-container { page-break-before: always }`.
+            // That is a general-sibling rule, so once the records are stitched it
+            // already starts each one on a fresh sheet — adding a break marker on
+            // top of it emitted a blank page at every join.
+            'breakBetween' => false,
+        ]);
     }
 
     public function batchPrintLog(Request $request)

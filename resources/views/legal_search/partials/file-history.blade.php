@@ -184,10 +184,45 @@
                   <svg data-refresh-icon xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                   Refresh
                 </button>
-                <button id="add-record-smart-btn" type="button" class="inline-flex items-center px-3 py-2 rounded-lg text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 border border-transparent cursor-pointer whitespace-nowrap" data-role="legal-search-add-record" data-target="pra">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-                  Add Record
-                </button>
+                {{-- Add Record splits into two paths: "New" opens the blank capture
+                     dialog (unchanged behaviour), "Existing" opens the picker that
+                     lists records already captured against this file number in one
+                     of the four sources so they can be attached to the property. --}}
+                <div class="relative" id="add-record-wrapper">
+                  <button id="add-record-smart-btn" type="button" class="inline-flex items-center px-3 py-2 rounded-lg text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 border border-transparent cursor-pointer whitespace-nowrap">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                    Add Record
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                  </button>
+
+                  <div id="add-record-menu" class="hidden absolute right-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg py-1" style="z-index:1000;">
+                    {{-- 1. New — data-target is kept in sync with the active tab by
+                         updateAddRecordButtonVisibility() in js.blade.php. --}}
+                    <button type="button" id="add-record-new-btn"
+                            class="flex items-center w-full px-3 py-2 text-xs text-gray-700 hover:bg-blue-50"
+                            data-role="legal-search-add-record" data-target="pra">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-2 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                      New
+                    </button>
+
+                    {{-- 2. Existing — expands the four source options in place. --}}
+                    <button type="button" id="add-record-existing-toggle"
+                            class="flex items-center justify-between w-full px-3 py-2 text-xs text-gray-700 hover:bg-blue-50">
+                      <span class="flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-2 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                        Existing
+                      </span>
+                      <svg id="add-record-existing-chevron" xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+                    </button>
+
+                    <div id="add-record-existing-sources" class="hidden border-t border-gray-100 bg-gray-50/60">
+                      <button type="button" class="ls-add-existing-btn flex items-center w-full pl-8 pr-3 py-2 text-xs text-gray-700 hover:bg-blue-50" data-source="pra">PRA</button>
+                      <button type="button" class="ls-add-existing-btn flex items-center w-full pl-8 pr-3 py-2 text-xs text-gray-700 hover:bg-blue-50" data-source="file_history_staging">File History</button>
+                      <button type="button" class="ls-add-existing-btn flex items-center w-full pl-8 pr-3 py-2 text-xs text-gray-700 hover:bg-blue-50" data-source="deed_registrations">Deeds Registration</button>
+                      <button type="button" class="ls-add-existing-btn flex items-center w-full pl-8 pr-3 py-2 text-xs text-gray-700 hover:bg-blue-50" data-source="CofO_staging">CofO</button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1621,3 +1656,68 @@
       </div>
     </div>
     {{-- ======= /Place Caveat Modal ======= --}}
+
+    {{-- ======= Add Existing Record Picker (Legal Search) =======
+         Lists every record captured against the file under request in ONE source
+         table. Rows already shown in the Timeline are greyed out and locked; the
+         rest come pre-ticked so the operator can attach them to this property in
+         one click (they are matched to the file's prop_id). --}}
+    <div id="ls-existing-records-modal" class="fixed inset-0 z-[9999] hidden" aria-modal="true" role="dialog">
+      <div class="absolute inset-0 bg-black/50" id="ls-existing-records-backdrop"></div>
+      <div class="relative z-10 flex items-center justify-center min-h-screen px-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col">
+          {{-- Header --}}
+          <div class="flex items-center justify-between px-6 py-4 border-b">
+            <div>
+              <h3 class="text-lg font-semibold text-gray-900">Add Existing Record — <span id="ls-existing-source-label">PRA</span></h3>
+              <p class="text-xs text-gray-500 mt-0.5">
+                Records held against <span id="ls-existing-file-display" class="font-medium text-gray-700"></span>.
+                Greyed rows are already in the Timeline.
+              </p>
+            </div>
+            <button type="button" id="ls-existing-close" class="text-gray-400 hover:text-gray-600">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+
+          {{-- Body --}}
+          <div class="flex-1 overflow-auto px-6 py-4">
+            <div id="ls-existing-loading" class="hidden py-10 text-center text-sm text-gray-400">Loading records…</div>
+            <div id="ls-existing-empty" class="hidden py-10 text-center text-sm text-gray-500">No records found for this file number in this source.</div>
+            <div id="ls-existing-error" class="hidden rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700"></div>
+
+            <div id="ls-existing-table-wrap" class="hidden overflow-x-auto">
+              <table class="w-full text-xs">
+                <thead>
+                  <tr class="text-left text-gray-500 border-b">
+                    <th class="w-8 py-2"><input type="checkbox" id="ls-existing-select-all"></th>
+                    <th class="py-2" style="min-width:40px;">S/N</th>
+                    <th class="py-2" style="min-width:140px;white-space:nowrap;">File No</th>
+                    <th class="py-2" style="min-width:150px;">Instrument/Transaction Type</th>
+                    <th class="py-2" style="min-width:110px;">Party 1</th>
+                    <th class="py-2" style="min-width:110px;">Party 2</th>
+                    <th class="py-2" style="min-width:90px;">Reg Particulars</th>
+                    <th class="py-2" style="min-width:100px;">Transaction Date</th>
+                    <th class="py-2" style="min-width:80px;">PropID</th>
+                    <th class="py-2" style="min-width:110px;">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="ls-existing-records-body"></tbody>
+              </table>
+            </div>
+          </div>
+
+          {{-- Footer --}}
+          <div class="flex items-center justify-between px-6 py-4 border-t bg-gray-50 rounded-b-xl">
+            <p class="text-xs text-gray-500"><span id="ls-existing-selected-count">0</span> selected · attaching assigns PropID <span id="ls-existing-target-propid" class="font-medium text-gray-700">—</span></p>
+            <div class="flex gap-3">
+              <button type="button" id="ls-existing-cancel" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button type="button" id="ls-existing-attach" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50" disabled>
+                Attach Selected
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {{-- ======= /Add Existing Record Picker ======= --}}

@@ -6092,10 +6092,13 @@
 
         // Title Status is required — at least one checkbox must be selected. The checkboxes
         // span two cards (Parcel Update / Normal and Title Status Update), so query by class.
+        // SLTR / KANGIS / DCIV registries hide both cards (handleRegistryFieldToggling), so
+        // the requirement doesn't apply there — skip it whenever the card is hidden.
         const titleStatusGroup = document.getElementById('ts-title-type-group');
+        const titleStatusHidden = !!document.getElementById('ts-title-status-block')?.classList.contains('hidden');
         const titleStatusBoxes = Array.from(document.querySelectorAll('.ts-title-type-cb'));
         const titleStatusChosen = titleStatusBoxes.some(cb => cb.checked);
-        if (titleStatusBoxes.length && !titleStatusChosen) {
+        if (!titleStatusHidden && titleStatusBoxes.length && !titleStatusChosen) {
             const errorTarget = titleStatusGroup || titleStatusBoxes[0];
             const focusTitleStatus = () => {
                 errorTarget.classList.add('error-border');
@@ -7569,6 +7572,8 @@
         const kangisPlaceholderPreviewValue = document.getElementById('kangis-placeholder-preview-value');
         const occupancyPermitSection = document.getElementById('occupancy-permit-section');
         const rofoSection = document.getElementById('rofo-section');
+        const titleStatusBlock = document.getElementById('ts-title-status-block');
+        const titleStatusUpdateBlock = document.getElementById('ts-title-update-group');
 
         /** Assemble the prefix + serial into the hidden <input> value and update preview */
         function assembleKangisPlaceholder() {
@@ -7681,6 +7686,16 @@
                     occupancyContainer?.classList.add('hidden');
                     if (typeof clearOccupancyPermitFields === 'function') clearOccupancyPermitFields();
                 }
+            }
+
+            // Title Status / Title Status Update don't apply to SLTR, KANGIS or DCIV
+            // files — hide both cards and drop any selection already made.
+            const hideTitleStatus = isSltr || isKangis || isDciv;
+            [titleStatusBlock, titleStatusUpdateBlock].forEach((block) => {
+                if (block) block.classList.toggle('hidden', hideTitleStatus);
+            });
+            if (hideTitleStatus && typeof window.tsClearSelections === 'function') {
+                window.tsClearSelections();
             }
 
             // Handle File Title Label

@@ -160,14 +160,7 @@
             <span>New Applications (Existing OP Change of Ownership)</span>
           </a>
 
-          <!-- iii. OP Verification -->
-          <a href="{{ route('oss-verifications.index') }}"
-            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('oss-verifications.index') ? 'active' : '' }}">
-            <i data-lucide="check-square" class="h-3.5 w-3.5 text-orange-400"></i>
-            <span>OP Verification</span>
-          </a>
-
-          <!-- iv. Bill -->
+          <!-- iii. Bill -->
           <a href="{{ route('lands-one-stop-shop.bill.index') }}"
             class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('lands-one-stop-shop.bill.index') && !request()->has('type') ? 'active' : '' }}">
             <i data-lucide="receipt" class="h-3.5 w-3.5 text-orange-400"></i>
@@ -251,6 +244,14 @@
             <i data-lucide="file-check" class="h-3.5 w-3.5 text-orange-400"></i>
             <span>RofO</span>
           </a>
+
+          <!-- iii. Re-grant Files -->
+          <a href="#" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200">
+            <i data-lucide="file-text" class="h-3.5 w-3.5 text-orange-400"></i>
+            <span>Re-grant Files</span>
+          </a>
+
+
         </div>
       @endif
 
@@ -301,14 +302,15 @@
                 <span>Scans</span>
               </a>
 
-              <!-- 2. Table -->
-              <a href="{{ route('file-search-db.index') }}"
-                class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-search-db.index') ? 'active' : '' }}">
-                <i data-lucide="table" class="h-3.5 w-3.5 text-orange-400"></i>
-                <span>Problem Files</span>
-              </a>
             </div>
           @endif
+
+          <!-- v. Problem Files -->
+          <a href="{{ route('file-search-db.index') }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-search-db.index') ? 'active' : '' }}">
+            <i data-lucide="table" class="h-3.5 w-3.5 text-orange-400"></i>
+            <span>Problem Files</span>
+          </a>
 
           <!-- iv. Digital Archive -->
           <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"

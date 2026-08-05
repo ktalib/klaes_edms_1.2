@@ -34,19 +34,18 @@
             </p>
         </div>
 
+        {{-- Two cards, mirroring the two tabs below. Each links to its own tab. --}}
         <div class="flex flex-wrap gap-2">
-            <div class="px-3 py-2 rounded-lg bg-white border border-slate-200 text-center min-w-[92px]">
-                <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">On Record</p>
+            <a href="{{ route('regrant.index') }}?tab=register"
+               class="px-4 py-2 rounded-lg bg-white border text-center min-w-[132px] transition hover:border-indigo-300 hover:shadow-sm {{ $tab === 'register' ? 'border-indigo-300 ring-1 ring-indigo-100' : 'border-slate-200' }}">
+                <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Re-grant Register</p>
                 <p class="text-lg font-bold text-slate-800">{{ number_format($stats['register_total']) }}</p>
-            </div>
-            <div class="px-3 py-2 rounded-lg bg-white border border-slate-200 text-center min-w-[92px]">
-                <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Pending</p>
-                <p class="text-lg font-bold text-amber-600">{{ number_format($stats['register_pending']) }}</p>
-            </div>
-            <div class="px-3 py-2 rounded-lg bg-white border border-slate-200 text-center min-w-[92px]">
+            </a>
+            <a href="{{ route('regrant.index') }}?tab=due"
+               class="px-4 py-2 rounded-lg bg-white border text-center min-w-[132px] transition hover:border-red-300 hover:shadow-sm {{ $tab === 'due' ? 'border-red-300 ring-1 ring-red-100' : 'border-slate-200' }}">
                 <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">To Be Re-granted</p>
                 <p class="text-lg font-bold text-red-600">{{ number_format($stats['due_total']) }}</p>
-            </div>
+            </a>
         </div>
     </div>
 
@@ -119,21 +118,30 @@
                             <th class="px-4 py-3">File No</th>
                             <th class="px-4 py-3">Re-granted From</th>
                             <th class="px-4 py-3">File Title / Holder</th>
-                            <th class="px-4 py-3">Plot</th>
-                            <th class="px-4 py-3">District</th>
-                            <th class="px-4 py-3">LGA</th>
                             <th class="px-4 py-3">Land Use</th>
+                            <th class="px-4 py-3">Location</th>
+                            <th class="px-4 py-3">Comment</th>
                             <th class="px-4 py-3">Date Created</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
                         @forelse ($records as $r)
+                            @php
+                                // The stored link wins; otherwise fall back to the single related
+                                // file resolved from the file's indexing row (land files only).
+                                $linkedFrom = filled($r->see_fileno) ? $r->see_fileno : ($r->derived_see_fileno ?? null);
+                                $isDerived  = blank($r->see_fileno) && filled($linkedFrom);
+                            @endphp
                             <tr class="hover:bg-slate-50/70">
                                 <td class="px-4 py-3 font-semibold text-slate-800 whitespace-nowrap">{{ $r->file_no }}</td>
                                 <td class="px-4 py-3 whitespace-nowrap">
-                                    @if (filled($r->see_fileno))
-                                        <span class="inline-flex items-center gap-1 text-indigo-700">
-                                            <i data-lucide="corner-down-right" class="w-3.5 h-3.5"></i>{{ $r->see_fileno }}
+                                    @if (filled($linkedFrom))
+                                        <span class="inline-flex items-center gap-1 {{ $isDerived ? 'text-slate-500' : 'text-indigo-700' }}"
+                                              @if ($isDerived) title="Resolved from the file's Related File No. — not stored on the record" @endif>
+                                            <i data-lucide="corner-down-right" class="w-3.5 h-3.5"></i>{{ $linkedFrom }}
+                                            @if ($isDerived)
+                                                <span class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">(related)</span>
+                                            @endif
                                         </span>
                                     @else
                                         <span class="text-slate-300">not linked</span>
@@ -141,16 +149,21 @@
                                 </td>
                                 <td class="px-4 py-3 text-slate-700 max-w-[260px] truncate"
                                     title="{{ $r->file_title ?: $r->applicant_name }}">{!! $dash($r->file_title ?: $r->applicant_name) !!}</td>
-                                <td class="px-4 py-3 text-slate-600">{!! $dash($r->plot_no) !!}</td>
-                                <td class="px-4 py-3 text-slate-600">{!! $dash($r->district) !!}</td>
-                                <td class="px-4 py-3 text-slate-600">{!! $dash($r->lga) !!}</td>
                                 <td class="px-4 py-3 text-slate-600">{!! $dash($r->land_use) !!}</td>
+                                <td class="px-4 py-3 text-slate-600 max-w-[300px] truncate" title="{{ $r->location }}">{!! $dash($r->location) !!}</td>
+                                <td class="px-4 py-3 text-slate-600 whitespace-nowrap">
+                                    @if (filled($linkedFrom))
+                                        Re-grant from {{ $linkedFrom }}
+                                    @else
+                                        <span class="text-slate-300">—</span>
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3 text-slate-500 whitespace-nowrap">
                                     {{ $r->created_at ? \Carbon\Carbon::parse($r->created_at)->format('d/m/Y') : '—' }}
                                 </td>
                             </tr>
                         @empty
-                            <tr><td colspan="8" class="px-4 py-10 text-center text-slate-400">No Re-grant records found.</td></tr>
+                            <tr><td colspan="7" class="px-4 py-10 text-center text-slate-400">No Re-grant records found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -183,7 +196,7 @@
                             <th class="px-4 py-3 text-center">Overdue</th>
                             <th class="px-4 py-3">Land Use</th>
                             <th class="px-4 py-3">Location</th>
-                            <th class="px-4 py-3 text-right">Action</th>
+                            {{-- Action column hidden; the Raise flow stays available via regrantRaise(). --}}
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
@@ -214,16 +227,9 @@
                                 </td>
                                 <td class="px-4 py-3 text-slate-600">{!! $dash($r->land_use) !!}</td>
                                 <td class="px-4 py-3 text-slate-600 max-w-[300px] truncate" title="{{ $r->location }}">{!! $dash($r->location) !!}</td>
-                                <td class="px-4 py-3 text-right">
-                                    <button type="button"
-                                            onclick="regrantRaise('{{ addslashes($r->file_no) }}', this)"
-                                            class="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white inline-flex items-center gap-1">
-                                        <i data-lucide="plus" class="w-3.5 h-3.5"></i> Raise
-                                    </button>
-                                </td>
                             </tr>
                         @empty
-                            <tr><td colspan="10" class="px-4 py-10 text-center text-slate-400">No files are currently due for re-grant.</td></tr>
+                            <tr><td colspan="9" class="px-4 py-10 text-center text-slate-400">No files are currently due for re-grant.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

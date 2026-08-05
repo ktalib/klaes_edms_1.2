@@ -4,7 +4,6 @@
 <div class="flex-1 overflow-auto bg-slate-50/60">
     @include('admin.header')
     <div class="py-12 bg-slate-50 min-h-screen">
-    <div class="py-12 bg-slate-50 min-h-screen">
         <div class="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
                 <div>
@@ -131,8 +130,124 @@
                     Printed
                     <span class="px-2 py-0.5 rounded-full text-[10px] font-black {{ $tab === 'printed' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500' }}">{{ number_format($stats['printed']) }}</span>
                 </a>
+                {{-- Batches get their own tab because they do not survive this list's
+                     pagination: a 100-child batch is one collapsed row whose children
+                     are spread over five pages, so expanding it here shows only the 20
+                     that happen to be on the page. On the Batches tab one row is one
+                     whole batch and expanding it loads every child. --}}
+                @if(($stats['batches'] ?? 0) > 0)
+                <a href="{{ route('land-recommendations.index', array_filter(['type' => !empty($isOssView) ? 'OSS' : 'ROFO', 'tab' => 'batches', 'search' => request('search'), 'user_id' => request('user_id')])) }}"
+                   class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'batches' ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100' }}">
+                    <i data-lucide="layers" class="h-4 w-4"></i>
+                    Batches
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black {{ $tab === 'batches' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500' }}">{{ number_format($stats['batches']) }}</span>
+                </a>
+                @endif
             </div>
 
+            @if($tab === 'batches')
+            {{-- ── Batches ───────────────────────────────────────────────────────
+                 One row per subdivision batch, whole. The child count is the real
+                 one, and expanding fetches every child rather than showing whatever
+                 slice of them the main list's paging left on this page. --}}
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-wrap gap-3">
+                    <h3 class="font-bold text-slate-800 uppercase tracking-wider text-xs flex items-center gap-2">
+                        <i data-lucide="layers" class="h-4 w-4 text-violet-600"></i>
+                        Subdivision Batches
+                        <span class="text-slate-400 normal-case tracking-normal font-medium">· {{ number_format($batches->total()) }} batch(es)</span>
+                    </h3>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse min-w-[980px]">
+                        <thead>
+                            <tr class="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                <th class="px-4 py-4 text-center w-10"></th>
+                                <th class="px-4 py-4 text-center whitespace-nowrap">S/N</th>
+                                <th class="px-6 py-4 whitespace-nowrap">Mother File No</th>
+                                <th class="px-6 py-4 whitespace-nowrap">Batch Ref</th>
+                                <th class="px-6 py-4 text-center whitespace-nowrap">Children</th>
+                                <th class="px-6 py-4 text-center whitespace-nowrap">Approved</th>
+                                <th class="px-6 py-4 text-center whitespace-nowrap">RofO Generated</th>
+                                <th class="px-6 py-4 whitespace-nowrap">Created By</th>
+                                <th class="px-6 py-4 whitespace-nowrap">Date Created</th>
+                                <th class="px-6 py-4 text-right whitespace-nowrap">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 text-sm">
+                            @forelse($batches as $i => $b)
+                            @php
+                                $total     = (int) $b->total;
+                                $approved  = (int) $b->approved_count;
+                                $generated = (int) $b->generated_count;
+                                $pending   = $total - $approved;
+                                $creator   = $batchCreators[$b->created_by] ?? null;
+                            @endphp
+                            <tr class="batch-row hover:bg-violet-50/40 transition cursor-pointer" data-batch="{{ $b->rofo_batch_id }}" aria-expanded="false">
+                                <td class="px-4 py-4 text-center">
+                                    <i data-lucide="chevron-right" class="batch-chevron h-4 w-4 text-violet-600 transition-transform"></i>
+                                </td>
+                                <td class="px-4 py-4 text-center text-slate-400 font-bold">{{ $batches->firstItem() + $i }}</td>
+                                <td class="px-6 py-4">
+                                    <span class="font-mono font-black text-slate-900">{{ $b->mother_file_no ?: $b->old_file_number }}</span>
+                                    <span class="block text-[10px] text-slate-400">{{ $b->application_type }}</span>
+                                </td>
+                                <td class="px-6 py-4 font-mono text-[11px] text-slate-500">{{ $b->rofo_batch_id }}</td>
+                                <td class="px-6 py-4 text-center">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-black bg-violet-600 text-white">{{ $total }}</span>
+                                </td>
+                                <td class="px-6 py-4 text-center">
+                                    @if($pending === 0)
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700">All {{ $total }}</span>
+                                    @else
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">{{ $approved }} of {{ $total }}</span>
+                                    @endif
+                                </td>
+                                <td class="px-6 py-4 text-center">
+                                    @if($generated >= $total)
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700">All {{ $total }}</span>
+                                    @elseif($generated > 0)
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">{{ $generated }} of {{ $total }}</span>
+                                    @else
+                                        <span class="text-[10px] font-bold text-slate-400">&mdash;</span>
+                                    @endif
+                                </td>
+                                <td class="px-6 py-4 text-slate-600 whitespace-nowrap">{{ $creator ? trim($creator->first_name . ' ' . $creator->last_name) : '—' }}</td>
+                                <td class="px-6 py-4 text-slate-500 whitespace-nowrap text-xs">{{ $b->created_at ? \Carbon\Carbon::parse($b->created_at)->format('d/m/Y H:i') : '—' }}</td>
+                                <td class="px-6 py-4 text-right whitespace-nowrap" onclick="event.stopPropagation()">
+                                    @if($pending > 0)
+                                        <button type="button" onclick='approveWholeBatch(@json($b->rofo_batch_id))'
+                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-[11px] font-bold rounded-lg hover:bg-green-700 transition">
+                                            <i data-lucide="check-circle" class="h-3.5 w-3.5"></i> Approve all ({{ $pending }})
+                                        </button>
+                                    @else
+                                        <a href="{{ route('land-recommendations.batch-print', $b->rofo_batch_id) }}" target="_blank"
+                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-[11px] font-bold rounded-lg hover:bg-violet-700 transition">
+                                            <i data-lucide="printer" class="h-3.5 w-3.5"></i> Print all ({{ $total }})
+                                        </a>
+                                    @endif
+                                </td>
+                            </tr>
+                            {{-- Filled on first expand from the batch-children endpoint. --}}
+                            <tr class="batch-children-row hidden" data-batch-children="{{ $b->rofo_batch_id }}">
+                                <td colspan="10" class="p-0 bg-violet-50/30"></td>
+                            </tr>
+                            @empty
+                            <tr>
+                                <td colspan="10" class="px-6 py-16 text-center text-slate-400">
+                                    <i data-lucide="layers" class="h-8 w-8 mx-auto mb-3 text-slate-300"></i>
+                                    No subdivision batches have been captured yet.
+                                </td>
+                            </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+                @if($batches->hasPages())
+                <div class="px-6 py-4 border-t border-slate-200">{{ $batches->links() }}</div>
+                @endif
+            </div>
+            @else
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-wrap gap-3">
                     <h3 class="font-bold text-slate-800 uppercase tracking-wider text-xs flex items-center gap-2">
@@ -181,8 +296,15 @@
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 text-sm">
+                            {{-- Batches are not shown here: they live on the Batches tab, whole,
+                                 where a 100-child batch is one row that expands to all 100 rather
+                                 than to whichever 20 this page happened to hold. Batched records
+                                 are filtered out of this list entirely — except under a search,
+                                 which must still be able to find any file number. --}}
                             @forelse($recommendations as $rec)
-                            <tr class="hover:bg-slate-50/50 transition row-item" data-id="{{ $rec->id }}" data-status="{{ $rec->status }}">
+
+                            <tr class="hover:bg-slate-50/50 transition row-item"
+                                data-id="{{ $rec->id }}" data-status="{{ $rec->status }}">
                                 @if(empty($isOssView))
                                 <td class="px-4 py-2 text-center whitespace-nowrap">
                                     @if($rec->status === \App\Models\LandRecommendation::STATUS_PENDING)
@@ -215,7 +337,7 @@
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->layout_plan_no }}</td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->term }}</td>
                                 <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">₦{{ number_format($rec->ground_rent, 2) }}</td>
-                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->development_period }}</td>
+                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->development_period_label }}</td>
                                 <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">₦{{ number_format($rec->preparation_fees, 2) }}</td>
                                 <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">₦{{ number_format($rec->development_value, 2) }}</td>
                                 {{-- <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">{{$rec->development_charge}}</td> --}}
@@ -395,12 +517,185 @@
                 </div>
                 @endif
             </div>
+            @endif
         </div>
     </div>
     @include('admin.footer')
 </div>
 
 @push('scripts')
+<script>
+    // ── Batches tab ────────────────────────────────────────────────────────
+    // One row per batch. Expanding fetches EVERY child from the server rather
+    // than revealing the rows that happen to share this page — which is the whole
+    // reason this tab exists, since on the main list a 100-child batch expands to
+    // show only the 20 the pagination left behind.
+    var CHILDREN_URL = @json(url('land-recommendations/batch'));
+
+    function statusPill(value, okValue, okLabel, pendingLabel) {
+        var ok = String(value || '').toLowerCase() === okValue;
+        return '<span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold '
+            + (ok ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700') + '">'
+            + (ok ? okLabel : pendingLabel) + '</span>';
+    }
+
+    function escHtml(v) {
+        return String(v == null ? '' : v)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    document.addEventListener('click', function (e) {
+        var row = e.target.closest('tr.batch-row');
+        if (!row) return;
+
+        var batch    = row.getAttribute('data-batch');
+        var expanded = row.getAttribute('aria-expanded') === 'true';
+        var holder   = document.querySelector('tr[data-batch-children="' + batch + '"]');
+        if (!holder) return;
+
+        row.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+        var chevron = row.querySelector('.batch-chevron');
+        if (chevron) chevron.style.transform = expanded ? '' : 'rotate(90deg)';
+
+        if (expanded) { holder.classList.add('hidden'); return; }
+        holder.classList.remove('hidden');
+
+        // Fetched once and kept — a batch does not change while the page is open.
+        if (holder.dataset.loaded === '1') return;
+
+        var cell = holder.querySelector('td');
+        cell.innerHTML = '<div class="px-8 py-6 text-xs text-slate-500">Loading all children…</div>';
+
+        fetch(CHILDREN_URL + '/' + encodeURIComponent(batch) + '/children', {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.success) throw new Error(data.message || 'Could not load the batch.');
+                holder.dataset.loaded = '1';
+
+                var rows = data.children.map(function (c) {
+                    return '<tr class="border-b border-violet-100/70 hover:bg-white/70">'
+                        + '<td class="px-4 py-2.5 text-center text-[11px] font-bold text-slate-400">' + c.seq + '</td>'
+                        + '<td class="px-4 py-2.5 font-mono text-xs font-bold text-slate-900">' + escHtml(c.file_number) + '</td>'
+                        + '<td class="px-4 py-2.5 text-xs text-slate-700">' + escHtml(c.applicant_name) + '</td>'
+                        + '<td class="px-4 py-2.5 text-xs text-slate-600">' + escHtml(c.plot_number) + '</td>'
+                        + '<td class="px-4 py-2.5 text-xs text-slate-600">' + escHtml(c.location) + '</td>'
+                        + '<td class="px-4 py-2.5 text-xs text-slate-600">' + escHtml(c.purpose) + '</td>'
+                        + '<td class="px-4 py-2.5 text-center">' + statusPill(c.status, 'approved', 'Approved', 'Pending') + '</td>'
+                        + '<td class="px-4 py-2.5 text-center">' + statusPill(c.rofo_status, 'generated', 'Generated', 'Pending') + '</td>'
+                        + '<td class="px-4 py-2.5 text-right whitespace-nowrap">'
+                        +   '<a href="' + c.edit_url + '" class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-blue-700 hover:bg-blue-50 rounded">Edit</a>'
+                        +   '<a href="' + c.print_url + '" target="_blank" class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-50 rounded">Print</a>'
+                        + '</td>'
+                        + '</tr>';
+                }).join('');
+
+                cell.innerHTML =
+                    '<div class="px-6 py-4">'
+                    + '<p class="text-[10px] font-black uppercase tracking-widest text-violet-700 mb-2">'
+                    +   'All ' + data.count + ' children of this batch</p>'
+                    + '<div class="overflow-x-auto rounded-lg border border-violet-200 bg-white">'
+                    + '<table class="w-full text-left border-collapse min-w-[880px]">'
+                    + '<thead><tr class="bg-violet-50 text-[10px] font-black text-violet-800 uppercase tracking-widest">'
+                    +   '<th class="px-4 py-2.5 text-center w-10">#</th>'
+                    +   '<th class="px-4 py-2.5">File Number</th>'
+                    +   '<th class="px-4 py-2.5">Applicant</th>'
+                    +   '<th class="px-4 py-2.5">Plot No</th>'
+                    +   '<th class="px-4 py-2.5">Location</th>'
+                    +   '<th class="px-4 py-2.5">Purpose</th>'
+                    +   '<th class="px-4 py-2.5 text-center">Status</th>'
+                    +   '<th class="px-4 py-2.5 text-center">RofO</th>'
+                    +   '<th class="px-4 py-2.5 text-right">Actions</th>'
+                    + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+            })
+            .catch(function (err) {
+                cell.innerHTML = '<div class="px-8 py-6 text-xs text-rose-700">'
+                    + escHtml(err.message || 'Network error loading the batch.') + '</div>';
+            });
+    });
+
+    // Approve every pending child of a batch straight from the Batches tab. The ids
+    // are not on the page here (the tab lists batches, not rows), so they are
+    // fetched first — the same endpoint the main list's batch row uses.
+    function approveWholeBatch(batchId) {
+        fetch(CHILDREN_URL + '/' + encodeURIComponent(batchId) + '/children', {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.success) throw new Error(data.message || 'Could not load the batch.');
+                var ids = data.children
+                    .filter(function (c) { return String(c.status).toLowerCase() !== 'approved'; })
+                    .map(function (c) { return c.id; });
+                if (!ids.length) {
+                    Swal.fire({ icon: 'info', title: 'Nothing to approve', text: 'Every recommendation in this batch is already approved.' });
+                    return;
+                }
+                approveBatch(batchId, ids);
+            })
+            .catch(function (err) {
+                Swal.fire({ icon: 'error', title: 'Error', text: err.message || 'Network error.' });
+            });
+    }
+
+    // Approve every still-pending child of a batch in one call. Reuses the same
+    // endpoint the row checkboxes use, so approval behaves identically either way.
+    function approveBatch(batchId, ids) {
+        if (!ids || !ids.length) return;
+
+        Swal.fire({
+            icon: 'question',
+            title: 'Approve the whole batch?',
+            text: ids.length + ' pending recommendation(s) in ' + batchId + ' will be approved.',
+            showCancelButton: true,
+            confirmButtonText: 'Approve all',
+            confirmButtonColor: '#059669',
+            cancelButtonText: 'Cancel',
+        }).then(function (r) {
+            if (!r.isConfirmed) return;
+
+            fetch('{{ route('land-recommendations.batch-approve') }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({ ids: ids }),
+            })
+            .then(function (res) { return res.json(); })
+            .then(function (data) {
+                if (!data.success) throw new Error(data.message || 'Approval failed.');
+                Swal.fire({
+                    icon: 'success', title: 'Batch approved',
+                    text: data.approved + ' recommendation(s) approved.',
+                    timer: 1800, showConfirmButton: false,
+                }).then(function () { window.location.reload(); });
+            })
+            .catch(function (err) {
+                Swal.fire({ icon: 'error', title: 'Error', text: err.message || 'Network error approving the batch.' });
+            });
+        });
+    }
+
+    // One document containing every child's recommendation letter. The server
+    // refuses a batch with pending rows, so say so here rather than opening a
+    // window onto a 403.
+    function printBatch(batchId, allApproved) {
+        if (!allApproved) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Approve the batch first',
+                text: 'Every recommendation in the batch must be approved before it can be printed.',
+            });
+            return;
+        }
+        window.open('{{ url('land-recommendations/batch') }}/' + encodeURIComponent(batchId) + '/print', '_blank');
+    }
+</script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         @if(session('success'))

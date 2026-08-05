@@ -380,6 +380,7 @@ class CoroiController extends Controller
             $stmt = DB::connection('sqlsrv')->getPdo()->prepare("
                 SELECT TOP 1
                     grantee as Applicant_Name,
+                    grantee as Grantee,
                     instrument_type,
                     serial_no,
                     volume_no,
@@ -406,6 +407,7 @@ class CoroiController extends Controller
             $stmt = DB::connection('sqlsrv')->getPdo()->prepare("
                 SELECT TOP 1
                     Grantor as Applicant_Name,
+                    Grantee,
                     instrument_type,
                     volume_no,
                     page_no,
@@ -461,6 +463,7 @@ class CoroiController extends Controller
             $stmt = DB::connection('sqlsrv')->getPdo()->prepare("
                 SELECT TOP 1
                     Grantor as Applicant_Name,
+                    Grantee,
                     instrument_type,
                     volume_no,
                     page_no,
@@ -476,7 +479,7 @@ class CoroiController extends Controller
                     status,
                     created_at
                 FROM registered_instruments
-                WHERE MLSFileNo = ? 
+                WHERE MLSFileNo = ?
                    OR KAGISFileNO = ? 
                    OR NewKANGISFileNo = ? 
                    OR StFileNo = ?
@@ -493,6 +496,7 @@ class CoroiController extends Controller
                 $stmt = DB::connection('sqlsrv')->getPdo()->prepare("
                     SELECT TOP 1
                         Grantor as Applicant_Name,
+                        Grantee,
                         instrument_type,
                         volume_no,
                         page_no,
@@ -508,7 +512,7 @@ class CoroiController extends Controller
                         status,
                         created_at
                     FROM registered_instruments
-                    WHERE MLSFileNo LIKE ? 
+                    WHERE MLSFileNo LIKE ?
                        OR KAGISFileNO LIKE ? 
                        OR NewKANGISFileNo LIKE ? 
                        OR StFileNo LIKE ?
@@ -751,12 +755,13 @@ class CoroiController extends Controller
                             ->orWhere('temp_fileno', $fileno);
                     })
                     ->orderBy('created_at', 'desc')
-                    ->select('party_1_name', 'party_1_address', 'party_2_address', 'solicitor_name', 'solicitor_address')
+                    ->select('party_1_name', 'party_1_address', 'party_2_name', 'party_2_address', 'solicitor_name', 'solicitor_address')
                     ->first();
 
                 if ($capture) {
                     $data->party_1_name = $capture->party_1_name;
                     $data->party_1_address = $capture->party_1_address;
+                    $data->party_2_name = $capture->party_2_name;
                     $data->party_2_address = $capture->party_2_address;
                     $data->solicitor_name = $capture->solicitor_name;
                     $data->solicitor_address = $capture->solicitor_address;
@@ -770,12 +775,13 @@ class CoroiController extends Controller
                                 ->orWhere('temp_fileno', 'LIKE', '%' . $fileno . '%');
                         })
                         ->orderBy('created_at', 'desc')
-                        ->select('party_1_name', 'party_1_address', 'party_2_address', 'solicitor_name', 'solicitor_address')
+                        ->select('party_1_name', 'party_1_address', 'party_2_name', 'party_2_address', 'solicitor_name', 'solicitor_address')
                         ->first();
 
                     if ($capture) {
                         $data->party_1_name = $capture->party_1_name;
                         $data->party_1_address = $capture->party_1_address;
+                        $data->party_2_name = $capture->party_2_name;
                         $data->party_2_address = $capture->party_2_address;
                         $data->solicitor_name = $capture->solicitor_name;
                         $data->solicitor_address = $capture->solicitor_address;

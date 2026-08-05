@@ -337,6 +337,13 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         form.addEventListener('submit', function (e) {
+            // A Plot Subdivision batch has no single file number, land use or
+            // applicant — each child row carries its own, and the batch endpoint
+            // runs the duplicate guard per child. Every check below is a
+            // single-record concern, so stand the whole guard down.
+            // The class is set by the batch module in land_recommendations/form.blade.php.
+            if (form.classList.contains('batch-mode')) return;
+
             if (!fileNoInput.value) {
                 e.preventDefault();
                 Swal.fire({ icon: 'warning', title: 'File Number Required', text: 'Please select a file number before saving.' });
@@ -566,3 +573,4 @@ document.addEventListener('DOMContentLoaded', function () {
         window.lucide.createIcons();
     }
 });
+

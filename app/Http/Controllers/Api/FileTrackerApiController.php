@@ -1543,7 +1543,11 @@ class FileTrackerApiController extends Controller
                 ? []
                 : $this->getPriorMovements($tracker);
             $commissioning = $commissioningService->infoFor($tracker->file_number);
-            if ($commissioning !== null && !$tracker->getAttribute('is_diit')) {
+            // Skipped when the line is already a real logged movement — a file
+            // commissioned with a next destination stores it (startTracking()).
+            if ($commissioning !== null
+                && !$tracker->getAttribute('is_diit')
+                && !$commissioningService->logHasCommissioningLine($priorMovements, $movementLog)) {
                 array_unshift($priorMovements, $commissioningService->movementEntry(
                     $commissioning,
                     $this->firstMovementMoment($priorMovements, $movementLog)

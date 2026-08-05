@@ -109,8 +109,10 @@
                                     </select>
                                 </div>
 
-                                {{-- Title Status (optional) — mirrors the standalone Title Status module --}}
-                                <div class="form-group mt-6">
+                                {{-- Title Status (optional) — mirrors the standalone Title Status module.
+                                     Hidden entirely for SLTR / KANGIS / DCIV registries (see
+                                     handleRegistryFieldToggling in create-indexing-dialog.js). --}}
+                                <div class="form-group mt-6" id="ts-title-status-block">
 
                                     <label class="block text-sm font-medium text-gray-700 mb-2">Title Status <span class="text-red-500">*</span></label>
                                     @php
@@ -1294,6 +1296,19 @@
                 seeHidden.value = '';
                 seeDisplay.value = '';
             });
+
+            // Called by handleRegistryFieldToggling() when the chosen registry (SLTR /
+            // KANGIS / DCIV) hides both Title Status cards — drop any selection so a
+            // stale status isn't submitted with the hidden fields.
+            window.tsClearSelections = function () {
+                typeCbs().forEach(cb => { cb.checked = false; });
+                setExtensionKind('');
+                if (reasonEl)   reasonEl.value = '';
+                if (remarkEl)   remarkEl.value = '';
+                if (seeHidden)  seeHidden.value = '';
+                if (seeDisplay) seeDisplay.value = '';
+                toggleStatusFields();
+            };
 
             // Called by create-indexing-dialog.js after a file index is created/updated.
             window.tsAfterFileIndexCreated = function (data, formData) {

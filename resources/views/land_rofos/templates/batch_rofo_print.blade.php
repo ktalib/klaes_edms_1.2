@@ -185,12 +185,14 @@
 
                     // Applications derived from an existing file (Plot Subdivision / Plot
                     // Merger / Change of Purpose) cite the parent file number in place of
-                    // the plan number, so the PLOT/PLAN No. box drops the plan part and
-                    // shows only the plot no (blank when there isn't one).
+                    // the plan number on the "as per plan No." line.
                     $oldFileNumber = trim((string) ($recommendation->old_file_number ?? ''));
                     $layoutPlanNo  = trim((string) ($recommendation->layout_plan_no ?? ''));
                     $planNoRef     = $oldFileNumber !== '' ? $oldFileNumber : $layoutPlanNo;
-                    $plotPlanNo    = $oldFileNumber !== '' ? $plotNo : $plotNo . ' / ' . $layoutPlanNo;
+
+                    // PLOT/PLAN No. always prints whatever is on the record: both parts when
+                    // present, otherwise whichever one exists (blank when neither does).
+                    $plotPlanNo = implode(' / ', array_filter([$plotNo, $layoutPlanNo], fn ($v) => $v !== ''));
                 @endphp
                 <div>
                     <div class="bordered-section">

@@ -39,8 +39,17 @@
 
             <div class="flex items-center gap-2.5">
                 <div class="dropdown-combo">
-                    <select id="prs_year" disabled title="Only {{ $year }} is available">
-                        <option>{{ $year }}</option>
+                    {{-- Years come from the data, not a hardcoded list: only years that
+                         actually carry activity are offered. --}}
+                    <select id="prs_year"
+                            onchange="window.location = '{{ route('prs-report.index', ['dept' => $department]) }}&year=' + this.value"
+                            @disabled(count($years ?? []) < 2)
+                            title="{{ count($years ?? []) < 2 ? 'Only ' . $year . ' has data' : 'Reporting year' }}">
+                        @forelse($years ?? [] as $y)
+                            <option value="{{ $y }}" @selected($y == $year)>{{ $y }}</option>
+                        @empty
+                            <option>{{ $year }}</option>
+                        @endforelse
                     </select>
                     <i data-lucide="chevron-down" class="w-4 h-4 dropdown-combo-icon"></i>
                 </div>
@@ -157,4 +166,24 @@
 
 @push('scripts')
 <script src="{{ asset('js/prs/annual-report.js') }}"></script>
+
+@if(request()->query('sec'))
+<script>
+    // ?sec= comes from the PRS sidebar, which deep-links to a section rather than
+    // sending every entry to the top of the same page.
+    document.addEventListener('DOMContentLoaded', function () {
+        var target = document.getElementById('section-{{ request()->query('sec') }}');
+
+        if (!target) {
+            return;
+        }
+
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        target.classList.add('ring-2', 'ring-indigo-400', 'ring-offset-2');
+        setTimeout(function () {
+            target.classList.remove('ring-2', 'ring-indigo-400', 'ring-offset-2');
+        }, 2200);
+    });
+</script>
+@endif
 @endpush

@@ -182,6 +182,7 @@
                         </div>
 
                         <div class="mt-4 overflow-hidden rounded-3xl border border-slate-100">
+                            @include('components.gender-legend')
                             <div class="overflow-x-auto">
                                 <table class="w-full text-sm" id="indexed-files-table">
                                     <thead class="bg-gray-100 border-b border-gray-200 sticky top-0">
@@ -311,6 +312,7 @@
                         </div>
 
                         <div class="mt-4 overflow-hidden rounded-3xl border border-slate-100">
+                            @include('components.gender-legend')
                             <div class="overflow-x-auto">
                                 <table class="w-full text-sm" id="view-indexing-table">
                                     <thead class="bg-gray-100 border-b border-gray-200 sticky top-0">
@@ -942,5 +944,5 @@
 
 
     <script type="module" src="{{ asset('js/indexed-files/index.js') }}?v={{ filemtime(public_path('js/indexed-files/index.js')) }}"></script>
-    <script type="module" src="{{ asset('js/indexed-files/view-indexing.js') }}"></script>
+    <script type="module" src="{{ asset('js/indexed-files/view-indexing.js') }}?v={{ filemtime(public_path('js/indexed-files/view-indexing.js')) }}"></script>
 @endsection

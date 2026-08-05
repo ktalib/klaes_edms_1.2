@@ -401,7 +401,7 @@
 
   <div class="field-row">value for proposed development N: <span class="field" style="width:430px;">{{ number_format($recommendation->development_value, 2) }}</span></div>
 
-  <div class="field-row">Time for completion of proposed development: <span class="field" style="width:360px;">{{ $recommendation->development_period }}</span></div>
+  <div class="field-row">Time for completion of proposed development: <span class="field" style="width:360px;">{{ $recommendation->development_period_label }}</span></div>
 
   <div class="field-row">Annual Ground Rent: <span class="field" style="width:450px;">{{ number_format($recommendation->ground_rent, 2) }}</span></div>
 

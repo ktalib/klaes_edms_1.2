@@ -48,6 +48,8 @@ class RegrantController extends Controller
             $records = $this->registerQuery($search)
                 ->paginate($limit)
                 ->appends($request->query());
+
+            $this->attachRelatedFileNo($records);
         }
 
         return view('regrant.index', [
@@ -83,24 +85,87 @@ class RegrantController extends Controller
             ->orderByDesc('created_at');
     }
 
+    /**
+     * Fill in the "Re-granted from" file for records that were captured without one.
+     *
+     * 35 of the 71 records on file carry no `see_fileno` because the File Indexing dialog
+     * leaves the "See" picker optional. The file's own indexing row usually knows the answer
+     * in `related_fileno`, so fall back to that. Two deliberate limits:
+     *
+     *   - Land files only (`general_registry = 'Lands Registry'`). Other registries link
+     *     files for reasons unrelated to a re-grant, so their related file is not evidence.
+     *   - Exactly one related file. `related_fileno` is a JSON array and 10 of these records
+     *     list two or more; with several candidates there is no basis to pick one, so they
+     *     stay unlinked rather than being given a guess.
+     *
+     * The resolved value is exposed as `derived_see_fileno` and never written back — this is
+     * a display aid, not a correction of the stored record.
+     */
+    private function attachRelatedFileNo($records): void
+    {
+        $needing = collect($records->items())
+            ->filter(fn ($r) => trim((string) $r->see_fileno) === '')
+            ->pluck('file_no')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $records->each(fn ($r) => $r->derived_see_fileno = null);
+
+        if ($needing->isEmpty()) {
+            return;
+        }
+
+        $indexed = DB::connection('sqlsrv')->table('file_indexings')
+            ->whereIn('file_number', $needing->all())
+            ->where('general_registry', 'Lands Registry')
+            ->get(['file_number', 'related_fileno'])
+            ->keyBy('file_number');
+
+        foreach ($records as $record) {
+            if (trim((string) $record->see_fileno) !== '') {
+                continue;
+            }
+
+            $row = $indexed->get($record->file_no);
+            if (!$row) {
+                continue;
+            }
+
+            $related = json_decode((string) $row->related_fileno, true);
+            if (!is_array($related)) {
+                continue;
+            }
+
+            $related = array_values(array_filter(
+                array_map('trim', $related),
+                fn ($value) => $value !== '' && $value !== $record->file_no
+            ));
+
+            if (count($related) === 1) {
+                $record->derived_see_fileno = $related[0];
+            }
+        }
+    }
+
     /** Counters for the page header. */
     private function stats(): array
     {
-        $register = TitleStatusApplication::query()
+        $registerTotal = TitleStatusApplication::query()
             ->where('title_type', TitleStatusApplication::TYPE_REGRANT)
             ->where(function ($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
-            });
+            })
+            ->count();
 
+        // cofo/rofo feed the Instrument filter's option labels, not a card.
         $due = $this->termService->dueCounts();
 
         return [
-            'register_total' => (clone $register)->count(),
-            'register_pending' => (clone $register)->where('status', TitleStatusApplication::STATUS_PENDING)->count(),
-            'register_approved' => (clone $register)->where('status', TitleStatusApplication::STATUS_APPROVED)->count(),
-            'due_total' => $due['total'],
-            'due_cofo'  => $due['cofo'],
-            'due_rofo'  => $due['rofo'],
+            'register_total' => $registerTotal,
+            'due_total'      => $due['total'],
+            'due_cofo'       => $due['cofo'],
+            'due_rofo'       => $due['rofo'],
         ];
     }
 

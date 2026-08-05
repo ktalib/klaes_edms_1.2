@@ -57,6 +57,7 @@ today, the chart that accompanies it, and the KLAES data source that should feed
 | [11-implementation-plan.md](11-implementation-plan.md) | Proposed KLAES module: routes, services, queries, charts, phasing |
 | [18-reporting-stack.md](18-reporting-stack.md) | Tooling: Chart.js / dompdf / maatwebsite / PhpWord — all already installed, no new packages |
 | [19-ui-caveat-log.md](19-ui-caveat-log.md) | **The caveats the UI no longer shows.** Per-section quality ratings and warnings, moved out of the screen — read before quoting any figure off the report page |
+| [20-live-data-implementation.md](20-live-data-implementation.md) | **Gap audit against the live database.** What KLAES can actually answer today, measured — the gender gap, the missing reporting year, and three corrections to [11](11-implementation-plan.md) |
 
 ## Report structure (as delivered)
 

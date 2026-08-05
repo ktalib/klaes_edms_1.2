@@ -6,6 +6,17 @@
 @section('content')
     @php
         $landOfficerSignature = optional(\App\Models\LandOfficer::where('user_id', auth()->id())->first())->signature_file;
+
+        // Uploads are stored on the "public" disk, which is exposed through the public/storage symlink.
+        // Legacy rows still hold values like "avatar.png" with no file behind them, so fall back to the icon.
+        $profilePath = auth()->user()->profile;
+        $profileImageUrl = $profilePath && \Illuminate\Support\Facades\Storage::disk('public')->exists($profilePath)
+            ? \Illuminate\Support\Facades\Storage::url($profilePath)
+            : null;
+
+        $signatureUrl = $landOfficerSignature && \Illuminate\Support\Facades\Storage::disk('public')->exists($landOfficerSignature)
+            ? \Illuminate\Support\Facades\Storage::url($landOfficerSignature)
+            : null;
     @endphp
   <div class="flex-1 overflow-auto">
         <!-- Header -->
@@ -27,8 +38,8 @@
                 <!-- Profile Image Section -->
                 <div class="flex flex-col items-center">
                     <div class="w-48 h-48 rounded-full overflow-hidden border-4 border-blue-100 shadow-md mb-4">
-                        @if(auth()->user()->profile)
-                            <img src="{{ asset('storage/app/public/'.auth()->user()->profile) }}" alt="Profile" class="w-full h-full object-cover">
+                        @if($profileImageUrl)
+                            <img src="{{ $profileImageUrl }}" alt="Profile" class="w-full h-full object-cover">
                         @else
                             <div class="w-full h-full flex items-center justify-center bg-blue-50 text-blue-500">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-24 w-24" viewBox="0 0 20 20" fill="currentColor">
@@ -38,10 +49,10 @@
                         @endif
                     </div>
                     <h2 class="text-xl font-bold text-gray-800">{{ auth()->user()->name }}</h2>
-                    @if($landOfficerSignature)
+                    @if($signatureUrl)
                         <div class="mt-4 text-center">
                             <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Lands 12 Signature</p>
-                            <img src="{{ \Illuminate\Support\Facades\Storage::url($landOfficerSignature) }}" alt="Signature"
+                            <img src="{{ $signatureUrl }}" alt="Signature"
                                 class="h-12 object-contain mx-auto border border-gray-200 rounded-md bg-white px-2 py-1">
                         </div>
                     @endif
@@ -156,8 +167,8 @@
                     <div class="text-center">
                         <div class="mx-auto w-32 h-32 mb-4 rounded-full overflow-hidden border-4 border-blue-100 shadow-md relative group">
                             <div id="profilePreview" class="w-full h-full bg-blue-50 flex items-center justify-center">
-                                @if(auth()->user()->profile)
-                                    <img src="{{ asset('storage/app/public/'.auth()->user()->profile) }}" alt="Profile" class="w-full h-full object-cover">
+                                @if($profileImageUrl)
+                                    <img src="{{ $profileImageUrl }}" alt="Profile" class="w-full h-full object-cover">
                                 @else
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
                                         <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
@@ -190,11 +201,11 @@
                         </label>
                         <p class="text-[11px] text-gray-500 mt-2">Used for Lands 12 after successful verification.</p>
 
-                        <div id="signaturePreviewWrap" class="mt-3 {{ $landOfficerSignature ? '' : 'hidden' }}">
+                        <div id="signaturePreviewWrap" class="mt-3 {{ $signatureUrl ? '' : 'hidden' }}">
                             <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Signature Preview</p>
                             <div class="border border-gray-200 rounded-md bg-white p-2">
                                 <img id="signaturePreview"
-                                    src="{{ $landOfficerSignature ? \Illuminate\Support\Facades\Storage::url($landOfficerSignature) : '' }}"
+                                    src="{{ $signatureUrl ?: '' }}"
                                     alt="Signature Preview"
                                     class="h-12 object-contain mx-auto">
                             </div>

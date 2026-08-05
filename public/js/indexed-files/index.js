@@ -1,3 +1,5 @@
+import { genderAttr, genderRowClass } from './gender.js';
+
 const config = window.indexedFilesConfig || {};
 const totalCols = (() => {
   const table = document.getElementById('indexed-files-table');
@@ -107,6 +109,9 @@ function renderRows(rows) {
     const fileNumberBadge = buildFileNumberBadge(row.file_number, row.is_temp_fallback, row.kangis_fileno_placeholder);
     const landUseBadge = buildLandUseBadge(row.land_use_type);
     const lgaValue = row.lga == null ? '' : String(row.lga).toUpperCase();
+    // Row tint by gender — see the legend partial for the key.
+    const genderClass = genderRowClass(row.gender);
+    const genderData = `data-gender="${escapeHtml(genderAttr(row.gender))}"`;
     rowCache.set(String(row.id), row);
 
     // Cadastral: render cells driven by config.columns order
@@ -166,7 +171,7 @@ function renderRows(rows) {
           }
         })
         .join('');
-      return `<tr class="hover:bg-gray-50" data-row-id="${row.id}">${rowCells}${config.hideActions ? '' : `<td class="p-3 whitespace-nowrap text-center">${buildActionsMenu(row, viewUrl)}</td>`}</tr>`;
+      return `<tr class="hover:bg-gray-50 ${genderClass}" ${genderData} data-row-id="${row.id}">${rowCells}${config.hideActions ? '' : `<td class="p-3 whitespace-nowrap text-center">${buildActionsMenu(row, viewUrl)}</td>`}</tr>`;
     }
 
     const rowCells = isKangisVariant
@@ -318,7 +323,7 @@ function renderRows(rows) {
       `;
 
     return `
-      <tr class="hover:bg-gray-50" data-row-id="${row.id}">
+      <tr class="hover:bg-gray-50 ${genderClass}" ${genderData} data-row-id="${row.id}">
         ${rowCells}
         ${config.hideActions ? '' : `<td class="p-3 whitespace-nowrap text-center">${buildActionsMenu(row, viewUrl)}</td>`}
       </tr>
@@ -424,10 +429,7 @@ function buildLandUseBadge(landUse) {
     'RES': 'RESIDENTIAL',
     'IND': 'INDUSTRIAL',
     'MIX': 'MIXED USE',
-    'PUB': 'PUBLIC',
-    'AGR': 'AGRICULTURAL',
-    'EDU': 'EDUCATIONAL',
-    'REL': 'RELIGIOUS'
+    'AGR': 'AGRICULTURAL'
   };
 
   const displayLabel = normMap[raw] || raw;
@@ -2345,6 +2347,16 @@ async function handleMoveToIndexingDuplicates(button) {
        </p>`
     : '';
 
+  // PRA / CofO rows move with the record, so this one is a stop-and-think.
+  const deletedTransactionTotal = Number(preview.deleted_transaction_total || 0);
+  const deletedTransactionWarning = deletedTransactionTotal > 0
+    ? `<p class="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded p-2 mt-3 text-left">
+         <strong>${deletedTransactionTotal.toLocaleString()}</strong> property/CofO record(s) will be
+         <strong>deleted</strong> along with this file (archived in the snapshot).
+         Make sure this is the duplicate and not the original.
+       </p>`
+    : '';
+
   // The file this one duplicates, stored on the archive record so the indexing
   // duplicates page can say what it was a duplicate of.
   let duplicateOf = '';
@@ -2369,6 +2381,7 @@ async function handleMoveToIndexingDuplicates(button) {
           </p>
           ${renderMovePreviewTable('Will be deleted from', deletions, 'delete')}
           ${renderMovePreviewTable('Kept — still references this file', retained, 'keep')}
+          ${deletedTransactionWarning}
           ${transactionWarning}
           <div class="mt-4 text-left">
             <p class="text-[11px] font-bold uppercase tracking-wider text-slate-600">Duplicate of</p>

@@ -461,6 +461,33 @@ class LegalSearchController extends Controller
     }
 
 
+    /**
+     * "Add Record -> Existing": list the records captured against the searched file
+     * number in one source table, so the operator can attach the ones that are not
+     * yet part of this property's Timeline.
+     */
+    public function existingRecords(Request $request)
+    {
+        $request->validate([
+            'file_number' => 'required|string|max:255',
+            'source' => 'required|string|in:pra,file_history_staging,CofO_staging,deed_registrations',
+        ]);
+
+        try {
+            $records = $this->searchService->findRecordsForFileNumber(
+                $request->input('file_number'),
+                $request->input('source')
+            );
+
+            return response()->json([
+                'success' => true,
+                'records' => $records,
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+    }
+
     // ================================================================
     // Cleanup Mode endpoints
     // ================================================================

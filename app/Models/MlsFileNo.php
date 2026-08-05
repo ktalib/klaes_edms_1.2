@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Services\GenderNormalizer;
 
 class MlsFileNo extends Model
 {
@@ -23,6 +24,7 @@ class MlsFileNo extends Model
         'tracking_id',
         'customer_type',
         'gender',
+        'gender_source',
         'file_option',
         'batch_no',
         'created_by',
@@ -38,6 +40,32 @@ class MlsFileNo extends Model
         // Old (duplicated) file number kept when a file number is re-issued.
         'old_fileno'
     ];
+
+    protected static function booted()
+    {
+        // Commissioning requires gender on the form, but batch and service paths
+        // do not go through it. Same fallback as FileIndexing: infer from the
+        // holder name at creation, and always record the provenance.
+        static::creating(function (MlsFileNo $model) {
+            if ($model->gender !== null) {
+                $model->gender_source = $model->gender_source ?: GenderNormalizer::SOURCE_CAPTURED;
+
+                return;
+            }
+
+            $inferred = app(GenderNormalizer::class)->classify($model->file_name);
+
+            if ($inferred !== null) {
+                [$model->gender, $model->gender_source] = $inferred;
+            }
+        });
+    }
+
+    /** Every write path folds onto the client's four values. See GenderNormalizer. */
+    public function setGenderAttribute($value): void
+    {
+        $this->attributes['gender'] = app(GenderNormalizer::class)->normalize($value);
+    }
 
     public function purpose()
     {

@@ -180,11 +180,16 @@ class FileNumberController extends Controller
 
             // ── Source WHERE fragment (no bindings needed — string literals only) ──
             if ($source === 'New') {
-                // Hide OP/TOT files commissioned from the OSS. Two markers are needed:
+                // Hide OP/TOT files commissioned from the OSS. Three markers are needed:
                 //   1. sub_source = 'OP Change of Name' — single OP commissions.
                 //   2. op_batch IS NOT NULL — OSS OP batch commissions. These carry
                 //      source = 'Direct Allocation' with a NULL sub_source, so marker 1
                 //      alone let them leak back into the land/MLS file list.
+                //   3. source IN ('OP Resettlement','OP Direct Allocation') — OP
+                //      commissions that carry neither of the first two markers. This is
+                //      the same OSS test the page's stat cards (index()) and the batch
+                //      commissioning sheet (MlsFileNoController::getBatchRecords) use;
+                //      without it the table listed rows the counters did not count.
                 $sourceWhere = "(
                                     (fn.SOURCE IN ('MLS_Commissioned','MLS_Commissioned_Batch') AND fn.type = 'MlsFileNO')
                                     OR EXISTS (
@@ -204,6 +209,7 @@ class FileNumberController extends Controller
                                       AND (
                                           ms.sub_source = 'OP Change of Name'
                                           OR (ms.op_batch IS NOT NULL AND LTRIM(RTRIM(ms.op_batch)) <> '')
+                                          OR ms.source IN ('OP Resettlement', 'OP Direct Allocation')
                                       )
                                 )";
             } elseif ($source === 'All') {
@@ -235,7 +241,9 @@ class FileNumberController extends Controller
 
             // ── Fast total count (cached 5 min) ──
             // Uses a single OUTER APPLY for batch_no only — no other lookups needed.
-            $recordsTotal = Cache::remember("file_numbers_total_v2_{$source}", 300, function () use ($sourceWhere) {
+            // v3: bumped when the OSS exclusion above gained its third marker, so the
+            // corrected total is not served from a stale v2 entry after deploy.
+            $recordsTotal = Cache::remember("file_numbers_total_v3_{$source}", 300, function () use ($sourceWhere) {
                 $row = DB::connection('sqlsrv')->selectOne(
                     "SELECT COUNT(DISTINCT COALESCE(NULLIF(mls.batch_no,''), CAST(fn.id AS VARCHAR(20)))) AS cnt
                      FROM fileNumber fn
@@ -2038,9 +2046,9 @@ class FileNumberController extends Controller
     private function forgetFileNumberCaches(): void
     {
         Cache::forget('mls_fileno_page_stats');
-        Cache::forget('file_numbers_total_v2_New');
-        Cache::forget('file_numbers_total_v2_All');
-        Cache::forget('file_numbers_total_v2_Captured');
+        Cache::forget('file_numbers_total_v3_New');
+        Cache::forget('file_numbers_total_v3_All');
+        Cache::forget('file_numbers_total_v3_Captured');
     }
 
     private function writeMasterDeleteAudit($id, array $result, bool $isBulk = false): void

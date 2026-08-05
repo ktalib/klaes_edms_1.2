@@ -81,6 +81,13 @@
                 </div>
             @endif
 
+            @if(session('warning'))
+                <div class="p-4 bg-amber-50 border-l-4 border-amber-500 rounded-xl text-amber-800 shadow-sm flex items-start gap-3">
+                    <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5"></i>
+                    <p class="font-semibold">{{ session('warning') }}</p>
+                </div>
+            @endif
+
             @if($errors->any())
                 <div class="p-4 bg-red-50 border-l-4 border-red-500 rounded-xl text-red-700 shadow-sm space-y-1">
                     <div class="flex items-center gap-3">

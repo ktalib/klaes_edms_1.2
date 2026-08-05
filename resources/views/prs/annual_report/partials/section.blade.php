@@ -133,10 +133,12 @@
             <div class="rounded-xl border border-slate-200 bg-slate-50/50 p-5">
                 <div class="secondary-insight-alert mb-4">
                     <div class="p-1 rounded bg-slate-200 shrink-0">
-                        <i data-lucide="zoom-in" class="w-4 h-4 text-slate-600"></i>
+                        <i data-lucide="{{ $sec['icon'] ?? ($sec['title'] ?? '') === 'Gender breakdown' ? 'users' : 'zoom-in' }}" class="w-4 h-4 text-slate-600"></i>
                     </div>
                     <div>
-                        <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Minor Categories Zoom</h4>
+                        {{-- Titled by the panel itself: this slot now carries the gender
+                             cut on every section, not only a minor-category zoom. --}}
+                        <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">{{ $sec['title'] ?? 'Minor Categories Zoom' }}</h4>
                         <p class="text-[11px] text-slate-500 font-medium leading-normal">{{ $sec['caption'] }}</p>
                     </div>
                 </div>
@@ -167,6 +169,29 @@
                 @include('prs.annual_report.partials.table', ['table' => $section['table']])
             </div>
         </div>
+
+        {{-- ── Gender table ────────────────────────────────────────────────── --}}
+        @if(!empty($section['table_secondary']))
+            <div>
+                <button type="button"
+                        class="js-toggle-table w-full flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-colors"
+                        data-target="table-{{ $section['key'] }}-gender"
+                        aria-expanded="true">
+                    <span class="inline-flex items-center gap-2 text-xs font-semibold text-slate-600">
+                        <i data-lucide="users" class="w-3.5 h-3.5"></i>
+                        {{ $section['table_secondary']['title'] ?? 'Gender breakdown' }}
+                        <span class="text-slate-400 font-normal">
+                            {{ count($section['table_secondary']['rows']) }} rows · same total as above
+                        </span>
+                    </span>
+                    <i data-lucide="chevron-up" class="w-4 h-4 text-slate-400 transition-transform js-chevron"></i>
+                </button>
+
+                <div id="table-{{ $section['key'] }}-gender" class="js-table-wrap mt-3">
+                    @include('prs.annual_report.partials.table', ['table' => $section['table_secondary']])
+                </div>
+            </div>
+        @endif
 
         {{-- Per-section notes & caveats previously rendered here.
              They now live in docs/prs-2025/19-ui-caveat-log.md. --}}

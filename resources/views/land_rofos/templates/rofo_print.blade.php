@@ -424,7 +424,14 @@
             text-transform: uppercase;
             letter-spacing: 0.2px;
             line-height: 20px;
-            color: #000;
+            /* Red so the supersession is unmissable on the issued letter. Matches the
+               document's existing red (.title-center, the ministry banner) rather than
+               the brighter #ff0000 of the ORIGINAL marker directly beneath it.
+               print-color-adjust keeps it red on paper — without it browsers drop
+               non-essential colour in print. */
+            color: #c90202;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
             text-align: center;
             white-space: nowrap;   /* must stay on one line */
             z-index: 2;
@@ -459,21 +466,38 @@
 
     @php
         // Re-issuance (?supersede=1): same letter, plus the superseding notice and
-        // the RE-ISSUANCE watermark — and it is issued as the ORIGINAL copy only,
-        // never the duplicate/triplicate set.
-        $isReissuance = request()->boolean('supersede');
+        // the RE-ISSUANCE watermark.
+        //   klaes  — the original set was already issued from KLAES, so the
+        //            re-issuance is the ORIGINAL copy only.
+        //   legacy — pre-KLAES original, so the full Original/Duplicate/Triplicate
+        //            set is issued as normal.
+        $isReissuance   = request()->boolean('supersede');
+        $reissueSource  = strtolower(trim((string) request('reissue_source', '')));
+        $originalOnly   = $isReissuance && $reissueSource !== 'legacy';
 
         $requestedStatus = request('status', 'Original');
-        $printVersions = $isReissuance
+        $printVersions = $originalOnly
             ? ['Original']
             : (($requestedStatus === 'Batch') ? ['Original', 'Duplicate', 'Triplicate'] : [$requestedStatus]);
 
-        // Date the superseded letter was issued. Passed in via ?superseded_date=...,
-        // else the record's own issue date — the same value DATE OF ISSUE prints,
-        // which is when the previous letter went out.
+        // Date the PREVIOUS letter was issued. Passed in via ?superseded_date=..., else:
+        //   legacy — a new record was created for the re-issuance, so its own
+        //            rofo_generated_at is today; the original date is the one keyed in
+        //            on the recommendation form (reissuance_original_date).
+        //   klaes  — re-issuing only flags the existing record, so rofo_generated_at
+        //            still holds the date the original letter was generated.
+        // created_at is never used: it is when the record was captured, which for a
+        // legacy re-issuance is today and would print "supersedes ... issued today".
+        // Legacy rows captured before that field existed have nothing better, so they
+        // fall through to rofo_generated_at/created_at — the notice always prints, but
+        // such a row shows the capture date until the original date is filled in.
         $supersedeOn = trim((string) ($supersededDate ?? ''));
         if ($isReissuance && $supersedeOn === '') {
-            $supersedeOn = optional($recommendation->rofo_generated_at ?? $recommendation->created_at)->format('jS F, Y');
+            $originalIssuedAt = ($reissueSource === 'legacy' ? $recommendation->reissuance_original_date : null)
+                ?? $recommendation->rofo_generated_at
+                ?? $recommendation->created_at;
+
+            $supersedeOn = optional($originalIssuedAt)->format('jS F, Y') ?? '';
         }
 
         $versionColors = [
@@ -531,8 +555,9 @@
                     @endif
                 </div>
 
-                @if($isReissuance)
-                    <!-- Superseding notice — replaces the handwritten line on the reissued letter. -->
+                {{-- Superseding notice — replaces the handwritten line on the reissued letter.
+                     Printed only with a real date; without one the sentence would end bare. --}}
+                @if($isReissuance && $supersedeOn !== '')
                     <div class="supersede-notice">
                         This letter of grant supersedes the previous one issued on {{ $supersedeOn }}
                     </div>
@@ -543,7 +568,14 @@
                     <div style="text-align: center;">
                         <img src="https://upload.wikimedia.org/wikipedia/commons/b/bc/Coat_of_arms_of_Nigeria.svg" alt="Nigeria Seal" style="width: 100px; height: auto; display: inline-block;" />
                     </div>
-                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={{ urlencode($recommendation->tracking_id) }}" alt="QR" style="position: absolute; left: 40px; top: 50%; transform: translateY(-50%); width: 55px; height: 55px;" />
+                    {{-- Not every recommendation has a tracking_id (a legacy re-issuance is
+                         captured straight onto the RofO table), and an empty ?data= makes the
+                         QR service return "malformed request" instead of an image — so fall
+                         back to the file number, as the batch template does. --}}
+                    @php $qrData = trim((string) ($recommendation->tracking_id ?: $recommendation->file_number)); @endphp
+                    @if($qrData !== '')
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={{ urlencode($qrData) }}" alt="QR" style="position: absolute; left: 40px; top: 50%; transform: translateY(-50%); width: 55px; height: 55px;" />
+                    @endif
                 </div>
                 <!-- Centered Blue Banner -->
                 <div style="text-align: center; margin-bottom: 8px;">
@@ -571,12 +603,14 @@
 
                     // Applications derived from an existing file (Plot Subdivision / Plot
                     // Merger / Change of Purpose) cite the parent file number in place of
-                    // the plan number, so the PLOT/PLAN No. box drops the plan part and
-                    // shows only the plot no (blank when there isn't one).
+                    // the plan number on the "as per plan No." line.
                     $oldFileNumber = trim((string) ($recommendation->old_file_number ?? ''));
                     $layoutPlanNo  = trim((string) ($recommendation->layout_plan_no ?? ''));
                     $planNoRef     = $oldFileNumber !== '' ? $oldFileNumber : $layoutPlanNo;
-                    $plotPlanNo    = $oldFileNumber !== '' ? $plotNo : $plotNo . ' / ' . $layoutPlanNo;
+
+                    // PLOT/PLAN No. always prints whatever is on the record: both parts when
+                    // present, otherwise whichever one exists (blank when neither does).
+                    $plotPlanNo = implode(' / ', array_filter([$plotNo, $layoutPlanNo], fn ($v) => $v !== ''));
                 @endphp
                 <!-- REF-GRID SECTION -->
                 <div class="ref-grid">

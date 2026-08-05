@@ -48,6 +48,15 @@
             /* Prevent spillover */
             margin-bottom: 20px;
             page-break-after: always;
+            /* Column flow so the footer logo can be pinned to the bottom of the
+               content box without leaving the flow (see .footer-logo). */
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Flex items default to shrinking; keep every block at its natural height. */
+        .page > * {
+            flex-shrink: 0;
         }
 
         .page:last-child {
@@ -224,9 +233,9 @@
         .letter-content {
             font-size: 17.5px;
             font-size: 17.5px;
-            line-height: 2.1;
-            /* Tightened */
-            margin-bottom: 12px;
+            line-height: 1.9;
+            /* Tightened so the page + footer logo fit inside A4 */
+            margin-bottom: 10px;
             text-align: left;
         }
 
@@ -269,19 +278,29 @@
         /* 7. Footer Red Box (Signatures) */
         .signature-container {
             position: relative;
-            position: relative;
-            margin-top: 10px;
-            padding-bottom: 20px;
+            margin-top: 8px;
+            /* Clears the .integrated-title, which hangs 15px below the box. */
+            padding-bottom: 14px;
         }
 
+        /* Pinned to the bottom of the page's content box by the auto margin, but
+           still in flow — so it can never overlap the signature box above it, and
+           the page's fixed 297mm height can never clip it. padding-top is the
+           minimum clearance kept when a long letter pushes the box down. */
         .footer-logo {
-            text-align: center;
-            margin-top: 15px;
+            margin-top: auto;
+            align-self: flex-end;
+            padding-top: 5mm;
+            text-align: right;
+            line-height: 0;
         }
 
         .footer-logo img {
-            max-height: 50px;
+            max-height: 40px;
+            max-width: 60mm;
             width: auto;
+            height: auto;
+            display: block;
         }
 
         .signature-box {
@@ -294,7 +313,7 @@
         .sig-row-name {
             display: flex;
             align-items: baseline;
-            margin-bottom: 25px;
+            margin-bottom: 18px;
             font-size: 18px;
             font-weight: bold;
         }
@@ -309,8 +328,8 @@
         .sig-cols {
             display: flex;
             justify-content: space-between;
-            margin-top: 40px;
-            margin-bottom: 15px;
+            margin-top: 30px;
+            margin-bottom: 12px;
         }
 
         .sig-field {
@@ -400,13 +419,30 @@
             .page:last-child {
                 page-break-after: avoid;
             }
+
+            /* Force watermarks/sidebars to render on every printed page */
+            .watermark,
+            .watermark-text,
+            .sidebar,
+            .title-banner {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
         }
     </style>
 </head>
 
 <body>
+    @php
+        // Every record prints twice: an ORIGINAL and a FILE COPY, each watermarked.
+        $copies = [
+            ['label' => 'Original', 'slug' => 'original'],
+            ['label' => 'File Copy', 'slug' => 'file-copy'],
+        ];
+    @endphp
     @foreach($records as $record)
-        <div class="page">
+        @foreach($copies as $copy)
+        <div class="page {{ $copy['slug'] }}">
             <!-- Sidebars -->
             <div class="sidebar sidebar-left"></div>
             <div class="sidebar sidebar-right"></div>
@@ -416,10 +452,13 @@
                 onerror="this.src='https://placehold.co/100x100?text=LOGO'">
 
             <div class="watermark-container">
-                <div class="watermark-text">{{ $watermarkText ?? 'ORIGINAL' }}</div>
-            </div> <!-- 1. Top Header -->
+                <div class="watermark-text">{{ $copy['label'] }}</div>
+            </div>
+
+            <!-- 1. Top Header -->
             <div class="top-header">
-                <div class="qr-container" id="qrcode-{{ $record->id }}" title="Tracking ID QR Code"></div>
+                <div class="qr-container" id="qrcode-{{ $record->id }}-{{ $copy['slug'] }}"
+                    data-tracking-id="{{ $record->tracking_id }}" title="Tracking ID QR Code"></div>
                 <div class="logo-center">
                     <img src="http://app.klaes.ng/assets/logo/ministry1.jpg" alt="Logo"
                         onerror="this.src='https://placehold.co/100x100?text=LOGO'">
@@ -470,7 +509,7 @@
             </div>
 
             <!-- 6. Content -->
-            <div class="letter-content" style="line-height: 2.1; text-align: left;">
+            <div class="letter-content" style="text-align: left;">
                 I am directed to inform you that Alhaji/Malam/Mr. <span class="data-field"
                     style="min-width: 200px;">{{ $record->FileName ?? '................................' }}</span>
                 has applied to the Ministry for Statutory Right of Occupancy over Plot No.
@@ -528,26 +567,23 @@
     <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="Logo"
         onerror="this.src='https://placehold.co/120x40?text=LOGO'">
 </div>        </div>
+        @endforeach
     @endforeach
 
     <script>
         document.addEventListener('DOMContentLoaded', function () {
-            @foreach($records as $record)
-                (function () {
-                    var trackingId = "{{ $record->tracking_id }}";
-                    var elementId = "qrcode-{{ $record->id }}";
-                    if (trackingId && document.getElementById(elementId)) {
-                        new QRCode(document.getElementById(elementId), {
-                            text: trackingId,
-                            width: 75,
-                            height: 75,
-                            colorDark: "#000000",
-                            colorLight: "#ffffff",
-                            correctLevel: QRCode.CorrectLevel.H
-                        });
-                    }
-                })();
-            @endforeach
+            document.querySelectorAll('.qr-container[data-tracking-id]').forEach(function (el) {
+                var trackingId = el.getAttribute('data-tracking-id');
+                if (!trackingId) return;
+                new QRCode(el, {
+                    text: trackingId,
+                    width: 75,
+                    height: 75,
+                    colorDark: "#000000",
+                    colorLight: "#ffffff",
+                    correctLevel: QRCode.CorrectLevel.H
+                });
+            });
         });
 
 

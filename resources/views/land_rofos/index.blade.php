@@ -173,8 +173,121 @@
                     Printed
                     <span class="px-2 py-0.5 rounded-full text-[10px] font-black {{ $tab === 'printed' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500' }}">{{ number_format($stats['printed']) }}</span>
                 </a>
+                {{-- Batches list whole, one row each. On the tabs above a batch is a
+                     collapsed row whose children are scattered across the pages behind
+                     it, so expanding it there shows only the few that share this page. --}}
+                @if(($rofoBatchCount ?? 0) > 0)
+                <a href="{{ route('land-rofos.index', $tabBaseParams + ['tab' => 'batches']) }}"
+                   class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'batches' ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100' }}">
+                    <i data-lucide="layers" class="h-4 w-4"></i>
+                    Batches
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black {{ $tab === 'batches' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500' }}">{{ number_format($rofoBatchCount) }}</span>
+                </a>
+                @endif
             </div>
 
+            @if($tab === 'batches')
+            {{-- ── Batches ───────────────────────────────────────────────────────
+                 One row per subdivision batch, with its real size. Expanding pulls
+                 every child from the server instead of revealing the ones the main
+                 list's paging happened to leave on this page. --}}
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+                    <h3 class="font-bold text-slate-800 uppercase tracking-wider text-xs flex items-center gap-2">
+                        <i data-lucide="layers" class="h-4 w-4 text-violet-600"></i>
+                        RofO Batches
+                        <span class="text-slate-400 normal-case tracking-normal font-medium">· {{ number_format($rofoBatches->total()) }} batch(es)</span>
+                    </h3>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse min-w-[980px]">
+                        <thead>
+                            <tr class="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                <th class="px-4 py-4 text-center w-10"></th>
+                                <th class="px-4 py-4 text-center whitespace-nowrap">S/N</th>
+                                <th class="px-6 py-4 whitespace-nowrap">Mother File No</th>
+                                <th class="px-6 py-4 whitespace-nowrap">Batch Ref</th>
+                                <th class="px-6 py-4 text-center whitespace-nowrap">RofOs</th>
+                                <th class="px-6 py-4 text-center whitespace-nowrap">Generated</th>
+                                <th class="px-6 py-4 text-center whitespace-nowrap">Printed</th>
+                                <th class="px-6 py-4 whitespace-nowrap">Created By</th>
+                                <th class="px-6 py-4 whitespace-nowrap">Date Created</th>
+                                <th class="px-6 py-4 text-right whitespace-nowrap">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 text-sm">
+                            @forelse($rofoBatches as $i => $b)
+                            @php
+                                $total     = (int) $b->total;
+                                $generated = (int) $b->generated_count;
+                                $printed   = (int) $b->printed_count;
+                                $creator   = $rofoBatchCreators[$b->created_by] ?? null;
+                            @endphp
+                            <tr class="rofo-batch-row hover:bg-violet-50/40 transition cursor-pointer" data-batch="{{ $b->rofo_batch_id }}" aria-expanded="false">
+                                <td class="px-4 py-4 text-center">
+                                    <i data-lucide="chevron-right" class="batch-chevron h-4 w-4 text-violet-600 transition-transform"></i>
+                                </td>
+                                <td class="px-4 py-4 text-center text-slate-400 font-bold">{{ $rofoBatches->firstItem() + $i }}</td>
+                                <td class="px-6 py-4">
+                                    <span class="font-mono font-black text-slate-900">{{ $b->mother_file_no ?: $b->old_file_number }}</span>
+                                    <span class="block text-[10px] text-slate-400">{{ $b->application_type }}</span>
+                                </td>
+                                <td class="px-6 py-4 font-mono text-[11px] text-slate-500">{{ $b->rofo_batch_id }}</td>
+                                <td class="px-6 py-4 text-center">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-black bg-violet-600 text-white">{{ $total }}</span>
+                                </td>
+                                <td class="px-6 py-4 text-center">
+                                    @if($generated >= $total)
+                                        <span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700">All {{ $total }}</span>
+                                    @elseif($generated > 0)
+                                        <span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">{{ $generated }} of {{ $total }}</span>
+                                    @else
+                                        <span class="text-[10px] font-bold text-slate-400">&mdash;</span>
+                                    @endif
+                                </td>
+                                <td class="px-6 py-4 text-center">
+                                    @if($printed >= $total)
+                                        <span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700">All {{ $total }}</span>
+                                    @elseif($printed > 0)
+                                        <span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">{{ $printed }} of {{ $total }}</span>
+                                    @else
+                                        <span class="text-[10px] font-bold text-slate-400">&mdash;</span>
+                                    @endif
+                                </td>
+                                <td class="px-6 py-4 text-slate-600 whitespace-nowrap">{{ $creator ? trim($creator->first_name . ' ' . $creator->last_name) : '—' }}</td>
+                                <td class="px-6 py-4 text-slate-500 whitespace-nowrap text-xs">{{ $b->created_at ? \Carbon\Carbon::parse($b->created_at)->format('d/m/Y H:i') : '—' }}</td>
+                                <td class="px-6 py-4 text-right whitespace-nowrap" onclick="event.stopPropagation()">
+                                    @if($generated > 0)
+                                        {{-- Only generated RofOs can be printed; the count says how many
+                                             this would actually put on paper. --}}
+                                        <button type="button" onclick='printBatchGroup(@json($b->rofo_batch_id))'
+                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-[11px] font-bold rounded-lg hover:bg-violet-700 transition">
+                                            <i data-lucide="printer" class="h-3.5 w-3.5"></i> Print batch ({{ $generated }})
+                                        </button>
+                                    @else
+                                        <span class="text-[10px] text-slate-400 font-semibold">No RofO generated yet</span>
+                                    @endif
+                                </td>
+                            </tr>
+                            <tr class="rofo-batch-children hidden" data-batch-children="{{ $b->rofo_batch_id }}">
+                                <td colspan="10" class="p-0 bg-violet-50/30"></td>
+                            </tr>
+                            @empty
+                            <tr>
+                                <td colspan="10" class="px-6 py-16 text-center text-slate-400">
+                                    <i data-lucide="layers" class="h-8 w-8 mx-auto mb-3 text-slate-300"></i>
+                                    No subdivision batches yet.
+                                </td>
+                            </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+                @if($rofoBatches->hasPages())
+                <div class="px-6 py-4 border-t border-slate-200">{{ $rofoBatches->links() }}</div>
+                @endif
+            </div>
+            @else
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between">
                     <h3 class="font-bold text-slate-800 uppercase tracking-wider text-xs flex items-center gap-2">
@@ -212,8 +325,14 @@
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 text-sm">
+                            {{-- Batches are not shown here: they live on the Batches tab, whole,
+                                 where one row expands to the entire batch rather than to whichever
+                                 slice of it this page happened to hold. Batched records are kept
+                                 out of this list entirely — except under a search, which must still
+                                 find any file number. --}}
                             @forelse($recommendations as $rec)
                             @php $isOssRec = strtoupper($rec->type ?? '') === 'OSS'; @endphp
+
                             <tr class="hover:bg-slate-50/50 transition {{ $isOssRec ? 'bg-purple-50/30' : '' }}">
                                 <td class="px-4 py-2 text-center text-slate-500 whitespace-nowrap">{{ ($recommendations->currentPage() - 1) * $recommendations->perPage() + $loop->iteration }}</td>
                                 <td class="px-4 py-2 font-mono font-bold text-slate-900 whitespace-nowrap">
@@ -367,7 +486,7 @@
                                                     {{-- Re-issued RofOs print only the watermarked re-issuance
                                                          letter, so this replaces the plain Print Manager entry. --}}
                                                     <button type="button"
-                                                            onclick="printReissuance('{{ $rec->id }}', @js($rec->file_number))"
+                                                            onclick="printReissuance('{{ $rec->id }}', @js($rec->file_number), @js($rec->reissuance_source))"
                                                             class="flex w-full items-center px-4 py-2.5 text-sm text-amber-700 hover:bg-amber-50 transition gap-2 font-bold">
                                                         <i data-lucide="printer" class="h-4 w-4"></i> Print Re-issuance
                                                     </button>
@@ -411,6 +530,7 @@
                 </div>
                 @endif
             </div>
+            @endif
         </div>
     </div>
     @include('admin.footer')
@@ -604,6 +724,7 @@
                 <p class="mt-1 text-[11px] text-slate-500">
                     The original letter pre-dates KLAES, so its details are captured on the next screen.
                 </p>
+                <div id="reiLegacyDetails" class="hidden mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1"></div>
             </div>
         </div>
 
@@ -636,14 +757,25 @@ var _reiSource       = null;   // 'klaes' | 'legacy'
 var _reiKlaesId      = null;   // selected recommendation id (klaes path)
 var _reiKlaesLabel   = '';     // its file number, for the confirmation prompt
 var _reiLegacyFileNo = '';     // selected file number (legacy path)
+var _reiLegacyFileTitle = '';  // its file title, shown on the step 2 card
+var _reiLegacyLocation  = '';  // its location, shown alongside the title
+
+function escapeReiHtml(value) {
+    var d = document.createElement('div');
+    d.textContent = value;
+    return d.innerHTML;
+}
 
 function openReissuanceModal() {
-    _reiSource       = null;
-    _reiKlaesId      = null;
-    _reiLegacyFileNo = '';
+    _reiSource          = null;
+    _reiKlaesId         = null;
+    _reiLegacyFileNo    = '';
+    _reiLegacyFileTitle = '';
+    _reiLegacyLocation  = '';
 
     document.getElementById('reiLegacyFileNo').value = '';
     document.getElementById('reiKlaesDetails').classList.add('hidden');
+    document.getElementById('reiLegacyDetails').classList.add('hidden');
     if (window.jQuery && jQuery('#reiKlaesSelect').data('select2')) {
         jQuery('#reiKlaesSelect').val(null).trigger('change');
     }
@@ -744,7 +876,10 @@ function reissuanceInitKlaesSelect() {
         box.innerHTML =
             '<div><strong>Applicant:</strong> ' + (d.applicant || '—') + '</div>' +
             '<div><strong>Location:</strong> ' + (d.location || '—') + '</div>' +
-            '<div><strong>Issued on:</strong> ' + (d.issued_on || '—') + '</div>';
+            // No issue date means the RofO was never generated in KLAES — say so
+            // rather than showing a date that only reflects when it was captured.
+            '<div><strong>Issued on:</strong> ' +
+                (d.issued_on || '<span style="color:#b45309">Not generated in KLAES</span>') + '</div>';
         box.classList.remove('hidden');
         reissuanceUpdateNextBtn();
     });
@@ -767,21 +902,47 @@ function reissuancePickLegacyFileNo() {
         autoPopulateGenericFields: false,
         targetFields: [],
         callback: function (data) {
-            _reiLegacyFileNo = (data && data.fileNumber) ? data.fileNumber : '';
+            var rec = (data && data.record) || {};
+
+            _reiLegacyFileNo    = (data && data.fileNumber) ? data.fileNumber : '';
+            _reiLegacyFileTitle = (data && (data.file_title || data.file_name)) || '';
+            // The lookup returns location on the resolved record; grouping-only
+            // fallbacks carry just district/lga, so take whichever is present.
+            _reiLegacyLocation  = rec.location || rec.district || rec.lga || '';
             document.getElementById('reiLegacyFileNo').value = _reiLegacyFileNo;
+
+            // Title and location are the details the selector can resolve for a
+            // pre-KLAES file — show them so the picked file is identifiable.
+            var box = document.getElementById('reiLegacyDetails');
+            if (_reiLegacyFileNo) {
+                box.innerHTML =
+                    '<div><strong>File Title:</strong> ' +
+                        (_reiLegacyFileTitle ? escapeReiHtml(_reiLegacyFileTitle) : '—') + '</div>' +
+                    '<div><strong>Location:</strong> ' +
+                        (_reiLegacyLocation ? escapeReiHtml(_reiLegacyLocation) : '—') + '</div>';
+                box.classList.remove('hidden');
+            } else {
+                box.classList.add('hidden');
+            }
+
             reissuanceUpdateNextBtn();
         }
     });
 }
 
-// Print an already-flagged re-issuance through the Print Manager. The doc type
-// carries "Re-issuance" so the manager badges itself accordingly and collapses to
-// the single Original step, and ?supersede=1 gives the watermarked letter.
-function printReissuance(id, fileNumber) {
+// Print an already-flagged re-issuance through the Print Manager. ?supersede=1
+// gives the watermarked letter; the doc type carries "Re-issuance" so the manager
+// badges itself, and "(Legacy)" tells it to keep the full 3-copy sequence:
+//   klaes  — KLAES already issued the set, so only the Original is re-issued
+//   legacy — pre-KLAES original, so all 3 copies are issued
+function printReissuance(id, fileNumber, source) {
+    var isLegacy = String(source || '').toLowerCase() === 'legacy';
+
     SmartPrintManager.open(
         fileNumber,
-        'Land RofO Re-issuance',
+        isLegacy ? 'Land RofO Re-issuance (Legacy)' : 'Land RofO Re-issuance',
         '{{ url('land-rofos') }}/' + id + '/print?supersede=1'
+            + (isLegacy ? '&reissue_source=legacy' : '&reissue_source=klaes')
     );
 }
 
@@ -1014,6 +1175,195 @@ function bpmConfirmLog() {
 function bpmCancelConfirm() {
     bpmShowState('list');
 }
+
+// ── Subdivision batch rows ─────────────────────────────────────────────────
+// Children of one mother file are grouped under a batch header. Printing from
+// that header reuses the existing batch-print pipeline (same endpoint, same
+// print log), just with the batch's own ids instead of a hand-picked selection.
+// Confirm first, then log, then open the print page. Asking after the window was
+// already sent to the printer left the two out of step — a cancelled dialog meant
+// paper had been used but nothing was recorded.
+// ── Batches tab ────────────────────────────────────────────────────────────
+// One row per batch. Expanding pulls EVERY child from the server rather than
+// revealing the rows that happen to share this page — which is the whole reason
+// the tab exists, since on the main list a 100-RofO batch expands to whatever
+// slice of it the pagination left behind.
+var ROFO_BATCH_URL = @json(url('land-rofos/batch'));
+
+function rofoEscHtml(v) {
+    return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function rofoPill(ok, okLabel, pendingLabel) {
+    return '<span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold '
+        + (ok ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700') + '">'
+        + (ok ? okLabel : pendingLabel) + '</span>';
+}
+
+function loadRofoBatchChildren(batchId) {
+    return fetch(ROFO_BATCH_URL + '/' + encodeURIComponent(batchId) + '/children', {
+        credentials: 'same-origin',
+        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (!data.success) throw new Error(data.message || 'Could not load the batch.');
+            return data;
+        });
+}
+
+document.addEventListener('click', function (e) {
+    var row = e.target.closest('tr.rofo-batch-row');
+    if (!row) return;
+
+    var batch    = row.getAttribute('data-batch');
+    var expanded = row.getAttribute('aria-expanded') === 'true';
+    var holder   = document.querySelector('tr[data-batch-children="' + batch + '"]');
+    if (!holder) return;
+
+    row.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+    var chevron = row.querySelector('.batch-chevron');
+    if (chevron) chevron.style.transform = expanded ? '' : 'rotate(90deg)';
+
+    if (expanded) { holder.classList.add('hidden'); return; }
+    holder.classList.remove('hidden');
+    if (holder.dataset.loaded === '1') return;
+
+    var cell = holder.querySelector('td');
+    cell.innerHTML = '<div class="px-8 py-6 text-xs text-slate-500">Loading all RofOs in this batch…</div>';
+
+    loadRofoBatchChildren(batch)
+        .then(function (data) {
+            holder.dataset.loaded = '1';
+
+            var rows = data.children.map(function (c) {
+                var generated = String(c.rofo_status || '').toLowerCase() === 'generated';
+                return '<tr class="border-b border-violet-100/70 hover:bg-white/70">'
+                    + '<td class="px-4 py-2.5 text-center text-[11px] font-bold text-slate-400">' + c.seq + '</td>'
+                    + '<td class="px-4 py-2.5 font-mono text-xs font-bold text-slate-900">' + rofoEscHtml(c.file_number) + '</td>'
+                    + '<td class="px-4 py-2.5 text-xs text-slate-700">' + rofoEscHtml(c.applicant_name) + '</td>'
+                    + '<td class="px-4 py-2.5 text-xs text-slate-600">' + rofoEscHtml(c.plot_number) + '</td>'
+                    + '<td class="px-4 py-2.5 text-xs text-slate-600">' + rofoEscHtml(c.location) + '</td>'
+                    + '<td class="px-4 py-2.5 font-mono text-[11px] text-slate-500">' + rofoEscHtml(c.serial_no || '—') + '</td>'
+                    + '<td class="px-4 py-2.5 text-center">' + rofoPill(generated, 'Generated', 'Pending') + '</td>'
+                    + '<td class="px-4 py-2.5 text-center">' + rofoPill(c.print_count > 0, 'Printed', 'Not printed') + '</td>'
+                    + '<td class="px-4 py-2.5 text-right whitespace-nowrap">'
+                    +   (generated
+                            ? '<a href="' + c.print_url + '" target="_blank" class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-50 rounded">Print</a>'
+                            : '<span class="text-[10px] text-slate-400">—</span>')
+                    + '</td>'
+                    + '</tr>';
+            }).join('');
+
+            cell.innerHTML =
+                '<div class="px-6 py-4">'
+                + '<p class="text-[10px] font-black uppercase tracking-widest text-violet-700 mb-2">All '
+                +   data.count + ' RofOs in this batch</p>'
+                + '<div class="overflow-x-auto rounded-lg border border-violet-200 bg-white">'
+                + '<table class="w-full text-left border-collapse min-w-[900px]">'
+                + '<thead><tr class="bg-violet-50 text-[10px] font-black text-violet-800 uppercase tracking-widest">'
+                +   '<th class="px-4 py-2.5 text-center w-10">#</th>'
+                +   '<th class="px-4 py-2.5">File Number</th>'
+                +   '<th class="px-4 py-2.5">Applicant</th>'
+                +   '<th class="px-4 py-2.5">Plot No</th>'
+                +   '<th class="px-4 py-2.5">Location</th>'
+                +   '<th class="px-4 py-2.5">Serial No</th>'
+                +   '<th class="px-4 py-2.5 text-center">RofO</th>'
+                +   '<th class="px-4 py-2.5 text-center">Printed</th>'
+                +   '<th class="px-4 py-2.5 text-right">Actions</th>'
+                + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+        })
+        .catch(function (err) {
+            cell.innerHTML = '<div class="px-8 py-6 text-xs text-rose-700">'
+                + rofoEscHtml(err.message || 'Network error loading the batch.') + '</div>';
+        });
+});
+
+// Print a whole batch from the Batches tab. The ids are not on the page here, and
+// only generated RofOs can print — batchPrint() filters on that, so a pending
+// child would otherwise contribute a blank sheet.
+function printBatchGroup(batchId) {
+    loadRofoBatchChildren(batchId)
+        .then(function (data) {
+            var ids = data.children
+                .filter(function (c) { return String(c.rofo_status).toLowerCase() === 'generated'; })
+                .map(function (c) { return c.id; });
+
+            if (!ids.length) {
+                Swal.fire({ icon: 'info', title: 'Nothing to print', text: 'No RofO in this batch has been generated yet.' });
+                return;
+            }
+            printRofoBatch(ids);
+        })
+        .catch(function (err) {
+            Swal.fire({ icon: 'error', title: 'Error', text: err.message || 'Network error.' });
+        });
+}
+
+function printRofoBatch(ids) {
+    if (!ids || !ids.length) return;
+
+    Swal.fire({
+        icon: 'question',
+        title: 'Print this batch?',
+        html: '<b>' + ids.length + '</b> RofO(s) will print as Original, Duplicate and Triplicate,'
+            + '<br>and be recorded as printed.',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, print batch',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#7c3aed',
+    }).then(function (r) {
+        if (!r.isConfirmed) return;
+
+        // Claim the tab now, while still inside the click that opened the dialog —
+        // opening it after the await below is what pop-up blockers stop.
+        var printWindow = window.open('', 'rofoBatchPrint');
+
+        var csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+        fetch('{{ route('land-rofos.batch-print-log') }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' },
+            body: JSON.stringify({ ids: ids })
+        })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+            if (!data.success) throw new Error(data.message || 'Failed to record the print.');
+            submitBatchPrint(ids, csrf, printWindow);
+        })
+        .catch(function (err) {
+            if (printWindow) { try { printWindow.close(); } catch (e) {} }
+            Swal.fire({ icon: 'error', title: 'Not printed', text: err.message || 'Network error recording the batch print.' });
+        });
+    });
+}
+
+// Posts the ids to the print route, rendering into the tab already opened above.
+function submitBatchPrint(ids, csrf, printWindow) {
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '{{ route('land-rofos.batch-print') }}';
+    form.target = printWindow ? 'rofoBatchPrint' : '_blank';
+
+    var token = document.createElement('input');
+    token.type = 'hidden'; token.name = '_token'; token.value = csrf;
+    form.appendChild(token);
+
+    ids.forEach(function (id) {
+        var inp = document.createElement('input');
+        inp.type = 'hidden'; inp.name = 'ids[]'; inp.value = id;
+        form.appendChild(inp);
+    });
+
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+
+    // The rows have moved to Printed, so refresh the list behind the print tab.
+    setTimeout(function () { window.location.reload(); }, 800);
+}
+
 </script>
 
 <!-- RofO Data Entry Modal -->

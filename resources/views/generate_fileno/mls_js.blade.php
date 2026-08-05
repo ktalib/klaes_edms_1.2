@@ -2346,6 +2346,13 @@
         }
         singleSummaryConfirmed = false;
 
+        // Where the file goes next, chosen on the Generation Summary. The backend
+        // turns it into the file's second tracking line.
+        if (pendingSummaryDestination) {
+            Object.entries(pendingSummaryDestination).forEach(([key, value]) => formData.set(key, value));
+            pendingSummaryDestination = null;
+        }
+
         // Send to new MLS generation endpoint
         const controller = new AbortController();
         const timeoutHandle = setTimeout(() => controller.abort(), GENERATE_REQUEST_TIMEOUT_MS);
@@ -2683,6 +2690,89 @@
         if (subtitleEl) subtitleEl.textContent = subtitle;
     }
 
+    // ── Generation Summary → "Next Destination" ────────────────────────────────
+    // A commissioned file is created at the File Commissioning Office and moves on
+    // for processing, so the summary asks where it goes next. The choice is posted
+    // with the generation request and opens the file's tracking with two lines:
+    // the File Commissioning line, then the trip to the office picked here.
+    let summaryOfficeCache = null;
+    // Destination captured when the summary is confirmed, read by both submit paths.
+    let pendingSummaryDestination = null;
+
+    async function loadSummaryDestinationOffices() {
+        const deptSelect = document.getElementById('summaryDepartment');
+        const officeSelect = document.getElementById('summaryUnitOffice');
+        if (!deptSelect || !officeSelect) return;
+
+        if (!summaryOfficeCache) {
+            try {
+                const res = await fetch('{{ route("filetracker.get-offices") }}', { headers: { 'Accept': 'application/json' } });
+                const json = await res.json();
+                summaryOfficeCache = (json && json.success && Array.isArray(json.data)) ? json.data : [];
+            } catch (e) {
+                console.warn('[Commissioning] Could not load offices', e);
+                summaryOfficeCache = [];
+            }
+        }
+
+        // The File Commissioning Office is where the file already is — it cannot be
+        // its own next destination.
+        const offices = summaryOfficeCache.filter(o => (o.office_code || '') !== 'FCO');
+        const departments = [...new Set(offices.map(o => (o.department || '').trim()).filter(Boolean))].sort();
+
+        const previousDept = deptSelect.value;
+        deptSelect.innerHTML = '<option value="">Select department…</option>'
+            + departments.map(d => `<option value="${d}">${d}</option>`).join('');
+        if (previousDept && departments.includes(previousDept)) {
+            deptSelect.value = previousDept;
+        }
+
+        const fillOffices = () => {
+            const dept = deptSelect.value;
+            const matching = offices.filter(o => (o.department || '').trim() === dept);
+            officeSelect.disabled = !dept;
+            officeSelect.innerHTML = dept
+                ? '<option value="">Select unit / office…</option>'
+                    + matching.map(o => `<option value="${o.office_code}" data-name="${o.office_name}">${o.office_name}${o.office_code ? ` (${o.office_code})` : ''}</option>`).join('')
+                : '<option value="">Select a department first</option>';
+        };
+
+        deptSelect.onchange = fillOffices;
+        fillOffices();
+    }
+
+    /**
+     * The chosen destination, or null when nothing is selected. Callers treat null
+     * as "no destination": the file then keeps only its default commissioning line.
+     */
+    function summaryDestinationPayload() {
+        const deptSelect = document.getElementById('summaryDepartment');
+        const officeSelect = document.getElementById('summaryUnitOffice');
+        const officeCode = officeSelect ? officeSelect.value : '';
+
+        if (!officeCode) return null;
+
+        const selected = officeSelect.options[officeSelect.selectedIndex];
+        return {
+            destination_department: deptSelect ? deptSelect.value : '',
+            destination_office_code: officeCode,
+            destination_office_name: selected ? (selected.dataset.name || selected.textContent.trim()) : ''
+        };
+    }
+
+    /** True when a destination is selected; warns and returns false when not. */
+    function summaryDestinationSelected() {
+        if (summaryDestinationPayload()) return true;
+
+        Swal.fire({
+            icon: 'warning',
+            title: 'Next Destination Required',
+            text: 'Select the department and unit/office this file goes to after commissioning.',
+            confirmButtonColor: '#f59e0b'
+        });
+        return false;
+    }
+
     function summaryLocationRow(fileNo, index, details) {
         return `
                 <div class="flex items-start justify-between">
@@ -2736,6 +2826,7 @@
         locationList.appendChild(entryDiv);
 
         document.getElementById('batchSummaryModal').classList.remove('hidden');
+        loadSummaryDestinationOffices();
 
         if (typeof lucide !== 'undefined') {
             lucide.createIcons();
@@ -2832,6 +2923,7 @@
 
         // Show the modal
         document.getElementById('batchSummaryModal').classList.remove('hidden');
+        loadSummaryDestinationOffices();
 
         // Re-initialize lucide icons for the modal
         if (typeof lucide !== 'undefined') {
@@ -2846,6 +2938,14 @@
     }
 
     function confirmBatchGeneration() {
+        // Where the file goes after commissioning is part of the confirmation, so
+        // it is validated before either mode proceeds. Captured here because the
+        // single-file path replays the submit after the modal is hidden.
+        if (!summaryDestinationSelected()) {
+            return;
+        }
+        pendingSummaryDestination = summaryDestinationPayload();
+
         // Single mode: close the summary and replay the original submit, which now
         // skips the confirmation gate and proceeds straight to generation.
         if (summaryModalMode === 'single') {
@@ -2925,8 +3025,11 @@
             rep_phone_no: document.getElementById('generateRepPhoneNo')?.value || '',
             rep_address: document.getElementById('generateRepAddress')?.value || '',
             // Typed related files apply to every file in the batch
-            related_files: JSON.stringify(alpineData.relatedFilesPayload ? alpineData.relatedFilesPayload() : [])
+            related_files: JSON.stringify(alpineData.relatedFilesPayload ? alpineData.relatedFilesPayload() : []),
+            // Every file in the batch is dispatched to the same next destination.
+            ...(pendingSummaryDestination || {})
         };
+        pendingSummaryDestination = null;
 
         // Send batch generation request
         fetch('{{ route("mls-fileno.generate-batch") }}', {
