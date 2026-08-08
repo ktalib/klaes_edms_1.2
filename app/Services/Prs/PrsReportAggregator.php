@@ -42,10 +42,20 @@ class PrsReportAggregator
 {
     use SectionShape;
 
+    /**
+     * The departments the report covers.
+     *
+     * Sectional Titling is one of them, not a corner of Deeds — it is a department
+     * in its own right in the `departments` table, alongside Land, Survey and
+     * Deeds. Its three sections span what would otherwise be two departments
+     * (registration sits with Deeds, commissioning with Lands), which is exactly
+     * why it needs its own tab rather than being split across theirs.
+     */
     public const DEPARTMENTS = [
         'survey' => ['label' => 'Survey', 'icon' => 'compass'],
         'deeds'  => ['label' => 'Deeds',  'icon' => 'file-signature'],
         'lands'  => ['label' => 'Lands',  'icon' => 'landmark'],
+        'st'     => ['label' => 'Sectional Titling', 'icon' => 'layers'],
     ];
 
     /** Gender series order, fixed. Not Recorded last so it reads as the remainder. */
@@ -53,11 +63,15 @@ class PrsReportAggregator
 
     private ?int $year = null;
 
+    /** Memo for availableYears(); survives forYear()'s clone, which is intended. */
+    private ?array $years = null;
+
     public function __construct(
         private DeedRegistrationStats $deeds,
         private LandFileStats $land,
         private SearchStats $searches,
         private OssStats $oss,
+        private StStats $st,
     ) {
     }
 
@@ -84,6 +98,12 @@ class PrsReportAggregator
      */
     public function availableYears(): array
     {
+        // Memoised: the controller asks for the selector list, then year() asks
+        // again through defaultYear(), and the tally costs five year-scans.
+        if ($this->years !== null) {
+            return $this->years;
+        }
+
         $tally = [];
 
         foreach ([
@@ -91,6 +111,7 @@ class PrsReportAggregator
             $this->land->availableYears(),
             $this->searches->availableYears(),
             $this->oss->availableYears(),
+            $this->st->availableYears(),
         ] as $set) {
             foreach ($set as $y => $n) {
                 $tally[$y] = ($tally[$y] ?? 0) + $n;
@@ -99,7 +120,7 @@ class PrsReportAggregator
 
         krsort($tally);
 
-        return $tally;
+        return $this->years = $tally;
     }
 
     private function defaultYear(): int
@@ -152,6 +173,17 @@ class PrsReportAggregator
                 'OSS Applications by Purpose', 'applications'),
             $this->ossSection('oss_gender', '16', 'gender',
                 'OSS Applications by Gender', 'applications'),
+            // Sectional Titling, added 2026-08-05. Three sections because ST is
+            // three distinct measures — a block fragmenting, its units changing
+            // hands, and the file numbers issued for both. Adding them together
+            // would double-count the same property.
+            $this->stRegisteredSection('st_fragmentation', '20',
+                InstrumentTypeNormalizer::ST_FRAGMENTATION,
+                'ST Fragmentation Registered', 'fragmentations'),
+            $this->stRegisteredSection('st_transfer', '21',
+                InstrumentTypeNormalizer::ST_TRANSFER,
+                'ST Unit Transfers Registered', 'transfers'),
+            $this->stCommissionedSection(),
         ]);
 
         return array_values(array_map([$this, 'withInsights'], $sections));
@@ -184,6 +216,14 @@ class PrsReportAggregator
              'dept' => 'lands', 'note' => 'received', 'icon' => 'building-2'],
             ['label' => 'Official searches', 'value' => $this->searches->monthly($year)['total'],
              'dept' => 'deeds', 'note' => 'requested', 'icon' => 'search'],
+            // The commissioning side, matching the tile's "files" framing. The
+            // registration counts live in sections 20 and 21 and are a different
+            // measure — see StStats.
+            ['label' => 'ST files commissioned', 'value' => $this->st->commissioned($year)['total'],
+             'dept' => 'st', 'note' => 'issued', 'icon' => 'layers'],
+            ['label' => 'ST registrations', 'value' => $this->st->registered(InstrumentTypeNormalizer::ST_FRAGMENTATION, $year)['total']
+                                                       + $this->st->registered(InstrumentTypeNormalizer::ST_TRANSFER, $year)['total'],
+             'dept' => 'st', 'note' => 'registered', 'icon' => 'layers-2'],
         ];
 
         return array_values(array_filter($tiles, fn ($t) => $t['value'] > 0));
@@ -368,6 +408,92 @@ class PrsReportAggregator
                 'rows'  => $rows,
                 'total' => $totalRow,
             ],
+        ];
+    }
+
+    /**
+     * Sections 20 and 21 — ST instruments entered in the deeds register.
+     *
+     * Shaped like a deed section, but sourced through StStats so land use and
+     * gender come from st_file_numbers. Routed through DeedRegistrationStats these
+     * would be 100% Uncategorised: an ST file number carries no land-use prefix.
+     */
+    private function stRegisteredSection(string $key, string $no, string $group, string $title, string $unit): ?array
+    {
+        $d = $this->st->registered($group, $this->year());
+
+        if ($d['total'] === 0) {
+            return null;
+        }
+
+        return [
+            'key'        => $key,
+            'no'         => $no,
+            'department' => 'st',
+            'title'      => $title,
+            'subtitle'   => 'Entered in the deeds register, January – December ' . $this->year(),
+            'measure'    => 'Sectional instruments registered',
+            'date_basis' => 'Deeds date',
+            'headline'   => [
+                'value'   => $d['total'],
+                'unit'    => $unit,
+                'caption' => $this->genderCaption($d['coverage'])
+                             . ' · land use and party taken from st_file_numbers, not the file number',
+            ],
+            'layout'     => 'monthly',
+            'chart'      => [
+                'type'   => 'stacked-column',
+                'labels' => self::MONTHS,
+                'series' => $this->landUseSeries($d['landuse']),
+            ],
+            'chart_secondary' => $this->genderPanel($d['gender'], $d['total']),
+            'table'      => $this->cutTable($d),
+            'table_secondary' => $this->genderTable($d),
+        ];
+    }
+
+    /**
+     * Section 22 — ST file numbers issued.
+     *
+     * The commissioning side, and NOT the same measure as 20 and 21: one block is
+     * commissioned as a PRIMARY file and then fragmented into unit files, so the
+     * file count exceeds the registration count by construction. Charted by file
+     * type, because blocks-to-units is the shape of the ST programme.
+     */
+    private function stCommissionedSection(): ?array
+    {
+        $d = $this->st->commissioned($this->year());
+
+        if ($d['total'] === 0) {
+            return null;
+        }
+
+        return [
+            'key'        => 'st_commissioned',
+            'no'         => '22',
+            'department' => 'st',
+            'title'      => 'ST Files Commissioned',
+            'subtitle'   => 'Sectional title file numbers issued, January – December ' . $this->year(),
+            'measure'    => 'ST file numbers issued',
+            'date_basis' => 'Date commissioned',
+            'headline'   => [
+                'value'   => $d['total'],
+                'unit'    => 'files',
+                'caption' => $this->streamCaption($d['types'])
+                             . ' · ' . $this->genderCaption($d['coverage'])
+                             . ($d['coverage']['undated'] > 0
+                                ? ' · ' . number_format($d['coverage']['undated']) . ' carry no commissioning date'
+                                : ''),
+            ],
+            'layout'     => 'monthly',
+            'chart'      => [
+                'type'   => 'stacked-column',
+                'labels' => self::MONTHS,
+                'series' => $this->namedSeries($d['types'], 'landuse'),
+            ],
+            'chart_secondary' => $this->genderPanel($d['gender'], $d['total']),
+            'table'      => $this->cutTable($d),
+            'table_secondary' => $this->genderTable($d),
         ];
     }
 

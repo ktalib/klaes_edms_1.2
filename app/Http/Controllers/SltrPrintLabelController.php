@@ -124,12 +124,15 @@ class SltrPrintLabelController extends Controller
     public function getAvailableFiles(Request $request)
     {
         try {
-            $subPrefix = trim((string) $request->input('sub_prefix', ''));
-            $search    = trim((string) $request->input('search', ''));
-            $digitRank = trim((string) $request->input('digit_rank', ''));
+            // Sub Prefix accepts a list ("A" or "A,B,C") so several sub prefixes can be
+            // loaded together and then assigned a shelf each in the Sub Prefix panel.
+            $subPrefixes = $this->parseSubPrefixes($request->input('sub_prefix', ''));
+            $subPrefix   = implode(',', $subPrefixes);
+            $search      = trim((string) $request->input('search', ''));
+            $digitRank   = trim((string) $request->input('digit_rank', ''));
 
-            if ($subPrefix === '') {
-                return response()->json(['success' => false, 'message' => 'Please select a sub prefix.'], 422);
+            if (empty($subPrefixes)) {
+                return response()->json(['success' => false, 'message' => 'Please select at least one sub prefix.'], 422);
             }
 
             if ($digitRank !== '' && !in_array($digitRank, ['5', '6'], true)) {
@@ -139,7 +142,11 @@ class SltrPrintLabelController extends Controller
             // Look up from file_indexings instead of sltr_grouping
             $query = FileIndexing::on('sqlsrv')
                 ->where('registry', 'like', '%SLTR%')
-                ->where('file_number', 'like', 'SLTR-' . $subPrefix . '%')
+                ->where(function ($q) use ($subPrefixes) {
+                    foreach ($subPrefixes as $p) {
+                        $q->orWhereRaw("file_number LIKE ? ESCAPE '\\'", [$this->likePrefixPattern('SLTR-' . $p)]);
+                    }
+                })
                 ->select([
                     'id',
                     'file_number',
@@ -190,10 +197,11 @@ class SltrPrintLabelController extends Controller
                         'files'      => [],
                         'missing'    => [],
                         'total'      => 0,
-                        'prefix'     => self::PREFIX,
-                        'sub_prefix' => $subPrefix,
-                        'digit_rank' => $digitRank,
-                        'message'    => 'No indexed records found for this sub prefix.',
+                        'prefix'       => self::PREFIX,
+                        'sub_prefix'   => $subPrefix,
+                        'sub_prefixes' => $subPrefixes,
+                        'digit_rank'   => $digitRank,
+                        'message'      => 'No indexed records found for this sub prefix.',
                     ],
                 ]);
             }
@@ -203,8 +211,21 @@ class SltrPrintLabelController extends Controller
 
             $this->syncFileIndexingDigitRanks($rows);
 
+            // Which of the requested sub prefixes each file belongs to. Files stay
+            // grouped by sub prefix (in the order the user picked them) so each
+            // group is a contiguous, serially ordered slice.
+            $order = array_flip($subPrefixes);
+
             $mapped = $rows
-                ->sort(function ($a, $b) {
+                ->each(function ($r) use ($subPrefixes) {
+                    $r->sub_prefix_group = $this->resolveSubPrefixGroup($r->file_number, $subPrefixes);
+                })
+                ->sort(function ($a, $b) use ($order) {
+                    $groupCompare = ($order[$a->sub_prefix_group] ?? PHP_INT_MAX) <=> ($order[$b->sub_prefix_group] ?? PHP_INT_MAX);
+                    if ($groupCompare !== 0) {
+                        return $groupCompare;
+                    }
+
                     $rankCompare = ($a->digit_rank ?? 999) <=> ($b->digit_rank ?? 999);
 
                     return $rankCompare !== 0
@@ -213,19 +234,20 @@ class SltrPrintLabelController extends Controller
                 })
                 ->map(function ($r) {
                 return [
-                    'id'              => $r->id,
-                    'file_number'     => $r->file_number,
-                    'digit_rank'      => $r->digit_rank,
-                    'file_title'      => null,
-                    'plot_number'     => null,
-                    'district'        => null,
-                    'lga'             => null,
-                    'land_use_type'   => $r->land_use_type,
-                    'shelf_location'  => $r->shelf_location,
-                    'tracking_id'     => $r->tracking_id,
-                    'sub_prefix'      => $r->sub_prefix,
-                    'suffix'          => $r->suffix,
-                    'already_batched' => false,
+                    'id'               => $r->id,
+                    'file_number'      => $r->file_number,
+                    'digit_rank'       => $r->digit_rank,
+                    'file_title'       => null,
+                    'plot_number'      => null,
+                    'district'         => null,
+                    'lga'              => null,
+                    'land_use_type'    => $r->land_use_type,
+                    'shelf_location'   => $r->shelf_location,
+                    'tracking_id'      => $r->tracking_id,
+                    'sub_prefix'       => $r->sub_prefix,
+                    'sub_prefix_group' => $r->sub_prefix_group,
+                    'suffix'           => $r->suffix,
+                    'already_batched'  => false,
                 ];
             });
 
@@ -237,6 +259,7 @@ class SltrPrintLabelController extends Controller
                     'total'              => $mapped->count(),
                     'prefix'             => self::PREFIX,
                     'sub_prefix'         => $subPrefix,
+                    'sub_prefixes'       => $subPrefixes,
                     'digit_rank'         => $digitRank,
                     'indexed_count'      => $rows->count(),
                     'batch_already_used' => $batchAlreadyUsed,
@@ -318,9 +341,12 @@ class SltrPrintLabelController extends Controller
                 'shelf_number' => 'required|integer|min:1|max:9999',
                 'rack_secondary' => 'nullable|string|max:5',
 
-                'sub_groups'                    => 'nullable|array|min:2',
+                // One entry per shelf assignment: a serial slice (Sub Group mode) or
+                // a whole sub prefix (Sub Prefix mode, which allows a single group).
+                'sub_groups'                    => 'nullable|array|min:1',
                 'sub_groups.*.file_ids'         => 'required|array|min:1',
                 'sub_groups.*.file_ids.*'       => 'integer|min:1',
+                'sub_groups.*.sub_prefix'       => 'nullable|string|max:50',
                 'sub_groups.*.full_label'       => 'required|string|max:20',
                 'sub_groups.*.rack_primary'     => 'required|string|max:5',
                 'sub_groups.*.rack_secondary'   => 'nullable|string|max:5',
@@ -347,7 +373,9 @@ class SltrPrintLabelController extends Controller
                     $created = $this->createBatchForGroup(
                         $batchNumber,
                         $prefix,
-                        $subPrefix,
+                        // In Sub Prefix mode each group carries its own sub prefix, so
+                        // the batch row records the one it actually holds.
+                        $group['sub_prefix'] ?? $subPrefix,
                         $group['file_ids'],
                         $group['full_label'],
                         $group['rack_primary'],
@@ -357,6 +385,7 @@ class SltrPrintLabelController extends Controller
                     );
 
                     $subGroupIndex = $multiGroup ? $index + 1 : null;
+                    $groupSubPrefix = $group['sub_prefix'] ?? $subPrefix;
                     foreach ($created['label_items'] as $item) {
                         $item['sub_group']       = $subGroupIndex;
                         $item['sub_group_total'] = $multiGroup ? count($groups) : null;
@@ -370,6 +399,7 @@ class SltrPrintLabelController extends Controller
                         'full_label'   => $group['full_label'],
                         'file_count'   => $created['file_count'],
                         'sub_group'    => $subGroupIndex,
+                        'sub_prefix'   => $groupSubPrefix,
                     ];
                 }
 
@@ -416,6 +446,7 @@ class SltrPrintLabelController extends Controller
         if (empty($raw)) {
             return [[
                 'file_ids'       => array_values(array_unique(array_map('intval', $validated['file_ids']))),
+                'sub_prefix'     => $validated['sub_prefix'] ?? null,
                 'full_label'     => strtoupper(trim($validated['full_label'])),
                 'rack_primary'   => strtoupper(trim($validated['rack_primary'])),
                 'rack_secondary' => isset($validated['rack_secondary']) ? strtoupper(trim($validated['rack_secondary'])) : null,
@@ -439,16 +470,20 @@ class SltrPrintLabelController extends Controller
                 $seen[$id] = true;
             }
 
+            $subPrefix = isset($group['sub_prefix']) ? (trim((string) $group['sub_prefix']) ?: null) : null;
+            $name      = $subPrefix !== null ? "sub prefix {$subPrefix}" : 'sub group ' . ($index + 1);
+
             $label = strtoupper(trim($group['full_label']));
             if (isset($labels[$label])) {
                 throw ValidationException::withMessages([
-                    'sub_groups' => "Sub groups " . $labels[$label] . " and " . ($index + 1) . " share the shelf/rack {$label}. Give each sub group its own shelf.",
+                    'sub_groups' => "Groups " . $labels[$label] . " and {$name} share the shelf/rack {$label}. Give each group its own shelf.",
                 ]);
             }
-            $labels[$label] = $index + 1;
+            $labels[$label] = $name;
 
             $groups[] = [
                 'file_ids'       => $ids,
+                'sub_prefix'     => $subPrefix,
                 'full_label'     => $label,
                 'rack_primary'   => strtoupper(trim($group['rack_primary'])),
                 'rack_secondary' => isset($group['rack_secondary']) ? (strtoupper(trim((string) $group['rack_secondary'])) ?: null) : null,
@@ -784,6 +819,50 @@ class SltrPrintLabelController extends Controller
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Split the Sub Prefix input into a clean list. Sub prefixes never contain
+     * whitespace-delimited parts, so only split on commas / semicolons / newlines.
+     */
+    private function parseSubPrefixes($raw): array
+    {
+        $parts = preg_split('/[,;\r\n]+/', (string) $raw);
+        $parts = array_filter(array_map('trim', $parts), fn($p) => $p !== '');
+
+        return array_values(array_unique($parts));
+    }
+
+    /**
+     * Build a "starts with" LIKE pattern with the SQL Server wildcards escaped,
+     * for use with `LIKE ? ESCAPE '\'`.
+     */
+    private function likePrefixPattern(string $value): string
+    {
+        return str_replace(['\\', '%', '_', '['], ['\\\\', '\%', '\_', '\['], $value) . '%';
+    }
+
+    /**
+     * Which of the requested sub prefixes a file number belongs to. Longest match
+     * wins so "SLTR-AB12" resolves to "AB" rather than "A" when both were loaded.
+     */
+    private function resolveSubPrefixGroup(?string $fileNumber, array $subPrefixes): ?string
+    {
+        $number = strtoupper(trim((string) $fileNumber));
+        if ($number === '') {
+            return null;
+        }
+
+        $candidates = $subPrefixes;
+        usort($candidates, fn($a, $b) => strlen($b) <=> strlen($a));
+
+        foreach ($candidates as $p) {
+            if (str_starts_with($number, strtoupper('SLTR-' . $p))) {
+                return $p;
+            }
+        }
+
+        return null;
+    }
 
     private function resolveRackLabelRecord(
         string $fullLabel,

@@ -1658,7 +1658,36 @@
                     return window.returnToUrl + separator + params.toString();
                 };
 
-                if (typeof Swal !== 'undefined') {
+                // Full summary card — the same one shown after indexing, listing the
+                // instruments captured and the file's whole record footprint. Falls
+                // back to the inline counts toast when the shared renderer is not on
+                // the page (it lives in create-indexing-dialog.js) or the server
+                // could not build a summary.
+                const canShowCard = typeof window.showIndexingSavedCard === 'function'
+                    && (response.storage_summary || (response.instruments || []).length);
+
+                if (canShowCard) {
+                    window.showIndexingSavedCard(response, {
+                        isUpdate: true,
+                        title: 'Transactions captured',
+                        // Just the instruments — the file's full record footprint was
+                        // already shown on the indexing card a moment earlier.
+                        instrumentsOnly: true,
+                    }).then(() => {
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.innerText = originalBtnText;
+                        }
+                        closePropertyTransactionModal();
+                        if (typeof checkExistingPropertyRecords === 'function') {
+                            checkExistingPropertyRecords();
+                        }
+                        const returnUrl = buildReturnUrl();
+                        if (returnUrl) {
+                            window.location.href = returnUrl;
+                        }
+                    });
+                } else if (typeof Swal !== 'undefined') {
                     Swal.fire({
                         icon: 'success',
                         title: 'Saved Successfully!',

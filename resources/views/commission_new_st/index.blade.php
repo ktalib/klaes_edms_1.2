@@ -19,6 +19,10 @@
 
 @section('content')
     <script src="{{ asset('js/primaryform/states-lga.js') }}"></script>
+    {{-- Shared "where did this record go" card, also used after file indexing and
+         property transaction capture. Must load before sua_commission.js, which
+         wraps it as showStCommissioningCard(). --}}
+    <script src="{{ asset('js/shared/record-summary-card.js') }}?v={{ @filemtime(public_path('js/shared/record-summary-card.js')) }}"></script>
     <script src="{{ asset('js/commission_new_st/location-map.js') }}"></script>
     <script src="{{ asset('js/commission_new_st/applicant-autofill.js') }}"></script>
     <script src="{{ asset('js/commission_new_st/primary.js') }}"></script>

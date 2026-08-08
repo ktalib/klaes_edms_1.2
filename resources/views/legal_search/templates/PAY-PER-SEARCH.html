@@ -710,10 +710,20 @@
         
       tbody.innerHTML = rows.map(rowHtml).join('');
 
+      // Show/hide is set EXPLICITLY both ways on every render, never hide-only.
+      // renderTransactions() runs twice: once with the placeholder dataset below, then
+      // again with the real rows once the fetch resolves. Hide-only left a column's
+      // <th> hidden from the first pass while the second pass rebuilt the <td>s visible
+      // (innerHTML drops their inline style) — so the header lost a column the body
+      // still had, and every column after it printed one place out of step.
+      const setColumnVisible = (cls, visible) => {
+        document.querySelectorAll('.' + cls).forEach(el => { el.style.display = visible ? '' : 'none'; });
+      };
+
       const hasP3 = rows.some(r => r.party_3 && r.party_3 !== '-' && String(r.party_3).trim() !== '');
       const hasP4 = rows.some(r => r.party_4 && r.party_4 !== '-' && String(r.party_4).trim() !== '');
-      if (!hasP3) document.querySelectorAll('.party-3-col').forEach(el => el.style.display = 'none');
-      if (!hasP4) document.querySelectorAll('.party-4-col').forEach(el => el.style.display = 'none');
+      setColumnVisible('party-3-col', hasP3);
+      setColumnVisible('party-4-col', hasP4);
 
       // When every row belongs to the same (searched) file — no related/associated
       // file numbers — the File No column is pure repetition, so hide it. It returns
@@ -721,9 +731,7 @@
       const _normFN = (s) => String(s || '').toUpperCase().replace(/[\s\-_=\/]+/g, '');
       const _distinctFileNos = new Set();
       rows.forEach(r => { const v = _normFN(r.file_no); if (v) _distinctFileNos.add(v); });
-      if (_distinctFileNos.size <= 1) {
-        document.querySelectorAll('.file-no-col').forEach(el => el.style.display = 'none');
-      }
+      setColumnVisible('file-no-col', _distinctFileNos.size > 1);
     }
 
     let __pprDataReady = false, __pprWmReady = false, __pprPrinted = false;

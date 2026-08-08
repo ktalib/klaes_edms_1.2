@@ -107,6 +107,8 @@
                                 'deeds of assignment' => ['surface' => '#ecfeff', 'border' => '#a5f3fc', 'accent' => '#0891b2', 'ink' => '#155e75', 'icon' => '#cffafe', 'shadow' => 'rgba(8,145,178,0.24)'],
                                 'certificates of occupancy' => ['surface' => '#fefce8', 'border' => '#fde68a', 'accent' => '#ca8a04', 'ink' => '#854d0e', 'icon' => '#fef3c7', 'shadow' => 'rgba(202,138,4,0.24)'],
                                 'mortgages' => ['surface' => '#fff1f2', 'border' => '#fecdd3', 'accent' => '#e11d48', 'ink' => '#9f1239', 'icon' => '#ffe4e6', 'shadow' => 'rgba(225,29,72,0.24)'],
+                                'st files commissioned' => ['surface' => '#fffbeb', 'border' => '#fde68a', 'accent' => '#d97706', 'ink' => '#92400e', 'icon' => '#fef3c7', 'shadow' => 'rgba(217,119,6,0.24)'],
+                                'st registrations' => ['surface' => '#fffbeb', 'border' => '#fcd34d', 'accent' => '#b45309', 'ink' => '#78350f', 'icon' => '#fef3c7', 'shadow' => 'rgba(180,83,9,0.24)'],
                             ][strtolower($tile['label'])] ?? ['surface' => '#f8fafc', 'border' => '#cbd5e1', 'accent' => '#64748b', 'ink' => '#1e293b', 'icon' => '#e2e8f0', 'shadow' => 'rgba(100,116,139,0.25)'];
                         @endphp
                         <div class="stat-glow-card metric-card"
@@ -123,8 +125,19 @@
                                 {{ number_format($tile['value']) }}
                             </div>
                             <div class="text-xs text-slate-500 mt-2 font-medium flex items-center gap-1">
-                                <span class="badge-soft {{ $tile['dept'] === 'survey' ? 'badge-soft-emerald' : ($tile['dept'] === 'deeds' ? 'badge-soft-blue' : 'badge-soft-violet') }}">
-                                    {{ $tile['dept'] }}
+                                @php
+                                    // One badge class per department. A ternary chain broke as soon
+                                    // as Sectional Titling made a fourth: every unmatched value fell
+                                    // through to violet and read as Lands.
+                                    $deptBadge = [
+                                        'survey' => 'badge-soft-emerald',
+                                        'deeds'  => 'badge-soft-blue',
+                                        'lands'  => 'badge-soft-violet',
+                                        'st'     => 'badge-soft-amber',
+                                    ][$tile['dept']] ?? 'badge-soft-blue';
+                                @endphp
+                                <span class="badge-soft {{ $deptBadge }}">
+                                    {{ $tile['dept'] === 'st' ? 'sectional titling' : $tile['dept'] }}
                                 </span>
                                 <span class="text-slate-400 font-normal">— {{ $tile['note'] }}</span>
                             </div>

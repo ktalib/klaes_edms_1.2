@@ -29,16 +29,49 @@ class InstrumentTypeNormalizer
     public const OP         = 'occupancy_permit';
     public const ROO        = 'right_of_occupancy';
 
+    /**
+     * Sectional Titling. Added 2026-08-05, after the deed source moved to
+     * `deed_registrations` made it obvious that ST was being lost twice over:
+     *
+     *   ST Fragmentation (54 rows)                 matched NO group at all and was
+     *                                              silently dropped from the report
+     *   ST Assignment (Transfer of Title) (8 rows) matched %TRANSFER OF TITLE% and
+     *                                              was counted as an Occupancy Permit
+     *
+     * The second rule was written for `pra`, where "Transfer of Title" really did
+     * mean an OP transfer. In the ST register it means a sectional unit changing
+     * hands, which is an assignment of a unit and not a permit.
+     */
+    public const ST_FRAGMENTATION = 'st_fragmentation';
+    public const ST_TRANSFER      = 'st_transfer';
+
+    /**
+     * Everything no other group claims — Deed of Gift, Power of Attorney, and
+     * whatever the registry books next. Not a PRS section in the source report, but
+     * the residue has to be countable: an instrument type that matches no group
+     * produces no section and no error, which is exactly how 54 ST Fragmentation
+     * registrations stayed invisible.
+     */
+    public const OTHER = 'other';
+
     /** Section key => human label, for section titles. */
     public const LABELS = [
-        self::ASSIGNMENT => 'Deed of Assignment',
-        self::MORTGAGE   => 'Deed of Mortgage',
-        self::RELEASE    => 'Deed of Release',
-        self::DEVOLUTION => 'Deed of Devolution',
-        self::COFO       => 'Certificate of Occupancy',
-        self::OP         => 'Occupancy Permit',
-        self::ROO        => 'Right of Occupancy',
+        self::ASSIGNMENT       => 'Deed of Assignment',
+        self::MORTGAGE         => 'Deed of Mortgage',
+        self::RELEASE          => 'Deed of Release',
+        self::DEVOLUTION       => 'Deed of Devolution',
+        self::COFO             => 'Certificate of Occupancy',
+        self::OP               => 'Occupancy Permit',
+        self::ROO              => 'Right of Occupancy',
+        self::ST_FRAGMENTATION => 'ST Fragmentation',
+        self::ST_TRANSFER      => 'ST Unit Transfer',
     ];
+
+    /**
+     * Anything sectional. Both the SQL and the PHP path test this first, so a
+     * sectional instrument can never fall through to the OP or assignment rules.
+     */
+    private const ST_PREFIXES = ['ST ', 'SECTIONAL '];
 
     public function normalize(?string $raw): ?string
     {
@@ -50,11 +83,19 @@ class InstrumentTypeNormalizer
 
         $v = trim(preg_replace('/\s+/', ' ', $v));
 
-        // Order matters. "Tripartite Mortgage" must not fall through to assignment;
-        // "Deed of Surrender and Release" must not read as a surrender only; and
-        // "ST Assignment (Transfer of Title)" is an OP transfer, not an assignment,
-        // so the OP test has to run before the assignment fallback.
+        // Order matters. Sectional instruments are tested first: "ST Assignment
+        // (Transfer of Title)" would otherwise be read as an Occupancy Permit by the
+        // TRANSFER OF TITLE rule, and "ST Fragmentation" matches nothing at all.
+        // After that, "Tripartite Mortgage" must not fall through to assignment, and
+        // "Deed of Surrender and Release" must not read as a surrender only.
+        if ($this->isSectional($v)) {
+            return str_contains($v, 'FRAGMENTATION')
+                ? self::ST_FRAGMENTATION
+                : self::ST_TRANSFER;
+        }
+
         return match (true) {
+            str_contains($v, 'FRAGMENTATION')                         => self::ST_FRAGMENTATION,
             str_contains($v, 'MORTGAGE')                              => self::MORTGAGE,
             str_contains($v, 'OCCUPANCY PERMIT') || str_contains($v, 'TRANSFER OF TITLE')
                 || $v === 'OP'                                        => self::OP,
@@ -69,12 +110,48 @@ class InstrumentTypeNormalizer
         };
     }
 
+    /** Does this instrument type name a sectional-title instrument? */
+    private function isSectional(string $upper): bool
+    {
+        foreach (self::ST_PREFIXES as $prefix) {
+            if (str_starts_with($upper, $prefix)) {
+                return true;
+            }
+        }
+
+        return str_contains($upper, 'SECTIONAL TITLE')
+            || str_contains($upper, 'SECTIONAL TITLING');
+    }
+
     /**
      * SQL fragment listing every raw spelling that belongs to a group, for pushing
      * the filter into the database rather than pulling 133,939 rows into PHP.
      */
     public function sqlPredicate(string $group, string $column): string
     {
+        // The residue: NOT any of the real groups. Defined by subtraction so it can
+        // never drift out of step with them.
+        if ($group === self::OTHER) {
+            $others = array_map(
+                fn ($g) => 'NOT (' . $this->sqlPredicate($g, $column) . ')',
+                self::ALL_GROUPS
+            );
+
+            return '(' . implode(' AND ', $others) . ')';
+        }
+
+        // Sectional groups are built separately: they need a prefix test ANDed with
+        // an instrument test, which the flat OR-list below cannot express.
+        if ($group === self::ST_FRAGMENTATION) {
+            return "(" . $this->sqlIsSectional($column) . " AND UPPER($column) LIKE '%FRAGMENTATION%')";
+        }
+
+        if ($group === self::ST_TRANSFER) {
+            return "(" . $this->sqlIsSectional($column) . ")"
+                 . " AND UPPER($column) NOT LIKE '%FRAGMENTATION%'"
+                 . " AND (UPPER($column) LIKE '%ASSIGNMENT%' OR UPPER($column) LIKE '%TRANSFER OF TITLE%')";
+        }
+
         $like = match ($group) {
             self::MORTGAGE   => ["%MORTGAGE%"],
             self::RELEASE    => ["%RELEASE%", "%SURRENDER%"],
@@ -93,6 +170,14 @@ class InstrumentTypeNormalizer
         $clauses = array_map(fn ($p) => "UPPER($column) LIKE '$p'", $like);
         $sql     = '(' . implode(' OR ', $clauses) . ')';
 
+        // No non-sectional group may claim a sectional instrument. Without this,
+        // "ST Assignment (Transfer of Title)" lands in BOTH the OP group (via
+        // %TRANSFER OF TITLE%) and the assignment group, and the report counts a
+        // sectional unit sale as an occupancy permit.
+        if (in_array($group, [self::OP, self::ASSIGNMENT, self::COFO, self::ROO], true)) {
+            $sql .= " AND NOT (" . $this->sqlIsSectional($column) . ")";
+        }
+
         // Assignment is the fallback in normalize(), so exclude the groups a bare
         // LIKE '%ASSIGNMENT%' would otherwise sweep in — notably
         // "ST Assignment (Transfer of Title)", which is an OP transfer.
@@ -110,4 +195,34 @@ class InstrumentTypeNormalizer
 
         return $sql;
     }
+
+    /** The SQL twin of isSectional(). Kept adjacent so the two cannot drift. */
+    private function sqlIsSectional(string $column): string
+    {
+        $tests = array_map(
+            fn ($p) => "UPPER($column) LIKE '" . $p . "%'",
+            self::ST_PREFIXES
+        );
+
+        $tests[] = "UPPER($column) LIKE '%SECTIONAL TITLE%'";
+
+        // Parenthesised here, not at the call sites. AND binds tighter than OR, so
+        // a bare "A OR B AND frag" reads as "A OR (B AND frag)" and the fragmentation
+        // group claimed every sectional row — including the transfers.
+        return '(' . implode(' OR ', $tests) . ')';
+    }
+
+    /**
+     * Every group a row could be counted in, so the report can prove no instrument
+     * type falls through unclaimed.
+     *
+     * This exists because 57 registrations — 54 ST Fragmentation, 2 Deed of Gift,
+     * 1 Power of Attorney — were silently absent from the report until 2026-08-05.
+     * A group that matches nothing produces no section and no error; only counting
+     * the residue makes it visible.
+     */
+    public const ALL_GROUPS = [
+        self::ASSIGNMENT, self::MORTGAGE, self::RELEASE, self::DEVOLUTION,
+        self::COFO, self::OP, self::ROO, self::ST_FRAGMENTATION, self::ST_TRANSFER,
+    ];
 }

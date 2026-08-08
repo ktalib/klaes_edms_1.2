@@ -7,13 +7,13 @@ return [
     | File Location Registry Ranges
     |--------------------------------------------------------------------------
     | Drives the Quick Search & File Location module. Given a file number, the
-    | FileLocationResolver parses it into a PREFIX and a 4-digit YEAR, then
+    | FileLocationResolver parses it into a PREFIX and a 4-digit YEAR, then   
     | matches the prefix here (LONGEST prefix first, so "CON-RES" wins over
-    | "RES") and finds the range whose [from, to] year span contains the year.
+    | "RES") and finds the range whose [from, to] year span contains the year. 
     |
     | Each range declares:
     |   - zone     : "archive" (Digital Archive — scanned, with us, has a
-    |                rack/shelf) or "pool" (Pool Office — within range but not
+    |                rack/shelf) or "pool" (Pool Office — within range but not 
     |                yet processed; needs a physical search).
     |   - registry : human-readable physical registry label shown to the user.
     |   - from/to  : inclusive 4-digit year bounds.
@@ -21,6 +21,7 @@ return [
     | Source of truth: ranges supplied by KLAES Admin (RAW CHAT.md, 15/06/2026).
     | A file number whose prefix/year matches NOTHING here resolves to
     | REFER_TO_ORIGINAL_REGISTRY (never transferred to us).
+    |--------------------------------------------------------------------------
     */
 
     'ranges' => [

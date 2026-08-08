@@ -552,6 +552,7 @@ class FileNumberApiController extends Controller
                 'tp_no' => $row->tp_no,
                 'location' => $row->district,
                 'district' => $row->district,
+                'street_name' => $row->street_name ?? null,
                 'lga' => $row->lga,
                 'tracking_id' => $row->tracking_id,
                 'num_pages' => $row->pagetypings_count ?? null,
@@ -1608,6 +1609,7 @@ class FileNumberApiController extends Controller
             $selects[] = 'fi.tp_no as fi_tp_no';
             $selects[] = 'fi.lga as fi_lga';
             $selects[] = 'fi.district as fi_district';
+            $selects[] = 'fi.street_name as fi_street_name';
             $selects[] = 'fi.file_title as fi_file_title';
             
             $selects[] = DB::raw("LTRIM(RTRIM(CONCAT(ISNULL(creator_users.first_name, ''), CASE WHEN ISNULL(creator_users.last_name, '') = '' THEN '' ELSE ' ' END, ISNULL(creator_users.last_name, '')))) as created_by_name");
@@ -1630,6 +1632,20 @@ class FileNumberApiController extends Controller
      * application's property parts (house no, street, district) so files that are
      * not yet indexed still backfill a usable location.
      */
+    /**
+     * First value that is neither null nor blank, else null.
+     */
+    private function firstFilled(...$values): ?string
+    {
+        foreach ($values as $value) {
+            if (trim((string) $value) !== '') {
+                return (string) $value;
+            }
+        }
+
+        return null;
+    }
+
     private function resolveLocation(array $record): ?string
     {
         $explicit = trim((string) ($record['location'] ?? ''));
@@ -1659,9 +1675,12 @@ class FileNumberApiController extends Controller
             'new_kangis_file_no' => $record['NewKANGISFileNo'] ?? null,
             'file_name' => $record['FileName'] ?? $record['fi_file_title'] ?? null,
             'location' => $this->resolveLocation($record),
-            'district' => $record['district'] ?? $record['fi_district'] ?? $record['ma_district'] ?? null,
-            'lga'      => $record['lga'] ?? $record['fi_lga'] ?? $record['ma_lga'] ?? null,
-            'plot_no'  => $record['plot_no'] ?? $record['fi_plot_no'] ?? $record['ma_plot_no'] ?? null,
+            // Indexing rows often hold '' rather than NULL, so fall through blanks too —
+            // otherwise an empty fi_district masks a usable mother-application value.
+            'district'    => $this->firstFilled($record['district'] ?? null, $record['fi_district'] ?? null, $record['ma_district'] ?? null),
+            'lga'         => $this->firstFilled($record['lga'] ?? null, $record['fi_lga'] ?? null, $record['ma_lga'] ?? null),
+            'street_name' => $this->firstFilled($record['fi_street_name'] ?? null, $record['ma_street_name'] ?? null),
+            'plot_no'     => $this->firstFilled($record['plot_no'] ?? null, $record['fi_plot_no'] ?? null, $record['ma_plot_no'] ?? null),
             'tp_no'    => $record['tp_no'] ?? $record['fi_tp_no'] ?? null,
             'type' => $record['type'] ?? null,
             'source' => $record['SOURCE'] ?? null,

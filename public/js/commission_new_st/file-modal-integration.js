@@ -588,12 +588,18 @@ function commissionFileNumber() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Success!',
-                    text: `ST file number ${npFileNo} has been commissioned successfully!`,
-                    confirmButtonColor: '#10b981'
-                });
+                // Shared commissioning card (sua_commission.js): where the record
+                // went, plus the EDMS scan folder created for the file.
+                if (typeof showStCommissioningCard === 'function') {
+                    showStCommissioningCard(data, `ST file number ${npFileNo} has been commissioned successfully!`);
+                } else {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Success!',
+                        text: `ST file number ${npFileNo} has been commissioned successfully!`,
+                        confirmButtonColor: '#10b981'
+                    });
+                }
                 console.log('ST file number commissioned:', npFileNo);
                 
                 // Optional: Redirect or refresh form

@@ -849,6 +849,9 @@ function _ossCollectPayload() {
     if (hasOpd) {
         payload.op_from_record = _ossOpdFromRecord ? 1 : 0;
         payload.occupancy_permit = {
+            // Primary key of the PRA row this section was backfilled from — the
+            // backend updates THAT row, not whichever sibling shares its prop_id.
+            record_id: _ossOpdRecordId || 0,
             status: opdVal('oss_opd_status'),
             op_type: opdVal('oss_opd_op_type'),
             op_serial_number: payload.op_serial_number,
@@ -996,9 +999,9 @@ function _ossFetchFileIndexing(fileNo) {
             _ossLinkedPraData = d;
             if (idField) idField.value = d.id || '';
 
-            _ossPrefillFromPra(d);
-
-            // Render card
+            // Render the card BEFORE prefilling. Prefill touches dozens of
+            // widgets (select2, flatpickr); if any of them throws, the card
+            // must not be left showing "Looking up record..." forever.
             if (details) {
                 details.innerHTML =
                     _ossFileField('File Number', d.file_number) +
@@ -1014,6 +1017,16 @@ function _ossFetchFileIndexing(fileNo) {
                     _ossFileField('TP No', d.tp_no) +
                     _ossFileField('Reg. Number', d.registration_number) +
                     _ossFileFieldIfValue('Customer Type', d.customer_type);
+            }
+
+            try {
+                _ossPrefillFromPra(d);
+            } catch (e) {
+                console.error('OSS prefill failed:', e);
+                if (details) {
+                    details.innerHTML += '<div class="col-span-2 mt-1 text-amber-600">'
+                        + 'Record loaded, but some fields could not be prefilled automatically.</div>';
+                }
             }
 
             if (_ossIsChangeOfNamePage()) {
@@ -1155,8 +1168,9 @@ function ossClearFileNumberSelection() {
        locked. An "Edit" button unlocks them so the user can override.
      - When the file has no OP, the section stays editable so the user can
        enter a new OP that will be created on save.
-   The collected values ride on the payload (see _ossCollectPayload); the
-   backend wiring to update/insert the OP is still to come.
+   The collected values ride on the payload (see _ossCollectPayload) as an
+   `occupancy_permit` group carrying the PRA row id, and the backend writes
+   them back onto that row (ApplicationController::syncOccupancyPermitToPra).
    ═══════════════════════════════════════════════════════════════════════ */
 
 // Editable OPD inputs (instrument type, grantor, file number and page number
@@ -1169,6 +1183,9 @@ var _OSS_OPD_EDITABLE = [
 
 // True when the OP was backfilled from an existing record (so save = update).
 var _ossOpdFromRecord = false;
+
+// Primary key of the PRA row the OP section was backfilled from (0 = none).
+var _ossOpdRecordId = 0;
 
 // Show or hide the whole Occupancy Permit Details section (header + body).
 function _ossSetOpdVisible(show) {
@@ -1241,6 +1258,43 @@ function _ossSetOpdValue(elId, value) {
     }
 }
 
+/**
+ * Match a PRA op_type onto the dropdown's options.
+ * PRA stores these as "OP Resettlement" / "OP Direct Allocation"; the select
+ * offers "Resettlement" / "Direct Allocation", so a literal comparison never
+ * matches and the field silently stays blank.
+ */
+function _ossNormalizeOpType(value) {
+    var v = (value || '').toString().trim().toUpperCase();
+    if (!v) return '';
+    if (v.indexOf('RESETTLE') !== -1) return 'Resettlement';
+    if (v.indexOf('DIRECT') !== -1) return 'Direct Allocation';
+    return (value || '').toString().trim();
+}
+
+/**
+ * Force a value onto a select, overwriting whatever is there.
+ * _ossSelectIfFound only writes into an empty select, which is right for the
+ * applicant fields but wrong here: re-running the lookup for a different file
+ * must replace the previous file's OP details, not keep them.
+ */
+function _ossForceSelect(elId, value) {
+    var el = document.getElementById(elId);
+    if (!el) return;
+    var target = (value || '').toString().trim().toLowerCase();
+    if (!target) { _ossSetSelectValue(elId, ''); return; }
+
+    for (var i = 0; i < el.options.length; i++) {
+        var opt = el.options[i];
+        if (!opt) continue;
+        if ((opt.value || '').toString().trim().toLowerCase() === target
+            || (opt.text || '').toString().trim().toLowerCase() === target) {
+            _ossSetSelectValue(elId, opt.value);
+            return;
+        }
+    }
+}
+
 // Backfill and lock the section from a looked-up PRA record.
 function _ossApplyOccupancyPermitFromPra(d) {
     if (!d) return;
@@ -1250,10 +1304,14 @@ function _ossApplyOccupancyPermitFromPra(d) {
     var badge = document.getElementById('oss_opd_source_badge');
 
     if (!opSerial) {
-        // Selected file has no Occupancy Permit → hide the details and block saving.
+        // Selected file has no Occupancy Permit → hide the details. Block saving
+        // only on a new application: an application that already exists must stay
+        // editable, otherwise a file whose OP was never captured locks its own
+        // record out of every other correction.
         _ossOpdFromRecord = false;
+        _ossOpdRecordId = 0;
         _ossSetOpdVisible(false);
-        _ossSetSaveDisabled(true);
+        _ossSetSaveDisabled(!_ossIsEditMode());
         if (editBtn) editBtn.classList.add('hidden');
         if (badge) badge.classList.add('hidden');
         return;
@@ -1263,11 +1321,15 @@ function _ossApplyOccupancyPermitFromPra(d) {
     _ossSetOpdVisible(true);
     _ossSetSaveDisabled(false);
 
+    // The PRA row this section will write back to on save.
+    _ossOpdRecordId = parseInt(d.op_record_id, 10) || 0;
+
     // Common backfill from the OP transaction.
     _ossSetOpdFileNumber((d.file_number || '').toString().trim());
     _ossSetOpdValue('oss_opd_grantee', (d.grantee || d.file_name || '').toString().trim());
-    _ossSelectIfFound('oss_opd_land_use', _ossExpandLandUsePrefix(d.op_land_use || d.land_use));
-    _ossSelectIfFound('oss_opd_op_type', (d.op_type || '').toString().trim());
+    _ossForceSelect('oss_opd_land_use', _ossExpandLandUsePrefix(d.op_land_use || d.land_use));
+    _ossForceSelect('oss_opd_op_type', _ossNormalizeOpType(d.op_type));
+    if (_ossMeaningful(d.op_status)) _ossForceSelect('oss_opd_status', d.op_status);
     _ossSetOpdValue('oss_opd_op_serial_number', opSerial);
 
     // Deeds registration particulars.
@@ -1287,6 +1349,7 @@ function _ossApplyOccupancyPermitFromPra(d) {
 
 function _ossResetOccupancyPermit() {
     _ossOpdFromRecord = false;
+    _ossOpdRecordId = 0;
 
     _ossSetOpdVisible(false);
     _ossSetSaveDisabled(false);
@@ -1369,9 +1432,21 @@ function _ossLandUseToType(landUse) {
     return '';
 }
 
+/**
+ * True while an existing application is open for editing. The lookup that
+ * ossEditRecord fires resolves AFTER the saved values have been written into
+ * the form, so prefill must not treat the form as blank: PRA is the source for
+ * the OP section, but the saved application wins for everything the user typed.
+ */
+function _ossIsEditMode() {
+    var idEl = document.getElementById('oss_id');
+    return !!(idEl && (idEl.value || '').toString().trim());
+}
+
 function _ossPrefillFromPra(d) {
     if (!d) return;
 
+    var isEdit = _ossIsEditMode();
     var applicantName = (d.file_name || '').toString().trim();
     var lga = (d.lga || '').toString().trim();
     var state = (d.state || '').toString().trim() || 'Kano';
@@ -1379,8 +1454,11 @@ function _ossPrefillFromPra(d) {
     var purpose = (d.purpose || d.land_use || '').toString().trim();
     var phone = (d.phone || '').toString().trim();
 
+    // Land use only *suggests* the tab on a new application. On edit the saved
+    // application_type is authoritative — deriving it from PRA here would flip
+    // the tab out from under the fields ossEditRecord has already populated.
     var detectedType = _ossLandUseToType(d.land_use);
-    if (detectedType) {
+    if (detectedType && !isEdit) {
         ossSelectType(detectedType);
     }
 
@@ -1410,15 +1488,30 @@ function _ossPrefillFromPra(d) {
     _ossSetIfEmpty('oss_agr_purpose', purposeWithPlan);
 
     // TP No. + Location (OP card) — prefill from the linked record.
-    _ossSetTpNo((d.tp_no || d.plan_no || planNo || '').toString().trim());
-    _ossSetIfEmpty('oss_lb_plot_no', (d.plot_no || '').toString().trim());
-    _ossSelectIfFound('oss_lb_district', (d.district || '').toString().trim());
-    _ossSetSelectValue('oss_lb_district', (document.getElementById('oss_lb_district')?.value || ''));
-    var recLocation = (d.location || d.property_description || '').toString().trim();
+    // On edit these already hold the saved values (this lookup resolves after
+    // ossEditRecord wrote them), so leave them alone; TP No. in particular was
+    // being overwritten by PRA's value on every edit.
+    if (!isEdit) {
+        _ossSetTpNo((d.op_tp_no || d.tp_no || d.plan_no || planNo || '').toString().trim());
+    }
+    _ossSetIfEmpty('oss_lb_plot_no', (d.op_plot_no || d.plot_no || '').toString().trim());
+
+    // District and LGA come off the OP row; the old code read a `district` key
+    // the lookup never returned, and never touched the LGA select at all.
+    var district = (d.op_district || d.district || '').toString().trim();
+    if (district && !(document.getElementById('oss_lb_district') || {}).value) {
+        _ossForceSelect('oss_lb_district', district);
+    }
+    var opLga = (d.op_lga || lga || '').toString().trim();
+    if (opLga && !(document.getElementById('oss_lb_lga') || {}).value) {
+        _ossForceSelect('oss_lb_lga', opLga);
+    }
+
+    var recLocation = (d.op_location || d.location || d.property_description || '').toString().trim();
+    var locEl = document.getElementById('oss_lb_full_location');
     if (recLocation) {
-        var locEl = document.getElementById('oss_lb_full_location');
         if (locEl && !locEl.value.trim()) locEl.value = recLocation.toUpperCase();
-    } else {
+    } else if (!locEl || !locEl.value.trim()) {
         _ossBuildOpLocation();
     }
 
@@ -1524,8 +1617,11 @@ function ossEditRecord(btn) {
     if (data.file_no) {
         var displayEl = document.getElementById('oss_file_no_display');
         if (displayEl) displayEl.value = data.file_no;
+        // The field-map loop above fills the hidden input, but only when the
+        // active type's map is the one carrying oss_file_no — set it outright.
+        var hiddenFileEl = document.getElementById('oss_file_no');
+        if (hiddenFileEl) hiddenFileEl.value = data.file_no;
         _ossSetOpdFileNumber(data.file_no);
-        _ossFetchFileIndexing(data.file_no);
         var clearBtn = document.getElementById('oss_file_no_clear_btn');
         if (clearBtn) clearBtn.classList.remove('hidden');
     }
@@ -1590,6 +1686,13 @@ function ossEditRecord(btn) {
 
     document.getElementById('ossApplicationModal').classList.remove('hidden');
     if (window.lucide) window.lucide.createIcons();
+
+    // Fire the PRA lookup last, once every saved value is on the form. It is
+    // what backfills the Occupancy Permit Details, and its callback must not
+    // race the assignments above.
+    if (data.file_no) {
+        _ossFetchFileIndexing(data.file_no);
+    }
 }
 
 
@@ -1794,7 +1897,19 @@ function _ossDoSave(id, isEdit, payload) {
     // Use FormData to support file upload (passport photo)
     var formData = new FormData();
     Object.keys(payload).forEach(function (key) {
-        formData.append(key, payload[key] || '');
+        var value = payload[key];
+        // Nested groups (occupancy_permit) must be flattened into key[sub]
+        // entries — appending the object itself stringifies it to
+        // "[object Object]" and the whole section silently never reaches PHP.
+        if (value && typeof value === 'object' && !(value instanceof Blob)) {
+            Object.keys(value).forEach(function (sub) {
+                var subVal = value[sub];
+                formData.append(key + '[' + sub + ']', subVal == null ? '' : subVal);
+            });
+            return;
+        }
+        // `|| ''` would turn a legitimate 0 (has_occupancy_permit) into a blank.
+        formData.append(key, value == null ? '' : value);
     });
     if (isEdit) {
         formData.append('_method', 'PUT');

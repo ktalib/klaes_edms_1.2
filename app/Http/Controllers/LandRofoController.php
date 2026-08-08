@@ -484,7 +484,7 @@ class LandRofoController extends Controller
                 : ($rec->rofo_status === LandRecommendation::ROFO_GENERATED ? 'APPROVED' : 'PENDING'),
             'approved_on'    => $isOss ? '' : ($rec->approved_at ? $rec->approved_at->format('Y-m-d h:i A') : 'N/A'),
             'created_by'     => $rec->creator->name ?? 'System',
-            'paper_code'     => $isOss ? 'N/A' : ($rec->land_rofo_serial_no ?: 'Unassigned'),
+            'paper_code'     => $rec->land_rofo_serial_no ?: 'Unassigned',
             'date_generated' => $rec->created_at ? $rec->created_at->format('Y-m-d h:i A') : 'N/A',
         ];
     }

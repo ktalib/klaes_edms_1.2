@@ -431,6 +431,8 @@
                     // NOTE: the "Apply & Pin on Map" coordinate requirement is enforced in
                     // submitFileIndexingForm() (create-indexing-dialog.js), which actually blocks
                     // submission — a preventDefault() here does not stop that handler's fetch.
+                    // That check is currently OFF (REQUIRE_LOCATION_PIN = false) while the Google
+                    // Cloud billing account is suspended.
 
                     if (!validateNigerianPhone() && phoneInput.value.trim()) {
                         e.preventDefault();

@@ -144,13 +144,14 @@
                                 </div>
                                 <div class="flex flex-col">
                                     <span class="text-xs font-semibold uppercase tracking-wide text-slate-600">Registry Batch No</span>
-                                    <input
-                                        type="text"
-                                        id="kangisBatchNoInput"
-                                        placeholder="e.g. 1 or 1,4,5"
+                                    <select
+                                        id="kangisBatchNoSelect"
+                                        multiple
+                                        disabled
                                         class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                                    />
-                                    <span class="mt-1 text-xs text-slate-500">Filter by sys_batch_no.</span>
+                                    >
+                                    </select>
+                                    <span id="kangisBatchNoHint" class="mt-1 text-xs text-slate-500">Select a prefix first.</span>
                                 </div>
                                 <div class="flex flex-col">
                                     <span class="text-xs font-semibold uppercase tracking-wide text-slate-600">Rack</span>
@@ -261,13 +262,35 @@
                                 <div class="text-xs text-slate-500 sm:text-left">
                                     Select a prefix and click <strong>Load Records</strong> to fetch files.
                                 </div>
-                                <button
-                                    id="generateBatchBtn"
-                                    class="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                                >
-                                    Load Records
-                                </button>
+                                <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                    <button
+                                        id="assignBatchShelvesBtn"
+                                        type="button"
+                                        class="inline-flex items-center justify-center gap-2 rounded-md border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50"
+                                    >
+                                        <i data-lucide="layout-grid" class="h-4 w-4"></i>
+                                        <span id="assignBatchShelvesBtnLabel">Assign Shelves per Registry Batch</span>
+                                    </button>
+                                    <button
+                                        id="generateBatchBtn"
+                                        class="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                                    >
+                                        Load Records
+                                    </button>
+                                </div>
                             </div>
+                        </div>
+
+                        {{-- Registry batch shelf/rack assignment --}}
+                        <div id="batchGroupPanel" class="hidden mb-6 rounded-md border border-amber-200">
+                            <div class="flex flex-col gap-1 border-b border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <h4 class="text-sm font-semibold text-slate-800">Registry Batch Shelf/Rack Assignment</h4>
+                                    <p class="text-xs text-slate-600">Each row holds the files of one loaded registry batch. Assign its shelf/rack below.</p>
+                                </div>
+                                <span id="batchGroupPanelMeta" class="text-xs font-medium text-slate-600"></span>
+                            </div>
+                            <div id="batchGroupList" class="divide-y"></div>
                         </div>
 
                         {{-- File list --}}

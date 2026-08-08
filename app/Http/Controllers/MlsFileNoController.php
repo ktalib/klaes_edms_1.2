@@ -1588,6 +1588,23 @@ class MlsFileNoController extends Controller
         return null;
     }
 
+    /**
+     * Which system this file number was commissioned from, for mls_file_no.system_sub_type.
+     *
+     * The One Stop Shop has no commissioning writer of its own — it deep-links
+     * into the generator page and posts here — so an OSS row and a generator row
+     * are otherwise identical, and `source` cannot tell them apart (the generator
+     * writes 'OP Resettlement' / 'OP Direct Allocation' for its own allocations
+     * too). Record the origin the client reports; the MLS file list filters on
+     * this column alone. See App\Support\OssOpCommissionFilter.
+     */
+    private function resolveSystemSubType(bool $ossCommission): string
+    {
+        return $ossCommission
+            ? \App\Support\OssOpCommissionFilter::OSS
+            : \App\Support\OssOpCommissionFilter::MLS;
+    }
+
 
     /**
      * Generate new MLS file number with land-use-based serial numbering
@@ -1636,6 +1653,9 @@ class MlsFileNoController extends Controller
                 'allocated_by_filter' => 'nullable|string|max:100',
                 'default_allocation_type' => 'nullable|string|max:50',
                 'require_op_source' => 'nullable|boolean',
+                // Set by the client when commissioning was raised from an OSS entry
+                // point; see resolveSystemSubType().
+                'oss_commission' => 'nullable|boolean',
                 'source_instrument_capture_id' => 'nullable|integer',
                 'source_pra_id' => 'nullable|integer',
                 'source_prop_id' => 'nullable',
@@ -2344,6 +2364,9 @@ class MlsFileNoController extends Controller
                     'purpose_id' => $validated['purpose_id'] ?? null,
                     'source' => $sourceValue,
                     'sub_source' => $validated['sub_source'] ?? null,
+                    'system_sub_type' => $this->resolveSystemSubType(
+                        (bool) ($validated['oss_commission'] ?? false)
+                    ),
                     'source_instrument_capture_id' => $validated['source_instrument_capture_id'] ?? null,
                     'source_pra_id' => $validated['source_pra_id'] ?? null,
                     'sit_reason' => $fileOption === 'sit' ? ($validated['sit_reason'] ?? null) : null,
@@ -3330,7 +3353,7 @@ class MlsFileNoController extends Controller
 
                 DB::connection('sqlsrv')->commit();
 
-                $this->ensureEdmsBlindScanFolder($fullFileNumber);
+                $edmsFolder = $this->ensureEdmsScanFolder($fullFileNumber);
 
                 Log::info('MLS File Number Generated', [
                     'file_number' => $fullFileNumber,
@@ -3353,6 +3376,10 @@ class MlsFileNoController extends Controller
                     'decommission_summary' => $decommissionSummary,
                     'skipped_serials' => $skippedSerials,
                     'notice' => $skipNotice,
+                    // Where scans for this file go — shown on the commissioning summary.
+                    'edms_folder' => $edmsFolder,
+                    // Which tables the commissioning wrote to, for the same card.
+                    'storage_summary' => $this->buildStorageSummary($fullFileNumber),
                     'data' => [
                         'file_number' => $fullFileNumber,
                         'file_name' => $validated['file_name'] ?? ($mlsRecord->file_name ?? null),
@@ -3728,6 +3755,8 @@ class MlsFileNoController extends Controller
                 'default_allocation_type' => 'nullable|string|max:50',
                 'source_instrument_capture_id' => 'nullable|integer',
                 'sub_source' => 'nullable|string|max:100',
+                // See resolveSystemSubType().
+                'oss_commission' => 'nullable|boolean',
                 'subdivision_app_id' => 'nullable|integer',
                 'separation_app_id' => 'nullable|integer',
                 'merger_app_id' => 'nullable|integer',
@@ -3865,6 +3894,11 @@ class MlsFileNoController extends Controller
                     $validated['allocated_by_filter'] ?? '',
                     $validated['default_allocation_type'] ?? null,
                     $validated['file_option'] ?? 'normal'
+                );
+
+                // Resolved once — every row in the batch shares the same origin.
+                $batchSystemSubType = $this->resolveSystemSubType(
+                    (bool) ($validated['oss_commission'] ?? false)
                 );
 
                 // 1. Generate all full file numbers first (from the allocated free serials)
@@ -4147,6 +4181,7 @@ class MlsFileNoController extends Controller
                         'purpose_id' => $validated['purpose_id'] ?? null,
                         'source' => $sourceValue,
                         'sub_source' => $validated['sub_source'] ?? null,
+                        'system_sub_type' => $batchSystemSubType,
                         'source_instrument_capture_id' => $validated['source_instrument_capture_id'] ?? null,
                         'created_at' => $now,
                         'updated_at' => $now
@@ -4723,9 +4758,16 @@ class MlsFileNoController extends Controller
 
                 DB::connection('sqlsrv')->commit();
 
+                $edmsFolders = [];
                 foreach ($generatedFiles as $generatedFileNumber) {
-                    $this->ensureEdmsBlindScanFolder($generatedFileNumber);
+                    $edmsFolders[] = $this->ensureEdmsScanFolder($generatedFileNumber);
                 }
+                $edmsFolderSummary = [
+                    'created'  => count(array_filter($edmsFolders, fn ($f) => $f['created'])),
+                    'existed'  => count(array_filter($edmsFolders, fn ($f) => $f['existed'])),
+                    'total'    => count($edmsFolders),
+                    'registry' => $edmsFolders[0]['registry'] ?? null,
+                ];
 
                 $serialRange = $allocatedSerials[0] . ' to ' . end($allocatedSerials);
 
@@ -4753,6 +4795,8 @@ class MlsFileNoController extends Controller
                     'decommission_summary' => $decommissionSummary,
                     'skipped_serials' => $skippedSerials,
                     'notice' => $skipNotice,
+                    // One scan folder per file in the batch, rolled up for the summary.
+                    'edms_folder' => $edmsFolderSummary,
                     'data' => [
                         'batch_size' => $batchQuantity,
                         'land_use' => $landUse,
@@ -5122,32 +5166,67 @@ class MlsFileNoController extends Controller
         }
     }
 
-    private function ensureEdmsBlindScanFolder(string $fileNumber): void
+    /**
+     * Create the commissioned file's EDMS scan folder.
+     *
+     * Delegates to EdmsScanUploadFolderService so commissioning, indexing and the
+     * scanning/page-typing readers all agree on one path. This used to build the
+     * path inline against a hardcoded "Lands_Registry" — fine in practice, since
+     * MLS commissioning only ever issues Land file numbers, but it meant the
+     * sanitising and slug rules lived in two places and could drift apart.
+     *
+     * @return array{created:bool, existed:bool, path:?string, registry:?string, reason:string}
+     */
+    private function ensureEdmsScanFolder(string $fileNumber): array
     {
-        $rawFileNumber = trim($fileNumber);
-        if ($rawFileNumber === '') {
-            return;
-        }
+        return app(\App\Services\EdmsScanUploadFolderService::class)
+            ->ensure($fileNumber, 'Lands Registry', ['source' => 'mls_commissioning']);
+    }
 
-        // Keep folder names filesystem-safe while still human-readable.
-        $safeFolderName = preg_replace('/[\\\\\/\:\*\?"<>\|]+/', '-', $rawFileNumber);
-        $safeFolderName = trim((string) $safeFolderName);
-        if ($safeFolderName === '') {
-            return;
+    /**
+     * "Where did this commissioning land?" — counts for the Commission Summary card.
+     *
+     * Commissioning writes across mls_file_no, fileNumber, file_indexings and the
+     * customer/entity staging tables, none of which the operator can see from the
+     * form. Reuses IndexingStorageSummaryService so the commissioning card reads
+     * like the one shown after file indexing and after ST commissioning.
+     *
+     * Best-effort and read-only: the commissioning is already committed by the time
+     * this runs, so a failure here must never turn a successful save into an error.
+     */
+    private function buildStorageSummary(?string $fileNumber): ?array
+    {
+        $fileNumber = trim((string) $fileNumber);
+        if ($fileNumber === '') {
+            return null;
         }
-
-        $folderPath = 'EDMS\SCAN_UPLOAD\Lands_Registry/' . $safeFolderName;
 
         try {
-            if (!Storage::disk('public')->exists($folderPath)) {
-                Storage::disk('public')->makeDirectory($folderPath);
+            $indexing = \App\Models\FileIndexing::on('sqlsrv')
+                ->where('file_number', $fileNumber)
+                ->orderByDesc('id')
+                ->first();
+
+            if (!$indexing) {
+                // Not every commissioning path creates an indexing row. An unsaved
+                // stand-in carrying just the number still counts everything keyed BY
+                // FILE NUMBER (mls_file_no, fileNumber, customer/entity staging);
+                // the id-keyed rows correctly come back zero.
+                $indexing = new \App\Models\FileIndexing();
+                $indexing->setConnection('sqlsrv');
+                $indexing->file_number = $fileNumber;
+                $indexing->general_registry = 'Lands Registry';
             }
+
+            return app(\App\Services\IndexingStorageSummaryService::class)
+                ->summarize($indexing, ['is_update' => false]);
         } catch (\Throwable $e) {
-            Log::warning('Failed to create EDMS BLIND_SCAN folder for commissioned file', [
-                'file_number' => $rawFileNumber,
-                'folder_path' => $folderPath,
+            Log::warning('MlsFileNoController - could not build storage summary', [
+                'file_number' => $fileNumber,
                 'error' => $e->getMessage(),
             ]);
+
+            return null;
         }
     }
 
@@ -5376,17 +5455,9 @@ class MlsFileNoController extends Controller
                 ->where(function ($q) {
                     $q->whereNull('mls_file_no.is_deleted')->orWhere('mls_file_no.is_deleted', 0);
                 })
-                ->where(function ($q) {
+                ->tap(function ($q) {
                     // Exclude OSS / One-Stop Shop specific records
-                    $q->where(function ($sq) {
-                        $sq->where('mls_file_no.sub_source', '!=', 'OP Change of Name')
-                            ->orWhereNull('mls_file_no.sub_source');
-                    })
-                        ->where(function ($sq) {
-                        // Also exclude OP Resettlement and OP Direct Allocation which are OSS sources
-                        $sq->whereNotIn('mls_file_no.source', ['OP Resettlement', 'OP Direct Allocation'])
-                            ->orWhereNull('mls_file_no.source');
-                    });
+                    \App\Support\OssOpCommissionFilter::applyExclusion($q);
                 })
                 ->select([
                     'mls_file_no.*',

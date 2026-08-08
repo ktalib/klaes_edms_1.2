@@ -15,11 +15,20 @@ document.addEventListener('DOMContentLoaded', function() {
         previewInFlight: false, previewPromise: null, labelStatistics: null, rackLabelStatus: null,
         excludeAssignedFromBatch: false, reprintMode: false, batchSearchQuery: '',
         batchPagination: { current_page:1, last_page:1, per_page:20, total:0 },
-        sltrPrefix: SLTR_PREFIX, sltrSubPrefix: '', digitRank: '',
+        sltrPrefix: SLTR_PREFIX, sltrSubPrefixes: [], loadedSubPrefixes: [], digitRank: '',
         subGroupEnabled: false, subGroupCount: 2, subGroups: [], currentBatchIds: [],
+        // Per-sub-prefix shelf assignment, switched on by the Assign Shelves button.
+        prefixAssignEnabled: false,
     };
 
     const MIN_SUB_GROUPS = 2;
+    // Grouping key for the shelf assignment panel: 'prefix' = one group per loaded
+    // sub prefix, 'serial' = the classic N-way serial split of a single sub prefix.
+    function groupMode() {
+        if (state.prefixAssignEnabled && state.loadedSubPrefixes.length) return 'prefix';
+        return state.subGroupEnabled ? 'serial' : 'none';
+    }
+    function selectedSubPrefixCsv() { return state.sltrSubPrefixes.join(','); }
 
     const PRINT_TEMPLATE_URL = '/sltr-printlabel/print-template';
     const API = {
@@ -130,7 +139,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ---- Sub groups ----
     function isSubGroupMode() {
-        return state.subGroupEnabled && Array.isArray(state.subGroups) && state.subGroups.length >= MIN_SUB_GROUPS;
+        if (!Array.isArray(state.subGroups) || !state.subGroups.length) return false;
+        // Sub Prefix mode is meaningful even with a single group: it still pins that
+        // sub prefix to its own shelf. Serial mode needs at least two slices.
+        return groupMode() === 'prefix' ? true : (state.subGroupEnabled && state.subGroups.length >= MIN_SUB_GROUPS);
     }
     function buildSubGroupLabel(g) {
         return ((g.rackPrimary||'').toUpperCase().trim()+(g.rackSecondary||'').toUpperCase().trim()+(g.shelfNumber||'').toString().trim());
@@ -154,40 +166,77 @@ document.addEventListener('DOMContentLoaded', function() {
         var el=document.getElementById('subGroupSummary');if(!el)return;
         if(message){el.innerHTML=message;return;}
         if(!state.availableFiles.length){el.innerHTML='Click <strong>Load Records</strong> to count the files and divide them.';return;}
-        if(!isSubGroupMode()){el.textContent='';return;}
+        if(!isSubGroupMode()||groupMode()==='prefix'){el.textContent='';return;}
         var sizes=state.subGroups.map(function(g){return g.count;});
         el.textContent=state.availableFiles.length+' file'+(state.availableFiles.length===1?'':'s')+' divided into '+state.subGroups.length+' sub groups ('+sizes.join(' / ')+').';
     }
-    // Slice the loaded files serially into N sub groups, preserving any shelf/rack
+    function updateSubGroupPanelHeading() {
+        var prefixMode=groupMode()==='prefix';
+        var t=document.getElementById('subGroupPanelTitle');
+        var s=document.getElementById('subGroupPanelSubtitle');
+        if(t)t.textContent=prefixMode?'Sub Prefix Shelf/Rack Assignment':'Sub Group Shelf/Rack Assignment';
+        if(s)s.textContent=prefixMode
+            ?'Each row holds the files of one loaded sub prefix. Assign its shelf/rack below.'
+            :'Each sub group holds a serial slice of the loaded files. Assign its shelf/rack below.';
+        // The serial split only makes sense within one sub prefix.
+        var toggle=document.getElementById('subGroupToggle');
+        var note=document.getElementById('subGroupDisabledNote');
+        var ctrls=document.getElementById('subGroupControls');
+        if(toggle){
+            toggle.disabled=prefixMode;
+            toggle.parentElement.classList.toggle('opacity-50',prefixMode);
+            toggle.parentElement.classList.toggle('cursor-not-allowed',prefixMode);
+        }
+        if(note)note.classList.toggle('hidden',!prefixMode);
+        if(ctrls&&prefixMode)ctrls.classList.add('hidden');
+    }
+    // Build one group per loaded sub prefix, in the order the user selected them.
+    function buildPrefixGroups(files, prev) {
+        var buckets=[],byKey={};
+        state.loadedSubPrefixes.forEach(function(p){
+            var b={key:p,files:[]};byKey[p]=b;buckets.push(b);
+        });
+        var unknown=null;
+        files.forEach(function(f){
+            var key=f.sub_prefix_group;
+            var b=(key!==undefined&&key!==null&&byKey[key])?byKey[key]:null;
+            if(!b){
+                if(!unknown){unknown={key:'',files:[]};buckets.push(unknown);}
+                b=unknown;
+            }
+            b.files.push(f);
+        });
+        var prevByKey={};
+        (prev||[]).forEach(function(g){if(g.subPrefix!==undefined)prevByKey[g.subPrefix||'']=g;});
+
+        return buckets.filter(function(b){return b.files.length;}).map(function(b,i){
+            var p=prevByKey[b.key||'']||{};
+            return {
+                index:i+1,
+                subPrefix:b.key||null,
+                label:b.key?('Sub Prefix '+b.key):'Unmatched',
+                count:b.files.length,
+                fileIds:b.files.map(function(f){return f.id;}),
+                firstFile:b.files[0].file_number,
+                lastFile:b.files[b.files.length-1].file_number,
+                rackPrimary:p.rackPrimary||(state.rackPrimary||'A'),
+                rackSecondary:p.rackSecondary||'',
+                shelfNumber:p.shelfNumber||String(i+1)
+            };
+        });
+    }
+    // Divide the loaded files serially into N sub groups, preserving any shelf/rack
     // the user already assigned to a sub group of the same index.
-    function computeSubGroups() {
-        var panel=document.getElementById('subGroupPanel');
-        var hide=function(msg){
-            state.subGroups=[];
-            if(panel)panel.classList.add('hidden');
-            setPrimaryRackControlsDisabled(false);
-            updateSubGroupSummary(msg);
-        };
-        if(!state.subGroupEnabled){hide();return;}
-
-        var files=state.availableFiles.slice();
-        var n=files.length;
-        if(n===0){hide();return;}
-
-        var k=parseInt(state.subGroupCount,10);
-        if(isNaN(k)||k<MIN_SUB_GROUPS)k=MIN_SUB_GROUPS;
-        var capped=false;
-        if(k>n){k=Math.max(MIN_SUB_GROUPS,n);capped=true;}
-        if(n<MIN_SUB_GROUPS){hide('Only '+n+' file loaded — at least '+MIN_SUB_GROUPS+' are needed to divide into sub groups.');return;}
-
-        var prev=state.subGroups||[];
-        var base=Math.floor(n/k),rem=n%k,cursor=0,groups=[];
+    function buildSerialGroups(files, prev, k) {
+        var n=files.length,base=Math.floor(n/k),rem=n%k,cursor=0,groups=[];
         for(var i=0;i<k;i++){
             var size=base+(i<rem?1:0);
             var slice=files.slice(cursor,cursor+size);cursor+=size;
-            var p=prev[i]||{};
-            var g={
+            var p=(prev||[])[i]||{};
+            groups.push({
                 index:i+1,
+                subPrefix:state.loadedSubPrefixes[0]||null,
+                label:'Sub Group '+(i+1),
                 count:slice.length,
                 fileIds:slice.map(function(f){return f.id;}),
                 firstFile:slice.length?slice[0].file_number:'',
@@ -195,24 +244,66 @@ document.addEventListener('DOMContentLoaded', function() {
                 rackPrimary:p.rackPrimary||(state.rackPrimary||'A'),
                 rackSecondary:p.rackSecondary||'',
                 shelfNumber:p.shelfNumber||String(i+1)
-            };
+            });
+        }
+        return groups;
+    }
+    function computeSubGroups() {
+        var panel=document.getElementById('subGroupPanel');
+        var hide=function(msg){
+            state.subGroups=[];
+            if(panel)panel.classList.add('hidden');
+            setPrimaryRackControlsDisabled(false);
+            updateSubGroupPanelHeading();
+            updateSubGroupSummary(msg);
+        };
+        var mode=groupMode();
+        if(mode==='none'){hide();return;}
+
+        var files=state.availableFiles.slice();
+        var n=files.length;
+        if(n===0){hide();return;}
+
+        var prev=state.subGroups||[],groups,capped=false,k=null;
+        if(mode==='prefix'){
+            groups=buildPrefixGroups(files,prev);
+            if(!groups.length){hide();return;}
+        }else{
+            k=parseInt(state.subGroupCount,10);
+            if(isNaN(k)||k<MIN_SUB_GROUPS)k=MIN_SUB_GROUPS;
+            if(k>n){k=Math.max(MIN_SUB_GROUPS,n);capped=true;}
+            if(n<MIN_SUB_GROUPS){hide('Only '+n+' file loaded — at least '+MIN_SUB_GROUPS+' are needed to divide into sub groups.');return;}
+            groups=buildSerialGroups(files,prev,k);
+        }
+
+        groups.forEach(function(g){
             g.fullLabel=buildSubGroupLabel(g);
             g.fileIdSet=new Set(g.fileIds.map(String));
-            groups.push(g);
-        }
+        });
         state.subGroups=groups;
         if(panel)panel.classList.remove('hidden');
         setPrimaryRackControlsDisabled(true);
+        updateSubGroupPanelHeading();
         renderSubGroupPanel();
         updateSubGroupSummary(capped?('Only '+n+' files loaded — divided into '+k+' sub groups (one file each).'):null);
     }
+    function groupTitle(g){return g.label||('Sub Group '+g.index);}
     function subGroupDuplicateLabels() {
         var seen={},dups=[];
         state.subGroups.forEach(function(g){
-            if(seen[g.fullLabel])dups.push(seen[g.fullLabel]+' & '+g.index+' (“'+g.fullLabel+'”)');
-            else seen[g.fullLabel]=g.index;
+            if(seen[g.fullLabel])dups.push(seen[g.fullLabel]+' & '+groupTitle(g)+' (“'+g.fullLabel+'”)');
+            else seen[g.fullLabel]=groupTitle(g);
         });
         return dups;
+    }
+    function subGroupMetaText() {
+        var dups=subGroupDuplicateLabels();
+        if(dups.length)return 'Duplicate shelf/rack on '+dups.join(', ');
+        var n=state.subGroups.length;
+        var noun=groupMode()==='prefix'
+            ? (n===1?'sub prefix':'sub prefixes')
+            : (n===1?'sub group':'sub groups');
+        return n+' '+noun;
     }
     function renderSubGroupPanel() {
         var list=document.getElementById('subGroupList');if(!list)return;
@@ -230,7 +321,7 @@ document.addEventListener('DOMContentLoaded', function() {
             var range=g.firstFile?(g.firstFile+(g.lastFile&&g.lastFile!==g.firstFile?' → '+g.lastFile:'')):'—';
             return '<div class="p-4 grid grid-cols-1 gap-3 md:grid-cols-12 md:items-end">'
                 +'<div class="md:col-span-5">'
-                +'<span class="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">Sub Group '+g.index+'</span>'
+                +'<span class="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">'+groupTitle(g)+'</span>'
                 +'<p class="mt-1 text-sm font-medium text-slate-800">'+range+'</p>'
                 +'<p class="text-xs text-slate-500">'+g.count+' file'+(g.count===1?'':'s')+'</p>'
                 +'</div>'
@@ -247,9 +338,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
         var meta=document.getElementById('subGroupPanelMeta');
         if(meta){
-            var dups=subGroupDuplicateLabels();
-            meta.textContent=dups.length?('Duplicate shelf/rack on sub groups '+dups.join(', ')):(state.subGroups.length+' sub groups');
-            meta.className='text-xs font-medium '+(dups.length?'text-red-600':'text-slate-600');
+            meta.textContent=subGroupMetaText();
+            meta.className='text-xs font-medium '+(subGroupDuplicateLabels().length?'text-red-600':'text-slate-600');
         }
 
         list.querySelectorAll('select[data-sg-index]').forEach(function(sel){
@@ -260,7 +350,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 g.fullLabel=buildSubGroupLabel(g);
                 var le=list.querySelector('[data-sg-label="'+g.index+'"]');if(le)le.textContent=g.fullLabel;
                 var meta2=document.getElementById('subGroupPanelMeta');
-                if(meta2){var d=subGroupDuplicateLabels();meta2.textContent=d.length?('Duplicate shelf/rack on sub groups '+d.join(', ')):(state.subGroups.length+' sub groups');meta2.className='text-xs font-medium '+(d.length?'text-red-600':'text-slate-600');}
+                if(meta2){meta2.textContent=subGroupMetaText();meta2.className='text-xs font-medium '+(subGroupDuplicateLabels().length?'text-red-600':'text-slate-600');}
                 resetPreparedState();renderFileList();updateCounts();
             });
         });
@@ -268,8 +358,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function computePreparationSignature() {
         var ids=state.selectedFiles.map(function(v){return v!=null?v.toString():'';}).filter(Boolean).sort();
-        var sg=isSubGroupMode()?state.subGroups.map(function(g){return g.index+':'+g.fullLabel+':'+g.fileIds.join(',');}):null;
-        return JSON.stringify({selectedIds:ids,fullLabel:state.fullLabel,selectedTemplate:state.selectedTemplate,orientation:state.orientation,sltrPrefix:state.sltrPrefix,sltrSubPrefix:state.sltrSubPrefix,digitRank:state.digitRank,subGroups:sg});
+        var sg=isSubGroupMode()?state.subGroups.map(function(g){return g.index+':'+(g.subPrefix||'')+':'+g.fullLabel+':'+g.fileIds.join(',');}):null;
+        return JSON.stringify({selectedIds:ids,fullLabel:state.fullLabel,selectedTemplate:state.selectedTemplate,orientation:state.orientation,sltrPrefix:state.sltrPrefix,sltrSubPrefix:selectedSubPrefixCsv(),digitRank:state.digitRank,subGroups:sg});
     }
 
     function buildPreparedEntriesFromItems(items) {
@@ -331,11 +421,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ---- SLTR file loading ----
     async function loadSltrFiles() {
-        var subPrefix=state.sltrSubPrefix;
-        if(!subPrefix){showError('Please select a sub prefix.');return;}
+        var subPrefixes=state.sltrSubPrefixes.slice();
+        if(!subPrefixes.length){showError('Please select at least one sub prefix.');return;}
+        var listed=subPrefixes.join(', ');
         showLoading('Loading SLTR files...');
         try{
-            var params=new URLSearchParams({prefix:SLTR_PREFIX,sub_prefix:subPrefix,search:state.searchTerm||''});
+            var params=new URLSearchParams({prefix:SLTR_PREFIX,sub_prefix:subPrefixes.join(','),search:state.searchTerm||''});
             if(state.digitRank)params.append('digit_rank',state.digitRank);
             if(state.excludeAssignedFromBatch)params.append('exclude_assigned','true');
             var r=await fetch(API.files+'?'+params);
@@ -343,12 +434,15 @@ document.addEventListener('DOMContentLoaded', function() {
             var data=await r.json();if(!data.success)throw new Error(data.message||'Unable to fetch files.');
             resetPreparedState();state.loadedFromBatch=true;
             var files=(data.data&&Array.isArray(data.data.files))?data.data.files:[];
+            // Freeze the sub prefixes the loaded files belong to, so changing the
+            // dropdown afterwards cannot desynchronise the assignment panel.
+            state.loadedSubPrefixes=(data.data&&Array.isArray(data.data.sub_prefixes))?data.data.sub_prefixes:subPrefixes;
             state.availableFiles=files;state.selectedFiles=files.map(function(f){return f.id;});
             computeSubGroups();
-            renderFileList();updateCounts();updateSelectAllCheckbox();
+            renderFileList();updateCounts();updateSelectAllCheckbox();updateAssignSubPrefixBtn();
             hideLoading();
-            if(files.length===0)showError('No indexed records found for SLTR sub prefix '+subPrefix+'.');
-            else showSuccess('Loaded '+files.length+' file'+(files.length===1?'':'s')+' for sub prefix '+subPrefix+'.');
+            if(files.length===0)showError('No indexed records found for SLTR sub prefix '+listed+'.');
+            else showSuccess('Loaded '+files.length+' file'+(files.length===1?'':'s')+' across '+state.loadedSubPrefixes.length+' sub prefix'+(state.loadedSubPrefixes.length===1?'':'es')+' ('+listed+').');
             if(state.activeTab==='preview')refreshPreview(true);
         }catch(err){hideLoading();showError('Failed to load files: '+(err.message||err));}
     }
@@ -357,21 +451,23 @@ document.addEventListener('DOMContentLoaded', function() {
     async function persistBatchForPrinting() {
         if(state.reprintMode&&state.currentBatchId&&state.preparedBatchResponse)return Promise.resolve(state.preparedBatchResponse);
         var sel=getSelectedFilesData();if(!sel.length)throw new Error('Please select at least one file before printing.');
-        var payload={prefix:SLTR_PREFIX,sub_prefix:state.sltrSubPrefix,file_ids:sel.map(function(r){return Number(r.id);}),
+        var payload={prefix:SLTR_PREFIX,sub_prefix:selectedSubPrefixCsv(),file_ids:sel.map(function(r){return Number(r.id);}),
             full_label:state.fullLabel||updateFullLabelDisplay(),rack_primary:state.rackPrimary,
             rack_secondary:state.rackSecondary||null,shelf_number:parseInt(state.shelfNumber,10),
             label_format:state.selectedTemplate,orientation:state.orientation};
 
         if(isSubGroupMode()){
             var dups=subGroupDuplicateLabels();
-            if(dups.length)throw new Error('Sub groups '+dups.join(', ')+' share the same shelf/rack. Give each sub group its own shelf.');
+            if(dups.length)throw new Error(dups.join(', ')+' share the same shelf/rack. Give each group its own shelf.');
             var selSet=new Set(state.selectedFiles.map(String));
             var groups=state.subGroups.map(function(g){
                 return {file_ids:g.fileIds.filter(function(id){return selSet.has(String(id));}).map(Number),
+                    sub_prefix:g.subPrefix||null,
                     full_label:g.fullLabel,rack_primary:g.rackPrimary,
                     rack_secondary:g.rackSecondary||null,shelf_number:parseInt(g.shelfNumber,10)};
             }).filter(function(g){return g.file_ids.length;});
-            if(groups.length<MIN_SUB_GROUPS)throw new Error('At least '+MIN_SUB_GROUPS+' sub groups must have selected files.');
+            var minGroups=groupMode()==='prefix'?1:MIN_SUB_GROUPS;
+            if(groups.length<minGroups)throw new Error('At least '+minGroups+' '+(minGroups===1?'group':'sub groups')+' must have selected files.');
             payload.sub_groups=groups;
             payload.file_ids=groups.reduce(function(acc,g){return acc.concat(g.file_ids);},[]);
         }
@@ -483,7 +579,7 @@ document.addEventListener('DOMContentLoaded', function() {
             var sb=sd?'<span class="text-xs text-gray-500">Shelf: '+sd+'</span>':'';
             if(isSubGroupMode()){
                 var sgi=state.subGroups.findIndex(function(g){return g.fileIdSet.has(String(file.id));});
-                if(sgi>=0)det+=' <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Sub Group '+(sgi+1)+'</span>';
+                if(sgi>=0)det+=' <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">'+groupTitle(state.subGroups[sgi])+'</span>';
             }
             return'<div class="flex items-center p-4"><input type="checkbox" id="'+file.id+'" class="file-checkbox mr-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" '+(state.selectedFiles.includes(file.id)?'checked':'')+'><div class="flex flex-1 items-center gap-3"><i data-lucide="file-text" class="h-8 w-8 text-blue-500"></i><div class="flex-1"><div class="flex items-center gap-2"><p class="font-medium text-blue-600">'+(file.file_number||'No file number')+'</p>'+lb+'</div><div class="flex flex-wrap items-center gap-2 mt-1">'+det+' '+sb+'</div></div></div></div>';
         }).join('');
@@ -589,7 +685,10 @@ document.addEventListener('DOMContentLoaded', function() {
             state.previewPrepared=true;state.preparedSignature=sig;
             state.preparedBatchResponse={success:true,data:{batch_id:batchId,batch_number:batch.batch_number,file_count:files.length,source:'existing',label_items:files}};
             state.currentBatchId=batchId;state.currentBatchIds=[batchId];state.reprintMode=true;
-            state.subGroups=[];
+            // A reprint prints exactly what the batch already holds — drop any pending
+            // grouping so it cannot re-split the loaded rows.
+            state.subGroups=[];state.loadedSubPrefixes=[];state.prefixAssignEnabled=false;
+            updateAssignSubPrefixBtn();
             switchTab('preview');showSuccess('Loaded batch '+batch.batch_number+' with '+files.length+' files for printing');hideLoading();
         }).catch(function(e){showError('Failed: '+e.message);hideLoading();});
     }
@@ -684,6 +783,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Load sub-prefixes and initialize Select2
+    function readSelectedSubPrefixes(sel) {
+        return Array.prototype.slice.call(sel.selectedOptions||[])
+            .map(function(o){return (o.value||'').trim();})
+            .filter(Boolean);
+    }
     function initSubPrefixSelector() {
         fetch(API.subPrefixes).then(function(r){return r.json();}).then(function(d){
             if(d.success&&Array.isArray(d.data)){
@@ -694,20 +798,22 @@ document.addEventListener('DOMContentLoaded', function() {
                     opt.value=p; opt.textContent=p;
                     sel.appendChild(opt);
                 });
-                
+
+                var onChange=function(){
+                    state.sltrSubPrefixes=readSelectedSubPrefixes(sel);
+                    resetPreparedState();
+                };
+
                 // Initialize Select2 if available
                 if (typeof jQuery !== 'undefined' && jQuery.fn.select2) {
                     jQuery(sel).select2({
-                        placeholder: 'Search and Select Sub Prefix',
+                        placeholder: 'Search and Select Sub Prefixes',
                         allowClear: true,
+                        closeOnSelect: false,
                         width: '100%'
-                    }).on('change', function() {
-                        state.sltrSubPrefix = this.value;
-                    });
+                    }).on('change', onChange);
                 } else {
-                    sel.addEventListener('change', function() {
-                        state.sltrSubPrefix = this.value;
-                    });
+                    sel.addEventListener('change', onChange);
                 }
             }
         }).catch(function(e){console.warn('Sub-prefix load error:',e);});
@@ -721,6 +827,45 @@ document.addEventListener('DOMContentLoaded', function() {
 
     var subGroupToggle=document.getElementById('subGroupToggle');
     var subGroupCountInput=document.getElementById('subGroupCountInput');
+
+    // ---- Assign Shelves per Sub Prefix ----
+    function updateAssignSubPrefixBtn() {
+        var btn=document.getElementById('assignSubPrefixBtn');
+        var lbl=document.getElementById('assignSubPrefixBtnLabel');
+        if(!btn)return;
+        var on=state.prefixAssignEnabled;
+        // Only actionable once records are on screen to divide.
+        var ready=state.availableFiles.length>0;
+        btn.disabled=!ready&&!on;
+        btn.classList.toggle('opacity-50',btn.disabled);
+        btn.classList.toggle('cursor-not-allowed',btn.disabled);
+        btn.classList.toggle('bg-amber-100',on);
+        btn.classList.toggle('bg-white',!on);
+        if(lbl)lbl.textContent=on?'Clear Sub Prefix Shelves':'Assign Shelves per Sub Prefix';
+        btn.title=ready?'':'Load records first.';
+    }
+    var assignSubPrefixBtn=document.getElementById('assignSubPrefixBtn');
+    if(assignSubPrefixBtn){
+        assignSubPrefixBtn.addEventListener('click',function(){
+            if(!state.prefixAssignEnabled){
+                if(!state.availableFiles.length){showError('Load records first, then assign a shelf to each sub prefix.');return;}
+                state.prefixAssignEnabled=true;
+                // The serial split divides one sub prefix; the two modes are exclusive.
+                if(state.subGroupEnabled){
+                    state.subGroupEnabled=false;
+                    if(subGroupToggle)subGroupToggle.checked=false;
+                    var ctrls=document.getElementById('subGroupControls');
+                    if(ctrls)ctrls.classList.add('hidden');
+                }
+            }else{
+                state.prefixAssignEnabled=false;
+            }
+            updateAssignSubPrefixBtn();
+            resetPreparedState();computeSubGroups();renderFileList();updateCounts();
+            if(state.activeTab==='preview')refreshPreview(true);
+        });
+    }
+    updateAssignSubPrefixBtn();
     if(subGroupToggle){
         subGroupToggle.addEventListener('change',function(){
             state.subGroupEnabled=this.checked;
@@ -755,26 +900,27 @@ document.addEventListener('DOMContentLoaded', function() {
         loadSltrFiles().finally(function(){btn.disabled=false;btn.classList.remove('opacity-50','cursor-not-allowed');});
     });
     document.getElementById('resetBtn').addEventListener('click',function(){
-        resetPreparedState();state.selectedFiles=[];state.copies=1;state.sltrSubPrefix='';state.digitRank='';
+        resetPreparedState();state.selectedFiles=[];state.copies=1;state.sltrSubPrefixes=[];state.loadedSubPrefixes=[];state.digitRank='';
         state.rackPrimary='A';state.shelfNumber='1';state.fullLabel='A1';state.availableFiles=[];
         state.excludeAssignedFromBatch=false;state.rackLabelStatus=null;state.loadedFromBatch=false;
         document.getElementById('copies').value=1;
         
         var subSel = document.getElementById('sltrSubPrefixSelect');
         if (subSel) {
-            subSel.value = '';
+            Array.prototype.slice.call(subSel.options).forEach(function(o){ o.selected = false; });
             if (typeof jQuery !== 'undefined' && jQuery.fn.select2) {
-                jQuery(subSel).trigger('change');
+                jQuery(subSel).val(null).trigger('change');
             }
         }
         if(digitRankSelect)digitRankSelect.value='';
         if(rackSelect)rackSelect.value='A';if(shelfSelect)shelfSelect.value='1';
         if(excludeToggle)excludeToggle.checked=false;
         state.subGroupEnabled=false;state.subGroupCount=MIN_SUB_GROUPS;state.subGroups=[];
+        state.prefixAssignEnabled=false;
         if(subGroupToggle)subGroupToggle.checked=false;
         if(subGroupCountInput)subGroupCountInput.value=MIN_SUB_GROUPS;
         var sgCtrls=document.getElementById('subGroupControls');if(sgCtrls)sgCtrls.classList.add('hidden');
-        computeSubGroups();
+        computeSubGroups();updateAssignSubPrefixBtn();
         updateFullLabelDisplay();updateRackLabelStatusDisplay();fetchRackLabelStatus(state.fullLabel);
         renderFileList();updateCounts();updateSelectAllCheckbox();
         if(state.activeTab==='preview')refreshPreview(true);

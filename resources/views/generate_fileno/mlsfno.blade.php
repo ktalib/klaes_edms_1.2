@@ -2976,6 +2976,10 @@
     @push('scripts')
         <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+        {{-- Shared "where did this record go" renderer, also used after file indexing
+             and ST commissioning. Must load before mls_js, whose Commission Summary
+             card calls renderRecordSummaryGroups(). --}}
+        <script src="{{ asset('js/shared/record-summary-card.js') }}?v={{ @filemtime(public_path('js/shared/record-summary-card.js')) }}"></script>
         @include('generate_fileno.mls_js')
         @include('generate_fileno.view_batches')
         <script src="{{ asset('js/global-fileno-modal.js') }}"></script>

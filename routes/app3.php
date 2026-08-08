@@ -261,6 +261,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/applications/op-resettlement/op-match-existing', [OpResettlementApplicationController::class, 'opMatchExisting'])->name('applications.op-match-existing');
         Route::post('/applications/op-resettlement/op-capture-and-link', [OpResettlementApplicationController::class, 'opCaptureAndLink'])->name('applications.op-capture-and-link');
         Route::post('/applications/op-resettlement/op-check-duplicates', [OpResettlementApplicationController::class, 'opCheckDuplicates'])->name('applications.op-check-duplicates');
+        Route::get('/applications/op-resettlement/op-commissioned-file', [OpResettlementApplicationController::class, 'opCommissionedFileLookup'])->name('applications.op-commissioned-file');
+        Route::post('/applications/op-resettlement/op-capture-commissioned', [OpResettlementApplicationController::class, 'opCaptureForCommissionedFile'])->name('applications.op-capture-commissioned');
         Route::post('/applications/op-resettlement/op-batch-capture', [OpResettlementApplicationController::class, 'opBatchCapture'])->name('applications.op-batch-capture');
         Route::get('/applications/op-resettlement/op-uncommissioned-batches', [OpResettlementApplicationController::class, 'opUncommissionedBatches'])->name('applications.op-uncommissioned-batches');
         Route::get('/applications/op-resettlement/op-uncommissioned-batch-records', [OpResettlementApplicationController::class, 'opUncommissionedBatchRecords'])->name('applications.op-uncommissioned-batch-records');
@@ -767,6 +769,9 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/{id}/unmatch-physical-planning', [IndexedFileTableController::class, 'unmatchPhysicalPlanning'])->name('unmatch-physical-planning');
         Route::get('/related-files/{id}', [IndexedFileTableController::class, 'getRelatedFiles'])->name('related-files');
         Route::put('/related-files/{id}', [IndexedFileTableController::class, 'updateRelatedFile'])->name('related-files.update');
+        // {id} here is the file_indexings id (the parent), not a link row id — the row to
+        // unlink is identified by the file_number in the payload.
+        Route::delete('/{id}/related-files', [IndexedFileTableController::class, 'unlinkRelatedFile'])->name('related-files.unlink');
         Route::put('/{id}/coordinates', [IndexedFileTableController::class, 'updateCoordinates'])->name('update-coordinates');
         Route::get('/edms-files/{id}', [IndexedFileTableController::class, 'getEdmsFiles'])->name('edms-files');
         Route::post('/{id}/update-placeholder', [IndexedFileTableController::class, 'updateKangisPlaceholder'])->name('update-placeholder');
@@ -1060,6 +1065,10 @@ Route::middleware(['auth'])->group(function () {
     // Plot Subdivision batch capture — both must stay above the resource route
     Route::get('land-recommendations/subdivision-mothers', [\App\Http\Controllers\LandRecommendationController::class, 'subdivisionMothers'])->name('land-recommendations.subdivision-mothers');
     Route::get('land-recommendations/subdivision-children', [\App\Http\Controllers\LandRecommendationController::class, 'subdivisionChildren'])->name('land-recommendations.subdivision-children');
+    // Regular-files batch capture — the same table, filled from a hand-picked set
+    // of file numbers instead of from one mother file's children.
+    Route::get('land-recommendations/batch-files', [\App\Http\Controllers\LandRecommendationController::class, 'batchFiles'])->name('land-recommendations.batch-files');
+    Route::post('land-recommendations/batch-file-details', [\App\Http\Controllers\LandRecommendationController::class, 'batchFileDetails'])->name('land-recommendations.batch-file-details');
     Route::post('land-recommendations/batch', [\App\Http\Controllers\LandRecommendationController::class, 'storeBatch'])->name('land-recommendations.store-batch');
     // Batch capture autosave — a 100+ child subdivision outlives the session that
     // keys it, so the form drafts itself here. Also above the resource route.
@@ -1125,7 +1134,10 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/cofo-comment', [LegalSearchController::class, 'saveCofoComment'])->name('legalsearch.saveCofoComment');
         Route::post('/transfer-caveat', [LegalSearchController::class, 'transferCaveat'])->name('legalsearch.transferCaveat');
         Route::post('/create-record', [LegalSearchController::class, 'createRecord'])->name('legalsearch.createRecord');
-        Route::post('/existing-records', [LegalSearchController::class, 'existingRecords'])->name('legalsearch.existingRecords');
+        // GET as well as POST: the Add Property Record dialog reads this from a
+        // static JS file (public/js/pra/form-controller.js) where a plain GET
+        // avoids threading a CSRF token through every module that includes it.
+        Route::match(['GET', 'POST'], '/existing-records', [LegalSearchController::class, 'existingRecords'])->name('legalsearch.existingRecords');
         Route::post('/update-file-indexing', [LegalSearchController::class, 'updateFileIndexing'])->name('legalsearch.updateFileIndexing');
     });
 
@@ -1151,6 +1163,7 @@ Route::middleware(['auth'])->group(function () {
         })->name('print-template');
         Route::get('/api/prefixes', [KangisPrintLabelController::class, 'getPrefixes'])->name('api.prefixes');
         Route::get('/api/prefix-next-range', [KangisPrintLabelController::class, 'getNextRangeForPrefix'])->name('api.prefix-next-range');
+        Route::get('/api/registry-batches', [KangisPrintLabelController::class, 'getRegistryBatchNos'])->name('api.registry-batches');
         Route::get('/api/files', [KangisPrintLabelController::class, 'getAvailableFiles'])->name('api.files');
         Route::get('/api/rack-label/status', [KangisPrintLabelController::class, 'getRackLabelStatus'])->name('api.rack-label.status');
         Route::post('/api/batch', [KangisPrintLabelController::class, 'createBatch'])->name('api.batch.store');

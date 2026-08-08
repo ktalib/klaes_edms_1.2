@@ -560,10 +560,15 @@ class ManualFileLinkageController extends Controller
                     if ($childNewIndexing) {
                         DB::connection('sqlsrv')->table('file_indexings')
                             ->where('id', $childNewIndexing->id)
-                            ->update($indexingPayload);
+                            ->update($indexingPayload + ['updated_by' => $commissionedBy]);
                         $childIndexingId = $childNewIndexing->id;
                     } else {
+                        // file_indexings.created_by is NOT NULL with no default — omitting it
+                        // aborts the whole linkage transaction, which is how a run can leave
+                        // fileNumber/PRA/PropID_Master rows behind with no indexing row.
                         $indexingPayload['created_at'] = now();
+                        $indexingPayload['created_by'] = $commissionedBy;
+                        $indexingPayload['updated_by'] = $commissionedBy;
                         $childIndexingId = DB::connection('sqlsrv')->table('file_indexings')->insertGetId($indexingPayload);
                     }
 
@@ -761,10 +766,13 @@ class ManualFileLinkageController extends Controller
                 if ($newIndexing) {
                     DB::connection('sqlsrv')->table('file_indexings')
                         ->where('id', $newIndexing->id)
-                        ->update($indexingPayload);
+                        ->update($indexingPayload + ['updated_by' => $commissionedBy]);
                     $newIndexingId = $newIndexing->id;
                 } else {
+                    // See the Subdivision branch: created_by is NOT NULL with no default.
                     $indexingPayload['created_at'] = now();
+                    $indexingPayload['created_by'] = $commissionedBy;
+                    $indexingPayload['updated_by'] = $commissionedBy;
                     $newIndexingId = DB::connection('sqlsrv')->table('file_indexings')->insertGetId($indexingPayload);
                 }
 

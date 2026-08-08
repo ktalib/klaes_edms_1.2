@@ -2192,6 +2192,203 @@
             .replace(/'/g, '&#039;');
     }
 
+    /* ---------------------------------------------------------------------
+     * "Where did this record go?" card
+     *
+     * Saving one indexing form writes across a dozen tables — registry, parties,
+     * CofO/PRA transactions, commissioning mirrors, bills, prop_id lineage — and
+     * none of that was visible from the form, so operators could not tell what a
+     * submission had actually done. The server returns `storage_summary` counting
+     * the rows that now carry this file, and this renders it the same way the
+     * "Move to Indexing Duplicates" confirmation renders its impact tables.
+     * ------------------------------------------------------------------- */
+
+    const SUMMARY_GROUP_PALETTE = {
+        primary: { head: 'text-emerald-700', count: 'text-emerald-700', border: 'border-emerald-100' },
+        parties: { head: 'text-sky-700', count: 'text-sky-700', border: 'border-sky-100' },
+        records: { head: 'text-indigo-700', count: 'text-indigo-700', border: 'border-indigo-100' },
+        onward: { head: 'text-amber-700', count: 'text-amber-700', border: 'border-amber-100' },
+    };
+
+    function renderStorageSummaryGroup(group) {
+        if (!group || !Array.isArray(group.rows) || group.rows.length === 0) {
+            return '';
+        }
+
+        const palette = SUMMARY_GROUP_PALETTE[group.tone] || SUMMARY_GROUP_PALETTE.records;
+
+        const body = group.rows.map(row => `
+            <tr class="border-t ${palette.border}">
+                <td class="py-1 pr-3 text-left font-mono text-[11px] text-slate-500 align-top">${escapeHtml(row.table)}</td>
+                <td class="py-1 pr-3 text-left align-top">
+                    ${escapeHtml(row.label)}
+                    ${row.detail ? `<span class="block text-[11px] text-slate-400 break-all">${escapeHtml(row.detail)}</span>` : ''}
+                </td>
+                <td class="py-1 text-right font-semibold align-top ${palette.count}">${Number(row.count).toLocaleString()}</td>
+            </tr>
+        `).join('');
+
+        return `
+            <div class="mt-3">
+                <p class="text-[11px] font-bold uppercase tracking-wider ${palette.head} text-left">${escapeHtml(group.title)}</p>
+                <table class="w-full text-xs mt-1"><tbody>${body}</tbody></table>
+            </div>
+        `;
+    }
+
+    /**
+     * The instruments captured in this submission, one row each, with the table the
+     * instrument landed in. Server-side these are read back from the rows that were
+     * actually written, so anything skipped as a duplicate never appears here.
+     */
+    function renderCapturedInstruments(instruments) {
+        if (!Array.isArray(instruments) || instruments.length === 0) {
+            return '';
+        }
+
+        const body = instruments.map(item => {
+            const parties = [item.grantor, item.grantee].filter(Boolean).join(' → ');
+            const meta = [item.reg_no, item.date].filter(Boolean).join(' · ');
+
+            return `
+                <tr class="border-t border-violet-100">
+                    <td class="py-1.5 pr-3 text-left align-top">
+                        <span class="font-semibold text-slate-800">${escapeHtml(item.instrument)}</span>
+                        ${parties ? `<span class="block text-[11px] text-slate-500 break-all">${escapeHtml(parties)}</span>` : ''}
+                        ${meta ? `<span class="block text-[11px] text-slate-400">${escapeHtml(meta)}</span>` : ''}
+                    </td>
+                    <td class="py-1.5 text-right align-top text-[11px] text-violet-700 whitespace-nowrap">
+                        ${escapeHtml(item.destination)}
+                        <span class="block font-mono text-[10px] text-slate-400">${escapeHtml(item.table)}</span>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        return `
+            <div class="mt-3">
+                <p class="text-[11px] font-bold uppercase tracking-wider text-violet-700 text-left">
+                    Instruments captured (${instruments.length})
+                </p>
+                <table class="w-full text-xs mt-1"><tbody>${body}</tbody></table>
+            </div>
+        `;
+    }
+
+    function renderStorageSummaryHtml(summary, message, instruments, options = {}) {
+        // After capturing transactions the operator is confirming the instruments
+        // themselves, not the file's whole footprint — so that card stops at the
+        // instruments table and drops the destination groups below it.
+        const { instrumentsOnly = false } = options;
+        const groups = Array.isArray(summary.groups) ? summary.groups : [];
+        const notes = Array.isArray(summary.notes) ? summary.notes : [];
+
+        const identity = [
+            ['File number', summary.file_number],
+            ['File title', summary.file_title],
+            ['Tracking ID', summary.tracking_id],
+            ['Registry', summary.registry],
+            ['Property ID', summary.prop_id],
+            ['Parent property', summary.parent_prop_id],
+        ].filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== '');
+
+        const identityHtml = identity.map(([label, value]) => `
+            <div class="flex items-baseline gap-2">
+                <span class="w-28 shrink-0 text-[11px] uppercase tracking-wider text-slate-500">${escapeHtml(label)}</span>
+                <span class="flex-1 min-w-0 font-semibold text-slate-800 break-all">${escapeHtml(value)}</span>
+            </div>
+        `).join('');
+
+        const notesHtml = notes.map(note => {
+            const tone = note.tone === 'muted'
+                ? 'text-slate-500 bg-slate-50 border-slate-200'
+                : 'text-blue-700 bg-blue-50 border-blue-200';
+            return `<p class="text-xs ${tone} border rounded p-2 mt-2 text-left">${escapeHtml(note.text)}</p>`;
+        }).join('');
+
+        return `
+            <p class="text-sm text-slate-600 text-left" style="white-space: pre-line;">${escapeHtml(message)}</p>
+            <div class="mt-3 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-left text-sm space-y-1">
+                ${identityHtml}
+            </div>
+            ${renderCapturedInstruments(instruments)}
+            ${instrumentsOnly ? '' : `
+                ${groups.map(renderStorageSummaryGroup).join('')}
+                ${notesHtml}
+                <p class="text-[11px] text-slate-400 mt-3 text-left">
+                    Counts are the rows that now carry this file — including any that already existed.
+                </p>
+            `}
+        `;
+    }
+
+    function storageSummaryToText(summary) {
+        const lines = [];
+        (summary.groups || []).forEach(group => {
+            lines.push(group.title + ':');
+            (group.rows || []).forEach(row => {
+                lines.push(`  - ${row.table}: ${row.count} (${row.label})`);
+            });
+        });
+        (summary.notes || []).forEach(note => lines.push(note.text));
+        return lines.join('\n');
+    }
+
+    /**
+     * Confirmation card shown after a successful save. Falls back to the old
+     * auto-dismissing toast when the server could not build a summary (it is
+     * best-effort server side, so its absence must not swallow the success
+     * message). Resolves once the operator dismisses it.
+     */
+    function showIndexingSavedCard(data, options = {}) {
+        const { isUpdate = false, extraText = '', title = null, instrumentsOnly = false } = options;
+        const summary = data && data.storage_summary;
+        // Present on the transaction-capture response; absent after plain indexing.
+        const instruments = (data && data.instruments) || [];
+        const baseMessage = (data && data.message)
+            || (isUpdate ? 'File indexing updated successfully!' : 'File indexing created successfully!');
+        const message = extraText ? `${baseMessage}${extraText}` : baseMessage;
+
+        if (typeof Swal === 'undefined') {
+            alert(summary ? `${message}\n\n${storageSummaryToText(summary)}` : message);
+            return Promise.resolve();
+        }
+
+        const heading = title
+            || (isUpdate ? 'Updated — here is where it lives' : 'Indexed — here is where it went');
+
+        // Nothing to tabulate: keep the old lightweight toast rather than an empty card.
+        if (!summary && instruments.length === 0) {
+            return Swal.fire({
+                title: isUpdate ? 'File index updated' : 'Success!',
+                text: message,
+                icon: 'success',
+                timer: 2500,
+                showConfirmButton: false,
+            });
+        }
+
+        return Swal.fire({
+            title: heading,
+            html: renderStorageSummaryHtml(
+                summary || { groups: [], notes: [] },
+                message,
+                instruments,
+                { instrumentsOnly }
+            ),
+            icon: 'success',
+            width: 620,
+            confirmButtonText: 'Continue',
+            confirmButtonColor: '#059669',
+            allowOutsideClick: false,
+        });
+    }
+
+    // Shared with the property transaction modal (property_transaction_modal.blade.php),
+    // which lives outside this module but shows the same card after capturing
+    // instruments — so both confirmations read identically.
+    window.showIndexingSavedCard = showIndexingSavedCard;
+
     function escapeAttribute(value) {
         return String(value)
             .replace(/&/g, '&amp;')
@@ -6127,7 +6324,13 @@
 
         // Location pin required — coordinates may only be applied via "Apply & Pin on Map",
         // so every file must have both latitude and longitude captured before submitting.
-        const latPinInputs = Array.from(document.querySelectorAll('input[name^="latitude["]'));
+        // TEMPORARILY DISABLED (Google Cloud billing account suspended, so the Maps/Geocoding
+        // API rejects requests and the pin can't be captured). Flip back to true once billing
+        // is restored — coordinates remain nullable server-side, so nothing else needs changing.
+        const REQUIRE_LOCATION_PIN = false;
+        const latPinInputs = REQUIRE_LOCATION_PIN
+            ? Array.from(document.querySelectorAll('input[name^="latitude["]'))
+            : [];
         let unpinnedIdx = null;
         for (const latEl of latPinInputs) {
             const idx = latEl.name.replace(/[^0-9]/g, '');
@@ -6302,20 +6505,7 @@
                     if (isEditingExisting) {
                         const launchTransactionPrompt = () => promptPropertyTransactionCapture(propertyModalPayload);
 
-                        if (typeof Swal !== 'undefined') {
-                            Swal.fire({
-                                title: 'File index updated',
-                                text: data.message || 'The file indexing record was updated successfully.',
-                                icon: 'success',
-                                timer: 2200,
-                                showConfirmButton: false,
-                                toast: true,
-                                position: 'top-end',
-                            }).then(launchTransactionPrompt);
-                        } else {
-                            alert(data.message || 'File indexing updated successfully!');
-                            launchTransactionPrompt();
-                        }
+                        showIndexingSavedCard(data, { isUpdate: true }).then(launchTransactionPrompt);
                     } else {
                         // The store response doesn't echo back tracking_id/file_title,
                         // so read them from the DOM (they were set in the form before submit).
@@ -6365,39 +6555,27 @@
                             promptPropertyTransactionCapture(fileIndexingData, transactionOptions);
                         };
 
-                        if (typeof Swal !== 'undefined') {
-                            let successMessage = data.message || 'File indexing created successfully!';
-
-                            if (data.batch_assignment) {
-                                const assignment = data.batch_assignment;
-                                successMessage += `\n\nAssigned to:\nBatch: ${assignment.batch_no}\nSerial: ${assignment.serial_no}\nShelf: ${assignment.shelf_location || 'Auto-assigned'}`;
-                            }
-
-                            Swal.fire({
-                                title: 'Success!',
-                                text: successMessage,
-                                icon: 'success',
-                                timer: 2500,
-                                showConfirmButton: false,
-                            }).then(() => {
-                                // Auto-print KANGIS tracking sheet when in new_kn mode
-                                const newFileId = data.file_indexing_id || data.id;
-                                if (window.isNewKnMode && newFileId) {
-                                    const sheetUrl = `/fileindexing/kangis-tracking-sheet?files=${encodeURIComponent(newFileId)}&autoprint=1`;
-                                    const printWin = window.open(sheetUrl, '_blank');
-                                    if (printWin) {
-                                        printWin.addEventListener('load', function () {
-                                            printWin.focus();
-                                            printWin.print();
-                                        });
-                                    }
-                                }
-                                launchTransactionPrompt();
-                            });
-                        } else {
-                            alert(data.message || 'File indexing created successfully!');
-                            launchTransactionPrompt();
+                        let extraText = '';
+                        if (data.batch_assignment) {
+                            const assignment = data.batch_assignment;
+                            extraText = `\n\nAssigned to:\nBatch: ${assignment.batch_no}\nSerial: ${assignment.serial_no}\nShelf: ${assignment.shelf_location || 'Auto-assigned'}`;
                         }
+
+                        showIndexingSavedCard(data, { extraText }).then(() => {
+                            // Auto-print KANGIS tracking sheet when in new_kn mode
+                            const newFileId = data.file_indexing_id || data.id;
+                            if (window.isNewKnMode && newFileId) {
+                                const sheetUrl = `/fileindexing/kangis-tracking-sheet?files=${encodeURIComponent(newFileId)}&autoprint=1`;
+                                const printWin = window.open(sheetUrl, '_blank');
+                                if (printWin) {
+                                    printWin.addEventListener('load', function () {
+                                        printWin.focus();
+                                        printWin.print();
+                                    });
+                                }
+                            }
+                            launchTransactionPrompt();
+                        });
                     }
                 } else {
                     throw new Error(data.message || 'Unknown error occurred');

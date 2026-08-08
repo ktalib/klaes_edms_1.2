@@ -88,7 +88,7 @@
                         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
                             <div>
                                 <h3 class="text-lg font-semibold">Select SLTR Files for Labels</h3>
-                                <p class="text-sm text-gray-600">Select a sub prefix and optional digit rank to load indexed SLTR files</p>
+                                <p class="text-sm text-gray-600">Select one or more sub prefixes and an optional digit rank to load indexed SLTR files</p>
                             </div>
                             <div class="flex flex-col md:flex-row gap-3 items-center w-full md:w-auto">
                                 <div class="relative w-full md:w-64">
@@ -129,11 +129,11 @@
                                     <span class="text-xs font-semibold uppercase tracking-wide text-slate-600">Sub Prefix</span>
                                     <select
                                         id="sltrSubPrefixSelect"
+                                        multiple
                                         class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 select2"
                                     >
-                                        <option value="">Select Sub Prefix</option>
                                     </select>
-                                    <span class="mt-1 text-xs text-slate-500">Distinct <code>sub_prefix</code> from grouping.</span>
+                                    <span class="mt-1 text-xs text-slate-500">Pick one or more <code>sub_prefix</code> values.</span>
                                 </div>
                                 <div class="flex flex-col">
                                     <span class="text-xs font-semibold uppercase tracking-wide text-slate-600">Digit Rank</span>
@@ -226,7 +226,7 @@
                             </div>
 
                             {{-- Sub group division --}}
-                            <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50/40 p-4">
+                            <div id="subGroupCard" class="mt-4 rounded-lg border border-amber-200 bg-amber-50/40 p-4">
                                 <label for="subGroupToggle" class="flex cursor-pointer items-start gap-3">
                                     <input
                                         type="checkbox"
@@ -238,6 +238,9 @@
                                         <span>Divide the files indexed under this group serially into sub groups, then assign a shelf/rack to each one.</span>
                                     </span>
                                 </label>
+                                <p id="subGroupDisabledNote" class="mt-2 hidden text-xs font-medium text-amber-700">
+                                    Serial sub groups are unavailable while shelves are assigned per sub prefix.
+                                </p>
                                 <div id="subGroupControls" class="mt-3 hidden">
                                     <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
                                         <div class="flex flex-col">
@@ -261,14 +264,24 @@
 
                             <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <div class="text-xs text-slate-500 sm:text-left">
-                                    Select a sub prefix, choose a digit rank if needed, then click <strong>Load Records</strong>.
+                                    Select one or more sub prefixes, choose a digit rank if needed, then click <strong>Load Records</strong>.
                                 </div>
-                                <button
-                                    id="generateBatchBtn"
-                                    class="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                                >
-                                    Load Records
-                                </button>
+                                <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                    <button
+                                        id="assignSubPrefixBtn"
+                                        type="button"
+                                        class="inline-flex items-center justify-center gap-2 rounded-md border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50"
+                                    >
+                                        <i data-lucide="layout-grid" class="h-4 w-4"></i>
+                                        <span id="assignSubPrefixBtnLabel">Assign Shelves per Sub Prefix</span>
+                                    </button>
+                                    <button
+                                        id="generateBatchBtn"
+                                        class="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                                    >
+                                        Load Records
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -276,8 +289,8 @@
                         <div id="subGroupPanel" class="hidden mb-6 rounded-md border border-amber-200">
                             <div class="flex flex-col gap-1 border-b border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
                                 <div>
-                                    <h4 class="text-sm font-semibold text-slate-800">Sub Group Shelf/Rack Assignment</h4>
-                                    <p class="text-xs text-slate-600">Each sub group holds a serial slice of the loaded files. Assign its shelf/rack below.</p>
+                                    <h4 id="subGroupPanelTitle" class="text-sm font-semibold text-slate-800">Sub Group Shelf/Rack Assignment</h4>
+                                    <p id="subGroupPanelSubtitle" class="text-xs text-slate-600">Each sub group holds a serial slice of the loaded files. Assign its shelf/rack below.</p>
                                 </div>
                                 <span id="subGroupPanelMeta" class="text-xs font-medium text-slate-600"></span>
                             </div>

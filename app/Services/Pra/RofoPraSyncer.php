@@ -39,8 +39,13 @@ class RofoPraSyncer
             'rofo_number'        => $fileNumber,
             'instrument_type'    => $isOss ? 'Right of Occupancy (OSS)' : 'Right of Occupancy',
             'transaction_type'   => $isOss ? 'Right of Occupancy (OSS)' : 'Right of Occupancy',
-            'transaction_date'   => $rec->rofo_date_generated
-                ?: ($rec->rofo_generated_at ? $rec->rofo_generated_at->toDateString() : now()->toDateString()),
+            // The PRA transaction date is the moment the ROFO was actually generated.
+            // rofo_date_generated is a user-editable field on the form and drifts from
+            // reality, so rofo_generated_at (stamped by the system at generation) wins.
+            // Older ROFOs — the ones identified by a security paper serial rather than
+            // rofo_status — carry neither, and for those the approval date is the
+            // closest real event to issuance; now() is a last resort only.
+            'transaction_date'   => $this->landTransactionDate($rec),
             'land_use'           => $rec->land_use,
             'purpose'            => $rec->purpose_of_clause,
             'plot_no'            => $rec->plot_number,
@@ -218,6 +223,26 @@ class RofoPraSyncer
             ]));
             return false;
         }
+    }
+
+    /**
+     * Issuance date for a Land/OSS ROFO, best source first. Only the last step
+     * invents a date, and it is reached only when the record carries no usable
+     * date at all.
+     */
+    private function landTransactionDate(LandRecommendation $rec): string
+    {
+        foreach ([$rec->rofo_generated_at, $rec->rofo_date_generated, $rec->approved_at] as $candidate) {
+            if (empty($candidate)) {
+                continue;
+            }
+
+            return $candidate instanceof \DateTimeInterface
+                ? $candidate->format('Y-m-d')
+                : substr(trim((string) $candidate), 0, 10);
+        }
+
+        return now()->toDateString();
     }
 
     private function praRowExists(string $rofoNumber): bool

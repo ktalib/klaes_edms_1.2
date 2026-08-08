@@ -3549,9 +3549,24 @@ class PropertyRecordController extends Controller
                 }
                 $message = implode(', ', $messageParts) ?: 'Property transaction details saved successfully!';
 
+                // The confirmation card lists the instruments that were captured. They
+                // are read back from what persisted rather than from the submitted
+                // payload, so a transaction skipped as a duplicate or dropped by a
+                // column mismatch cannot be reported as captured.
+                //
+                // No storage_summary here on purpose: the file's full record footprint
+                // was already shown on the indexing card moments earlier, and counting
+                // it again costs a round of COUNT queries the card would not display.
+                $instruments = $this->collectCapturedInstruments([
+                    self::COFO_TABLE => $cofoIds,
+                    self::PRA_TABLE  => $praIds,
+                    'file_history_staging' => $allIds,
+                ]);
+
                 return response()->json([
                     'success' => true,
                     'message' => $message,
+                    'instruments' => $instruments,
                     'data' => [
                         'property_record_ids' => $allIds,
                         'created_ids' => $persistedRecords['created'],
@@ -3579,6 +3594,86 @@ class PropertyRecordController extends Controller
                 'success' => false,
                 'message' => 'Failed to save transaction details: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Read the instruments that were actually written back out of their tables, so
+     * the confirmation card can list them with the destination each one landed in.
+     *
+     * Keyed by table => ids. The three tables share the same instrument columns
+     * (transaction_type / instrument_type / Grantor / Grantee / regNo /
+     * transaction_date), which is what lets one reader serve all of them.
+     *
+     * Best-effort and read-only: the transactions are already committed by the time
+     * this runs, so a failure here must never turn a successful save into an error.
+     *
+     * @param  array<string, array<int, mixed>>  $idsByTable
+     * @return array<int, array<string, mixed>>
+     */
+    private function collectCapturedInstruments(array $idsByTable): array
+    {
+        $labels = [
+            self::COFO_TABLE       => 'Certificate of Occupancy',
+            self::PRA_TABLE        => 'Property record (PRA)',
+            'file_history_staging' => 'File history',
+        ];
+
+        $out = [];
+
+        foreach ($idsByTable as $table => $ids) {
+            $ids = array_values(array_filter((array) $ids, fn ($id) => $id !== null && $id !== ''));
+            if (empty($ids)) {
+                continue;
+            }
+
+            try {
+                $rows = DB::connection('sqlsrv')->table($table)
+                    ->whereIn('id', $ids)
+                    ->get(['id', 'transaction_type', 'instrument_type', 'Grantor', 'Grantee', 'regNo', 'transaction_date']);
+            } catch (\Throwable $e) {
+                \Log::warning('collectCapturedInstruments - readback failed', [
+                    'table' => $table,
+                    'error' => $e->getMessage(),
+                ]);
+                continue;
+            }
+
+            foreach ($rows as $row) {
+                $out[] = [
+                    'table'       => $table,
+                    'destination' => $labels[$table] ?? $table,
+                    'instrument'  => trim((string) ($row->instrument_type ?: $row->transaction_type ?: '')) ?: 'Instrument',
+                    'grantor'     => trim((string) ($row->Grantor ?? '')) ?: null,
+                    'grantee'     => trim((string) ($row->Grantee ?? '')) ?: null,
+                    'reg_no'      => trim((string) ($row->regNo ?? '')) ?: null,
+                    'date'        => $this->displayDate($row->transaction_date ?? null),
+                ];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * A transaction date as Y-m-d for display.
+     *
+     * These columns are not uniformly typed: pra holds real datetimes, while many
+     * CofO_staging rows hold pre-formatted strings like "Oct 19, 2005". Slicing the
+     * first 10 characters therefore mangles half of them ("Oct 19, 20"), so parse
+     * first and only fall back to the raw value when it is not a date at all.
+     */
+    private function displayDate($value): ?string
+    {
+        $raw = trim((string) ($value ?? ''));
+        if ($raw === '') {
+            return null;
+        }
+
+        try {
+            return \Carbon\Carbon::parse($raw)->format('Y-m-d');
+        } catch (\Throwable $e) {
+            return $raw;
         }
     }
 

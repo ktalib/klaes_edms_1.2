@@ -101,6 +101,7 @@ class FileLocationResolver
         //        in_processing while they sit at another office, and those are all "out".
         if ($tracker
             && !$this->isTerminalTrackerStatus($tracker->status)
+            && !$this->isRangeHomeTracker($tracker)  // at rest in its own registry, not logged out
             && !empty($tracker->movement_log)   // guard against a stuck tracker whose movements were all deleted
         ) {                                     // (a movement still "pending_acceptance" at its destination is still in transit)
             $location  = $this->resolveTransitLocation($tracker);
@@ -136,12 +137,29 @@ class FileLocationResolver
             ], $meta));
         }
 
-        // ── 2. Tracker logged back in -> Archive ──
+        // ── 2. Tracker logged back in -> with us ──
         if ($tracker && strtoupper((string) $tracker->status) === FileTracker::STATUS_COMPLETED) {
-            // Logged back in / with us -> Archive (must be confirmed by SCB before logging out).
+            // Logged back in / with us (must be confirmed by SCB before logging out).
+            // WHERE with us still comes from the range: a pool-zone file that was
+            // logged back in went back to the Pool Office, not to the archive.
+            // Since FileRangeTrackingService now writes a COMPLETED "at rest" row
+            // for every indexed file, this branch answers for pool files too.
+            $range    = $this->matchRange($fileNumber);
+            $registry = $range['registry'] ?? null;
+            $isPool   = ($range['zone'] ?? 'archive') === 'pool';
+
+            if ($isPool) {
+                return $this->result($fileNumber, self::STATUS_IN_POOL, array_merge([
+                    'registry'         => $registry,
+                    'zone'             => 'pool',
+                    'current_location' => ($registry ?: 'Pool Office') . ' — Pool Office',
+                    'file_tracker_id'  => $tracker->id,
+                    'tracker'          => $tracker,
+                    'indexing'         => $indexing,
+                ], $this->actionMetaFor(self::STATUS_IN_POOL, $registry, $this->isDcivFile($indexing))));
+            }
+
             $rackShelf = $this->getRackShelf($fileNumber, $indexing);
-            $range     = $this->matchRange($fileNumber);
-            $registry  = $range['registry'] ?? null;
 
             return $this->result($fileNumber, self::STATUS_IN_ARCHIVE, array_merge([
                 'registry'         => $registry,
@@ -871,6 +889,26 @@ class FileLocationResolver
      * Mirrors the file-tracker API's "NOT IN ('COMPLETED','CANCELLED')" logged-out
      * test, extended with the manual log-back statuses ("Log-in", "Canceled").
      */
+    /**
+     * True for the opening "home" tracker written at indexing by
+     * FileRangeTrackingService — the row that records which registry/zone the file
+     * number belongs to (see config/file_ranges.php).
+     *
+     * Such a tracker is carried as ACTIVE so the File Log Table lists it under
+     * Active Files, but the file was never logged out to anybody: it is sitting in
+     * its own registry. So it must NOT satisfy the in-transit test above — the file
+     * falls through to the range lookup and reports IN_ARCHIVE / IN_POOL_OFFICE.
+     *
+     * file_request_type = SYSTEM is the marker; operators only ever choose MANUAL
+     * or SUBMITTED. The moment the file is genuinely logged out, that movement is
+     * recorded on a normal tracker and this stops applying.
+     */
+    public function isRangeHomeTracker(?FileTracker $tracker): bool
+    {
+        return $tracker !== null
+            && strtoupper(trim((string) $tracker->file_request_type)) === 'SYSTEM';
+    }
+
     public function isTerminalTrackerStatus(?string $status): bool
     {
         return in_array(strtoupper(trim((string) $status)), [

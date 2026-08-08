@@ -1537,22 +1537,48 @@ function backfillManualMergerCard(index, fileData) {
     updateManualMergerLocationPreview(index);
 }
 
+// Loose comparison key for district / street / LGA names: the reference lists are
+// hand-entered (≈1,800 district rows) and indexed records rarely spell a name the
+// same way — "Nasarawa" vs "NASARAWA DISTRICT", "K/NASARAWA" vs "K NASARAWA".
+function normalizeLocationName(value) {
+    return String(value || '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9 ]+/g, ' ')   // slashes, apostrophes, dots → space
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/\s+(DISTRICT|DIST)$/, '');
+}
+
 function setManualSelectValue(select, value) {
     if (!select || !value || value === 'N/A') return;
-    const n = String(value).trim().toUpperCase();
-    Array.from(select.options).some(o => {
-        if (String(o.value).trim().toUpperCase() === n || String(o.text).trim().toUpperCase() === n) {
-            select.value = o.value;
-            // Update Select2 display without firing the native onchange handler (avoid re-init cycle)
-            const $select = $(select);
-            if ($select.data('select2')) {
-                $select.trigger('change.select2');
-            }
-            // Also fire native change for location preview update
-            if (typeof updateManualLocationPreview === 'function') updateManualLocationPreview();
-            return true;
-        }
-    });
+    const raw    = String(value).trim();
+    const exact  = raw.toUpperCase();
+    const target = normalizeLocationName(raw);
+    if (!target) return;
+
+    const options = Array.from(select.options);
+    let option = options.find(o => String(o.value).trim().toUpperCase() === exact
+                                || String(o.text).trim().toUpperCase()  === exact)
+              || options.find(o => normalizeLocationName(o.value) === target
+                                || normalizeLocationName(o.text)  === target);
+
+    // Still nothing: the stored value simply isn't in the reference list. Add it as an
+    // option rather than leaving the field blank — the value is real, it backfills and
+    // submits (district/street/lga are free text server-side).
+    if (!option) {
+        option = new Option(exact, raw, false, false);
+        option.dataset.backfilled = '1';
+        select.add(option);
+    }
+
+    select.value = option.value;
+    // Update Select2 display without firing the native onchange handler (avoid re-init cycle)
+    const $select = $(select);
+    if ($select.data('select2')) {
+        $select.trigger('change.select2');
+    }
+    // Also fire native change for location preview update
+    if (typeof updateManualLocationPreview === 'function') updateManualLocationPreview();
 }
 
 // Merger card "Other" → reveal a free-text "Specify" field for street/district

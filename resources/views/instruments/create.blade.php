@@ -256,7 +256,7 @@
         <script src="{{ asset('js/pra/helpers.js') }}"></script>
         <script src="{{ asset('js/pra/state.js') }}"></script>
         <script src="{{ asset('js/pra/modal.js') }}"></script>
-        <script src="{{ asset('js/pra/form-controller.js') }}"></script>
+        <script src="{{ asset('js/pra/form-controller.js') }}?v={{ @filemtime(public_path('js/pra/form-controller.js')) }}"></script>
 
         <!-- Duplicate Check Modal -->
         <div id="duplicate-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full"

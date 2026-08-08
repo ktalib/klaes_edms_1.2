@@ -17,6 +17,20 @@ use App\Models\PrintLog;
 
 class LandRecommendationController extends Controller
 {
+    /**
+     * Grant-condition columns a regular batch may set per file rather than once
+     * for the whole batch. Kept in step with GRANT_FIELDS in the form's Grant
+     * Conditions stepper — a column added to one and not the other is a value the
+     * officer keys per file and the batch then saves from the common set.
+     */
+    private const PER_CHILD_GRANT_FIELDS = [
+        'term', 'cofo_year', 'selected_year', 'ground_rent', 'development_period',
+        'development_value', 'development_charge', 'survey_fees',
+        'preparation_fees', 'preparation_fees_words',
+        // A hand-picked batch spans layouts, so TP No. is captured per file too.
+        'layout_plan_no',
+    ];
+
     public function index(Request $request)
     {
         $viewType = strtoupper(trim((string) $request->query('type', '')));
@@ -47,7 +61,9 @@ class LandRecommendationController extends Controller
             });
         };
 
-        $query = LandRecommendation::with('creator');
+        // landUse/purpose back the "Landuse/Purpose Clause" column when the row itself
+        // only stored the ids (see LandRecommendation::getLandusePurposeAttribute).
+        $query = LandRecommendation::with(['creator', 'landUse', 'purpose.landUse']);
         $isOssView = $viewType === 'OSS';
 
         if ($isOssView) {
@@ -93,23 +109,17 @@ class LandRecommendationController extends Controller
             });
         }
 
-        $selectedUserId = $request->get('user_id');
-
+        // The register is shown whole. It used to default to the signed-in user's
+        // own records with an "All Users" escape hatch, which meant a recommendation
+        // captured by a colleague simply was not there — and nothing on screen said
+        // why. Nothing filters on created_by any more.
         if ($request->filled('search')) {
-            if ($selectedUserId && $selectedUserId !== 'all') {
-                $query->where('land_recommendations.created_by', $selectedUserId);
-            }
             $search = $request->search;
             $query->where(function($q) use ($search) {
                 $q->where('file_number', 'LIKE', "%{$search}%")
                   ->orWhere('applicant_name', 'LIKE', "%{$search}%")
                   ->orWhere('location', 'LIKE', "%{$search}%");
             });
-        } else {
-            $filterUserId = ($selectedUserId === 'all') ? null : ($selectedUserId ?? Auth::id());
-            if ($filterUserId) {
-                $query->where('land_recommendations.created_by', $filterUserId);
-            }
         }
 
         // Printed / Not-Printed tab filter. This uses the SAME source as the
@@ -172,9 +182,6 @@ class LandRecommendationController extends Controller
             }
 
             if ($request->filled('search')) {
-                if ($selectedUserId && $selectedUserId !== 'all') {
-                    $batchQuery->where('created_by', $selectedUserId);
-                }
                 $search = $request->search;
                 // Searching batches means searching for the mother file or for a
                 // child inside it, so a hit on any member surfaces the whole batch.
@@ -184,11 +191,6 @@ class LandRecommendationController extends Controller
                       ->orWhere('file_number', 'LIKE', "%{$search}%")
                       ->orWhere('applicant_name', 'LIKE', "%{$search}%");
                 });
-            } else {
-                $filterUserId = ($selectedUserId === 'all') ? null : ($selectedUserId ?? Auth::id());
-                if ($filterUserId) {
-                    $batchQuery->where('created_by', $filterUserId);
-                }
             }
 
             $batches = $batchQuery
@@ -219,13 +221,11 @@ class LandRecommendationController extends Controller
                 'batches'         => $batches,
                 'batchCreators'   => $batchCreators,
                 'PageTitle'       => $PageTitle,
-                'stats'           => $this->indexStats($request, $isOssView, $applyOssChangeOfNameOriginFilter, $printedExists, $selectedUserId),
+                'stats'           => $this->indexStats($request, $isOssView, $applyOssChangeOfNameOriginFilter, $printedExists),
                 'isOssView'       => $isOssView,
                 'tab'             => $tab,
                 'printDates'      => [],
                 'recSerials'      => [],
-                'filterUsers'     => \App\Models\User::whereIn('id', LandRecommendation::select('created_by')->distinct())
-                    ->orderBy('first_name')->get(['id', 'first_name', 'last_name']),
                 'batchSizes'      => collect(),
                 'batchActions'    => collect(),
             ]);
@@ -284,7 +284,7 @@ class LandRecommendationController extends Controller
                 'all_approved' => $rows->every(fn ($r) => $r->status === LandRecommendation::STATUS_APPROVED),
             ]);
 
-        $stats = $this->indexStats($request, $isOssView, $applyOssChangeOfNameOriginFilter, $printedExists, $selectedUserId);
+        $stats = $this->indexStats($request, $isOssView, $applyOssChangeOfNameOriginFilter, $printedExists);
 
         // Batch-load the most recent print date per file number (from print_logs)
         // so the table can show a "Print Date" column without an N+1 per row.
@@ -334,11 +334,7 @@ class LandRecommendationController extends Controller
             }
         }
 
-        $filterUsers = \App\Models\User::whereIn('id', LandRecommendation::select('created_by')->distinct())
-            ->orderBy('first_name')
-            ->get(['id', 'first_name', 'last_name']);
-
-        return view('land_recommendations.index', compact('recommendations', 'PageTitle', 'stats', 'isOssView', 'tab', 'printDates', 'recSerials', 'filterUsers', 'batchSizes', 'batchActions'));
+        return view('land_recommendations.index', compact('recommendations', 'PageTitle', 'stats', 'isOssView', 'tab', 'printDates', 'recSerials', 'batchSizes', 'batchActions'));
     }
 
     /**
@@ -346,7 +342,7 @@ class LandRecommendationController extends Controller
      * returns early with a different paginator, still reports the same numbers as
      * the Printed / Not Printed tabs.
      */
-    private function indexStats(Request $request, bool $isOssView, callable $applyOssFilter, callable $printedExists, $selectedUserId): array
+    private function indexStats(Request $request, bool $isOssView, callable $applyOssFilter, callable $printedExists): array
     {
         $statsQuery = LandRecommendation::query();
         if ($isOssView) {
@@ -359,16 +355,8 @@ class LandRecommendationController extends Controller
             });
         }
 
-        if ($request->filled('search')) {
-            if ($selectedUserId && $selectedUserId !== 'all') {
-                $statsQuery->where('created_by', $selectedUserId);
-            }
-        } else {
-            $filterUserId = ($selectedUserId === 'all') ? null : ($selectedUserId ?? Auth::id());
-            if ($filterUserId) {
-                $statsQuery->where('created_by', $filterUserId);
-            }
-        }
+        // No created_by filter: the cards and tab badges count the whole register,
+        // matching the list they sit above.
 
         // The tab badges have to count exactly what their tab lists, so they apply
         // the same batched-record exclusion the list does. The header cards above
@@ -399,11 +387,13 @@ class LandRecommendationController extends Controller
     public function batchChildren(Request $request, string $batchId)
     {
         $children = LandRecommendation::where('rofo_batch_id', $batchId)
+            ->with(['landUse', 'purpose.landUse'])
             ->orderBy('batch_seq')
             ->orderBy('id')
             ->get([
                 'id', 'batch_seq', 'file_number', 'applicant_name', 'plot_number', 'location',
-                'purpose_of_clause', 'land_use', 'status', 'rofo_status', 'land_rofo_serial_no',
+                'purpose_of_clause', 'purpose_id', 'land_use', 'land_use_id',
+                'status', 'rofo_status', 'land_rofo_serial_no',
             ]);
 
         if ($children->isEmpty()) {
@@ -421,7 +411,7 @@ class LandRecommendationController extends Controller
                 'applicant_name' => $c->applicant_name,
                 'plot_number'    => $c->plot_number,
                 'location'       => $c->location,
-                'purpose'        => $c->purpose_of_clause ?: $c->land_use,
+                'purpose'        => $c->landuse_purpose,
                 'status'         => $c->status,
                 'rofo_status'    => $c->rofo_status,
                 'serial_no'      => $c->land_rofo_serial_no,
@@ -442,7 +432,7 @@ class LandRecommendationController extends Controller
             ['key' => 'sn',             'label' => 'S/N',              'pdfWidth' => 9,  'wrap' => false],
             ['key' => 'file_number',    'label' => 'File Number',      'pdfWidth' => 26, 'wrap' => false],
             ['key' => 'applicant_name', 'label' => 'Applicant Name',   'pdfWidth' => 34],
-            ['key' => 'purpose',        'label' => 'Purpose Clause',   'pdfWidth' => 22],
+            ['key' => 'purpose',        'label' => 'Landuse/Purpose Clause', 'pdfWidth' => 30],
             // No pdfWidth: Location is the flexible column and absorbs the
             // remaining page width (see buildColumnStyles in records_export.js).
             ['key' => 'location',       'label' => 'Location'],
@@ -470,7 +460,7 @@ class LandRecommendationController extends Controller
             'sn'               => $sn,
             'file_number'      => $rec->file_number,
             'applicant_name'   => $rec->applicant_name,
-            'purpose'          => $rec->purpose_of_clause,
+            'purpose'          => $rec->landuse_purpose,
             'location'         => $rec->display_location,
             'address'          => $rec->resolved_applicant_address ?? $rec->applicant_address ?? 'N/A',
             'plot_number'      => $rec->plot_number,
@@ -512,7 +502,9 @@ class LandRecommendationController extends Controller
             $ossHasIsDeleted = false;
         }
 
-        $query = LandRecommendation::with('creator');
+        // landUse/purpose back the "Landuse/Purpose Clause" column when the row itself
+        // only stored the ids (see LandRecommendation::getLandusePurposeAttribute).
+        $query = LandRecommendation::with(['creator', 'landUse', 'purpose.landUse']);
 
         if ($isOssView) {
             // Same resolved-address join the index page uses, so the exported
@@ -1001,20 +993,63 @@ class LandRecommendationController extends Controller
             ]);
         }
 
+        $payload = $this->hydrateBatchRows($childFileNumbers, $legacyByChild);
+
+        return response()->json([
+            'success'  => true,
+            'mother'   => $mother,
+            'children' => $payload,
+            'count'    => $payload->count(),
+        ]);
+    }
+
+    /**
+     * Turn a list of file numbers into the row shape the batch table renders.
+     *
+     * Shared by both batch kinds: the Plot Subdivision capture (children of one
+     * mother file) and the regular-files capture (an arbitrary set the user picked).
+     * Everything the table shows comes from whatever the file actually has —
+     * mls_file_no, file_indexings, a legacy manual linkage, or an existing
+     * recommendation — so the two kinds cannot drift apart in what they backfill.
+     *
+     * $legacyByChild is only ever populated by the subdivision path; a regular
+     * batch has no linkage rows to draw on.
+     */
+    private function hydrateBatchRows($fileNumbers, $legacyByChild = null, bool $sortByPlot = true)
+    {
+        $fileNumbers  = collect($fileNumbers)->map(fn ($f) => trim((string) $f))->filter()->unique()->values();
+
+        // Every lookup below is keyed on the UPPERCASED file number. SQL Server's
+        // collation is case-insensitive, so whereIn() happily matches a row stored
+        // as "Res-2026-1000" against a picked "RES-2026-1000" — but keyBy() then
+        // files it under the database's spelling and the PHP lookup misses. The row
+        // came back blank and flagged "Not on file" even though the file exists.
+        // The picker uppercases anything typed into it, so this was hit routinely.
+        $key = fn ($v) => mb_strtoupper(trim((string) $v));
+
+        $legacyByChild = collect($legacyByChild ?? [])
+            ->keyBy(fn ($row, $k) => $key($k));
+
+        if ($fileNumbers->isEmpty()) {
+            return collect();
+        }
+
         // Hydrate from whatever each child actually has. A legacy child may exist in
         // mls_file_no under a different source, only in file_indexings, or in neither.
+        $childFileNumbers = $fileNumbers;
+
         $mlsByFile = DB::connection('sqlsrv')->table('mls_file_no')
             ->whereIn('full_file_number', $childFileNumbers)
             ->where(function ($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
             })
             ->get(['full_file_number', 'file_name', 'plot_no', 'location', 'lga', 'district', 'land_use', 'tracking_id', 'address'])
-            ->keyBy(fn ($r) => trim((string) $r->full_file_number));
+            ->keyBy(fn ($r) => $key($r->full_file_number));
 
         $indexByFile = DB::connection('sqlsrv')->table('file_indexings')
             ->whereIn('file_number', $childFileNumbers)
-            ->get(['file_number', 'file_title', 'plot_number', 'district', 'lga', 'land_use_type', 'residence_address'])
-            ->keyBy(fn ($r) => trim((string) $r->file_number));
+            ->get(['file_number', 'file_title', 'plot_number', 'district', 'lga', 'land_use_type', 'residence_address', 'location'])
+            ->keyBy(fn ($r) => $key($r->file_number));
 
         // Children that already carry a recommendation come back with it attached:
         // the row is unticked (the duplicate guard would reject it) and shows what
@@ -1027,7 +1062,7 @@ class LandRecommendationController extends Controller
                 'location', 'land_use_id', 'purpose_id', 'page', 'page_2', 'page_3',
                 'status', 'rofo_status',
             ])
-            ->keyBy(fn ($r) => strtoupper(trim((string) $r->file_number)));
+            ->keyBy(fn ($r) => $key($r->file_number));
 
         // mls_file_no.land_use holds file-number prefixes (RES, CON-AG, IND-RC …)
         // while land_uses holds full names, so route the value through the shared
@@ -1038,11 +1073,12 @@ class LandRecommendationController extends Controller
             ->all();
 
         $payload = $childFileNumbers
-            ->map(function ($fileNo) use ($mlsByFile, $indexByFile, $legacyByChild, $existingByFile, $canonToLandUseId, $normalizer) {
-                $mls    = $mlsByFile[$fileNo] ?? null;
-                $index  = $indexByFile[$fileNo] ?? null;
-                $legacy = $legacyByChild[$fileNo] ?? null;
-                $rec    = $existingByFile[strtoupper($fileNo)] ?? null;
+            ->map(function ($fileNo) use ($mlsByFile, $indexByFile, $legacyByChild, $existingByFile, $canonToLandUseId, $normalizer, $key) {
+                $lookup = $key($fileNo);
+                $mls    = $mlsByFile[$lookup] ?? null;
+                $index  = $indexByFile[$lookup] ?? null;
+                $legacy = $legacyByChild[$lookup] ?? null;
+                $rec    = $existingByFile[$lookup] ?? null;
 
                 // Land use is not recorded on a manual linkage, so a legacy child
                 // falls back to the indexing row and finally to its file-number prefix.
@@ -1057,22 +1093,50 @@ class LandRecommendationController extends Controller
                 // displayed should be what was actually captured, not a fresh guess at
                 // it. Each field still falls back to the registry where the existing
                 // record left it empty.
-                $blank = fn ($v) => trim((string) ($v ?? '')) === '';
+                // First non-blank wins, in the order listed. `??` was used here and it
+                // only falls through on NULL — a column holding an empty string ended
+                // the chain and the later, populated source was never consulted. The
+                // precedence below is unchanged; only the blank test is.
+                // "PLOT 61, 14, 31" -> "14, 31". file_indexings leads its location
+                // with the plot for ~43k rows, and the plot has its own column on the
+                // batch row — left in, every letter would carry it twice. Only a
+                // leading "PLOT <token>," is taken, and only when something is left
+                // after it, so a location that is nothing but a plot survives intact.
+                $stripPlot = function (string $loc): string {
+                    $out = trim((string) preg_replace('/^\s*PLOT\s+[^,]+,\s*/i', '', $loc));
+
+                    return $out !== '' ? $out : $loc;
+                };
+
+                $pick = function (...$values) {
+                    foreach ($values as $v) {
+                        $text = trim((string) ($v ?? ''));
+                        if ($text !== '') {
+                            return $text;
+                        }
+                    }
+
+                    return '';
+                };
 
                 return [
                     'file_number'    => $fileNo,
-                    'applicant_name' => trim((string) (($rec && !$blank($rec->applicant_name)) ? $rec->applicant_name
-                        : ($index->file_title ?? $mls->file_name ?? $legacy->applicant_name ?? ''))),
-                    'plot_number'    => trim((string) (($rec && !$blank($rec->plot_number)) ? $rec->plot_number
-                        : ($mls->plot_no ?? $legacy->child_plot_number ?? $index->plot_number ?? ''))),
-                    'location'       => trim((string) (($rec && !$blank($rec->location)) ? $rec->location
-                        : ($mls->location ?? ''))),
+                    'applicant_name' => $pick($rec->applicant_name ?? null, $index->file_title ?? null,
+                        $mls->file_name ?? null, $legacy->applicant_name ?? null),
+                    'plot_number'    => $pick($rec->plot_number ?? null, $mls->plot_no ?? null,
+                        $legacy->child_plot_number ?? null, $index->plot_number ?? null),
+                    // file_indexings carries the property description too, and for
+                    // older files it is the only place it exists. Its convention is
+                    // to lead with the plot ("PLOT 61, 14, 31") — that has its own
+                    // column on the row, so it is stripped rather than printed twice.
+                    'location'       => $stripPlot($pick($rec->location ?? null, $mls->location ?? null,
+                        $index->location ?? null)),
                     // Correspondence address for the letter. Rarely captured on a
                     // subdivision child, so it is usually keyed in the batch table.
-                    'applicant_address' => trim((string) (($rec && !$blank($rec->applicant_address)) ? $rec->applicant_address
-                        : ($mls->address ?? $index->residence_address ?? ''))),
-                    'district'       => trim((string) ($mls->district ?? $index->district ?? '')),
-                    'lga'            => trim((string) ($mls->lga ?? $index->lga ?? '')),
+                    'applicant_address' => $pick($rec->applicant_address ?? null, $mls->address ?? null,
+                        $index->residence_address ?? null),
+                    'district'       => $pick($mls->district ?? null, $index->district ?? null),
+                    'lga'            => $pick($mls->lga ?? null, $index->lga ?? null),
                     'land_use'       => $landUseName,
                     'land_use_id'    => ($rec && $rec->land_use_id) ? $rec->land_use_id : $landUseId,
                     'purpose_id'     => $rec->purpose_id ?? null,
@@ -1081,6 +1145,10 @@ class LandRecommendationController extends Controller
                     'page_3'         => (string) ($rec->page_3 ?? ''),
                     'tracking_id'    => trim((string) ($mls->tracking_id ?? '')),
                     'is_legacy'      => $legacy !== null && $mls === null,
+                    // Nothing on file anywhere. The row is still rendered — the number
+                    // was picked deliberately — but the picker says so, because an
+                    // empty row is otherwise indistinguishable from a load that failed.
+                    'is_unknown'     => $mls === null && $index === null && $legacy === null && $rec === null,
                     'has_recommendation' => $rec !== null,
                     // Shown on the row so the reason it is excluded is visible.
                     'existing_status' => $rec
@@ -1088,18 +1156,186 @@ class LandRecommendationController extends Controller
                         : null,
                 ];
             })
-            ->sortBy([['plot_number', 'asc'], ['file_number', 'asc']])
-            ->values()
-            ->map(function ($row, $i) {
-                $row['seq'] = $i + 1;
-                return $row;
-            });
+            ->values();
+
+        // A subdivision reads as a run of plots, so its rows go in plot order. A
+        // hand-picked set has no such order — the only meaningful one is the order
+        // the officer picked them in, which is the order they were passed in.
+        if ($sortByPlot) {
+            $payload = $payload->sortBy([['plot_number', 'asc'], ['file_number', 'asc']])->values();
+        }
+
+        return $payload->map(function ($row, $i) {
+            $row['seq'] = $i + 1;
+            return $row;
+        });
+    }
+
+    /**
+     * File numbers for the regular-files batch picker.
+     *
+     * Deliberately a different search from the global file-number modal: this one
+     * answers "what can a recommendation be captured against", so it is scoped to
+     * the same two registries the batch table hydrates from, and every hit says
+     * whether it already carries a recommendation. A file that does cannot go into
+     * a batch — storeBatch() rejects the whole post over it — so it is shown, and
+     * disabled, rather than silently omitted and hunted for.
+     */
+    public function batchFiles(Request $request)
+    {
+        $term  = trim((string) $request->query('q', ''));
+        $limit = max(1, min(100, (int) $request->query('limit', 30)));
+
+        // Without a search term the picker would be a meaningless slice of the whole
+        // register, so the first thing it shows is an instruction to type.
+        if ($term === '') {
+            return response()->json(['success' => true, 'files' => [], 'count' => 0, 'message' => 'Type to search file numbers.']);
+        }
+
+        // A file number is searched the way it is read: from the front. "IND-2026"
+        // means the IND-2026 run, not every number with those characters buried in
+        // it — which is what pushed the real hits off the end of a capped list.
+        // Prefix matches are taken first; only if there is room left does a
+        // contains match fill the rest, so nothing that used to be findable stops
+        // being findable.
+        // SQL Server has no default LIKE escape character, so a backslash would be
+        // matched literally rather than escaping anything — wildcards typed into
+        // the box are neutralised with bracket classes instead. '[' is replaced
+        // first; the brackets that introduces contain no % or _ for the later
+        // passes to touch.
+        $escaped  = str_replace(['[', '%', '_'], ['[[]', '[%]', '[_]'], $term);
+        $prefix   = $escaped . '%';
+        $anywhere = '%' . $escaped . '%';
+
+        $files = [];
+
+        $addMls = function (string $like, int $take) use (&$files) {
+            if ($take <= 0) {
+                return;
+            }
+            $rows = DB::connection('sqlsrv')->table('mls_file_no')
+                ->where('full_file_number', 'LIKE', $like)
+                ->where(function ($q) {
+                    $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                })
+                ->orderBy('full_file_number')
+                ->limit($take)
+                ->get(['full_file_number', 'file_name', 'plot_no', 'location']);
+
+            foreach ($rows as $row) {
+                $no = trim((string) $row->full_file_number);
+                if ($no === '' || isset($files[mb_strtoupper($no)])) {
+                    continue;
+                }
+                $files[mb_strtoupper($no)] = [
+                    'file_number'    => $no,
+                    'applicant_name' => trim((string) ($row->file_name ?? '')),
+                    'plot_number'    => trim((string) ($row->plot_no ?? '')),
+                    'location'       => trim((string) ($row->location ?? '')),
+                ];
+            }
+        };
+
+        // Files that were indexed but never made it into mls_file_no — a real and
+        // common case for older records, and one the subdivision path already
+        // hydrates from, so the picker has to be able to find them too.
+        $addIndexed = function (string $like, int $take) use (&$files) {
+            if ($take <= 0) {
+                return;
+            }
+            $rows = DB::connection('sqlsrv')->table('file_indexings')
+                ->where('file_number', 'LIKE', $like)
+                ->orderBy('file_number')
+                ->limit($take)
+                ->get(['file_number', 'file_title', 'plot_number', 'district']);
+
+            foreach ($rows as $row) {
+                $no = trim((string) $row->file_number);
+                if ($no === '' || isset($files[mb_strtoupper($no)])) {
+                    continue;
+                }
+                $files[mb_strtoupper($no)] = [
+                    'file_number'    => $no,
+                    'applicant_name' => trim((string) ($row->file_title ?? '')),
+                    'plot_number'    => trim((string) ($row->plot_number ?? '')),
+                    'location'       => trim((string) ($row->district ?? '')),
+                ];
+            }
+        };
+
+        $addMls($prefix, $limit);
+        $addIndexed($prefix, $limit - count($files));
+        $addMls($anywhere, $limit - count($files));
+        $addIndexed($anywhere, $limit - count($files));
+
+        $files = array_slice($files, 0, $limit, true);
+
+        // Case-insensitive collation, so a plain whereIn matches the same rows
+        // findDuplicate() would while still using the index.
+        $used = [];
+        if ($files) {
+            foreach (LandRecommendation::whereIn('file_number', array_column($files, 'file_number'))->pluck('file_number') as $u) {
+                $used[mb_strtoupper(trim((string) $u))] = true;
+            }
+        }
+
+        $out = [];
+        foreach ($files as $key => $file) {
+            $file['has_recommendation'] = isset($used[$key]);
+            $out[] = $file;
+        }
+
+        // A broad term matches far more than the picker returns, and silently
+        // showing the first 30 reads as "my file is not in the register". The
+        // picker says so instead and asks for a narrower term.
+        return response()->json([
+            'success' => true,
+            'files'   => $out,
+            'count'   => count($out),
+            'capped'  => count($out) >= $limit,
+            'limit'   => $limit,
+        ]);
+    }
+
+    /**
+     * Table rows for a set of hand-picked file numbers — the regular-files batch.
+     *
+     * POST rather than GET: a batch of 100 file numbers does not fit comfortably in
+     * a query string, and this reads nothing the user has not already selected.
+     */
+    public function batchFileDetails(Request $request)
+    {
+        $numbers = $request->input('file_numbers', []);
+        if (is_string($numbers)) {
+            // Never split on whitespace: KANGIS numbers legitimately contain spaces
+            // ("KNML 1"), and doing so would tear one file number into two.
+            $numbers = preg_split('/[,;\r\n]+/', $numbers);
+        }
+
+        $numbers = collect($numbers)->map(fn ($f) => trim((string) $f))->filter()->unique()->values();
+
+        if ($numbers->isEmpty()) {
+            return response()->json(['success' => false, 'message' => 'No file numbers supplied.'], 422);
+        }
+
+        if ($numbers->count() > 300) {
+            return response()->json([
+                'success' => false,
+                'message' => 'A batch is capped at 300 files. Save these in smaller groups.',
+            ], 422);
+        }
+
+        // Every number picked gets a row, whether or not any registry has anything
+        // on it — the officer chose it deliberately and can key the details by hand.
+        // Rows nothing is known about are flagged so a blank row cannot be mistaken
+        // for a load that failed.
+        $rows = $this->hydrateBatchRows($numbers, null, false);
 
         return response()->json([
             'success'  => true,
-            'mother'   => $mother,
-            'children' => $payload,
-            'count'    => $payload->count(),
+            'children' => $rows,
+            'count'    => $rows->count(),
+            'unknown'  => $rows->where('is_unknown', true)->pluck('file_number')->values(),
         ]);
     }
 
@@ -1248,13 +1484,32 @@ class LandRecommendationController extends Controller
     }
 
     /**
-     * Save a Plot Subdivision batch: one recommendation per selected child, all
-     * sharing a rofo_batch_id so the RofO table can group them back together.
+     * Save a batch: one recommendation per selected file, all sharing a
+     * rofo_batch_id so the RofO table can group them back together.
+     *
+     * Two kinds, one path. A `subdivision` batch is keyed to a mother file and
+     * covers its commissioned children; a `regular` batch is an arbitrary set of
+     * files the officer picked, with no lineage between them. Everything after the
+     * mother-file rules is identical — the same common fields are copied onto the
+     * same per-file rows — so the two share this method rather than drifting.
      */
     public function storeBatch(Request $request)
     {
+        // Absent means subdivision: the only kind that existed before regular
+        // batches, so an old form (or a resumed draft keyed by one) still posts
+        // exactly what it always did.
+        $kind = $request->input('batch_kind') === 'regular' ? 'regular' : 'subdivision';
+
         $validated = $request->validate([
-            'batch_mother_file_no' => 'required|string|max:100',
+            'batch_kind' => 'nullable|string|in:subdivision,regular',
+            // Only a subdivision batch has a mother; a regular batch is a set of
+            // unrelated files and has nothing to group under.
+            'batch_mother_file_no' => ($kind === 'subdivision' ? 'required' : 'nullable') . '|string|max:100',
+            // A regular batch keeps whatever application type was picked on the
+            // form (or none). A subdivision batch is Plot Subdivision by definition
+            // and overwrites this below.
+            'application_type'     => 'nullable|string|max:60',
+            'old_file_number'      => 'nullable|string|max:100',
             'children'                    => 'required|array|min:1',
             'children.*.file_number'      => 'required|string|max:100',
             'children.*.applicant_name'   => 'required|string',
@@ -1268,6 +1523,22 @@ class LandRecommendationController extends Controller
             'children.*.page_2'           => 'nullable|string',
             'children.*.page_3'           => 'nullable|string',
             'children.*.tracking_id'      => 'nullable|string',
+
+            // Per-file grant conditions. Only a regular batch sends these — its
+            // files are unrelated grants, each with its own term and fees, captured
+            // on the Grant Conditions stepper. A subdivision omits them and every
+            // child keeps the single common set below, exactly as before.
+            'children.*.term'               => 'nullable|string',
+            'children.*.cofo_year'          => 'nullable|integer|min:1900|max:' . date('Y'),
+            'children.*.selected_year'      => 'nullable|integer|min:1900|max:' . (date('Y') + 10),
+            'children.*.ground_rent'        => 'nullable|numeric',
+            'children.*.development_period' => 'nullable|string',
+            'children.*.development_value'  => 'nullable|numeric',
+            'children.*.development_charge' => 'nullable|string',
+            'children.*.survey_fees'        => 'nullable|numeric',
+            'children.*.preparation_fees'   => 'nullable|numeric',
+            'children.*.preparation_fees_words' => 'nullable|string',
+            'children.*.layout_plan_no'     => 'nullable|string',
 
             // Common fields — captured once and copied onto every child.
             // applicant_address is NOT here: it is captured per child in the table,
@@ -1326,7 +1597,7 @@ class LandRecommendationController extends Controller
             ]);
         }
 
-        $mother = trim($validated['batch_mother_file_no']);
+        $mother = trim((string) ($validated['batch_mother_file_no'] ?? ''));
 
         // Same rule as the single-record path: a file number may not carry two
         // recommendations. Reported for the whole batch at once so the user fixes
@@ -1344,18 +1615,25 @@ class LandRecommendationController extends Controller
             ]);
         }
 
-        $common = collect($validated)->except(['children', 'batch_mother_file_no', 'rofo_survey_method', 'draft_key'])->all();
+        $common = collect($validated)
+            ->except(['children', 'batch_kind', 'batch_mother_file_no', 'rofo_survey_method', 'draft_key', 'children_expected'])
+            ->all();
         $common['rofo_director_survey']    = ($request->rofo_survey_method === 'DIRECTOR') ? 'YES' : 'NO';
         $common['rofo_licensed_surveyor']  = ($request->rofo_survey_method === 'LICENSED') ? 'YES' : 'NO';
-        $common['old_file_number']         = $mother;
-        $common['batch_mother_file_no']    = $mother;
-        $common['application_type']        = 'Plot Subdivision';
         $common['use_standard_template']   = $request->boolean('use_standard_template');
-        $common['num_plots']               = (string) count($validated['children']);
         $common['created_by']              = Auth::id();
         $common['updated_by']              = Auth::id();
 
-        $batchId = 'RB-' . now()->format('YmdHis') . '-' . strtoupper(substr(md5($mother . microtime(true)), 0, 4));
+        if ($kind === 'subdivision') {
+            // The mother is both the lineage link and what groups the batch, and
+            // num_plots is the size of the split — none of which a regular batch has.
+            $common['old_file_number']      = $mother;
+            $common['batch_mother_file_no'] = $mother;
+            $common['application_type']     = 'Plot Subdivision';
+            $common['num_plots']            = (string) count($validated['children']);
+        }
+
+        $batchId = 'RB-' . now()->format('YmdHis') . '-' . strtoupper(substr(md5(($mother ?: 'REGULAR') . microtime(true)), 0, 4));
 
         // One timestamp for the whole batch. The RofO table is ordered newest-first
         // on created_at, which carries milliseconds — left to itself each row gets
@@ -1385,6 +1663,18 @@ class LandRecommendationController extends Controller
                 $row['page']           = $child['page'] ?? null;
                 $row['page_2']         = $child['page_2'] ?? null;
                 $row['page_3']         = $child['page_3'] ?? null;
+
+                // A regular batch captures grant conditions per file, so anything
+                // the child carries wins over the common set. Only keys actually
+                // present are considered — a subdivision sends none of them and
+                // falls through to $common untouched. A key present but blank is
+                // still an answer ("no ground rent"), so it is written as null
+                // rather than quietly reverting to the common value.
+                foreach (self::PER_CHILD_GRANT_FIELDS as $field) {
+                    if (array_key_exists($field, $child)) {
+                        $row[$field] = ($child[$field] === '' ? null : $child[$field]);
+                    }
+                }
 
                 $purposeId = $child['purpose_id'] ?? null;
                 if ($purposeId === 'other') {
@@ -1425,8 +1715,12 @@ class LandRecommendationController extends Controller
                 ]);
         }
 
+        $summary = $kind === 'subdivision'
+            ? "Subdivision batch saved — {$created} recommendations created for children of {$mother}."
+            : "Batch saved — {$created} recommendations created for the selected files.";
+
         return redirect()->route('land-recommendations.index', ['type' => 'ROFO', 'batch' => $batchId])
-            ->with('success', "Subdivision batch saved — {$created} recommendations created for children of {$mother}.");
+            ->with('success', $summary);
     }
 
     public function show($id)
@@ -1565,6 +1859,15 @@ class LandRecommendationController extends Controller
             }
         }
 
+        // `type` marks where the recommendation came from, and the edit form only
+        // offers Direct / Conversion — OSS is not one of its choices. Saving an OSS
+        // record through this form would therefore post type=Direct and silently
+        // move it out of the OSS scope every list and print path filters on, so the
+        // OSS origin is never overwritten here.
+        if (strtoupper((string) $recommendation->type) === 'OSS') {
+            $validated['type'] = 'OSS';
+        }
+
         $validated['updated_by'] = Auth::id();
 
         $recommendation->update($validated);
@@ -1665,7 +1968,7 @@ class LandRecommendationController extends Controller
             $record = (object) [
                 'applicant_name'    => strtoupper((string) ($recommendation->applicant_name ?? '')),
                 'file_ref'          => (string) ($recommendation->file_number ?? ''),
-                'purpose'           => strtoupper((string) ($recommendation->purpose_of_clause ?? $recommendation->land_use ?? '')),
+                'purpose'           => strtoupper($recommendation->landuse_purpose),
                 'location'          => (string) ($recommendation->location ?? ''),
                 'plot_no'           => strtoupper((string) ($recommendation->plot_number ?? '')),
                 'plan_no'           => strtoupper((string) ($recommendation->layout_plan_no ?? '')),
@@ -1778,7 +2081,10 @@ class LandRecommendationController extends Controller
         $stitched = app(\App\Services\StitchedBatchPrint::class)
             ->stitch($records->map(fn ($record) => $this->printViewFor($record)));
 
-        $mother = $records->first()->batch_mother_file_no ?? $records->first()->old_file_number;
+        // A regular batch has no mother file to name it by, so it is titled by its
+        // batch id instead of by an empty string.
+        $mother = trim((string) ($records->first()->batch_mother_file_no ?: $records->first()->old_file_number))
+            ?: $batchId;
 
         return view('print.stitched_batch', [
             'head'     => $stitched['head'],

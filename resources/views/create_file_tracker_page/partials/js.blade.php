@@ -4237,7 +4237,11 @@
             // its timeline status was Amber/Red — see FileTrackerController::updateStatus().
             delayReason: log.delay_reason ?? log.delayReason ?? null,
             // The derived "File Commissioning" line (DIIT) rather than a logged movement.
-            isDiit: Boolean(log._diit)
+            isDiit: Boolean(log._diit),
+            // The opening "In Archive" / "In Pool Office" line written at indexing from
+            // the registry range (FileRangeTrackingService). It IS the home row, so the
+            // hard-coded one below must not be drawn on top of it.
+            isRangeHome: Boolean(log._range_home)
         };
     }
 
@@ -4774,7 +4778,11 @@
         let effectiveReceivingOfficerId = receivingOfficerIdRaw;
         let effectiveReceivingOfficerName = $officerOption.text() || _hiddenOfficerName;
 
-        const requesterDirectorId = document.getElementById('requester-director')?.value || null;
+        // "OTHER" is the sentinel for "+ Add New Director…" — it must not reach the
+        // backend, which validates requester_director_id as an integer and builds
+        // the director from the first/last name inputs instead.
+        const requesterDirectorRaw = document.getElementById('requester-director')?.value || '';
+        const requesterDirectorId = /^\d+$/.test(requesterDirectorRaw) ? requesterDirectorRaw : null;
         const requesterDirectorFirstName = document.getElementById('rd-first-name')?.value?.trim() || null;
         const requesterDirectorLastName = document.getElementById('rd-last-name')?.value?.trim() || null;
 
@@ -6362,7 +6370,19 @@
             // Office and is still moving between offices for processing — it has not
             // reached the archive yet. Its DIIT "File Commissioning" line (delivered
             // with the prior movements below) opens the timeline in place of this row.
-            const homeLocationRow = (isKangisView || tracker.isCommissioned) ? '' : `
+            //
+            // A file indexed since FileRangeTrackingService shipped carries a REAL
+            // opening row for the same thing — written at indexing and placed by the
+            // file's registry range, so it says "In Pool Office" where this hard-coded
+            // row can only ever say "In Archive". Drawing both gives the file two home
+            // lines, and for an archive-zone file two rows both reading "In Archive".
+            //
+            // file_request_type = SYSTEM is the marker: only FileRangeTrackingService
+            // writes it (operators pick MANUAL / SUBMITTED), so it identifies a tracker
+            // whose opening row already IS the home row.
+            const isSystemTracker = (tracker.fileRequestType || '').toUpperCase() === 'SYSTEM'
+                || (tracker.logEntries || []).some(e => e.isRangeHome);
+            const homeLocationRow = (isKangisView || tracker.isCommissioned || isSystemTracker) ? '' : `
                         <tr class="bg-indigo-50/40">
                             <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-gray-700">
                                 <div class="flex items-center gap-2">
@@ -8405,6 +8425,12 @@
                                         // "File Commissioning" line (printed with the prior
                                         // entries below), not with the Registry / Archive row.
                                         if (tracker.isCommissioned) {
+                                            return '';
+                                        }
+                                        // Likewise a SYSTEM tracker: its stored opening row IS
+                                        // the home row, and it knows whether the file is in the
+                                        // Archive or the Pool Office (see the on-screen table).
+                                        if ((tracker.fileRequestType || '').toUpperCase() === 'SYSTEM') {
                                             return '';
                                         }
                                         // Default "home location" row — the file's permanent
@@ -11200,14 +11226,16 @@
             }
 
             const directors = window.requesterDirectors.filter(d => (d.department || '').toLowerCase() === departmentName.toLowerCase());
-            
+
             directors.forEach(director => {
                 const opt = document.createElement('option');
                 opt.value = director.id;
-                opt.textContent = `${director.first_name} ${director.last_name}`;
+                // "<Department> Director" (the standing department entry) plus any
+                // named individuals added through "Add New Director".
+                opt.textContent = director.full_name || `${director.first_name} ${director.last_name}`;
                 directorSelect.appendChild(opt);
             });
-            
+
             const otherOpt = document.createElement('option');
             otherOpt.value = 'OTHER';
             otherOpt.textContent = '+ Add New Director...';
@@ -11237,6 +11265,10 @@
         if (!isSltrInternalScope()) {
             filterReceivingOffices(destinationOfficeSelect.value);
         }
+        // Department can already be selected on load (e.g. Digital Request pins it
+        // to the user's own department), and no change event ever fires for it —
+        // populate the director list from the current value too.
+        filterRequesterDirectors(destinationOfficeSelect.value);
 
         // Listener
         destinationOfficeSelect.addEventListener('change', function () {

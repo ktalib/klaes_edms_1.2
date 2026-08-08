@@ -115,6 +115,50 @@ class KangisPrintLabelController extends Controller
     }
 
     /**
+     * List the registry batch numbers available for a prefix, with a file count each,
+     * so the Registry Batch No selector can offer them instead of free typing.
+     */
+    public function getRegistryBatchNos(Request $request)
+    {
+        $prefix = $this->validatePrefix($request->input('prefix', ''));
+        if (!$prefix) {
+            return response()->json(['success' => false, 'message' => 'Invalid prefix.'], 422);
+        }
+
+        try {
+            $cfg = $this->groupingConfig($prefix);
+
+            $rows = DB::connection('sqlsrv')
+                ->table($cfg['table'])
+                ->where($cfg['awaiting'], 'like', $prefix . '%')
+                ->when($cfg['has_is_indexed'], function ($q) {
+                    $q->where('is_indexed', 1);
+                })
+                ->whereNotNull('registry_batch_no')
+                ->where('registry_batch_no', '!=', '')
+                ->groupBy('registry_batch_no')
+                ->select(['registry_batch_no', DB::raw('COUNT(*) as file_count')])
+                ->orderByRaw('TRY_CAST(registry_batch_no AS INT)')
+                ->get();
+
+            $data = $rows->map(function ($r) {
+                return [
+                    'registry_batch_no' => (string) $r->registry_batch_no,
+                    'file_count'        => (int) $r->file_count,
+                ];
+            })->values();
+
+            return response()->json([
+                'success' => true,
+                'data'    => ['prefix' => $prefix, 'batches' => $data],
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('kangis-printlabel.getRegistryBatchNos', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * Fetch file_indexings records for a given prefix (matched on kangis_fileno_placeholder).
      */
     public function getAvailableFiles(Request $request)
@@ -400,7 +444,18 @@ class KangisPrintLabelController extends Controller
                 'rack_primary'      => 'required|string|max:5',
                 'shelf_number'      => 'required|integer|min:1|max:9999',
                 'rack_secondary'    => 'nullable|string|max:5',
+
+                // Explicit shelf per registry batch, chosen in the Registry Batch panel.
+                // Any batch without an entry keeps the derived-from-anchor shelf below.
+                'batch_groups'                     => 'nullable|array|min:1',
+                'batch_groups.*.registry_batch_no' => 'required|string|max:100',
+                'batch_groups.*.full_label'        => 'required|string|max:20',
+                'batch_groups.*.rack_primary'      => 'required|string|max:5',
+                'batch_groups.*.rack_secondary'    => 'nullable|string|max:5',
+                'batch_groups.*.shelf_number'      => 'required|integer|min:1|max:9999',
             ]);
+
+            $assignments = $this->normalizeBatchGroupAssignments($validated['batch_groups'] ?? []);
 
             // Label prefix used on batch numbers / QR payloads. In manual override with
             // no prefix chosen, fall back to a generic marker.
@@ -416,7 +471,7 @@ class KangisPrintLabelController extends Controller
             $cfg = $manualOverride ? $this->groupingConfig('KANGIS') : $this->groupingConfig($prefix);
 
             $result = DB::connection('sqlsrv')->transaction(function () use (
-                $prefix, $fileIds, $fullLabel, $rackPrimary, $rackSecondary, $shelfNumber, $manualOverride, $cfg
+                $prefix, $fileIds, $fullLabel, $rackPrimary, $rackSecondary, $shelfNumber, $manualOverride, $cfg, $assignments
             ) {
                 $now = Carbon::now();
 
@@ -444,10 +499,6 @@ class KangisPrintLabelController extends Controller
                 
                 $createdBatchesData = [];
                 $allLabelItems = [];
-                $currentFullLabel = $fullLabel;
-                $currentRackPrimary = $rackPrimary;
-                $currentRackSecondary = $rackSecondary;
-                $currentShelfNumber = $shelfNumber;
 
                 // Anchor = lowest loaded registry batch. It maps to the shelf the user selected;
                 // every other batch is offset from it so gaps in the loaded batches are preserved
@@ -460,10 +511,24 @@ class KangisPrintLabelController extends Controller
                 foreach ($groups as $regBatchNo => $groupFiles) {
                     $regBatchNoStr = (string)$regBatchNo;
 
-                    // Derive the shelf from the file's registry batch range, preserving gaps:
-                    //   shelf = selected start shelf + (this batch - lowest loaded batch)
-                    // so batch 25 -> B1, 32 -> B8, regardless of which batches were skipped.
-                    if ($anchorBatch !== null && is_numeric($regBatchNoStr)) {
+                    // Start from the top-level rack/shelf on every batch so an explicit
+                    // assignment never leaks into the next (derived) batch.
+                    $currentFullLabel     = $fullLabel;
+                    $currentRackPrimary   = $rackPrimary;
+                    $currentRackSecondary = $rackSecondary;
+                    $currentShelfNumber   = $shelfNumber;
+
+                    if (isset($assignments[$regBatchNoStr])) {
+                        // The user assigned this registry batch its own shelf/rack.
+                        $a = $assignments[$regBatchNoStr];
+                        $currentRackPrimary   = $a['rack_primary'];
+                        $currentRackSecondary = $a['rack_secondary'];
+                        $currentShelfNumber   = $a['shelf_number'];
+                        $currentFullLabel     = $a['full_label'];
+                    } elseif ($anchorBatch !== null && is_numeric($regBatchNoStr)) {
+                        // Derive the shelf from the file's registry batch range, preserving gaps:
+                        //   shelf = selected start shelf + (this batch - lowest loaded batch)
+                        // so batch 25 -> B1, 32 -> B8, regardless of which batches were skipped.
                         $currentShelfNumber = max(1, $shelfNumber + ((int) $regBatchNoStr - $anchorBatch));
                         $currentFullLabel   = $currentRackPrimary . $currentShelfNumber;
                     }
@@ -1184,6 +1249,38 @@ $query = KangisPrintLabelBatch::with(['creator'])
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Key the per-registry-batch shelf assignments by their batch number.
+     * A batch listed twice is a UI bug, so it is rejected rather than silently
+     * resolved to whichever entry happened to come last.
+     */
+    private function normalizeBatchGroupAssignments(array $raw): array
+    {
+        $assignments = [];
+
+        foreach ($raw as $group) {
+            $key = trim((string) $group['registry_batch_no']);
+            if ($key === '') {
+                continue;
+            }
+
+            if (isset($assignments[$key])) {
+                throw ValidationException::withMessages([
+                    'batch_groups' => "Registry batch {$key} was assigned a shelf more than once.",
+                ]);
+            }
+
+            $assignments[$key] = [
+                'full_label'     => strtoupper(trim($group['full_label'])),
+                'rack_primary'   => strtoupper(trim($group['rack_primary'])),
+                'rack_secondary' => isset($group['rack_secondary']) ? (strtoupper(trim((string) $group['rack_secondary'])) ?: null) : null,
+                'shelf_number'   => (int) $group['shelf_number'],
+            ];
+        }
+
+        return $assignments;
+    }
 
     private function validatePrefix(string $raw): ?string
     {

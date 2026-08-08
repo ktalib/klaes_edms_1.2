@@ -380,7 +380,7 @@
 
   <div class="paired">
     <div class="field-row paired-narrow"><span class="field-label">(a) File Ref. No.:</span> <span class="field" style="flex:1;">{{ $recommendation->file_number }}</span></div>
-    <div class="field-row paired-wide"><span class="field-label">(b) Purpose Clause:</span> <span class="field" style="flex:1;">{{ $recommendation->purpose_of_clause }}</span></div>
+    <div class="field-row paired-wide"><span class="field-label">(b) Landuse/Purpose Clause:</span> <span class="field" style="flex:1;">{{ $recommendation->landuse_purpose }}</span></div>
   </div>
 
   <div class="paired">
@@ -407,8 +407,9 @@
 
   <div class="field-row">Development Charge (if any): <span class="field" style="width:400px;">{{ $recommendation->development_charge ? (is_numeric($recommendation->development_charge) ? number_format($recommendation->development_charge, 2) : $recommendation->development_charge) : 'NIL' }}</span></div>
 
-  <div class="field-row">Survey and processing charges: <span class="field" style="width:390px;">{{ number_format($recommendation->preparation_fees, 2) }}</span></div>
+  <div class="field-row">Survey and processing charges: <span class="field" style="width:390px;">{{ number_format($recommendation->survey_fees, 2) }}</span></div>
 
+ 
   <div style="margin:0.6cm 0 0.2cm;">
     The Director of Land recommends/does not recommend the application for the following reasons:
   </div>

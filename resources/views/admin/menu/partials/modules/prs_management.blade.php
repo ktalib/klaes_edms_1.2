@@ -1,10 +1,10 @@
 <!-- PRS Management (after Cadastral) -->
 @if($hasRole('PRS') || $hasRole('Supper Admin'))
   @php
-      // All five entries open the same report; what differs is the department
-      // filter and which section it lands on. The active test therefore has to
-      // compare those parameters — matching on the route name alone lit up every
-      // item at once, because they share one route.
+      // All entries open the same report; what differs is the department filter
+      // and which section it lands on. The active test therefore has to compare
+      // those parameters — matching on the route name alone lit up every item at
+      // once, because they share one route.
       $prsDept = request()->query('dept', 'all');
       $prsSec  = request()->query('sec');
 
@@ -14,6 +14,7 @@
           ['label' => 'Legal Search',            'icon' => 'search',            'dept' => 'deeds', 'sec' => 'search'],
           ['label' => 'Land File Commissioning', 'icon' => 'folder-tree',       'dept' => 'lands', 'sec' => 'land_conversion'],
           ['label' => 'Land Allocation',         'icon' => 'landmark',          'dept' => 'lands', 'sec' => 'land_direct_allocation'],
+          ['label' => 'Sectional Titling',       'icon' => 'layers',            'dept' => 'st',    'sec' => null],
       ];
   @endphp
 

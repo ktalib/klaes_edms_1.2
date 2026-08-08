@@ -565,6 +565,16 @@ function buildActionsMenu(row, viewUrl) {
           <span class="leading-snug">Match Shadow File ${isPpMatchedRow ? ' <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-green-50 text-green-600 border border-green-200 align-middle">MATCHED</span>' : ''}</span>
         </button>`;
 
+  // Disabled when the record has no related file numbers at all. When it does, the
+  // handler opens the Related Files list rather than guessing: the row only knows
+  // *that* related files exist, not how many (link-sourced rows show "Linked Records"
+  // with no count), so the authoritative list decides whether to confirm one directly
+  // or make the operator pick.
+  const unlinkRelatedButton = `<button type="button" class="unlink-related-menu-btn flex items-start gap-2.5 w-full text-left px-4 py-2.5 text-sm ${row.has_related_files ? 'text-red-700 hover:bg-red-50' : 'text-gray-400 cursor-not-allowed opacity-40'} transition-colors" data-file-id="${id}" data-file-number="${safeFileNumber}" ${row.has_related_files ? '' : 'disabled="disabled"'}>
+          <i data-lucide="unlink" class="h-4 w-4 mt-0.5 shrink-0 ${row.has_related_files ? 'text-red-600' : 'text-gray-300'}"></i>
+          <span class="leading-snug">Unlink Related FileNo</span>
+        </button>`;
+
   const updatePlaceholderButton = (isKangisVariant || row.kangis_fileno_placeholder) ? `<button type="button" class="update-placeholder-btn block w-full text-left px-4 py-2.5 text-sm text-purple-700 hover:bg-purple-50 transition-colors" data-file-id="${id}" data-placeholder="${escapeHtml(row.kangis_fileno_placeholder ?? '')}">
           <i data-lucide="edit-3" class="h-4 w-4 mr-2.5 inline text-purple-600"></i>
           KANGIS FileNo Placeholder
@@ -617,6 +627,7 @@ function buildActionsMenu(row, viewUrl) {
           ${tempFileButton}
           ${mccFileNoButton}
           ${mppFileNoButton}
+          ${unlinkRelatedButton}
           ${updatePlaceholderButton}
           ${deleteButton ? '<div class="border-t border-slate-50 my-1.5"></div>' + deleteButton : ''}
         </div>
@@ -851,6 +862,18 @@ function handleTableBodyClick(event) {
     event.stopPropagation();
     const id = relatedBtn.getAttribute('data-id');
     openRelatedFilesModal(id);
+    return;
+  }
+
+  const unlinkMenuBtn = event.target.closest('.unlink-related-menu-btn');
+  if (unlinkMenuBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (unlinkMenuBtn.disabled) return;
+    closeAllActionMenus();
+    // autoUnlink: with exactly one related file the confirmation opens straight away;
+    // with more than one the list stays up so the operator says which.
+    openRelatedFilesModal(unlinkMenuBtn.getAttribute('data-file-id'), { autoUnlink: true });
     return;
   }
 
@@ -1145,7 +1168,8 @@ function updateLatLonCell(id, row) {
   }
 }
 
-function openRelatedFilesModal(id) {
+function openRelatedFilesModal(id, options) {
+  const opts = options || {};
   const modal = document.getElementById('related-files-modal');
   const tbody = document.getElementById('related-files-table-body');
   const closeBtns = [
@@ -1180,6 +1204,22 @@ function openRelatedFilesModal(id) {
       const parentBadge = document.getElementById('parent-file-number-badge');
 
       if (data.success && data.data.length > 0) {
+        // parent_prop_id drives the "this also clears Property ID X" warning in the
+        // unlink confirmation; each row carries its own prop_id (see backfillRelatedFromIndex).
+        const meta = data.meta || {};
+
+        // More than one related file => make the operator pick, don't assume.
+        const multiNotice = ensureMultiNotice();
+        const countEl = document.getElementById('related-files-count');
+        if (multiNotice) {
+          if (data.data.length > 1) {
+            if (countEl) countEl.textContent = data.data.length;
+            multiNotice.classList.remove('hidden');
+          } else {
+            multiNotice.classList.add('hidden');
+          }
+        }
+
         // Show Parent File Number
         const firstRow = data.data[0];
         if (firstRow && firstRow.main_file_number && parentContainer && parentBadge) {
@@ -1222,6 +1262,15 @@ function openRelatedFilesModal(id) {
                     data-lpkn-no="${escapeHtml(file.lpkn_no || '')}">
                     <i data-lucide="edit-3" class="w-4 h-4"></i>
                 </button>
+                <button type="button" class="unlink-related-file-btn p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Unlink this related file number"
+                    data-id="${file.id}"
+                    data-parent-id="${id}"
+                    data-parent-file-number="${escapeHtml(file.main_file_number || '')}"
+                    data-file-number="${escapeHtml(file.file_number)}"
+                    data-prop-id="${escapeHtml(file.prop_id || '')}">
+                    <i data-lucide="unlink" class="w-4 h-4"></i>
+                </button>
             </td>
           </tr>
         `).join('');
@@ -1232,8 +1281,16 @@ function openRelatedFilesModal(id) {
         bindRelatedEditHandlers(id);
         // Clicking a related file number backfills its row from the indexed record.
         bindRelatedFilenoBackfill();
+        bindRelatedUnlinkHandlers(id, meta);
+
+        // Entered from the row menu with a single related file: go straight to the
+        // confirmation. More than one and the list stays up for the operator to choose.
+        if (opts.autoUnlink && data.data.length === 1) {
+          document.querySelector('.unlink-related-file-btn')?.click();
+        }
       } else {
         if (parentContainer) parentContainer.classList.add('hidden');
+        document.getElementById('related-files-multi-notice')?.classList.add('hidden');
         const msg = data.message || 'No related files found for this record.';
         tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-sm ${data.success ? 'text-gray-500' : 'text-red-500'} font-medium">${msg}</td></tr>`;
       }
@@ -1635,6 +1692,354 @@ function bindRelatedEditHandlers(parentId) {
     } catch (err) {
       console.error(err);
       alert('A network error occurred.');
+    }
+  };
+}
+
+// The Related Files modal markup is duplicated across several blades (the shared
+// components.indexed-files-table component, indexed_files/index.blade.php, the per-registry
+// pages). Rather than add these two elements to every copy and let them drift, the JS owns
+// them and injects them on first use.
+function ensureUnlinkModal() {
+  let modal = document.getElementById('unlink-related-file-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'unlink-related-file-modal';
+    modal.className = 'fixed inset-0 z-[120] hidden overflow-y-auto';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.innerHTML = `
+      <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" id="unlink-related-backdrop"></div>
+        <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+        <div class="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+          <div id="unlink-related-header" class="bg-red-600 px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <i data-lucide="unlink" class="w-5 h-5 text-white" id="unlink-related-header-icon"></i>
+              <h3 class="text-lg font-bold text-white" id="unlink-related-header-title">Unlink Related File Number</h3>
+            </div>
+            <button type="button" id="close-unlink-related-modal" class="text-white/70 hover:text-white transition-colors">
+              <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+          </div>
+          <div id="unlink-related-confirm-body" class="px-6 py-6 space-y-4">
+            <p class="text-sm text-gray-600">
+              Remove <span id="unlink-related-file-number" class="font-bold text-gray-900">-</span>
+              as a related file of <span id="unlink-related-parent" class="font-bold text-gray-900">-</span>?
+            </p>
+            <div id="unlink-related-propid" class="hidden rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <p class="text-xs text-amber-800 font-medium" id="unlink-related-propid-text"></p>
+            </div>
+            <p class="text-xs text-gray-500">This cannot be undone from the interface. The action is recorded in the audit log.</p>
+          </div>
+          <div id="unlink-related-result-body" class="hidden px-6 py-6"></div>
+          <div id="unlink-related-confirm-footer" class="bg-gray-50 px-6 py-4 flex justify-end gap-3 border-t border-gray-100">
+            <button type="button" id="cancel-unlink-related" class="px-6 py-2.5 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-200 transition-all">Cancel</button>
+            <button type="button" id="confirm-unlink-related" class="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-red-600 hover:bg-red-700 transition-all shadow-sm disabled:opacity-60 disabled:cursor-not-allowed">Unlink</button>
+          </div>
+          <div id="unlink-related-result-footer" class="hidden bg-gray-50 px-6 py-4 flex justify-end gap-3 border-t border-gray-100">
+            <button type="button" id="done-unlink-related" class="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-slate-800 hover:bg-slate-900 transition-all shadow-sm">Done</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+  return modal;
+}
+
+// Banner shown above the related-files list when there is more than one entry, so the
+// operator picks which to unlink instead of assuming there is only one.
+function ensureMultiNotice() {
+  let notice = document.getElementById('related-files-multi-notice');
+  if (!notice) {
+    const tbody = document.getElementById('related-files-table-body');
+    // The list sits inside a scroll wrapper; the banner belongs above that wrapper.
+    const anchor = tbody?.closest('table')?.parentElement;
+    if (!anchor || !anchor.parentElement) return null;
+
+    notice = document.createElement('div');
+    notice.id = 'related-files-multi-notice';
+    notice.className = 'hidden mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3';
+    notice.innerHTML = `
+      <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600 mt-0.5 shrink-0"></i>
+      <p class="text-xs text-amber-800 font-medium">
+        This file has <span id="related-files-count" class="font-bold">0</span> related file numbers.
+        Choose the specific one you want to unlink — only the row you pick is removed.
+      </p>`;
+    anchor.parentElement.insertBefore(notice, anchor);
+  }
+  return notice;
+}
+
+// Every close path (Done, the X, the backdrop) goes through here, so the refresh queued
+// by a successful unlink runs no matter how the operator dismisses the card.
+function closeUnlinkModal() {
+  const modal = document.getElementById('unlink-related-file-modal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+
+  const pending = modal._pendingRefresh;
+  modal._pendingRefresh = null;
+  if (typeof pending === 'function') pending();
+}
+
+// Puts the modal back into its "confirm" state — needed because the same modal is
+// reused for the result card and would otherwise still show the previous outcome.
+function resetUnlinkModalState() {
+  document.getElementById('unlink-related-confirm-body')?.classList.remove('hidden');
+  document.getElementById('unlink-related-confirm-footer')?.classList.remove('hidden');
+  document.getElementById('unlink-related-result-body')?.classList.add('hidden');
+  document.getElementById('unlink-related-result-footer')?.classList.add('hidden');
+
+  const header = document.getElementById('unlink-related-header');
+  if (header) header.className = 'bg-red-600 px-6 py-4 flex items-center justify-between';
+  const title = document.getElementById('unlink-related-header-title');
+  if (title) title.textContent = 'Unlink Related File Number';
+  const icon = document.getElementById('unlink-related-header-icon');
+  if (icon) icon.setAttribute('data-lucide', 'unlink');
+}
+
+// Swaps the confirm body for an outcome card. The backend reports which store the entry
+// came out of and what happened to the Property ID; all of that is worth showing, which
+// a native alert() cannot do.
+function showUnlinkResult(payload, context) {
+  const data = payload.data || {};
+  const body = document.getElementById('unlink-related-result-body');
+  if (!body) return;
+
+  const sources = [];
+  if (data.removed_link_rows > 0) {
+    sources.push(`${data.removed_link_rows} related-file link row${data.removed_link_rows === 1 ? '' : 's'}`);
+  }
+  if (data.removed_from_related_fileno) {
+    sources.push('the related file number list');
+  }
+
+  // Both "cleared it" and "there was never one" end in the same state — no parent
+  // Property ID on this record — so both report as UNLINKED. The KEPT branches below
+  // stay as they are: the linkage really does survive there, and saying otherwise
+  // would tell the operator the parcel link is gone when it is not.
+  let propRow;
+  if (data.prop_id_cleared) {
+    propRow = `
+      <div class="flex items-start gap-2">
+        <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-50 text-red-700 border border-red-200 shrink-0 mt-0.5">UNLINKED</span>
+        <span class="text-gray-700">Parent Property ID <span class="font-bold">${escapeHtml(data.cleared_prop_id)}</span> unlinked from this record.</span>
+      </div>`;
+  } else if (data.prop_id_note === 'no_parent_prop_id') {
+    propRow = `
+      <div class="flex items-start gap-2">
+        <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-50 text-red-700 border border-red-200 shrink-0 mt-0.5">UNLINKED</span>
+        <span class="text-gray-700">Parent Property ID unlinked.</span>
+      </div>`;
+  } else if (data.prop_id_note === 'still_justified_by_remaining_related_file') {
+    propRow = `
+      <div class="flex items-start gap-2">
+        <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0 mt-0.5">KEPT</span>
+        <span class="text-gray-700">Another related file still points at the same parcel.</span>
+      </div>`;
+  } else if (data.prop_id_note === 'parent_prop_id_from_another_source') {
+    propRow = `
+      <div class="flex items-start gap-2">
+        <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0 mt-0.5">KEPT</span>
+        <span class="text-gray-700">The linked Property ID was not set by this related file.</span>
+      </div>`;
+  } else {
+    // Defensive: any note the UI does not recognise still ends up here.
+    propRow = `
+      <div class="flex items-start gap-2">
+        <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-50 text-red-700 border border-red-200 shrink-0 mt-0.5">UNLINKED</span>
+        <span class="text-gray-700">Parent Property ID unlinked.</span>
+      </div>`;
+  }
+
+  body.innerHTML = `
+    <div class="flex items-start gap-3 mb-5">
+      <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-2 shrink-0">
+        <i data-lucide="check" class="w-5 h-5 text-emerald-600"></i>
+      </div>
+      <div>
+        <p class="text-sm font-bold text-gray-900">Related file unlinked</p>
+        <p class="text-xs text-gray-500 mt-0.5">
+          <span class="font-semibold text-gray-700">${escapeHtml(data.file_number || '')}</span>
+          is no longer a related file of
+          <span class="font-semibold text-gray-700">${escapeHtml(context.parentFileNumber || '')}</span>.
+        </p>
+      </div>
+    </div>
+    <dl class="rounded-xl border border-gray-100 bg-gray-50/60 divide-y divide-gray-100 text-xs">
+      <div class="px-4 py-3">
+        <dt class="font-bold text-gray-400 uppercase tracking-wider text-[10px] mb-1">Removed from</dt>
+        <dd class="text-gray-700">${sources.length ? escapeHtml(sources.join(' and ')) : '&mdash;'}</dd>
+      </div>
+      <div class="px-4 py-3">
+        <dt class="font-bold text-gray-400 uppercase tracking-wider text-[10px] mb-1">Property ID</dt>
+        <dd>${propRow}</dd>
+      </div>
+      <div class="px-4 py-3">
+        <dt class="font-bold text-gray-400 uppercase tracking-wider text-[10px] mb-1">Related files remaining</dt>
+        <dd class="text-gray-700 font-bold">${Number(data.remaining) || 0}</dd>
+      </div>
+    </dl>
+    <p class="text-[11px] text-gray-400 mt-4 flex items-center gap-1.5">
+      <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+      Recorded in the audit log.
+    </p>`;
+
+  document.getElementById('unlink-related-confirm-body')?.classList.add('hidden');
+  document.getElementById('unlink-related-confirm-footer')?.classList.add('hidden');
+  body.classList.remove('hidden');
+  document.getElementById('unlink-related-result-footer')?.classList.remove('hidden');
+
+  const header = document.getElementById('unlink-related-header');
+  if (header) header.className = 'bg-emerald-600 px-6 py-4 flex items-center justify-between';
+  const title = document.getElementById('unlink-related-header-title');
+  if (title) title.textContent = 'Unlink Complete';
+  const icon = document.getElementById('unlink-related-header-icon');
+  if (icon) icon.setAttribute('data-lucide', 'check-circle');
+
+  // Queued rather than run now, so the card is not yanked out from under the operator.
+  const modal = document.getElementById('unlink-related-file-modal');
+  if (modal) {
+    modal._pendingRefresh = () => {
+      if (Number(data.remaining) > 0) {
+        openRelatedFilesModal(context.parentId); // refresh the surviving rows
+      } else {
+        document.getElementById('related-files-modal')?.classList.add('hidden');
+      }
+      // The row's related-files button and display text are derived server-side.
+      if (typeof loadTable === 'function') loadTable();
+    };
+  }
+
+  const doneBtn = document.getElementById('done-unlink-related');
+  if (doneBtn) doneBtn.onclick = closeUnlinkModal;
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+/** Failure card — same modal, same shape, so errors are not a different experience. */
+function showUnlinkError(message) {
+  const body = document.getElementById('unlink-related-result-body');
+  if (!body) return;
+
+  body.innerHTML = `
+    <div class="flex items-start gap-3">
+      <div class="bg-red-50 border border-red-200 rounded-xl p-2 shrink-0">
+        <i data-lucide="alert-circle" class="w-5 h-5 text-red-600"></i>
+      </div>
+      <div>
+        <p class="text-sm font-bold text-gray-900">Nothing was unlinked</p>
+        <p class="text-xs text-gray-600 mt-1 leading-relaxed">${escapeHtml(message)}</p>
+      </div>
+    </div>`;
+
+  document.getElementById('unlink-related-confirm-body')?.classList.add('hidden');
+  document.getElementById('unlink-related-confirm-footer')?.classList.add('hidden');
+  body.classList.remove('hidden');
+  document.getElementById('unlink-related-result-footer')?.classList.remove('hidden');
+
+  const title = document.getElementById('unlink-related-header-title');
+  if (title) title.textContent = 'Unlink Failed';
+
+  const doneBtn = document.getElementById('done-unlink-related');
+  if (doneBtn) doneBtn.onclick = closeUnlinkModal;
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// Unlink removes ONE related file number from the record. The backend decides what
+// happens to the linked Property ID; `meta.parent_prop_id` + the row's own prop_id let
+// the confirmation say so in advance (see IndexedFileTableController::unlinkRelatedFile).
+function bindRelatedUnlinkHandlers(parentId, meta) {
+  const modal = ensureUnlinkModal();
+  const confirmBtn = document.getElementById('confirm-unlink-related');
+  if (!modal || !confirmBtn) return;
+
+  // Closing is handled by the global delegated listener at the bottom of this file —
+  // binding it here would stack a fresh listener every time the modal is reopened.
+  const parentPropId = String(meta?.parent_prop_id ?? '').trim();
+
+  document.querySelectorAll('.unlink-related-file-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const fileNumber = btn.dataset.fileNumber || '';
+      const rowPropId = String(btn.dataset.propId || '').trim();
+
+      // The modal doubles as the outcome card, so it may still be showing the previous
+      // result when reopened for another row.
+      resetUnlinkModalState();
+
+      document.getElementById('unlink-related-file-number').textContent = fileNumber || '-';
+      document.getElementById('unlink-related-parent').textContent = btn.dataset.parentFileNumber || '-';
+
+      // Mirrors the backend rule: the Property ID is only cleared when it came from
+      // the file being unlinked. Whether another related file still justifies it is
+      // resolved server-side, so the wording stays conditional here.
+      const propBox = document.getElementById('unlink-related-propid');
+      const propText = document.getElementById('unlink-related-propid-text');
+      if (parentPropId && rowPropId && parentPropId === rowPropId) {
+        propText.textContent =
+          `The linked Property ID ${parentPropId} came from this file, so it will be cleared too ` +
+          `— unless another related file still points at the same parcel.`;
+        propBox.classList.remove('hidden');
+      } else if (parentPropId) {
+        propText.textContent =
+          `The linked Property ID ${parentPropId} will be kept — it was not set by this related file.`;
+        propBox.classList.remove('hidden');
+      } else {
+        propBox.classList.add('hidden');
+      }
+
+      confirmBtn.dataset.fileNumber = fileNumber;
+      confirmBtn.dataset.linkId = btn.dataset.id || '';
+      confirmBtn.dataset.parentId = btn.dataset.parentId || parentId;
+      confirmBtn.dataset.parentFileNumber = btn.dataset.parentFileNumber || '';
+
+      modal.classList.remove('hidden');
+      if (window.lucide) window.lucide.createIcons();
+    });
+  });
+
+  confirmBtn.onclick = async () => {
+    const fileNumber = confirmBtn.dataset.fileNumber || '';
+    const linkId = confirmBtn.dataset.linkId || '';
+    const targetParentId = confirmBtn.dataset.parentId || parentId;
+    if (!fileNumber) return;
+
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Unlinking...';
+
+    try {
+      const response = await fetch(`${window.location.origin}/api/indexed-files/${targetParentId}/related-files`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': getCsrfToken(),
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        // A "json_*" link_id means the entry lives in related_fileno rather than
+        // file_indexing_links; the backend reads the id and matches the number anyway.
+        body: JSON.stringify({ file_number: fileNumber, link_id: linkId })
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        // The outcome card reports which store the entry came out of, what happened to
+        // the Property ID and how many related files are left; refreshing the table is
+        // deferred to its Done button.
+        showUnlinkResult(result, {
+          parentId: targetParentId,
+          parentFileNumber: confirmBtn.dataset.parentFileNumber || '',
+        });
+      } else {
+        showUnlinkError(result.message || 'Failed to unlink related file.');
+      }
+    } catch (err) {
+      console.error(err);
+      showUnlinkError('A network error occurred. Nothing was changed.');
+    } finally {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Unlink';
     }
   };
 }
@@ -3708,6 +4113,12 @@ document.addEventListener('click', (e) => {
   // 2. Check for Close Edit Related Modal
   if (e.target.closest('#close-edit-related-modal') || e.target.closest('#cancel-edit-related')) {
     document.getElementById('edit-related-file-modal')?.classList.add('hidden');
+  }
+  // 2b. Check for Close Unlink Related Modal — via closeUnlinkModal() so a refresh
+  // queued by a successful unlink still runs when dismissed with X / backdrop / Cancel.
+  if (e.target.closest('#close-unlink-related-modal') || e.target.closest('#cancel-unlink-related')
+      || e.target.closest('#unlink-related-backdrop')) {
+    closeUnlinkModal();
   }
   // 3. Check for Close Temp File Modal
   if (e.target.closest('#close-temp-file-modal') || e.target.closest('#cancel-temp-file')) {

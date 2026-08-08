@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Yajra\DataTables\Facades\DataTables;
 use App\Models\FileNumber;
+use App\Support\OssOpCommissionFilter;
 use App\Models\LandUse;
 use App\Models\StreetName;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -32,7 +33,7 @@ class FileNumberController extends Controller
         // Single query replaces 3 separate COUNT round-trips.
         // Results are cached for 10 minutes; cache is busted when a new file number
         // is commissioned (see store/generate methods which call Cache::forget).
-        $stats = Cache::remember('mls_fileno_page_stats', 600, function () {
+        $stats = Cache::remember('mls_fileno_page_stats_v2', 600, function () {
             $today = now()->toDateString();   // YYYY-MM-DD
             $month = now()->month;
             $year = now()->year;
@@ -48,11 +49,7 @@ class FileNumberController extends Controller
                    AND SOURCE IN ('MLS_Commissioned','MLS_Commissioned_Batch')
                    AND type = 'MlsFileNO'
                    AND (is_deleted IS NULL OR is_deleted = 0)
-                   AND NOT EXISTS (
-                       SELECT 1 FROM mls_file_no ms
-                       WHERE ms.full_file_number = fileNumber.mlsfNo
-                         AND (ms.sub_source = 'OP Change of Name' OR ms.source IN ('OP Resettlement', 'OP Direct Allocation'))
-                   )",
+                   AND " . OssOpCommissionFilter::notExistsSql('fileNumber.mlsfNo'),
                 [$today, $month, $year]
             );
 
@@ -180,16 +177,16 @@ class FileNumberController extends Controller
 
             // ── Source WHERE fragment (no bindings needed — string literals only) ──
             if ($source === 'New') {
-                // Hide OP/TOT files commissioned from the OSS. Three markers are needed:
-                //   1. sub_source = 'OP Change of Name' — single OP commissions.
-                //   2. op_batch IS NOT NULL — OSS OP batch commissions. These carry
-                //      source = 'Direct Allocation' with a NULL sub_source, so marker 1
-                //      alone let them leak back into the land/MLS file list.
-                //   3. source IN ('OP Resettlement','OP Direct Allocation') — OP
-                //      commissions that carry neither of the first two markers. This is
-                //      the same OSS test the page's stat cards (index()) and the batch
-                //      commissioning sheet (MlsFileNoController::getBatchRecords) use;
-                //      without it the table listed rows the counters did not count.
+                // Hide OP/TOT files commissioned from the OSS. The test lives in
+                // OssOpCommissionFilter so this list, the page's stat cards (index())
+                // and the batch commissioning sheet
+                // (MlsFileNoController::getBatchRecords) hide the same rows — when
+                // they disagree the table shows rows the counters do not count.
+                //
+                // It deliberately does NOT test source IN ('OP Resettlement',
+                // 'OP Direct Allocation'): the generator writes those same values for
+                // its own OP allocations, so that test also hid files commissioned in
+                // MLS File Commissioning. Origin is stamped into sub_source instead.
                 $sourceWhere = "(
                                     (fn.SOURCE IN ('MLS_Commissioned','MLS_Commissioned_Batch') AND fn.type = 'MlsFileNO')
                                     OR EXISTS (
@@ -203,15 +200,7 @@ class FileNumberController extends Controller
                                           )
                                     )
                                 )
-                                AND NOT EXISTS (
-                                    SELECT 1 FROM mls_file_no ms
-                                    WHERE ms.full_file_number = fn.mlsfNo
-                                      AND (
-                                          ms.sub_source = 'OP Change of Name'
-                                          OR (ms.op_batch IS NOT NULL AND LTRIM(RTRIM(ms.op_batch)) <> '')
-                                          OR ms.source IN ('OP Resettlement', 'OP Direct Allocation')
-                                      )
-                                )";
+                                AND " . OssOpCommissionFilter::notExistsSql('fn.mlsfNo');
             } elseif ($source === 'All') {
                 // Global view – no type/source filter, show everything
                 $sourceWhere = "1=1";
@@ -241,9 +230,9 @@ class FileNumberController extends Controller
 
             // ── Fast total count (cached 5 min) ──
             // Uses a single OUTER APPLY for batch_no only — no other lookups needed.
-            // v3: bumped when the OSS exclusion above gained its third marker, so the
-            // corrected total is not served from a stale v2 entry after deploy.
-            $recordsTotal = Cache::remember("file_numbers_total_v3_{$source}", 300, function () use ($sourceWhere) {
+            // v4: bumped when the OSS exclusion above dropped its source-based marker,
+            // so the corrected total is not served from a stale v3 entry after deploy.
+            $recordsTotal = Cache::remember("file_numbers_total_v4_{$source}", 300, function () use ($sourceWhere) {
                 $row = DB::connection('sqlsrv')->selectOne(
                     "SELECT COUNT(DISTINCT COALESCE(NULLIF(mls.batch_no,''), CAST(fn.id AS VARCHAR(20)))) AS cnt
                      FROM fileNumber fn
@@ -2045,10 +2034,10 @@ class FileNumberController extends Controller
 
     private function forgetFileNumberCaches(): void
     {
-        Cache::forget('mls_fileno_page_stats');
-        Cache::forget('file_numbers_total_v3_New');
-        Cache::forget('file_numbers_total_v3_All');
-        Cache::forget('file_numbers_total_v3_Captured');
+        Cache::forget('mls_fileno_page_stats_v2');
+        Cache::forget('file_numbers_total_v4_New');
+        Cache::forget('file_numbers_total_v4_All');
+        Cache::forget('file_numbers_total_v4_Captured');
     }
 
     private function writeMasterDeleteAudit($id, array $result, bool $isBulk = false): void
@@ -3012,16 +3001,7 @@ class FileNumberController extends Controller
                 }
 
                 // Exclude OSS / One-Stop Shop specific records (match getBatchRecords filters)
-                $query->where(function ($q) {
-                    $q->where(function ($sq) {
-                        $sq->where('sub_source', '!=', 'OP Change of Name')
-                            ->orWhereNull('sub_source');
-                    })
-                        ->where(function ($sq) {
-                            $sq->whereNotIn('source', ['OP Resettlement', 'OP Direct Allocation'])
-                                ->orWhereNull('source');
-                        });
-                });
+                OssOpCommissionFilter::applyExclusion($query);
 
                 if (!empty($onlyFileNumbers)) {
                     $query->whereIn('full_file_number', $onlyFileNumbers);

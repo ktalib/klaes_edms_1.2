@@ -1,7 +1,7 @@
 <script src="{{ asset('js/pra/helpers.js') }}"></script>
 <script src="{{ asset('js/pra/state.js') }}"></script>
 <script src="{{ asset('js/pra/modal.js') }}"></script>
-<script src="{{ asset('js/pra/form-controller.js') }}"></script>
+<script src="{{ asset('js/pra/form-controller.js') }}?v={{ @filemtime(public_path('js/pra/form-controller.js')) }}"></script>
 <script>
     const PraHelpers = window.PraHelpers || {};
     const isIndexAssistant = window.location.pathname.includes('/property-index-card');

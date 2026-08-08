@@ -1186,49 +1186,111 @@
             const trackingId = tracker.trackingId || query || '—';
             const fileName = tracker.fileName || 'Unnamed File';
 
-            const row = (l, v) => v ? `
-                <div class="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
-                    <span class="text-xs font-semibold text-gray-500">${l}</span>
-                    <span class="text-xs font-bold text-gray-900 text-right">${self.escapeHtml(v)}</span>
-                </div>` : '';
+            // Row with a leading lucide icon. `tone` tints the value (holder, warnings).
+            const row = (icon, label, value, tone) => {
+                if (!value) return '';
+                const toneClass = tone === 'accent' ? 'text-blue-700'
+                    : tone === 'warn' ? 'text-amber-700'
+                    : tone === 'muted' ? 'text-gray-500 font-medium'
+                    : 'text-gray-900';
+                return `
+                <div class="flex items-center justify-between gap-4 py-2.5 border-b border-gray-100 last:border-0">
+                    <span class="flex items-center gap-2 text-xs font-semibold text-gray-500">
+                        <i data-lucide="${icon}" class="h-3.5 w-3.5 text-gray-400"></i>${label}
+                    </span>
+                    <span class="text-xs font-bold text-right ${toneClass}">${self.escapeHtml(value)}</span>
+                </div>`;
+            };
 
-            let receivingOfficerRow = '';
-            if (tracker.status === 'IN_TRANSIT') {
-                let dept = (tracker.receivingDepartment || '').trim();
-                if (dept && !/department$/i.test(dept)) dept = dept + ' Department';
-                receivingOfficerRow = row('Receiving Officer (holder)', tracker.receivingOfficerName)
-                                    + row('Department', dept || tracker.currentOffice);
-            } else {
-                receivingOfficerRow = row('Current Location (Expected)', tracker.currentOffice)
-                                    + row('Receiving Officer', 'Archive');
-            }
+            // Where the file physically is. `tracker.status` is the WORKFLOW status
+            // (submitted / recommended / approved / …), never 'IN_TRANSIT', so keying the
+            // holder off it always fell through to the archive branch and printed
+            // "Receiving Officer: Archive" for files that were plainly logged out.
+            // The physical state comes from the active movement, with the resolver's
+            // logged-out / duration fields (IN_TRANSIT-only) as the fallback signal.
+            const activeEntry = (tracker.logEntries || []).find(
+                entry => (entry.status || '').toLowerCase() === 'active'
+            ) || null;
+            const isInTransit = Boolean(activeEntry)
+                || String(tracker.status || '').toUpperCase() === 'IN_TRANSIT'
+                || Boolean(tracker.loggedOutAt || tracker.durationWithHolder);
+
+            const holderName = activeEntry?.receivingOfficerName
+                || tracker.receivingOfficerName
+                || tracker.receivingOfficer?.name
+                || null;
+            const holderOffice = activeEntry?.receivingOfficeName
+                || tracker.currentOffice
+                || tracker.receivingOfficeName
+                || null;
+            const lastHolder = holderName
+                || (tracker.logEntries || []).slice().reverse().find(e => e.receivingOfficerName)?.receivingOfficerName
+                || null;
+
+            let dept = (tracker.receivingDepartment || tracker.department || '').trim();
+            if (dept && !/department$/i.test(dept)) dept = dept + ' Department';
+
+            const locationRows = isInTransit
+                ? row('map-pin', 'Current Location', holderOffice)
+                    + row('user-check', 'Receiving Officer (holder)', holderName || 'Not recorded', holderName ? 'accent' : 'muted')
+                    + row('building-2', 'Department', dept)
+                    + row('log-out', 'Logged Out', tracker.loggedOutAt)
+                    + row('timer', 'Duration with holder', tracker.durationWithHolder, 'warn')
+                : row('map-pin', 'Current Location', tracker.currentOffice || tracker.registry || 'Registry / Archive')
+                    + row('archive', 'Held By', 'In Registry / Archive — no officer holding', 'muted')
+                    + row('user', 'Last held by', lastHolder, 'muted');
+
+            const locationBadge = isInTransit
+                ? '<span class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-700"><i data-lucide="send" class="h-3 w-3"></i>In Transit</span>'
+                : '<span class="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-bold text-blue-700"><i data-lucide="archive" class="h-3 w-3"></i>In Archive</span>';
 
             const detailsHtml = `
-                <div class="mb-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-left">
-                    ${row('Registry', tracker.registry || 'Registry / Archive')}
-                    ${row('Shelf/Rack', tracker.rackShelfLocation || '—')}
-                    ${receivingOfficerRow}
-                    ${row('Logged Out', tracker.loggedOutAt)}
-                    ${row('Duration with holder', tracker.durationWithHolder)}
+                <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+                    <div class="flex items-center justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-2.5">
+                        <span class="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-gray-600">
+                            <i data-lucide="map-pinned" class="h-3.5 w-3.5"></i> File Location
+                        </span>
+                        ${locationBadge}
+                    </div>
+                    <div class="px-4 py-1">
+                        ${row('library', 'Registry', tracker.registry || 'Registry / Archive')}
+                        ${row('layout-grid', 'Shelf/Rack', tracker.rackShelfLocation || 'Not assigned', tracker.rackShelfLocation ? undefined : 'muted')}
+                        ${locationRows}
+                    </div>
                 </div>
             `;
 
             const html = `
-                <div class="space-y-5 text-left">
-                    <div class="flex items-start gap-3">
-                        <span class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                <div class="space-y-4 text-left">
+                    <div class="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                        <span class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
                             <i data-lucide="check-circle" class="h-5 w-5"></i>
                         </span>
-                        <div>
+                        <div class="min-w-0">
                             <p class="text-base font-semibold text-emerald-700">Active tracker located</p>
-                            <p class="text-sm text-gray-600">We added the tracker to the log panel. Use the shortcuts below to jump to it.</p>
+                            <p class="text-sm text-emerald-800/80">We added the tracker to the log panel. Use the shortcuts below to jump to it.</p>
+                        </div>
+                    </div>
+
+                    <div class="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="min-w-0">
+                                <p class="flex items-center gap-2 text-sm font-bold text-gray-900">
+                                    <i data-lucide="file-text" class="h-4 w-4 text-blue-600"></i>${self.escapeHtml(fileNo)}
+                                </p>
+                                <p class="mt-0.5 truncate text-xs text-gray-500">${self.escapeHtml(fileName)}</p>
+                            </div>
+                        </div>
+                        <div class="mt-2 flex flex-wrap items-center gap-3 border-t border-gray-100 pt-2 text-[11px] text-gray-500">
+                            <span class="inline-flex items-center gap-1"><i data-lucide="hash" class="h-3 w-3"></i>${self.escapeHtml(trackingId)}</span>
+                            <span class="inline-flex items-center gap-1"><i data-lucide="calendar" class="h-3 w-3"></i>Created ${self.escapeHtml(createdAt)}</span>
                         </div>
                     </div>
 
                     ${detailsHtml}
 
-                    <div class="mb-3 rounded-lg border border-gray-200 mt-4 text-left" data-movement-timeline>
-                        <div class="px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-600 flex items-center gap-2">
+                    <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden text-left" data-movement-timeline>
+                        <div class="px-4 py-2.5 bg-gray-50 border-b border-gray-200 text-xs font-bold uppercase tracking-wide text-gray-600 flex items-center gap-2">
                             <i data-lucide="route" class="h-3.5 w-3.5"></i> Movement Timeline
                         </div>
                         <div class="px-4 pb-3 pt-3">
@@ -1236,16 +1298,16 @@
                         </div>
                     </div>
 
-                    <div class="flex flex-wrap gap-2 pt-2">
-                        <button type="button" class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700" data-action="focus-tracker">
+                    <div class="flex flex-wrap gap-2 pt-1">
+                        <button type="button" class="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700" data-action="focus-tracker">
                             <i data-lucide="panel-left-open" class="mr-2 h-4 w-4"></i>
                             Show in Log
                         </button>
-                        <button type="button" class="inline-flex items-center rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50" data-action="view-details">
+                        <button type="button" class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50 hover:text-gray-900" data-action="view-details">
                             <i data-lucide="eye" class="mr-2 h-4 w-4"></i>
                             View Details
                         </button>
-                        <button type="button" class="inline-flex items-center rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50" data-action="copy-tracking">
+                        <button type="button" class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50 hover:text-gray-900" data-action="copy-tracking">
                             <i data-lucide="clipboard" class="mr-2 h-4 w-4"></i>
                             Copy Tracking ID
                         </button>

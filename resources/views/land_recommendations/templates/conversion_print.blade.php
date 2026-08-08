@@ -213,12 +213,7 @@
             <div class="ml-20 flex items-end">
               <span class="italic">for the purpose of</span>
               <div class="dotted-line">
-                  <span class="value-text">
-                      {{ $recommendation->land_use }}
-                      @if($recommendation->purpose_of_clause)
-                          ({{ $recommendation->purpose_of_clause }})
-                      @endif
-                  </span>
+                  <span class="value-text">{{ $recommendation->landuse_purpose }}</span>
               </div>
             </div>
             <div class="pt-1 text-[13px] leading-relaxed flex items-start gap-2">

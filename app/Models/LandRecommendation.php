@@ -158,6 +158,54 @@ class LandRecommendation extends Model
         return trim(preg_replace('/\s+/', ' ', $location));
     }
 
+    public function landUse()
+    {
+        return $this->belongsTo(LandUse::class, 'land_use_id');
+    }
+
+    public function purpose()
+    {
+        return $this->belongsTo(Purpose::class, 'purpose_id');
+    }
+
+    /**
+     * Land use and purpose clause are captured as a pair (the purpose list is filtered
+     * by the selected land use), so they are displayed together as "Landuse (Purpose
+     * Clause)".
+     *
+     * Only `purpose_of_clause` is denormalized onto the row, and older records were
+     * saved with the ids only, so each side falls back to its lookup table before
+     * giving up: purpose_of_clause -> purposes.name, land_use -> land_uses.landuse
+     * (via land_use_id, or via the purpose's own land use when only purpose_id is
+     * set). Either side may still end up blank, in which case whichever one resolved
+     * is shown on its own.
+     */
+    public function getLandusePurposeAttribute(): string
+    {
+        $purpose = trim((string) ($this->purpose_of_clause ?? ''));
+        if ($purpose === '') {
+            $purpose = trim((string) ($this->purpose->name ?? ''));
+        }
+
+        $landUse = trim((string) ($this->land_use ?? ''));
+        if ($landUse === '') {
+            $landUse = trim((string) ($this->landUse->landuse ?? $this->purpose->landUse->landuse ?? ''));
+        }
+
+        if ($landUse === '' || $purpose === '') {
+            return $landUse === '' ? $purpose : $landUse;
+        }
+
+        // Much of the existing data already stores the land use inside the purpose
+        // ("COMMERCIAL", "COMMERCIAL (HOTEL)" against land use "COMMERCIAL"), so
+        // pairing them blindly would print "COMMERCIAL (COMMERCIAL (HOTEL))".
+        if (stripos($purpose, $landUse) === 0) {
+            return $purpose;
+        }
+
+        return "{$landUse} ({$purpose})";
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');

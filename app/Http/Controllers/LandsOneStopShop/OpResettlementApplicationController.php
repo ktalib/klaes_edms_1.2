@@ -1387,6 +1387,264 @@ class OpResettlementApplicationController extends Controller
     }
 
     /**
+     * Resolve an already-commissioned file number for the Capture OP card.
+     *
+     * A file can be commissioned with no OP behind it: when the allocation source is OP but no
+     * source OP is linked, MlsFileNoController writes a single placeholder pra row that is itself
+     * an 'Occupancy Permit (OP)' carrying the commissioned mlsFNo, and no Transfer of Title row
+     * at all — so the file never appears on the Change of Name listing, which filters on
+     * Transfer of Title. This returns what the card needs to attach a real OP/ToT pair to it.
+     */
+    public function opCommissionedFileLookup(Request $request): JsonResponse
+    {
+        $validated = $request->validate(['file_no' => 'required|string|max:100']);
+        $fileNo = trim($validated['file_no']);
+
+        $mfn = DB::connection('sqlsrv')->table('mls_file_no')
+            ->whereRaw('LTRIM(RTRIM(full_file_number)) = ?', [$fileNo])
+            ->orderByDesc('id')
+            ->first();
+
+        if (!$mfn) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No commissioned file found with that number. Only a file already '
+                    . 'present in MLS File Numbers can have an OP captured against it.',
+            ], 404);
+        }
+
+        $fn = DB::connection('sqlsrv')->table('fileNumber')
+            ->whereRaw('LTRIM(RTRIM(mlsfNo)) = ?', [$fileNo])
+            ->where(fn ($q) => $q->whereNull('is_deleted')->orWhere('is_deleted', 0))
+            ->orderByDesc('id')
+            ->first();
+
+        // Every live pra row on this file number, split into the two shapes that matter.
+        $praRows = DB::connection('sqlsrv')->table('pra')
+            ->where(function ($q) use ($fileNo) {
+                $q->whereRaw('LTRIM(RTRIM(mlsFNo)) = ?', [$fileNo])
+                    ->orWhereRaw('LTRIM(RTRIM(fileno)) = ?', [$fileNo]);
+            })
+            ->where(fn ($q) => $q->whereNull('is_deleted')->orWhere('is_deleted', 0))
+            ->orderBy('id')
+            ->get();
+
+        $isTot = fn ($r) => stripos((string) ($r->instrument_type ?? ''), 'Transfer of Title') !== false
+            || stripos((string) ($r->transaction_type ?? ''), 'Transfer of Title') !== false;
+
+        $existingTot = $praRows->first($isTot);
+        $placeholder = $praRows->first(fn ($r) => !$isTot($r));
+
+        return response()->json([
+            'success' => true,
+            'file_no' => $fileNo,
+            'file_name' => trim((string) ($mfn->file_name ?? $fn->FileName ?? '')),
+            'land_use' => trim((string) ($mfn->land_use ?? '')),
+            'plot_no' => trim((string) ($fn->plot_no ?? $placeholder->plot_no ?? '')),
+            'tp_no' => trim((string) ($fn->tp_no ?? $placeholder->tp_no ?? '')),
+            'lga' => trim((string) ($fn->lga ?? $placeholder->lgsaOrCity ?? '')),
+            'location' => trim((string) ($fn->location ?? $placeholder->location ?? '')),
+            'prop_id' => $placeholder->prop_id ?? null,
+            'commissioned_at' => $mfn->con_commissioned_at ?? null,
+            'placeholder_pra_id' => $placeholder->id ?? null,
+            // A file that already has a ToT is not a candidate — capturing here would give it a
+            // second one. The card blocks on this rather than letting the POST 409.
+            'has_tot' => (bool) $existingTot,
+            'tot_pra_id' => $existingTot->id ?? null,
+        ]);
+    }
+
+    /**
+     * Capture an OP against a file number that was commissioned without one, writing BOTH pra
+     * rows the pair needs: the Occupancy Permit and its Transfer of Title.
+     *
+     *   Row 1 (OP)  — mlsFNo NULL, carries its own TEMP-XXXXX. Kano State Government → allottee.
+     *   Row 2 (ToT) — carries the commissioned mlsFNo. Allottee → new holder, and points back at
+     *                 Row 1 through source_op_id, so the pair never relies on prop_id coincidence.
+     *
+     * Both share the file's prop_id. The ToT deliberately does NOT copy the OP's temp_fileno —
+     * the listing already resolves the OP's TEMP for display through the shared prop_id
+     * (source_temp_fileno in index()), and keeping them distinct avoids the file-number ambiguity
+     * documented in docs/op-tot-mismatch-rootcause.md §3 D.
+     *
+     * The placeholder OP row that commissioning left behind is intentionally left untouched, so
+     * the file ends up with two live Occupancy Permit rows on one prop_id. That is the shape
+     * /maintenance/tot reports as a mismatch; clear it there with Archive Selected.
+     */
+    public function opCaptureForCommissionedFile(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'file_no' => 'required|string|max:100',
+            'grantee' => 'required|string|max:255',        // the allottee — OP party 2, ToT party 1
+            'new_holder' => 'required|string|max:255',     // ToT party 2
+            'op_type' => 'required|string|in:OP Resettlement,OP Direct Allocation',
+            'status' => 'required|string|in:Normal',
+            'system_fileno' => 'nullable|string|max:50',
+            'op_serial_number' => 'nullable|string|max:100',
+            'transaction_date' => 'nullable|date',
+            'land_use' => 'nullable|string|max:100',
+            'purpose' => 'nullable|string|max:255',
+            'lga' => 'nullable|string|max:150',
+            'location' => 'nullable|string|max:1000',
+            'plot_no' => 'nullable|string|max:100',
+            'serial_no' => 'nullable|string|max:50',
+            'page_no' => 'nullable|string|max:50',
+            'volume_no' => 'nullable|string|max:50',
+            'deeds_date' => 'nullable|string|max:100',
+            'deeds_time' => 'nullable|string|max:100',
+        ]);
+
+        $fileNo = trim($validated['file_no']);
+        $allottee = trim($validated['grantee']);
+        $newHolder = trim($validated['new_holder']);
+
+        $mfn = DB::connection('sqlsrv')->table('mls_file_no')
+            ->whereRaw('LTRIM(RTRIM(full_file_number)) = ?', [$fileNo])
+            ->orderByDesc('id')
+            ->first();
+
+        if (!$mfn) {
+            return response()->json([
+                'success' => false,
+                'message' => 'That file number is not commissioned, so an OP cannot be captured against it.',
+            ], 404);
+        }
+
+        // Re-check at write time: the card's lookup may be stale by now.
+        $praRows = DB::connection('sqlsrv')->table('pra')
+            ->where(function ($q) use ($fileNo) {
+                $q->whereRaw('LTRIM(RTRIM(mlsFNo)) = ?', [$fileNo])
+                    ->orWhereRaw('LTRIM(RTRIM(fileno)) = ?', [$fileNo]);
+            })
+            ->where(fn ($q) => $q->whereNull('is_deleted')->orWhere('is_deleted', 0))
+            ->orderBy('id')
+            ->get();
+
+        $existingTot = $praRows->first(function ($r) {
+            return stripos((string) ($r->instrument_type ?? ''), 'Transfer of Title') !== false
+                || stripos((string) ($r->transaction_type ?? ''), 'Transfer of Title') !== false;
+        });
+
+        if ($existingTot) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This file already has a Transfer of Title (pra #' . $existingTot->id
+                    . '). Capturing here would give it a second one — use the OP Batch card to link '
+                    . 'an OP to the existing ToT instead.',
+            ], 409);
+        }
+
+        $placeholder = $praRows->first();
+        $propId = $placeholder->prop_id ?? null;
+        if (empty($propId)) {
+            $propId = app(\App\Services\PropertyIdAllocationService::class)
+                ->allocateOrRetrievePropId($fileNo, $fileNo, null, null, []);
+        }
+
+        // The OP carries a TEMP file number, never the commissioned one — that belongs to the ToT.
+        $systemFileno = trim((string) ($validated['system_fileno'] ?? ''));
+        if (!preg_match('/^TEMP-\d+$/i', $systemFileno)) {
+            $seqId = DB::connection('sqlsrv')->table('temp_fileno_sequence')->insertGetId([
+                'created_by' => Auth::id(), 'is_used' => 1, 'created_at' => now(), 'updated_at' => now(),
+            ]);
+            $systemFileno = 'TEMP-' . str_pad((string) $seqId, 5, '0', STR_PAD_LEFT);
+        }
+
+        $location = trim((string) ($validated['location'] ?? '')) ?: trim((string) ($placeholder->location ?? ''));
+        $landUse = ($validated['land_use'] ?? null) ?: ($placeholder->land_use ?? $mfn->land_use ?? null);
+        $plotNo = ($validated['plot_no'] ?? null) ?: ($placeholder->plot_no ?? null);
+        $lga = ($validated['lga'] ?? null) ?: ($placeholder->lgsaOrCity ?? null);
+        $tpNo = $placeholder->tp_no ?? null;
+        $now = now();
+
+        // Fields both rows share, so the pair can never drift apart on the property itself.
+        $shared = [
+            'prop_id' => $propId,
+            'status' => $validated['status'],
+            'op_type' => $validated['op_type'],
+            'op_serial_number' => ($validated['op_serial_number'] ?? null) ?: null,
+            'transaction_date' => ($validated['transaction_date'] ?? null) ?: null,
+            'serialNo' => ($validated['serial_no'] ?? null) ?: null,
+            'pageNo' => ($validated['page_no'] ?? null) ?: null,
+            'volumeNo' => ($validated['volume_no'] ?? null) ?: null,
+            'deeds_date' => ($validated['deeds_date'] ?? null) ?: null,
+            'deeds_time' => ($validated['deeds_time'] ?? null) ?: null,
+            'location' => $location ?: null,
+            'property_description' => $location ?: null,
+            'plot_no' => $plotNo,
+            'tp_no' => $tpNo,
+            'lgsaOrCity' => $lga,
+            'land_use' => $landUse,
+            'purpose' => ($validated['purpose'] ?? null) ?: null,
+            'system_source' => 'OSSOPCHANGEOFNAME',
+            'source' => 'OSS Capture OP (Commissioned File)',
+            'created_by' => (string) Auth::id(),
+            'created_at' => $now->toDateTimeString(),
+            'updated_at' => $now->toDateTimeString(),
+            'is_deleted' => 0,
+        ];
+
+        try {
+            [$opId, $totId] = DB::connection('sqlsrv')->transaction(function () use ($shared, $systemFileno, $fileNo, $allottee, $newHolder) {
+                $opId = DB::connection('sqlsrv')->table('pra')->insertGetId($shared + [
+                    'mlsFNo' => null,
+                    'fileno' => $systemFileno,
+                    'temp_fileno' => $systemFileno,
+                    'transaction_type' => 'Occupancy Permit (OP)',
+                    'instrument_type' => 'Occupancy Permit (OP)',
+                    'Grantor' => 'Kano State Government',
+                    'party_1' => 'Kano State Government',
+                    'Grantee' => $allottee,
+                    'party_2' => $allottee,
+                ]);
+
+                $totId = DB::connection('sqlsrv')->table('pra')->insertGetId($shared + [
+                    'mlsFNo' => $fileNo,
+                    'fileno' => $fileNo,
+                    'temp_fileno' => null,
+                    'transaction_type' => 'Transfer of Title',
+                    'instrument_type' => 'Transfer of Title',
+                    'Grantor' => $allottee,
+                    'party_1' => $allottee,
+                    'Grantee' => $newHolder,
+                    'party_2' => $newHolder,
+                    // Hard OP→ToT link, so the pair never depends on prop_id coincidence.
+                    'source_op_table' => 'pra',
+                    'source_op_id' => $opId,
+                ]);
+
+                return [$opId, $totId];
+            });
+        } catch (\Throwable $e) {
+            Log::channel('op_batch')->error('Capture OP for commissioned file failed', [
+                'user' => Auth::id(), 'file_no' => $fileNo, 'error' => $e->getMessage(),
+            ]);
+            return response()->json(['success' => false, 'message' => 'Capture failed: ' . $e->getMessage()], 500);
+        }
+
+        Log::channel('op_batch')->info('Captured OP + ToT for commissioned file', [
+            'user' => Auth::id(),
+            'file_no' => $fileNo,
+            'prop_id' => $propId,
+            'op_pra_id' => $opId,
+            'tot_pra_id' => $totId,
+            'temp_fileno' => $systemFileno,
+            'allottee' => $allottee,
+            'new_holder' => $newHolder,
+            'placeholder_pra_id' => $placeholder->id ?? null,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'OP and Transfer of Title created for ' . $fileNo . '. The OP carries ' . $systemFileno . '.',
+            'op_pra_id' => $opId,
+            'tot_pra_id' => $totId,
+            'temp_fileno' => $systemFileno,
+            'prop_id' => $propId,
+        ]);
+    }
+
+    /**
      * Batch Capture OP — create N UNLINKED Occupancy Permit rows sharing one Batch ID.
      *
      * Launched from the OSS Commission New File Number card in Batch Mode. Each OP carries its

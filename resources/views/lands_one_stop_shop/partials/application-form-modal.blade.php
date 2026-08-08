@@ -119,7 +119,7 @@
                         </div>
                     </div>
 
-                    {{-- ── Occupancy Permit Details (UI only — not yet persisted) ── --}}
+                    {{-- ── Occupancy Permit Details (synced back onto the PRA OP row on save) ── --}}
                     <div class="mb-5 border border-slate-200 rounded-xl overflow-hidden hidden" id="oss_opd_section">
                         <div class="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-200">
                             <div class="flex items-center gap-2">

@@ -17,6 +17,12 @@ return new class extends Migration
         });
     }
 
+
+-- UP Migration
+ALTER TABLE spa_applications
+ADD land_title_type NVARCHAR(MAX) NULL;
+
+
     public function down(): void
     {
         Schema::connection($this->connection)->table('spa_applications', function (Blueprint $table) {

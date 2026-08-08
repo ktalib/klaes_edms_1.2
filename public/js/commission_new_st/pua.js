@@ -1539,12 +1539,18 @@ async function commissionPuaFileNumber() {
                 puaUnitFileNo.classList.add('bg-blue-100', 'text-blue-700');
             }
             
-            Swal.fire({
-                icon: 'success',
-                title: 'Success!',
-                text: `PuA file number ${fileNumber} commissioned successfully!`,
-                confirmButtonColor: '#10b981'
-            });
+            // Shared commissioning card (sua_commission.js): where the record went,
+            // plus the EDMS scan folder created for the file.
+            if (typeof showStCommissioningCard === 'function') {
+                showStCommissioningCard(result, `PuA file number ${fileNumber} commissioned successfully!`);
+            } else {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Success!',
+                    text: `PuA file number ${fileNumber} commissioned successfully!`,
+                    confirmButtonColor: '#10b981'
+                });
+            }
             
             // Disable the generate button after successful commission
             const generateBtn = document.getElementById('pua_generate_btn');

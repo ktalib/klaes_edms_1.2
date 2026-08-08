@@ -857,3 +857,122 @@ the deed tables had a capture date distinct from the transaction.
 Re-verified across all 14 sections: **gender total = land-use total = section total, in every
 section and every month**. 14 sections, 25 chart payloads, **1.2 seconds** — down from 6.1s, since
 the page no longer scans 133,939 staging rows.
+
+---
+
+## 15. Sectional Titling added (2026-08-05)
+
+ST was already in the data. The report was mishandling it two ways, both found by asking where the
+9,502 `deed_registrations` rows actually went.
+
+### 15.1 Two bugs
+
+**54 `ST Fragmentation` registrations appeared in no section at all.** `InstrumentTypeNormalizer`
+returned `null` for the string — it contains none of MORTGAGE / OCCUPANCY PERMIT / TRANSFER OF TITLE
+/ RELEASE / DEVOLUTION / ASSIGNMENT — and no `sqlPredicate` group matched it either. A group that
+matches nothing produces no section and no error, so they were simply absent. `Deed of Gift` (2) and
+`Power of Attorney` (1) were lost the same way: **57 registrations, 0.6% of the register, invisible.**
+
+**8 `ST Assignment (Transfer of Title)` rows were counted as Occupancy Permits**, because the OP
+predicate matches `%TRANSFER OF TITLE%`. That rule was written for `pra`, where the phrase really did
+mean an OP transfer. In the ST register it means a sectional unit changing hands — `ST-RES-2026-2-001`
+… `-005`, one owner selling five units to named buyers. Section 10 drops 8,947 → **8,939**.
+
+### 15.2 The partition is now proved, not assumed
+
+`ALL_GROUPS` plus an `OTHER` group defined by subtraction (`NOT` every real group) makes the residue
+countable. Checked across every distinct `instrument_type` in the register:
+
+**9,502 of 9,502 rows claimed by exactly one group, with `normalize()` and `sqlPredicate()` agreeing
+on every type.** `Deed of Gift` and `Power of Attorney` now land in `OTHER` rather than nowhere.
+`OTHER` is not rendered as a section — 3 rows is noise — but it exists so the next unmapped
+instrument type surfaces instead of vanishing.
+
+This check also caught a bug in the fix itself: `sqlIsSectional()` returned an unparenthesised `OR`
+chain, and since `AND` binds tighter, `A OR B AND '%FRAGMENTATION%'` read as `A OR (B AND frag)` —
+the fragmentation group claimed every sectional row, transfers included. Parenthesised at the source
+rather than at each call site.
+
+### 15.3 Three sections, three measures
+
+| # | Section | Dept | Source | 2026 |
+|---:|---|---|---|---:|
+| 20 | ST Fragmentation Registered | Deeds | `deed_registrations` | 54 |
+| 21 | ST Unit Transfers Registered | Deeds | `deed_registrations` | 8 |
+| 22 | ST Files Commissioned | Lands | `st_file_numbers` | 92 |
+
+**These must never be summed.** A block is commissioned as one PRIMARY file and fragmented into unit
+files, so 22 counts files while 20 and 21 count registrations against them — the same distinction the
+report already maintains between OP files commissioned (983) and OP instruments registered (8,939).
+
+Section 22 charts by file type, because blocks-to-units is the shape of the ST programme: **15 Primary
+(block) · 70 Parented unit · 7 Standalone unit**. 6 files carry no `date_commissioned` and are reported
+as undated rather than folded into their `created_at` month; 5 more fall in 2025, which is why the year
+selector now offers 2025 as well.
+
+### 15.4 Why `StStats` rather than two more deed groups
+
+ST file numbers (`ST-RES-2026-2-001`) carry no land-use prefix, so routing them through the generic
+deed query would report every sectional registration as Uncategorised. But **all 62 ST rows in
+`deed_registrations` join to `st_file_numbers`** on `fileno` or `np_fileno` — measured, 62/62 — and
+that table holds the land use outright plus the applicant's name and title.
+
+Joining is what makes ST the best-dimensioned section on the page rather than the worst:
+
+| Section | Gender resolved | Land use |
+|---|---:|---|
+| 20 ST Fragmentation | **98.1%** | Mixed 46, Residential 7, Commercial 1 |
+| 22 ST Files Commissioned | **73.9%** | 100% populated, no fallback |
+| 02 Deed of Assignment | 30.0% | 42 of 280 Uncategorised |
+| 10 Occupancy Permits | 0.0% | 8,946 of 8,947 Uncategorised |
+
+Gender comes from `GenderNormalizer::classify()` — the same honorific rules `gender:backfill` used, so
+a sectional applicant is classified exactly as everyone else. `applicant_type = Corporate` wins
+outright; a company has no gender to infer.
+
+### 15.5 Section 21's coverage is genuinely poor, and correctly so
+
+Section 21 resolves gender for **12.5%** against section 20's 98.1%, from the same join. The subject
+differs: on a transfer the party that matters is the acquirer, so the grantee is classified, not the
+file's original applicant — using the applicant would report the *seller's* gender for a sale. The
+grantees are `UMAR SADIQ ABUBAKAR`, `ADAMU ABUBAKAR`, `KABIR HAMISU` — bare given names with no
+honorific, which `GenderNormalizer` refuses to guess from by design. Section 20's grantees are block
+owners and mostly titled, hence 98.1%.
+
+Low coverage here is the true state of the data, not a defect in the join.
+
+### 15.6 Page cost
+
+17 sections and 31 charts render in **2.5 seconds**, against 14 sections and 25 charts at 2.4s. One
+duplicate removed on the way: the controller called `availableYears()` and then `year()` called it
+again through `defaultYear()`, running five year-scans twice. Memoised on the aggregator.
+
+### 15.7 Sectional Titling is its own department tab
+
+Client correction, same day: ST is a department, not a corner of Deeds. Confirmed in the
+`departments` table, which lists **Sectional Titling** alongside Land, Survey, Deeds, Cadastral and
+the rest.
+
+It also resolves an awkwardness the first cut had. ST's three sections naturally straddle two
+departments — registration (20, 21) belongs with Deeds, commissioning (22) with Lands — so filing
+them under either one splits the department's own story in half. A fourth tab keeps them together:
+
+| Tab | Sections |
+|---|---:|
+| Survey | 0 — section 01 still needs a `survey_layouts` table (D6) |
+| Deeds | 9 |
+| Lands | 5 |
+| **Sectional Titling** | **3** |
+
+Two tiles carry the department: **ST files commissioned (92)** and **ST registrations (62)**, the
+latter being sections 20 and 21 together. Those two tiles may not be added to each other — same
+commissioned-vs-registered rule as everywhere else — but 54 + 8 is a legitimate roll-up, since both
+are registrations in the deeds register.
+
+One bug fixed on the way in: the tile badge picked its colour with a three-branch ternary, so every
+value that was not `survey` or `deeds` fell through to violet. A fourth department would have been
+labelled "sectional titling" while wearing the Lands colour. Replaced with a lookup keyed by
+department, and ST takes amber so it does not read as a shade of Lands at a glance.
+
+Page cost is unchanged, and the per-tab views are much cheaper than the full report: **0.4–0.5s**
+each, against 2.5s for All Departments.

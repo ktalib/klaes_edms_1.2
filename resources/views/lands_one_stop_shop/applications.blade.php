@@ -239,6 +239,17 @@
                                 <i data-lucide="file-plus-2" class="w-4 h-4"></i>
                                 FileNo Commissioning
                             </button>
+
+                            {{-- A file commissioned with no OP behind it has no ToT row, so it never
+                                 reaches this listing. This opens the Capture OP card straight into
+                                 commissioned-file mode to write the missing OP + ToT pair. --}}
+                            <button type="button" id="btn-capture-op-commissioned"
+                                onclick="openCaptureOpForCommissionedFile()"
+                                class="inline-flex items-center gap-2 px-5 py-2 bg-white border border-blue-300 text-blue-700 rounded-xl text-sm font-semibold shadow-sm hover:bg-blue-50 transition"
+                                title="Capture the OP for a file number that was commissioned without one">
+                                <i data-lucide="file-search-2" class="w-4 h-4"></i>
+                                Capture OP for Commissioned File
+                            </button>
                         @endif
 
                         @if(!isset($recordType) || $recordType === 'fefr')

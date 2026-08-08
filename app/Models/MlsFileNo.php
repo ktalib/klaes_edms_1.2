@@ -34,6 +34,9 @@ class MlsFileNo extends Model
         'purpose_id',
         'source',
         'sub_source',
+        // 'MLS' or 'OSS' — which system commissioned the file. The MLS file list
+        // filters on this; see App\Support\OssOpCommissionFilter.
+        'system_sub_type',
         'source_instrument_capture_id',
         'source_pra_id',
         'sit_reason',

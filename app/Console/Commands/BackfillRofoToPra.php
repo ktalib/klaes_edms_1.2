@@ -54,10 +54,15 @@ class BackfillRofoToPra extends Command
         $this->info('Backfilling Land / OSS ROFOs...');
         $synced = 0;
 
+        // A ROFO counts as issued if rofo_status says so, if it came from OSS, or if
+        // it holds a security paper serial — the serial is only ever written against
+        // a physically printed document, and a batch of older records was left on
+        // rofo_status=pending despite having one.
         $query = LandRecommendation::query()
             ->where(function ($q) {
                 $q->where('rofo_status', LandRecommendation::ROFO_GENERATED)
-                  ->orWhereRaw("UPPER(ISNULL(type, '')) = 'OSS'");
+                  ->orWhereRaw("UPPER(ISNULL(type, '')) = 'OSS'")
+                  ->orWhereRaw("LTRIM(RTRIM(ISNULL(land_rofo_serial_no, ''))) <> ''");
             })
             ->whereNotNull('file_number')
             ->where('file_number', '<>', '');

@@ -19,7 +19,8 @@
         </div>
         <div class="pra-property-form" data-pra-form
             data-temp-endpoint="{{ route('property-records.temp-file-number') }}"
-            data-instrument-types-url="{{ url('api/instrument-types') }}">
+            data-instrument-types-url="{{ url('api/instrument-types') }}"
+            data-existing-records-url="{{ route('legalsearch.existingRecords') }}">
             <form id="property-record-form" action="{{ route('property-records.store') }}" method="POST"
                 data-role="pra-form" data-update-base="{{ url('property-records') }}">
                 @csrf
@@ -280,6 +281,60 @@
                             State.</div>
                     </div>
 
+
+                    {{-- ===== Existing Records for this File =====
+                         Everything the file already holds across PRA, File History,
+                         Deeds Registration and CofO — the same shape the Legal Search
+                         Timeline shows. Rendered here so a duplicate is visible at the
+                         point of entry; rows matching what is being typed are
+                         highlighted and raise the banner below.
+                         Populated by PraFormController.loadExistingRecordsTable(). --}}
+                    <div class="mt-4 hidden" data-role="existing-records-section">
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="text-sm font-semibold text-gray-700 flex items-center gap-1.5">
+                                <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                </svg>
+                                Existing Records for this File
+                                <span data-role="existing-records-count"
+                                      class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600"></span>
+                            </h3>
+                            <span class="text-[11px] text-gray-400" data-role="existing-records-hint">
+                                Check here before saving to avoid a duplicate entry.
+                            </span>
+                        </div>
+
+                        {{-- Duplicate flag — raised live as the instrument type, registration
+                             particulars or transaction date are filled in. --}}
+                        <div class="hidden mb-2 rounded-md border px-3 py-2 text-xs"
+                             data-role="duplicate-warning"></div>
+
+                        <div data-role="existing-records-loading" class="hidden py-4 text-center text-xs text-gray-400">
+                            Loading existing records…
+                        </div>
+
+                        <div class="border border-gray-200 rounded-md overflow-hidden">
+                            <div class="overflow-x-auto max-h-72 overflow-y-auto">
+                                <table class="w-full text-[11px]">
+                                    <thead class="bg-gray-50 sticky top-0 z-10">
+                                        <tr class="text-left text-gray-500">
+                                            <th class="px-2 py-1.5 font-medium" style="min-width:34px;">S/N</th>
+                                            <th class="px-2 py-1.5 font-medium" style="min-width:80px;">Source</th>
+                                            <th class="px-2 py-1.5 font-medium" style="min-width:130px;">File No</th>
+                                            <th class="px-2 py-1.5 font-medium" style="min-width:150px;">Instrument Type</th>
+                                            <th class="px-2 py-1.5 font-medium" style="min-width:110px;">Party 1</th>
+                                            <th class="px-2 py-1.5 font-medium" style="min-width:110px;">Party 2</th>
+                                            <th class="px-2 py-1.5 font-medium" style="min-width:90px;">Reg Particulars</th>
+                                            <th class="px-2 py-1.5 font-medium" style="min-width:95px;">Date</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody data-role="existing-records-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    {{-- ===== /Existing Records for this File ===== --}}
 
                     <div class="flex justify-end space-x-3 pt-2 border-t mt-4 sticky bottom-0 bg-white z-10">
                         <button id="property-submit-btn" type="submit" class="btn btn-primary"

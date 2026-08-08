@@ -440,6 +440,14 @@ tfoot td.prs-sticky-col {
     border-color: #f3e8ff;
 }
 
+/* Sectional Titling. Amber, so the fourth department is not read as a shade of
+   Lands (violet) at a glance. */
+.badge-soft-amber {
+    background-color: #fffbeb;
+    color: #b45309;
+    border-color: #fef3c7;
+}
+
 /* Progress bar style */
 .insight-progress-bar {
     height: 6px;

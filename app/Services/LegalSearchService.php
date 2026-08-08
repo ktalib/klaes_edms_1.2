@@ -707,6 +707,11 @@ class LegalSearchService
         // related file has no transactions at all.
         $all = $this->suppressRedundantRelatedFileRows($all);
 
+        // An "-RC-" file's recertification now reads off its own commissioning row
+        // ("File Commissioning & Recertification"), so its separate recert line is folded
+        // away here — for the screen and, since buildPrintReport() calls search(), the slip.
+        $all = $this->dropMergedRecertRows($all);
+
         $all = $this->tagRowsWithLifecycleFileNo(
             $all,
             $this->resolveAliasHintOwners($all, $this->aliasHintsFromDisplay($fileNumberDisplay))
@@ -1468,6 +1473,15 @@ class LegalSearchService
                 $this->isKangisFormat($relNo) ? $relNo : $otherSide,
                 $row->transaction_type
             );
+
+            // The old Ministry "KN 6071" file's line is that file's OWN commissioning, not a
+            // recertification of the land file it links to, so it reads "File Commissioning".
+            // Placed before the two checks below so neither treats it as a recert row: its
+            // comment would otherwise repeat its own number, and the year fallback has no year
+            // to find in a "KN ####" number anyway.
+            if ($txType === 'Land Recertification (File Commissioning)' && $this->isOldMlsKnFileNo($relNo)) {
+                $txType = 'File Commissioning';
+            }
 
             $commentVal = $row->comment ?: '-';
             if ($txType === 'Land Recertification (File Commissioning)') {
@@ -2590,6 +2604,107 @@ class LegalSearchService
 
         $holder = trim((string) ($row->grantor ?? ''));
         return $holder !== '' ? $holder : null;
+    }
+
+    /**
+     * File numbers from this year on are exempt from the grant-party rule below.
+     *
+     * The rule repairs LEGACY files, whose title drifted to a later owner over decades. A
+     * file opened in the KLAES era already carries the right holder on its title, and there
+     * the rule actively misfires: a file created by a Transfer of Title would take Party 2
+     * from the OP that preceded it — i.e. the PREVIOUS owner — instead of its own holder.
+     */
+    private const GRANT_HOLDER_EXEMPT_FROM_YEAR = 2026;
+
+    /**
+     * The instruments Party 2 of a File Commissioning row is read from, in preference order —
+     * first match wins and the search stops there.
+     *
+     * WHICH party is read differs per instrument, because the original allottee sits on a
+     * different side of each deal:
+     *   - Right of Occupancy / Occupancy Permit — the State GRANTS to the allottee, so the
+     *     allottee is Party 2.
+     *   - Transfer of Title / Deed of Assignment — the allottee GIVES the land away, so they
+     *     are Party 1 (the transferor / assignor).
+     *
+     * Mirrored by COMMISSIONING_HOLDER_SOURCES in resources/views/legal_search/js.blade.php,
+     * which reads this constant via @json rather than carrying its own copy.
+     *
+     * @var list<array{type: string, party: int}>
+     */
+    public const COMMISSIONING_HOLDER_SOURCES = [
+        ['type' => 'right of occupancy', 'party' => 2],
+        ['type' => 'transfer of title',  'party' => 1],
+        ['type' => 'occupancy permit',   'party' => 2],
+        ['type' => 'deed of assignment', 'party' => 1],
+    ];
+
+    /**
+     * Whether the RofO/ToT/OP grant rule applies to this file number. Files with no year in
+     * their number are legacy by definition, so the rule applies.
+     */
+    private function grantHolderRuleApplies(?string $fileNo): bool
+    {
+        $year = $this->extractYearFromFileNumber($fileNo);
+
+        return $year === null || (int) $year < self::GRANT_HOLDER_EXEMPT_FROM_YEAR;
+    }
+
+    /**
+     * The allottee the file was commissioned for, read off the instrument that opened it —
+     * see COMMISSIONING_HOLDER_SOURCES for the order and for which party each one contributes.
+     * The File Commissioning row carries that name rather than the file title, which tracks
+     * the CURRENT owner and drifts as the land changes hands.
+     *
+     * Exempt from GRANT_HOLDER_EXEMPT_FROM_YEAR onward — see that constant.
+     *
+     * Returns null when the file has none of those instruments — callers keep whatever name
+     * they already had.
+     *
+     * Rows on the searched file win over rows on linked files, so a KANGIS alias or a
+     * subdivision sibling cannot lend its party to this file's commissioning row.
+     *
+     * @param array    $transactions            Normalized timeline rows, already date-sorted,
+     *                                          so the FIRST Deed of Assignment reached is the
+     *                                          earliest — i.e. the original allottee assigning
+     *                                          the land away, not a mid-chain owner.
+     * @param callable $canonicalTransactionType The caller's type canonicaliser.
+     */
+    private function resolveHolderFromGrantEvent(
+        array $transactions,
+        callable $canonicalTransactionType,
+        ?string $fileNumber
+    ): ?string {
+        if (!$this->grantHolderRuleApplies($fileNumber)) {
+            return null;
+        }
+
+        $normFileNo = fn($v) => strtoupper(preg_replace('/[\s\-_=\/]+/', '', (string) $v));
+        $target = $normFileNo($fileNumber);
+
+        foreach (self::COMMISSIONING_HOLDER_SOURCES as $source) {
+            $partyKey = 'party_' . $source['party'];
+            $fallback = null;
+            foreach ($transactions as $t) {
+                $type = $canonicalTransactionType($t['transaction_type'] ?? ($t['instrument_type'] ?? ''));
+                if ($type !== $source['type']) {
+                    continue;
+                }
+                $holder = trim((string) ($t[$partyKey] ?? ''));
+                if ($holder === '' || $holder === '-') {
+                    continue;
+                }
+                if ($target !== '' && $normFileNo($this->extractLifecycleFileNo($t)) === $target) {
+                    return $holder;
+                }
+                $fallback ??= $holder;
+            }
+            if ($fallback !== null) {
+                return $fallback;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -4016,6 +4131,48 @@ class LegalSearchService
     }
 
     /**
+     * Every record held against a file number across ALL four sources, newest first.
+     *
+     * Backs the "Existing Records for this File" table inside the Add Property
+     * Record dialog: before capturing a new instrument the operator sees what the
+     * file already holds in PRA, File History, Deeds Registration and CofO, so a
+     * duplicate is obvious at the point of entry rather than after the fact.
+     *
+     * @return array Normalized rows, each tagged with its source_table
+     */
+    public function findRecordsForFileNumberAllSources(string $fileNo): array
+    {
+        $all = [];
+
+        foreach (self::VALID_TABLES as $table) {
+            try {
+                foreach ($this->findRecordsForFileNumber($fileNo, $table) as $row) {
+                    $all[] = $row;
+                }
+            } catch (\Throwable $e) {
+                // One bad source must not blank the whole panel.
+                Log::warning('findRecordsForFileNumberAllSources: source failed', [
+                    'table' => $table,
+                    'file_no' => $fileNo,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        // Newest first: the instrument most likely to be re-keyed sits at the top.
+        // sort_date is the unformatted value normalizeRow() carries for exactly
+        // this purpose — transaction_date is already display-formatted.
+        usort($all, function ($a, $b) {
+            $da = strtotime((string) ($a['sort_date'] ?? $a['transaction_date'] ?? '')) ?: 0;
+            $db = strtotime((string) ($b['sort_date'] ?? $b['transaction_date'] ?? '')) ?: 0;
+
+            return $db <=> $da;
+        });
+
+        return $all;
+    }
+
+    /**
      * Match: Assign orphan record(s) to a prop_id group.
      * Sets the prop_id on the specified record(s).
      *
@@ -5278,7 +5435,12 @@ class LegalSearchService
 
             $candidates = $transactionDateFirst
                 ? [$txnDate, $deedsDate, $regDate]
-                : [$regDate, $txnDate, $deedsDate];
+                // deeds_date BEFORE transaction_date: pra and CofO_staging have no literal
+                // reg_date column (the fetch selects NULL AS reg_date) and carry their
+                // registration date in deeds_date. With transaction_date ahead of it these
+                // two sources never reached their reg date at all and sorted on the
+                // transaction date instead — which is what this branch exists to avoid.
+                : [$regDate, $deedsDate, $txnDate];
 
             $candidates = array_merge($candidates, [
                 ['date' => $item['cofo_date'] ?? null, 'time' => $item['time'] ?? null],
@@ -5694,11 +5856,14 @@ class LegalSearchService
         // year embedded in the file number instead. Reg particulars are 0/0/0.
         $commissioningDate = $this->resolveCommissioningInfo($fileNumber, $fileNo)['date'];
 
-        // Party 2 of the commissioning / temporary rows is the ASSIGNOR of the file's
-        // KLAES-registered Deed of Assignment (the original allottee), falling back to the
-        // file title (latest owner) when the file has no such deed.
+        // Party 2 of the commissioning / temporary rows is the allottee the file was opened
+        // for, read off the instrument that opened it — see COMMISSIONING_HOLDER_SOURCES for
+        // the order and for which party each one contributes — and only then the file title
+        // (latest owner). The file title names whoever holds the land today, which is the
+        // wrong name on a commissioning row once the land has changed hands.
+        $grantHolder = $this->resolveHolderFromGrantEvent($transactions, $canonicalTransactionType, $fileNumber);
         $commissioningHolder = $this->resolveCommissioningHolder(DB::connection('sqlsrv'), $fileNo)
-            ?: ($fileTitle ?: '-');
+            ?: ($grantHolder !== null ? $tc($grantHolder) : ($fileTitle ?: '-'));
 
         // ── "Temporary File" record — printed directly below File Commissioning ──
         // Present when the searched file has a temporary "(T)" sibling, OR when the searched
@@ -5784,7 +5949,9 @@ class LegalSearchService
             'grantee' => $commissioningHolder,
             'party_3' => '-',
             'party_4' => '-',
-            'instrument_type' => $isStMother ? 'Land File Commissioning' : 'File Commissioning',
+            'instrument_type' => $isStMother
+                ? 'Land File Commissioning'
+                : $this->commissioningLabelFor($commissioningFileNo),
             'transaction_date' => $commissioningTxnDate,
             'reg_time' => '-',
             'reg_date' => $commissioningDate,
@@ -7405,6 +7572,52 @@ class LegalSearchService
         return (bool) preg_match('/^KN[- ]\d+/i', $v);
     }
 
+    /**
+     * The Instrument/Transaction Type of a file's File Commissioning row.
+     *
+     * An "-RC-" land file was commissioned AND recertified by the Ministry, and the client
+     * wants those read as one event rather than two lines, so its commissioning row carries
+     * the combined label and no separate "Land Recertification (File Commissioning)" row is
+     * emitted for it (see dropMergedRecertRows()). Every other file is unchanged.
+     *
+     * Mirrored by commissioningLabelFor() in resources/views/legal_search/js.blade.php.
+     */
+    private function commissioningLabelFor(?string $fileNo): string
+    {
+        return $this->isRecertLandFile($fileNo)
+            ? 'File Commissioning & Recertification'
+            : 'File Commissioning';
+    }
+
+    /**
+     * Drop the "Land Recertification (File Commissioning)" rows that commissioningLabelFor()
+     * has just folded into an RC file's own commissioning line.
+     *
+     * Scoped to rows sitting on the RC file ITSELF. The identically-typed row belonging to the
+     * file's old Ministry "KN 3686" number is a different file's line — it survives, and ranks
+     * above the commissioning row (LegalSearchTimelineWeights::OLD_KN_COMMISSIONING).
+     */
+    private function dropMergedRecertRows(array $rows): array
+    {
+        $ownNo = function (array $row): string {
+            foreach (['file_no', 'fileno', 'file_number', 'mlsFNo'] as $col) {
+                $v = trim((string) ($row[$col] ?? ''));
+                if ($v !== '' && $v !== '-') {
+                    return $v;
+                }
+            }
+            return '';
+        };
+
+        return array_values(array_filter($rows, function (array $row) use ($ownNo): bool {
+            $type = trim((string) ($row['instrument_type'] ?? ($row['transaction_type'] ?? '')));
+            if (strcasecmp($type, 'Land Recertification (File Commissioning)') !== 0) {
+                return true;
+            }
+            return !$this->isRecertLandFile($ownNo($row));
+        }));
+    }
+
     private function resolveKnFileNoForLandFile(string $fileNo): ?string
     {
         $variants = $this->fileNumberVariants($fileNo);
@@ -7627,7 +7840,7 @@ class LegalSearchService
 
     /**
      * Build a print-format "Ministry of Land and Physical Planning Recertification" row for an
-     * "-RC-" land file (client Rule 4). Classified into the recertification band (weight 8) so it
+     * "-RC-" land file (client Rule 4). Classified into the recertification band so it
      * sits under the File Commissioning line and above the C of O.
      */
     private function makePrintMinistryRecertRow(string $fileNo, array $meta): array
@@ -7862,6 +8075,50 @@ class LegalSearchService
     }
 
     /**
+     * The print-row twin of resolveHolderFromGrantEvent(): the allottee $fno was commissioned
+     * for, read off COMMISSIONING_HOLDER_SOURCES in order.
+     *
+     * Operates on PRINT rows, so Party 1/2 are the 'grantor'/'grantee' keys and the type is
+     * the formatted label — matched by str_contains, since a print label carries decoration
+     * the canonicaliser would otherwise have stripped ("Occupancy Permit (Op)"). Rows on $fno
+     * itself win over rows on other files in the lifecycle. Returns null when the file has
+     * none of those instruments, leaving the caller's existing name in place.
+     */
+    private function resolveGrantHolderFromPrintRows(array $rows, string $fno): ?string
+    {
+        if (!$this->grantHolderRuleApplies($fno)) {
+            return null;
+        }
+
+        $normFileNo = fn($v) => strtoupper(preg_replace('/[\s\-_=\/]+/', '', (string) $v));
+        $target = $normFileNo($fno);
+
+        foreach (self::COMMISSIONING_HOLDER_SOURCES as $source) {
+            $partyKey = $source['party'] === 1 ? 'grantor' : 'grantee';
+            $otherFileMatch = null;
+            foreach ($rows as $r) {
+                $type = mb_strtolower(trim((string) ($r['instrument_type'] ?? ($r['transaction_type'] ?? ''))));
+                if ($type === '' || !str_contains($type, $source['type'])) {
+                    continue;
+                }
+                $holder = trim((string) ($r[$partyKey] ?? ''));
+                if ($holder === '' || $holder === '-') {
+                    continue;
+                }
+                if ($target !== '' && $normFileNo($r['lifecycle_file_no'] ?? ($r['file_no'] ?? '')) === $target) {
+                    return $holder;
+                }
+                $otherFileMatch ??= $holder;
+            }
+            if ($otherFileMatch !== null) {
+                return $otherFileMatch;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Build a print-format "File Commissioning" synthetic row for any lifecycle file.
      */
     private function makePrintCommissioningRow(string $fileNo, array $meta): array
@@ -7871,7 +8128,9 @@ class LegalSearchService
         if ($date === '-') {
             $txnDate = $this->extractYearFromFileNumber($fileNo) ?? '-';
         }
-        $holder = $meta['commissioning_holder'] ?: $meta['file_title'] ?: '-';
+        // grant_holder (Party 2 of the RofO / ToT / OP) ranks above the file title, which
+        // names the CURRENT owner. Commissioning and temporary-file rows only.
+        $holder = $meta['commissioning_holder'] ?: (($meta['grant_holder'] ?? null) ?: ($meta['file_title'] ?: '-'));
 
         return [
             'sn' => 0,
@@ -7881,7 +8140,7 @@ class LegalSearchService
             'grantee' => $holder,
             'party_3' => '-',
             'party_4' => '-',
-            'instrument_type' => 'File Commissioning',
+            'instrument_type' => $this->commissioningLabelFor($fileNo),
             'transaction_date' => $txnDate,
             'reg_time' => '-',
             'reg_date' => $date,
@@ -7900,7 +8159,8 @@ class LegalSearchService
      */
     private function makePrintTemporaryFileRow(string $fileNo, array $meta): array
     {
-        $holder = $meta['commissioning_holder'] ?: $meta['file_title'] ?: '-';
+        // Same Party 2 as the File Commissioning row above it — see makePrintCommissioningRow().
+        $holder = $meta['commissioning_holder'] ?: (($meta['grant_holder'] ?? null) ?: ($meta['file_title'] ?: '-'));
 
         return [
             'sn' => 0,
@@ -7970,7 +8230,6 @@ class LegalSearchService
         $hasCommissioning = [];
         $hasDecommissioning = [];
         $hasTemp = [];
-        $hasMinistryRecert = [];
         $hasKangisRecert = [];
         $kangisAliases = [];
 
@@ -7983,8 +8242,15 @@ class LegalSearchService
             $instrument = (string) ($row['instrument_type'] ?? '');
             $type = (string) ($row['transaction_type'] ?? '');
 
-            if ($source === 'File Commissioning' || $source === 'DCIV File Commissioning'
-                || $instrument === 'File Commissioning' || $instrument === 'DCIV File Commissioning') {
+            // The old Ministry "KN 6071" row is typed "File Commissioning" but belongs to the KN
+            // file, not to the group it is folded into — it must not satisfy the land file's own
+            // commissioning row, which would then never be synthesized.
+            $isForeignOldKnRow = $this->isOldMlsKnFileNo(
+                (string) ($row['file_no'] ?? ($row['fileno'] ?? ($row['file_number'] ?? ($row['mlsFNo'] ?? ''))))
+            );
+
+            if (!$isForeignOldKnRow && ($source === 'File Commissioning' || $source === 'DCIV File Commissioning'
+                || $instrument === 'File Commissioning' || $instrument === 'DCIV File Commissioning')) {
                 $hasCommissioning[$fno] = true;
             }
             // A unit ST "ST File Commissioning – Fragmentation" row IS that unit's
@@ -8001,12 +8267,6 @@ class LegalSearchService
             if ($source === 'Temporary File' || $instrument === 'Temporary File') {
                 $hasTemp[$fno] = true;
             }
-            // A Ministry recert may already be present as a real "Related Fileno" link row —
-            // don't synthesize a second one for the same file (Rule 4, dedup).
-            if (stripos($type, 'physical planning') !== false && stripos($type, 'recertification') !== false) {
-                $hasMinistryRecert[$fno] = true;
-            }
-
             // KANGIS recertification bookkeeping (Rules 6/7). A recert already on the timeline
             // (a real related_file_number link) is recorded per KANGIS endpoint so a second,
             // synthetic one is never added for the same alias; '*' covers a recert row whose
@@ -8022,8 +8282,12 @@ class LegalSearchService
 
             // Every KANGIS number carried by a row of this lifecycle is an alias of the land
             // file — the evidence that the file went through a KANGIS recertification exercise.
+            // A SPACED "KN 6071" is not such evidence: it is the old Ministry file number, and
+            // identifyFileNumberType() reads it as new-KANGIS only because its regex tolerates a
+            // separator. Synthesizing a "Second KANGIS Recertification" for it would invent a
+            // second line for the file whose commissioning row is already in this block.
             $aliasKey = $this->extractKangisLifecycleKey($row);
-            if ($aliasKey !== '') {
+            if ($aliasKey !== '' && !$this->isOldMlsKnFileNo($aliasKey)) {
                 $kangisAliases[$fno][$aliasKey] = true;
             }
         }
@@ -8033,6 +8297,18 @@ class LegalSearchService
                 $metaCache[$fno] = $this->resolveLifecycleFileMeta($conn, $fno);
             }
             $meta = $metaCache[$fno];
+
+            // Party 2 of this file's commissioning / temporary rows follows the instrument
+            // that opened the file (COMMISSIONING_HOLDER_SOURCES) before falling back to the
+            // file title (current owner). Same rule as resolveHolderFromGrantEvent(), read
+            // off the print rows' grantor/grantee columns. This is the path a searched KANGIS
+            // alias takes: the land file's commissioning row is synthesized here, not by the
+            // searched-file builder.
+            //
+            // Kept in its OWN key rather than overwriting commissioning_holder, which the
+            // recertification builders below also read: the rule applies to commissioning
+            // and temporary-file rows only, never to supporting rows.
+            $meta['grant_holder'] = $this->resolveGrantHolderFromPrintRows($rows, (string) $fno);
 
             // A KANGIS-format file (KNML/MLKN/KNGP/KN…) is an alias of a land file, never
             // its own lifecycle — suppress its synthetic Commissioning/Decommissioning
@@ -8045,11 +8321,11 @@ class LegalSearchService
                 $rows[] = $this->makePrintCommissioningRow($fno, $meta);
             }
 
-            // Rule 4: an "-RC-" land file gets a Ministry of Land and Physical Planning
-            // Recertification line (unless one already arrived as a real link row).
-            if (empty($hasMinistryRecert[$fno]) && $this->isRecertLandFile($fno)) {
-                $rows[] = $this->makePrintMinistryRecertRow($fno, $meta);
-            }
+            // Rule 4 (superseded): an "-RC-" land file used to get its own Ministry of Land
+            // and Physical Planning Recertification line here. That event now reads off the
+            // file's commissioning row instead — see commissioningLabelFor() — so nothing is
+            // synthesized, and any real row of that type on the file itself is folded away by
+            // dropMergedRecertRows(). makePrintMinistryRecertRow() is kept for reference.
 
             // Rules 6/7: a land file that carries a KANGIS number WAS recertified — the KANGIS
             // number is the product of the exercise. That line must show even when no
@@ -8149,6 +8425,15 @@ class LegalSearchService
             return 'ST File Commissioning';
         }
 
+        // Likewise the old Ministry "KN 6071" file's commissioning: a DIFFERENT file's event
+        // from the land file's own, though both classify as 'File Commissioning' and share the
+        // group. Key it by its own number so the two coexist rather than one deduping the
+        // other away — the land file's row scores higher and was silently winning.
+        $ownNo = $this->extractOwnFileNo($row);
+        if ($type === 'File Commissioning' && $this->isOldMlsKnFileNo($ownNo)) {
+            return $type . '|' . $this->normalizeLifecycleFileNo($ownNo);
+        }
+
         if ($type === 'Kangis Recertification') {
             $kangis = $this->extractKangisLifecycleKey($row);
             if ($kangis === '') {
@@ -8207,6 +8492,16 @@ class LegalSearchService
         }
         
         return null;
+    }
+
+    /**
+     * True when the row carries no timeline rank of its own (parcel updates, decommissionings,
+     * DCIV commissionings). Such rows are positioned chronologically, never by weight.
+     */
+    private function rowIsFloating(array $row, callable $canonicalTransactionType): bool
+    {
+        $txType = $canonicalTransactionType($row['transaction_type'] ?? ($row['instrument_type'] ?? ''));
+        return LegalSearchTimelineWeights::weightFor($row, $txType) === null;
     }
 
     private function scoreLifecycleRow(array $row, string $eventType): int
@@ -8484,16 +8779,38 @@ class LegalSearchService
             return $w ?? 0;
         };
 
-        $ts = function (array $r): ?int {
-            $candidates = [
-                $r['transaction_date'] ?? null,
-                $r['deeds_date'] ?? null,
-                $r['reg_date'] ?? null,
+        // OP / TOT / RofO carry their operative date in transaction_date; every other event —
+        // C of O, recertifications, other instruments — is keyed off its REGISTRATION date.
+        // Mirrors getTransactionTimestamp() in buildPrintReport() and js.blade.php. Without
+        // the split this block sorter re-ordered every lifecycle on transaction_date and
+        // silently undid the ordering those two had already agreed on.
+        $ts = function (array $r) use ($canonicalTransactionType): ?int {
+            $transactionDateFirst = in_array(
+                LegalSearchTimelineWeights::classify(
+                    $r,
+                    $canonicalTransactionType($r['transaction_type'] ?? ($r['instrument_type'] ?? ''))
+                ),
+                [
+                    LegalSearchTimelineWeights::OCCUPANCY_PERMIT,
+                    LegalSearchTimelineWeights::TRANSFER_OF_TITLE_OP,
+                    LegalSearchTimelineWeights::RIGHT_OF_OCCUPANCY,
+                ],
+                true
+            );
+
+            $candidates = $transactionDateFirst
+                ? [$r['transaction_date'] ?? null, $r['deeds_date'] ?? null, $r['reg_date'] ?? null]
+                // reg_date, then deeds_date (the registration date on pra/CofO_staging rows,
+                // which have no literal reg_date column), and only then transaction_date.
+                : [$r['reg_date'] ?? null, $r['deeds_date'] ?? null, $r['transaction_date'] ?? null];
+
+            $candidates = array_merge($candidates, [
                 $r['cofo_date'] ?? null,
                 $r['certificateDate'] ?? null,
                 $r['approval_date'] ?? null,
                 $r['date'] ?? null,
-            ];
+            ]);
+
             foreach ($candidates as $c) {
                 $d = trim((string) $c);
                 if ($d !== '' && $d !== '-') {
@@ -8524,30 +8841,33 @@ class LegalSearchService
         // transaction phase so rows never leave their lifecycle group.
         $transactions = $this->placeKangisRecertBeforeCofo($transactions);
 
-        // Rule 4: the "Ministry of Land and Physical Planning Recertification" line for an
-        // "-RC-" land file must sit directly UNDER the File Commissioning line (top of the
-        // transaction band). It is usually undated, which would otherwise float it to the
-        // very end of the block — so hoist it to the front of the transactions here.
-        $commissioning = [];
-        $ministryRecert = [];
+        // A File Commissioning row is NO LONGER hoisted to the head of its block — it takes
+        // the position its weight earns, so an Occupancy Permit (14) and its Transfer of
+        // Title (13) read ABOVE the commissioning line (12). One exception survives:
+        //
+        //  - A FLOATING commissioning row (DCIV, weight null) has no rank to take a position
+        //    from, and $weightOf would read its null as 0 and sink it to the foot of the
+        //    block. Those keep the old hoist.
+        //
+        // The Rule 4 hoist that used to splice a "Land Recertification" row directly under the
+        // commissioning line is GONE: an RC file's recertification is now named by the
+        // commissioning row itself, and the only rows still carrying that label belong to the
+        // file's old Ministry "KN 3686" number, which must rank ABOVE the commissioning row
+        // (OLD_KN_COMMISSIONING = 15) — the splice was dragging them back underneath it.
+        $floatingCommissioning = [];
         $otherTransactions = [];
         foreach ($transactions as $t) {
-            $ty = (string) ($t['transaction_type'] ?? ($t['instrument_type'] ?? ''));
             $evt = $this->classifyLifecycleEventType($t);
-            $isComm = ($evt === 'File Commissioning' || $evt === 'Temporary File' || $evt === 'DCIV File Commissioning' || $evt === 'ST File Commissioning');
-            
-            $isMinistry = (stripos($ty, 'physical planning') !== false && stripos($ty, 'recertification') !== false)
-                || (stripos($ty, 'Land Recertification') !== false);
-            
-            if ($isComm) {
-                $commissioning[] = $t;
-            } elseif ($isMinistry) {
-                $ministryRecert[] = $t;
+            $isComm = ($evt === 'File Commissioning' || $evt === 'Temporary File');
+
+            if ($isComm && $this->rowIsFloating($t, $canonicalTransactionType)) {
+                $floatingCommissioning[] = $t;
             } else {
                 $otherTransactions[] = $t;
             }
         }
-        $transactions = array_merge($commissioning, $ministryRecert, $otherTransactions);
+
+        $transactions = array_merge($floatingCommissioning, $otherTransactions);
 
         // Sectional Titling: within an ST unit's block the transactions must read strictly
         // chronologically (e.g. Right of Occupancy before its later Assignment/Transfer of
@@ -8574,6 +8894,35 @@ class LegalSearchService
                 return $ta <=> $tb;
             });
         }
+
+        // A KANGIS Recertification (First or Second) closes the file's KANGIS chapter, so it
+        // reads LAST in the transaction band — directly above the File Decommissioning that
+        // retires the file, since decommissioning rows are appended after this. Its weight
+        // (8) would otherwise rank it above the file's own dealings.
+        //
+        // Any C of O pinned directly beneath a recert by placeKangisRecertBeforeCofo() travels
+        // with it: the pair moves as one block so the recert still precedes the C of O it
+        // produced. Classification is by lifecycle event, not by weight, so the Ministry of
+        // Land recertification (Rule 4, kept under File Commissioning) is untouched.
+        $recertBlock = [];
+        $beforeRecert = [];
+        for ($i = 0, $n = count($transactions); $i < $n; $i++) {
+            if ($this->classifyLifecycleEventType($transactions[$i]) !== 'Kangis Recertification') {
+                $beforeRecert[] = $transactions[$i];
+                continue;
+            }
+            $recertBlock[] = $transactions[$i];
+            while ($i + 1 < $n) {
+                $next = $transactions[$i + 1];
+                $nextType = $canonicalTransactionType($next['transaction_type'] ?? ($next['instrument_type'] ?? ''));
+                if (LegalSearchTimelineWeights::classify($next, $nextType) !== LegalSearchTimelineWeights::CERTIFICATE_OF_OCCUPANCY) {
+                    break;
+                }
+                $recertBlock[] = $next;
+                $i++;
+            }
+        }
+        $transactions = array_merge($beforeRecert, $recertBlock);
 
         return array_merge($transactions, $decommissioning);
     }

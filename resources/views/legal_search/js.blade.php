@@ -1665,7 +1665,28 @@ const executeSearchAjax = (filters, searchData) => {
   const TIMELINE_WEIGHTS = @json(\App\Support\LegalSearchTimelineWeights::MAP);
   const PARCEL_UPDATE_PATTERN = /subdivision|merger|change of purpose|plot extension|separation|parcel update/;
 
+  // An OLD Ministry KN number carries a SEPARATOR — "KN 3686", "KN-3686". A new-KANGIS number
+  // is written solid, "KN3686", and is a different registry entirely.
+  // Mirrors LegalSearchTimelineWeights::isOldKnFileNo().
+  const isOldKnFileNo = (v) => /^KN[\s\-]\d+/i.test(String(v || '').trim());
+
+  // The old Ministry file's OPENING line (its commissioning or recertification row), not an
+  // ordinary dealing that merely sits on that file — a mortgage registered against "KN 3686"
+  // keeps its normal rank. Mirrors LegalSearchTimelineWeights::isOldKnCommissioningRow().
+  const isOldKnCommissioningRow = (item, txType) => {
+    if (!txType.includes('recertification') && !txType.includes('file commissioning')) return false;
+    const own = ['file_no', 'fileno', 'file_number', 'mlsFNo']
+      .map(c => String(item?.[c] || '').trim())
+      .find(v => v && v !== '-') || '';
+    return isOldKnFileNo(own);
+  };
+
   const classifyTimelineEvent = (item) => {
+    // Tested first: the old Ministry file's opening line outranks every other event,
+    // including the commissioning row it sits above.
+    if (isOldKnCommissioningRow(item, canonicalWeightingInstrumentType(getMappedValue(item, 'transactionType')))) {
+      return 'OLD_KN_COMMISSIONING';
+    }
     if (item?._is_commissioning) return 'FILE_COMMISSIONING';
     if (item?._is_temporary_file) return 'TEMP_FILE_COMMISSIONING';
     if (item?._is_decommissioning) return 'FILE_DECOMMISSIONING';
@@ -1690,9 +1711,34 @@ const executeSearchAjax = (filters, searchData) => {
     if (txType.includes('certificate of occupanc')) return 'CERTIFICATE_OF_OCCUPANCY';
     if (PARCEL_UPDATE_PATTERN.test(txType)) return 'PARCEL_UPDATE';
 
+    // Lineage rows — a parent/child file's own commissioning or decommissioning, which reach
+    // the timeline through the 'Related Fileno' source rather than their own source_table.
+    // Classified on TYPE so they land in the commissioning tier and the floating band; without
+    // this they fell through to the untyped fallback below and were ranked as recerts (8).
+    if (txType.includes('decommissioning')) return 'FILE_DECOMMISSIONING';
+    if (txType.includes('file commissioning')) return 'FILE_COMMISSIONING';
+
     // An untyped 'Related Fileno' row is the synthetic KANGIS recertification marker.
     if (source === 'Related Fileno') return 'KANGIS_RECERTIFICATION';
     return 'OTHER_INSTRUMENTS';
+  };
+
+  // Mirrors LegalSearchTimelineWeights::DATE_FIELDS / eventYear(). Only the 4-digit year
+  // matters, and the same row reaches here as "2026-05-11", "May 11, 2026", "11/05/2026" or
+  // a bare "2026", so it is read by regex rather than parsed.
+  const TIMELINE_DATE_FIELDS = [
+    'reg_date', 'deeds_date', 'transaction_date',
+    'cofo_date', 'certificateDate', 'approval_date', 'date',
+  ];
+
+  const timelineEventYear = (item) => {
+    for (const field of TIMELINE_DATE_FIELDS) {
+      const value = String(item?.[field] ?? '').trim();
+      if (!value || value === '-') continue;
+      const match = value.match(/(?:19|20)\d{2}/);
+      if (match) return Number(match[0]);
+    }
+    return null;
   };
 
   // Lineage rows (a child file's commissioning/decommissioning) are positioned by splice
@@ -1701,7 +1747,16 @@ const executeSearchAjax = (filters, searchData) => {
   // hoist them to the top of the table alongside the searched file's own commissioning.
   const recordPriorityWeight = (item) => {
     if (item?._pinned) return null;
-    const weight = TIMELINE_WEIGHTS[classifyTimelineEvent(item)];
+    const eventKey = classifyTimelineEvent(item);
+
+    // Current-year exception (mirrors LegalSearchTimelineWeights::isCurrentYearInstrument):
+    // a dealing dated in the year we are in now closes the timeline, below the C of O.
+    // Scoped to OTHER_INSTRUMENTS — grants and commissioning rows keep their rank.
+    if (eventKey === 'OTHER_INSTRUMENTS' && timelineEventYear(item) === new Date().getFullYear()) {
+      return TIMELINE_WEIGHTS.CURRENT_YEAR_INSTRUMENT;
+    }
+
+    const weight = TIMELINE_WEIGHTS[eventKey];
     return weight === undefined ? TIMELINE_WEIGHTS.OTHER_INSTRUMENTS : weight;
   };
 
@@ -3053,11 +3108,19 @@ const executeSearchAjax = (filters, searchData) => {
   
   // Switch between tabs in the file details view
   const updateAddRecordButtonVisibility = (tabName) => {
-    // The "New" menu item carries data-target; the trigger button only opens the menu.
-    const btn = document.getElementById('add-record-new-btn') || document.getElementById('add-record-smart-btn');
-    if (!btn) return;
-    // Always visible — just point to the right table for the active tab
-    btn.setAttribute('data-target', tabName === 'cofo' ? 'cofo_staging' : 'pra');
+    // Both menu options (New / Existing) open the capture card, so both carry
+    // data-target; the trigger button itself only opens the menu.
+    const target = tabName === 'cofo' ? 'cofo_staging' : 'pra';
+    const options = document.querySelectorAll('.add-record-option');
+
+    if (options.length > 0) {
+      options.forEach((option) => option.setAttribute('data-target', target));
+      return;
+    }
+
+    // Fallback for any view still rendering the pre-menu single button.
+    const btn = document.getElementById('add-record-smart-btn');
+    if (btn) btn.setAttribute('data-target', target);
   };
 
   const switchTab = (tabName) => {
@@ -3359,9 +3422,12 @@ const executeSearchAjax = (filters, searchData) => {
         item.date,
       ]
       : [
+        // deeds_date BEFORE transaction_date: pra and CofO_staging have no literal reg_date
+        // column and carry their registration date in deeds_date, so with transaction_date
+        // ahead of it those two sources never sorted on their reg date at all.
         item.reg_date,
-        item.transaction_date,
         item.deeds_date,
+        item.transaction_date,
         item.cofo_date,
         item.certificateDate,
         item.approval_date,
@@ -3554,7 +3620,7 @@ const executeSearchAjax = (filters, searchData) => {
   // KNML/MLKN/KNGP, 2014–2024) before Second KANGIS Recertification (new KN, 2025–present) —
   // and each generation's C of O stays with its own recertification.
   //
-  // The weight/date sort alone gets this wrong: both recerts share weight 8, and a Second
+  // The weight/date sort alone gets this wrong: both recerts share the same weight, and a Second
   // Recertification usually has no C of O of its own, so placeKangisRecertBeforeCofo() leaves
   // it wherever it landed — which can be ABOVE the First Recertification / C of O pair.
   const orderRecertGenerations = (rows) => {
@@ -3697,6 +3763,63 @@ const executeSearchAjax = (filters, searchData) => {
     return null;
   };
 
+  // Party 2 of a commissioning row is the allottee the file was opened for, read off the
+  // instrument that opened it. WHICH party carries that name differs per instrument — the
+  // State grants TO the allottee (Party 2), but the allottee assigns the land AWAY (Party 1)
+  // — so the list pairs each type with its party number. The file title names the CURRENT
+  // owner, the wrong name on a commissioning row once the land has changed hands, so it
+  // stays only as the last resort. Returns null when the file has none of these instruments
+  // — the caller then keeps the name it already had.
+  // Read straight from LegalSearchService::COMMISSIONING_HOLDER_SOURCES so the two cannot drift.
+  const COMMISSIONING_HOLDER_SOURCES = @json(\App\Services\LegalSearchService::COMMISSIONING_HOLDER_SOURCES);
+
+  // File numbers from this year on are exempt: the rule repairs LEGACY files whose title
+  // drifted to a later owner over decades. A KLAES-era file already carries the right holder,
+  // and there the rule misfires — a file created by a Transfer of Title would take Party 2
+  // from the OP that preceded it, i.e. the PREVIOUS owner. Files with no year in their number
+  // are legacy by definition, so the rule applies to them.
+  // Mirrors LegalSearchService::GRANT_HOLDER_EXEMPT_FROM_YEAR.
+  const GRANT_HOLDER_EXEMPT_FROM_YEAR = 2026;
+  const grantHolderRuleApplies = (fileNo) => {
+    const year = extractYearFromFileNumber(fileNo);
+    return year === null || Number(year) < GRANT_HOLDER_EXEMPT_FROM_YEAR;
+  };
+
+  const resolveHolderFromGrantEvent = (fileNo) => {
+    if (!grantHolderRuleApplies(fileNo)) return null;
+    const rows = window._preferredRelatedTransactions || window._allRelatedTransactions || [];
+    const norm = (v) => String(v || '').toUpperCase().replace(/[\s\-_=\/]+/g, '');
+    const target = norm(fileNo);
+    for (const source of COMMISSIONING_HOLDER_SOURCES) {
+      const partyKey = 'party_' + source.party;
+
+      // Unlike the PHP twin, this row set is the DEDUPED list, not the date-sorted timeline,
+      // so the earliest match has to be picked explicitly: the Deed of Assignment that names
+      // the original allottee is the FIRST one, not whichever the dedup happened to emit.
+      const matches = [];
+      for (const r of rows) {
+        if (canonicalWeightingInstrumentType(getMappedValue(r, 'transactionType')) !== source.type) continue;
+        const holder = String((r && r[partyKey]) || '').trim();
+        if (!holder || holder === '-') continue;
+        // Rows on this very file win over rows on linked files, so a KANGIS alias or a
+        // subdivision sibling cannot lend its party to this file's commissioning row.
+        const own = target && norm(r.lifecycle_file_no || r.mlsFNo || r.fileno || r.file_number) === target;
+        matches.push({ holder, own, ts: getTransactionTimestamp(r) });
+      }
+      if (!matches.length) continue;
+
+      matches.sort((a, b) => {
+        if (a.own !== b.own) return a.own ? -1 : 1;
+        if (a.ts === null && b.ts === null) return 0;
+        if (a.ts === null) return 1;
+        if (b.ts === null) return -1;
+        return a.ts - b.ts;
+      });
+      return matches[0].holder;
+    }
+    return null;
+  };
+
   // Build the synthetic "File Commissioning" timeline record. It is always the
   // first row (weight 12). Its Transaction Date is the file's commissioning date
   // (resolved server-side; '-' when the file was not commissioned within KLAES),
@@ -3750,7 +3873,7 @@ const executeSearchAjax = (filters, searchData) => {
       String((r && r.source_table) || '') === 'ST File Commissioning' &&
       String((r && r.transaction_type) || '').indexOf('Fragmentation') === -1 &&
       _normStFn((r && (r.lifecycle_file_no || r.parent_file_number)) || '') === _fileNoNormST);
-    const _commissioningLabel = _hasStCommissioning ? 'Land File Commissioning' : 'File Commissioning';
+    const _commissioningLabel = _hasStCommissioning ? 'Land File Commissioning' : commissioningLabelFor(fileNo);
     // The commissioning date belongs to whichever file number was actually
     // commissioned (fileNumber.mlsfNo, resolved server-side). It carries a "(T)"
     // suffix when the temporary file was the commissioned one. Show the date on
@@ -3768,9 +3891,13 @@ const executeSearchAjax = (filters, searchData) => {
     }
     // Party 1 is the commissioning authority; Party 2 is the file's original holder —
     // the assignor (Party 1) of the KLAES-registered Deed of Assignment when present,
-    // otherwise the file title (latest owner).
-    const ownerName = (selectedFile && (selectedFile._file_commissioning_holder
+    // then the grantee of the RofO / ToT / OP the file was opened for, and only then the
+    // file title (latest owner).
+    const titleHolder = (selectedFile && (selectedFile._file_commissioning_holder
       || selectedFile._file_title || selectedFile.file_title)) || '-';
+    const ownerName = (selectedFile && selectedFile._file_commissioning_holder)
+      || resolveHolderFromGrantEvent(fileNo)
+      || titleHolder;
     return {
       _is_commissioning: true,
       id: 'commissioning',
@@ -3780,8 +3907,11 @@ const executeSearchAjax = (filters, searchData) => {
       mlsFNo: fileNo,
       lifecycle_file_no: fileNo,
       transaction_type: _commissioningLabel,
-      instrument_type: 'File Commissioning',
+      instrument_type: _commissioningLabel,
       party_1: 'Kano State Ministry of Land and Physical Planning', party_2: ownerName, party_3: '-', party_4: '-',
+      // Pre-grant-rule holder, read by getHolderForFile() so the granted name stays on
+      // this row instead of seeding the file's other synthetic rows.
+      _lifecycle_holder: titleHolder,
       serial_no: '', page_no: '', volume_no: '',
       transaction_date: mainRowDate,
       reg_date: '',
@@ -3825,8 +3955,8 @@ const executeSearchAjax = (filters, searchData) => {
       file_number: no,
       mlsFNo: no,
       lifecycle_file_no: no,
-      transaction_type: 'File Commissioning',
-      instrument_type: 'File Commissioning',
+      transaction_type: commissioningLabelFor(no),
+      instrument_type: commissioningLabelFor(no),
       party_1: 'Kano State Ministry of Land and Physical Planning',
       party_2: fileTitle || '-', party_3: '-', party_4: '-',
       serial_no: '', page_no: '', volume_no: '',
@@ -3993,8 +4123,13 @@ const executeSearchAjax = (filters, searchData) => {
     const tempRowDate = (commDate && commDate !== '-' && commissionedIsTemp)
       ? commDate : '-';
 
-    const ownerName = (selectedFile && (selectedFile._file_commissioning_holder
+    // Same Party 2 as the permanent File Commissioning row above it — the grant rows live
+    // on the main number, so the "(T)" suffix is stripped before matching.
+    const titleHolder = (selectedFile && (selectedFile._file_commissioning_holder
       || selectedFile._file_title || selectedFile.file_title)) || '-';
+    const ownerName = (selectedFile && selectedFile._file_commissioning_holder)
+      || resolveHolderFromGrantEvent(tempFileNo.replace(/\s*\(\s*T\s*\)\s*$/i, '').trim())
+      || titleHolder;
     return {
       _is_temporary_file: true,
       id: 'temporary-file',
@@ -4006,6 +4141,9 @@ const executeSearchAjax = (filters, searchData) => {
       transaction_type: 'Temporary File',
       instrument_type: 'Temporary File',
       party_1: 'Kano State Ministry of Land and Physical Planning', party_2: ownerName, party_3: '-', party_4: '-',
+      // See buildCommissioningTimelineRow(): keeps the granted name off the file's
+      // other synthetic rows.
+      _lifecycle_holder: titleHolder,
       serial_no: '', page_no: '', volume_no: '',
       transaction_date: tempRowDate,
       reg_date: '',
@@ -4146,7 +4284,12 @@ const executeSearchAjax = (filters, searchData) => {
     }
     const ordered = [...rowsForFile].sort((a, b) => (getTransactionTimestamp(a) ?? Infinity) - (getTransactionTimestamp(b) ?? Infinity));
     for (const r of ordered) {
-      const p2 = String(r?.party_2 || '').trim();
+      // _lifecycle_holder, when present, is a commissioning row's holder BEFORE the
+      // RofO/ToT/OP grant rule was applied to it. That rule is for commissioning and
+      // temporary-file rows only — without this the commissioning row (always the
+      // earliest, so always the row picked here) would hand its granted name on to
+      // every other synthetic row of the file, e.g. the KANGIS Recertification.
+      const p2 = String(r?._lifecycle_holder || r?.party_2 || '').trim();
       if (p2 && p2 !== '-') return p2;
       const p1 = String(r?.party_1 || '').trim();
       if (p1 && p1 !== '-') return p1;
@@ -4186,8 +4329,8 @@ const executeSearchAjax = (filters, searchData) => {
       file_number: no,
       mlsFNo: no,
       lifecycle_file_no: normalizeLifecycleFileNo(no),
-      transaction_type: 'File Commissioning',
-      instrument_type: 'File Commissioning',
+      transaction_type: commissioningLabelFor(no),
+      instrument_type: commissioningLabelFor(no),
       party_1: 'Kano State Ministry of Land and Physical Planning',
       party_2: holder,
       party_3: '-',
@@ -4289,6 +4432,15 @@ const executeSearchAjax = (filters, searchData) => {
       // "Land File Commissioning" — both classify as 'File Commissioning' but must
       // coexist in the same land block, so give the ST primary its own dedupe key.
       if (r && r._st_primary_commissioning) return 'ST File Commissioning';
+      // Likewise the old Ministry "KN 6071" file's commissioning: a DIFFERENT file's event from
+      // the land file's own, though both classify as 'File Commissioning' and share the group.
+      // Key it by its own number so the two coexist instead of one deduping the other away.
+      const ownNo = ['file_no', 'fileno', 'file_number', 'mlsFNo']
+        .map(c => String(r?.[c] || '').trim())
+        .find(v => v && v !== '-') || '';
+      if (eventType === 'File Commissioning' && isOldKnFileNo(ownNo)) {
+        return `${eventType}|${normalizeLifecycleFileNo(ownNo)}`;
+      }
       if (eventType === 'Kangis Recertification') {
         const k = extractKangisLifecycleKey(r) || normalizeLifecycleFileNo(extractLifecycleFileNo(r) || '');
         return `${eventType}|${k}`;
@@ -4340,6 +4492,27 @@ const executeSearchAjax = (filters, searchData) => {
     return /(?:^|[-_/ ])RC(?:[-_/ ]|$)/.test(s);
   };
 
+  // An "-RC-" land file was commissioned AND recertified by the Ministry; the client reads
+  // those as one event, so its commissioning row carries the combined label and no separate
+  // "Land Recertification (File Commissioning)" line is emitted for it (see
+  // dropMergedRecertRows). Mirrors LegalSearchService::commissioningLabelFor().
+  const commissioningLabelFor = (fileNo) =>
+    isRecertLandFileNo(fileNo) ? 'File Commissioning & Recertification' : 'File Commissioning';
+
+  // Drop the recert rows that commissioningLabelFor() has folded into an RC file's own
+  // commissioning line. Scoped to rows sitting on the RC file ITSELF — the identically-typed
+  // row belonging to its old Ministry "KN 3686" number is a different file's line and
+  // survives, ranking above the commissioning row (OLD_KN_COMMISSIONING).
+  // Mirrors LegalSearchService::dropMergedRecertRows().
+  const dropMergedRecertRows = (rows) => rows.filter(r => {
+    const type = String(r?.instrument_type || r?.transaction_type || '').trim();
+    if (type.toLowerCase() !== 'land recertification (file commissioning)') return true;
+    const own = ['file_no', 'fileno', 'file_number', 'mlsFNo']
+      .map(c => String(r?.[c] || '').trim())
+      .find(v => v && v !== '-') || '';
+    return !isRecertLandFileNo(own);
+  });
+
   const ensureLifecycleSyntheticRows = (groupedRows) => {
     const result = {};
     // The searched file's own lineage flag (window._lsLineage) describes ONLY that
@@ -4350,7 +4523,15 @@ const executeSearchAjax = (filters, searchData) => {
     for (const fno of Object.keys(groupedRows)) {
       const rows = groupedRows[fno];
       const meta = lifecycleMetaFor(fno);
-      const hasCommissioning = rows.some(r =>
+      // The old Ministry "KN 6071" row is typed "File Commissioning" but belongs to the KN
+      // file, not to the group it is folded into — it must not satisfy this group's own
+      // commissioning row, which would then never be synthesized.
+      const isForeignOldKnRow = (r) => isOldKnFileNo(
+        ['file_no', 'fileno', 'file_number', 'mlsFNo']
+          .map(c => String(r?.[c] || '').trim())
+          .find(v => v && v !== '-') || ''
+      );
+      const hasCommissioning = rows.some(r => !isForeignOldKnRow(r) && (
         String(r?.source_table || '') === 'File Commissioning'
         || String(r?.source_table || '') === 'DCIV File Commissioning'
         // A unit ST "ST File Commissioning – Fragmentation" row IS that unit's own
@@ -4362,7 +4543,7 @@ const executeSearchAjax = (filters, searchData) => {
         || String(r?.instrument_type || '') === 'DCIV File Commissioning'
         || String(r?.transaction_type || '') === 'File Commissioning'
         || String(r?.transaction_type || '') === 'DCIV File Commissioning'
-      );
+      ));
       const hasTemp = rows.some(r =>
         String(r?.source_table || '') === 'Temporary File'
         || String(r?.instrument_type || '') === 'Temporary File'
@@ -4378,36 +4559,11 @@ const executeSearchAjax = (filters, searchData) => {
         const row = buildLifecycleCommissioningRow(fno, rows);
         if (row) rows.push(row);
       }
-      // Rule 4: an "-RC-" land file shows a Ministry of Land and Physical Planning
-      // Recertification line under its File Commissioning, unless one already arrived as a
-      // real link row. Classified into the recert band (weight 8) → under commissioning, above CofO.
-      const hasMinistryRecert = rows.some(r => {
-        const t = String(r?.transaction_type || r?.instrument_type || '');
-        return (/physical planning/i.test(t) && /recertification/i.test(t)) || /Land Recertification/i.test(t);
-      });
-      if (!hasMinistryRecert && isRecertLandFileNo(fno)) {
-        let txDate = '-';
-        const m = String(fno).match(/(?:^|[-_/ ])(19\d{2}|20\d{2})(?:[-_/ ]|$)/);
-        if (m) {
-          txDate = m[1];
-        }
-        rows.push({
-          _is_recertification: true,
-          id: 'ministry-recert-' + fno,
-          source_table: 'Related Fileno',
-          fileno: fno, file_number: fno, mlsFNo: fno,
-          lifecycle_file_no: normalizeLifecycleFileNo(fno),
-          transaction_type: 'Land Recertification (File Commissioning)',
-          instrument_type: 'Land Recertification (File Commissioning)',
-          party_1: 'Kano State Ministry of Land and Physical Planning',
-          party_2: getHolderForFile(fno, rows), party_3: '-', party_4: '-',
-          serial_no: '', page_no: '', volume_no: '',
-          transaction_date: txDate, reg_date: '',
-          caveat: 'No', is_caveated: 0, prop_id: '',
-          comments: meta?.kn_file_no || '-',
-          _synthesized: true
-        });
-      }
+      // Rule 4 (superseded): an "-RC-" land file used to get its own Ministry of Land and
+      // Physical Planning Recertification line here. That event now reads off the file's
+      // commissioning row instead — see commissioningLabelFor() — so nothing is synthesized,
+      // and any real row of that type on the file itself is folded away by
+      // dropMergedRecertRows().
       // Rules 6/7: a land file that carries a KANGIS number WAS recertified — the KANGIS
       // number is the product of the exercise. The line must show even when no
       // related_file_number link records it: the alias is frequently known only from the
@@ -4432,7 +4588,11 @@ const executeSearchAjax = (filters, searchData) => {
         const aliases = new Set();
         for (const r of rows) {
           const k = extractKangisLifecycleKey(r);
-          if (k && !recertedKangis.has(k)) aliases.add(k);
+          // A SPACED "KN 6071" is the old Ministry file number, not evidence of a KANGIS
+          // recertification — identifyFileNumberType() reads it as new-KANGIS only because its
+          // regex tolerates a separator. Synthesizing a "Second KANGIS Recertification" for it
+          // would invent a second line for the file whose commissioning row is already here.
+          if (k && !recertedKangis.has(k) && !isOldKnFileNo(k)) aliases.add(k);
         }
         for (const kangisNo of aliases) {
           rows.push({
@@ -4495,7 +4655,10 @@ const executeSearchAjax = (filters, searchData) => {
         const dec = buildLifecycleDecommissioningRow(fno, rows);
         if (dec) rows.push(dec);
       }
-      result[fno] = rows;
+      // The server already folds these away for the searched file; repeat it here so a row
+      // reaching the timeline by another route (an expanded child, a re-sort) can't reinstate
+      // a second line for an event the commissioning row now names.
+      result[fno] = dropMergedRecertRows(rows);
     }
     return result;
   };
@@ -4530,29 +4693,35 @@ const executeSearchAjax = (filters, searchData) => {
 
     let arrangedTransactions = placeKangisRecertBeforeCofo(transactions);
 
-    // Rule 4: the "Ministry of Land and Physical Planning Recertification" line for an
-    // "-RC-" land file must sit directly UNDER the File Commissioning line. It is usually
-    // undated, which would otherwise float it to the end of the block — hoist it to the
-    // front of the transactions. Mirrors LegalSearchService::arrangeLifecycleFileRows().
-    const isMinistryRecert = (r) => {
-      const t = String(r?.transaction_type || r?.instrument_type || '');
-      return (/physical planning/i.test(t) && /recertification/i.test(t)) || /Land Recertification/i.test(t);
+    // A File Commissioning row is NO LONGER hoisted to the head of its block — it takes the
+    // position its weight earns, so an Occupancy Permit (14) and its Transfer of Title (13)
+    // read ABOVE the commissioning line (12). One exception survives:
+    //
+    //  - A FLOATING commissioning row (DCIV, weight null) has no rank to take a position
+    //    from and would sink to the foot of the block, so it keeps the old hoist.
+    //
+    // The Rule 4 hoist that used to splice a "Land Recertification" row directly under the
+    // commissioning line is GONE: an RC file's recertification is now named by the
+    // commissioning row itself, and the only rows still carrying that label belong to the
+    // file's old Ministry "KN 3686" number, which must rank ABOVE the commissioning row
+    // (OLD_KN_COMMISSIONING = 15) — the splice was dragging them back underneath it.
+    //
+    // Mirrors LegalSearchService::arrangeLifecycleFileRows().
+    const isCommissioningEvent = (r) => {
+      const evt = classifyLifecycleEventType(r);
+      return evt === 'File Commissioning' || evt === 'Temporary File';
     };
-    const commissioning = [];
-    const ministryRecert = [];
+    const floatingCommissioning = [];
     const otherTransactions = [];
     for (const r of arrangedTransactions) {
-      const evt = classifyLifecycleEventType(r);
-      const isComm = (evt === 'File Commissioning' || evt === 'Temporary File' || evt === 'DCIV File Commissioning' || evt === 'ST File Commissioning');
-      if (isComm) {
-        commissioning.push(r);
-      } else if (isMinistryRecert(r)) {
-        ministryRecert.push(r);
+      if (isCommissioningEvent(r) && recordPriorityWeight(r) === null) {
+        floatingCommissioning.push(r);
       } else {
         otherTransactions.push(r);
       }
     }
-    arrangedTransactions = [...commissioning, ...ministryRecert, ...otherTransactions];
+
+    arrangedTransactions = [...floatingCommissioning, ...otherTransactions];
 
     // Sectional Titling: within an ST unit's block the transactions read strictly
     // chronologically (Right of Occupancy before its later Assignment/Transfer of Title),
@@ -4575,6 +4744,31 @@ const executeSearchAjax = (filters, searchData) => {
         return ta - tb;
       });
     }
+
+    // A KANGIS Recertification (First or Second) closes the file's KANGIS chapter, so it reads
+    // LAST in the transaction band — directly above the File Decommissioning that retires the
+    // file, since decommissioning rows are appended after this. Its weight (8) would otherwise
+    // rank it above the file's own dealings.
+    //
+    // Any C of O pinned directly beneath a recert by placeKangisRecertBeforeCofo() travels with
+    // it: the pair moves as one block so the recert still precedes the C of O it produced.
+    // Classification is by lifecycle event, not by weight, so the Ministry of Land
+    // recertification (Rule 4, kept under File Commissioning) is untouched.
+    // Mirrors LegalSearchService::arrangeLifecycleFileRows().
+    const recertBlock = [];
+    const beforeRecert = [];
+    for (let i = 0; i < arrangedTransactions.length; i++) {
+      if (classifyLifecycleEventType(arrangedTransactions[i]) !== 'Kangis Recertification') {
+        beforeRecert.push(arrangedTransactions[i]);
+        continue;
+      }
+      recertBlock.push(arrangedTransactions[i]);
+      while (i + 1 < arrangedTransactions.length
+        && classifyTimelineEvent(arrangedTransactions[i + 1]) === 'CERTIFICATE_OF_OCCUPANCY') {
+        recertBlock.push(arrangedTransactions[++i]);
+      }
+    }
+    arrangedTransactions = [...beforeRecert, ...recertBlock];
 
     return [...arrangedTransactions, ...decommissioning];
   };
@@ -4601,6 +4795,17 @@ const executeSearchAjax = (filters, searchData) => {
       }
     });
 
+    // The primary file is the one the user actually searched. When a temp file
+    // number is searched, its main/base file is treated as the primary group.
+    // Resolved before the rows are tagged: resolveLifecycleOwner() needs the primary
+    // number to fold system-temp rows into it.
+    const searchedNo = normalizeLifecycleFileNo(
+      userSelectedFileNumber || window._currentFileNumber || ''
+    );
+    const searchedIsTemp = isTempFileNo(searchedNo);
+    const primaryFileNo = searchedIsTemp ? normalizeLifecycleFileNo(baseFileNo(searchedNo)) : searchedNo;
+    const mainFileNo = normalizeLifecycleFileNo(baseFileNo(searchedNo));
+
     const resolveLifecycleOwner = (r) => {
       const type = String(r?.transaction_type || r?.instrument_type || '').toLowerCase();
       const isRecert = type.includes('recertification');
@@ -4614,6 +4819,25 @@ const executeSearchAjax = (filters, searchData) => {
 
       let fno = extractLifecycleFileNo(r);
       if (fno && kangisToMain[fno]) fno = kangisToMain[fno];
+
+      // A system temporary file ("TEMP-91950") has no lifecycle of its own — it is the
+      // placeholder an Occupancy Permit / deed registration is captured under, and its
+      // number is hidden in the UI. Left as its own group it became a separate block
+      // ranked after the searched file, so an OP (weight 14) rendered BELOW the searched
+      // file's lower-weighted rows. Roll it into the primary group.
+      // Mirrors LegalSearchService::tagRowsWithLifecycleFileNo().
+      if (fno && isSystemTempFileNo(fno) && primaryFileNo) {
+        return primaryFileNo;
+      }
+
+      // A "(T)" number is not its own lifecycle either — it is the SAME physical file as
+      // its base number, so its rows join the base file's group (they keep displaying
+      // their own "(T)" number; only the grouping key collapses). Same rule as PHP.
+      if (fno && isTempFileNo(fno)) {
+        const base = normalizeLifecycleFileNo(baseFileNo(fno));
+        if (base) return base;
+      }
+
       return fno;
     };
 
@@ -4622,15 +4846,6 @@ const executeSearchAjax = (filters, searchData) => {
       ...r,
       lifecycle_file_no: resolveLifecycleOwner(r),
     }));
-
-    // The primary file is the one the user actually searched. When a temp file
-    // number is searched, its main/base file is treated as the primary group.
-    const searchedNo = normalizeLifecycleFileNo(
-      userSelectedFileNumber || window._currentFileNumber || ''
-    );
-    const searchedIsTemp = isTempFileNo(searchedNo);
-    const primaryFileNo = searchedIsTemp ? normalizeLifecycleFileNo(baseFileNo(searchedNo)) : searchedNo;
-    const mainFileNo = normalizeLifecycleFileNo(baseFileNo(searchedNo));
 
     // Group rows by lifecycle owner. For temp-file searches, merge the temp file's
     // rows into the main file's group so the lifecycle reads:
@@ -7538,305 +7753,44 @@ const executeSearchAjax = (filters, searchData) => {
   });
 
   // ── Add Record: New / Existing ───────────────────────────────────────────────
-  // The trigger opens a small menu. "New" delegates to the existing
-  // [data-role="legal-search-add-record"] handler in file-history.blade.php
-  // (unchanged capture path). "Existing" expands four source options, each of
-  // which opens the picker below.
-
-  const lsExistingSourceLabels = {
-    'pra': 'PRA',
-    'file_history_staging': 'File History',
-    'deed_registrations': 'Deeds Registration',
-    'CofO_staging': 'CofO',
-  };
+  // The trigger opens the chooser card. BOTH options then open the same Add
+  // Property Record card via the existing [data-role="legal-search-add-record"]
+  // capture handler in file-history.blade.php — they differ only in what the
+  // operator is capturing. That card carries the "Existing Records for this File"
+  // table (PRA / File History / Deeds Registration / CofO) and the duplicate flag,
+  // so neither path can add a record blind to what the file already holds.
 
   const closeAddRecordMenu = () => {
-    const menu = document.getElementById('add-record-menu');
-    if (menu) menu.classList.add('hidden');
-    const sources = document.getElementById('add-record-existing-sources');
-    if (sources) sources.classList.add('hidden');
-    const chevron = document.getElementById('add-record-existing-chevron');
-    if (chevron) chevron.classList.remove('rotate-90');
-  };
-
-  document.addEventListener('click', (e) => {
-    const trigger = e.target.closest('#add-record-smart-btn');
-    const menu = document.getElementById('add-record-menu');
-    if (!menu) return;
-
-    if (trigger) {
-      e.preventDefault();
-      e.stopPropagation();
-      const wasHidden = menu.classList.contains('hidden');
-      closeAddRecordMenu();
-      if (wasHidden) menu.classList.remove('hidden');
-      return;
-    }
-
-    const existingToggle = e.target.closest('#add-record-existing-toggle');
-    if (existingToggle) {
-      e.preventDefault();
-      const sources = document.getElementById('add-record-existing-sources');
-      const chevron = document.getElementById('add-record-existing-chevron');
-      if (sources) sources.classList.toggle('hidden');
-      if (chevron) chevron.classList.toggle('rotate-90');
-      return;
-    }
-
-    const sourceBtn = e.target.closest('.ls-add-existing-btn');
-    if (sourceBtn) {
-      e.preventDefault();
-      closeAddRecordMenu();
-      openExistingRecordsPicker(sourceBtn.getAttribute('data-source') || 'pra');
-      return;
-    }
-
-    // "New" closes the menu; the capture-phase handler opens the dialog.
-    if (e.target.closest('#add-record-new-btn')) {
-      closeAddRecordMenu();
-      return;
-    }
-
-    // Any click outside the menu closes it.
-    if (!e.target.closest('#add-record-wrapper')) closeAddRecordMenu();
-  });
-
-  // ── "Existing" record picker ─────────────────────────────────────────────────
-
-  const lsExistingModal = () => document.getElementById('ls-existing-records-modal');
-  let _lsExistingSource = 'pra';
-
-  const closeExistingRecordsPicker = () => {
-    const modal = lsExistingModal();
+    const modal = document.getElementById('add-record-choice-modal');
     if (modal) modal.classList.add('hidden');
   };
 
-  const updateExistingSelectionCount = () => {
-    const boxes = document.querySelectorAll('#ls-existing-records-body .ls-existing-row-checkbox:checked');
-    const countEl = document.getElementById('ls-existing-selected-count');
-    if (countEl) countEl.textContent = boxes.length;
-    const attachBtn = document.getElementById('ls-existing-attach');
-    if (attachBtn) attachBtn.disabled = boxes.length === 0;
-  };
-
-  // Uids of everything currently rendered in the Timeline, so those rows can be
-  // locked in the picker. getRecordUid() already yields "<table>::<id>".
-  const lsTimelineUidSet = () => {
-    const set = new Set();
-    (window._timelineTransactions || []).forEach((item) => {
-      if (item && item.id !== undefined && item.id !== null) set.add(getRecordUid(item));
-    });
-    return set;
-  };
-
-  const renderExistingRecords = (records) => {
-    const body = document.getElementById('ls-existing-records-body');
-    const wrap = document.getElementById('ls-existing-table-wrap');
-    const empty = document.getElementById('ls-existing-empty');
-    if (!body) return;
-
-    body.innerHTML = '';
-
-    if (!records || records.length === 0) {
-      if (wrap) wrap.classList.add('hidden');
-      if (empty) empty.classList.remove('hidden');
-      updateExistingSelectionCount();
-      return;
-    }
-
-    if (empty) empty.classList.add('hidden');
-    if (wrap) wrap.classList.remove('hidden');
-
-    const inTimeline = lsTimelineUidSet();
-
-    records.forEach((item, index) => {
-      const uid = getRecordUid(item);
-      const locked = inTimeline.has(uid);
-
-      const fileNo = getMappedValue(item, 'fileNumber') || '-';
-      const transactionType = toProperCase(getMappedValue(item, 'transactionType')) || '-';
-      const party1 = toProperCase(item.party_1 || '-');
-      const party2 = toProperCase(item.party_2 || '-');
-      const regParticulars = formatRegParticulars(
-        getMappedValue(item, 'serialNo'),
-        getMappedValue(item, 'pageNo'),
-        getMappedValue(item, 'volumeNo')
-      );
-      const date = getMappedValue(item, 'date') || '-';
-      const propId = item.prop_id || '—';
-
-      const tr = document.createElement('tr');
-      tr.className = 'border-b border-gray-100 ' + (locked ? 'opacity-50 bg-gray-50' : 'hover:bg-blue-50/40');
-      tr.innerHTML = `
-        <td class="py-2">
-          <input type="checkbox" class="ls-existing-row-checkbox"
-                 data-id="${item.id}" data-table="${_lsExistingSource}"
-                 ${locked ? 'disabled' : 'checked'}>
-        </td>
-        <td class="py-2 text-gray-500">${index + 1}</td>
-        <td class="py-2 whitespace-nowrap text-gray-600">${fileNo}</td>
-        <td class="py-2">${transactionType}</td>
-        <td class="py-2">${party1}</td>
-        <td class="py-2">${party2}</td>
-        <td class="py-2">${regParticulars}</td>
-        <td class="py-2">${date}</td>
-        <td class="py-2 font-mono text-[11px] text-gray-500">${propId}</td>
-        <td class="py-2">
-          ${locked
-            ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-200 text-gray-600">In Timeline</span>'
-            : '<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700">Not in Timeline</span>'}
-        </td>
-      `;
-      body.appendChild(tr);
-    });
-
-    updateExistingSelectionCount();
-  };
-
-  const openExistingRecordsPicker = async (source) => {
-    _lsExistingSource = source;
-
-    const modal = lsExistingModal();
+  document.addEventListener('click', (e) => {
+    const modal = document.getElementById('add-record-choice-modal');
     if (!modal) return;
 
-    const fileNumber = (window.__lsLastSearchedFileNumber || window._currentFileNumber || '').toString().trim();
-    if (!fileNumber) {
-      await swalAlert('Search for a file first.', 'warning', 'No File Selected');
+    if (e.target.closest('#add-record-smart-btn')) {
+      e.preventDefault();
+      modal.classList.remove('hidden');
       return;
     }
 
-    const labelEl = document.getElementById('ls-existing-source-label');
-    if (labelEl) labelEl.textContent = lsExistingSourceLabels[source] || source;
-    const fileEl = document.getElementById('ls-existing-file-display');
-    if (fileEl) fileEl.textContent = fileNumber;
-    const propIdEl = document.getElementById('ls-existing-target-propid');
-    if (propIdEl) propIdEl.textContent = window._currentPropId || '—';
-
-    const loading = document.getElementById('ls-existing-loading');
-    const wrap = document.getElementById('ls-existing-table-wrap');
-    const empty = document.getElementById('ls-existing-empty');
-    const errorEl = document.getElementById('ls-existing-error');
-    const selectAll = document.getElementById('ls-existing-select-all');
-    if (selectAll) selectAll.checked = false;
-    if (errorEl) errorEl.classList.add('hidden');
-    if (wrap) wrap.classList.add('hidden');
-    if (empty) empty.classList.add('hidden');
-    if (loading) loading.classList.remove('hidden');
-
-    modal.classList.remove('hidden');
-
-    try {
-      const res = await fetch('{{ route("legalsearch.existingRecords") }}', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken, 'Accept': 'application/json' },
-        body: JSON.stringify({ file_number: fileNumber, source }),
-      });
-      const data = await res.json();
-      if (loading) loading.classList.add('hidden');
-
-      if (!res.ok || !data.success) {
-        if (errorEl) {
-          errorEl.textContent = data.message || 'Could not load records.';
-          errorEl.classList.remove('hidden');
-        }
-        return;
-      }
-
-      renderExistingRecords(data.records || []);
-    } catch (err) {
-      console.error('Existing records load failed:', err);
-      if (loading) loading.classList.add('hidden');
-      if (errorEl) {
-        errorEl.textContent = 'Network error while loading records.';
-        errorEl.classList.remove('hidden');
-      }
-    }
-  };
-
-  document.addEventListener('click', (e) => {
-    if (e.target.closest('#ls-existing-close') || e.target.closest('#ls-existing-cancel') || e.target.closest('#ls-existing-records-backdrop')) {
-      closeExistingRecordsPicker();
+    if (e.target.closest('#add-record-choice-close')
+      || e.target.closest('#add-record-choice-cancel')
+      || e.target.closest('#add-record-choice-backdrop')) {
+      closeAddRecordMenu();
       return;
     }
 
-    if (e.target.closest('#ls-existing-select-all')) {
-      const checked = document.getElementById('ls-existing-select-all').checked;
-      document.querySelectorAll('#ls-existing-records-body .ls-existing-row-checkbox:not(:disabled)')
-        .forEach(cb => { cb.checked = checked; });
-      updateExistingSelectionCount();
-      return;
-    }
-
-    if (e.target.closest('.ls-existing-row-checkbox')) {
-      updateExistingSelectionCount();
-    }
-  });
-
-  // Attach: match the selected records to this property's prop_id, then let the
-  // silent refresh re-derive the Timeline, tab counts and report from the server.
-  document.addEventListener('click', async (e) => {
-    if (!e.target.closest('#ls-existing-attach')) return;
-
-    const propId = (window._currentPropId || '').toString().trim();
-    if (!propId) {
-      await swalAlert('This file has no PropID, so records cannot be attached to it. Index or allocate a PropID for the file first.', 'error', 'No PropID');
-      return;
-    }
-
-    const ids = Array.from(document.querySelectorAll('#ls-existing-records-body .ls-existing-row-checkbox:checked'))
-      .map(cb => parseInt(cb.dataset.id, 10))
-      .filter(id => !Number.isNaN(id));
-
-    if (ids.length === 0) {
-      await swalAlert('Select at least one record to attach.', 'warning', 'No Selection');
-      return;
-    }
-
-    const label = lsExistingSourceLabels[_lsExistingSource] || _lsExistingSource;
-    const proceed = await swalConfirm(
-      `Attach ${ids.length} ${label} record(s) to PropID ${propId}?`,
-      'Confirm Attach',
-      'question'
-    );
-    if (!proceed) return;
-
-    const attachBtn = document.getElementById('ls-existing-attach');
-    if (attachBtn) { attachBtn.disabled = true; attachBtn.textContent = 'Attaching…'; }
-
-    try {
-      const resp = await cleanupAjax('/legal_search/match', {
-        table: _lsExistingSource,
-        ids,
-        prop_id: propId,
-      });
-
-      if (attachBtn) { attachBtn.disabled = false; attachBtn.textContent = 'Attach Selected'; }
-
-      if (!resp || resp.success !== true) {
-        await swalAlert((resp && resp.message) || 'Could not attach the selected records.', 'error', 'Attach Failed');
-        return;
-      }
-
-      closeExistingRecordsPicker();
-      await swalAlert(resp.message || `${ids.length} record(s) attached.`, 'success', 'Attached');
-
-      const refreshBtn = document.getElementById('refresh-history-btn');
-      if (refreshBtn) refreshBtn.click();
-    } catch (err) {
-      console.error('Attach existing records failed:', err);
-      if (attachBtn) { attachBtn.disabled = false; attachBtn.textContent = 'Attach Selected'; }
-      await swalAlert('Network error while attaching records.', 'error', 'Attach Failed');
+    // Either option dismisses the chooser; the capture-phase handler opens the card.
+    if (e.target.closest('.add-record-option')) {
+      closeAddRecordMenu();
     }
   });
 
   // Close modal when pressing Escape key
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      const existingModal = lsExistingModal();
-      if (existingModal && !existingModal.classList.contains('hidden')) {
-        closeExistingRecordsPicker();
-        return;
-      }
       closeAddRecordMenu();
       if (searchModal) {
         searchModal.classList.add('hidden');

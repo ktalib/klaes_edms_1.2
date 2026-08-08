@@ -5,11 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SLTR Recommendation - {{ $recommendation->sltr_number ?? 'N/A' }}</title>
     @php
-        $letterheadPath = resource_path('views/sltr_recommendations/templates/letterheader.jpeg');
-        $letterheadBase64 = file_exists($letterheadPath)
-            ? 'data:image/jpeg;base64,' . base64_encode(file_get_contents($letterheadPath))
-            : null;
-
         $securityCode = app(\App\Services\SecurityCodeService::class)->getOrGenerateForDocument(
             (string) ($recommendation->sltr_number ?? ($recommendation->id ?? '')),
             (int) $recommendation->id,
@@ -35,12 +30,7 @@
 
         .a4-page {
             background-color: white;
-            @if($letterheadBase64)
-            /* background-image: url('{{ $letterheadBase64 }}'); */
-            background-size: 210mm 297mm;
-            background-position: top left;
-            background-repeat: no-repeat;
-            @endif
+            position: relative; /* anchors the CSS letterhead and the serial box */
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
             color-adjust: exact;
@@ -54,9 +44,11 @@
 
         .main-container {
             flex: 1;
-            /* Keeps content clear of the pre-printed letterhead: the crest/rule
-               sits ~42mm from the top and the vertical rule ~34mm from the left. */
+            /* Keeps content clear of the letterhead drawn by
+               partials/ministry_letterhead: top rule at 38mm, vertical rule at 30mm. */
             padding: 42mm 10mm 10px 34mm;
+            position: relative;
+            z-index: 1;
             display: flex;
             flex-direction: column;
         }
@@ -154,24 +146,66 @@
             object-fit: contain;
         }
 
+        /* The acknowledgement partial emits one .ack-page per copy (File Copy,
+           then Original), each already carrying page-break-before. The styling
+           therefore goes on the individual sheets, not the wrapper, or the two
+           copies would share a single card. Mirrors .a4-page on screen but stays
+           in normal flow and grows with its content. */
+        .ack-sheet-wrap {
+            width: 210mm;
+            margin: 0 auto;
+        }
+        .ack-sheet-wrap .ack-page {
+            background-color: white;
+            margin: 10px auto;
+            padding: 15mm 14mm;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+
+        /* The partial anchors its footer logo to bottom/right:0. An absolutely
+           positioned child is placed against the PADDING box, so those offsets
+           put the logo hard against the sheet edge — and with @page margin:0
+           there is no printer margin left, so it prints sliced. Inset it by the
+           sheet padding instead. */
+        .ack-sheet-wrap .ack-page .footer {
+            right: 14mm;
+            bottom: 8mm; /* sits low on the sheet but clear of the unprintable edge */
+        }
+
         /* Printing logic to force one page */
         @media print {
             body { background: none; }
-            .a4-page { 
-                margin: 0; 
-                box-shadow: none; 
+            .a4-page {
+                margin: 0;
+                box-shadow: none;
                 width: 100%;
                 height: 100%;
+            }
+            .ack-sheet-wrap {
+                width: 100%;
+                margin: 0;
+            }
+            .ack-sheet-wrap .ack-page {
+                margin: 0;
+                box-shadow: none;
+                padding: 14mm 12mm;
+            }
+            .ack-sheet-wrap .ack-page .footer {
+                right: 12mm;
+                bottom: 8mm;
             }
             @page { size: A4; margin: 0; }
         }
 
         .serial-box {
             position: absolute;
-            top: 12mm;
+            /* 4mm is about as close to the sheet edge as a laser printer will
+               render; the rest of the clearance from the letterhead title comes
+               from the tightened padding below. */
+            top: 4mm;
             right: 12mm;
             border: 1px solid var(--primary-green);
-            padding: 4px 8px;
+            padding: 3px 8px;
             min-width: 110px;
             font-size: 8pt;
             background: white;
@@ -182,8 +216,8 @@
             font-weight: bold;
             text-transform: uppercase;
             border-bottom: 1px solid var(--primary-green);
-            padding-bottom: 3px;
-            margin-bottom: 4px;
+            padding-bottom: 2px;
+            margin-bottom: 3px;
             font-size: 8pt;
             color: var(--primary-green);
         }
@@ -222,6 +256,8 @@
 <body>
 
 <div class="a4-page">
+    @include('partials.ministry_letterhead', ['lhSpine' => 'Systematic Land Titling and Registration'])
+
     <div class="serial-box">
         <div class="serial-label">Serial No:</div>
         <div class="serial-code-wrap">
@@ -318,6 +354,21 @@
     </div>
 </div>
 
-<script>setTimeout(()=>window.print(),800);</script>
+{{-- Collection acknowledgement, one sheet per copy (File Copy, then Original).
+     `.a4-page` forces height 297mm with overflow:hidden and is a flex row, none
+     of which suits the ack sheet, so each gets its own sheet wrapper. @page
+     margin is 0 here, so the wrapper supplies the print margins the sheet's own
+     CSS assumes. --}}
+<div class="ack-sheet-wrap">
+    @include('sltr_recommendations.templates._ack_sheet')
+</div>
+
+{{-- Wait for the letterhead crest, the footer logos and the remote QR image
+     before opening the dialog, otherwise they print blank. --}}
+<script>
+    window.addEventListener('load', function () {
+        setTimeout(function () { window.print(); }, 400);
+    });
+</script>
 </body>
 </html>

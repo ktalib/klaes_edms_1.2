@@ -2298,6 +2298,12 @@
             currentUrl.pathname.includes('/lands-one-stop-shop/') ||
             currentUrl.searchParams.get('source') === 'lands-one-stop-shop';
 
+        // The OSS posts to this same endpoint, so the resulting mls_file_no row is
+        // otherwise indistinguishable from one raised here. Report the origin so the
+        // server can stamp system_sub_type and keep OSS files out of the MLS file
+        // list — see MlsFileNoController::resolveSystemSubType().
+        formData.set('oss_commission', isOssCommissioningFlow ? '1' : '0');
+
         if (isOssCommissioningFlow && sourceCaptureId === '' && !hasPreSyncedPraContext) {
             formData.set('require_op_source', '0');
             if (alpineData) {
@@ -2529,9 +2535,27 @@
                                                 ? `Lineage established via Parent Property ID linkage${data.data.prop_id ? `: <b class="font-black text-${summaryColor}-900 underline decoration-2 underline-offset-2">${data.data.prop_id}</b>` : ''}.`
                                                 : `New Property ID generated${data.data.prop_id ? `: <b class="font-black text-${summaryColor}-900 underline decoration-2 underline-offset-2">${data.data.prop_id}</b>` : ''}.`}</span>
                                         </li>
+                                        {{-- Scan folder created at commissioning (EdmsScanUploadFolderService),
+                                             so scanning can start before the file is ever indexed. --}}
+                                        ${data.edms_folder && data.edms_folder.path ? `
+                                        <li class="flex items-start gap-2.5">
+                                            <div class="mt-1 w-1 h-1 rounded-full bg-${summaryColor}-400"></div>
+                                            <span>${data.edms_folder.existed ? 'Scan folder already present' : 'EDMS scan folder created'}:
+                                                <b class="font-black text-${summaryColor}-900 break-all">${data.edms_folder.path}</b></span>
+                                        </li>` : ''}
                                     </ul>
                                 </div>
                             </div>
+
+                            {{-- Which tables the commissioning actually wrote to, rendered by the
+                                 shared record-summary-card.js so this card matches the one shown
+                                 after file indexing and after ST commissioning. --}}
+                            ${(typeof renderRecordSummaryGroups === 'function' && data.storage_summary)
+                                ? `<div class="mb-5 p-4 bg-slate-50/70 border border-slate-200 rounded-3xl">
+                                       <span class="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">WHERE THE RECORD WENT</span>
+                                       ${renderRecordSummaryGroups(data.storage_summary)}
+                                   </div>`
+                                : ''}
 
                             <!-- Generated File -->
                             <div class="mb-5">
@@ -3013,6 +3037,9 @@
             customer_type: alpineData.customerType,
             purpose_id: alpineData.purpose,
             sub_source: alpineData.subSource || '',
+            // Origin marker — see the matching set in the single-file submit handler.
+            oss_commission: (window.location.pathname.includes('/lands-one-stop-shop/')
+                || new URL(window.location.href).searchParams.get('source') === 'lands-one-stop-shop') ? 1 : 0,
             allocated_by_filter: alpineData.allocatedByFilter || '',
             default_allocation_type: alpineData.defaultAllocationType || null,
             // Plot management app IDs — critical for decommissioning and lineage
@@ -8785,6 +8812,12 @@
      * Batch Capture OP stepper; Single leaves Batch Mode off.
      */
     function promptOpBatchOrSingle(alpineData, normalized, opType) {
+        // Third way out, offered as a footer link because the three buttons are already spoken
+        // for. Both paths above end in commissioning a NEW file number; this one is for a file
+        // that was already commissioned without an OP, so it skips commissioning entirely and
+        // goes straight to the Capture OP card. Only offered where that card is on the page.
+        const hasCommissionedFlow = typeof window.openCaptureOpForCommissionedFile === 'function';
+
         Swal.fire({
             title: 'Occupancy Permit (OP)',
             html: `<p class="text-sm text-gray-600">Are you capturing a <strong>single</strong> OP, or a <strong>batch</strong> of OPs for ${opType}?</p>`,
@@ -8796,6 +8829,29 @@
             cancelButtonText: 'Cancel',
             confirmButtonColor: '#2563eb',
             denyButtonColor: '#059669',
+            footer: hasCommissionedFlow
+                ? '<button type="button" id="opAlreadyCommissionedLink" class="text-sm text-blue-600 hover:text-blue-800 hover:underline font-medium">'
+                    + 'The file number is already commissioned — capture the OP for it'
+                    + '</button>'
+                : '',
+            didOpen: () => {
+                const link = document.getElementById('opAlreadyCommissionedLink');
+                if (!link) return;
+                link.addEventListener('click', () => {
+                    // Closing resolves the promise as a dismissal, which resets the OP type
+                    // selection below — correct here, since we are not commissioning.
+                    Swal.close();
+                    // The commission form is irrelevant to this flow; don't leave it half-filled
+                    // behind the card.
+                    if (typeof window.closeCommissionFileNoModal === 'function') {
+                        window.closeCommissionFileNoModal();
+                    } else {
+                        const m = document.getElementById('generateModal');
+                        if (m) m.classList.add('hidden');
+                    }
+                    window.openCaptureOpForCommissionedFile();
+                });
+            },
         }).then((result) => {
             if (result.isConfirmed) {
                 // Batch: offer a new batch or resuming an uncommissioned one. The quantity is

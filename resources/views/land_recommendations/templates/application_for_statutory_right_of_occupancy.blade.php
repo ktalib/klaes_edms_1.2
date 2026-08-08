@@ -100,7 +100,7 @@
     </div>
 
     <div class="para">
-      The term of the grant is <strong>{{ $record->term ?? '99' }} years</strong> for <strong>{{ $record->purpose_of_clause ?? 'Commercial/Industrial purposes' }}</strong>.
+      The term of the grant is <strong>{{ $record->term ?? '99' }} years</strong> for <strong>{{ $record->landuse_purpose ?: 'Commercial/Industrial purposes' }}</strong>.
     </div>
 
     <div class="para">

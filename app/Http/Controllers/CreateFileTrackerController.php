@@ -124,7 +124,9 @@ class CreateFileTrackerController extends Controller
             }
         }
 
-        $requesterDirectors = \App\Models\RequesterDirector::orderBy('first_name')->get();
+        // Department directors ("DCIV Director", "Land Director", …) plus any
+        // named individuals added through "Add New Director".
+        $requesterDirectors = app(\App\Services\RequesterDirectorService::class)->optionsForDropdown();
 
         return view('create_file_tracker_page.index', compact(
             'PageTitle', 'PageDescription', 'registries', 'departments', 'offices',
@@ -314,24 +316,14 @@ class CreateFileTrackerController extends Controller
                 ? \Carbon\Carbon::parse($request->deadline)->setTime(23, 59, 59)
                 : ($timelineDays !== null ? now()->addDays($timelineDays)->setTime(23, 59, 59) : null);
 
-            $requesterDirectorId = $request->requester_director_id;
-            $requesterDirectorName = null;
-            if ($requesterDirectorId) {
-                $rd = \App\Models\RequesterDirector::find($requesterDirectorId);
-                $requesterDirectorName = $rd ? $rd->full_name : null;
-            } elseif ($request->filled('requester_director_first_name') && $request->filled('requester_director_last_name')) {
-                $firstName = trim($request->requester_director_first_name);
-                $lastName = trim($request->requester_director_last_name);
-                $fullName = $firstName . ' ' . $lastName;
-                $rd = \App\Models\RequesterDirector::create([
-                    'department' => $request->department,
-                    'first_name' => $firstName,
-                    'last_name' => $lastName,
-                    'full_name' => $fullName
-                ]);
-                $requesterDirectorId = $rd->id;
-                $requesterDirectorName = $rd->full_name;
-            }
+            $rd = app(\App\Services\RequesterDirectorService::class)->resolve(
+                $request->filled('requester_director_id') ? (int) $request->requester_director_id : null,
+                $request->requester_director_first_name,
+                $request->requester_director_last_name,
+                $request->department
+            );
+            $requesterDirectorId = $rd?->id;
+            $requesterDirectorName = $rd?->full_name;
 
             // Create file tracker
             $tracker = FileTracker::create([
@@ -1809,7 +1801,7 @@ HTML;
         // backfilled straight into the Create File Tracker form on "Log File".
         $requestPurposes = RequestPurpose::active()->orderBy('name')->get(['id', 'name', 'turnaround_days']);
 
-        $requesterDirectors = \App\Models\RequesterDirector::orderBy('first_name')->get();
+        $requesterDirectors = app(\App\Services\RequesterDirectorService::class)->optionsForDropdown();
 
         return view('create_file_tracker_page.quick_search', compact(
             'PageTitle', 'PageDescription', 'receivingOfficers', 'offices', 'departments', 'departmentIds', 'registries', 'requestPurposes', 'requesterDirectors'

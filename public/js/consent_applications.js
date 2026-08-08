@@ -242,6 +242,52 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    // The assignee must be a DIFFERENT person from both the applicant and the party
+    // who currently holds the title. Either match means the transaction is already
+    // done (or is a no-op), so flag it the moment the name is typed rather than
+    // letting the user complete four wizard steps and fail at submit.
+    //
+    // setCustomValidity() is what does the blocking: it makes the native
+    // checkValidity() used by both validateWizardStep() and the submit handler fail,
+    // so Next and Create are both stopped without any extra wiring.
+    function checkAssigneeNameConflict() {
+        const partyInput = document.querySelector('input[name="party_name"]');
+        if (!partyInput) return true;
+
+        const warning = document.getElementById('party-name-duplicate-warning');
+        const warningText = document.getElementById('party-name-duplicate-warning-text');
+        const norm = (selector) => {
+            const el = document.querySelector(selector);
+            return el ? (el.value || '').trim().toUpperCase() : '';
+        };
+
+        const assignee = norm('input[name="party_name"]');
+        const applicant = norm('input[name="applicant_name"]');
+        const holder = norm('input[name="original_holder_name"]');
+        const roleLabel = (document.getElementById('party-role-label')?.textContent || 'Assignee')
+            .replace(/\s*Details\s*$/i, '').trim() || 'Assignee';
+
+        let message = '';
+        if (assignee && applicant && assignee === applicant) {
+            message = `The ${roleLabel} cannot be the same person as the Applicant. A property cannot be transferred to its own holder.`;
+        } else if (assignee && holder && assignee === holder) {
+            message = `${partyInput.value.trim()} is already the registered holder of this file, so this transaction has already been registered.`;
+        }
+
+        partyInput.setCustomValidity(message);
+        partyInput.classList.toggle('border-red-400', !!message);
+        partyInput.classList.toggle('bg-red-50', !!message);
+        partyInput.classList.toggle('border-slate-200', !message);
+
+        if (warning && warningText) {
+            warningText.textContent = message;
+            warning.classList.toggle('hidden', !message);
+            if (message && window.lucide) window.lucide.createIcons();
+        }
+
+        return !message;
+    }
+
     function filterRightOfOccupancyPurposeOptions() {
         if (!rightOfOccupancyLandUseSelect || !rightOfOccupancyPurposeSelect) {
             return;
@@ -460,12 +506,20 @@ document.addEventListener('DOMContentLoaded', function () {
         return result.data;
     }
 
-    function populateFromApplicationRecord(appData) {
+    // asEdit=false means the user picked a file that ALREADY has a consent while
+    // capturing a NEW one (the next assignment, to a different owner). Only
+    // file/property-level facts may carry over. Anything belonging to the previous
+    // transaction — the parties, the money, the applicant's identity, the tracking
+    // number, and above all the record id — must not, or the new consent silently
+    // becomes an edit of the old one and 403s when that one has been printed.
+    function populateFromApplicationRecord(appData, { asEdit = true } = {}) {
         if (!appData) {
             return;
         }
 
-        applicationIdInput.value = appData.id || '';
+        if (asEdit) {
+            applicationIdInput.value = appData.id || '';
+        }
         filenoInput.value = appData.file_number || filenoInput.value;
 
         const setInputValue = (name, value) => {
@@ -473,26 +527,30 @@ document.addEventListener('DOMContentLoaded', function () {
             if (input) input.value = value || '';
         };
 
-        setInputValue('applicant_name', appData.applicant_name);
-        setInputValue('party_name', appData.party_name);
-        setInputValue('consideration', appData.consideration);
-        setInputValue('consideration_words', appData.consideration_words);
+        if (asEdit) {
+            setInputValue('applicant_name', appData.applicant_name);
+            setInputValue('party_name', appData.party_name);
+            setInputValue('consideration', appData.consideration);
+            setInputValue('consideration_words', appData.consideration_words);
+        }
         setRightOfOccupancyNumber(appData.right_of_occupancy_number || appData.file_number || '');
         updateApplicantNamePreview();
         setInputValue('right_of_occupancy_landuse', appData.right_of_occupancy_landuse);
         filterRightOfOccupancyPurposeOptions();
         setInputValue('purpose_of_right_of_occupancy', appData.purpose_of_right_of_occupancy);
-        setInputValue('original_holder_name', appData.original_holder_name);
-        setInputValue('correspondence_address', appData.correspondence_address);
-        setInputValue('postal_address_gsm', appData.postal_address_gsm);
-        setInputValue('nationality_state_of_origin', appData.nationality_state_of_origin);
-        if (appData.nationality || appData.state_of_origin) {
-            setInputValue('nationality', appData.nationality);
-            setInputValue('state_of_origin', appData.state_of_origin);
-        } else if (appData.nationality_state_of_origin) {
-            const parsed = splitNationalityState(appData.nationality_state_of_origin);
-            setInputValue('nationality', parsed.nationality);
-            setInputValue('state_of_origin', parsed.stateOfOrigin);
+        if (asEdit) {
+            setInputValue('original_holder_name', appData.original_holder_name);
+            setInputValue('correspondence_address', appData.correspondence_address);
+            setInputValue('postal_address_gsm', appData.postal_address_gsm);
+            setInputValue('nationality_state_of_origin', appData.nationality_state_of_origin);
+            if (appData.nationality || appData.state_of_origin) {
+                setInputValue('nationality', appData.nationality);
+                setInputValue('state_of_origin', appData.state_of_origin);
+            } else if (appData.nationality_state_of_origin) {
+                const parsed = splitNationalityState(appData.nationality_state_of_origin);
+                setInputValue('nationality', parsed.nationality);
+                setInputValue('state_of_origin', parsed.stateOfOrigin);
+            }
         }
         setInputValue('stage_of_development', appData.stage_of_development);
         setDistrictValue(
@@ -503,65 +561,74 @@ document.addEventListener('DOMContentLoaded', function () {
         if (dateOfGrantInput) {
             dateOfGrantInput.value = appData.date_of_grant ? String(appData.date_of_grant).split(' ')[0] : '';
         }
-        setInputValue('special_mortgage_terms', appData.special_mortgage_terms);
+        if (asEdit) {
+            setInputValue('special_mortgage_terms', appData.special_mortgage_terms);
 
-        if (letterDateInput) {
-            const letterDate = appData.application_date ? appData.application_date.split(' ')[0] : '';
-            letterDateInput.value = letterDate;
-        }
-        if (applicationDateInput) {
-            const applicationDate = appData.application_submitted_date ? appData.application_submitted_date.split(' ')[0] : '';
-            applicationDateInput.value = applicationDate;
-        }
+            if (letterDateInput) {
+                const letterDate = appData.application_date ? appData.application_date.split(' ')[0] : '';
+                letterDateInput.value = letterDate;
+            }
+            if (applicationDateInput) {
+                const applicationDate = appData.application_submitted_date ? appData.application_submitted_date.split(' ')[0] : '';
+                applicationDateInput.value = applicationDate;
+            }
 
-        if (consentTypeSelect && appData.consent_type) {
-            consentTypeSelect.value = appData.consent_type;
-            consentTypeSelect.dispatchEvent(new Event('change'));
-        }
+            if (consentTypeSelect && appData.consent_type) {
+                consentTypeSelect.value = appData.consent_type;
+                consentTypeSelect.dispatchEvent(new Event('change'));
+            }
 
-        parseAndPopulateAddress(appData.applicant_address, 'applicant');
-        parseAndPopulateAddress(appData.party_address, 'party');
+            parseAndPopulateAddress(appData.applicant_address, 'applicant');
+            parseAndPopulateAddress(appData.party_address, 'party');
+        }
         parseAndPopulateAddress(appData.property_description, 'property');
-        parseAndPopulateAddress(appData.correspondence_address || appData.applicant_address, 'correspondence');
-        syncApplicantWithCorrespondence();
+        if (asEdit) {
+            parseAndPopulateAddress(appData.correspondence_address || appData.applicant_address, 'correspondence');
+            syncApplicantWithCorrespondence();
+        }
 
-        if (document.getElementById('applicant_address_hidden')) {
+        if (asEdit && document.getElementById('applicant_address_hidden')) {
             document.getElementById('applicant_address_hidden').value = appData.applicant_address || '';
         }
-        if (document.getElementById('party_address_hidden')) {
+        if (asEdit && document.getElementById('party_address_hidden')) {
             document.getElementById('party_address_hidden').value = appData.party_address || '';
         }
         if (document.getElementById('property_address_hidden')) {
             document.getElementById('property_address_hidden').value = appData.property_description || '';
         }
-        if (document.getElementById('correspondence_address_hidden')) {
+        if (asEdit && document.getElementById('correspondence_address_hidden')) {
             document.getElementById('correspondence_address_hidden').value = appData.correspondence_address || appData.applicant_address || '';
         }
 
-        const applicantPreview = document.getElementById('applicant_address_preview');
-        const partyPreview = document.getElementById('party_address_preview');
         const propertyPreview = document.getElementById('property_address_preview');
-        const correspondencePreview = document.getElementById('correspondence_address_preview');
-        if (applicantPreview) applicantPreview.textContent = appData.applicant_address || 'No address built yet...';
-        if (partyPreview) partyPreview.textContent = appData.party_address || 'No address built yet...';
         if (propertyPreview) propertyPreview.textContent = appData.property_description || 'No description built yet...';
-        if (correspondencePreview) correspondencePreview.textContent = document.getElementById('correspondence_address_hidden')?.value || 'No address built yet...';
+        if (asEdit) {
+            const applicantPreview = document.getElementById('applicant_address_preview');
+            const partyPreview = document.getElementById('party_address_preview');
+            const correspondencePreview = document.getElementById('correspondence_address_preview');
+            if (applicantPreview) applicantPreview.textContent = appData.applicant_address || 'No address built yet...';
+            if (partyPreview) partyPreview.textContent = appData.party_address || 'No address built yet...';
+            if (correspondencePreview) correspondencePreview.textContent = document.getElementById('correspondence_address_hidden')?.value || 'No address built yet...';
+        }
 
         populateAdditionalProperties(appData.additional_properties);
 
-        // These were previously restored only by the Edit button, so loading an
-        // existing application by file number silently dropped them on save.
-        setTrackingNo(appData.application_tracking_no);
-        populateAdditionalParties(appData.additional_parties);
-        if (typeof populateAdditionalApplicants === 'function') {
-            populateAdditionalApplicants(appData.additional_applicants);
-        }
-        if (applicationTypeInput && appData.application_type) {
-            applicationTypeInput.value = appData.application_type;
-            currentEditingAppType = appData.application_type;
+        if (asEdit) {
+            // These were previously restored only by the Edit button, so loading an
+            // existing application by file number silently dropped them on save.
+            setTrackingNo(appData.application_tracking_no);
+            populateAdditionalParties(appData.additional_parties);
+            if (typeof populateAdditionalApplicants === 'function') {
+                populateAdditionalApplicants(appData.additional_applicants);
+            }
+            if (applicationTypeInput && appData.application_type) {
+                applicationTypeInput.value = appData.application_type;
+                currentEditingAppType = appData.application_type;
+            }
         }
 
         setInteractiveFormState(true);
+        checkAssigneeNameConflict();
 
         if (selectionIndicator) selectionIndicator.classList.remove('hidden');
     }
@@ -631,6 +698,9 @@ document.addEventListener('DOMContentLoaded', function () {
             form.reset();
             applicationIdInput.value = '';
             currentEditingAppType = null; // Reset edit mode tracking
+            // form.reset() restores values but not setCustomValidity(), so a stale
+            // conflict would keep the next application unsubmittable.
+            checkAssigneeNameConflict();
 
             // Clear address components manually
             document.querySelectorAll('.address-component-applicant').forEach(el => el.value = '');
@@ -840,6 +910,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 applicationTypeInput.value = appData.application_type;
             }
 
+            checkAssigneeNameConflict();
+
             if (selectionIndicator) selectionIndicator.classList.remove('hidden');
         }
     });
@@ -909,15 +981,34 @@ document.addEventListener('DOMContentLoaded', function () {
                             }
 
                             try {
+                                // A file can be assigned again and again over its life, so an
+                                // existing consent on it is a PREVIOUS transaction, not this one.
+                                // Carry over only its file/property facts and never its id —
+                                // adopting the id turned every new consent into an edit of the
+                                // last one. Use the Edit button in the list to edit deliberately.
                                 const existingApplication = await fetchApplicationByFileNumber(result.fileNumber);
                                 if (existingApplication) {
-                                    populateFromApplicationRecord(existingApplication);
-                                } else {
-                                    applicationIdInput.value = '';
+                                    populateFromApplicationRecord(existingApplication, { asEdit: false });
                                 }
+                                applicationIdInput.value = '';
                             } catch (error) {
                                 console.error('Lookup error:', error);
                             }
+
+                            // Original Holder Name belongs to the FILE (its registered title),
+                            // not to any earlier application on it. Assert it AFTER the lookup
+                            // above, which replays a previous application's whole saved form —
+                            // on a brand-new consent that was carrying the old applicant's name
+                            // onto a file whose title is someone else entirely.
+                            const fileTitle = result.file_title || result.file_name
+                                || (result.record || {}).file_name || (result.record || {}).file_title || '';
+                            const originalHolderInput = document.querySelector('input[name="original_holder_name"]');
+                            if (originalHolderInput && fileTitle) {
+                                originalHolderInput.value = fileTitle;
+                            }
+                            // Assigning .value fires no input event, so re-run the conflict
+                            // check by hand now that the holder name is known.
+                            checkAssigneeNameConflict();
                         }
                     }
                 });
@@ -1391,6 +1482,15 @@ document.addEventListener('DOMContentLoaded', function () {
         applicantNameInputLive.addEventListener('input', updateApplicantNamePreview);
         applicantNameInputLive.addEventListener('change', updateApplicantNamePreview);
     }
+
+    // Live assignee-conflict detection: any of the three names changing can create
+    // or clear the conflict, so all three drive the same check.
+    ['party_name', 'applicant_name', 'original_holder_name'].forEach(fieldName => {
+        const field = document.querySelector(`input[name="${fieldName}"]`);
+        if (!field) return;
+        field.addEventListener('input', checkAssigneeNameConflict);
+        field.addEventListener('change', checkAssigneeNameConflict);
+    });
 
     if (rightOfOccupancyLandUseSelect) {
         rightOfOccupancyLandUseSelect.addEventListener('change', function () {
@@ -1931,6 +2031,21 @@ document.addEventListener('DOMContentLoaded', function () {
                     Swal.fire('Required', 'Please select a File Number first.', 'warning');
                 } else {
                     alert('Please select a File Number first.');
+                }
+                return;
+            }
+
+            // Assignee may be neither the applicant nor the file's current holder.
+            // checkAssigneeNameConflict() already flags this live and blocks via
+            // setCustomValidity(); this is the backstop for values set programmatically
+            // after the last check. Mirrored server-side in ConsentApplicationController.
+            if (!checkAssigneeNameConflict()) {
+                const msg = document.getElementById('party-name-duplicate-warning-text')?.textContent
+                    || 'The Assignee conflicts with another party on this application.';
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({ icon: 'error', title: 'Duplicate Party', text: msg, confirmButtonColor: '#dc2626' });
+                } else {
+                    alert(msg);
                 }
                 return;
             }

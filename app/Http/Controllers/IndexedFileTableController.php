@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\FileIndexing;
+use App\Services\AuditService;
 use App\Services\IndexingDuplicateService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -739,7 +740,9 @@ class IndexedFileTableController extends Controller
             return '';
         }
 
-        return preg_replace('/[\s\-\/\.]+/', '', $normalized);
+        // '_' is a separator variant of '-' in this data (RES_RC_1983_1147), which the
+        // related_file_number rebuild normalises the same way — so it is stripped too.
+        return preg_replace('/[\s\-\/\._]+/', '', $normalized);
     }
 
     /** Legacy ("Old") KANGIS file-number prefixes. */
@@ -1070,24 +1073,13 @@ class IndexedFileTableController extends Controller
             $mainRecord = DB::connection('sqlsrv')
                 ->table('file_indexings')
                 ->where('id', $id)
-                ->select(['file_number', 'related_fileno', 'file_title', 'temp_file_no'])
+                ->select(['file_number', 'related_fileno', 'file_title', 'temp_file_no', 'prop_id', 'parent_prop_id'])
                 ->first();
 
             $finalResults = $relatedLinks;
 
             if ($mainRecord && !empty($mainRecord->related_fileno)) {
-                $rawRelated = trim($mainRecord->related_fileno);
-                $parents = json_decode($rawRelated, true);
-
-                // If it's not valid JSON array, treat it as a plain string (legacy format)
-                if (!is_array($parents)) {
-                    // Check if it's a simple string like "FILE/NO" or "FILE/NO, FILE/NO2"
-                    if (str_contains($rawRelated, ',')) {
-                        $parents = array_map('trim', explode(',', $rawRelated));
-                    } else {
-                        $parents = [$rawRelated];
-                    }
-                }
+                $parents = $this->parseRelatedFilenoList($mainRecord->related_fileno);
 
                 if (is_array($parents)) {
                     // Fetch all titles for these parent numbers in one query
@@ -1149,6 +1141,15 @@ class IndexedFileTableController extends Controller
             return response()->json([
                 'success' => true,
                 'data' => $finalResults,
+                // Lets the Unlink confirmation state up-front whether removing a given
+                // related file would also clear the record's linked Property ID, without
+                // a second round-trip. See unlinkRelatedFile() for the actual rule.
+                'meta' => [
+                    'file_indexing_id' => (int) $id,
+                    'prop_id' => $mainRecord->prop_id ?? null,
+                    'parent_prop_id' => $mainRecord->parent_prop_id ?? null,
+                    'total' => count($finalResults),
+                ],
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -1190,7 +1191,7 @@ class IndexedFileTableController extends Controller
                     ->orWhereIn(DB::raw('UPPER(LTRIM(RTRIM(temp_file_no)))'), $keys);
             })
             ->orderBy('id')
-            ->get(['file_number', 'temp_file_no', 'file_title', 'location', 'plot_number', 'tp_no', 'lpkn_no']);
+            ->get(['file_number', 'temp_file_no', 'file_title', 'location', 'plot_number', 'tp_no', 'lpkn_no', 'prop_id']);
 
         $map = [];
         foreach ($rows as $row) {
@@ -1224,8 +1225,52 @@ class IndexedFileTableController extends Controller
                     }
                 }
             }
+
+            // Never present on the link/JSON rows themselves — the Unlink dialog uses it
+            // to tell the operator whether the record's parent_prop_id came from this file.
+            if ($isObj) {
+                $r->prop_id = $src->prop_id ?? null;
+            } else {
+                $r['prop_id'] = $src->prop_id ?? null;
+            }
         }
         unset($r);
+    }
+
+    /**
+     * Decode a related_fileno value into a list of file numbers.
+     *
+     * The column is a JSON array on most rows, but legacy rows hold a bare string or a
+     * comma-separated list (see the normalize_related_fileno_format migration, which
+     * deliberately does NOT split on '&' — that character occurs inside individual
+     * legacy file numbers).
+     *
+     * @return array<int, string>
+     */
+    private function parseRelatedFilenoList($raw): array
+    {
+        $raw = trim((string) $raw);
+        if ($raw === '' || $raw === '[]') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            $decoded = str_contains($raw, ',') ? explode(',', $raw) : [$raw];
+        }
+
+        $out = [];
+        foreach ($decoded as $value) {
+            if (is_array($value)) {
+                continue;
+            }
+            $value = trim((string) $value);
+            if ($value !== '' && $value !== '-') {
+                $out[] = $value;
+            }
+        }
+
+        return array_values($out);
     }
 
     public function updateRelatedFile(Request $request, $id): JsonResponse
@@ -1265,6 +1310,258 @@ class IndexedFileTableController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Unlink one related file number from an indexed record.
+     *
+     * A related file lives in either of two stores (see getRelatedFiles()):
+     *   * a file_indexing_links row              -> the row is deleted
+     *   * a token in file_indexings.related_fileno -> spliced out of the array
+     * The modal sends back the row id it displayed: numeric ids are link rows,
+     * "json_*" ids are related_fileno tokens. The file number is always matched too,
+     * so a stale id from an open modal cannot remove the wrong link.
+     *
+     * Property ID: parent_prop_id / ancestral_prop_id are cleared ONLY when the file
+     * being unlinked is the one that justified them — its prop_id equals the record's
+     * parent_prop_id — AND no remaining related file still resolves to that prop_id.
+     * A parent_prop_id set by some other path (a commissioning branch,
+     * KangisParentLinkService) is left alone; the response says so.
+     *
+     * The record's own prop_id and its PropID_Master row are never touched: prop_id is
+     * per-parcel, so dropping a lineage link does not invalidate the parcel identity.
+     */
+    public function unlinkRelatedFile(Request $request, $id, AuditService $audit): JsonResponse
+    {
+        $fileId = (int) $id;
+        if ($fileId <= 0) {
+            return response()->json(['success' => false, 'message' => 'Invalid file ID.'], 422);
+        }
+
+        $validated = $request->validate([
+            'file_number' => 'required|string|max:500',
+            'link_id' => 'nullable|string|max:100',
+        ]);
+
+        $target = trim($validated['file_number']);
+        $targetKey = $this->normalizeFileNoKey($target);
+        if ($targetKey === '') {
+            return response()->json(['success' => false, 'message' => 'A related file number is required.'], 422);
+        }
+
+        $conn = DB::connection('sqlsrv');
+
+        $record = $conn->table('file_indexings')
+            ->where('id', $fileId)
+            ->select(['id', 'file_number', 'related_fileno', 'prop_id', 'parent_prop_id'])
+            ->first();
+
+        if (!$record) {
+            return response()->json(['success' => false, 'message' => 'Indexed file not found.'], 404);
+        }
+
+        $hasAncestral = Schema::connection('sqlsrv')->hasColumn('file_indexings', 'ancestral_prop_id');
+        if ($hasAncestral) {
+            $record->ancestral_prop_id = $conn->table('file_indexings')
+                ->where('id', $fileId)
+                ->value('ancestral_prop_id');
+        }
+
+        $linkId = trim((string) ($validated['link_id'] ?? ''));
+
+        try {
+            $result = DB::connection('sqlsrv')->transaction(function () use (
+                $conn, $record, $fileId, $target, $targetKey, $linkId, $hasAncestral
+            ) {
+                // ---- 1. Link rows -------------------------------------------------
+                // Scoped to this record and matched on the normalised number, so a
+                // stale link_id cannot delete a different file's link.
+                $linkQuery = $conn->table('file_indexing_links')->where('file_indexing_id', $fileId);
+                if (ctype_digit($linkId)) {
+                    $linkQuery->where('id', (int) $linkId);
+                }
+
+                $linkRows = $linkQuery->get(['id', 'file_number', 'file_title']);
+                $doomedLinkIds = [];
+                foreach ($linkRows as $link) {
+                    if ($this->normalizeFileNoKey($link->file_number) === $targetKey) {
+                        $doomedLinkIds[] = (int) $link->id;
+                    }
+                }
+
+                $removedLinks = 0;
+                if (!empty($doomedLinkIds)) {
+                    $removedLinks = $conn->table('file_indexing_links')
+                        ->whereIn('id', $doomedLinkIds)
+                        ->delete();
+                }
+
+                // ---- 2. related_fileno JSON --------------------------------------
+                $originalRelated = $record->related_fileno;
+                $tokens = $this->parseRelatedFilenoList($originalRelated);
+                $kept = [];
+                $removedFromJson = false;
+                foreach ($tokens as $token) {
+                    if ($this->normalizeFileNoKey($token) === $targetKey) {
+                        $removedFromJson = true;
+                        continue;
+                    }
+                    $kept[] = $token;
+                }
+
+                $newRelated = $originalRelated;
+                if ($removedFromJson) {
+                    $newRelated = empty($kept) ? null : json_encode(array_values($kept));
+                    $conn->table('file_indexings')
+                        ->where('id', $fileId)
+                        ->update(['related_fileno' => $newRelated, 'updated_at' => now()]);
+                }
+
+                // ---- 3. Property ID linkage --------------------------------------
+                $parentPropId = trim((string) ($record->parent_prop_id ?? ''));
+                $propIdCleared = false;
+                $propIdNote = null;
+
+                if ($parentPropId === '') {
+                    $propIdNote = 'no_parent_prop_id';
+                } else {
+                    // Every file number still related to this record after the removal.
+                    $remainingNumbers = $kept;
+                    foreach ($conn->table('file_indexing_links')
+                        ->where('file_indexing_id', $fileId)
+                        ->pluck('file_number') as $fn) {
+                        $remainingNumbers[] = $fn;
+                    }
+
+                    $propIdOf = function (array $numbers) use ($conn): array {
+                        $numbers = array_values(array_filter(array_map(
+                            fn ($n) => trim((string) $n),
+                            $numbers
+                        ), fn ($n) => $n !== '' && $n !== '-'));
+
+                        if (empty($numbers)) {
+                            return [];
+                        }
+
+                        return $conn->table('file_indexings')
+                            ->whereIn('file_number', $numbers)
+                            ->whereNotNull('prop_id')
+                            ->pluck('prop_id')
+                            ->map(fn ($v) => trim((string) $v))
+                            ->filter()
+                            ->unique()
+                            ->values()
+                            ->all();
+                    };
+
+                    $unlinkedPropIds = $propIdOf([$target]);
+                    $remainingPropIds = $propIdOf($remainingNumbers);
+
+                    if (!in_array($parentPropId, $unlinkedPropIds, true)) {
+                        // parent_prop_id was not contributed by the file being unlinked.
+                        $propIdNote = 'parent_prop_id_from_another_source';
+                    } elseif (in_array($parentPropId, $remainingPropIds, true)) {
+                        // Another surviving related file still points at the same parcel.
+                        $propIdNote = 'still_justified_by_remaining_related_file';
+                    } else {
+                        $clear = ['parent_prop_id' => null, 'updated_at' => now()];
+                        if ($hasAncestral) {
+                            $clear['ancestral_prop_id'] = null;
+                        }
+                        $conn->table('file_indexings')->where('id', $fileId)->update($clear);
+                        $propIdCleared = true;
+                    }
+                }
+
+                $remaining = count($kept) + $conn->table('file_indexing_links')
+                    ->where('file_indexing_id', $fileId)
+                    ->count();
+
+                return [
+                    'removed_links' => $removedLinks,
+                    'removed_from_json' => $removedFromJson,
+                    'original_related' => $originalRelated,
+                    'new_related' => $newRelated,
+                    'prop_id_cleared' => $propIdCleared,
+                    'cleared_prop_id' => $propIdCleared ? $parentPropId : null,
+                    'prop_id_note' => $propIdNote,
+                    'remaining' => $remaining,
+                ];
+            });
+        } catch (\Throwable $e) {
+            Log::error('Failed to unlink related file number', [
+                'file_indexing_id' => $fileId,
+                'related_file_number' => $target,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'The unlink failed and was rolled back: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        if ($result['removed_links'] === 0 && !$result['removed_from_json']) {
+            return response()->json([
+                'success' => false,
+                'message' => sprintf('"%s" is not linked to this record (it may already have been unlinked).', $target),
+            ], 404);
+        }
+
+        // Audit is best-effort: the unlink is already committed, and AuditService
+        // rethrows on failure, so a logging problem must not surface as a failed unlink.
+        try {
+            $audit->logAction(
+                'DELETED',
+                'file_indexing_related_file',
+                $fileId,
+                [
+                    'file_number' => $record->file_number,
+                    'related_fileno' => $result['original_related'],
+                    'parent_prop_id' => $record->parent_prop_id,
+                    'ancestral_prop_id' => $record->ancestral_prop_id ?? null,
+                ],
+                [
+                    'unlinked_file_number' => $target,
+                    'related_fileno' => $result['new_related'],
+                    'removed_link_rows' => $result['removed_links'],
+                    'removed_from_related_fileno' => $result['removed_from_json'],
+                    'prop_id_cleared' => $result['prop_id_cleared'],
+                    'cleared_prop_id' => $result['cleared_prop_id'],
+                    'prop_id_note' => $result['prop_id_note'],
+                ],
+                sprintf('Unlinked related file %s from %s', $target, $record->file_number)
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Related-file unlink succeeded but the audit entry failed', [
+                'file_indexing_id' => $fileId,
+                'related_file_number' => $target,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        $message = sprintf('Unlinked "%s".', $target);
+        if ($result['prop_id_cleared']) {
+            $message .= sprintf(' Property ID %s was also cleared.', $result['cleared_prop_id']);
+        } elseif ($result['prop_id_note'] === 'still_justified_by_remaining_related_file') {
+            $message .= ' The linked Property ID was kept — another related file still points at it.';
+        } elseif ($result['prop_id_note'] === 'parent_prop_id_from_another_source') {
+            $message .= ' The linked Property ID was kept — it was not set by this related file.';
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $message,
+            'data' => [
+                'file_number' => $target,
+                'removed_link_rows' => $result['removed_links'],
+                'removed_from_related_fileno' => $result['removed_from_json'],
+                'remaining' => $result['remaining'],
+                'prop_id_cleared' => $result['prop_id_cleared'],
+                'cleared_prop_id' => $result['cleared_prop_id'],
+                'prop_id_note' => $result['prop_id_note'],
+            ],
+        ]);
     }
 
     public function updateCoordinates(Request $request, $id): JsonResponse

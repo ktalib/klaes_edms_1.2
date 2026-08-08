@@ -552,10 +552,14 @@ class CommissionNewSTController extends Controller
                 'data' => $validated
             ]);
 
+            $edmsFolder = $this->ensureEdmsScanFolder($validated['np_fileno']);
+
             return response()->json([
                 'success' => true,
                 'fileNumber' => $validated['np_fileno'],
                 'message' => 'ST file number commissioned successfully and saved to database',
+                'edms_folder' => $edmsFolder,
+                'storage_summary' => $this->buildStorageSummary($validated['np_fileno']),
                 'data' => array_merge($validated, [
                     'st_file_number_id' => $transactionResult['st_file_number_id'],
                     'file_number_id' => $transactionResult['file_number_id'],
@@ -758,10 +762,14 @@ class CommissionNewSTController extends Controller
                 'data' => $validated
             ]);
 
+            $edmsFolder = $this->ensureEdmsScanFolder($transactionResult['unit_file_number']);
+
             return response()->json([
                 'success' => true,
                 'suaFileNumber' => $transactionResult['unit_file_number'],
                 'message' => 'SuA file number commissioned successfully and saved to database',
+                'edms_folder' => $edmsFolder,
+                'storage_summary' => $this->buildStorageSummary($transactionResult['unit_file_number']),
                 'data' => array_merge($validated, [
                     'sua_file_number_id' => $transactionResult['sua_file_number_id'],
                     'file_number_id' => $transactionResult['file_number_id'],
@@ -970,11 +978,15 @@ class CommissionNewSTController extends Controller
                 'data' => $validated
             ]);
 
+            $edmsFolder = $this->ensureEdmsScanFolder($unitFileNo);
+
             return response()->json([
                 'success' => true,
                 'parentFileNumber' => $validated['parent_file_number'],
                 'unitFileNumber' => $unitFileNo,
                 'message' => 'PuA file number commissioned successfully and saved to database',
+                'edms_folder' => $edmsFolder,
+                'storage_summary' => $this->buildStorageSummary($unitFileNo),
                 'data' => array_merge($validated, [
                     'pua_file_number_id' => $transactionResult['pua_file_number_id'],
                     'file_number_id' => $transactionResult['file_number_id'],
@@ -998,6 +1010,71 @@ class CommissionNewSTController extends Controller
                 'success' => false,
                 'message' => 'Error commissioning PuA file number: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Create the commissioned ST file's EDMS scan folder.
+     *
+     * ST files live under EDMS/SCAN_UPLOAD/ST_Registry/{FILE NUMBER}. Made at
+     * commissioning — the same point the Land flow does it — so scanning can start
+     * before the file is ever indexed. Shares EdmsScanUploadFolderService with the
+     * indexing and MLS commissioning paths so all three agree on the path the
+     * scanning/page-typing modules read back from.
+     *
+     * @return array{created:bool, existed:bool, path:?string, registry:?string, reason:string}
+     */
+    private function ensureEdmsScanFolder(?string $fileNumber): array
+    {
+        return app(\App\Services\EdmsScanUploadFolderService::class)
+            ->ensure((string) $fileNumber, 'ST Registry', ['source' => 'st_commissioning']);
+    }
+
+    /**
+     * "Where did this commissioning land?" — counts for the confirmation card.
+     *
+     * Commissioning an ST file writes across st_file_numbers, fileNumber,
+     * file_indexings and the customer/entity staging tables, none of which the
+     * operator can see from the form. Reuses IndexingStorageSummaryService so the
+     * ST card reads exactly like the one shown after file indexing.
+     *
+     * Best-effort and read-only: the commissioning is already committed by the time
+     * this runs, so a failure here must never turn a successful save into an error.
+     */
+    private function buildStorageSummary(?string $fileNumber): ?array
+    {
+        $fileNumber = trim((string) $fileNumber);
+        if ($fileNumber === '') {
+            return null;
+        }
+
+        try {
+            $indexing = \App\Models\FileIndexing::on('sqlsrv')
+                ->where('file_number', $fileNumber)
+                ->orderByDesc('id')
+                ->first();
+
+            if (!$indexing) {
+                // SuA / PuA units are allocated in st_file_numbers but get no
+                // file_indexings row of their own (only the primary NPFN does). An
+                // unsaved stand-in carrying just the number still counts everything
+                // keyed BY FILE NUMBER — st_file_numbers, fileNumber, customer and
+                // entity staging — while the id-keyed rows correctly come back zero.
+                $indexing = new \App\Models\FileIndexing();
+                $indexing->setConnection('sqlsrv');
+                $indexing->file_number = $fileNumber;
+                $indexing->general_registry = 'ST Registry';
+            }
+
+            return app(\App\Services\IndexingStorageSummaryService::class)
+                ->summarize($indexing, ['is_update' => false]);
+        } catch (\Throwable $e) {
+            Log::warning('CommissionNewSTController - could not build storage summary', [
+                'file_number' => $fileNumber,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
         }
     }
 

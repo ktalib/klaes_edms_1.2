@@ -282,8 +282,21 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    // A conversion file carries CON in its number (CON-RES, CON-AG-RC …). One rule,
+    // shared by single capture and by the regular batch, so the same file cannot be
+    // classified one way on one screen and the other way on the next.
+    function isConversionFileNo(fileNo) {
+        return /CON/i.test(String(fileNo || ''));
+    }
+
     function autoDetectRecommendationType(fileNo) {
-        const isConversion = /CON/i.test(fileNo);
+        lockRecommendationType(isConversionFileNo(fileNo));
+    }
+
+    // Force Direct or Conversion and disable the other. Split out of the detector so
+    // the regular batch — which decides from a whole set of files rather than one —
+    // can drive the same lock instead of reproducing it.
+    function lockRecommendationType(isConversion) {
         const directRadio     = document.querySelector('input[name="type"][value="Direct"]');
         const conversionRadio = document.querySelector('input[name="type"][value="Conversion"]');
         const directLabel     = directRadio?.closest('label');
@@ -528,6 +541,10 @@ document.addEventListener('DOMContentLoaded', function () {
         termEl.dataset.manual = '0';
     }
     window._calcResidualTerm = calcResidualTerm;
+    // Used by the regular batch in land_recommendations/form.blade.php, which reads
+    // the type off the set of picked files rather than off one file number.
+    window._isConversionFileNo    = isConversionFileNo;
+    window._lockRecommendationType = lockRecommendationType;
 
     if (termInput) {
         termInput.addEventListener('input', function() {

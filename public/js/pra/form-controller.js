@@ -165,6 +165,17 @@
         return String(value).trim();
     }
 
+    /** Values in the existing-records table come straight from the register — escape them. */
+    function escapeExistingHtml(value) {
+        return normalizeText(value).replace(/[&<>"']/g, (char) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[char]));
+    }
+
     class PraFormController {
         constructor(container) {
             this.container = container;
@@ -193,6 +204,17 @@
             this.fileNumberMessage = container.querySelector('[data-role="no-file-number-copy"]');
             this.matchingRecordsContainer = container.querySelector('[data-role="matching-records-container"]');
             this.matchingRecordsResults = container.querySelector('[data-role="matching-records-results"]');
+            // "Existing Records for this File" table + duplicate flag.
+            this.existingRecordsSection = container.querySelector('[data-role="existing-records-section"]');
+            this.existingRecordsBody = container.querySelector('[data-role="existing-records-body"]');
+            this.existingRecordsCount = container.querySelector('[data-role="existing-records-count"]');
+            this.existingRecordsLoading = container.querySelector('[data-role="existing-records-loading"]');
+            this.duplicateWarning = container.querySelector('[data-role="duplicate-warning"]');
+            this.existingRecordsUrl = container.dataset.existingRecordsUrl || '';
+            this.existingRecords = [];
+            // Set once the operator confirms "Add anyway" on an exact duplicate;
+            // cleared again as soon as the entry changes.
+            this.duplicateOverride = false;
             this.smartWrapper = container.querySelector('[data-role="smart-wrapper"]');
             this.tempStatus = document.getElementById('modal-temp-status');
             this.tempValue = document.getElementById('modal-temp-value');
@@ -399,6 +421,7 @@
             this.bindRegNumberSynchronisers();
             this.bindSmartSelectorWatcher();
             this.bindUpdateModeHandlers();
+            this.bindDuplicateWatchers();
             if (this.state.transactionType === 'Tripartite Mortgage' && normalizeText(this.state.thirdParty).length > 0) {
                 this.state.tripartiteHasThird = true;
                 const tripartiteCheckbox = this.modelElements.get('tripartiteHasThird');
@@ -506,6 +529,10 @@
                     const fileno = normalizeText(value);
                     if (fileno.length > 0) {
                         this.fetchAndDisplayMatchingRecords(fileno);
+                        // Wider view than the PRA-only card above: everything the
+                        // file holds across PRA/FH/Deeds/CofO, so a duplicate is
+                        // visible before it is saved.
+                        this.loadExistingRecordsTable(fileno);
                         // Backfill the shared property details (location, plot,
                         // district, land use, etc.) from any existing record on
                         // this file so selecting a file number prefills the form
@@ -519,6 +546,7 @@
                         if (this.matchingRecordsContainer) {
                             this.matchingRecordsContainer.classList.add('hidden');
                         }
+                        this.clearExistingRecordsTable();
                     }
                     this.syncModelElement(key, value);
                     break;
@@ -804,6 +832,7 @@
             if (this.matchingRecordsContainer) {
                 this.matchingRecordsContainer.classList.add('hidden');
             }
+            this.clearExistingRecordsTable();
 
             // Also clear the CofO/PRA duplicate lock cards if the blade helpers exist.
             try {
@@ -1245,6 +1274,278 @@
             } catch (err) {
                 console.warn('Failed to fetch matching records', err);
             }
+        }
+
+        // ── Existing Records for this File ───────────────────────────────────
+        // The PRA-only card above answers "what else is on this file in PRA?".
+        // This table answers the wider question the operator actually needs before
+        // capturing: what does the file already hold ANYWHERE — PRA, File History,
+        // Deeds Registration or CofO — so the same instrument is not entered twice.
+
+        /**
+         * Load every record held against the file across all four sources and
+         * render them as a Timeline-shaped table below the form.
+         */
+        async loadExistingRecordsTable(fileno) {
+            if (!this.existingRecordsSection || !this.existingRecordsBody) return;
+            if (!this.existingRecordsUrl) return;
+
+            const cleaned = normalizeText(fileno);
+            if (!cleaned) {
+                this.clearExistingRecordsTable();
+                return;
+            }
+
+            // Reuse the matching-records token so a Refresh mid-flight discards this too.
+            const requestToken = this.matchingRecordsToken || 0;
+
+            this.existingRecordsSection.classList.remove('hidden');
+            if (this.existingRecordsLoading) this.existingRecordsLoading.classList.remove('hidden');
+
+            try {
+                const url = `${this.existingRecordsUrl}?file_number=${encodeURIComponent(cleaned)}&source=all`;
+                const response = await fetch(url, {
+                    headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                    credentials: 'same-origin'
+                });
+
+                const payload = response.ok ? await response.json() : null;
+
+                if ((this.matchingRecordsToken || 0) !== requestToken) {
+                    this.clearExistingRecordsTable();
+                    return;
+                }
+
+                if (this.existingRecordsLoading) this.existingRecordsLoading.classList.add('hidden');
+
+                this.existingRecords = (payload && payload.success && Array.isArray(payload.records))
+                    ? payload.records
+                    : [];
+
+                this.renderExistingRecordsTable();
+                this.evaluateDuplicate();
+            } catch (err) {
+                console.warn('Failed to load existing records for file', err);
+                if (this.existingRecordsLoading) this.existingRecordsLoading.classList.add('hidden');
+                this.clearExistingRecordsTable();
+            }
+        }
+
+        clearExistingRecordsTable() {
+            this.existingRecords = [];
+            this.duplicateOverride = false;
+
+            if (this.existingRecordsBody) this.existingRecordsBody.innerHTML = '';
+            if (this.existingRecordsCount) this.existingRecordsCount.textContent = '';
+            if (this.existingRecordsLoading) this.existingRecordsLoading.classList.add('hidden');
+            if (this.existingRecordsSection) this.existingRecordsSection.classList.add('hidden');
+            if (this.duplicateWarning) {
+                this.duplicateWarning.classList.add('hidden');
+                this.duplicateWarning.innerHTML = '';
+            }
+        }
+
+        renderExistingRecordsTable() {
+            if (!this.existingRecordsBody || !this.existingRecordsSection) return;
+
+            const records = this.existingRecords || [];
+            this.existingRecordsBody.innerHTML = '';
+
+            if (this.existingRecordsCount) {
+                this.existingRecordsCount.textContent = records.length ? String(records.length) : '0';
+            }
+
+            if (records.length === 0) {
+                // A file with nothing on it is the ordinary "new record" case — say
+                // so plainly rather than showing an empty grid.
+                this.existingRecordsBody.innerHTML =
+                    '<tr><td colspan="8" class="px-2 py-4 text-center text-gray-400">' +
+                    'No records held against this file yet — this will be the first.' +
+                    '</td></tr>';
+                this.existingRecordsSection.classList.remove('hidden');
+                return;
+            }
+
+            records.forEach((record, index) => {
+                const tr = document.createElement('tr');
+                tr.className = 'border-t border-gray-100';
+                tr.setAttribute('data-existing-row', String(index));
+
+                const source = record.source_table || '—';
+                const fileNo = record.file_number || record.mlsFNo || record.fileno || '—';
+                const type = record.transaction_type || record.instrument_type || '—';
+                const party1 = record.party_1 || '—';
+                const party2 = record.party_2 || '—';
+                const reg = this.formatExistingRegParticulars(record);
+                const date = record.transaction_date || record.instrument_date || '—';
+
+                tr.innerHTML = `
+                    <td class="px-2 py-1.5 text-gray-400">${index + 1}</td>
+                    <td class="px-2 py-1.5"><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600">${escapeExistingHtml(source)}</span></td>
+                    <td class="px-2 py-1.5 whitespace-nowrap text-gray-600">${escapeExistingHtml(fileNo)}</td>
+                    <td class="px-2 py-1.5 font-medium text-gray-800" data-cell="type">${escapeExistingHtml(type)}</td>
+                    <td class="px-2 py-1.5 text-gray-600">${escapeExistingHtml(party1)}</td>
+                    <td class="px-2 py-1.5 text-gray-600">${escapeExistingHtml(party2)}</td>
+                    <td class="px-2 py-1.5 text-gray-600">${escapeExistingHtml(reg)}</td>
+                    <td class="px-2 py-1.5 whitespace-nowrap text-gray-600">${escapeExistingHtml(date)}</td>
+                `;
+
+                this.existingRecordsBody.appendChild(tr);
+            });
+
+            this.existingRecordsSection.classList.remove('hidden');
+        }
+
+        formatExistingRegParticulars(record) {
+            const serial = normalizeText(record.serial_no ?? record.serialNo ?? '');
+            const page = normalizeText(record.page_no ?? record.pageNo ?? '');
+            const volume = normalizeText(record.volume_no ?? record.volumeNo ?? '');
+
+            if (!serial && !page && !volume) return '—';
+
+            return `${serial || '-'}/${page || '-'}/${volume || '-'}`;
+        }
+
+        /** What the form currently holds, in the shape the duplicate rules compare. */
+        readDuplicateKeyFromForm() {
+            const typeSelect = this.container.querySelector('[data-role="transaction-type"]');
+            const dateInput = this.container.querySelector('#transactionDate');
+
+            return {
+                type: normalizeText(typeSelect ? typeSelect.value : '').toLowerCase(),
+                serial: normalizeText(this.container.querySelector('#serialNo')?.value ?? ''),
+                page: normalizeText(this.container.querySelector('#pageNo')?.value ?? ''),
+                volume: normalizeText(this.container.querySelector('#volumeNo')?.value ?? ''),
+                date: normalizeText(dateInput ? dateInput.value : '')
+            };
+        }
+
+        /**
+         * Compare the in-progress entry against what the file already holds.
+         *
+         * Two tiers, because certainty differs:
+         *   exact  — same instrument type AND identical registration particulars
+         *            (serial/page/volume all present and equal). Two instruments
+         *            cannot share a registration entry, so this is a real duplicate.
+         *   likely — same instrument type AND same transaction date, but the
+         *            particulars do not both exist to compare. Worth a warning,
+         *            not a claim.
+         *
+         * @return {{exact: number[], likely: number[]}} indexes into this.existingRecords
+         */
+        findDuplicateMatches() {
+            const key = this.readDuplicateKeyFromForm();
+            const exact = [];
+            const likely = [];
+
+            if (!key.type) return { exact, likely };
+
+            const hasReg = key.serial !== '' && key.volume !== '';
+
+            (this.existingRecords || []).forEach((record, index) => {
+                const type = normalizeText(record.transaction_type || record.instrument_type || '').toLowerCase();
+                if (!type || type !== key.type) return;
+
+                const serial = normalizeText(record.serial_no ?? record.serialNo ?? '');
+                const page = normalizeText(record.page_no ?? record.pageNo ?? '');
+                const volume = normalizeText(record.volume_no ?? record.volumeNo ?? '');
+
+                if (hasReg && serial !== '' && volume !== ''
+                    && serial === key.serial && volume === key.volume
+                    && (key.page === '' || page === '' || page === key.page)) {
+                    exact.push(index);
+                    return;
+                }
+
+                if (key.date !== '') {
+                    const recordDate = normalizeText(record.transaction_date || record.instrument_date || '');
+                    // Server dates render as "Nov 29, 2019"; the input is ISO. Compare
+                    // on the parsed day so the two formats still meet.
+                    const a = Date.parse(recordDate);
+                    const b = Date.parse(key.date);
+                    if (!Number.isNaN(a) && !Number.isNaN(b)
+                        && new Date(a).toDateString() === new Date(b).toDateString()) {
+                        likely.push(index);
+                    }
+                }
+            });
+
+            return { exact, likely };
+        }
+
+        /** Highlight matching rows and raise (or clear) the duplicate banner. */
+        evaluateDuplicate() {
+            if (!this.duplicateWarning || !this.existingRecordsBody) return { exact: [], likely: [] };
+
+            const matches = this.findDuplicateMatches();
+
+            // Repaint row highlights from scratch each time.
+            this.existingRecordsBody.querySelectorAll('tr[data-existing-row]').forEach((tr) => {
+                tr.classList.remove('bg-red-50', 'bg-amber-50');
+                const typeCell = tr.querySelector('[data-cell="type"]');
+                if (typeCell) typeCell.classList.remove('text-red-700', 'text-amber-800');
+            });
+
+            const paint = (indexes, rowClass, textClass) => {
+                indexes.forEach((i) => {
+                    const tr = this.existingRecordsBody.querySelector(`tr[data-existing-row="${i}"]`);
+                    if (!tr) return;
+                    tr.classList.add(rowClass);
+                    const typeCell = tr.querySelector('[data-cell="type"]');
+                    if (typeCell) typeCell.classList.add(textClass);
+                });
+            };
+
+            paint(matches.likely, 'bg-amber-50', 'text-amber-800');
+            paint(matches.exact, 'bg-red-50', 'text-red-700');
+
+            if (matches.exact.length > 0) {
+                this.duplicateWarning.className =
+                    'mb-2 rounded-md border px-3 py-2 text-xs border-red-300 bg-red-50 text-red-800';
+                this.duplicateWarning.innerHTML =
+                    '<span class="font-semibold">This record already exists.</span> ' +
+                    `${matches.exact.length} record(s) on this file share this instrument type and registration particulars ` +
+                    '(highlighted below). Saving will create a duplicate.';
+                this.duplicateWarning.classList.remove('hidden');
+            } else if (matches.likely.length > 0) {
+                this.duplicateWarning.className =
+                    'mb-2 rounded-md border px-3 py-2 text-xs border-amber-300 bg-amber-50 text-amber-900';
+                this.duplicateWarning.innerHTML =
+                    '<span class="font-semibold">Possible duplicate.</span> ' +
+                    `${matches.likely.length} record(s) on this file share this instrument type and transaction date ` +
+                    '(highlighted below). Check the registration particulars before saving.';
+                this.duplicateWarning.classList.remove('hidden');
+            } else {
+                this.duplicateWarning.classList.add('hidden');
+                this.duplicateWarning.innerHTML = '';
+            }
+
+            // A changed entry invalidates any previous "add anyway" decision.
+            this.duplicateOverride = false;
+
+            return matches;
+        }
+
+        /** Confirm before saving over an exact duplicate. */
+        async confirmDuplicateSubmit(count) {
+            const message = `${count} record(s) on this file already have this instrument type and registration particulars. `
+                + 'Saving will create a duplicate entry.';
+
+            if (window.Swal && typeof window.Swal.fire === 'function') {
+                const result = await window.Swal.fire({
+                    title: 'This record already exists',
+                    text: message,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Add anyway',
+                    cancelButtonText: 'Cancel',
+                    confirmButtonColor: '#dc2626',
+                    reverseButtons: true
+                });
+                return !!result.isConfirmed;
+            }
+
+            return window.confirm(`${message}\n\nAdd anyway?`);
         }
 
         /**
@@ -2130,6 +2431,28 @@
             });
         }
 
+        /**
+         * Re-run the duplicate check whenever a field the rules depend on changes,
+         * so the flag appears while the record is being typed rather than at save.
+         */
+        bindDuplicateWatchers() {
+            if (!this.container || !this.duplicateWarning) return;
+
+            const watch = (selector, events) => {
+                const element = this.container.querySelector(selector);
+                if (!element) return;
+                events.forEach((eventName) => {
+                    element.addEventListener(eventName, () => this.evaluateDuplicate());
+                });
+            };
+
+            watch('[data-role="transaction-type"]', ['change']);
+            watch('#serialNo', ['input', 'change']);
+            watch('#pageNo', ['input', 'change']);
+            watch('#volumeNo', ['input', 'change']);
+            watch('#transactionDate', ['input', 'change']);
+        }
+
         bindUpdateModeHandlers() {
             if (this.form) {
                 this.form.addEventListener('submit', (event) => this.handleFormSubmit(event));
@@ -2281,6 +2604,39 @@
         }
 
         async handleFormSubmit(event) {
+            // Duplicate guard — runs ahead of every save path, including the plain
+            // native POST below that returns early. Only an exact match (same
+            // instrument type AND same registration particulars) stops the save;
+            // the softer "possible duplicate" case stays advisory.
+            if (!this.state.isUpdateMode && !this.duplicateOverride) {
+                const matches = this.evaluateDuplicate();
+
+                if (matches.exact.length > 0) {
+                    // Stop propagation too, not just the default: Legal Search binds
+                    // its own submit interceptor on document that AJAX-posts the
+                    // form. Without this, cancelling the prompt would still save.
+                    event.preventDefault();
+                    event.stopPropagation();
+                    event.stopImmediatePropagation();
+
+                    const proceed = await this.confirmDuplicateSubmit(matches.exact.length);
+                    if (!proceed) {
+                        return;
+                    }
+
+                    // Re-enter the normal flow; the override lets it through once.
+                    this.duplicateOverride = true;
+                    if (typeof this.form.requestSubmit === 'function') {
+                        this.form.requestSubmit();
+                    } else {
+                        this.form.submit();
+                    }
+                    return;
+                }
+            }
+
+            this.duplicateOverride = false;
+
             const isInstrumentsPage = window.location.pathname.toLowerCase().includes('/instruments/create');
             
             if (!this.state.isUpdateMode && !isInstrumentsPage) {
@@ -2660,6 +3016,40 @@
             },
             setFormMode(mode) {
                 controller.setState('formMode', mode);
+            },
+            /**
+             * Announce a file number that was written straight into the form inputs
+             * by an outside opener (Legal Search prefills #fileno itself). Without
+             * this the fileNumber state change never fires, so the file-driven
+             * panels — the PRA matching-records card and the "Existing Records for
+             * this File" table — stay empty on a prefilled dialog.
+             */
+            setFileNumber(value) {
+                const fileno = normalizeText(value);
+                const changed = controller.state.fileNumber !== fileno;
+
+                controller.setState('fileNumber', fileno);
+
+                // setState is a no-op when the value is unchanged — which is exactly
+                // what happens when the dialog is reopened for the same file. Drive
+                // the file-keyed panels directly in that case so they still load.
+                if (!changed) {
+                    if (fileno) {
+                        controller.fetchAndDisplayMatchingRecords(fileno);
+                        controller.loadExistingRecordsTable(fileno);
+                    } else {
+                        controller.clearExistingRecordsTable();
+                    }
+                }
+            },
+            /** Reload just the existing-records table + duplicate check. */
+            refreshExistingRecords(value) {
+                const fileno = normalizeText(value !== undefined ? value : controller.state.fileNumber);
+                if (fileno) {
+                    controller.loadExistingRecordsTable(fileno);
+                } else {
+                    controller.clearExistingRecordsTable();
+                }
             },
             refreshDescription() {
                 controller.updatePropertyDescription();

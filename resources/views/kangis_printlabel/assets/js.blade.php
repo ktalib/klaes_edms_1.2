@@ -39,7 +39,12 @@ document.addEventListener('DOMContentLoaded', function() {
         batchPagination: { current_page:1, last_page:1, per_page:20, total:0 },
         // KANGIS-specific
         kangisPrefix: '',
-        kangisBatchNo: '',
+        // Registry Batch No accepts several batches; each loaded batch is then given
+        // its own shelf/rack in the Registry Batch Assignment panel.
+        kangisBatchNos: [],
+        batchGroups: [],
+        // Per-registry-batch shelf assignment, switched on by the Assign Shelves button.
+        batchAssignEnabled: false,
         // Manual Registry Override: files loaded by typed file numbers (no prefix).
         manualOverrideMode: false,
     };
@@ -49,6 +54,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const API = {
         prefixes:        "{{ route('kangis-printlabel.api.prefixes') }}",
         prefixNextRange: "{{ route('kangis-printlabel.api.prefix-next-range') }}",
+        registryBatches: "{{ route('kangis-printlabel.api.registry-batches') }}",
         files:           "{{ route('kangis-printlabel.api.files') }}",
         rackStatus:      "{{ route('kangis-printlabel.api.rack-label.status') }}",
         createBatch:     "{{ route('kangis-printlabel.api.batch.store') }}",
@@ -245,7 +251,10 @@ document.addEventListener('DOMContentLoaded', function() {
             selectedTemplate: state.selectedTemplate,
             orientation: state.orientation,
             kangisPrefix: state.kangisPrefix,
-            kangisBatchNo: state.kangisBatchNo,
+            kangisBatchNo: state.kangisBatchNos.join(','),
+            batchGroups: isBatchGroupMode()
+                ? state.batchGroups.map(function(g){ return g.key+':'+g.fullLabel; })
+                : null,
         });
     }
 
@@ -355,6 +364,157 @@ document.addEventListener('DOMContentLoaded', function() {
             .catch(function(err){ console.error('Preview preparation failed:', err); showError(err.message||'Preview failed.'); updatePreview(); });
     }
 
+    // ─── Registry batch shelf/rack assignment ───
+    function selectedBatchNoCsv() { return state.kangisBatchNos.join(','); }
+    function isBatchGroupMode() { return Array.isArray(state.batchGroups) && state.batchGroups.length > 0; }
+    function buildBatchGroupLabel(g) {
+        return ((g.rackPrimary||'').toUpperCase().trim()+(g.rackSecondary||'').toUpperCase().trim()+(g.shelfNumber||'').toString().trim());
+    }
+    function fileBatchKey(file) {
+        var v = (file && (file.registry_batch_no !== undefined && file.registry_batch_no !== null))
+            ? file.registry_batch_no : (file ? file.sys_batch_no : null);
+        return (v === undefined || v === null) ? '' : String(v).trim();
+    }
+    function labelForFile(file) {
+        if (isBatchGroupMode()) {
+            var key = fileBatchKey(file);
+            for (var i=0;i<state.batchGroups.length;i++) {
+                if (state.batchGroups[i].key === key) return state.batchGroups[i].fullLabel;
+            }
+        }
+        return state.fullLabel || '';
+    }
+    function setPrimaryRackControlsDisabled(disabled) {
+        ['rackPrimarySelect','rackSecondarySelect','shelfNumberSelect'].forEach(function(id){
+            var el=document.getElementById(id); if(!el) return;
+            el.disabled=!!disabled;
+            el.classList.toggle('opacity-50',!!disabled);
+            el.classList.toggle('cursor-not-allowed',!!disabled);
+        });
+    }
+    function batchGroupDuplicateLabels() {
+        var seen={},dups=[];
+        state.batchGroups.forEach(function(g){
+            if(seen[g.fullLabel])dups.push('Batches '+seen[g.fullLabel]+' & '+g.key+' (“'+g.fullLabel+'”)');
+            else seen[g.fullLabel]=g.key;
+        });
+        return dups;
+    }
+    function batchGroupMetaText() {
+        var dups=batchGroupDuplicateLabels();
+        if(dups.length)return 'Duplicate shelf/rack on '+dups.join(', ');
+        var n=state.batchGroups.length;
+        return n+' registry batch'+(n===1?'':'es');
+    }
+    // One group per registry batch present in the loaded files, ordered numerically,
+    // keeping any shelf/rack the user already assigned to that batch.
+    function computeBatchGroups() {
+        var panel=document.getElementById('batchGroupPanel');
+        var hide=function(){
+            state.batchGroups=[];
+            if(panel)panel.classList.add('hidden');
+            setPrimaryRackControlsDisabled(false);
+        };
+        // Manual override loads arbitrary file numbers with no batch structure.
+        if(!state.batchAssignEnabled||state.manualOverrideMode||!state.availableFiles.length){hide();return;}
+
+        var buckets={},order=[];
+        state.availableFiles.forEach(function(f){
+            var key=fileBatchKey(f);
+            if(!buckets[key]){buckets[key]=[];order.push(key);}
+            buckets[key].push(f);
+        });
+        if(!order.length){hide();return;}
+
+        order.sort(function(a,b){
+            var na=parseInt(a,10),nb=parseInt(b,10);
+            if(!isNaN(na)&&!isNaN(nb))return na-nb;
+            if(!isNaN(na))return -1;
+            if(!isNaN(nb))return 1;
+            return a.localeCompare(b);
+        });
+
+        var prev={};
+        (state.batchGroups||[]).forEach(function(g){prev[g.key]=g;});
+
+        state.batchGroups=order.map(function(key,i){
+            var files=buckets[key],p=prev[key]||{};
+            var g={
+                index:i+1,
+                key:key,
+                label:key===''?'No batch number':('Registry Batch '+key),
+                count:files.length,
+                fileIds:files.map(function(f){return f.id;}),
+                firstFile:files[0].file_number,
+                lastFile:files[files.length-1].file_number,
+                rackPrimary:p.rackPrimary||(state.rackPrimary||'A'),
+                rackSecondary:p.rackSecondary||'',
+                // Default to consecutive shelves from the selected one, matching the
+                // server's anchor-offset behaviour when nothing is assigned.
+                shelfNumber:p.shelfNumber||String(Math.max(1,(parseInt(state.shelfNumber,10)||1)+i))
+            };
+            g.fullLabel=buildBatchGroupLabel(g);
+            return g;
+        });
+
+        if(panel)panel.classList.remove('hidden');
+        setPrimaryRackControlsDisabled(true);
+        renderBatchGroupPanel();
+    }
+    function renderBatchGroupPanel() {
+        var list=document.getElementById('batchGroupList');if(!list)return;
+        var rackOptions=function(sel,includeNone){
+            var h=includeNone?'<option value=""'+(sel?'':' selected')+'>None</option>':'';
+            for(var c=65;c<=90;c++){var L=String.fromCharCode(c);h+='<option value="'+L+'"'+(sel===L?' selected':'')+'>'+L+'</option>';}
+            return h;
+        };
+        var shelfOptions=function(sel){
+            var h='';for(var i=1;i<=100;i++){h+='<option value="'+i+'"'+(String(sel)===String(i)?' selected':'')+'>'+i+'</option>';}
+            return h;
+        };
+        var cls='mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200';
+        list.innerHTML=state.batchGroups.map(function(g){
+            var range=g.firstFile?(g.firstFile+(g.lastFile&&g.lastFile!==g.firstFile?' → '+g.lastFile:'')):'—';
+            return '<div class="p-4 grid grid-cols-1 gap-3 md:grid-cols-12 md:items-end">'
+                +'<div class="md:col-span-5">'
+                +'<span class="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">'+g.label+'</span>'
+                +'<p class="mt-1 text-sm font-medium text-slate-800">'+range+'</p>'
+                +'<p class="text-xs text-slate-500">'+g.count+' file'+(g.count===1?'':'s')+'</p>'
+                +'</div>'
+                +'<div class="md:col-span-2"><span class="text-xs font-semibold uppercase tracking-wide text-slate-600">Rack</span>'
+                +'<select data-bg-key="'+g.key+'" data-bg-field="rackPrimary" class="'+cls+'">'+rackOptions(g.rackPrimary,false)+'</select></div>'
+                +'<div class="md:col-span-2"><span class="text-xs font-semibold uppercase tracking-wide text-slate-600">Backup Rack</span>'
+                +'<select data-bg-key="'+g.key+'" data-bg-field="rackSecondary" class="'+cls+'">'+rackOptions(g.rackSecondary,true)+'</select></div>'
+                +'<div class="md:col-span-2"><span class="text-xs font-semibold uppercase tracking-wide text-slate-600">Shelf</span>'
+                +'<select data-bg-key="'+g.key+'" data-bg-field="shelfNumber" class="'+cls+'">'+shelfOptions(g.shelfNumber)+'</select></div>'
+                +'<div class="md:col-span-1"><span class="text-xs font-semibold uppercase tracking-wide text-slate-600">Label</span>'
+                +'<div class="mt-1 rounded-md border border-gray-300 bg-slate-50 px-2 py-1.5 text-sm font-semibold text-slate-700" data-bg-label="'+g.key+'">'+g.fullLabel+'</div></div>'
+                +'</div>';
+        }).join('');
+
+        var updateMeta=function(){
+            var meta=document.getElementById('batchGroupPanelMeta');
+            if(!meta)return;
+            meta.textContent=batchGroupMetaText();
+            meta.className='text-xs font-medium '+(batchGroupDuplicateLabels().length?'text-red-600':'text-slate-600');
+        };
+        updateMeta();
+
+        list.querySelectorAll('select[data-bg-key]').forEach(function(sel){
+            sel.addEventListener('change',function(){
+                var key=this.dataset.bgKey;
+                var g=state.batchGroups.find(function(x){return x.key===key;});
+                if(!g)return;
+                var v=this.value||'';
+                g[this.dataset.bgField]=(this.dataset.bgField==='shelfNumber')?v:v.toUpperCase();
+                g.fullLabel=buildBatchGroupLabel(g);
+                var le=list.querySelector('[data-bg-label="'+key+'"]');if(le)le.textContent=g.fullLabel;
+                updateMeta();
+                resetPreparedState();renderFileList();updateCounts();
+            });
+        });
+    }
+
     // ─── KANGIS file loading ───
     async function loadKangisFiles() {
         // Manual Registry Override bypasses the prefix requirement entirely — it
@@ -389,9 +549,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 state.availableFiles = files;
                 state.selectedFiles  = files.map(function(f){ return f.id; });
 
+                computeBatchGroups();
                 renderFileList();
                 updateCounts();
                 updateSelectAllCheckbox();
+                updateAssignBatchBtn();
 
                 if (registryOverrideSummary) registryOverrideSummary.textContent = (files.length) + ' file(s) matched. ' + ((data.data.missing && data.data.missing.length) ? data.data.missing.length + ' missing.' : '');
 
@@ -413,8 +575,8 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             var params = new URLSearchParams({
                 prefix: prefix,
-                registry_batch_no: state.kangisBatchNo || '', 
-                search: state.searchTerm || '' 
+                registry_batch_no: selectedBatchNoCsv(),
+                search: state.searchTerm || ''
             });
             if (state.excludeAssignedFromBatch) params.append('exclude_assigned','true');
 
@@ -431,9 +593,11 @@ document.addEventListener('DOMContentLoaded', function() {
             state.availableFiles = files;
             state.selectedFiles  = files.map(function(f){ return f.id; });
 
+            computeBatchGroups();
             renderFileList();
             updateCounts();
             updateSelectAllCheckbox();
+            updateAssignBatchBtn();
 
             var pd = document.getElementById('activePrefixDisplay');
             if (pd) pd.textContent = prefix;
@@ -457,7 +621,7 @@ document.addEventListener('DOMContentLoaded', function() {
         var payload = {
             prefix: state.kangisPrefix || null,
             manual_override: !!state.manualOverrideMode,
-            registry_batch_no: state.kangisBatchNo || null,
+            registry_batch_no: selectedBatchNoCsv() || null,
             file_ids: selected.map(function(r){ return Number(r.id); }),
             full_label: state.fullLabel || updateFullLabelDisplay(),
             rack_primary: state.rackPrimary,
@@ -466,6 +630,27 @@ document.addEventListener('DOMContentLoaded', function() {
             label_format: state.selectedTemplate,
             orientation: state.orientation,
         };
+
+        if (isBatchGroupMode()) {
+            var dups = batchGroupDuplicateLabels();
+            if (dups.length) throw new Error(dups.join(', ') + ' share the same shelf/rack. Give each registry batch its own shelf.');
+            // Only send assignments for batches that still have a selected file; a batch
+            // whose files were all unticked must not claim a shelf.
+            var selectedKeys = {};
+            selected.forEach(function(f){ selectedKeys[fileBatchKey(f)] = true; });
+            var groups = state.batchGroups
+                .filter(function(g){ return selectedKeys[g.key] && g.key !== ''; })
+                .map(function(g){
+                    return {
+                        registry_batch_no: g.key,
+                        full_label: g.fullLabel,
+                        rack_primary: g.rackPrimary,
+                        rack_secondary: g.rackSecondary || null,
+                        shelf_number: parseInt(g.shelfNumber, 10),
+                    };
+                });
+            if (groups.length) payload.batch_groups = groups;
+        }
 
         showLoading('Saving batch details...');
         try {
@@ -503,8 +688,10 @@ document.addEventListener('DOMContentLoaded', function() {
         var fnShelf = fl ? normalizeLocationValue(fl) : '';
 
         files.forEach(function(file) {
-            var shelfLabel = fnShelf || normalizeLocationValue(file.shelf_location||'') || 'Shelf/Rack-N/A';
-            var shelfValue = fl || getDisplayShelfValue(shelfLabel, file.shelf_location) || 'N/A';
+            // In Registry Batch mode each file follows its batch's own shelf.
+            var assigned   = (labelForFile(file)||'').toString().trim() || fl;
+            var shelfLabel = (assigned ? normalizeLocationValue(assigned) : fnShelf) || normalizeLocationValue(file.shelf_location||'') || 'Shelf/Rack-N/A';
+            var shelfValue = assigned || getDisplayShelfValue(shelfLabel, file.shelf_location) || 'N/A';
             var trackingId = coalesce(file.tracking_id,'').toString();
             if (!trackingId) trackingId = file.id ? ('IDX-'+file.id) : ('IDX-'+Math.random().toString(36).slice(2,8));
             var derived = deriveFileNumbers(file);
@@ -718,7 +905,9 @@ document.addEventListener('DOMContentLoaded', function() {
             var trackBadge   = file.tracking_id ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">Tracking: '+file.tracking_id+'</span>' : '';
             var batchBadge   = (file.registry_batch_no || file.sys_batch_no) ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">Batch: '+(file.registry_batch_no || file.sys_batch_no)+'</span>' : '';
             var alreadyBadge = file.already_batched ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Already batched</span>' : '';
-            var details      = [trackBadge, batchBadge, alreadyBadge].filter(Boolean).join(' ');
+            var shelf        = isBatchGroupMode() ? labelForFile(file) : '';
+            var shelfBadge   = shelf ? '<span class="text-xs text-gray-500">Shelf: '+shelf+'</span>' : '';
+            var details      = [trackBadge, batchBadge, alreadyBadge, shelfBadge].filter(Boolean).join(' ');
             var secFn        = (file.secondary_file_number || file.file_title) ? '<p class="text-xs text-gray-500 mt-0.5">'+(file.secondary_file_number || file.file_title)+'</p>' : '';
 
             return '<div class="flex items-center p-4">'+
@@ -918,6 +1107,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 resetPreparedState({ preserveBatchId:true, preserveReprint:true });
                 state.availableFiles = files;
                 state.selectedFiles  = files.map(function(f){ return f.id; });
+                // A reprint prints the batch exactly as stored — drop any pending
+                // assignment so it cannot re-shelve the loaded rows.
+                state.batchGroups = [];
+                state.batchAssignEnabled = false;
+                var panel = document.getElementById('batchGroupPanel');
+                if (panel) panel.classList.add('hidden');
+                setPrimaryRackControlsDisabled(false);
+                updateAssignBatchBtn();
 
                 var sig   = computePreparationSignature();
                 var built = buildPreparedEntriesFromItems(files);
@@ -1144,37 +1341,141 @@ document.addEventListener('DOMContentLoaded', function() {
             var pd = document.getElementById('activePrefixDisplay');
             if (pd) pd.textContent = this.value || '—';
 
-            if (this.value) {
-                fetch(API.prefixNextRange + '?prefix=' + encodeURIComponent(this.value))
-                    .then(function(r){ return r.json(); })
-                    .then(function(d) {
-                        if (d.success && d.data) {
-                            var bi = document.getElementById('kangisBatchNoInput');
-                            if (bi && !bi.value) {
-                                var val = d.data.next_batch_no;
-                                bi.value = val;
-                                state.kangisBatchNo = val.toString();
-                                // Note: do NOT sync the shelf to the batch number. The shelf is
-                                // chosen independently (rack + shelf) and increments per batch
-                                // server-side, so batch 25 maps to the selected shelf (e.g. B1).
-                            }
-                        }
-                    })
-                    .catch(function(e){ console.warn('Could not auto-suggest batch number:', e); });
-            }
+            loadRegistryBatchOptions(this.value);
         });
     }
 
-    // KANGIS batch number input
-    var kangisBatchNoInput = document.getElementById('kangisBatchNoInput');
-    if (kangisBatchNoInput) {
-        kangisBatchNoInput.addEventListener('input', function() {
-            state.kangisBatchNo = this.value;
-            // The shelf is selected independently of the registry batch number; it must not
-            // be overwritten here. The server assigns the chosen shelf to the lowest batch
-            // and increments for subsequent batches.
+    // KANGIS registry batch multi-select
+    var kangisBatchNoSelect = document.getElementById('kangisBatchNoSelect');
+    var batchSelectIsSelect2 = false;
+
+    function readSelectedBatchNos(sel) {
+        return Array.prototype.slice.call(sel.selectedOptions||[])
+            .map(function(o){ return (o.value||'').trim(); })
+            .filter(Boolean);
+    }
+    function clearBatchNoSelection() {
+        state.kangisBatchNos = [];
+        if (!kangisBatchNoSelect) return;
+        Array.prototype.slice.call(kangisBatchNoSelect.options).forEach(function(o){ o.selected = false; });
+        if (batchSelectIsSelect2) jQuery(kangisBatchNoSelect).val(null).trigger('change.select2');
+    }
+    function setBatchNoHint(text) {
+        var hint = document.getElementById('kangisBatchNoHint');
+        if (hint) hint.textContent = text;
+    }
+    // The batch list is per prefix, so keep the control disabled (rather than an
+    // empty box that reports "No results found") until a prefix is chosen.
+    function setBatchNoEnabled(enabled) {
+        if (!kangisBatchNoSelect) return;
+        kangisBatchNoSelect.disabled = !enabled;
+        if (batchSelectIsSelect2) jQuery(kangisBatchNoSelect).prop('disabled', !enabled).trigger('change.select2');
+    }
+    // Refill the registry batch list for the chosen prefix, pre-selecting the next
+    // unprocessed batch so the common single-batch flow still needs no extra clicks.
+    function loadRegistryBatchOptions(prefix) {
+        if (!kangisBatchNoSelect) return;
+        clearBatchNoSelection();
+        kangisBatchNoSelect.innerHTML = '';
+        if (batchSelectIsSelect2) jQuery(kangisBatchNoSelect).trigger('change.select2');
+
+        if (!prefix) { setBatchNoEnabled(false); setBatchNoHint('Select a prefix first.'); return; }
+
+        setBatchNoEnabled(false);
+        setBatchNoHint('Loading registry batches…');
+
+        fetch(API.registryBatches + '?prefix=' + encodeURIComponent(prefix))
+            .then(function(r){ return r.json(); })
+            .then(function(d) {
+                if (!d.success || !d.data || !Array.isArray(d.data.batches)) {
+                    setBatchNoHint(d && d.message ? d.message : 'Could not load registry batches.');
+                    return;
+                }
+                var batches = d.data.batches;
+                if (!batches.length) {
+                    setBatchNoHint('No registry batches available for ' + prefix + '.');
+                    return;
+                }
+                batches.forEach(function(b) {
+                    var opt = document.createElement('option');
+                    opt.value = b.registry_batch_no;
+                    opt.textContent = b.registry_batch_no + ' (' + b.file_count + ' file' + (b.file_count===1?'':'s') + ')';
+                    kangisBatchNoSelect.appendChild(opt);
+                });
+                setBatchNoEnabled(true);
+                setBatchNoHint(batches.length + ' batch' + (batches.length===1?'':'es') + ' available — pick one or more.');
+
+                return fetch(API.prefixNextRange + '?prefix=' + encodeURIComponent(prefix))
+                    .then(function(r){ return r.json(); })
+                    .then(function(nd) {
+                        if (!nd.success || !nd.data || !nd.data.exists) return;
+                        var next = String(nd.data.next_batch_no);
+                        var match = Array.prototype.slice.call(kangisBatchNoSelect.options)
+                            .find(function(o){ return o.value === next; });
+                        if (!match) return;
+                        match.selected = true;
+                        state.kangisBatchNos = [next];
+                        if (batchSelectIsSelect2) jQuery(kangisBatchNoSelect).trigger('change.select2');
+                        // Note: do NOT sync the shelf to the batch number. Shelves are
+                        // chosen per batch in the Registry Batch Assignment panel.
+                    });
+            })
+            .catch(function(e){
+                console.warn('Could not load registry batches:', e);
+                setBatchNoHint('Could not load registry batches. Check your connection and re-pick the prefix.');
+            });
+    }
+
+    if (kangisBatchNoSelect) {
+        var onBatchNoChange = function() {
+            state.kangisBatchNos = readSelectedBatchNos(kangisBatchNoSelect);
+            resetPreparedState();
+        };
+        if (typeof jQuery !== 'undefined' && jQuery.fn.select2) {
+            batchSelectIsSelect2 = true;
+            jQuery(kangisBatchNoSelect).select2({
+                placeholder: 'Select Registry Batch No',
+                allowClear: true,
+                closeOnSelect: false,
+                width: '100%'
+            }).on('change', onBatchNoChange);
+        } else {
+            kangisBatchNoSelect.addEventListener('change', onBatchNoChange);
+        }
+    }
+
+    // ─── Assign Shelves per Registry Batch ───
+    function updateAssignBatchBtn() {
+        var btn = document.getElementById('assignBatchShelvesBtn');
+        var lbl = document.getElementById('assignBatchShelvesBtnLabel');
+        if (!btn) return;
+        var on = state.batchAssignEnabled;
+        // Only actionable once batch-structured records are on screen.
+        var ready = state.availableFiles.length > 0 && !state.manualOverrideMode;
+        btn.disabled = !ready && !on;
+        btn.classList.toggle('opacity-50', btn.disabled);
+        btn.classList.toggle('cursor-not-allowed', btn.disabled);
+        btn.classList.toggle('bg-amber-100', on);
+        btn.classList.toggle('bg-white', !on);
+        if (lbl) lbl.textContent = on ? 'Clear Registry Batch Shelves' : 'Assign Shelves per Registry Batch';
+        btn.title = ready ? '' : 'Load records by prefix and registry batch first.';
+    }
+    var assignBatchShelvesBtn = document.getElementById('assignBatchShelvesBtn');
+    if (assignBatchShelvesBtn) {
+        assignBatchShelvesBtn.addEventListener('click', function() {
+            if (!state.batchAssignEnabled) {
+                if (!state.availableFiles.length) { showError('Load records first, then assign a shelf to each registry batch.'); return; }
+                if (state.manualOverrideMode) { showError('Manual Registry Override has no registry batches to assign.'); return; }
+                state.batchAssignEnabled = true;
+            } else {
+                state.batchAssignEnabled = false;
+            }
+            updateAssignBatchBtn();
+            resetPreparedState(); computeBatchGroups(); renderFileList(); updateCounts();
+            if (state.activeTab==='preview') refreshPreview(true);
         });
     }
+    updateAssignBatchBtn();
 
     // Exclude assigned toggle
     var excludeToggle = document.getElementById('excludeAssignedToggle');
@@ -1231,7 +1532,9 @@ document.addEventListener('DOMContentLoaded', function() {
         state.selectedFiles = [];
         state.copies = 1;
         state.kangisPrefix = '';
-        state.kangisBatchNo = '';
+        state.kangisBatchNos = [];
+        state.batchGroups = [];
+        state.batchAssignEnabled = false;
         state.rackPrimary = 'A';
         state.rackSecondary = '';
         state.shelfNumber = '1';
@@ -1243,7 +1546,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
         document.getElementById('copies').value = 1;
         if (kangisPrefixSelect) kangisPrefixSelect.value = '';
-        if (kangisBatchNoInput) kangisBatchNoInput.value = '';
+        loadRegistryBatchOptions('');
+        computeBatchGroups();
+        updateAssignBatchBtn();
         if (rackSelect) rackSelect.value = 'A';
         if (rackSecondarySelect) rackSecondarySelect.value = '';
         if (shelfSelect) shelfSelect.value = '1';

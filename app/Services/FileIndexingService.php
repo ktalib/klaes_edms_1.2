@@ -88,9 +88,19 @@ class FileIndexingService
         // Third lineage level: the root above the parent, so merged files that are
         // more than two generations deep record their original parcel at index time
         // rather than waiting for the propid:backfill-ancestral sweep.
+        //
+        // tableIsReady() gates the write on the column actually existing: this code
+        // may run against a database where the ancestral_prop_id migration has not
+        // been applied yet, and indexing must not break there.
         if (!empty($indexingData['parent_prop_id'])) {
-            $indexingData['ancestral_prop_id'] = app(PropIdLineageService::class)
-                ->resolveAncestralForRow($data['prop_id'] ?? null, $indexingData['parent_prop_id']);
+            $lineage = app(PropIdLineageService::class);
+
+            if ($lineage->tableIsReady('file_indexings')) {
+                $indexingData['ancestral_prop_id'] = $lineage->resolveAncestralForRow(
+                    $data['prop_id'] ?? null,
+                    $indexingData['parent_prop_id']
+                );
+            }
         }
 
         $indexingData = $this->enrichWithCorrespondingFile($indexingData);

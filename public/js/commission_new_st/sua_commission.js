@@ -1,5 +1,102 @@
 // SuA (Standalone Unit Application) JavaScript Module for Commission Interface
 
+/* =========================================================================
+ * PLACEHOLDER — NOT REAL DATA. REMOVE WHEN THE BACKEND LANDS.
+ *
+ * ST commissioning does not yet open a file_tracker record, so the server
+ * sends no tracking lines for it. These two rows are hardcoded purely so the
+ * card can be screenshotted for sign-off; they are the SAME EVERY TIME and do
+ * not reflect anything that was actually written.
+ *
+ * The real version is IndexingStorageSummaryService::pushTrackingLines(),
+ * which reads the tracker's movement_log — that is what the Land commissioning
+ * card already uses. Once ST commissioning writes its tracker, delete this
+ * function and its call in showStCommissioningCard(); the rows will then come
+ * from the server like every other row on the card.
+ * ========================================================================= */
+function addPlaceholderStTrackingLines(summary) {
+    var PLACEHOLDER_ROWS = [
+        { table: 'file_tracker', label: 'File Commissioning (DIIT)', count: 1, detail: 'File Commissioning Office' },
+        { table: 'file_tracker', label: 'Log-out', count: 1, detail: 'Director Land' }
+    ];
+
+    var next = Object.assign({}, summary || {});
+    next.groups = (next.groups || []).map(function (g) { return Object.assign({}, g); });
+
+    var onward = next.groups.filter(function (g) { return g.tone === 'onward'; })[0];
+    if (!onward) {
+        onward = { title: 'Onward / derived', tone: 'onward', rows: [] };
+        next.groups.push(onward);
+    }
+
+    // Don't double up if the server ever starts sending real tracker rows —
+    // at that point this whole function should be deleted anyway.
+    var hasTrackerRow = (onward.rows || []).some(function (r) { return r.table === 'file_tracker'; });
+    onward.rows = hasTrackerRow ? onward.rows : (onward.rows || []).concat(PLACEHOLDER_ROWS);
+
+    return next;
+}
+
+/**
+ * Commissioning confirmation for ST (Primary / SuA / PuA).
+ *
+ * Commissioning an ST file writes across st_file_numbers, fileNumber,
+ * file_indexings and the customer/entity staging tables, so the confirmation is
+ * the shared "where did this go" card (js/shared/record-summary-card.js) — the
+ * same one shown after file indexing — with the EDMS scan folder appended.
+ *
+ * Degrades to a plain success dialog if that script is not on the page.
+ */
+function showStCommissioningCard(result, message) {
+    const edmsLine = renderEdmsFolderLine(result && result.edms_folder);
+
+    if (typeof window.showRecordSummaryCard === 'function') {
+        const payload = Object.assign({}, result, { message: message });
+        payload.storage_summary = addPlaceholderStTrackingLines(payload.storage_summary);
+
+        return window.showRecordSummaryCard(
+            payload,
+            {
+                title: 'Commissioned — here is where it went',
+                fallbackTitle: 'Success!',
+                extraHtml: edmsLine
+            }
+        );
+    }
+
+    return Swal.fire({
+        icon: 'success',
+        title: 'Success!',
+        html: `<p>${message}</p>` + edmsLine,
+        confirmButtonColor: '#10b981'
+    });
+}
+window.showStCommissioningCard = showStCommissioningCard;
+
+/**
+ * "Where scans for this file go" line for a commissioning confirmation.
+ *
+ * The EDMS scan folder is created server-side the moment a file number is
+ * commissioned, so the operator can start scanning before the file is indexed.
+ * Returns '' when the server did not report a folder, so callers can always
+ * concatenate it. Shared by the SuA / PuA / Primary ST commissioning dialogs.
+ */
+function renderEdmsFolderLine(edmsFolder) {
+    if (!edmsFolder || !edmsFolder.path) {
+        return '';
+    }
+
+    const label = edmsFolder.existed ? 'Scan folder already present' : 'EDMS scan folder created';
+
+    return `
+        <div style="margin-top:10px;padding:8px 10px;border:1px solid #d1fae5;background:#ecfdf5;border-radius:6px;text-align:left;">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#047857;">${label}</div>
+            <div style="font-size:11px;font-family:monospace;color:#334155;word-break:break-all;margin-top:2px;">${edmsFolder.path}</div>
+        </div>
+    `;
+}
+window.renderEdmsFolderLine = renderEdmsFolderLine;
+
 // SuA uses the shared applicant type change handler with 'sua_' prefix
 // No need to redefine - the shared function handles this
 
@@ -314,13 +411,9 @@ async function generateSuaFileNumbers() {
                 previewField.textContent = fileNumber;
             }
             
-            // Show success message
-            Swal.fire({
-                icon: 'success',
-                title: 'Success!',
-                text: `SuA file number ${fileNumber} commissioned successfully!`,
-                confirmButtonColor: '#10b981'
-            });
+            // Full summary card: which tables the commissioning wrote to, plus the
+            // EDMS scan folder created for the file. See showStCommissioningCard().
+            showStCommissioningCard(result, `SuA file number ${fileNumber} commissioned successfully!`);
             
             // Update button state
             button.innerHTML = '<i data-lucide="check" class="inline-block h-5 w-5 mr-2"></i>SuA File Number Generated';

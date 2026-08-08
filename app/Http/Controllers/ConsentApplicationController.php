@@ -159,12 +159,24 @@ class ConsentApplicationController extends Controller
             'additional_applicant_state' => 'nullable|array',
         ]);
 
-        // Reject duplicate file number
-        $existing = ConsentApplication::where('file_number', $request->file_number)->first();
+        // A file is assigned again and again over its life, so one consent per file
+        // number is wrong — it blocked every subsequent assignment. What must not
+        // repeat is the same transaction: the same file to the same assignee.
+        $assignee = trim((string) $request->party_name);
+
+        if ($conflict = $this->assigneeConflictMessage($request)) {
+            return response()->json(['success' => false, 'message' => $conflict], 422);
+        }
+
+        $existing = ConsentApplication::where('file_number', $request->file_number)
+            ->whereRaw('LOWER(LTRIM(RTRIM(party_name))) = ?', [mb_strtolower($assignee)])
+            ->first();
         if ($existing) {
             return response()->json([
                 'success' => false,
-                'message' => 'An application for file number ' . $request->file_number . ' already exists.'
+                'message' => 'A consent application for file number ' . $request->file_number
+                    . ' in favour of ' . $assignee . ' already exists (ref '
+                    . ($existing->application_tracking_no ?: '#' . $existing->id) . ').'
             ], 422);
         }
 
@@ -341,6 +353,12 @@ class ConsentApplicationController extends Controller
             'additional_applicant_state' => 'nullable|array',
         ]);
 
+        // Same party rules as store(): an edit must not be able to introduce what a
+        // create forbids.
+        if ($conflict = $this->assigneeConflictMessage($request)) {
+            return response()->json(['success' => false, 'message' => $conflict], 422);
+        }
+
         $data = $request->all();
         $data['date_of_grant_purpose'] = collect([
             $request->date_of_grant,
@@ -434,6 +452,41 @@ class ConsentApplicationController extends Controller
             'message' => 'Application updated successfully.',
             'id' => $application->id
         ]);
+    }
+
+    /**
+     * The assignee must be a different person from both the applicant and the party
+     * who currently holds the title:
+     *  - assignee === applicant  → a transfer to oneself, a no-op.
+     *  - assignee === original holder → the file title already reads that name, so
+     *    this transaction has already been registered.
+     *
+     * Mirrored client-side by checkAssigneeNameConflict() in consent_applications.js,
+     * which flags it live as the name is typed. This is the authoritative copy.
+     *
+     * @return string|null Null when there is no conflict.
+     */
+    private function assigneeConflictMessage(Request $request): ?string
+    {
+        $assignee  = trim((string) $request->party_name);
+        $applicant = trim((string) $request->applicant_name);
+        $holder    = trim((string) $request->original_holder_name);
+
+        if ($assignee === '') {
+            return null;
+        }
+
+        if ($applicant !== '' && strcasecmp($applicant, $assignee) === 0) {
+            return 'The Assignee cannot be the same person as the Applicant (' . $assignee
+                . '). A property cannot be transferred to its own holder.';
+        }
+
+        if ($holder !== '' && strcasecmp($holder, $assignee) === 0) {
+            return $assignee . ' is already the registered holder of file ' . $request->file_number
+                . '. A consent cannot assign a property to the party who already holds it.';
+        }
+
+        return null;
     }
 
     public function lookupByFileNumber(Request $request)

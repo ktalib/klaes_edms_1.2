@@ -546,6 +546,13 @@
                             <input type="text" name="party_name" required
                                 class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium"
                                 placeholder="Full name of the party">
+                            {{-- Live duplicate flag: the assignee may not be the applicant, nor the
+                                 party who already holds the title. Populated by consent_applications.js. --}}
+                            <p id="party-name-duplicate-warning"
+                                class="hidden mt-2 flex items-start gap-1.5 text-xs font-semibold text-red-600">
+                                <i data-lucide="alert-triangle" class="h-4 w-4 shrink-0 mt-px"></i>
+                                <span id="party-name-duplicate-warning-text"></span>
+                            </p>
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Party

@@ -25,6 +25,9 @@ use App\Services\FileLocationResolver;
 use Illuminate\Validation\Rule;
 use App\Services\PropertyIdAllocationService;
 use App\Services\FileIndexingBillService;
+use App\Services\IndexingStorageSummaryService;
+use App\Services\FileRangeTrackingService;
+use App\Services\EdmsScanUploadFolderService;
 
 class FileIndexingController extends Controller
 {
@@ -33,17 +36,26 @@ class FileIndexingController extends Controller
     private CommissioningMirrorService $commissioningMirrorService;
     private FileIndexingBillService $fileIndexingBillService;
     private KangisParentLinkService $kangisParentLinkService;
+    private IndexingStorageSummaryService $indexingStorageSummaryService;
+    private FileRangeTrackingService $fileRangeTrackingService;
+    private EdmsScanUploadFolderService $edmsScanUploadFolderService;
 
     public function __construct(
         PropertyIdAllocationService $propertyIdAllocationService,
         CommissioningMirrorService $commissioningMirrorService,
         FileIndexingBillService $fileIndexingBillService,
-        KangisParentLinkService $kangisParentLinkService
+        KangisParentLinkService $kangisParentLinkService,
+        IndexingStorageSummaryService $indexingStorageSummaryService,
+        FileRangeTrackingService $fileRangeTrackingService,
+        EdmsScanUploadFolderService $edmsScanUploadFolderService
     ) {
         $this->propertyIdAllocationService = $propertyIdAllocationService;
         $this->commissioningMirrorService = $commissioningMirrorService;
         $this->fileIndexingBillService = $fileIndexingBillService;
         $this->kangisParentLinkService = $kangisParentLinkService;
+        $this->indexingStorageSummaryService = $indexingStorageSummaryService;
+        $this->fileRangeTrackingService = $fileRangeTrackingService;
+        $this->edmsScanUploadFolderService = $edmsScanUploadFolderService;
     }
 
     /**
@@ -1461,11 +1473,21 @@ class FileIndexingController extends Controller
                 'file_number' => $updatedRecord->file_number ?? 'unknown'
             ]);
 
+            // Same "where did this record go?" card as the create path — an update
+            // fans out across the same tables, so the operator sees the current state.
+            $storageSummary = $billFileIndexing
+                ? $this->indexingStorageSummaryService->summarize(
+                    $billFileIndexing->fresh() ?? $billFileIndexing,
+                    ['is_update' => true]
+                )
+                : null;
+
             return response()->json([
                 'success' => true,
                 'message' => 'File indexing record updated successfully!',
                 'data' => $updatedRecord,
                 'file_transactions' => $fileTransactions,
+                'storage_summary' => $storageSummary,
             ]);
         } catch (\Exception $e) {
             Log::error('FileIndexing::update - failed', [
@@ -4405,12 +4427,36 @@ class FileIndexingController extends Controller
                 }
             }
 
+            // Opening tracking line: config/file_ranges.php says which registry and
+            // zone (Digital Archive / Pool Office) the file number belongs to, so the
+            // file gets a real file_tracker row recording where it now physically is
+            // instead of only being placed at search time. See FileRangeTrackingService.
+            $rangeTracking = $this->fileRangeTrackingService->openForIndexing($fileIndexing);
+
+            // Scan folder: EDMS/SCAN_UPLOAD/{Registry}/{FILE NUMBER}. Created now so
+            // it is waiting before anyone scans, rather than appearing only when the
+            // first page is uploaded. Best-effort — never fails the save.
+            $scanFolder = $this->edmsScanUploadFolderService->ensureForIndexing($fileIndexing);
+
+            // "Where did this record go?" — the fan-out across registry, parties,
+            // transaction and commissioning tables is invisible from the form, so
+            // the response carries a count of what now exists for this file and the
+            // client shows it as a confirmation card. Best-effort: never fails the save.
+            $storageSummary = $this->indexingStorageSummaryService->summarize($fileIndexing, [
+                'is_update' => false,
+                'parent_prop_id' => $mainParentPropId,
+                'kangis_record' => $kangisFileIndexing,
+                'range_tracking' => $rangeTracking,
+                'scan_folder' => $scanFolder,
+            ]);
+
             return response()->json([
                 'success' => true,
                 'message' => 'File indexing created successfully!',
                 'data' => $fileIndexing,
                 'siblings_updated' => $kangisPlaceholderResult['siblings'] ?? [],
                 'kangis_resolved' => $kangisPlaceholderResult['resolved'] ?? null,
+                'storage_summary' => $storageSummary,
             ]);
         } catch (\Exception $e) {
             return response()->json([

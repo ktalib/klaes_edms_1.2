@@ -19,16 +19,9 @@
                         <input type="hidden" name="type" value="{{ !empty($isOssView) ? 'OSS' : 'ROFO' }}">
                         <input type="hidden" name="tab" value="{{ $tab ?? 'not_printed' }}">
                         
-                        <select name="user_id" onchange="this.form.submit()" 
-                                class="pl-3 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all shadow-sm cursor-pointer font-medium text-slate-700">
-                            <option value="all" {{ request('user_id') === 'all' ? 'selected' : '' }}>All Users</option>
-                            @foreach($filterUsers as $fUser)
-                                <option value="{{ $fUser->id }}" {{ (request('user_id', Auth::id()) == $fUser->id && request('user_id') !== 'all') ? 'selected' : '' }}>
-                                    {{ $fUser->name }}
-                                </option>
-                            @endforeach
-                        </select>
-
+                        {{-- The per-user filter is gone: the register is shown whole, so
+                             a recommendation captured by a colleague is on the list like
+                             any other. --}}
                         <div class="relative group flex-1 md:w-80">
                             <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors"></i>
                             <input type="text" 
@@ -118,13 +111,13 @@
             {{-- Printed / Not-Printed tabs --}}
             @php $tab = $tab ?? 'not_printed'; @endphp
             <div class="flex items-center gap-2 mb-4 bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm w-full sm:w-max">
-                <a href="{{ route('land-recommendations.index', array_filter(['type' => !empty($isOssView) ? 'OSS' : 'ROFO', 'tab' => 'not_printed', 'search' => request('search'), 'user_id' => request('user_id')])) }}"
+                <a href="{{ route('land-recommendations.index', array_filter(['type' => !empty($isOssView) ? 'OSS' : 'ROFO', 'tab' => 'not_printed', 'search' => request('search')])) }}"
                    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'not_printed' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100' }}">
                     <i data-lucide="file-clock" class="h-4 w-4"></i>
                     Not Printed
                     <span class="px-2 py-0.5 rounded-full text-[10px] font-black {{ $tab === 'not_printed' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500' }}">{{ number_format($stats['not_printed']) }}</span>
                 </a>
-                <a href="{{ route('land-recommendations.index', array_filter(['type' => !empty($isOssView) ? 'OSS' : 'ROFO', 'tab' => 'printed', 'search' => request('search'), 'user_id' => request('user_id')])) }}"
+                <a href="{{ route('land-recommendations.index', array_filter(['type' => !empty($isOssView) ? 'OSS' : 'ROFO', 'tab' => 'printed', 'search' => request('search')])) }}"
                    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'printed' ? 'bg-green-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100' }}">
                     <i data-lucide="printer-check" class="h-4 w-4"></i>
                     Printed
@@ -136,7 +129,7 @@
                      that happen to be on the page. On the Batches tab one row is one
                      whole batch and expanding it loads every child. --}}
                 @if(($stats['batches'] ?? 0) > 0)
-                <a href="{{ route('land-recommendations.index', array_filter(['type' => !empty($isOssView) ? 'OSS' : 'ROFO', 'tab' => 'batches', 'search' => request('search'), 'user_id' => request('user_id')])) }}"
+                <a href="{{ route('land-recommendations.index', array_filter(['type' => !empty($isOssView) ? 'OSS' : 'ROFO', 'tab' => 'batches', 'search' => request('search')])) }}"
                    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'batches' ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100' }}">
                     <i data-lucide="layers" class="h-4 w-4"></i>
                     Batches
@@ -189,8 +182,11 @@
                                 </td>
                                 <td class="px-4 py-4 text-center text-slate-400 font-bold">{{ $batches->firstItem() + $i }}</td>
                                 <td class="px-6 py-4">
-                                    <span class="font-mono font-black text-slate-900">{{ $b->mother_file_no ?: $b->old_file_number }}</span>
-                                    <span class="block text-[10px] text-slate-400">{{ $b->application_type }}</span>
+                                    {{-- A regular batch has no mother file: it is a set of unrelated
+                                         files, so it is labelled by what it is rather than left blank. --}}
+                                    @php $batchLabel = trim((string) ($b->mother_file_no ?: $b->old_file_number)); @endphp
+                                    <span class="font-mono font-black text-slate-900">{{ $batchLabel !== '' ? $batchLabel : 'Regular files' }}</span>
+                                    <span class="block text-[10px] text-slate-400">{{ $b->application_type ?: ($batchLabel === '' ? $total . ' files' : '') }}</span>
                                 </td>
                                 <td class="px-6 py-4 font-mono text-[11px] text-slate-500">{{ $b->rofo_batch_id }}</td>
                                 <td class="px-6 py-4 text-center">
@@ -276,7 +272,7 @@
                                 <th class="px-4 py-4 text-center whitespace-nowrap">S/N</th>
                                 <th class="px-6 py-4 whitespace-nowrap">File Number</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Applicant Name</th>
-                                <th class="px-6 py-4 whitespace-nowrap">Purpose Clause</th>
+                                <th class="px-6 py-4 whitespace-nowrap">Landuse/Purpose Clause</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Location</th>
                                 <th class="px-6 py-4 whitespace-nowrap text-blue-600">Applicant Address</th>
                                 <th class="px-6 py-4 text-center whitespace-nowrap">Plot No</th>
@@ -330,7 +326,7 @@
                                     @endif
                                 </td>
                                 <td class="px-4 py-2 text-slate-700 whitespace-nowrap uppercase font-bold text-blue-900">{{ $rec->applicant_name }}</td>
-                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->purpose_of_clause }}</td>
+                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->landuse_purpose }}</td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap uppercase">{{ $rec->display_location }}</td>
                                 <td class="px-4 py-2 text-blue-600 whitespace-nowrap font-medium italic">{{ $rec->resolved_applicant_address ?? $rec->applicant_address ?? 'N/A' }}</td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->plot_number }}</td>

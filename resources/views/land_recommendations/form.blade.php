@@ -126,11 +126,12 @@
                 @endif
 
                 {{-- ── Batch Mode ────────────────────────────────────────────────
-                     A Plot Subdivision produces many child files off one mother file.
-                     Batch mode captures a recommendation for every child in one pass:
-                     the common grant conditions are keyed once below, and only the
-                     values that differ per child go in the table. Edit mode is a
-                     single record by definition, so the switch is create-only. --}}
+                     Two kinds of batch, one table. A Plot Subdivision produces many
+                     child files off one mother file; a regular batch is any set of
+                     files the officer picks. Either way the common grant conditions
+                     are keyed once below and only the values that differ per file go
+                     in the table. Edit mode is a single record by definition, so the
+                     switch is create-only. --}}
                 @unless($isEdit)
                 <div id="batch-mode-card" class="bg-violet-50/60 border border-violet-200 rounded-xl p-6">
                     <div class="flex flex-wrap items-center justify-between gap-3">
@@ -138,7 +139,7 @@
                             <label class="block text-sm font-extrabold text-slate-900 uppercase tracking-wider">Batch Mode</label>
                             <span class="inline-flex items-center gap-1.5 mt-1.5 px-2.5 py-1 rounded-full bg-violet-50 border border-violet-200 text-violet-800">
                                 <i data-lucide="layers" class="h-3.5 w-3.5 flex-shrink-0"></i>
-                                <span class="text-xs font-semibold leading-none">Capture one recommendation per child of a subdivided mother file.</span>
+                                <span class="text-xs font-semibold leading-none">Capture one recommendation per file in a single pass.</span>
                             </span>
                         </div>
                         <label class="inline-flex items-center gap-3 cursor-pointer select-none bg-white border-2 border-slate-300 hover:border-violet-500 rounded-full pl-4 pr-2 py-1.5 shadow-sm transition-colors">
@@ -152,10 +153,98 @@
                             </div>
                         </label>
                     </div>
+                    {{-- ── Which kind of batch ───────────────────────────────────────
+                         The two differ only in where the table's rows come from: one
+                         mother file's commissioned children, or a set of file numbers
+                         the officer picks by hand. Everything downstream — the common
+                         fields, the table, Apply-to-all, autosave, the save itself —
+                         is the same, which is why this is a choice inside batch mode
+                         rather than a second mode beside it. --}}
+                    <div id="batch-kind-row" class="hidden mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <label class="flex items-start gap-3 cursor-pointer p-3.5 bg-white border-2 border-slate-200 rounded-xl hover:border-violet-400 transition shadow-sm has-[:checked]:border-violet-500 has-[:checked]:bg-violet-50/60">
+                            <input type="radio" name="batch_kind_ui" value="subdivision" checked
+                                class="batch-kind-radio mt-0.5 w-4 h-4 text-violet-600 focus:ring-violet-500 border-slate-300">
+                            <span class="leading-snug">
+                                <span class="block text-sm font-bold text-slate-900">Subdivision batch</span>
+                                <span class="block text-[11px] text-slate-500">
+                                    Pick a subdivided mother file; every commissioned child loads into the table.
+                                </span>
+                            </span>
+                        </label>
+                        <label class="flex items-start gap-3 cursor-pointer p-3.5 bg-white border-2 border-slate-200 rounded-xl hover:border-violet-400 transition shadow-sm has-[:checked]:border-violet-500 has-[:checked]:bg-violet-50/60">
+                            <input type="radio" name="batch_kind_ui" value="regular"
+                                class="batch-kind-radio mt-0.5 w-4 h-4 text-violet-600 focus:ring-violet-500 border-slate-300">
+                            <span class="leading-snug">
+                                <span class="block text-sm font-bold text-slate-900">Regular files</span>
+                                <span class="block text-[11px] text-slate-500">
+                                    Select any number of file numbers yourself &mdash; no subdivision lineage needed.
+                                </span>
+                            </span>
+                        </label>
+                    </div>
+
                     <p id="batch-mode-hint" class="hidden mt-3 text-xs text-violet-900 bg-white/70 border border-violet-200 rounded-lg px-3 py-2">
                         Pick <span class="font-bold">Plot Subdivision</span> below, then select the mother file &mdash;
                         its children load into a table where you key only what differs between them.
                     </p>
+
+                    {{-- What a regular batch does differently, said once and up front.
+                         Without it the two steppers further down the form look like a
+                         glitch rather than the point — and the locked Recommendation
+                         Type and stood-down Application Type look like bugs. --}}
+                    <div id="batch-regular-info" class="hidden mt-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
+                        <p class="text-xs font-bold text-sky-900 flex items-center gap-1.5">
+                            <i data-lucide="info" class="h-4 w-4"></i>
+                            Regular batch is on &mdash;
+                            <span id="batch-regular-info-count" class="font-mono">no files picked yet</span>
+                        </p>
+                        <ul class="mt-2 space-y-1 text-[11px] text-sky-800 list-disc list-inside">
+                            <li>Each file is saved as its own RofO recommendation, grouped under one batch.</li>
+                            <li><span class="font-semibold">Grant Conditions</span> and <span class="font-semibold">TP No.</span>
+                                are captured per file &mdash; use the <span class="font-semibold">1 of N</span> arrows on those
+                                cards to move through the batch.</li>
+                            <li><span class="font-semibold">Recommendation Type</span> is taken from the file numbers
+                                (any <span class="font-mono">CON</span> file makes the batch a Conversion), and
+                                <span class="font-semibold">Application Type</span> stays off.</li>
+                           
+                        </ul>
+                    </div>
+
+                    {{-- ── Regular batch: the file picker ────────────────────────────
+                         Multi-select with tagging, so a file number that is not in the
+                         registers yet can still be typed in — a paper file being
+                         captured for the first time is exactly the case a fixed list
+                         would lock out. Nothing loads until Apply is pressed: fetching
+                         on every pick would repaint (and could discard) a table the
+                         officer is part-way through keying. --}}
+                    <div id="batch-files-picker" class="hidden mt-4 rounded-xl border border-violet-200 bg-white p-4">
+                        <div class="flex items-center gap-2 mb-2">
+                            <i data-lucide="files" class="h-4 w-4 text-violet-600"></i>
+                            <label class="text-sm font-bold text-slate-900 uppercase tracking-tight">File Numbers</label>
+                            <span id="batch-files-count"
+                                class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">0 picked</span>
+                        </div>
+                        <div class="flex flex-col md:flex-row md:items-start gap-3">
+                            <div class="flex-1 min-w-0">
+                                <select id="batch-file-select" multiple
+                                    class="w-full border border-violet-300 rounded-lg px-3 py-2.5 bg-white text-sm outline-none shadow-sm"></select>
+                                <p class="mt-1.5 text-[11px] text-slate-500">
+                                    Type to search, then pick as many as you need. A file number that is not found can be
+                                    typed in and added as-is. Files that already carry a recommendation are marked and cannot be picked.
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-2 flex-shrink-0">
+                                <button type="button" id="batch-files-apply"
+                                    class="px-5 py-2.5 text-xs font-bold bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed transition inline-flex items-center gap-1.5">
+                                    <i data-lucide="table" class="h-4 w-4"></i> Apply
+                                </button>
+                                <button type="button" id="batch-files-clear"
+                                    class="px-3 py-2.5 text-xs font-semibold bg-white border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50 transition">
+                                    Clear
+                                </button>
+                            </div>
+                        </div>
+                    </div>
 
                     {{-- ── Draft / autosave ──────────────────────────────────────────
                          A subdivision of 100+ children takes longer to key than a
@@ -227,6 +316,11 @@
                          it is what groups the saved children together. Disabled outside
                          batch mode so the single-record post never sees it. --}}
                     <input type="hidden" name="batch_mother_file_no" id="batch-mother-file-no" disabled value="">
+                    {{-- Which kind of batch is being posted. storeBatch() branches on
+                         it for the mother-file rules; absent (or disabled, outside
+                         batch mode) it reads as a subdivision, which is what every
+                         batch was before regular files existed. --}}
+                    <input type="hidden" name="batch_kind" id="batch-kind" disabled value="subdivision">
                     {{-- Posted with the batch so storeBatch() can close the draft out once
                          the recommendations are committed. Disabled alongside the mother
                          field so the single-record post never carries it. --}}
@@ -239,7 +333,7 @@
                     <div class="bg-violet-50 border-b border-violet-200 px-5 py-3.5">
                         <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
                             <i data-lucide="git-fork" class="h-4 w-4 text-violet-600 flex-shrink-0"></i>
-                            <h3 class="text-sm font-bold text-violet-900 uppercase tracking-tight">Children of</h3>
+                            <h3 id="batch-card-title" class="text-sm font-bold text-violet-900 uppercase tracking-tight">Children of</h3>
                             <span id="batch-mother-label" class="font-mono font-black text-slate-900 text-sm">&mdash;</span>
                             <span id="batch-children-count"
                                 class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-violet-600 text-white">0 selected</span>
@@ -252,6 +346,9 @@
                                     <i data-lucide="arrow-down-to-line" class="h-3.5 w-3.5"></i>
                                     Apply source row <span id="batch-apply-all-row" class="font-mono">#1</span> to all
                                 </button>
+                                {{-- Reload re-fetches from the mother file, so it belongs to the
+                                     subdivision kind only — a regular batch is reloaded by
+                                     pressing Apply on the picker above. --}}
                                 <button type="button" id="batch-reload-children"
                                     class="px-3 py-1.5 text-[11px] font-semibold bg-white border border-violet-300 text-violet-700 rounded-lg hover:bg-violet-50 transition inline-flex items-center gap-1.5">
                                     <i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i> Reload
@@ -263,14 +360,19 @@
                              is yours alone" is not something the user should have to find out
                              by pressing the button. Same three colours on the headers and on
                              the cells. --}}
-                        <p class="mt-2 text-[11px] text-violet-800/80">
+                        {{-- Source row and Apply-to-all are a subdivision idea: the children
+                             of one mother share almost everything. A regular batch is a set
+                             of unrelated files, so there is nothing to copy from and the
+                             whole apparatus — this hint, the colour bands and the SRC
+                             column — is hidden for it. --}}
+                        <p id="batch-source-hint" class="mt-2 text-[11px] text-violet-800/80">
                             Pick the <span class="font-bold">source row</span> in the
                             <span class="font-mono font-bold">SRC</span> column, then use Apply to all.
                         </p>
                         {{-- Two colours for the two banks of columns. The columns marked
                              "if blank" under their heading are the exception within the
                              copied bank, which is said in words rather than a third tint. --}}
-                        <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] font-semibold">
+                        <div id="batch-copy-legend" class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] font-semibold">
                             <span class="inline-flex items-center gap-1.5 text-amber-900">
                                 <span class="w-3 h-3 rounded-sm bg-amber-100 border border-amber-300"></span>
                                 Left of the line &mdash; never copied
@@ -296,7 +398,7 @@
                                  grouping is what makes the rule readable at a glance — the
                                  colours only reinforce it. --}}
                             <thead class="sticky top-0 z-10">
-                                <tr class="bg-slate-100 border-b border-slate-200 text-[9px] font-black uppercase tracking-widest">
+                                <tr id="batch-band-header" class="bg-slate-100 border-b border-slate-200 text-[9px] font-black uppercase tracking-widest">
                                     <th class="bg-slate-100" colspan="3"></th>
                                     <th class="px-2 py-2 bg-amber-100/80 text-amber-900 text-center whitespace-nowrap" colspan="5">
                                         <span class="inline-flex items-center gap-1.5">
@@ -321,10 +423,10 @@
                                             class="w-4 h-4 align-middle text-violet-600 border-slate-300 rounded focus:ring-violet-500 cursor-pointer">
                                     </th>
                                     <th class="px-1 py-3 text-center w-8 bg-slate-50">#</th>
-                                    <th class="px-1 py-3 text-center w-10 bg-slate-50 text-violet-700" title="Which row Apply-to-all copies from">Src</th>
+                                    <th id="batch-col-src" class="px-1 py-3 text-center w-10 bg-slate-50 text-violet-700" title="Which row Apply-to-all copies from">Src</th>
 
                                     {{-- Left bank: per-plot --}}
-                                    <th class="px-2 py-3 align-bottom w-[126px] bg-amber-50/70 text-amber-900">Child File No</th>
+                                    <th id="batch-col-file-no" class="px-2 py-3 align-bottom w-[126px] bg-amber-50/70 text-amber-900">Child File No</th>
                                     <th class="px-2 py-3 align-bottom w-[76px] bg-amber-50/70 text-amber-900">Plot No</th>
                                     <th class="px-2 py-3 align-bottom w-[168px] bg-amber-50/70 text-amber-900">Applicant Address</th>
                                     <th class="px-2 py-3 align-bottom w-[116px] bg-amber-50/70 text-amber-900">Land Use</th>
@@ -338,7 +440,6 @@
                                     </th>
                                     <th class="px-2 py-3 align-bottom w-[146px] bg-sky-50/70 text-sky-900">
                                         Location
-                                        <span class="block font-medium normal-case tracking-normal text-[9px] text-sky-600">if blank</span>
                                     </th>
                                     <th class="px-2 py-3 align-bottom w-[186px] bg-sky-50/70 text-sky-900">
                                         Page Refs
@@ -351,7 +452,7 @@
                     </div>
 
                     <div class="bg-slate-50 border-t border-slate-200 px-5 py-2.5">
-                        <p class="text-[11px] text-slate-500">
+                        <p id="batch-footer-note" class="text-[11px] text-slate-500">
                             Untick any child that should not receive a recommendation. Every ticked row is saved as
                             its own RofO recommendation, grouped under one batch.
                         </p>
@@ -393,12 +494,21 @@
                         // (extra fields, old file number) but printing uses the Direct /
                         // Conversion template instead of the application-type template.
                         $useStandardTemplate = (bool) old('use_standard_template', $recommendation->use_standard_template ?? false);
-                        $lockRecType  = $hasAppType && !$useStandardTemplate;
+                        // An OSS record's type is its origin, not a choice: neither radio
+                        // here can express it, so the block is locked rather than letting a
+                        // save quietly turn the record into a Direct one.
+                        $isOssRec     = strtoupper((string) ($recommendation->type ?? '')) === 'OSS';
+                        $lockRecType  = ($hasAppType && !$useStandardTemplate) || $isOssRec;
                     @endphp
 
                     <!-- Recommendation Type Selection -->
                     <div id="recommendation-type-block" class="bg-blue-50/30 border border-blue-100 rounded-xl p-6 col-span-2 transition-opacity {{ $lockRecType ? 'opacity-40 pointer-events-none' : '' }}">
-                        <label class="block text-xs font-bold text-blue-700 uppercase tracking-wider mb-3">Recommendation Type</label>
+                        <label class="block text-xs font-bold text-blue-700 uppercase tracking-wider mb-3">
+                            Recommendation Type
+                            @if($isOssRec)
+                                <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 normal-case tracking-normal">OSS — origin cannot be changed</span>
+                            @endif
+                        </label>
                         <div class="flex flex-col sm:flex-row gap-4">
                             <label class="flex items-center gap-3 cursor-pointer p-4 bg-white border border-blue-200 rounded-xl hover:border-blue-500 transition shadow-sm flex-1 group">
                                 <input type="radio" id="rec-direct" name="type" value="Direct"
@@ -419,6 +529,10 @@
                                 </div>
                             </label>
                         </div>
+                        {{-- Why the radios are locked, in a regular batch. Its own line
+                             rather than the batch status box, which the file loader
+                             overwrites with its own notes a moment later. --}}
+                        <div id="batch-rec-type-note" class="hidden mt-3 rounded-lg px-3 py-2 text-[11px] font-semibold"></div>
                     </div>
 
                     <!-- Application Type -->
@@ -910,9 +1024,28 @@
 
                     <!-- Section 1: Applicant & Property (Template a-e) -->
                     <div class="bg-slate-50 border border-slate-100 rounded-xl p-6 space-y-4">
-                        <div class="flex items-center gap-2 mb-2">
+                        <div class="flex flex-wrap items-center gap-2 mb-2">
                             <i data-lucide="user" class="h-4 w-4 text-blue-600"></i>
                             <h3 class="text-sm font-bold text-slate-900 uppercase tracking-tight">Applicant & Property</h3>
+
+                            {{-- Regular batch only, and driven by the same index as the
+                                 Grant Conditions stepper — both cards always show the
+                                 same file, so there is one position in the batch rather
+                                 than two that can disagree. --}}
+                            <div class="per-file-step-nav hidden ml-auto flex items-center gap-2">
+                                <span class="per-file-step-file font-mono text-[11px] font-bold text-slate-700 truncate max-w-[200px]"></span>
+                                <span class="per-file-step-untick hidden px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 text-slate-600 uppercase tracking-wide"
+                                      title="This file is unticked in the table, so these values will not be saved">Not in batch</span>
+                                <div class="flex items-center gap-1 rounded-lg border border-blue-200 bg-white p-0.5">
+                                    <button type="button" class="per-file-step-prev p-1.5 rounded-md text-blue-700 hover:bg-blue-50 disabled:opacity-30 disabled:cursor-not-allowed transition" title="Previous file">
+                                        <i data-lucide="chevron-left" class="h-4 w-4"></i>
+                                    </button>
+                                    <span class="per-file-step-label px-2 text-[11px] font-bold text-slate-700 tabular-nums whitespace-nowrap">1 of 1</span>
+                                    <button type="button" class="per-file-step-next p-1.5 rounded-md text-blue-700 hover:bg-blue-50 disabled:opacity-30 disabled:cursor-not-allowed transition" title="Next file">
+                                        <i data-lucide="chevron-right" class="h-4 w-4"></i>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                         <div class="space-y-4">
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1074,11 +1207,38 @@
                     </div>
 
                     <!-- Section 2: Grant Conditions (Financials) -->
-                    <div class="bg-slate-50 border border-slate-100 rounded-xl p-6 space-y-4">
-                        <div class="flex items-center gap-2 mb-2">
+                    <div id="grant-conditions-card" class="bg-slate-50 border border-slate-100 rounded-xl p-6 space-y-4">
+                        <div class="flex flex-wrap items-center gap-2 mb-2">
                             <i data-lucide="banknote" class="h-4 w-4 text-blue-600"></i>
                             <h3 class="text-sm font-bold text-slate-900 uppercase tracking-tight">Grant Conditions</h3>
+
+                            {{-- Regular batch only. A subdivision's children share one set of
+                                 grant conditions, so the card stays a single capture there.
+                                 Unrelated files do not: each one is its own grant, with its
+                                 own term, fees and premium. Rather than widen the table by
+                                 ten more columns, the card itself becomes the per-file step —
+                                 the values are held in JS and swapped in and out as the
+                                 officer moves through the batch. --}}
+                            <div class="per-file-step-nav hidden ml-auto flex items-center gap-2">
+                                <span class="per-file-step-file font-mono text-[11px] font-bold text-slate-700 truncate max-w-[200px]"></span>
+                                <span class="per-file-step-untick hidden px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 text-slate-600 uppercase tracking-wide"
+                                      title="This file is unticked in the table, so these values will not be saved">Not in batch</span>
+                                <div class="flex items-center gap-1 rounded-lg border border-blue-200 bg-white p-0.5">
+                                    <button type="button" class="per-file-step-prev p-1.5 rounded-md text-blue-700 hover:bg-blue-50 disabled:opacity-30 disabled:cursor-not-allowed transition" title="Previous file">
+                                        <i data-lucide="chevron-left" class="h-4 w-4"></i>
+                                    </button>
+                                    <span class="per-file-step-label px-2 text-[11px] font-bold text-slate-700 tabular-nums whitespace-nowrap">1 of 1</span>
+                                    <button type="button" class="per-file-step-next p-1.5 rounded-md text-blue-700 hover:bg-blue-50 disabled:opacity-30 disabled:cursor-not-allowed transition" title="Next file">
+                                        <i data-lucide="chevron-right" class="h-4 w-4"></i>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
+                        {{-- Per-file grant conditions are posted from here as
+                             children[i][term] and friends. Rebuilt on submit from the JS
+                             store, so the fields on screen never have to be the whole
+                             record. --}}
+                        <div id="grant-per-child-inputs" class="hidden"></div>
                         <div class="space-y-4">
                             <input type="hidden" id="base_term" value="{{ old('term', $recommendation->term ?? '99') }}">
                             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1186,8 +1346,20 @@
                             <h3 class="text-sm font-bold text-amber-900 uppercase tracking-tight">Page Number details</h3>
                         </div>
                         
-                        <!-- Row 1 & 2: Page Numbers and Survey Report -->
+                        {{-- Ordered the way the file is worked through: the application
+                             first, then Physical Planning's page, then the survey report
+                             and the detail that goes with it. --}}
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Application Page No</label>
+                                <input type="text" name="page" value="{{ old('page', $recommendation->page ?? '') }}"
+                                    class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Physical Planning Page No</label>
+                                <input type="text" name="page_2" value="{{ old('page_2', $recommendation->page_2 ?? '') }}"
+                                    class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
+                            </div>
                             <div>
                                 <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Survey Report Page No</label>
                                 <input type="text" name="page_survey_report" value="{{ old('page_survey_report', $recommendation->page_survey_report ?? '') }}"
@@ -1198,16 +1370,6 @@
                                 <input type="text" name="survey_report" value="{{ old('survey_report', $recommendation->survey_report ?? '') }}"
                                     class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition"
                                     placeholder="Reference/Description">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Application Page No</label>
-                                <input type="text" name="page" value="{{ old('page', $recommendation->page ?? '') }}"
-                                    class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Physical Planning Page No</label>
-                                <input type="text" name="page_2" value="{{ old('page_2', $recommendation->page_2 ?? '') }}"
-                                    class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
                             </div>
                         </div>
 
@@ -1623,15 +1785,20 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 </style>
 <script>
-// ── Plot Subdivision batch capture ─────────────────────────────────────────
-// One recommendation per child of the mother file. The rest of the form keeps
-// capturing the values common to the whole batch; only what differs per child
-// lives in the table, and the form posts to the batch endpoint instead.
+// ── Batch capture ──────────────────────────────────────────────────────────
+// One recommendation per file, in a single pass. Two kinds share this module and
+// the same table: a SUBDIVISION batch, whose rows are the commissioned children
+// of one mother file, and a REGULAR batch, whose rows are file numbers the
+// officer picked by hand. The rest of the form keeps capturing the values common
+// to the whole batch; only what differs per file lives in the table, and the form
+// posts to the batch endpoint instead.
 document.addEventListener('DOMContentLoaded', function () {
     var BATCH_TYPE     = 'Plot Subdivision';
     var MOTHERS_URL    = '{{ route('land-recommendations.subdivision-mothers') }}';
     var CHILDREN_URL   = '{{ route('land-recommendations.subdivision-children') }}';
     var BATCH_ACTION   = '{{ route('land-recommendations.store-batch') }}';
+    var FILES_URL      = '{{ route('land-recommendations.batch-files') }}';
+    var FILE_DETAIL_URL = '{{ route('land-recommendations.batch-file-details') }}';
     var PURPOSES_URL   = '{{ url('api/reference/purposes') }}';
 
     var toggle      = document.getElementById('batch-mode-toggle');
@@ -1655,6 +1822,73 @@ document.addEventListener('DOMContentLoaded', function () {
     var manualHelp  = document.getElementById('atx-old-fileno-help');
     var motherField = document.getElementById('batch-mother-file-no');
     var mothersLoaded = false;
+
+    // Regular-files kind.
+    var kindRow     = document.getElementById('batch-kind-row');
+    var kindRadios  = document.querySelectorAll('.batch-kind-radio');
+    var kindInput   = document.getElementById('batch-kind');
+    var filesPicker = document.getElementById('batch-files-picker');
+    var fileSel     = document.getElementById('batch-file-select');
+    var filesApply  = document.getElementById('batch-files-apply');
+    var filesClear  = document.getElementById('batch-files-clear');
+    var filesCount  = document.getElementById('batch-files-count');
+    var cardTitle   = document.getElementById('batch-card-title');
+    var colFileNo   = document.getElementById('batch-col-file-no');
+    var footerNote  = document.getElementById('batch-footer-note');
+    var filesSelectReady = false;
+    // File numbers (uppercased) from the most recent picker search. createTag is
+    // only handed the typed term, and it has to be able to tell whether the
+    // register already returned that exact number — see the note on createTag.
+    var lastFileResults = [];
+
+    // Everything that only makes sense when one row can be copied onto the others.
+    var srcHint     = document.getElementById('batch-source-hint');
+    var copyLegend  = document.getElementById('batch-copy-legend');
+    var bandHeader  = document.getElementById('batch-band-header');
+    var colSrc      = document.getElementById('batch-col-src');
+
+    // Per-file capture, regular batch only. Two cards carry a stepper — Grant
+    // Conditions and Applicant & Property — and both are driven from one index, so
+    // they always show the same file.
+    var stepNavs    = document.querySelectorAll('.per-file-step-nav');
+    var grantInputs = document.getElementById('grant-per-child-inputs');
+    var batchInfo   = document.getElementById('batch-regular-info');
+    var batchInfoCount = document.getElementById('batch-regular-info-count');
+
+    function eachStep(selector, fn) {
+        Array.prototype.forEach.call(stepNavs, function (nav) {
+            var el = nav.querySelector(selector);
+            if (el) fn(el, nav);
+        });
+    }
+    var recTypeNote    = document.getElementById('batch-rec-type-note');
+    // Set by applyRegularRecType so the submit handler can block a mixed batch
+    // without re-deriving it. Up here with the rest of the state for the same
+    // reason as PER_FILE_FIELDS below — applyKind() writes it and can run early.
+    var regularTypeMixed = false;
+    // Declared with the rest of the state rather than beside the functions that
+    // use them: applyKind() runs from a change event that can fire while this
+    // script is still executing, and a `var` initialised further down would be
+    // undefined at that point.
+    //
+    // Every field a regular batch captures once per file, by input name, across
+    // both stepped cards. Order matters on the way in — preparation_fees is
+    // written before preparation_fees_words so the derived wording cannot
+    // overwrite the stored one. Anything added to either card must be listed here,
+    // and in LandRecommendationController::PER_CHILD_GRANT_FIELDS, or it will not
+    // travel per file.
+    var PER_FILE_FIELDS = [
+        // Grant Conditions
+        'cofo_year', 'selected_year', 'term', 'development_value',
+        'development_period', 'ground_rent', 'development_charge',
+        'survey_fees', 'preparation_fees', 'preparation_fees_words',
+        // Applicant & Property. A hand-picked set spans layouts, so TP No. cannot
+        // be captured once for the whole batch. Application Date stays batch-wide
+        // — one date for the batch is fine.
+        'layout_plan_no'
+    ];
+    var grantStore  = [];
+    var grantIndex  = 0;
 
     // Sections that move up under Batch Mode while it is on, in the order a batch is
     // actually filled in: pick the type, pick the mother, then work the children.
@@ -1692,6 +1926,16 @@ document.addEventListener('DOMContentLoaded', function () {
         return (appToggle && !appToggle.checked) ? '' : (checked ? checked.value : '');
     }
 
+    // 'subdivision' | 'regular'. Subdivision is the default and the fallback: it is
+    // what every batch was before regular files existed, so nothing that fails to
+    // read the radios can silently change the meaning of a post.
+    function currentKind() {
+        var picked = document.querySelector('.batch-kind-radio:checked');
+        return (picked && picked.value === 'regular') ? 'regular' : 'subdivision';
+    }
+
+    function isRegular() { return currentKind() === 'regular'; }
+
     // Fields the table now owns are hidden AND disabled — disabled inputs are not
     // submitted, which also stands down their `required` so the browser cannot
     // block the batch post on a field the user can no longer see.
@@ -1717,7 +1961,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function applyBatchMode(on) {
-        if (hint) hint.classList.toggle('hidden', !on);
+        if (kindRow) kindRow.classList.toggle('hidden', !on);
 
         // Autosave only exists for a batch — a single record is short enough that
         // losing it to a timeout is an annoyance rather than a day's work.
@@ -1733,16 +1977,6 @@ document.addEventListener('DOMContentLoaded', function () {
             fileNoInput.required = !on;
         }
 
-        // Batch mode only exists for an application type, so the type panel is
-        // forced open and held there.
-        if (appToggle) {
-            if (on && !appToggle.checked) {
-                appToggle.checked = true;
-                appToggle.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-            appToggle.disabled = on;
-        }
-
         standDownPerChildFields(on);
         recForm.setAttribute('action', on ? BATCH_ACTION : singleAction);
 
@@ -1752,14 +1986,65 @@ document.addEventListener('DOMContentLoaded', function () {
             motherField.value = (on && oldFileNo) ? oldFileNo.value.trim() : '';
         }
 
-        // A batch letter is the standard Direct / Conversion document — the
-        // Plot Subdivision template describes the mother's split, not an individual
-        // child's grant. Ticking this also releases the Recommendation Type lock, so
-        // Direct / Conversion becomes selectable. The prior state is restored on the
-        // way out so switching batch mode off does not leave the box changed.
+        // Which sections belong to which kind, what the table calls its rows, and
+        // whether the type panel is forced open all follow from the kind — so they
+        // live in one place rather than being decided twice.
+        applyKind(on);
+
+        if (!on) {
+            card.classList.add('hidden');
+            rowsBody.innerHTML = '';
+            setStatus('');
+        }
+        if (window.lucide) window.lucide.createIcons();
+    }
+
+    // Everything that differs between the two kinds of batch. Called when batch mode
+    // is switched and whenever the kind itself changes; `on` is batch mode's state,
+    // so switching batch mode off restores the single-record form regardless of kind.
+    function applyKind(on) {
+        var regular = on && isRegular();
+        var subdivision = on && !regular;
+
+        if (kindInput) {
+            kindInput.disabled = !on;
+            kindInput.value = regular ? 'regular' : 'subdivision';
+        }
+
+        // A regular batch has no mother. The field still posts (the endpoint accepts
+        // it empty), but it must not carry the old file number across — that would
+        // group an unrelated set of files under a file they have nothing to do with.
+        if (motherField && regular) motherField.value = '';
+
+        // Subdivision batch mode only exists for an application type, so the type
+        // panel is forced open and held there. A regular batch has no such
+        // requirement — any type, or none, is valid — so the toggle stays the
+        // officer's to set.
+        if (appToggle) {
+            if (subdivision && !appToggle.checked) {
+                appToggle.checked = true;
+                appToggle.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            // A regular batch prints the standard Direct / Conversion document, and
+            // which of the two it is comes from the files themselves. An application
+            // type would take that decision over — so the toggle is forced off and
+            // held there for the length of the batch.
+            if (regular && appToggle.checked) {
+                appToggle.checked = false;
+                appToggle.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            appToggle.disabled = on;
+        }
+
+        // A subdivision batch letter is the standard Direct / Conversion document —
+        // the Plot Subdivision template describes the mother's split, not an
+        // individual child's grant. Ticking this also releases the Recommendation
+        // Type lock, so Direct / Conversion becomes selectable. The prior state is
+        // restored on the way out so leaving the kind (or batch mode) does not
+        // leave the box changed. A regular batch prints whatever the form says.
         var stdTemplate = document.getElementById('use-standard-template');
         if (stdTemplate) {
-            if (on) {
+            if (subdivision) {
                 if (stdTemplate.dataset.batchPrevChecked === undefined) {
                     stdTemplate.dataset.batchPrevChecked = stdTemplate.checked ? '1' : '0';
                 }
@@ -1777,49 +2062,122 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
 
-        // Stack the three sections between Batch Mode and the children table, in
-        // array order (inserting each before the table preserves it).
+        // Stack the three sections between Batch Mode and the table, in array order
+        // (inserting each before the table preserves it). Only the subdivision kind
+        // needs them up there — it is filled in that order, type then mother then
+        // children. A regular batch picks its files from the card above the table,
+        // so the sections stay where the markup puts them.
         if (card) {
             relocatable.forEach(function (r) {
-                if (on) {
+                if (subdivision) {
                     if (!r.home) {
                         r.home = { parent: r.el.parentNode, next: r.el.nextSibling };
                     }
                     card.parentNode.insertBefore(r.el, card);
                 } else if (r.home) {
                     r.home.parent.insertBefore(r.el, r.home.next);
+                    r.home = null;
                 }
             });
         }
 
         // Swap the whole-register file picker for the short list of files that
         // actually have subdivision children.
-        if (motherPick) motherPick.classList.toggle('hidden', !on);
-        if (manualPick) manualPick.classList.toggle('hidden', on);
-        if (motherHelp) motherHelp.classList.toggle('hidden', !on);
-        if (manualHelp) manualHelp.classList.toggle('hidden', on);
-        if (on) loadMothers();
+        if (motherPick) motherPick.classList.toggle('hidden', !subdivision);
+        if (manualPick) manualPick.classList.toggle('hidden', subdivision);
+        if (motherHelp) motherHelp.classList.toggle('hidden', !subdivision);
+        if (manualHelp) manualHelp.classList.toggle('hidden', subdivision);
 
-        if (!on) {
-            card.classList.add('hidden');
-            rowsBody.innerHTML = '';
-            setStatus('');
+        if (hint) hint.classList.toggle('hidden', !subdivision);
+        if (filesPicker) filesPicker.classList.toggle('hidden', !regular);
+        if (reloadBtn) reloadBtn.classList.toggle('hidden', !subdivision);
+
+        // Apply-to-all copies one row onto the rest, which is a subdivision idea:
+        // the children of one mother share an applicant, a location and a page set.
+        // Unrelated files share none of that, so the button, the SRC column and the
+        // two colour bands that explain them all stand down — a band headed
+        // "copied from the source row" over columns nothing copies into is worse
+        // than no band at all.
+        if (applyAllBtn) applyAllBtn.classList.toggle('hidden', regular);
+        if (srcHint)     srcHint.classList.toggle('hidden', regular);
+        if (copyLegend)  copyLegend.classList.toggle('hidden', regular);
+        if (bandHeader)  bandHeader.classList.toggle('hidden', regular);
+        if (colSrc)      colSrc.classList.toggle('hidden', regular);
+        rowsBody.querySelectorAll('.batch-src-cell').forEach(function (td) {
+            td.classList.toggle('hidden', regular);
+        });
+        // The left-edge bar and the "Source row" badge mark a row nothing copies
+        // from once the picker is gone, so they go with it.
+        rowsBody.querySelectorAll('.batch-row').forEach(function (tr) {
+            if (regular) tr.classList.remove('batch-source-row');
+        });
+        rowsBody.querySelectorAll('.batch-source-badge').forEach(function (b) {
+            if (regular) b.classList.add('hidden');
+        });
+
+        // Grant conditions are per file in a regular batch and shared in a
+        // subdivision, so the stepper appears with the kind.
+        Array.prototype.forEach.call(stepNavs, function (nav) {
+            nav.classList.toggle('hidden', !regular);
+        });
+        if (batchInfo) batchInfo.classList.toggle('hidden', !regular);
+        if (regular) {
+            rebuildGrantStore();
         } else {
-            syncForAppType();
+            grantStore = [];
+            grantIndex = 0;
+            regularTypeMixed = false;
+            if (grantInputs) grantInputs.innerHTML = '';
         }
-        if (window.lucide) window.lucide.createIcons();
+
+        // The Application Type card is off and untouchable for the length of a
+        // batch either way — forced on for a subdivision, forced off for a regular
+        // one — so it is dimmed to match the toggle rather than looking live.
+        var appCard = document.getElementById('application-type-card');
+        if (appCard) appCard.classList.toggle('opacity-60', on);
+
+        // The rows mean different things, so the table says which it is holding.
+        if (cardTitle)  cardTitle.textContent = regular ? 'Selected files' : 'Children of';
+        if (motherLabel) motherLabel.classList.toggle('hidden', regular);
+        if (colFileNo)  colFileNo.textContent = regular ? 'File No' : 'Child File No';
+        if (footerNote) {
+            footerNote.textContent = regular
+                ? 'Untick any file that should not receive a recommendation. Every ticked row is saved as its own '
+                    + 'RofO recommendation, grouped under one batch.'
+                : 'Untick any child that should not receive a recommendation. Every ticked row is saved as its own '
+                    + 'RofO recommendation, grouped under one batch.';
+        }
+
+        if (!on) return;
+
+        if (subdivision) {
+            loadMothers();
+            syncForAppType();
+        } else {
+            initFileSelect();
+            setStatus('');
+            // A kind switch must not carry the other kind's rows across — they are
+            // a different set of files entirely.
+            if (!restoring) {
+                card.classList.toggle('hidden', rowsBody.querySelectorAll('.batch-row').length === 0);
+            }
+            // After the setStatus('') above, or the message it writes is cleared
+            // the moment it is set.
+            applyRegularRecType();
+        }
     }
 
-    // The table only makes sense for a subdivision; any other type in batch mode
-    // falls back to an empty table and a note rather than silently doing nothing.
+    // The subdivision table only makes sense for a subdivision; any other type in
+    // that kind falls back to an empty table and a note rather than silently doing
+    // nothing. A regular batch has no such constraint, so it never comes through here.
     function syncForAppType() {
-        if (!toggle.checked || suppressChildLoad) return;
+        if (!toggle.checked || suppressChildLoad || isRegular()) return;
         var type = currentAppType();
 
         if (type !== BATCH_TYPE) {
             card.classList.add('hidden');
             rowsBody.innerHTML = '';
-            setStatus(type ? 'Batch mode currently covers ' + BATCH_TYPE + ' only.' : '', 'warn');
+            setStatus(type ? 'A subdivision batch covers ' + BATCH_TYPE + ' only — switch to Regular files for any other type.' : '', 'warn');
             return;
         }
 
@@ -1870,10 +2228,11 @@ document.addEventListener('DOMContentLoaded', function () {
             +   '<input type="checkbox" class="batch-row-check w-4 h-4 text-violet-600 border-slate-300 rounded focus:ring-violet-500 cursor-pointer"'
             +     ' data-had-rec="' + (alreadyDone ? '1' : '0') + '"'
             +     ' data-existing-status="' + esc(child.existing_status || '') + '"'
+            +     ' data-unknown="' + (child.is_unknown ? '1' : '0') + '"'
             +     (alreadyDone ? '' : ' checked') + '>'
             + '</td>'
             + '<td class="px-2 py-2.5 text-center text-xs font-bold text-slate-400">' + (i + 1) + '</td>'
-            + '<td class="px-1 py-2.5 text-center">'
+            + '<td class="batch-src-cell px-1 py-2.5 text-center">'
             +   '<input type="radio" class="batch-row-source w-4 h-4 text-violet-600 border-slate-300 focus:ring-violet-500 cursor-pointer"'
             +     ' name="batch_source_row" value="' + i + '"' + (isSource ? ' checked' : '')
             +     ' title="Copy this row\'s values into the others">'
@@ -1883,6 +2242,11 @@ document.addEventListener('DOMContentLoaded', function () {
             +   '<span class="batch-source-badge mt-1 ' + (isSource ? 'inline-flex' : 'hidden') + ' items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-100 text-violet-700 uppercase tracking-wide">Source row</span>'
             +   (alreadyDone
                     ? '<span class="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-100 text-rose-700" title="' + esc(child.existing_status || '') + ' — already captured, so this row is excluded from the batch">Has a RofO</span>'
+                    : '')
+            // No register has anything on this number, so the row came back blank.
+            // Said on the row itself, or a blank line reads as a load that failed.
+            +   (child.is_unknown
+                    ? '<span class="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800" title="Nothing is on file for this number — key its details by hand">Not on file</span>'
                     : '')
             +   '<input type="hidden" name="children[' + i + '][file_number]" value="' + esc(child.file_number) + '">'
             +   '<input type="hidden" name="children[' + i + '][tracking_id]" value="' + esc(child.tracking_id) + '">'
@@ -1944,6 +2308,15 @@ document.addEventListener('DOMContentLoaded', function () {
         if (selectAll) {
             selectAll.checked = total > 0 && n === total;
             selectAll.indeterminate = n > 0 && n < total;
+        }
+
+        // The "not in batch" flag on the steppers follows the tick boxes.
+        renderGrantStep();
+
+        if (batchInfoCount) {
+            batchInfoCount.textContent = total
+                ? n + ' of ' + total + ' file' + (total === 1 ? '' : 's') + ' ticked'
+                : 'no files picked yet';
         }
     }
 
@@ -2086,10 +2459,534 @@ document.addEventListener('DOMContentLoaded', function () {
             });
     }
 
+    // ── Regular batch: the file picker ─────────────────────────────────────
+    // Multi-select with tagging over the register. Searching server-side is the
+    // only thing that scales here — the register is the whole point — and tagging
+    // is what lets a file number that is not indexed yet still be captured.
+    function initFileSelect() {
+        if (filesSelectReady || !fileSel) return;
+
+        // Without jQuery/Select2 the plain multiple <select> is useless (nothing
+        // populates it), so the field degrades to a comma-separated text box
+        // instead. Rare, but a batch that silently cannot be filled is worse.
+        if (!window.jQuery || !jQuery.fn || !jQuery.fn.select2) {
+            filesSelectReady = true;
+            var box = document.createElement('textarea');
+            box.id = 'batch-file-manual';
+            box.rows = 3;
+            box.placeholder = 'One file number per line, or separated by commas';
+            box.className = 'w-full border border-violet-300 rounded-lg px-3 py-2.5 bg-white text-sm font-mono outline-none';
+            fileSel.parentNode.insertBefore(box, fileSel);
+            fileSel.classList.add('hidden');
+            return;
+        }
+
+        filesSelectReady = true;
+        var $sel = jQuery(fileSel);
+
+        $sel.select2({
+            placeholder: 'Search file numbers — pick as many as you need',
+            width: '100%',
+            multiple: true,
+            // The chip renders from the <option>'s text, and an option can outlive
+            // the code that labelled it — a resumed draft, or a tab that was open
+            // before the plot suffix was dropped from the list. Stripped here as
+            // well so nothing shows "· Plot …" whatever created it.
+            templateSelection: function (data) {
+                return String(data.text || data.id || '').replace(/\s*·\s*Plot\b.*$/i, '');
+            },
+            // Anything typed that the search did not return is still a valid pick:
+            // paper files being captured for the first time have no register row yet.
+            tags: true,
+            minimumInputLength: 1,
+            // No tag at all for a number the register just returned. Keeping the
+            // check here rather than only in insertTag matters: Select2 appends the
+            // tag's <option> to the underlying <select> before insertTag ever runs,
+            // so a tag sharing a value with a real result left two options on the
+            // same value — and the chip then rendered with the tag's label. That is
+            // why picking "IND-2026-253 — SALISU UMAR" turned into
+            // "IND-2026-253 (not in the register — added as typed)" once selected.
+            createTag: function (params) {
+                var term = jQuery.trim(params.term);
+                if (!term) return null;
+                if (lastFileResults.indexOf(term.toUpperCase()) !== -1) return null;
+                // A typed number must not sneak past the same-type rule the list
+                // below enforces — it would produce exactly the mixed batch the
+                // dropdown is refusing to let you build.
+                var lock = pickedTypeLock();
+                if (lock !== null && isConversionFile(term) !== lock) return null;
+                return { id: term.toUpperCase(), text: term.toUpperCase() + ' (not in the register — added as typed)', isNew: true };
+            },
+            // Select2 puts a created tag at the top of the list and highlights the
+            // first row, so typing a file number in full offered "added as typed"
+            // above the register's own match — and Enter took it. The file then
+            // loaded blank as "Not on file" even though it exists. The tag now goes
+            // last, and is dropped entirely when the register already has that exact
+            // number.
+            insertTag: function (data, tag) {
+                var term = String(tag.id || '').trim().toUpperCase();
+                var exact = data.some(function (item) {
+                    return String(item.id || '').trim().toUpperCase() === term;
+                });
+                if (exact) return;
+                // Before the "showing the first N" notice, which is always last.
+                var noticeAt = data.findIndex
+                    ? data.findIndex(function (item) { return item.isNotice; })
+                    : -1;
+                if (noticeAt >= 0) data.splice(noticeAt, 0, tag);
+                else data.push(tag);
+            },
+            ajax: {
+                url: FILES_URL,
+                dataType: 'json',
+                delay: 250,
+                data: function (params) { return { q: params.term || '' }; },
+                processResults: function (data) {
+                    // One Recommendation Type is saved for the whole batch, so the
+                    // first pick fixes it: once a CON file is in, only CON files can
+                    // join, and vice versa. Enforced here rather than only at save —
+                    // finding out at the end that a batch cannot be saved is the
+                    // worst possible moment.
+                    var lock = pickedTypeLock();
+
+                    var results = ((data && data.files) || []).map(function (f) {
+                        var label = f.file_number;
+                        if (f.applicant_name) label += ' — ' + f.applicant_name;
+
+                        var wrongType = lock !== null && isConversionFile(f.file_number) !== lock;
+                        if (wrongType) {
+                            label += lock
+                                ? '  ⛔ not a conversion file — this batch is Conversion'
+                                : '  ⛔ conversion file — this batch is Direct';
+                        } else if (f.has_recommendation) {
+                            label += '  ⛔ already has a recommendation';
+                        }
+
+                        return {
+                            id: f.file_number,
+                            text: label,
+                            // A file that already carries one cannot go into a
+                            // batch — storeBatch() rejects the whole post over it,
+                            // so it is shown and blocked rather than picked and
+                            // then failed at save.
+                            disabled: !!f.has_recommendation || wrongType
+                        };
+                    });
+
+                    // Remembered for createTag, which cannot see the results itself.
+                    lastFileResults = results.map(function (r) {
+                        return String(r.id || '').trim().toUpperCase();
+                    });
+
+                    // The search returned as many rows as it is allowed to, so there
+                    // are almost certainly more. Said outright — a truncated list
+                    // reads as "my file is not in the register".
+                    if (data && data.capped) {
+                        results.push({
+                            id: '__more__',
+                            text: 'Showing the first ' + (data.limit || results.length)
+                                + ' matches — type more of the file number to narrow it down',
+                            disabled: true,
+                            isNotice: true
+                        });
+                    }
+
+                    return { results: results };
+                },
+                cache: true
+            }
+        });
+
+        $sel.on('change', function () { updateFilesCount(); });
+        updateFilesCount();
+    }
+
+    // The file numbers currently picked, from whichever control is in play.
+    function pickedFiles() {
+        var manual = document.getElementById('batch-file-manual');
+        if (manual) {
+            // Never split on whitespace: KANGIS numbers contain spaces ("KNML 1").
+            return manual.value.split(/[,;\n\r]+/).map(function (s) { return s.trim(); }).filter(Boolean);
+        }
+        if (!fileSel) return [];
+        return Array.prototype.map.call(fileSel.selectedOptions || [], function (o) { return o.value.trim(); })
+            .filter(Boolean);
+    }
+
+    function updateFilesCount() {
+        if (!filesCount) return;
+        var n = pickedFiles().length;
+        filesCount.textContent = n + ' picked';
+        filesCount.className = 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold '
+            + (n ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-600');
+    }
+
+    // Put a picked selection into the picker's control — used by a draft restore,
+    // which has the file numbers but no Select2 options for them.
+    function setPickedFiles(files) {
+        files = (files || []).filter(Boolean);
+        var manual = document.getElementById('batch-file-manual');
+        if (manual) {
+            manual.value = files.join('\n');
+            updateFilesCount();
+            return;
+        }
+        if (!fileSel) return;
+
+        if (window.jQuery && jQuery.fn && jQuery.fn.select2 && filesSelectReady) {
+            var $sel = jQuery(fileSel);
+            $sel.empty();
+            files.forEach(function (f) { $sel.append(new Option(f, f, true, true)); });
+            $sel.trigger('change.select2');
+        } else {
+            fileSel.innerHTML = files.map(function (f) {
+                return '<option value="' + esc(f) + '" selected>' + esc(f) + '</option>';
+            }).join('');
+        }
+        updateFilesCount();
+    }
+
+    // Load the picked file numbers into the table. Same row shape and the same
+    // renderer the subdivision children use, so everything downstream — Apply to
+    // all, autosave, the save itself — cannot tell the two kinds apart.
+    function loadPickedFiles(files) {
+        var ticket = ++childLoadSeq;
+
+        motherLabel.textContent = '';
+        if (motherField) motherField.value = '';
+
+        card.classList.remove('hidden');
+        rowsBody.innerHTML = '<tr><td colspan="11" class="px-3 py-10 text-center text-xs text-slate-500">'
+            + '<i data-lucide="loader-2" class="h-5 w-5 mx-auto mb-2 text-violet-400 animate-spin"></i>Loading files…</td></tr>';
+        if (window.lucide) window.lucide.createIcons();
+        setStatus('');
+
+        return fetchFileDetails(files).then(function (result) {
+            if (ticket !== childLoadSeq) return;
+
+            if (!result.success) {
+                rowsBody.innerHTML = '';
+                setStatus(result.message || 'Could not load the selected files.', 'error');
+                updateCount();
+                return;
+            }
+
+            renderChildren(result.children);
+
+            var alreadyDone = result.children.filter(function (c) { return c.has_recommendation; }).length;
+            var notes = [];
+            if (alreadyDone) {
+                notes.push(alreadyDone + ' of these files already carry a recommendation and are unticked — they cannot be captured twice.');
+            }
+            if (result.unknown && result.unknown.length) {
+                notes.push('Nothing is on file for: ' + result.unknown.join(', ') + ' — key their details by hand.');
+            }
+            setStatus(notes.join(' '), 'warn');
+            scheduleSave();
+        });
+    }
+
+    // The picked files as the registers have them right now, without touching the
+    // table. Used by the Apply button and by a draft restore's backfill.
+    function fetchFileDetails(files) {
+        var body = new FormData();
+        body.append('_token', csrfToken());
+        files.forEach(function (f) { body.append('file_numbers[]', f); });
+
+        return fetch(FILE_DETAIL_URL, {
+            method: 'POST',
+            body: body,
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                return (data && data.success)
+                    ? { success: true, children: data.children || [], unknown: data.unknown || [] }
+                    : { success: false, message: (data && data.message) || 'Could not load the selected files.' };
+            })
+            .catch(function () {
+                return { success: false, message: 'Network error while loading the selected files.' };
+            });
+    }
+
     // Paint a set of child rows into the table. Shared by the live load from the
     // server and by a draft restore, so a resumed capture is byte-for-byte the
     // table the user left — the draft simply supplies the same row objects the
     // children endpoint would have.
+    /* ═══════════════════════════════════════════════════════════════════
+       Per-file Grant Conditions — regular batch only
+       ═══════════════════════════════════════════════════════════════════
+       A subdivision's children are one grant split across plots, so they share
+       one set of conditions. A regular batch is a set of unrelated files, and
+       each of those is its own grant. Rather than bolt ten more columns onto an
+       already 1184px-wide table, the Grant Conditions card becomes the step: the
+       officer walks the batch with Prev / Next and the card shows one file at a
+       time. The values live in `grantStore` — the inputs on screen are only ever
+       the view onto the current index.
+
+       The card's own inputs keep their original names, so outside a regular
+       batch (single record, or a subdivision) nothing about this runs and the
+       form posts exactly as it always did. */
+
+    // PER_FILE_FIELDS / grantStore / grantIndex are declared with the other batch
+    // state above, out of reach of the initialisation-order trap noted there.
+
+    function grantEls() {
+        return PER_FILE_FIELDS.map(function (f) {
+            return { name: f, el: recForm.querySelector('[name="' + f + '"]') };
+        }).filter(function (p) { return p.el; });
+    }
+
+    // What the card currently shows, as a plain object.
+    function readGrantCard() {
+        var out = {};
+        grantEls().forEach(function (p) { out[p.name] = p.el.value; });
+        return out;
+    }
+
+    function writeGrantCard(values) {
+        grantEls().forEach(function (p) {
+            var next = (values && values[p.name] !== undefined) ? values[p.name] : '';
+            var el = p.el;
+
+            // TP No. is a Select2. Its value only sticks if an <option> for it
+            // exists, and the rendered text only refreshes on change.select2 —
+            // otherwise the box keeps showing the file before it.
+            if (window.jQuery && jQuery.fn && jQuery.fn.select2 && jQuery(el).data('select2')) {
+                var $el = jQuery(el);
+                if (next) {
+                    var known = Array.prototype.some.call(el.options || [], function (o) {
+                        return o.value === next;
+                    });
+                    if (!known) $el.append(new Option(next, next, false, false));
+                }
+                $el.val(next || null).trigger('change.select2');
+
+                // The "Specify TP No…" box belongs to whichever file was on screen
+                // when it was opened. Left alone it follows you to the next file
+                // still holding the previous one's text, and its input handler
+                // would then overwrite that file's TP No on the next keystroke.
+                var other = document.getElementById(el.id + '_other');
+                if (other) { other.value = ''; other.style.display = 'none'; }
+                return;
+            }
+
+            if (el.value === next) return;
+            el.value = next;
+            // preparation_fees_words is derived from preparation_fees by a change
+            // listener elsewhere on this form; firing the event keeps it in step
+            // instead of leaving the previous file's wording on screen.
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+    }
+
+    function grantRows() {
+        return Array.prototype.slice.call(rowsBody.querySelectorAll('.batch-row'));
+    }
+
+    function grantFileNumber(i) {
+        var tr = grantRows()[i];
+        if (!tr) return '';
+        var hid = tr.querySelector('input[name$="[file_number]"]');
+        return hid ? hid.value : '';
+    }
+
+    // Park whatever is on screen into the current slot. Called before every move
+    // and before the batch is posted, so nothing keyed is left only in the DOM.
+    function commitGrant() {
+        if (!isRegular() || !grantStore.length) return;
+        if (grantIndex < 0 || grantIndex >= grantStore.length) return;
+        grantStore[grantIndex] = readGrantCard();
+    }
+
+    function renderGrantStep() {
+        if (!stepNavs.length) return;
+        var total = grantStore.length;
+
+        // An unticked row is not saved, so say so rather than let the officer key
+        // values into a file that will never receive them.
+        var tr = grantRows()[grantIndex];
+        var ticked = !tr || (tr.querySelector('.batch-row-check') || {}).checked;
+
+        eachStep('.per-file-step-label', function (el) {
+            el.textContent = (total ? (grantIndex + 1) : 0) + ' of ' + total;
+        });
+        eachStep('.per-file-step-file', function (el) {
+            el.textContent = grantFileNumber(grantIndex);
+        });
+        eachStep('.per-file-step-prev', function (el) { el.disabled = grantIndex <= 0; });
+        eachStep('.per-file-step-next', function (el) { el.disabled = grantIndex >= total - 1; });
+        eachStep('.per-file-step-untick', function (el) {
+            el.classList.toggle('hidden', !!ticked);
+        });
+    }
+
+    function gotoGrant(i) {
+        var total = grantStore.length;
+        if (!total) return;
+        commitGrant();
+        grantIndex = Math.max(0, Math.min(total - 1, i));
+        writeGrantCard(grantStore[grantIndex]);
+        renderGrantStep();
+    }
+
+    // Rebuild the store to match the table. Rows keep their values across a
+    // re-render by file number, so reordering or reloading the picked set does not
+    // scramble conditions onto the wrong file. `seed` carries values restored from
+    // a draft, keyed the same way.
+    function rebuildGrantStore(seed) {
+        var byFile = {};
+        grantStore.forEach(function (g, i) {
+            var fn = (g && g.__file) || '';
+            if (fn) byFile[fn] = g;
+        });
+        (seed || []).forEach(function (g) {
+            if (g && g.__file) byFile[g.__file] = g;
+        });
+
+        // The card as it stands is the template for any file with nothing of its
+        // own yet — a batch is usually keyed once and adjusted per file, not keyed
+        // ten times from blank.
+        var template = readGrantCard();
+
+        grantStore = grantRows().map(function (tr, i) {
+            var fn = grantFileNumber(i);
+            var prev = fn ? byFile[fn] : null;
+            var g = {};
+            PER_FILE_FIELDS.forEach(function (f) {
+                g[f] = (prev && prev[f] !== undefined) ? prev[f] : template[f];
+            });
+            g.__file = fn;
+            return g;
+        });
+
+        if (grantIndex >= grantStore.length) grantIndex = Math.max(0, grantStore.length - 1);
+        if (grantStore.length) writeGrantCard(grantStore[grantIndex]);
+        renderGrantStep();
+    }
+
+    // Values captured per file, for the draft. Keyed by file number so a resumed
+    // draft can put them back on the right rows even if the set changed.
+    function serializeGrant() {
+        commitGrant();
+        return grantStore.map(function (g) { return Object.assign({}, g); });
+    }
+
+    // Write the store out as children[i][field] just before the post. Rebuilt from
+    // scratch every time so a removed row never leaves a stale input behind.
+    //
+    // Only values that differ from what the card itself is posting are written. The
+    // card posts as the batch-wide set, and the server falls back to it for any
+    // field a child does not carry — so a batch where every file shares the
+    // conditions adds no fields at all. That matters: a 200-file batch is already
+    // near PHP's max_input_vars, and ten unconditional inputs per child would
+    // double it (see the children_expected guard in storeBatch).
+    function syncGrantInputs() {
+        if (!grantInputs) return;
+        grantInputs.innerHTML = '';
+        if (!toggle.checked || !isRegular()) return;
+
+        commitGrant();
+        var baseline = readGrantCard();
+        var html = '';
+        grantStore.forEach(function (g, i) {
+            PER_FILE_FIELDS.forEach(function (f) {
+                var v = (g && g[f] !== undefined && g[f] !== null) ? String(g[f]) : '';
+                if (v === String(baseline[f] === undefined || baseline[f] === null ? '' : baseline[f])) return;
+                html += '<input type="hidden" name="children[' + i + '][' + f + ']" value="' + esc(v) + '">';
+            });
+        });
+        grantInputs.innerHTML = html;
+    }
+
+    eachStep('.per-file-step-prev', function (el) {
+        el.addEventListener('click', function () { gotoGrant(grantIndex - 1); });
+    });
+    eachStep('.per-file-step-next', function (el) {
+        el.addEventListener('click', function () { gotoGrant(grantIndex + 1); });
+    });
+
+    /* ═══════════════════════════════════════════════════════════════════
+       Recommendation Type from the picked files — regular batch only
+       ═══════════════════════════════════════════════════════════════════
+       Single capture reads Direct / Conversion off the one file number it has
+       (autoDetectRecommendationType in land_recommendations.js). A regular batch
+       has a set instead, so it applies the same rule across the set and locks the
+       radios the same way — via the shared _lockRecommendationType, so the two
+       screens cannot drift apart.
+
+       The type is posted once for the whole batch, which means a set that mixes
+       conversion and non-conversion files cannot be right for all of it. That is
+       said plainly rather than resolved silently. */
+
+    // regularTypeMixed is declared with the other batch state above.
+
+    function isConversionFile(fileNo) {
+        return typeof window._isConversionFileNo === 'function'
+            ? window._isConversionFileNo(fileNo)
+            : /CON/i.test(String(fileNo || ''));
+    }
+
+    // What the picked set has already committed the batch to:
+    //   true  — Conversion, so only CON files may join
+    //   false — Direct, so no CON file may join
+    //   null  — nothing picked yet, or the set is already mixed (a draft keyed
+    //           before this rule existed), in which case the picker stops
+    //           policing and the submit guard reports it instead.
+    function pickedTypeLock() {
+        var picked = pickedFiles();
+        if (!picked.length) return null;
+
+        var anyConv  = picked.some(isConversionFile);
+        var anyPlain = picked.some(function (f) { return !isConversionFile(f); });
+
+        if (anyConv && !anyPlain) return true;
+        if (anyPlain && !anyConv) return false;
+        return null;
+    }
+
+    function setRecTypeNote(message, tone) {
+        if (!recTypeNote) return;
+        if (!message) { recTypeNote.classList.add('hidden'); recTypeNote.textContent = ''; return; }
+        recTypeNote.className = 'mt-3 rounded-lg px-3 py-2 text-[11px] font-semibold ' + (
+            tone === 'error' ? 'bg-rose-50 border border-rose-200 text-rose-700'
+                             : 'bg-blue-50 border border-blue-200 text-blue-800'
+        );
+        recTypeNote.textContent = message;
+    }
+
+    function applyRegularRecType() {
+        if (!toggle.checked || !isRegular()) {
+            regularTypeMixed = false;
+            setRecTypeNote('');
+            return;
+        }
+
+        var files = grantRows().map(function (tr, i) { return grantFileNumber(i); })
+                               .filter(Boolean);
+        if (!files.length) { regularTypeMixed = false; setRecTypeNote(''); return; }
+
+        var conv = files.filter(isConversionFile);
+        var isConv = conv.length > 0;
+        regularTypeMixed = conv.length > 0 && conv.length < files.length;
+
+        if (typeof window._lockRecommendationType === 'function') {
+            window._lockRecommendationType(isConv);
+        }
+
+        if (regularTypeMixed) {
+            setRecTypeNote('This batch mixes ' + conv.length + ' conversion file'
+                + (conv.length === 1 ? '' : 's') + ' with ' + (files.length - conv.length)
+                + ' non-conversion. One Recommendation Type is saved for the whole batch, so '
+                + 'they cannot both be right — split them into two batches.', 'error');
+        } else {
+            setRecTypeNote('Locked to ' + (isConv ? 'Conversion' : 'Direct')
+                + ' — taken from the ' + files.length + ' file' + (files.length === 1 ? '' : 's')
+                + ' picked. Change the selection to change the type.');
+        }
+    }
+
     function renderChildren(children) {
         // The source row is the user's, and it survives a re-render and a draft
         // restore — falling back to the first row only when nothing is marked.
@@ -2122,6 +3019,24 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             syncRowEnabled(tr);
         });
+
+        // The table is the batch, so the per-file grant store follows it. Values
+        // already keyed survive by file number; a draft's are passed in as the seed.
+        if (isRegular()) {
+            rebuildGrantStore(children.map(function (c) {
+                if (!c || !c.grant) return null;
+                var g = Object.assign({}, c.grant);
+                g.__file = c.file_number;
+                return g;
+            }).filter(Boolean));
+            // Row markup is rebuilt from scratch, so the source column has to be
+            // hidden again on the new cells.
+            rowsBody.querySelectorAll('.batch-src-cell').forEach(function (td) { td.classList.add('hidden'); });
+            rowsBody.querySelectorAll('.batch-row').forEach(function (tr) { tr.classList.remove('batch-source-row'); });
+            rowsBody.querySelectorAll('.batch-source-badge').forEach(function (b) { b.classList.add('hidden'); });
+            // The set decides the type, so re-derive it whenever the set changes.
+            applyRegularRecType();
+        }
 
         updateCount();
         if (window.lucide) window.lucide.createIcons();
@@ -2188,6 +3103,54 @@ document.addEventListener('DOMContentLoaded', function () {
     // ── events ──
     toggle.addEventListener('change', function () { applyBatchMode(toggle.checked); });
 
+    // Switching kind mid-capture throws the table away, because the rows of one
+    // kind are simply not the rows of the other. Worth a confirm once anything has
+    // been loaded — on a long batch that is real work.
+    kindRadios.forEach(function (radio) {
+        radio.addEventListener('change', function () {
+            if (!toggle.checked) return;
+
+            if (rowsBody.querySelectorAll('.batch-row').length
+                && !confirm('Switching the kind of batch clears the table and everything keyed into it. Continue?')) {
+                // Put the radio back: the change already happened by the time this fires.
+                var other = isRegular() ? 'subdivision' : 'regular';
+                var back = document.querySelector('.batch-kind-radio[value="' + other + '"]');
+                if (back) back.checked = true;
+                return;
+            }
+
+            rowsBody.innerHTML = '';
+            card.classList.add('hidden');
+            updateCount();
+            setStatus('');
+            applyKind(true);
+        });
+    });
+
+    if (filesApply) filesApply.addEventListener('click', function () {
+        var files = pickedFiles();
+        if (!files.length) {
+            setStatus('Pick at least one file number first.', 'error');
+            card.classList.remove('hidden');
+            return;
+        }
+        // Same warning the subdivision Reload gives, for the same reason: this
+        // repaints the table and discards whatever was keyed into it.
+        if (rowsBody.querySelectorAll('.batch-row').length
+            && !confirm('Applying reloads the table from the picked files and discards everything keyed into it. Continue?')) {
+            return;
+        }
+        loadPickedFiles(files);
+    });
+
+    if (filesClear) filesClear.addEventListener('click', function () {
+        setPickedFiles([]);
+        rowsBody.innerHTML = '';
+        card.classList.add('hidden');
+        updateCount();
+        setStatus('');
+    });
+
     document.querySelectorAll('.app-type-radio').forEach(function (radio) {
         radio.addEventListener('change', function () { if (toggle.checked) syncForAppType(); });
     });
@@ -2195,8 +3158,9 @@ document.addEventListener('DOMContentLoaded', function () {
     if (oldFileNo) {
         oldFileNo.addEventListener('change', function () {
             // A restore writes the mother in directly; re-fetching the children here
-            // would wipe the very values being restored.
-            if (!toggle.checked || suppressChildLoad || currentAppType() !== BATCH_TYPE) return;
+            // would wipe the very values being restored. In a regular batch this
+            // field is just the old file number — it says nothing about the rows.
+            if (!toggle.checked || suppressChildLoad || isRegular() || currentAppType() !== BATCH_TYPE) return;
             var v = this.value.trim();
             if (motherField) motherField.value = v;
             if (v) { loadChildren(v); }
@@ -2381,8 +3345,10 @@ document.addEventListener('DOMContentLoaded', function () {
     // batch_source_row is a table control, not a form value — it rides with the
     // children (as is_source) so it survives a re-render, and the batch endpoint
     // ignores it entirely.
+    // batch_kind rides with the payload as `kind`, restored before anything else,
+    // so it is not replayed through the generic common-field restore either.
     var NOT_CAPTURE = ['_token', '_method', 'draft_key', 'children_expected',
-                       'batch_mother_file_no', 'batch_source_row'];
+                       'batch_mother_file_no', 'batch_source_row', 'batch_kind', 'batch_kind_ui'];
 
     function serializeCommon() {
         var out = {};
@@ -2407,6 +3373,15 @@ document.addEventListener('DOMContentLoaded', function () {
     // Children are stored in the exact shape the children endpoint returns, so a
     // restore feeds renderChildren() the same objects a live load would.
     function serializeChildren() {
+        // Park whatever is on the Grant Conditions stepper first, then key the store
+        // by file number so each row picks up its own set below.
+        var grantByFile = {};
+        if (isRegular()) {
+            serializeGrant().forEach(function (g) {
+                if (g && g.__file) grantByFile[g.__file] = g;
+            });
+        }
+
         return Array.prototype.map.call(rowsBody.querySelectorAll('.batch-row'), function (tr) {
             function v(f) {
                 var el = tr.querySelector('[data-f="' + f + '"]');
@@ -2435,7 +3410,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 // Carried through so a restored row keeps its "Has a RofO" flag
                 // without a second round trip to the children endpoint.
                 has_recommendation: tr.querySelector('.batch-row-check').dataset.hadRec === '1',
-                existing_status:    tr.querySelector('.batch-row-check').dataset.existingStatus || ''
+                existing_status:    tr.querySelector('.batch-row-check').dataset.existingStatus || '',
+                is_unknown:         tr.querySelector('.batch-row-check').dataset.unknown === '1',
+                // Regular batch only — the conditions keyed against this file on the
+                // Grant Conditions stepper. Absent for a subdivision, whose children
+                // all share the one set held in the card itself.
+                grant:              grantByFile[hid('file_number')] || null
             };
         });
     }
@@ -2443,8 +3423,12 @@ document.addEventListener('DOMContentLoaded', function () {
     function buildPayload() {
         return {
             version:          1,
+            // Which kind of batch this draft is, and — for a regular one — the files
+            // that were picked, so resuming restores the picker as well as the table.
+            kind:             currentKind(),
+            picked_files:     isRegular() ? pickedFiles() : [],
             application_type: currentAppType(),
-            mother_file_no:   oldFileNo ? oldFileNo.value.trim() : '',
+            mother_file_no:   isRegular() ? '' : (oldFileNo ? oldFileNo.value.trim() : ''),
             common:           serializeCommon(),
             children:         serializeChildren(),
             saved_at:         new Date().toISOString()
@@ -2490,10 +3474,13 @@ document.addEventListener('DOMContentLoaded', function () {
         if (restoring || !toggle.checked) return Promise.resolve();
         if (draftSaving) { draftDirty = true; return Promise.resolve(); }
 
-        // Nothing worth a row yet: no mother picked and no children on screen.
+        // Nothing worth a row yet: nothing picked and nothing on screen. A regular
+        // batch counts its picked files here — they are a choice already made, and
+        // losing them to a timeout before Apply is pressed is still lost work.
         var childRows = rowsBody.querySelectorAll('.batch-row').length;
-        var mother = oldFileNo ? oldFileNo.value.trim() : '';
-        if (!draftKey && !mother && !childRows) return Promise.resolve();
+        var mother = isRegular() ? '' : (oldFileNo ? oldFileNo.value.trim() : '');
+        var picked = isRegular() ? pickedFiles().length : 0;
+        if (!draftKey && !mother && !childRows && !picked) return Promise.resolve();
 
         if (!draftKey) {
             draftKey = newDraftKey();
@@ -2644,7 +3631,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 draftList.innerHTML = drafts.map(function (d) {
                     return '<div class="flex items-center gap-3 px-3 py-2">'
                         + '<div class="min-w-0">'
-                        +   '<div class="font-mono text-xs font-bold text-slate-900 truncate">' + esc(d.mother_file_no || '(no mother file)') + '</div>'
+                        {{-- A regular batch has no mother file to name it by, so it is
+                             labelled by what it is rather than by an absence. --}}
+                        +   '<div class="font-mono text-xs font-bold text-slate-900 truncate">' + esc(d.mother_file_no || 'Regular files') + '</div>'
                         +   '<div class="text-[10px] text-slate-500">' + d.children_selected + ' of ' + d.children_total
                         +     ' children · saved ' + esc(d.last_saved_human || '') + '</div>'
                         + '</div>'
@@ -2746,17 +3735,34 @@ document.addEventListener('DOMContentLoaded', function () {
         if (draftKeyInput) draftKeyInput.value = key;
         if (draftDiscard) draftDiscard.classList.remove('hidden');
 
-        var mother = payload.mother_file_no || '';
+        var kind   = payload.kind === 'regular' ? 'regular' : 'subdivision';
+        var mother = kind === 'regular' ? '' : (payload.mother_file_no || '');
 
         try {
+            // The kind decides which sections are on screen and which are stood
+            // down, so it is set before batch mode paints any of them.
+            var kindRadio = document.querySelector('.batch-kind-radio[value="' + kind + '"]');
+            if (kindRadio) kindRadio.checked = true;
+
             // Batch mode first: it relocates sections and stands the per-child
             // fields down, so restoring values before it would fight with it.
             if (!toggle.checked) {
                 toggle.checked = true;
                 applyBatchMode(true);
+            } else {
+                applyKind(true);
             }
 
             restoreCommon(payload.common || {});
+
+            if (kind === 'regular') {
+                initFileSelect();
+                // Fall back to the file numbers in the table when the draft pre-dates
+                // picked_files, so an older regular draft still restores its picker.
+                setPickedFiles(payload.picked_files && payload.picked_files.length
+                    ? payload.picked_files
+                    : (payload.children || []).map(function (c) { return c.file_number; }));
+            }
 
             if (oldFileNo) oldFileNo.value = mother;
             if (motherField) motherField.value = mother;
@@ -2799,15 +3805,29 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         setTimeout(function () { releaseRestore('Draft restored — autosave is on.', 'ok'); }, 15000);
 
-        if (!mother) {
-            releaseRestore('Draft restored — autosave is on.', 'ok');
-            return;
+        // Where the registry copy comes from is the one thing the two kinds do
+        // differently on restore: a subdivision re-reads the mother's children, a
+        // regular batch re-reads the files that were picked.
+        var freshRows;
+        if (kind === 'regular') {
+            var files = (payload.children || []).map(function (c) { return c.file_number; }).filter(Boolean);
+            if (!files.length) {
+                releaseRestore('Draft restored — autosave is on.', 'ok');
+                return;
+            }
+            freshRows = fetchFileDetails(files).then(function (r) { return r.success ? r.children : []; });
+        } else {
+            if (!mother) {
+                releaseRestore('Draft restored — autosave is on.', 'ok');
+                return;
+            }
+            freshRows = fetchChildren(mother);
         }
 
         // Backfill: the draft is authoritative for everything the user keyed, and
         // the registry fills the gaps around it — blank cells, plus any child
         // commissioned since the draft was started.
-        fetchChildren(mother).then(function (fresh) {
+        freshRows.then(function (fresh) {
             var merged = mergeDraftWithRegistry(payload.children || [], fresh);
             renderChildren(merged.children);
             releaseRestore(
@@ -2859,6 +3879,9 @@ document.addEventListener('DOMContentLoaded', function () {
             // this draft sat waiting.
             merged.has_recommendation = !!fresh.has_recommendation;
             merged.existing_status = fresh.existing_status || '';
+            // Whether anything is on file is the register's call too — a number that
+            // was unknown when the draft was started may have been indexed since.
+            merged.is_unknown = !!fresh.is_unknown;
             if (merged.has_recommendation) merged.checked = false;
 
             return merged;
@@ -2983,23 +4006,56 @@ document.addEventListener('DOMContentLoaded', function () {
     recForm.addEventListener('submit', function (e) {
         if (!toggle.checked) return;
 
-        if (currentAppType() !== BATCH_TYPE) {
+        // Kept in step here as well as on every kind change: this is the value the
+        // server branches on, and it must match what is actually on screen.
+        if (kindInput) kindInput.value = currentKind();
+
+        if (!isRegular()) {
+            if (currentAppType() !== BATCH_TYPE) {
+                e.preventDefault(); e.stopPropagation();
+                setStatus('A subdivision batch covers ' + BATCH_TYPE + ' only — pick that type, or switch to Regular files.', 'error');
+                return;
+            }
+            if (!oldFileNo || !oldFileNo.value.trim()) {
+                e.preventDefault(); e.stopPropagation();
+                setStatus('Select the subdivided (mother) file first.', 'error');
+                card.classList.remove('hidden');
+                if (motherSel) motherSel.focus();
+                return;
+            }
+        } else if (!rowsBody.querySelectorAll('.batch-row').length) {
             e.preventDefault(); e.stopPropagation();
-            setStatus('Batch mode covers ' + BATCH_TYPE + ' only — pick that type or switch batch mode off.', 'error');
+            setStatus('Pick the file numbers and press Apply to load them into the table first.', 'error');
+            if (filesPicker) filesPicker.scrollIntoView({ behavior: 'smooth', block: 'center' });
             return;
         }
-        if (!oldFileNo || !oldFileNo.value.trim()) {
-            e.preventDefault(); e.stopPropagation();
-            setStatus('Select the subdivided (mother) file first.', 'error');
-            card.classList.remove('hidden');
-            if (motherSel) motherSel.focus();
-            return;
-        }
+
         if (!rowsBody.querySelectorAll('.batch-row-check:checked').length) {
             e.preventDefault(); e.stopPropagation();
             setStatus('Tick at least one child to save a batch.', 'error');
             card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return;
         }
+
+        // One Recommendation Type is saved for every file in the batch, so a mixed
+        // set would print the wrong document for one half of it. Blocked rather
+        // than warned: nothing on the saved record would show which half was wrong.
+        if (isRegular()) {
+            applyRegularRecType();
+            if (regularTypeMixed) {
+                e.preventDefault(); e.stopPropagation();
+                setStatus('This batch mixes conversion and non-conversion files — see Recommendation Type. '
+                    + 'Split them into two batches and save each on its own.', 'error');
+                var recBlock = document.getElementById('recommendation-type-block');
+                (recBlock || card).scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+        }
+
+        // Grant conditions are per file in a regular batch, and only the file
+        // currently on the stepper is in the DOM — the rest have to be written out
+        // as children[i][…] before the post or they would be lost.
+        syncGrantInputs();
     });
 
     // Last write before the page goes away. Registered after the validation

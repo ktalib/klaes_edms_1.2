@@ -747,7 +747,13 @@ class ApplicationController extends Controller
             unset($data['passport_photo']);
         }
 
+        // `occupancy_permit` is not a column on oss_applications — it belongs to
+        // the PRA OP row and is synced separately below.
+        unset($data['occupancy_permit'], $data['has_occupancy_permit'], $data['op_from_record']);
+
         $record = LandsOneStopShopApplication::create($data);
+
+        $this->syncOccupancyPermitToPra($request, (string) ($record->file_no ?? ''));
 
         return response()->json([
             'success' => true,
@@ -812,7 +818,20 @@ class ApplicationController extends Controller
             unset($data['passport_photo']);
         }
 
+        unset($data['occupancy_permit'], $data['has_occupancy_permit'], $data['op_from_record']);
+
+        // The form always posts op_serial_number, blank included — when the OP
+        // lookup returns nothing the input is empty, and writing that through
+        // would erase a serial the record already holds.
+        if (array_key_exists('op_serial_number', $data)
+            && trim((string) $data['op_serial_number']) === ''
+            && trim((string) ($record->op_serial_number ?? '')) !== '') {
+            unset($data['op_serial_number']);
+        }
+
         $record->update($data);
+
+        $this->syncOccupancyPermitToPra($request, (string) ($record->file_no ?? ''));
 
         return response()->json([
             'success' => true,
@@ -3716,6 +3735,22 @@ class ApplicationController extends Controller
 
         // OP serial only from an OP-specific column (never the deed serial/page).
         $opSerialNo   = strtoupper((string) ($this->firstFilledValue($opRow, ['op_serial_number', 'op_serial', 'opSerialNo']) ?? ''));
+        // Primary key of the OP row itself. The form posts it back on save so the
+        // edited Occupancy Permit Details update THAT row, and never a sibling
+        // sharing the same prop_id (an OP and its Transfer of Title do).
+        $opRecordId   = (int) ($opRow['id'] ?? 0);
+        $opPropId     = (string) ($opRow['prop_id'] ?? '');
+        $opStatus     = trim((string) ($this->firstFilledValue($opRow, ['status']) ?? ''));
+        $opPlotNo     = strtoupper((string) ($this->firstFilledValue($opRow, ['plot_no', 'plotNo']) ?? ''));
+        $opTpNo       = strtoupper((string) ($this->firstFilledValue($opRow, ['tp_no', 'tpNo', 'approved_plan_no']) ?? ''));
+        $opDistrict   = strtoupper((string) ($this->firstFilledValue($opRow, ['districtName', 'district']) ?? ''));
+        $opLga        = strtoupper((string) ($this->firstFilledValue($opRow, ['lgsaOrCity', 'lga']) ?? ''));
+        // PRA's `location` column is frequently the junk value "Other"; the real
+        // text lives in property_description on those rows.
+        $opLocation   = strtoupper((string) ($this->firstFilledValue($opRow, ['property_description', 'location']) ?? ''));
+        if ($opLocation === 'OTHER') {
+            $opLocation = '';
+        }
         $opType       = strtoupper((string) ($this->firstFilledValue($opRow, ['op_type']) ?? ''));
         $opDeedSerial = strtoupper((string) ($this->firstFilledValue($opRow, ['serialNo', 'serial_no']) ?? ''));
         $opDeedPage   = strtoupper((string) ($this->firstFilledValue($opRow, ['pageNo', 'page_no']) ?? ''));
@@ -3763,6 +3798,14 @@ class ApplicationController extends Controller
 
                 // Occupancy Permit Details backfill (from the OP transaction)
                 'has_occupancy_permit' => $hasOccupancyPermit,
+                'op_record_id'         => $opRecordId,
+                'op_prop_id'           => $opPropId,
+                'op_status'            => $opStatus,
+                'op_plot_no'           => $opPlotNo,
+                'op_tp_no'             => $opTpNo,
+                'op_district'          => $opDistrict,
+                'op_lga'               => $opLga,
+                'op_location'          => $opLocation,
                 'op_type'              => $opType,
                 'op_land_use'          => $opLandUse,
                 'grantor'              => $opGrantor,
@@ -3952,6 +3995,129 @@ class ApplicationController extends Controller
             // OP Serial Number (for manual capture when not found in record).
             // Mandatory for Change of Name applications so no row is saved without one.
             'op_serial_number' => 'required_if:system_source,OSSOPCHANGEOFNAME|nullable|string|max:100',
+
+            // ── Occupancy Permit Details ──
+            // Not columns on oss_applications: this block is synced back onto the
+            // PRA Occupancy Permit row identified by occupancy_permit.record_id.
+            'has_occupancy_permit' => 'nullable|boolean',
+            'op_from_record' => 'nullable|boolean',
+            'occupancy_permit' => 'nullable|array',
+            'occupancy_permit.record_id' => 'nullable|integer',
+            'occupancy_permit.from_record' => 'nullable|boolean',
+            'occupancy_permit.status' => 'nullable|string|max:100',
+            'occupancy_permit.op_type' => 'nullable|string|max:100',
+            'occupancy_permit.op_serial_number' => 'nullable|string|max:100',
+            'occupancy_permit.transaction_date' => 'nullable|date',
+            'occupancy_permit.file_number' => 'nullable|string|max:120',
+            'occupancy_permit.land_use' => 'nullable|string|max:100',
+            'occupancy_permit.grantor' => 'nullable|string|max:255',
+            'occupancy_permit.grantee' => 'nullable|string|max:255',
+            'occupancy_permit.serial_no' => 'nullable|string|max:50',
+            'occupancy_permit.page_no' => 'nullable|string|max:50',
+            'occupancy_permit.vol_no' => 'nullable|string|max:50',
+            'occupancy_permit.deeds_time' => 'nullable|string|max:20',
+            'occupancy_permit.deeds_date' => 'nullable|date',
         ];
+    }
+
+    /**
+     * Push the form's "Occupancy Permit Details" back onto the PRA Occupancy
+     * Permit row it was backfilled from.
+     *
+     * The row is addressed by its primary key (posted as occupancy_permit.record_id,
+     * handed out by lookupFileIndexing) rather than by prop_id: an OP and its
+     * Transfer of Title share a prop_id, so a prop_id write would hit the wrong
+     * sibling. A blank field is treated as "not edited" and left alone — the
+     * section is rendered read-only until the user clicks Edit, and half the
+     * inputs are disabled, so an empty value is never a deliberate erase.
+     *
+     * Only existing OP rows are updated. Creating a PRA OP from here would have
+     * to mint a prop_id, and the form already hides this section (and blocks
+     * Save) when the selected file has no OP, so that path cannot be reached.
+     */
+    private function syncOccupancyPermitToPra(Request $request, string $fileNo): void
+    {
+        $op = $request->input('occupancy_permit');
+        if (!is_array($op) || empty($op)) {
+            return;
+        }
+
+        if (!filter_var($request->input('has_occupancy_permit', 1), FILTER_VALIDATE_BOOLEAN)) {
+            return;
+        }
+
+        $recordId = (int) ($op['record_id'] ?? 0);
+        if ($recordId <= 0) {
+            Log::info('OSS: occupancy permit not synced — no PRA record id posted', [
+                'file_no' => $fileNo,
+            ]);
+            return;
+        }
+
+        $val = static function (array $op, string $key): ?string {
+            $v = trim((string) ($op[$key] ?? ''));
+            return $v === '' ? null : $v;
+        };
+
+        // The dropdown offers "Resettlement" / "Direct Allocation"; PRA stores
+        // these prefixed ("OP Resettlement"). Write PRA's form back so a save
+        // through this screen does not quietly restyle the value.
+        $opType = $val($op, 'op_type');
+        if ($opType !== null && stripos($opType, 'OP ') !== 0) {
+            $opType = 'OP ' . $opType;
+        }
+
+        $updates = array_filter([
+            'status' => $val($op, 'status'),
+            'op_type' => $opType,
+            'op_serial_number' => $val($op, 'op_serial_number'),
+            'transaction_date' => $val($op, 'transaction_date'),
+            'land_use' => $val($op, 'land_use'),
+            'Grantor' => $val($op, 'grantor'),
+            'party_1' => $val($op, 'grantor'),
+            'Grantee' => $val($op, 'grantee'),
+            'party_2' => $val($op, 'grantee'),
+            'serialNo' => $val($op, 'serial_no'),
+            'pageNo' => $val($op, 'page_no'),
+            'volumeNo' => $val($op, 'vol_no'),
+            'deeds_date' => $val($op, 'deeds_date'),
+            'deeds_time' => $val($op, 'deeds_time'),
+        ], static fn ($v) => $v !== null);
+
+        // regNo is the composed serial/page/volume — keep it consistent with the
+        // three parts rather than letting it drift.
+        $serial = $updates['serialNo'] ?? null;
+        $page = $updates['pageNo'] ?? null;
+        $vol = $updates['volumeNo'] ?? null;
+        if ($serial !== null && $page !== null && $vol !== null) {
+            $updates['regNo'] = $serial . '/' . $page . '/' . $vol;
+        }
+
+        if (empty($updates)) {
+            return;
+        }
+
+        $updates['updated_by'] = Auth::id();
+        $updates['updated_at'] = now();
+
+        try {
+            $affected = DB::connection('sqlsrv')->table('pra')
+                ->where('id', $recordId)
+                ->update($updates);
+
+            Log::info('OSS: occupancy permit synced to PRA', [
+                'pra_id' => $recordId,
+                'file_no' => $fileNo,
+                'affected' => $affected,
+                'fields' => array_keys($updates),
+            ]);
+        } catch (\Throwable $e) {
+            // A failed OP sync must not roll back the application itself.
+            Log::error('OSS: occupancy permit sync failed', [
+                'pra_id' => $recordId,
+                'file_no' => $fileNo,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }
