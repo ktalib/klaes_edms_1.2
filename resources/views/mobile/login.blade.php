@@ -62,7 +62,7 @@
   <div class="login-container">
     <div class="login-card">
       <div class="logo-section">
-        <div class="logo-icon"><img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES Logo"></div>
+        <div class="logo-icon"><img src="http://app.klaes.ng/storage/upload/logo/Klase.png" alt="KLAES Logo"></div>
         <div class="logo-text">KLAES</div>
         <div class="logo-subtitle">File Tracking System</div>
       </div>

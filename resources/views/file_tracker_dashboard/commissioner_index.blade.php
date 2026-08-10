@@ -3,10 +3,12 @@
 @section('page-title', $PageTitle ?? 'File Tracker Commissioner Dashboard')
 
 @section('content')
-    <link rel="stylesheet" href="{{ asset('css/file-tracker-dashboard.css') }}">
+    {{-- ?v=filemtime so a deploy invalidates the browser copy: without it the
+         page picks up new markup while still running the cached script. --}}
+    <link rel="stylesheet" href="{{ asset('css/file-tracker-dashboard.css') }}?v={{ @filemtime(public_path('css/file-tracker-dashboard.css')) }}">
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
-    <script src="{{ asset('js/commissioner-dashboard.js') }}" defer></script>
+    <script src="{{ asset('js/commissioner-dashboard.js') }}?v={{ @filemtime(public_path('js/commissioner-dashboard.js')) }}" defer></script>
 
     <div class="flex-1 overflow-auto bg-gray-50">
         @include('admin.header')

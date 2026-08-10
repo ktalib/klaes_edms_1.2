@@ -1,6 +1,6 @@
 {{-- KLAES mobile preloader — shows the logo until the page finishes loading --}}
 <div id="klaes-preloader" role="status" aria-label="Loading">
-  <img src="//app.klaes.ng/storage/upload/logo/klas_logo.gif" alt="KLAES">
+  <img src="//app.klaes.ng/assets/logo/klas_logo.gif" alt="KLAES">
 </div>
 <style>
   #klaes-preloader {
