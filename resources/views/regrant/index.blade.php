@@ -237,7 +237,7 @@
         </div>
 
         {{-- Rows that could not be assessed, shown so the gap is visible rather than silent. --}}
-        <div class="mt-4 p-4 rounded-xl bg-amber-50/60 border border-amber-200 text-xs text-amber-900">
+        <div class="mt-4 p-4 rounded-xl bg-amber-50/60 border border-amber-200 text-xs text-amber-900 hidden" id="unassessable-info">
             <p class="font-bold mb-1.5 flex items-center gap-1.5">
                 <i data-lucide="alert-triangle" class="w-4 h-4"></i> Not assessed
             </p>

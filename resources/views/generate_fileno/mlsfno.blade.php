@@ -1,6 +1,6 @@
 @extends('layouts.app')
 @section('page-title')
-    {{ __('MLS File Number Generator') }}
+    {{ __('MLPP File Number Generator') }}
 @endsection
  
 @section('content') 
@@ -83,7 +83,7 @@
             <div class="flex-1 overflow-auto">
                 <!-- Header -->
                 @include('admin.header', [
-                    'PageTitle' => 'MLS File Number Generator',
+                    'PageTitle' => 'MLPP File Number Generator',
                     'PageDescription' => 'Generate and manage MLS file numbers'])
 
                 <!-- Dashboard Content -->
@@ -99,7 +99,7 @@
                                     class="tab-button group relative py-3 px-6 text-sm font-semibold rounded-t-lg transition-all duration-200">
                                     <div class="flex items-center space-x-2">
                                         <i data-lucide="file-text" class="w-5 h-5"></i>
-                                        <span>MLS File Number Generator</span>
+                                        <span>MLPP File Number Generator</span>
                                     </div>
                                     <div class="absolute bottom-0 left-0 right-0 h-1 bg-blue-600 rounded-t-sm transition-all duration-200"></div>
                                 </button>

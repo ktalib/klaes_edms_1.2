@@ -8,8 +8,9 @@
     $hasRole('Land to Cad/Survey') ||
     $hasRole('Other Applications-Land') ||
     $hasRole('Generate New FileNo (MLSFileNo)') ||
-    $hasRole('EDMS Update')
-  )
+    $hasRole('EDMS Update')||
+    $hasRole('Regrant')
+)
   <div class="py-1 px-3 mb-0.5 border-t border-slate-100">
     <div
       class="sidebar-module-header flex items-center justify-between py-2 px-3 mb-0.5 cursor-pointer hover:bg-slate-50 rounded-md"
@@ -246,7 +247,7 @@
           </a>
 
           <!-- iii. Re-grant Files -->
-          <a href="#" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200">
+          <a href="{{ route('regrant.index') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('regrant.index') ? 'active' : '' }}">
             <i data-lucide="file-text" class="h-3.5 w-3.5 text-orange-400"></i>
             <span>Re-grant Files</span>
           </a>
@@ -453,11 +454,11 @@
           </a>
 
           <!-- iv. Re-grant Management -->
-          <a href="{{ route('regrant.index') }}"
+          {{-- <a href="{{ route('regrant.index') }}"
             class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('regrant.index') ? 'active' : '' }}">
             <i data-lucide="refresh-cw" class="h-3.5 w-3.5 text-indigo-400"></i>
             <span>Re-grant</span>
-          </a>
+          </a> --}}
         </div>
       @endif
 
