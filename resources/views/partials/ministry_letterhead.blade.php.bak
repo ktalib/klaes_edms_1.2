@@ -28,10 +28,6 @@
     $lhMinistry = $lhMinistry ?? 'Ministry of Land and Physical Planning';
     $lhState    = $lhState    ?? 'Kano State';
     $lhSpine    = $lhSpine    ?? $lhMinistry;
-
-    // Pass false to drop the red spine text and the vertical rule beside it,
-    // leaving just the crest, the titles and the horizontal rule.
-    $lhShowSpine = $lhShowSpine ?? true;
 @endphp
 
 <style>
@@ -67,12 +63,6 @@
         right: 12mm;
         top: 30mm;
         border-top: var(--lh-rule) solid var(--lh-green);
-    }
-
-    /* With no vertical rule there is no cross to form, so the top rule pulls
-       back to match the right-hand inset instead of overhanging into the gutter. */
-    .lh--no-spine .lh-rule-top {
-        left: 12mm;
     }
 
     /* Red spine: ministry name rotated to read bottom-to-top. */
@@ -154,15 +144,11 @@
     }
 </style>
 
-<div class="lh {{ $lhShowSpine ? '' : 'lh--no-spine' }}" aria-hidden="true">
-    @if($lhShowSpine)
-        <div class="lh-spine"><span>{{ $lhSpine }}</span></div>
-    @endif
+<div class="lh" aria-hidden="true">
+    <div class="lh-spine"><span>{{ $lhSpine }}</span></div>
 
     {{-- Rules first: .lh-head paints over them to mask the top rule. --}}
-    @if($lhShowSpine)
-        <div class="lh-rule-v"></div>
-    @endif
+    <div class="lh-rule-v"></div>
     <div class="lh-rule-top"></div>
 
     <div class="lh-head">

@@ -256,7 +256,7 @@
 <body>
 
 <div class="a4-page">
-    @include('partials.ministry_letterhead', ['lhShowSpine' => false])
+    @include('partials.ministry_letterhead', ['lhSpine' => 'Systematic Land Titling and Registration'])
 
     <div class="serial-box">
         <div class="serial-label">Serial No:</div>
