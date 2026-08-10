@@ -15,7 +15,9 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
+// Draft autosave for the Primary Application Form logs to storage/logs/primary_form.log
+// — see config/logging.php channel "primary_form".
+use App\Support\PrimaryFormLog as Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 

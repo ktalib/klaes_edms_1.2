@@ -1863,7 +1863,23 @@ document.addEventListener('DOMContentLoaded', function () {
      * @param {boolean} opts.silent - If true, only returns a result without showing Swal alerts.
      * @returns {Promise<boolean>} true = gate passed (can proceed), false = blocked.
      */
+    // ── Consent gate feature flags ───────────────────────────────────────────
+    // TEMPORARILY DISABLED. The gate blocks instrument registration until the
+    // consent workflow is satisfied; it is switched off while the workflow is
+    // being reworked so users are not held up. Nothing has been removed —
+    // set CONSENT_GATE_ENABLED back to true to restore the full gate.
+    //
+    //   CONSENT_GATE_ENABLED              master switch for the whole gate
+    //   COMMISSIONER_SIGNATURE_GATE_ENABLED  the capture-date + 7 days rule only
+    //
+    // To bring back only the old behaviour (consent exists + letter printed),
+    // set CONSENT_GATE_ENABLED = true and leave the signature flag false.
+    const CONSENT_GATE_ENABLED = false;
+    const COMMISSIONER_SIGNATURE_GATE_ENABLED = false;
+
     async function runConsentGateCheck({ silent = false } = {}) {
+        if (!CONSENT_GATE_ENABLED) return true;
+
         const consentGatedTypes = {
             'deed-of-assignment': 'Assignment',
             'deed-of-gift': 'Gift',
@@ -1922,7 +1938,7 @@ document.addEventListener('DOMContentLoaded', function () {
             // Commissioner's signature — it is the signature, not the consent
             // letter, that authorises registration. The signing event is not
             // recorded in KLAES, so it is derived as capture date + N days.
-            if (!data.has_signature) {
+            if (COMMISSIONER_SIGNATURE_GATE_ENABLED && !data.has_signature) {
                 const signatureDate = data.signature_date
                     ? new Date(data.signature_date + 'T00:00:00').toLocaleDateString('en-GB', {
                         day: 'numeric', month: 'long', year: 'numeric'

@@ -539,6 +539,14 @@ class CommissionNewSTController extends Controller
                     'mlsfNo' => $mlsFileNo,
                     'st_file_no' => $npFileNo,
                     'FileName' => $fileName,
+                    // The MLS File Commissioning table reads its Location and Plot No
+                    // from this row, so a new mirror row must carry them.
+                    'location' => $this->composeLocation(
+                        $validated['property_district'] ?? null,
+                        $validated['property_lga'] ?? null,
+                        $validated['property_street_name'] ?? null
+                    ),
+                    'plot_no' => $validated['property_plot_no'] ?? null,
                     'type' => $fileNoType,
                     'SOURCE' => 'ST Dept',
                     'date_commissioned' => $commissionedAt,

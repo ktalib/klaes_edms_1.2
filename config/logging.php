@@ -115,6 +115,17 @@ return [
             'days' => 90,
         ],
 
+        // Primary Application Form (Sectional Titling main application) — the form is
+        // long, multi-step and heavily instrumented, so its debug dumps drown out
+        // everything else in laravel.log. Kept on its own file end-to-end: draft
+        // autosave, submission, buyer/EDMS processing and file-number allocation.
+        'primary_form' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/primary_form.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => 30,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

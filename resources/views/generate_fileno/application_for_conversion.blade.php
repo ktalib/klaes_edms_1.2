@@ -461,6 +461,12 @@
         ];
     @endphp
     @foreach($records as $record)
+        @php
+            // A Sectional Titling conversion carries the ST file number on its
+            // fileNumber row; that, or an explicit ?source=st, selects the ST wording
+            // and makes the ST primary — not the CON mother — the reference.
+            $isStRecord = request('source') === 'st' || !empty($record->st_file_no);
+        @endphp
         @foreach($copies as $copy)
         <div class="page {{ $copy['slug'] }}">
             <!-- Sidebars -->
@@ -504,9 +510,16 @@
             </div>
 
             <!-- 3. Ref & Date Row -->
+            @php
+                // A Sectional Titling conversion is referenced by its ST primary, not by
+                // the CON mother file the number was raised on.
+                $ourRef = $isStRecord
+                    ? ($record->st_file_no ?: ($record->mlsfNo ?? ''))
+                    : ($record->mlsfNo ?? '');
+            @endphp
             <div class="meta-line">
                 <div>
-                    Our Ref: <span class="underline-box" style="min-width: 320px;">{{ $record->mlsfNo ?? '' }}@if(!empty($record->source_derived)) ({{ $record->source_derived }})@endif</span>
+                    Our Ref: <span class="underline-box" style="min-width: 320px;">{{ $ourRef }}@if(!empty($record->source_derived)) ({{ $record->source_derived }})@endif</span>
                 </div>
                 <div>
                     Date: <span class="underline-box" style="min-width: 150px;">{{ date('d/m/Y') }}</span>
@@ -524,11 +537,6 @@
             </div>
 
             <!-- 5. Subject Banner -->
-            @php
-                // A Sectional Titling conversion carries the ST file number on its
-                // fileNumber row; that, or an explicit ?source=st, selects the ST wording.
-                $isStRecord = request('source') === 'st' || !empty($record->st_file_no);
-            @endphp
             <div class="main-subject-banner">
                 @if($isStRecord)
                     {{-- Broken after "titling" so the banner stays two lines, like the

@@ -6,7 +6,9 @@ use Illuminate\Http\Request;
 use App\Helpers\SectionalTitleHelper;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
+// Primary Application Form logging goes to its own file (storage/logs/primary_form.log),
+// not laravel.log — see config/logging.php channel "primary_form".
+use App\Support\PrimaryFormLog as Log;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Throwable;

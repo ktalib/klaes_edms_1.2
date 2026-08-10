@@ -21,6 +21,9 @@ return new class extends Migration
         });
     }
 
+
+    
+
     public function down(): void
     {
         Schema::connection('sqlsrv')->table('st_file_numbers', function (Blueprint $table) {

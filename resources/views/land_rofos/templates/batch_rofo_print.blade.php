@@ -79,6 +79,15 @@
         .signature-row { display:flex; justify-content:space-between; margin-top:60px; }
         .signature-item { border-top:1px solid #000; width:45%; text-align:center; padding-top:5px; }
         .signature-item-date { border-top:1px solid #000; width:30%; text-align:center; padding-top:5px; }
+        /* Only the ORIGINAL copy carries colour; the Duplicate and Triplicate are
+           office copies and print black & white. Desaturating the wrapper (rather
+           than each image) is what takes the ornate frame with it — the frame is a
+           border-image, which no img rule can reach — and the coloured text rules
+           are overridden to black because grayscale alone leaves red and blue as
+           mid-greys. */
+        .copy-bw .content-wrapper { filter:grayscale(100%); -webkit-filter:grayscale(100%); }
+        .copy-bw .title-center { color:#000!important; }
+        .copy-bw .version-label { color:#000!important; }
         /* Batch print button */
         .print-btn-container { position:fixed; top:20px; right:20px; z-index:1000; display:flex; gap:10px; }
         .print-btn { padding:12px 24px; background-color:#006b3f; color:#fff; border:none; border-radius:4px; cursor:pointer; font-weight:bold; box-shadow:0 2px 8px rgba(0,0,0,0.2); font-size:14px; }
@@ -122,14 +131,18 @@
 @endphp
 
 @foreach($versions as $vIdx => $version)
+@php
+    // Only the ORIGINAL copy prints in colour; the office copies go out B&W.
+    $isBwCopy = $version !== 'Original';
+@endphp
 {{-- ═══════════════  PAGE 1 ═══════════════ --}}
-<div class="page-container" style="{{ ($vIdx === 0) ? $recordBreakStyle : 'page-break-before: always;' }}">
+<div class="page-container{{ $isBwCopy ? ' copy-bw' : '' }}" style="{{ ($vIdx === 0) ? $recordBreakStyle : 'page-break-before: always;' }}">
     <div class="security-bg"></div>
     <div class="content-wrapper ornate-border">
         <div class="inner-content" style="position:relative;">
             {{-- Version + security code top-right --}}
             <div style="position:absolute;top:10px;right:10px;text-align:right;font-weight:bold;font-size:16px;letter-spacing:0.35em;z-index:2;">
-                <span style="color:{{ $versionColors[$version] }};text-transform:uppercase;">{{ $version }}</span>
+                <span class="version-label" style="color:{{ $versionColors[$version] }};text-transform:uppercase;">{{ $version }}</span>
                 @if($securityCode)
                     @php $sc = app(\App\Services\SecurityCodeService::class)->formatForDisplay($securityCode->code); @endphp
                     <div style="display:flex;justify-content:flex-end;margin-top:4px;">
@@ -252,7 +265,7 @@
 </div>
 
 {{-- ═══════════════  PAGE 2 ═══════════════ --}}
-<div class="page-container" style="page-break-before: always;">
+<div class="page-container{{ $isBwCopy ? ' copy-bw' : '' }}" style="page-break-before: always;">
     <div class="security-bg"></div>
     <div class="content-wrapper simple-margin">
         <div class="inner-content">

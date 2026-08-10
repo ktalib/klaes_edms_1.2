@@ -458,7 +458,7 @@
             print-color-adjust: exact;
         }
 
-        /* ── Re-issuance: Duplicate / Triplicate are black & white ─────────
+        /* ── Duplicate / Triplicate are black & white ──────────────────────
            Only the ORIGINAL copy carries colour (red superseding notice, red
            ministry banner, colour coat of arms / KLAES logo). The office copies
            print monochrome, so images are desaturated and every coloured text
@@ -538,9 +538,10 @@
 
     @foreach($printVersions as $index => $version)
     @php
-        // Only the ORIGINAL re-issued copy prints in colour; the Duplicate and
-        // Triplicate (issued for a legacy re-issuance) go out black & white.
-        $isBwCopy = $isReissuance && $version !== 'Original';
+        // Only the ORIGINAL copy prints in colour — on every print, not just a
+        // re-issuance. The Duplicate and Triplicate are office copies and go out
+        // black & white. (A CTC is its own document and keeps its colour.)
+        $isBwCopy = in_array($version, ['Duplicate', 'Triplicate'], true);
     @endphp
     <!-- PAGE 1 – Signature line uses exact CSS technique, no double lines -->
         {{-- <div class="page-container" id="page1-{{ $index }}" style="{{ $index > 0 ? 'page-break-before: always;' : '' }} background-image: url('/assets/images/pages/backgrand.jpg'); background-size: cover; background-position: center; background-repeat: no-repeat;">     --}}

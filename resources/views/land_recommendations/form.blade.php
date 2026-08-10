@@ -1392,14 +1392,14 @@
                                 </div>
                             </div>
 
-                            <div class="grid grid-cols-12 gap-4">
-                                <div class="col-span-6 sm:col-span-4 md:col-span-3">
+                            <div class="flex flex-wrap items-end gap-8">
+                                <div class="shrink-0">
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono whitespace-nowrap">Survey Report Page No</label>
                                     <input type="text" name="page_survey_report" value="{{ old('page_survey_report', $recommendation->page_survey_report ?? '') }}"
                                         title="Survey Report Page No" placeholder="Rpt pg"
                                         class="w-full max-w-[96px] border border-slate-200 rounded-lg px-3 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
                                 </div>
-                                <div class="pp-detail-col col-span-6 sm:col-span-8 md:col-span-9">
+                                <div class="pp-detail-col flex-1 min-w-[240px]">
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Survey Report Detail</label>
                                     <input type="text" name="survey_report" value="{{ old('survey_report', $recommendation->survey_report ?? '') }}"
                                         class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition"
@@ -1407,14 +1407,14 @@
                                 </div>
                             </div>
 
-                            <div class="grid grid-cols-12 gap-4">
-                                <div class="col-span-6 sm:col-span-4 md:col-span-3" data-batch-child>
+                            <div class="flex flex-wrap items-end gap-8">
+                                <div class="shrink-0" data-batch-child>
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono whitespace-nowrap">Physical Planning Page No</label>
                                     <input type="text" name="page_2" value="{{ old('page_2', $recommendation->page_2 ?? '') }}"
                                         title="Physical Planning Page No" placeholder="PP pg"
                                         class="w-full max-w-[96px] border border-slate-200 rounded-lg px-3 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
                                 </div>
-                                <div class="pp-detail-col col-span-6 sm:col-span-8 md:col-span-9">
+                                <div class="pp-detail-col flex-1 min-w-[240px]">
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Physical Planning Comment</label>
                                     <input type="text" name="physical_planning_comment" value="{{ old('physical_planning_comment', $recommendation->physical_planning_comment ?? '') }}"
                                         class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition"
@@ -1815,12 +1815,12 @@ document.addEventListener('DOMContentLoaded', function () {
     /* The mirror of the above: notes that only make sense while a batch is on. */
     #land-recommendation-form:not(.batch-mode) [data-batch-only] { display: none !important; }
 
-    /* Page Number details: with the Application / Physical Planning page numbers
-       stood down (the table owns them), the
-       detail box beside each would otherwise keep its 10-column width and leave a
-       gap where the page number used to be. */
+    /* Page Number details: the detail rows are flex, so the page-number box sits
+       only as wide as it needs and the detail beside it starts right after —
+       and when the page number is stood down in batch mode (the table owns it),
+       the detail simply takes the whole row. */
     #land-recommendation-form.batch-mode #conversion-fields-section .pp-detail-col {
-        grid-column: span 12 / span 12;
+        min-width: 100%;
     }
 
     /* The row Apply-to-all copies from. A bar down the left edge rather than a row
