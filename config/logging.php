@@ -126,6 +126,16 @@ return [
             'days' => 30,
         ],
 
+        // Plot Subdivision (Deeds → Parcel Update). Subdivision mutates parcel
+        // lineage, so a per-application audit trail of who captured/approved/rejected
+        // what is worth keeping separate from the general log.
+        'plot_subdivision' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/plot_subdivision.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => 90,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

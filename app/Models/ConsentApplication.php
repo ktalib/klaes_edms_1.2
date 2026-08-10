@@ -58,6 +58,26 @@ class ConsentApplication extends Model
     ];
 
     /**
+     * The date the applicant's own application bears — what the consent letter
+     * means by "further to your application dated …".
+     *
+     * The form captures this in one of two fields depending on the variant:
+     *   - "application" variant → application_submitted_date (the real one)
+     *   - "letter" variant      → application_date ("Letter Date")
+     * Only one is ever populated; the other is cleared and disabled. So the
+     * submitted date wins, and the letter date is the fallback.
+     *
+     * Returns null when neither is set — callers must not substitute today's
+     * date, which is what Carbon::parse(null) silently did.
+     *
+     * @return \Carbon\Carbon|null
+     */
+    public function getApplicationDatedAttribute()
+    {
+        return $this->application_submitted_date ?: $this->application_date;
+    }
+
+    /**
      * Get the user who created the application.
      */
     public function user()

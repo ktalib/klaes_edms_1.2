@@ -150,7 +150,7 @@
                                         </div>
                                     </td>
                                     <td class="px-6 py-4 text-slate-600 font-medium whitespace-nowrap text-xs">
-                                        {{ $app->application_date ? \Carbon\Carbon::parse($app->application_date)->format('M d, Y') : 'N/A' }}
+                                        {{ optional($app->application_dated)->format('M d, Y') ?: 'N/A' }}
                                     </td>
                                     <td class="px-6 py-4 text-slate-600 font-medium whitespace-nowrap text-xs">
                                         {{ $app->created_at->format('h:i A') }}

@@ -685,9 +685,9 @@
                                     </label>
                                     <div class="flex items-center space-x-3">
                                         <input type="number" id="batchQuantity" x-model="batchQuantity" @input="updateBatchPreview()"
-                                               min="2" max="100" 
+                                               min="2" max="200"
                                                class="w-32 px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                                        <span class="text-sm text-gray-600">files (Max: 100)</span>
+                                        <span class="text-sm text-gray-600">files (Max: 200)</span>
                                         <div class="flex-1"></div>
                                         <div class="text-xs text-blue-600 font-medium" x-show="batchQuantity > 1">
                                             Serial Range: <span x-text="serialRangePreview"></span>
@@ -748,6 +748,27 @@
                                                     <i data-lucide="chevron-right" class="w-5 h-5"></i>
                                                 </button>
                                             </div>
+                                        </div>
+
+                                        <!-- Batch Applicant Sync Toggle (shown only in batch mode) -->
+                                        <div x-show="batchMode" class="flex items-center space-x-2 mb-3 pb-3 border-b border-gray-200">
+                                            <input type="checkbox"
+                                                   id="applyApplicantToAllBatch"
+                                                   x-model="applyApplicantToAll"
+                                                   class="rounded text-blue-600 focus:ring-blue-500">
+                                            <label for="applyApplicantToAllBatch" class="text-xs font-medium text-gray-600 cursor-pointer">
+                                                Apply Applicant Details to All Files in Batch
+                                            </label>
+                                        </div>
+
+                                        <!-- Apply to Batch Button (shown when toggle is enabled) -->
+                                        <div x-show="batchMode && applyApplicantToAll" class="mb-3">
+                                            <button type="button"
+                                                    @click="applyApplicantToBatch()"
+                                                    class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md transition-colors flex items-center justify-center space-x-2">
+                                                <i data-lucide="copy" class="w-4 h-4"></i>
+                                                <span>Apply Current Applicant to All <span x-text="batchQuantity"></span> Files</span>
+                                            </button>
                                         </div>
 
                                         {{-- Party 1 for this applicant: the paired OP's Party 2 (allottee), matched by

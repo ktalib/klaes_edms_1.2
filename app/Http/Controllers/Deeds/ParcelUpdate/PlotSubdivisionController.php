@@ -8,6 +8,9 @@ use App\Models\PlotApplicationSize;
 use App\Models\StreetName;
 use App\Services\ParcelUpdateNotificationService;
 use App\Services\TitleStatusParcelRouter;
+// Plot Subdivision logging goes to its own file (storage/logs/plot_subdivision.log),
+// not laravel.log — see config/logging.php channel "plot_subdivision".
+use App\Support\PlotSubdivisionLog as Log;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -70,7 +73,7 @@ class PlotSubdivisionController extends Controller
             'file_no' => 'required|string|max:100',
             'file_title' => 'required|string|max:500',
             'applicant_name' => 'nullable|string|max:255',
-            'num_plots' => 'required|integer|min:1|max:50',
+            'num_plots' => 'required|integer|min:1|max:200',
             'plot_no' => 'nullable|string|max:100',
             'house_no' => 'nullable|string|max:100',
             'street_name' => 'nullable|string|max:255',
@@ -87,6 +90,10 @@ class PlotSubdivisionController extends Controller
         ]);
 
         if ($validator->fails()) {
+            Log::warning('Subdivision capture rejected by validation', [
+                'file_no' => $request->input('file_no'),
+                'errors' => $validator->errors()->toArray(),
+            ]);
             return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
         }
 
@@ -134,6 +141,15 @@ class PlotSubdivisionController extends Controller
 
             DB::connection('sqlsrv')->commit();
 
+            Log::info('Subdivision application captured', [
+                'application_id' => $application->id,
+                'file_no' => $application->file_no,
+                'file_title' => $application->file_title,
+                'num_plots' => (int) $application->num_plots,
+                'plot_sizes' => array_values($request->plot_sizes),
+                'documents' => array_keys($docUpdates),
+            ]);
+
             $this->parcelNotifier->notifyCreated(
                 'subdivision',
                 $application->id,
@@ -145,6 +161,11 @@ class PlotSubdivisionController extends Controller
             return response()->json(['success' => true, 'message' => 'Subdivision application created successfully.']);
         } catch (\Exception $e) {
             DB::connection('sqlsrv')->rollBack();
+            Log::error('Subdivision capture failed, transaction rolled back', [
+                'file_no' => $request->input('file_no'),
+                'error' => $e->getMessage(),
+                'file' => $e->getFile() . ':' . $e->getLine(),
+            ]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
@@ -161,9 +182,17 @@ class PlotSubdivisionController extends Controller
     public function approve(int $id)
     {
         $record = PlotSubdivisionApplication::findOrFail($id);
+        $previousStatus = $record->status;
         $record->update([
             'status' => PlotSubdivisionApplication::STATUS_APPROVED,
             'updated_by' => Auth::id(),
+        ]);
+
+        Log::info('Subdivision application approved', [
+            'application_id' => $record->id,
+            'file_no' => $record->file_no,
+            'num_plots' => (int) $record->num_plots,
+            'previous_status' => $previousStatus,
         ]);
 
         $approver = Auth::user();
@@ -183,11 +212,20 @@ class PlotSubdivisionController extends Controller
     {
         $record = PlotSubdivisionApplication::findOrFail($id);
         $reason = trim((string) $request->input('reason', ''));
+        $previousStatus = $record->status;
         $record->update([
             'status' => PlotSubdivisionApplication::STATUS_REJECTED,
             'remarks' => $reason ? "Rejected: {$reason}" : 'Rejected',
             'updated_by' => Auth::id(),
         ]);
+
+        Log::info('Subdivision application rejected', [
+            'application_id' => $record->id,
+            'file_no' => $record->file_no,
+            'previous_status' => $previousStatus,
+            'reason' => $reason ?: null,
+        ]);
+
         return response()->json(['success' => true, 'message' => 'Application rejected.']);
     }
 
@@ -198,6 +236,12 @@ class PlotSubdivisionController extends Controller
             'application_generated_at' => now(),
             'updated_by' => Auth::id(),
         ]);
+
+        Log::info('Subdivision application document generated', [
+            'application_id' => $record->id,
+            'file_no' => $record->file_no,
+        ]);
+
         return response()->json(['success' => true, 'message' => 'Application generated.']);
     }
 
@@ -214,6 +258,12 @@ class PlotSubdivisionController extends Controller
             'recommendation_generated_at' => now(),
             'updated_by' => Auth::id(),
         ]);
+
+        Log::info('Subdivision recommendation generated', [
+            'application_id' => $record->id,
+            'file_no' => $record->file_no,
+        ]);
+
         return response()->json(['success' => true, 'message' => 'Recommendation generated.']);
     }
 
@@ -244,6 +294,17 @@ class PlotSubdivisionController extends Controller
         }
 
         $record->update($updateData);
+
+        Log::info('Subdivision KNUPDA status updated', [
+            'application_id' => $record->id,
+            'file_no' => $record->file_no,
+            'knupda_status' => $knupdaStatus,
+            'land_value' => $request->input('land_value'),
+            'knupda_fee' => $request->input('knupda_fee'),
+            // KNUPDA Approved/Declined silently flips the application status too.
+            'auto_status' => $updateData['status'] ?? null,
+        ]);
+
         return response()->json(['success' => true, 'message' => 'KNUPDA status updated.']);
     }
 
@@ -266,6 +327,10 @@ class PlotSubdivisionController extends Controller
         $record = PlotSubdivisionApplication::findOrFail($id);
         
         if ($record->status === PlotSubdivisionApplication::STATUS_APPROVED) {
+            Log::warning('Blocked delete of approved subdivision application', [
+                'application_id' => $record->id,
+                'file_no' => $record->file_no,
+            ]);
             return response()->json(['success' => false, 'message' => 'Approved applications cannot be deleted.'], 403);
         }
 
@@ -274,6 +339,13 @@ class PlotSubdivisionController extends Controller
             'deleted_by' => Auth::id(),
             'deleted_at' => now(),
         ]);
+
+        Log::info('Subdivision application soft-deleted', [
+            'application_id' => $record->id,
+            'file_no' => $record->file_no,
+            'status_at_delete' => $record->status,
+        ]);
+
         return response()->json(['success' => true, 'message' => 'Application deleted successfully.']);
     }
 }

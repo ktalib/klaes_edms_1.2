@@ -3021,6 +3021,21 @@
             }
         }
 
+        // Same safety net for the applicant fields when "Apply Applicant Details to All"
+        // is checked but the button was never pressed.
+        if (alpineData.applyApplicantToAll && alpineData.locationEntries.length > 0) {
+            const currentApplicant = alpineData.locationEntries[alpineData.currentEntryIndex] || alpineData.locationEntries[0];
+            if (currentApplicant) {
+                for (let i = 0; i < alpineData.batchQuantity; i++) {
+                    if (alpineData.locationEntries[i]) {
+                        alpineData.locationEntries[i].file_name = currentApplicant.file_name;
+                        alpineData.locationEntries[i].phone_no = currentApplicant.phone_no;
+                        alpineData.locationEntries[i].address = currentApplicant.address;
+                    }
+                }
+            }
+        }
+
         // Prepare batch data
         const batchData = {
             batch_mode: true,
@@ -4419,6 +4434,7 @@
             currentEntryIndex: 0,
             serialRangePreview: '-',
             applyLocationToAll: false, // Toggle for batch location sync
+            applyApplicantToAll: false, // Toggle for batch applicant sync (File Options card)
             // Allottees (each OP's Party 2) by batch sequence, set by the Batch Capture OP
             // hand-off (copReopenCommissionForBatch). Index i pairs with applicant i, and
             // becomes the ToT's Party 1 at link time. Empty outside that flow.
@@ -6150,6 +6166,14 @@
                             }
                         }
                     }
+
+                    if (this.applyApplicantToAll && ['file_name', 'phone_no', 'address'].includes(field)) {
+                        for (let i = 0; i < this.batchQuantity; i++) {
+                            if (this.locationEntries[i]) {
+                                this.locationEntries[i][field] = value;
+                            }
+                        }
+                    }
                 }
             },
 
@@ -6385,6 +6409,62 @@
                 });
 
                 // Refresh icons after the DOM updates
+                this.$nextTick(() => {
+                    if (typeof lucide !== 'undefined') {
+                        lucide.createIcons();
+                    }
+                });
+            },
+
+            // Apply the current applicant's details to every file in the batch. The rest
+            // of the File Options card (file type, prefix, land use, purpose, customer
+            // type, gender) is already batch-wide, so only the per-entry fields are copied.
+            applyApplicantToBatch() {
+                if (!this.batchMode || this.batchQuantity < 2) {
+                    return;
+                }
+
+                // The applicant inputs bind to top-level state, not to the entry, so flush
+                // what is on screen into the current entry before broadcasting it.
+                this.saveCurrentApplicantToEntry();
+
+                const currentEntry = this.locationEntries[this.currentEntryIndex];
+                if (!currentEntry) {
+                    console.error('Apply applicant to batch failed: current entry at index ' + this.currentEntryIndex + ' is undefined');
+                    return;
+                }
+
+                const applicantData = {
+                    file_name: currentEntry.file_name || '',
+                    phone_no: currentEntry.phone_no || '',
+                    address: currentEntry.address || ''
+                };
+
+                const count = Math.min(this.batchQuantity, this.locationEntries.length);
+                for (let i = 0; i < count; i++) {
+                    if (this.locationEntries[i]) {
+                        this.locationEntries[i] = {
+                            ...this.locationEntries[i],
+                            ...applicantData
+                        };
+                    } else {
+                        console.warn('Location entry at index ' + i + ' is missing during batch applicant apply');
+                    }
+                }
+
+                // Keep the top-level bound fields in sync with what was just applied
+                this.fileName = applicantData.file_name;
+                this.phone_no = applicantData.phone_no;
+                this.address = applicantData.address;
+
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Applicant Applied',
+                    text: `Applicant details applied to all ${count} files in the batch`,
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+
                 this.$nextTick(() => {
                     if (typeof lucide !== 'undefined') {
                         lucide.createIcons();

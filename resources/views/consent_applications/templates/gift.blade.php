@@ -266,7 +266,7 @@
         <div class="mt-0 leading-tight text-md text-justify">
             By virtue of the powers conferred upon the Governor of Kano state by the provisions 9, 21 and 22 of the Land
             Act Laws of the Federation of Nigeria, Vol.118, and further to your application dated <span
-                class="json-data">{{ \Carbon\Carbon::parse($application->application_date)->format('jS F, Y') }}</span>
+                class="json-data">{{ optional($application->application_dated)->format('jS F, Y') ?: '_____________' }}</span>
             the above subject matter. I hereby Convey my Approval for Consent to Assign the property with Certificate of
             Occupancy No.<span class="json-data">{{ $application->file_number }}</span> To <span
                 class="json-data">{{ strtoupper($application->party_name) }}</span> of <span

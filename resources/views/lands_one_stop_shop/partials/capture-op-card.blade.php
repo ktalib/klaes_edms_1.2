@@ -703,7 +703,7 @@
             title: 'Start a New Batch',
             html: '<p class="text-sm text-gray-600 mb-3">How many OPs are you capturing for <strong>'
                 + (opType || 'this batch') + '</strong>?</p>'
-                + '<input id="copNewBatchQty" type="number" min="2" max="100" value="2" class="swal2-input" '
+                + '<input id="copNewBatchQty" type="number" min="2" max="200" value="2" class="swal2-input" '
                 + 'style="width:8rem;margin:0 auto;" placeholder="Qty">'
                 + '<p class="text-xs text-gray-500">You can add or remove records later, before commissioning.</p>',
             showCancelButton: true,
@@ -712,8 +712,8 @@
             focusConfirm: false,
             preConfirm: () => {
                 const qty = parseInt(document.getElementById('copNewBatchQty')?.value, 10);
-                if (!qty || qty < 2 || qty > 100) {
-                    Swal.showValidationMessage('Enter a batch quantity between 2 and 100.');
+                if (!qty || qty < 2 || qty > 200) {
+                    Swal.showValidationMessage('Enter a batch quantity between 2 and 200.');
                     return false;
                 }
                 return qty;

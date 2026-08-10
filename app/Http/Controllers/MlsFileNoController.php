@@ -3693,14 +3693,14 @@ class MlsFileNoController extends Controller
         try {
             $validated = $request->validate([
                 'batch_mode' => 'required|boolean',
-                'batch_quantity' => 'required|integer|min:2|max:100',
+                'batch_quantity' => 'required|integer|min:2|max:200',
                 'application_type' => 'required|string',
                 'file_option' => 'required|string',
                 'file_name' => 'nullable|string|max:500',
                 'land_use' => 'required|string|max:50',
                 'year' => 'required|integer|min:2020|max:2050',
                 'serial_start' => 'required|integer|min:1',
-                'location_entries' => 'required|array|min:2|max:100',
+                'location_entries' => 'required|array|min:2|max:200',
                 'location_entries.*.plotNo' => 'nullable|string|max:100',
                 'location_entries.*.tpNo' => 'nullable|string|max:100',
                 'location_entries.*.location' => 'nullable|string',
