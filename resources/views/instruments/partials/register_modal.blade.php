@@ -473,7 +473,7 @@
                                      Backfilled from the selected file's indexing record: see
                                      backfillPropertyFromFile() in public/js/instruments-capture.js. --}}
                                 <x-instrument-select id="secondPartyGender" label="" icon="users"
-                                    :options="\App\Models\Gender::options()" placeholder="Select Gender"
+                                    :options="\App\Models\Gender::options()" placeholder="Select Gender *"
                                     value="{{ app(\App\Services\GenderNormalizer::class)->normalize($record->party_2_gender ?? null) }}" />
                             </div>
                         </div>

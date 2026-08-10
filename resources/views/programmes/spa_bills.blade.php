@@ -38,7 +38,7 @@
 
         {{-- DataTable --}}
         <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div class="px-5 py-4 border-b border-gray-100"><h2 class="text-sm font-semibold text-gray-700">All SPA Bills</h2></div>
+            <div class="px-5 py-4 border-b border-gray-100"><h2 class="text-sm font-semibold text-gray-700">All SPAS Bills</h2></div>
             <div class="p-4">
                 <table id="spa-bills-table" class="w-full text-sm" style="width:100%">
                     <thead>

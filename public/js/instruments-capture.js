@@ -7305,12 +7305,17 @@ document.addEventListener('DOMContentLoaded', function () {
         const typeId = currentInstrumentType;
         const p1Name = document.getElementById('firstPartyName')?.value?.trim();
         const p2Name = document.getElementById('secondPartyName')?.value?.trim();
+        const p2Gender = document.getElementById('secondPartyGender')?.value?.trim();
 
         const errors = [];
         if (!fileNo) errors.push('File selection is required.');
         if (!typeId) errors.push('Instrument type is not defined.');
         if (!p1Name) errors.push('First party name is required.');
         if (!p2Name) errors.push('Second party name is required.');
+        // Mirrors the server rule in InstrumentController::store(). The backfill
+        // only fills this when Party 2 is the file's owner, so on assignments and
+        // mortgages the clerk always picks it by hand.
+        if (!p2Gender) errors.push('Second party gender is required.');
 
         // Party 2 Address Validation (LGA & State)
         const p2Lga = document.getElementById('secondPartyLga')?.value?.trim();

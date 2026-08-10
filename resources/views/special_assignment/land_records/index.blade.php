@@ -55,7 +55,7 @@
                             <th class="px-3 py-2">Applied Land Use</th>
                             <th class="px-3 py-2">Prevailing Land Use</th>
                             <th class="px-3 py-2">Contravention</th>
-                            <th class="px-3 py-2">SPA Status</th>
+                            <th class="px-3 py-2">SPAS Status</th>
                             <th class="px-3 py-2">Date</th>
                         </tr>
                     </thead>
@@ -228,7 +228,7 @@ $(document).ready(function () {
         ],
     });
 
-    // ── SPA modal open / close ─────────────────────────────────────────────
+    // ── SPAS modal open / close ─────────────────────────────────────────────
     const spaModal = document.getElementById('modal-add-record');
 
     function openSpaModal() {
@@ -248,7 +248,7 @@ $(document).ready(function () {
         document.getElementById('contravention-badge').style.display = 'none';
     }
 
-    // ── "Add to SPA" per-row button ────────────────────────────────────────
+    // ── "Add to SPAS" per-row button ────────────────────────────────────────
     $(document).on('click', '.btn-lr-add-spa', async function () {
         $('.lr-dropdown').addClass('hidden');
         const p = JSON.parse($(this).attr('data-prefill'));

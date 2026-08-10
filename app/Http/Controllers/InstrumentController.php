@@ -9,7 +9,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use App\Services\InstrumentCaptureService;
+use App\Models\Gender;
 use App\Models\StreetName;
+use Illuminate\Validation\Rule;
 
 class InstrumentController extends Controller
 {
@@ -133,6 +135,11 @@ class InstrumentController extends Controller
                 'instrument_type' => 'required|string',
                 'temp_fileno' => 'nullable|string|max:255',
                 'fileno' => 'nullable|string|max:255',
+                // Party 2's gender must be chosen, not left to default. A blank is
+                // indistinguishable from the legacy rows that predate the column,
+                // and those are exactly what the gender reports cannot count.
+                // Must be a NAME from the `genders` lookup, never an id.
+                'secondPartyGender' => ['required', Rule::in(Gender::options())],
             ];
 
             if (stripos($instrumentType, 'Occupancy Permit') !== false) {
@@ -158,7 +165,12 @@ class InstrumentController extends Controller
                 }
             }
 
-            $validator = Validator::make($request->all(), $rules);
+            $messages = [
+                'secondPartyGender.required' => 'Party 2 gender is required — please select one.',
+                'secondPartyGender.in' => 'Party 2 gender must be one of: ' . implode(', ', Gender::options()) . '.',
+            ];
+
+            $validator = Validator::make($request->all(), $rules, $messages);
 
             if ($validator->fails()) {
                 if ($request->expectsJson()) {

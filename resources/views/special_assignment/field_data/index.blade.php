@@ -13,7 +13,7 @@
             <button id="btn-add-spa"
                 class="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-lg hover:opacity-90 transition-opacity whitespace-nowrap"
                 style="background:rgb(186,191,12)">
-                <i data-lucide="plus" class="h-4 w-4"></i> Add to SPA
+                <i data-lucide="plus" class="h-4 w-4"></i> Add to SPAS
             </button>
         </div>
 
@@ -270,7 +270,7 @@
     </div>
 </div>
 
-{{-- Add Record (Add to SPA) Modal — land record details + optional field inspection in one pass --}}
+{{-- Add Record (Add to SPAS) Modal — land record details + optional field inspection in one pass --}}
 <div id="modal-add-record" class="fixed inset-0 z-[1100] hidden items-center justify-center bg-black/40 p-4">
     <div class="bg-white rounded-2xl shadow-xl w-full max-w-6xl mx-auto overflow-hidden max-h-[92vh] flex flex-col">
         <div class="flex items-center justify-between px-6 py-3 border-b border-gray-100 flex-shrink-0">
@@ -1053,7 +1053,7 @@ $(document).ready(function () {
 });
 </script>
 
-{{-- ── Add to SPA flow (file selector card → Add Land Record modal) ──────────── --}}
+{{-- ── Add to SPAS flow (file selector card → Add Land Record modal) ──────────── --}}
 <script>
 const LR_STORE = '{{ route("special-assignment.land-records.store") }}';
 const LR_LOOKUP = '{{ route("special-assignment.check-file") }}';
@@ -1322,7 +1322,7 @@ $(document).ready(function () {
         }
     }
 
-    // Form submit → create SPA application (and, if filled in, its field inspection)
+    // Form submit → create SPAS application (and, if filled in, its field inspection)
     document.getElementById('form-add-record').addEventListener('submit', async function (e) {
         e.preventDefault();
 
@@ -1358,7 +1358,7 @@ $(document).ready(function () {
                 closeSpaModal();
                 resetSpaForm();
                 $('#field-records-table').DataTable().ajax.reload(null, false);
-                Swal.fire({ icon:'success', title:'Added to SPA', text: data.message + inspectionNote, timer: inspectionNote ? 3500 : 2000, showConfirmButton:false });
+                Swal.fire({ icon:'success', title:'Added to SPAS', text: data.message + inspectionNote, timer: inspectionNote ? 3500 : 2000, showConfirmButton:false });
             } else {
                 Swal.fire({ icon:'error', title:'Error', text:data.message || 'Save failed.' });
             }

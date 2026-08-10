@@ -3329,7 +3329,7 @@ class ProgrammesController extends Controller
         $isReport = $request->get('sub') === 'report';
 
         $PageTitle       = $isReport ? 'Special Assignment – Payment Reports' : 'Special Assignment – Payments';
-        $PageDescription = $isReport ? 'Summary of SPA payment records.' : 'Record and manage payments for Special Assignment bills.';
+        $PageDescription = $isReport ? 'Summary of SPAS payment records.' : 'Record and manage payments for Special Assignment bills.';
 
         return view('programmes.spa_payments', compact('PageTitle', 'PageDescription', 'stats', 'isReport'));
     }

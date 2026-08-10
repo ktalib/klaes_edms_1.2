@@ -58,7 +58,7 @@ class Kernel extends ConsoleKernel
         // Clean up expired Digital File Request temp copies daily at 03:00
         $schedule->command('dfr:cleanup-expired')->dailyAt('03:00')->withoutOverlapping();
 
-        // Auto-trigger second serve notices for SPA first-serve records 14+ days old
+        // Auto-trigger second serve notices for SPAS first-serve records 14+ days old
         $schedule->command('spa:trigger-second-service')->dailyAt('08:00')->withoutOverlapping();
 
         // Warn PHS organizations whose token balance is running low (daily).

@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Log;
 class SpaTriggerSecondService extends Command
 {
     protected $signature   = 'spa:trigger-second-service';
-    protected $description = 'Auto-trigger second serve notices for SPA first-serve records that are 14+ days old';
+    protected $description = 'Auto-trigger second serve notices for SPAS first-serve records that are 14+ days old';
 
     public function handle(): int
     {
@@ -69,7 +69,7 @@ class SpaTriggerSecondService extends Command
                     $message = "Dear {$first->recipient_name}, this is a Second Serve Notice from Kano State Ministry of Lands regarding your property{$fileRef}. You are required to comply immediately. KANGIS.";
                     $smsSent = $sms->send($first->phone, $message);
                 } catch (\Throwable $e) {
-                    Log::warning('SPA auto-second-serve SMS failed', ['phone' => $first->phone, 'error' => $e->getMessage()]);
+                    Log::warning('SPAS auto-second-serve SMS failed', ['phone' => $first->phone, 'error' => $e->getMessage()]);
                 }
 
                 $second->update(['sms_sent' => $smsSent, 'sms_sent_at' => $smsSent ? now() : null]);
@@ -79,7 +79,7 @@ class SpaTriggerSecondService extends Command
 
             } catch (\Throwable $e) {
                 $failed++;
-                Log::error('SPA auto-second-serve failed', ['first_id' => $first->id, 'error' => $e->getMessage()]);
+                Log::error('SPAS auto-second-serve failed', ['first_id' => $first->id, 'error' => $e->getMessage()]);
                 $this->error("  ✗ Failed for App #{$first->spa_application_id}: {$e->getMessage()}");
             }
         }

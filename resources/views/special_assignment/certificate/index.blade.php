@@ -226,7 +226,7 @@ $(document).ready(function () {
         const btn = this.querySelector('[type=submit]');
         const body = Object.fromEntries(new FormData(this));
 
-        // Guard: must have a real (numeric) SPA application selected
+        // Guard: must have a real (numeric) SPAS application selected
         if (!body.spa_application_id || body.spa_application_id === 'null') {
             Swal.fire({ icon:'warning', title:'Select an application', text:'Please choose an approved Special Assignment application before issuing a certificate.' });
             return;

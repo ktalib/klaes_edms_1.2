@@ -37,7 +37,7 @@ class IndexingDuplicateService
         'thumbnails'             => 'thumbnail(s)',
         'pagetypings'            => 'page typing record(s)',
         'file_indexing_bills'    => 'bill(s)',
-        'spa_applications'       => 'SPA application(s)',
+        'spa_applications'       => 'SPAS application(s)',
     ];
 
     /**
