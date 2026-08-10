@@ -294,8 +294,10 @@
                                 <p class="text-[11px] text-gray-400 mt-1" id="ts-see-hint">The related file number written as "See ..." on the physical file. This field is optional.</p>
                             </div>
 
-                            {{-- Reason --}}
-                            <div class="form-group">
+                            {{-- Reason. Hidden for the statuses whose remark is a fixed sentence
+                                 about the counterpart file (Re-grant / Resettlement / Closed) and
+                                 for the classification flags — none of them quote a reason. --}}
+                            <div class="form-group" id="ts-reason-row">
                                 <label class="block text-sm font-medium text-gray-700 mb-2">Reason</label>
                                 <textarea id="ts-reason" rows="2"
                                     class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm"
@@ -1149,6 +1151,7 @@
             const resettleLabelEl = document.getElementById('ts-resettlement-label');
             const seeLabelEl   = document.getElementById('ts-see-label');
             const seeHintEl    = document.getElementById('ts-see-hint');
+            const reasonRow    = document.getElementById('ts-reason-row');
 
             if (!typeGroup) return;
 
@@ -1226,6 +1229,16 @@
             // Everything that should appear in Remark / Comment (actionable + classification).
             const isRemarkType = (t) => t !== '' && t !== 'Normal';
             const getRemarkTypes = () => getSelectedTypes().filter(isRemarkType);
+
+            // Statuses whose auto remark is a fixed sentence about a counterpart file, so the
+            // Reason box has nothing to feed. Kept in step with buildRemarkFor() below: a bare
+            // "Resettlement" with no direction still falls through to the generic sentence.
+            const REASONLESS_TYPES = ['Re-grant', 'Closed', ...CLASSIFICATION_TYPES];
+            const usesReason = (t) => {
+                if (!isRemarkType(t) || REASONLESS_TYPES.includes(t)) return false;
+                if (t === 'Resettlement') return !getResettleKind();
+                return true;
+            };
 
             function buildRemarkFor(type) {
                 const fileNo = getFileNo();
@@ -1322,6 +1335,12 @@
                             : 'The OLD file number this file was resettled from. This field is optional.';
                     }
                 }
+
+                // Reason only shows for statuses that actually quote it in their remark; drop
+                // anything already typed so a hidden box can't submit a stale reason.
+                const needsReason = remarkTypes.some(usesReason);
+                reasonRow?.classList.toggle('hidden', !needsReason);
+                if (!needsReason && reasonEl) reasonEl.value = '';
 
                 statusBlock?.classList.toggle('hidden', !hasType);
                 seeRow?.classList.toggle('hidden', !needsSee);

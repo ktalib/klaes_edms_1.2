@@ -42,11 +42,28 @@ class RegrantTermService
     ];
 
     /**
-     * Grant years below this are data errors, not titles. 1901 rather than 1900 because
-     * `pra` holds 91 epoch sentinels stamped in year 1900 ("Jan  1 1900 12:00AM" x77,
-     * plus a handful of Feb 1900) which would otherwise show as ~86 years overdue.
+     * Earliest grant year treated as a real transaction date. Anything older is a data
+     * error rather than a title, and the due list must not act on it.
+     *
+     * Two distinct problems sat below this floor and put 731 bad rows on the due list:
+     *  - Epoch sentinels. `pra` holds 91 rows stamped in year 1900 ("Jan  1 1900 12:00AM"
+     *    x77, plus a handful of Feb 1900), which showed as ~86 years overdue.
+     *  - Instrument dates carried over from a predecessor title, dated long before the file
+     *    itself — e.g. COM-RC-1982-232 dated 1940-11-01 — so the term was being clocked from
+     *    a colonial deed. The file's real grant is its 1980s (re)certification, not that date.
+     *
+     * A file with both an old and a recent instrument is not lost: the CTEs pick the newest
+     * instrument *within* this window, so it is simply clocked from the valid one instead.
      */
-    private const MIN_YEAR = 1901;
+    private const MIN_GRANT_YEAR = 1981;
+
+    /**
+     * File-number prefixes that mark a KANGIS file. KANGIS numbers (MLKN 2958, KNML 1, KN…)
+     * are excluded from the due list: they are not MLS grants, so the statutory term cannot
+     * be clocked from their instrument dates. Matched on the number rather than only on
+     * `general_registry` because 38 KANGIS-numbered rows are filed under Lands Registry.
+     */
+    private const KANGIS_PREFIXES = ['MLKN%', 'KNML%', 'KN%'];
 
     /**
      * SQL that pulls the grant year out of a mixed-format nvarchar date column.
@@ -115,7 +132,7 @@ class RegrantTermService
      *
      * The underlying union scans all 133,915 `pra` rows and 32,101 `CofO_staging` rows,
      * applying a PATINDEX and a CASE per row — nothing an index can help with, so it costs
-     * seconds. The *result* is only ~1,200 rows, so it is far cheaper to build the whole
+     * seconds. The *result* is only ~500 rows, so it is far cheaper to build the whole
      * set once and then filter, count and paginate it in memory than to re-run the union
      * for each of those operations (which cost ~17s of page load between them).
      *
@@ -306,6 +323,10 @@ class RegrantTermService
         // The term is decided by the file register's own number and land use.
         $term      = self::termExpression('fi.file_number', 'fi.land_use_type');
         $grantYear = 'COALESCE(c.grant_year, r.grant_year)';
+        $notKangis = implode(' AND ', array_map(
+            fn ($p) => "UPPER(LTRIM(file_number)) NOT LIKE '{$p}'",
+            self::KANGIS_PREFIXES
+        ));
 
         $sql = "
         WITH cofo AS (
@@ -336,6 +357,9 @@ class RegrantTermService
                    ROW_NUMBER() OVER (PARTITION BY file_number ORDER BY id DESC) AS rn
             FROM file_indexings
             WHERE file_number IS NOT NULL AND LTRIM(RTRIM(file_number)) <> ''
+              -- KANGIS files are not MLS grants and never belong on the due list.
+              AND (general_registry IS NULL OR general_registry <> 'KANGIS Registry')
+              AND {$notKangis}
         )
         SELECT
             CASE WHEN c.grant_year IS NOT NULL THEN 'cofo' ELSE 'rofo' END AS source,
@@ -374,8 +398,8 @@ class RegrantTermService
         ORDER BY years_overdue DESC, file_no";
 
         return DB::connection('sqlsrv')->select($sql, [
-            self::MIN_YEAR, $asOfYear,   // cofo year window
-            self::MIN_YEAR, $asOfYear,   // rofo year window
+            self::MIN_GRANT_YEAR, $asOfYear,   // cofo year window
+            self::MIN_GRANT_YEAR, $asOfYear,   // rofo year window
             $asOfYear,                   // years_overdue
             $asOfYear,                   // expiry cut-off
         ]);

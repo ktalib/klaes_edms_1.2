@@ -12,6 +12,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Carbon\Carbon;
 
 class ConsentApplicationController extends Controller
 {
@@ -519,17 +520,34 @@ class ConsentApplicationController extends Controller
     }
 
     /**
+     * Number of days after a consent is captured before the Commissioner's
+     * signature is deemed to have been given. The signature — not the consent
+     * letter alone — is what authorises instrument registration, but the
+     * signing event is not recorded in KLAES, so it is derived from the
+     * capture date (created_at) plus this window.
+     */
+    public const COMMISSIONER_SIGNATURE_DAYS = 7;
+
+    /**
      * API: Check whether a consent application exists for a file number and consent type,
-     * and whether the consent letter has been printed.
-     * Used by the instrument capture flow to gate Assignment/Gift registration.
+     * whether the consent letter has been printed, and whether the Commissioner's
+     * signature window has elapsed.
+     * Used by the instrument capture flow to gate Assignment/Gift/Mortgage registration.
      */
     public function checkForInstrument(Request $request)
     {
         $fileNo      = trim((string) $request->query('file_number', ''));
         $consentType = trim((string) $request->query('consent_type', ''));
 
+        $blocked = [
+            'has_consent'   => false,
+            'has_printed'   => false,
+            'print_count'   => 0,
+            'has_signature' => false,
+        ];
+
         if ($fileNo === '' || $consentType === '') {
-            return response()->json(['has_consent' => false, 'has_printed' => false, 'print_count' => 0]);
+            return response()->json($blocked);
         }
 
         $consent = DB::connection('sqlsrv')
@@ -540,15 +558,31 @@ class ConsentApplicationController extends Controller
             ->first();
 
         if (!$consent) {
-            return response()->json(['has_consent' => false, 'has_printed' => false, 'print_count' => 0]);
+            return response()->json($blocked);
         }
 
+        // Derive the Commissioner's signature date from the capture date.
+        $capturedAt   = $consent->created_at ? Carbon::parse($consent->created_at) : null;
+        $signatureDue = $capturedAt ? $capturedAt->copy()->addDays(self::COMMISSIONER_SIGNATURE_DAYS) : null;
+
+        // No capture timestamp means we cannot derive a signature date; treat the
+        // record as legacy and let the print rule alone govern it.
+        $hasSignature  = $signatureDue ? Carbon::now()->greaterThanOrEqualTo($signatureDue) : true;
+        $daysRemaining = ($signatureDue && !$hasSignature)
+            ? (int) ceil(Carbon::now()->floatDiffInDays($signatureDue, false))
+            : 0;
+
         return response()->json([
-            'has_consent'  => true,
-            'has_printed'  => ((int) $consent->print_count > 0),
-            'print_count'  => (int) $consent->print_count,
-            'consent_type' => $consent->consent_type,
-            'consent_id'   => $consent->id,
+            'has_consent'          => true,
+            'has_printed'          => ((int) $consent->print_count > 0),
+            'print_count'          => (int) $consent->print_count,
+            'consent_type'         => $consent->consent_type,
+            'consent_id'           => $consent->id,
+            'has_signature'        => $hasSignature,
+            'captured_at'          => $capturedAt ? $capturedAt->toDateString() : null,
+            'signature_date'       => $signatureDue ? $signatureDue->toDateString() : null,
+            'signature_days'       => self::COMMISSIONER_SIGNATURE_DAYS,
+            'days_until_signature' => max(0, $daysRemaining),
         ]);
     }
 

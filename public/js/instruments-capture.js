@@ -1821,8 +1821,9 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     /**
-     * Check whether a consent application exists and has been printed for the
-     * currently selected file number and instrument type (Assignment / Gift).
+     * Check whether a consent application exists, has been printed, and has
+     * reached the Commissioner's signature date for the currently selected file
+     * number and instrument type (Assignment / Gift / Mortgage).
      *
      * @param {object} opts
      * @param {boolean} opts.silent - If true, only returns a result without showing Swal alerts.
@@ -1878,6 +1879,37 @@ document.addEventListener('DOMContentLoaded', function () {
                         icon: 'error',
                         title: 'Consent Letter Not Printed',
                         html: `The <strong>${requiredConsentType} Consent Letter</strong> for file <strong>${fileNo}</strong> must be printed before registering this instrument.<br><br>Please print the consent letter from <em>Applications for Consent</em> first.`,
+                        confirmButtonColor: '#dc2626'
+                    });
+                }
+                return false;
+            }
+
+            // Commissioner's signature — it is the signature, not the consent
+            // letter, that authorises registration. The signing event is not
+            // recorded in KLAES, so it is derived as capture date + N days.
+            if (!data.has_signature) {
+                const signatureDate = data.signature_date
+                    ? new Date(data.signature_date + 'T00:00:00').toLocaleDateString('en-GB', {
+                        day: 'numeric', month: 'long', year: 'numeric'
+                    })
+                    : null;
+                const days = Number(data.days_until_signature) || 0;
+                const dayWord = days === 1 ? 'day' : 'days';
+
+                disableSubmit(
+                    `Commissioner's Signature Pending: The ${requiredConsentType} Consent is not yet due for signature` +
+                    (signatureDate ? ` until ${signatureDate}.` : '.')
+                );
+                if (!silent) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: "Commissioner's Signature Pending",
+                        html: `The <strong>${requiredConsentType} Consent</strong> for file <strong>${fileNo}</strong> is not yet signed by the Commissioner.<br><br>` +
+                            `Consent captured: <strong>${data.captured_at || 'unknown'}</strong><br>` +
+                            `Signature due: <strong>${signatureDate || 'unknown'}</strong>` +
+                            (days ? ` (${days} ${dayWord} remaining)` : '') +
+                            `<br><br>This instrument can be registered once the Commissioner's signature date is reached.`,
                         confirmButtonColor: '#dc2626'
                     });
                 }
