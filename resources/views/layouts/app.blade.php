@@ -79,19 +79,18 @@
 
 <body class="bg-gray-100 flex h-screen font-sans antialiased">
   <!-- Preloader -->
-  {{-- <div id="preloader" class="fixed inset-0 bg-white bg-opacity-80 flex items-center justify-center z-50">
-    <img src="http://app.klaes.ng/storage/upload/logo/4.gif" alt="Loading..." style="width: 300px; height: auto;">
-  </div> --}}
+    <div id="preloader" class="fixed inset-0 bg-white bg-opacity-80 flex items-center justify-center z-50">
+    <img src="http://app.klaes.ng/assets/logo/klas_logo.gif" alt="Loading..." style="width: 300px; height: auto;">
+  </div>  
 
-
-  {{-- <script>
+  <script>
     document.addEventListener('DOMContentLoaded', function () {
       const preloader = document.getElementById('preloader');
       setTimeout(function () {
         preloader.style.display = 'none';
       }, 9000);
     });
-  </script> --}}
+  </script>  
   <!-- Sidebar -->
   <script>
     document.addEventListener('DOMContentLoaded', function () {
