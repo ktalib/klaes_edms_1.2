@@ -1139,6 +1139,14 @@ class FileNumberApiController extends Controller
                     'st_file_numbers.unit_sequence',
                     'st_file_numbers.year',
                     'st_file_numbers.file_no_type',
+                    // Needed by the Actions menu: an ST conversion prints the
+                    // Application for Conversion off its CON mother file number.
+                    'st_file_numbers.application_type',
+                    'st_file_numbers.date_commissioned',
+                    'st_file_numbers.property_plot_no',
+                    'st_file_numbers.property_street_name',
+                    'st_file_numbers.property_district',
+                    'st_file_numbers.property_lga',
                     'st_file_numbers.parent_id',
                     'st_file_numbers.mother_application_id',
                     'st_file_numbers.subapplication_id',

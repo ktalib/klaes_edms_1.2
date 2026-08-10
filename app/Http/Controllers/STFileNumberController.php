@@ -363,7 +363,8 @@ class STFileNumberController extends Controller
         $validator = Validator::make($request->all(), [
             'land_use' => 'required|string|in:Residential,Commercial,Industrial,Mixed,RESIDENTIAL,COMMERCIAL,INDUSTRIAL,MIXED,INDUSTRY',
             'type' => 'required|string|in:PRIMARY,SUA,PUA',
-            'parent_file_number' => 'required_if:type,PUA|string|regex:/^ST-[A-Z]+-\d{4}-\d+$/'
+            'application_type' => 'nullable|string',
+            'parent_file_number' => 'required_if:type,PUA|string|regex:/^ST-(CON-)?[A-Z]+-\d{4}-\d+$/'
         ]);
 
         if ($validator->fails()) {
@@ -387,7 +388,7 @@ class STFileNumberController extends Controller
                 $parentFileNumber = $request->input('parent_file_number');
 
                 // Parse parent file number
-                if (!preg_match('/^ST-([A-Z]+)-(\d{4})-(\d+)$/', $parentFileNumber, $matches)) {
+                if (!preg_match('/^ST-(CON-)?([A-Z]+)-(\d{4})-(\d+)$/', $parentFileNumber, $matches)) {
                     return response()->json([
                         'success' => false,
                         'message' => 'Invalid parent file number format'
@@ -413,8 +414,31 @@ class STFileNumberController extends Controller
 
             } else {
                 // For PRIMARY and SUA
-                $nextSerial = $this->getNextSerialPreview($landUseInfo['code'], $year);
-                $npFileNo = "ST-{$landUseInfo['code']}-{$year}-{$nextSerial}";
+                $isConversion = strcasecmp(trim((string) $request->input('application_type')), 'Conversion') === 0;
+
+                // Conversions count on their own pool per land use (CON-COM), so their
+                // serials start at 1 and never touch the direct-allocation run.
+                $conversionFileNo = null;
+                $trackingId = null;
+
+                if ($isConversion && $type === 'PRIMARY') {
+                    $nextSerial = $this->getNextSerialPreview('CON-' . $landUseInfo['code'], $year);
+                    $npFileNo = "ST-CON-{$landUseInfo['code']}-{$year}-{$nextSerial}";
+
+                    // The CON land file commissioned alongside it draws from the shared
+                    // MLS conversion stream. Peek only -- commissioning consumes it.
+                    $conPrefix = $this->conversionPrefix($landUseInfo['full']);
+                    $conSerial = (int) \App\Models\MlsSerialControl::getCurrentSerial($conPrefix, $year) + 1;
+                    $conversionFileNo = \App\Models\MlsFileNo::generateFileNumber($conPrefix, $year, $conSerial);
+
+                    // A conversion links to no existing file, so there is no grouping
+                    // record to read a tracking ID from — it is minted here so the form
+                    // can show it, and commissioning stores the one it displayed.
+                    $trackingId = $this->reserveTrackingId();
+                } else {
+                    $nextSerial = $this->getNextSerialPreview($landUseInfo['code'], $year);
+                    $npFileNo = "ST-{$landUseInfo['code']}-{$year}-{$nextSerial}";
+                }
 
                 if ($type === 'SUA') {
                     $unitFileNo = "{$npFileNo}-001";
@@ -434,6 +458,10 @@ class STFileNumberController extends Controller
                         'success' => true,
                         'data' => [
                             'preview_file_number' => $npFileNo,
+                            // The CON land file the ST primary will be created under;
+                            // the form shows it in place of the Applied File Number picker.
+                            'conversion_file_number' => $conversionFileNo,
+                            'tracking_id' => $trackingId,
                             'serial_no' => $nextSerial,
                             'type' => $type
                         ]
@@ -453,6 +481,41 @@ class STFileNumberController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * A tracking ID (TRK-XXXXXXXX-XXXXX) not yet used by any ST file number.
+     *
+     * Only a preview: commissioning stores whatever the form posts back, so the
+     * operator sees the same ID before and after.
+     */
+    private function reserveTrackingId(): string
+    {
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $candidate = 'TRK-' . strtoupper(\Illuminate\Support\Str::random(8)) . '-' . strtoupper(\Illuminate\Support\Str::random(5));
+
+            $taken = DB::connection('sqlsrv')->table('st_file_numbers')->where('tra', $candidate)->exists();
+            if (!$taken) {
+                return $candidate;
+            }
+        }
+
+        return 'TRK-' . strtoupper(\Illuminate\Support\Str::random(8)) . '-' . strtoupper(\Illuminate\Support\Str::random(5));
+    }
+
+    /**
+     * MLS conversion prefix for a land use — the mls_serial_control stream a
+     * conversion serial is drawn from. Mirrors CommissionNewSTController.
+     */
+    private function conversionPrefix(?string $landUse): string
+    {
+        return [
+            'COMMERCIAL'   => 'CON-COM',
+            'RESIDENTIAL'  => 'CON-RES',
+            'INDUSTRIAL'   => 'CON-IND',
+            'AGRICULTURAL' => 'CON-AG',
+            'MIXED'        => 'CON-MIXED',
+        ][strtoupper(trim((string) $landUse))] ?? 'CON-RES';
     }
 
     /**

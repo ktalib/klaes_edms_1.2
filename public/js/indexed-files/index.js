@@ -1208,17 +1208,21 @@ function openRelatedFilesModal(id, options) {
         // unlink confirmation; each row carries its own prop_id (see backfillRelatedFromIndex).
         const meta = data.meta || {};
 
-        // More than one related file => make the operator pick, don't assume.
+        // More than one related file => make the operator pick, don't assume. Selection
+        // checkboxes and the bulk bar only appear in that case.
+        const isMulti = data.data.length > 1;
         const multiNotice = ensureMultiNotice();
         const countEl = document.getElementById('related-files-count');
         if (multiNotice) {
-          if (data.data.length > 1) {
+          if (isMulti) {
             if (countEl) countEl.textContent = data.data.length;
             multiNotice.classList.remove('hidden');
           } else {
             multiNotice.classList.add('hidden');
           }
         }
+        const bulkBar = ensureBulkUnlinkBar();
+        if (bulkBar) bulkBar.classList.toggle('hidden', !isMulti);
 
         // Show Parent File Number
         const firstRow = data.data[0];
@@ -1234,7 +1238,16 @@ function openRelatedFilesModal(id, options) {
 
         tbody.innerHTML = data.data.map((file, idx) => `
           <tr class="hover:bg-gray-50 transition-colors related-file-row" data-file-number="${escapeHtml(file.file_number)}">
-            <td class="px-4 py-3 text-sm text-gray-600 font-medium">${idx + 1}</td>
+            <td class="px-4 py-3 text-sm text-gray-600 font-medium">
+              ${isMulti ? `
+                <label class="inline-flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" class="related-file-select h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                    data-file-number="${escapeHtml(file.file_number)}"
+                    data-link-id="${file.id}"
+                    data-prop-id="${escapeHtml(file.prop_id || '')}">
+                  <span>${idx + 1}</span>
+                </label>` : idx + 1}
+            </td>
             <td class="px-4 py-3 text-sm">
                 <button type="button" class="related-fileno-link inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 hover:border-blue-300 cursor-pointer transition-colors"
                     data-file-number="${escapeHtml(file.file_number)}" title="Click to backfill details from the indexed file">
@@ -1282,6 +1295,9 @@ function openRelatedFilesModal(id, options) {
         // Clicking a related file number backfills its row from the indexed record.
         bindRelatedFilenoBackfill();
         bindRelatedUnlinkHandlers(id, meta);
+        if (isMulti) {
+          bindRelatedBulkUnlink(id, firstRow ? (firstRow.main_file_number || '') : '');
+        }
 
         // Entered from the row menu with a single related file: go straight to the
         // confirmation. More than one and the list stays up for the operator to choose.
@@ -1744,6 +1760,14 @@ function ensureUnlinkModal() {
       </div>`;
     document.body.appendChild(modal);
   }
+
+  // The bulk path rewrites the confirm body, destroying the elements the single-file
+  // path writes into. Keep the pristine markup so resetUnlinkModalState() can restore it.
+  const confirmBody = modal.querySelector('#unlink-related-confirm-body');
+  if (confirmBody && !confirmBody._defaultHtml) {
+    confirmBody._defaultHtml = confirmBody.innerHTML;
+  }
+
   return modal;
 }
 
@@ -1762,13 +1786,49 @@ function ensureMultiNotice() {
     notice.className = 'hidden mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3';
     notice.innerHTML = `
       <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600 mt-0.5 shrink-0"></i>
-      <p class="text-xs text-amber-800 font-medium">
-        This file has <span id="related-files-count" class="font-bold">0</span> related file numbers.
-        Choose the specific one you want to unlink — only the row you pick is removed.
-      </p>`;
+      <div class="flex-1">
+        <p class="text-xs text-amber-800 font-medium">
+          This file has <span id="related-files-count" class="font-bold">0</span> related file numbers.
+          Tick the ones you want to unlink — only the rows you pick are removed.
+        </p>
+        <label class="mt-2 inline-flex items-center gap-2 text-xs font-bold text-amber-900 cursor-pointer">
+          <input type="checkbox" id="related-files-select-all" class="h-4 w-4 rounded border-amber-300 text-red-600 focus:ring-red-500">
+          Select all
+        </label>
+      </div>`;
     anchor.parentElement.insertBefore(notice, anchor);
   }
   return notice;
+}
+
+/**
+ * Bulk action bar under the related-files list. Only shown when the record has more than
+ * one related file number — with a single one the per-row unlink button is the whole job.
+ */
+function ensureBulkUnlinkBar() {
+  let bar = document.getElementById('related-files-bulk-bar');
+  if (!bar) {
+    const tbody = document.getElementById('related-files-table-body');
+    const anchor = tbody?.closest('table')?.parentElement;
+    if (!anchor || !anchor.parentElement) return null;
+
+    bar = document.createElement('div');
+    bar.id = 'related-files-bulk-bar';
+    bar.className = 'hidden mt-4 flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-4 py-3';
+    bar.innerHTML = `
+      <p class="text-xs text-gray-600 font-medium">
+        <span id="related-files-selected-count" class="font-bold text-gray-900">0</span> selected
+      </p>
+      <button type="button" id="bulk-unlink-related-btn"
+        class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+        disabled>
+        <i data-lucide="unlink" class="w-3.5 h-3.5"></i>
+        Unlink selected
+      </button>`;
+    // insertBefore(…, anchor.nextSibling) puts the bar directly under the list.
+    anchor.parentElement.insertBefore(bar, anchor.nextSibling);
+  }
+  return bar;
 }
 
 // Every close path (Done, the X, the backdrop) goes through here, so the refresh queued
@@ -1786,7 +1846,13 @@ function closeUnlinkModal() {
 // Puts the modal back into its "confirm" state — needed because the same modal is
 // reused for the result card and would otherwise still show the previous outcome.
 function resetUnlinkModalState() {
-  document.getElementById('unlink-related-confirm-body')?.classList.remove('hidden');
+  // Restore the single-file confirm markup if a bulk confirm replaced it.
+  const confirmBody = document.getElementById('unlink-related-confirm-body');
+  if (confirmBody && confirmBody._defaultHtml) {
+    confirmBody.innerHTML = confirmBody._defaultHtml;
+  }
+
+  confirmBody?.classList.remove('hidden');
   document.getElementById('unlink-related-confirm-footer')?.classList.remove('hidden');
   document.getElementById('unlink-related-result-body')?.classList.add('hidden');
   document.getElementById('unlink-related-result-footer')?.classList.add('hidden');
@@ -1948,6 +2014,242 @@ function showUnlinkError(message) {
   if (window.lucide) window.lucide.createIcons();
 }
 
+/**
+ * Checkbox selection + "Unlink selected" for records with more than one related file.
+ *
+ * The requests are issued one at a time, not in parallel: the backend decides whether the
+ * parent Property ID is still justified by whatever related files REMAIN, so overlapping
+ * calls would each read a different intermediate state and could disagree.
+ */
+function bindRelatedBulkUnlink(parentId, parentFileNumber) {
+  const bar = document.getElementById('related-files-bulk-bar');
+  const btn = document.getElementById('bulk-unlink-related-btn');
+  const countEl = document.getElementById('related-files-selected-count');
+  const selectAll = document.getElementById('related-files-select-all');
+  if (!bar || !btn) return;
+
+  const boxes = () => Array.from(document.querySelectorAll('.related-file-select'));
+  const checked = () => boxes().filter(b => b.checked);
+
+  const syncState = () => {
+    const n = checked().length;
+    if (countEl) countEl.textContent = n;
+    btn.disabled = n === 0;
+    if (selectAll) {
+      const all = boxes();
+      selectAll.checked = n > 0 && n === all.length;
+      selectAll.indeterminate = n > 0 && n < all.length;
+    }
+  };
+
+  boxes().forEach(b => { b.onchange = syncState; });
+
+  if (selectAll) {
+    selectAll.indeterminate = false;
+    selectAll.checked = false;
+    selectAll.onchange = () => {
+      boxes().forEach(b => { b.checked = selectAll.checked; });
+      syncState();
+    };
+  }
+
+  syncState();
+
+  btn.onclick = () => {
+    const items = checked().map(b => ({
+      fileNumber: b.dataset.fileNumber || '',
+      linkId: b.dataset.linkId || '',
+    })).filter(i => i.fileNumber);
+
+    if (!items.length) return;
+    openBulkUnlinkConfirm(parentId, parentFileNumber, items);
+  };
+}
+
+/** Reuses the single-unlink modal, re-worded for a set. */
+function openBulkUnlinkConfirm(parentId, parentFileNumber, items) {
+  const modal = ensureUnlinkModal();
+  const confirmBtn = document.getElementById('confirm-unlink-related');
+  if (!modal || !confirmBtn) return;
+
+  resetUnlinkModalState();
+
+  const body = document.getElementById('unlink-related-confirm-body');
+  if (body) {
+    body.innerHTML = `
+      <p class="text-sm text-gray-600">
+        Remove <span class="font-bold text-gray-900">${items.length}</span> related file
+        number${items.length === 1 ? '' : 's'} from
+        <span class="font-bold text-gray-900">${escapeHtml(parentFileNumber || '-')}</span>?
+      </p>
+      <ul class="rounded-lg border border-gray-100 bg-gray-50/60 divide-y divide-gray-100 max-h-48 overflow-y-auto">
+        ${items.map(i => `
+          <li class="px-4 py-2 text-xs font-bold text-gray-700">${escapeHtml(i.fileNumber)}</li>
+        `).join('')}
+      </ul>
+      <p class="text-xs text-gray-500">
+        Each is unlinked in turn. The linked Property ID is cleared only once no remaining
+        related file still justifies it.
+      </p>
+      <p class="text-xs text-gray-500">This cannot be undone from the interface. The action is recorded in the audit log.</p>`;
+  }
+
+  // Swap the confirm button over to the bulk runner; the per-row handler reassigns
+  // .onclick back to the single-file path when a row button is used.
+  confirmBtn.onclick = async () => {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Unlinking...';
+
+    const outcomes = [];
+    for (const item of items) {
+      try {
+        const response = await fetch(`${window.location.origin}/api/indexed-files/${parentId}/related-files`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: JSON.stringify({ file_number: item.fileNumber, link_id: item.linkId }),
+        });
+        const result = await response.json();
+        outcomes.push({
+          fileNumber: item.fileNumber,
+          ok: !!result.success,
+          data: result.data || {},
+          message: result.message || '',
+        });
+      } catch (err) {
+        console.error(err);
+        outcomes.push({ fileNumber: item.fileNumber, ok: false, data: {}, message: 'A network error occurred.' });
+      }
+    }
+
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = 'Unlink';
+    showBulkUnlinkResult(outcomes, { parentId, parentFileNumber });
+  };
+
+  modal.classList.remove('hidden');
+  if (window.lucide) window.lucide.createIcons();
+}
+
+/** Combined outcome card for a bulk unlink — per-file status plus the aggregate effects. */
+function showBulkUnlinkResult(outcomes, context) {
+  const body = document.getElementById('unlink-related-result-body');
+  if (!body) return;
+
+  const succeeded = outcomes.filter(o => o.ok);
+  const failed = outcomes.filter(o => !o.ok);
+  const allFailed = succeeded.length === 0;
+
+  // The last successful call reports the authoritative remaining count.
+  const lastOk = succeeded[succeeded.length - 1];
+  const remaining = lastOk ? (Number(lastOk.data.remaining) || 0) : null;
+
+  const clearedIds = succeeded
+    .filter(o => o.data.prop_id_cleared)
+    .map(o => String(o.data.cleared_prop_id || '').trim())
+    .filter(Boolean);
+  const stillKept = succeeded.some(o => !o.data.prop_id_cleared
+    && (o.data.prop_id_note === 'still_justified_by_remaining_related_file'
+      || o.data.prop_id_note === 'parent_prop_id_from_another_source'));
+
+  let propRow;
+  if (clearedIds.length) {
+    propRow = `
+      <div class="flex items-start gap-2">
+        <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-50 text-red-700 border border-red-200 shrink-0 mt-0.5">UNLINKED</span>
+        <span class="text-gray-700">Parent Property ID <span class="font-bold">${escapeHtml(clearedIds.join(', '))}</span> unlinked from this record.</span>
+      </div>`;
+  } else if (stillKept) {
+    propRow = `
+      <div class="flex items-start gap-2">
+        <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0 mt-0.5">KEPT</span>
+        <span class="text-gray-700">The parent Property ID is still justified by a remaining related file.</span>
+      </div>`;
+  } else {
+    propRow = `
+      <div class="flex items-start gap-2">
+        <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-50 text-red-700 border border-red-200 shrink-0 mt-0.5">UNLINKED</span>
+        <span class="text-gray-700">Parent Property ID unlinked.</span>
+      </div>`;
+  }
+
+  body.innerHTML = `
+    <div class="flex items-start gap-3 mb-5">
+      <div class="${allFailed ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'} border rounded-xl p-2 shrink-0">
+        <i data-lucide="${allFailed ? 'alert-circle' : 'check'}" class="w-5 h-5 ${allFailed ? 'text-red-600' : 'text-emerald-600'}"></i>
+      </div>
+      <div>
+        <p class="text-sm font-bold text-gray-900">
+          ${succeeded.length} of ${outcomes.length} related file${outcomes.length === 1 ? '' : 's'} unlinked
+        </p>
+        <p class="text-xs text-gray-500 mt-0.5">
+          from <span class="font-semibold text-gray-700">${escapeHtml(context.parentFileNumber || '')}</span>
+        </p>
+      </div>
+    </div>
+    <ul class="rounded-xl border border-gray-100 divide-y divide-gray-100 mb-4 max-h-52 overflow-y-auto">
+      ${outcomes.map(o => `
+        <li class="px-4 py-2.5 flex items-start gap-2 text-xs">
+          <i data-lucide="${o.ok ? 'check-circle' : 'x-circle'}" class="w-3.5 h-3.5 shrink-0 mt-0.5 ${o.ok ? 'text-emerald-600' : 'text-red-600'}"></i>
+          <div>
+            <span class="font-bold text-gray-800">${escapeHtml(o.fileNumber)}</span>
+            ${o.ok ? '' : `<span class="block text-gray-500 mt-0.5">${escapeHtml(o.message)}</span>`}
+          </div>
+        </li>
+      `).join('')}
+    </ul>
+    <dl class="rounded-xl border border-gray-100 bg-gray-50/60 divide-y divide-gray-100 text-xs">
+      <div class="px-4 py-3">
+        <dt class="font-bold text-gray-400 uppercase tracking-wider text-[10px] mb-1">Property ID</dt>
+        <dd>${propRow}</dd>
+      </div>
+      <div class="px-4 py-3">
+        <dt class="font-bold text-gray-400 uppercase tracking-wider text-[10px] mb-1">Related files remaining</dt>
+        <dd class="text-gray-700 font-bold">${remaining === null ? '&mdash;' : remaining}</dd>
+      </div>
+    </dl>
+    <p class="text-[11px] text-gray-400 mt-4 flex items-center gap-1.5">
+      <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+      Recorded in the audit log.
+    </p>`;
+
+  document.getElementById('unlink-related-confirm-body')?.classList.add('hidden');
+  document.getElementById('unlink-related-confirm-footer')?.classList.add('hidden');
+  body.classList.remove('hidden');
+  document.getElementById('unlink-related-result-footer')?.classList.remove('hidden');
+
+  const header = document.getElementById('unlink-related-header');
+  if (header) {
+    header.className = `${allFailed ? 'bg-red-600' : 'bg-emerald-600'} px-6 py-4 flex items-center justify-between`;
+  }
+  const title = document.getElementById('unlink-related-header-title');
+  if (title) title.textContent = allFailed ? 'Unlink Failed' : 'Unlink Complete';
+  const icon = document.getElementById('unlink-related-header-icon');
+  if (icon) icon.setAttribute('data-lucide', allFailed ? 'alert-circle' : 'check-circle');
+
+  const modal = document.getElementById('unlink-related-file-modal');
+  if (modal) {
+    modal._pendingRefresh = () => {
+      if (remaining !== null && remaining > 0) {
+        openRelatedFilesModal(context.parentId);
+      } else if (remaining === 0) {
+        document.getElementById('related-files-modal')?.classList.add('hidden');
+      } else {
+        openRelatedFilesModal(context.parentId); // nothing succeeded — just re-read
+      }
+      if (typeof loadTable === 'function') loadTable();
+    };
+  }
+
+  const doneBtn = document.getElementById('done-unlink-related');
+  if (doneBtn) doneBtn.onclick = closeUnlinkModal;
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
 // Unlink removes ONE related file number from the record. The backend decides what
 // happens to the linked Property ID; `meta.parent_prop_id` + the row's own prop_id let
 // the confirmation say so in advance (see IndexedFileTableController::unlinkRelatedFile).
@@ -1995,12 +2297,16 @@ function bindRelatedUnlinkHandlers(parentId, meta) {
       confirmBtn.dataset.parentId = btn.dataset.parentId || parentId;
       confirmBtn.dataset.parentFileNumber = btn.dataset.parentFileNumber || '';
 
+      // A cancelled bulk confirm leaves .onclick on the bulk runner, so claim it back
+      // here rather than only once per bind.
+      confirmBtn.onclick = runSingleUnlink;
+
       modal.classList.remove('hidden');
       if (window.lucide) window.lucide.createIcons();
     });
   });
 
-  confirmBtn.onclick = async () => {
+  const runSingleUnlink = async () => {
     const fileNumber = confirmBtn.dataset.fileNumber || '';
     const linkId = confirmBtn.dataset.linkId || '';
     const targetParentId = confirmBtn.dataset.parentId || parentId;
@@ -2042,6 +2348,8 @@ function bindRelatedUnlinkHandlers(parentId, meta) {
       confirmBtn.textContent = 'Unlink';
     }
   };
+
+  confirmBtn.onclick = runSingleUnlink;
 }
 
 function handleDocumentClick(event) {

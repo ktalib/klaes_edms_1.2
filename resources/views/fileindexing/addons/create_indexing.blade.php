@@ -252,11 +252,24 @@
                                                     class="ts-title-type-cb peer sr-only">
                                                 <span class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-600 transition hover:border-indigo-300 hover:bg-indigo-50/40 peer-checked:border-indigo-500 peer-checked:bg-indigo-50 peer-checked:text-indigo-700 peer-checked:font-medium peer-focus:ring-2 peer-focus:ring-indigo-200">
                                                     <i data-lucide="{{ $tsMeta[1] }}" class="h-4 w-4 flex-shrink-0"></i>
-                                                    <span class="leading-tight">{{ $tsMeta[0] }}</span>
+                                                    <span class="leading-tight"@if($tsValue === 'Re-grant') id="ts-regrant-label"@elseif($tsValue === 'Closed') id="ts-closed-label"@elseif($tsValue === 'Resettlement') id="ts-resettlement-label"@endif>{{ $tsMeta[0] }}</span>
                                                 </span>
                                             </label>
                                         @endforeach
                                     </div>
+                                    {{-- Holds the chosen re-grant direction (Re-granted From / Re-granted To),
+                                         selected via popup when "Re-grant" is picked. "From" means this file is
+                                         the new one and Initial FileNo is the old number; "To" means this file
+                                         is the old one and the picked number is its replacement. --}}
+                                    <input type="hidden" id="ts-regrant-kind" value="">
+                                    {{-- Holds the chosen closure direction (Closed To / Continued From).
+                                         "Closed To" means this file is being closed and the picked number
+                                         is the file it continues in; "Continued From" means this file is
+                                         the continuation and the picked number is the closed file. --}}
+                                    <input type="hidden" id="ts-closed-kind" value="">
+                                    {{-- Holds the chosen resettlement direction (Resettled From /
+                                         Resettled To), same From/To sense as Re-grant. --}}
+                                    <input type="hidden" id="ts-resettlement-kind" value="">
                                 </div>
                             </div>
                         </div>
@@ -268,7 +281,7 @@
                             {{-- See (Additional File No.) — Re-grant only (OPTIONAL) --}}
                             <div id="ts-see-row" class="form-group hidden">
                                 <input type="hidden" id="ts-see-fileno">
-                                <label class="block text-sm font-medium text-gray-700 mb-2">Initial FileNo <span class="text-xs font-normal text-gray-500">(Optional)</span></label>
+                                <label class="block text-sm font-medium text-gray-700 mb-2"><span id="ts-see-label">Initial FileNo</span> <span class="text-xs font-normal text-gray-500">(Optional)</span></label>
                                 <div class="flex items-stretch gap-2">
                                     <input type="text" id="ts-see-fileno-display" readonly
                                         class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 sm:text-sm"
@@ -278,7 +291,7 @@
                                     <button type="button" id="ts-see-clear-btn"
                                         class="px-3 py-2 rounded-md border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 transition">Clear</button>
                                 </div>
-                                <p class="text-[11px] text-gray-400 mt-1">The related file number written as "See ..." on the physical file. This field is optional.</p>
+                                <p class="text-[11px] text-gray-400 mt-1" id="ts-see-hint">The related file number written as "See ..." on the physical file. This field is optional.</p>
                             </div>
 
                             {{-- Reason --}}
@@ -1128,6 +1141,14 @@
             const remarkEl     = document.getElementById('ts-remark');
             const extKindEl    = document.getElementById('ts-extension-kind');
             const extLabelEl   = document.getElementById('ts-extension-label');
+            const regrantKindEl  = document.getElementById('ts-regrant-kind');
+            const regrantLabelEl = document.getElementById('ts-regrant-label');
+            const closedKindEl   = document.getElementById('ts-closed-kind');
+            const closedLabelEl  = document.getElementById('ts-closed-label');
+            const resettleKindEl  = document.getElementById('ts-resettlement-kind');
+            const resettleLabelEl = document.getElementById('ts-resettlement-label');
+            const seeLabelEl   = document.getElementById('ts-see-label');
+            const seeHintEl    = document.getElementById('ts-see-hint');
 
             if (!typeGroup) return;
 
@@ -1138,8 +1159,47 @@
                 if (extKindEl) extKindEl.value = kind || '';
                 if (extLabelEl) extLabelEl.textContent = kind ? kind : 'Extension';
             };
-            // Resolve the effective title type: a ticked "Extension" reports the chosen kind.
-            const resolveType = (t) => (t === 'Extension' && getExtensionKind()) ? getExtensionKind() : t;
+            // Re-grant direction (Re-granted From / Re-granted To), chosen via popup.
+            //   From — this file is the NEW file; Initial FileNo is the OLD number it came from.
+            //   To   — this file is the OLD file; the picked number is the NEW one replacing it.
+            const REGRANT_FROM = 'Re-granted From';
+            const REGRANT_TO   = 'Re-granted To';
+            const getRegrantKind = () => (regrantKindEl?.value || '').trim();
+            const setRegrantKind = (kind) => {
+                if (regrantKindEl)  regrantKindEl.value = kind || '';
+                if (regrantLabelEl) regrantLabelEl.textContent = kind ? kind : 'Re-grant';
+            };
+
+            // Closure direction (Closed To / Continued From), chosen via popup.
+            //   Closed To      — this file is being closed; the picked number is the file it continues in.
+            //   Continued From — this file is the continuation; the picked number is the closed file.
+            const CLOSED_TO      = 'Closed To';
+            const CONTINUED_FROM = 'Continued From';
+            const getClosedKind = () => (closedKindEl?.value || '').trim();
+            const setClosedKind = (kind) => {
+                if (closedKindEl)  closedKindEl.value = kind || '';
+                if (closedLabelEl) closedLabelEl.textContent = kind ? kind : 'Closed';
+            };
+
+            // Resettlement direction (Resettled From / Resettled To), same From/To sense as
+            // Re-grant: "From" = this file is the new one, "To" = this file is the old one.
+            const RESETTLED_FROM = 'Resettled From';
+            const RESETTLED_TO   = 'Resettled To';
+            const getResettleKind = () => (resettleKindEl?.value || '').trim();
+            const setResettleKind = (kind) => {
+                if (resettleKindEl)  resettleKindEl.value = kind || '';
+                if (resettleLabelEl) resettleLabelEl.textContent = kind ? kind : 'Resettlement';
+            };
+
+            // Resolve the effective title type: a ticked "Extension" / "Re-grant" / "Closed" /
+            // "Resettlement" reports the chosen sub-kind.
+            const resolveType = (t) => {
+                if (t === 'Extension')    return getExtensionKind() || t;
+                if (t === 'Re-grant')     return getRegrantKind()   || t;
+                if (t === 'Closed')       return getClosedKind()    || t;
+                if (t === 'Resettlement') return getResettleKind()  || t;
+                return t;
+            };
 
             // Checkboxes live in two cards (Parcel Update + Normal in the Indexing Type card,
             // Title Status Update in the General Registry card), so query document-wide.
@@ -1178,9 +1238,28 @@
                 }
                 if (type === 'Re-grant') {
                     const seeFileno = (seeHidden?.value || '').trim();
+                    if (!seeFileno) return 'This File has been Re-granted';
+                    return getRegrantKind() === REGRANT_TO
+                        ? `This File has been Re-granted to ${seeFileno}`
+                        : `This File has been Re-granted from ${seeFileno}`;
+                }
+                if (type === 'Resettlement' && getResettleKind()) {
+                    const seeFileno = (seeHidden?.value || '').trim();
+                    if (!seeFileno) return 'This File has been Resettled';
+                    return getResettleKind() === RESETTLED_TO
+                        ? `This File has been Resettled to ${seeFileno}`
+                        : `This File has been Resettled from ${seeFileno}`;
+                }
+                if (type === 'Closed') {
+                    const seeFileno = (seeHidden?.value || '').trim();
+                    if (getClosedKind() === CONTINUED_FROM) {
+                        return seeFileno
+                            ? `This File is Continued From ${seeFileno}`
+                            : 'This File is a Continuation of a Closed File';
+                    }
                     return seeFileno
-                        ? `This File has been Re-granted from ${seeFileno}`
-                        : 'This File has been Re-granted';
+                        ? `This File has been Closed and Continued in ${seeFileno}`
+                        : 'This File has been Closed';
                 }
                 const verb   = (type === 'Extension')
                     ? (getExtensionKind() || 'Extension')
@@ -1205,11 +1284,50 @@
                 const actionable  = getActionableTypes();
                 const hasType   = remarkTypes.length > 0;
                 const isRegrant = actionable.includes('Re-grant');
+                const isClosed  = actionable.includes('Closed');
+                const isResettle = actionable.includes('Resettlement');
+                // These statuses all point at a counterpart file, so they share the See row.
+                const needsSee  = isRegrant || isClosed || isResettle;
+
+                // Deselecting happens silently in two cases — the Title Status Update radios
+                // replace each other, and ticking "Normal" clears the rest in code — so neither
+                // fires a change event on the option that lost its tick. Drop any stale sub-kind.
+                if (!isRegrant && getRegrantKind()) setRegrantKind('');
+                if (!isClosed && getClosedKind()) setClosedKind('');
+                if (!isResettle && getResettleKind()) setResettleKind('');
+                if (!actionable.includes('Extension') && getExtensionKind()) setExtensionKind('');
+
+                if (isRegrant) {
+                    const to = getRegrantKind() === REGRANT_TO;
+                    if (seeLabelEl) seeLabelEl.textContent = to ? 'Re-granted To FileNo' : 'Initial FileNo';
+                    if (seeHintEl) {
+                        seeHintEl.textContent = to
+                            ? 'The NEW file number this file was re-granted to. This field is optional.'
+                            : 'The OLD file number this file was re-granted from, written as "See ..." on the physical file. This field is optional.';
+                    }
+                } else if (isClosed) {
+                    const from = getClosedKind() === CONTINUED_FROM;
+                    if (seeLabelEl) seeLabelEl.textContent = from ? 'Continued From FileNo' : 'Continued In FileNo';
+                    if (seeHintEl) {
+                        seeHintEl.textContent = from
+                            ? 'The CLOSED file number this file carries on from. This field is optional.'
+                            : 'The file number this file continues in now that it is closed. This field is optional.';
+                    }
+                } else if (isResettle) {
+                    const to = getResettleKind() === RESETTLED_TO;
+                    if (seeLabelEl) seeLabelEl.textContent = to ? 'Resettled To FileNo' : 'Resettled From FileNo';
+                    if (seeHintEl) {
+                        seeHintEl.textContent = to
+                            ? 'The NEW file number this file was resettled to. This field is optional.'
+                            : 'The OLD file number this file was resettled from. This field is optional.';
+                    }
+                }
+
                 statusBlock?.classList.toggle('hidden', !hasType);
-                seeRow?.classList.toggle('hidden', !isRegrant);
-                // NOTE: Initial FileNo (see_fileno) is OPTIONAL for Re-grant
+                seeRow?.classList.toggle('hidden', !needsSee);
+                // NOTE: the See file number (see_fileno) is OPTIONAL for Re-grant and Closed
                 // Do NOT add required validation on this field
-                if (!isRegrant && seeHidden) { seeHidden.value = ''; if (seeDisplay) seeDisplay.value = ''; }
+                if (!needsSee && seeHidden) { seeHidden.value = ''; if (seeDisplay) seeDisplay.value = ''; }
                 if (typeof lucide !== 'undefined') lucide.createIcons();
             }
 
@@ -1255,6 +1373,129 @@
                 });
             }
 
+            // Re-grant and Closed share the See row, so a fresh pick must not inherit the
+            // counterpart file left behind by the other status.
+            function resetSeeFileno() {
+                if (seeHidden)  seeHidden.value = '';
+                if (seeDisplay) seeDisplay.value = '';
+            }
+
+            // Ask which way the re-grant runs when "Re-grant" is picked. Cancelling clears the
+            // selection — a direction is what makes the Initial FileNo readable either way.
+            function promptRegrantKind(cb) {
+                const finish = () => { toggleStatusFields(); refreshRemark(); };
+                resetSeeFileno();
+
+                if (typeof Swal === 'undefined') {
+                    const isFrom = window.confirm('Re-grant direction:\n\nOK = Re-granted From (this is the new file)\nCancel = Re-granted To (this is the old file)');
+                    setRegrantKind(isFrom ? REGRANT_FROM : REGRANT_TO);
+                    finish();
+                    return;
+                }
+
+                Swal.fire({
+                    title: 'Re-grant Direction',
+                    html: 'Is this file the <b>new</b> file or the <b>old</b> one?<br>'
+                        + '<span class="text-sm text-gray-500">Re-granted From = this file replaced an older file.<br>'
+                        + 'Re-granted To = this file has been replaced by a newer file.</span>',
+                    icon: 'question',
+                    showDenyButton: true,
+                    showCancelButton: true,
+                    confirmButtonText: REGRANT_FROM,
+                    denyButtonText: REGRANT_TO,
+                    cancelButtonText: 'Cancel',
+                    confirmButtonColor: '#4f46e5',
+                    denyButtonColor: '#0d9488',
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        setRegrantKind(REGRANT_FROM);
+                    } else if (result.isDenied) {
+                        setRegrantKind(REGRANT_TO);
+                    } else {
+                        cb.checked = false;
+                        setRegrantKind('');
+                    }
+                    finish();
+                });
+            }
+
+            // Ask which way the closure runs when "Closed" is picked. Cancelling clears the
+            // selection, same as Re-grant.
+            function promptClosedKind(cb) {
+                const finish = () => { toggleStatusFields(); refreshRemark(); };
+                resetSeeFileno();
+
+                if (typeof Swal === 'undefined') {
+                    const isTo = window.confirm('Closure direction:\n\nOK = Closed To (this file is being closed)\nCancel = Continued From (this file continues a closed file)');
+                    setClosedKind(isTo ? CLOSED_TO : CONTINUED_FROM);
+                    finish();
+                    return;
+                }
+
+                Swal.fire({
+                    title: 'Closure Direction',
+                    html: 'Is this file the one being <b>closed</b>, or the one <b>carrying on</b>?<br>'
+                        + '<span class="text-sm text-gray-500">Closed To = this file is closed and continues in another file.<br>'
+                        + 'Continued From = this file continues a file that was closed.</span>',
+                    icon: 'question',
+                    showDenyButton: true,
+                    showCancelButton: true,
+                    confirmButtonText: CLOSED_TO,
+                    denyButtonText: CONTINUED_FROM,
+                    cancelButtonText: 'Cancel',
+                    confirmButtonColor: '#4f46e5',
+                    denyButtonColor: '#0d9488',
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        setClosedKind(CLOSED_TO);
+                    } else if (result.isDenied) {
+                        setClosedKind(CONTINUED_FROM);
+                    } else {
+                        cb.checked = false;
+                        setClosedKind('');
+                    }
+                    finish();
+                });
+            }
+
+            // Ask which way the resettlement runs when "Resettlement" is picked.
+            function promptResettleKind(cb) {
+                const finish = () => { toggleStatusFields(); refreshRemark(); };
+                resetSeeFileno();
+
+                if (typeof Swal === 'undefined') {
+                    const isFrom = window.confirm('Resettlement direction:\n\nOK = Resettled From (this is the new file)\nCancel = Resettled To (this is the old file)');
+                    setResettleKind(isFrom ? RESETTLED_FROM : RESETTLED_TO);
+                    finish();
+                    return;
+                }
+
+                Swal.fire({
+                    title: 'Resettlement Direction',
+                    html: 'Is this file the <b>new</b> file or the <b>old</b> one?<br>'
+                        + '<span class="text-sm text-gray-500">Resettled From = this file received the resettlement.<br>'
+                        + 'Resettled To = the holder on this file was resettled to a newer file.</span>',
+                    icon: 'question',
+                    showDenyButton: true,
+                    showCancelButton: true,
+                    confirmButtonText: RESETTLED_FROM,
+                    denyButtonText: RESETTLED_TO,
+                    cancelButtonText: 'Cancel',
+                    confirmButtonColor: '#4f46e5',
+                    denyButtonColor: '#0d9488',
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        setResettleKind(RESETTLED_FROM);
+                    } else if (result.isDenied) {
+                        setResettleKind(RESETTLED_TO);
+                    } else {
+                        cb.checked = false;
+                        setResettleKind('');
+                    }
+                    finish();
+                });
+            }
+
             document.addEventListener('change', function (e) {
                 const cb = e.target;
                 if (!cb || !cb.classList || !cb.classList.contains('ts-title-type-cb')) return;
@@ -1272,6 +1513,25 @@
                         return; // popup callback runs toggleStatusFields()/refreshRemark()
                     }
                     setExtensionKind('');
+                }
+
+                // "Re-grant" picked → ask From vs To; it is a radio, so it can only be
+                // cleared by another option winning the group (handled in toggleStatusFields).
+                if (cb.value === 'Re-grant' && cb.checked) {
+                    promptRegrantKind(cb);
+                    return; // popup callback runs toggleStatusFields()/refreshRemark()
+                }
+
+                // "Closed" picked → ask Closed To vs Continued From, same radio caveat.
+                if (cb.value === 'Closed' && cb.checked) {
+                    promptClosedKind(cb);
+                    return; // popup callback runs toggleStatusFields()/refreshRemark()
+                }
+
+                // "Resettlement" picked → ask Resettled From vs To, same radio caveat.
+                if (cb.value === 'Resettlement' && cb.checked) {
+                    promptResettleKind(cb);
+                    return; // popup callback runs toggleStatusFields()/refreshRemark()
                 }
 
                 toggleStatusFields();
@@ -1295,8 +1555,8 @@
                 });
             });
             document.getElementById('ts-see-clear-btn')?.addEventListener('click', function () {
-                seeHidden.value = '';
-                seeDisplay.value = '';
+                resetSeeFileno();
+                refreshRemark(); // the cleared number is quoted in the auto remark
             });
 
             // Called by handleRegistryFieldToggling() when the chosen registry (SLTR /
@@ -1305,6 +1565,9 @@
             window.tsClearSelections = function () {
                 typeCbs().forEach(cb => { cb.checked = false; });
                 setExtensionKind('');
+                setRegrantKind('');
+                setClosedKind('');
+                setResettleKind('');
                 if (reasonEl)   reasonEl.value = '';
                 if (remarkEl)   remarkEl.value = '';
                 if (seeHidden)  seeHidden.value = '';
@@ -1335,10 +1598,13 @@
                 const remarks = types.map(function (type) {
                     return (types.length === 1 && customRemark && !hasClassification) ? customRemark : buildRemarkFor(type);
                 });
-                const regrant = types.indexOf('Re-grant');
+                // The statuses that reference a counterpart file via the shared See row.
+                const usesSee = types.includes('Re-grant')
+                    || types.includes('Closed')
+                    || types.includes('Resettlement');
 
-                // Report the chosen extension kind (Plot/File Extension) in place of the
-                // generic "Extension" type so it is persisted distinctly.
+                // Report the chosen sub-kinds — Plot/File Extension, and Re-granted From/To —
+                // in place of the generic "Extension"/"Re-grant" so they persist distinctly.
                 const reportedTypes = types.map(resolveType);
 
                 // One request carrying every selected type so the backend records all of them
@@ -1349,7 +1615,7 @@
                     title_types:    reportedTypes,
                     remarks:        remarks,
                     file_no:        fileNo,
-                    see_fileno:     regrant !== -1 ? (seeHidden?.value || '').trim() : '',
+                    see_fileno:     usesSee ? (seeHidden?.value || '').trim() : '',
                     file_title:     pick(formData.file_title),
                     applicant_name: pick(formData.current_holder) || pick(formData.file_title),
                     plot_no:        pick(formData.plot_number),

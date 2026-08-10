@@ -3,116 +3,279 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Change of Purpose Recommendation - KLAES GIS</title>
+    <title>Change of Purpose Recommendation - {{ $record->file_no ?? '' }}</title>
     <style>
         :root {
-            --page-color: #fdf6e3;
-            --accent-red: #cc0000;
+            --primary-green: #1b7a3d;
+            --accent-red: #a00000;
         }
+
         * { box-sizing: border-box; }
         body {
             background-color: #525659;
             margin: 0;
             padding: 0;
             font-family: 'Times New Roman', Times, serif;
-            font-size: 11pt;
-            display: flex;
-            justify-content: center;
+            font-size: 11.5pt;
         }
+
         .a4-page {
-            background-color: var(--page-color);
+            background-color: #fff;
+            position: relative; /* anchors the CSS letterhead */
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+            color-adjust: exact;
             width: 210mm;
-            height: 297mm;
+            min-height: 297mm;
+            margin: 10px auto;
             display: flex;
-            position: relative;
-            overflow: hidden;
             box-shadow: 0 0 10px rgba(0,0,0,0.5);
         }
-        .left-sidebar { width: 60px; flex-shrink: 0; }
-        .main-container { flex: 1; display: flex; flex-direction: column; padding: 20px 40px; }
-        .header-block { height: 100px; margin-bottom: 5px; }
-        .addressee { font-weight: bold; text-decoration: underline; margin-top: 15px; margin-bottom: 15px; font-size: 1.1em; }
-        .body-paragraph { text-align: justify; line-height: 1.4; margin-bottom: 15px; }
-        .point-block { margin-top: 15px; margin-bottom: 10px; font-weight: bold; }
-        .signature-field-container { display: flex; flex-direction: column; gap: 15px; margin-bottom: 25px; }
-        .sig-row { display: flex; justify-content: space-between; align-items: flex-end; gap: 30px; }
-        .sig-item { display: flex; align-items: flex-end; width: 45%; }
-        .line-label { font-weight: bold; white-space: nowrap; margin-right: 8px; }
-        .input-line { border: none; background: transparent; border-bottom: 1px solid #000; font-size: 1em; font-family: inherit; flex-grow: 1; padding-bottom: 2px; }
-        .approval-section { border-top: 1px solid black; padding-top: 15px; margin-top: 25px; padding-bottom: 20px; }
-        .approval-section .sig-row { justify-content: flex-start; gap: 10px; }
-        .approval-section .sig-item { width: auto; flex-grow: 1; }
-        .approval-section .input-line { width: 150px; flex-grow: 0; }
-        .red-tick { color: var(--accent-red); font-size: 1.4em; margin-left: 10px; vertical-align: middle; }
+
+        .main-container {
+            flex: 1;
+            /* Clears the letterhead drawn by partials/ministry_letterhead:
+               top rule at 38mm, vertical rule at 30mm. */
+            padding: 42mm 12mm 10mm 34mm;
+            position: relative;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .addressee {
+            font-weight: bold;
+            text-decoration: underline;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            font-size: 12pt;
+        }
+
+        .para {
+            text-align: justify;
+            line-height: 1.35;
+            margin-bottom: 7px;
+        }
+
         .bold-caps { font-weight: bold; text-transform: uppercase; }
-        .red-text { color: var(--accent-red); font-weight: bold; }
+        .strong { font-weight: bold; }
+
+        /* Measurements block — bold, as on the ministry copy. */
+        .measure {
+            font-weight: bold;
+            line-height: 1.35;
+            margin-bottom: 5px;
+        }
+        .measure-label { white-space: nowrap; }
+
+        .rec-point {
+            font-weight: bold;
+            text-align: justify;
+            line-height: 1.35;
+            margin: 6px 0 0 0;
+        }
+
+        /* Fill-in blanks: values the memo needs that the application record does
+           not carry (folio page numbers, plot measurements, term dates). They are
+           editable on screen so the officer can complete the sheet before
+           printing, and print as a plain ruled blank when left empty. */
+        .fill {
+            display: inline-block;
+            min-width: 60px;
+            border-bottom: 1px solid #000;
+            line-height: 1.1;
+            padding: 0 3px;
+            font-weight: bold;
+            text-align: center;
+        }
+        .fill:focus { outline: none; background: #fffbe6; }
+        .fill-wide { min-width: 100%; text-align: left; }
+        .fill-page { min-width: 42px; }
+
+        /* Signature blocks */
+        .sig-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            column-gap: 24px;
+            margin: 22px 0 10px;
+        }
+        .sig-row { display: flex; align-items: flex-end; margin-bottom: 10px; }
+        .sig-label { white-space: nowrap; margin-right: 6px; }
+        .sig-line { flex: 1; border-bottom: 1px solid #000; height: 15px; }
+        .sig-title { font-weight: bold; text-align: center; }
+
+        .section-body { margin-bottom: 6px; }
+
+        .approver-line {
+            border-top: 1px solid #000;
+            width: 62mm;
+            margin-left: auto;
+            margin-top: 26px;
+            padding-top: 3px;
+            font-weight: bold;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        .doc-footer-logos {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: auto;
+            padding-top: 8px;
+        }
+        .doc-footer-logos img { height: 38px; width: auto; object-fit: contain; }
+
+        .toolbar {
+            text-align: center;
+            padding: 10px;
+            font-family: Arial, Helvetica, sans-serif;
+        }
+        .toolbar button {
+            padding: 8px 22px;
+            font-size: 11pt;
+            cursor: pointer;
+            background: #1a5276;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+        }
+        .toolbar span { color: #ddd; font-size: 9pt; display: block; margin-top: 6px; }
+
         @media print {
-            body { background: none; margin: 0; padding: 0; }
-            .a4-page { box-shadow: none; margin: 0; border: none; }
+            body { background: none; }
+            .a4-page { margin: 0; box-shadow: none; width: 100%; min-height: 0; }
+            .no-print { display: none !important; }
+            .fill:empty { min-width: 90px; }
             @page { size: A4; margin: 0; }
         }
     </style>
 </head>
 <body>
-    <div class="a4-page">
-        <div class="left-sidebar"></div>
-        <div class="main-container">
-            <div class="header-block"></div>
-            <div class="addressee">PERMANENT SECRETARY.</div>
-            <div class="body-paragraph">
-                At Page 1 is an application for <span class="bold-caps">CHANGE OF PURPOSE</span> over a piece of land situated <span class="bold-caps">{{ Str::upper($record->location) }}</span> covered by Certificate of occupancy no. <span class="bold-caps">{{ Str::upper($record->file_no) }}</span> in favour of <span class="bold-caps">{{ Str::upper($record->applicant_name) }}.</span>
+
+@php
+    $currentUse = $currentUseLabel ?? ($record->land_use ?: null);
+    $newUse     = $newPurposeLabel ?? ($record->purpose ?: null);
+    $location   = normalizeLocationText($record->location) ?: null;
+    $lga        = $record->lga ?: null;
+
+    // Memo details captured on the Generate Recommendation card. Anything left
+    // blank there still prints as an editable ruled space.
+    $titleAlias   = $record->rec_title_alias ?: $record->plan_no;
+    $commencement = $record->rec_commencement_date
+        ? $record->rec_commencement_date->format('jS F Y')
+        : null;
+@endphp
+
+<div class="a4-page">
+    @include('partials.ministry_letterhead', ['lhSpine' => 'Ministry of Land and Physical Planning'])
+
+    <div class="main-container">
+        <div class="addressee">The Permanent Secretary</div>
+
+        <div class="para">
+            At page <span class="fill fill-page" contenteditable="true">{{ $record->rec_page_application }}</span> is an application for Change of purpose from
+            <span class="strong">{{ $currentUse ?? '................' }}</span> to
+            <span class="strong">{{ $newUse ?? '................' }}</span> use in respect of a property covered by tittle number
+            NO. <span class="bold-caps">{{ $record->file_no ?: '................' }}</span>
+            (<span class="fill" contenteditable="true">{{ $titleAlias }}</span>) situated at
+            <span class="bold-caps">{{ $location ?? '................' }}</span>
+            @if($lga) <span class="bold-caps">in {{ $lga }} Local Government Area</span>@endif.
+            submitted by <span class="bold-caps">{{ $record->applicant_name ?: '................' }}</span>.
+        </div>
+
+        <div class="para">
+            The application was referred to Physical planning department for planning views, consequently; the department
+            recommended the application for Change of purpose from
+            <span class="strong">{{ $currentUse ?? '................' }}</span> to
+            <span class="strong">{{ $newUse ?? '................' }}</span> use. Via its recommendation letter at page
+            <span class="fill fill-page" contenteditable="true">{{ $record->rec_page_planning }}</span>. this in view of the fact that, the site is
+            obtainable accessible adequate in size requirement and conforms with the surrounding land use.
+        </div>
+
+        <div class="para">
+            However, this recommendation is based on the recommended site plan at page
+            <span class="fill fill-page" contenteditable="true">{{ $record->rec_page_site_plan }}</span> and back cover with the following measurements
+        </div>
+
+        <div class="measure">
+            <span class="measure-label">Part A =</span>
+            <span class="fill" style="min-width:150mm; text-align:left;" contenteditable="true">{{ $record->rec_measurement_a }}</span>
+        </div>
+        {{-- Part B only appears on files split into two parts; hide the ruled line
+             when the memo details card left it empty. --}}
+        @if($record->rec_measurement_b || !$record->rec_measurement_a)
+        <div class="measure">
+            <span class="measure-label">Part B =</span>
+            <span class="fill" style="min-width:150mm; text-align:left;" contenteditable="true">{{ $record->rec_measurement_b }}</span>
+        </div>
+        @endif
+
+        <div class="para">
+            Meanwhile, the tittle was granted for <span class="strong">{{ $currentUse ?? '................' }}</span> purpose to
+            <span class="strong">{{ $newUse ?? '................' }}</span> for a term of
+            <span class="fill fill-page" contenteditable="true">{{ $record->rec_term_years }}</span> years commencing from
+            <span class="fill" contenteditable="true">{{ $commencement }}</span> AND now has the residual term of
+            <span class="fill fill-page" contenteditable="true">{{ $record->rec_residual_years }}</span> years to expire.
+        </div>
+
+        <div class="para">
+            In view of the above, you may kindly wish to recommend the following for <span class="strong">approval</span>
+            of the <span class="strong">Honourable commissioner</span>
+        </div>
+
+        <div class="rec-point">
+            I)&nbsp; consider and above the application for change of purpose from
+            {{ $currentUse ?? '................' }} to {{ $newUse ?? '................' }} use at
+            {{ $location ?? '................' }}@if($lga) in {{ $lga }} local government Area @endif covered by
+            certificate of occupancy NO.{{ $record->file_no ?: '................' }}(<span class="fill" contenteditable="true">{{ $titleAlias }}</span>)
+            in favour of {{ $record->applicant_name ?: '................' }} please
+        </div>
+
+        {{-- DIRECTOR DEEDS --}}
+        <div class="sig-grid">
+            <div>
+                <div class="sig-row"><span class="sig-label">Name:-</span><span class="sig-line"></span></div>
+                <div class="sig-row"><span class="sig-label">Rank:-</span><span class="sig-line"></span></div>
+                <div class="sig-row"><span class="sig-label">Sign:-</span><span class="sig-line"></span></div>
+                <div class="sig-row"><span class="sig-label">Date:-</span><span class="sig-line"></span></div>
             </div>
-            <div class="body-paragraph">
-                The application seeks to change the land use from <span class="bold-caps">{{ Str::upper($record->land_use ?: 'RESIDENTIAL') }}</span> to <span class="bold-caps">{{ Str::upper($record->purpose) }}</span>. Verification at Planning and Deeds Departments confirms that the proposed change is in line with the master plan and the title is free from encumbrances.
-            </div>
-            <div class="body-paragraph">
-                In view of the above, you may kindly wish to recommend this application for Change of Purpose to <span class="bold-caps">Honourable Commissioner</span> for approval of:
-            </div>
-            <div class="point-block">
-                a.) Change of purpose of the property covered by C of O no. <span class="bold-caps">{{ Str::upper($record->file_no) }}</span> situated at {{ Str::upper($record->location) }} in favor of {{ Str::upper($record->applicant_name) }}.
-            </div>
-            <div class="signature-field-container">
-                <div class="sig-row">
-                    <div class="sig-item"><span class="line-label">Name:</span> <input type="text" class="input-line"></div>
-                    <div class="sig-item"><span class="line-label">Counter Sign:</span> <input type="text" class="input-line"></div>
-                </div>
-                <div class="sig-row">
-                    <div class="sig-item"><span class="line-label">Rank:</span> <input type="text" class="input-line"></div>
-                    <div class="sig-item"><span class="line-label">Director Land:</span> <input type="text" class="input-line"></div>
-                </div>
-                <div class="sig-row">
-                    <div class="sig-item"><span class="line-label">Sign:</span> <input type="text" class="input-line"></div>
-                    <div class="sig-item"><span class="line-label">Date:</span> <span class="red-text" style="border-bottom: 1px solid black; flex-grow: 1; min-width: 150px;"></span></div>
-                </div>
-            </div>
-            <div class="addressee">HONOURABLE COMMISSIONER:</div>
-            <div class="body-paragraph">The application is hereby recommended for your kind approval, please.</div>
-            <div class="signature-field-container" style="margin-bottom: 10px;">
-                <div class="sig-row">
-                    <div class="sig-item"><span class="line-label">Sign:</span> <input type="text" class="input-line"></div>
-                    <div class="sig-item"><span class="line-label">Date:</span> <span class="red-text" style="border-bottom: 1px solid black; width: 150px;"></span></div>
-                </div>
-                <div class="sig-row"><div class="sig-item"><span class="line-label">Permanent Secretary.</span></div></div>
-            </div>
-            <div class="approval-section">
-                <div class="addressee" style="margin-top: 0;">PERMANENT SECRETARY.</div>
-                <div class="body-paragraph">The application is hereby Approved/<span style="text-decoration: line-through;">Not Approved:</span> <span class="red-tick"></span></div>
-                <div class="signature-field-container" style="margin-bottom: 10px;">
-                    <div class="sig-row">
-                        <div class="sig-item"><span class="line-label">Sign:</span> <input type="text" class="input-line"></div>
-                        <div class="sig-item"><span class="line-label">Date:</span> <span class="red-text" style="border-bottom: 1px solid black; width: 150px;"></span></div>
-                    </div>
-                    <div class="sig-row"><div class="sig-item"><span class="line-label">Honourable Commissioner.</span></div></div>
-                </div>
-            </div>
-            <div style="margin-top: auto; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #000; padding-top: 10px; padding-bottom: 20px;">
-                <div style="display: flex; align-items: center; gap: 10px;">
-                <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES Logo" style="width: 100px; height: 100px; object-fit: contain;">
-                   
-                </div>
-                <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="LAS Logo" style="width: 100px; height: 100px; object-fit: contain;">
+            <div>
+                <div class="sig-row"><span class="sig-label">countersign:</span><span class="sig-line"></span></div>
+                <div class="sig-title">Director Deeds</div>
+                <div class="sig-row" style="margin-top:14px;"><span class="sig-label">Date:</span><span class="sig-line"></span></div>
             </div>
         </div>
+
+        {{-- Addressed to the Honourable Commissioner, signed by the Permanent Secretary --}}
+        <div class="addressee">The Honourable Commissioner</div>
+        <div class="section-body">The application is hereby recommended for your kind approval, please.</div>
+        <div class="sig-row" style="width:60%;">
+            <span class="sig-label">Date:</span><span class="sig-line"></span>
+            <span style="margin-left:6px;">{{ date('Y') }}.</span>
+        </div>
+        <div class="approver-line">Permanent Secretary</div>
+
+        {{-- Addressed to the Permanent Secretary, signed by the Honourable Commissioner --}}
+        <div class="addressee" style="margin-top:20px;">Permanent Secretary</div>
+        <div class="section-body">The application is hereby APPROVED/NOT APPROVED.</div>
+        <div class="sig-row" style="width:60%;">
+            <span class="sig-label">Date:</span><span class="sig-line"></span>
+            <span style="margin-left:6px;">{{ date('Y') }}.</span>
+        </div>
+        <div class="approver-line">The Honourable Commissioner</div>
+
+        <div class="doc-footer-logos">
+            <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES Logo">
+            <img src="http://app.klaes.ng/assets/logo/las.jpg" alt="LAS Logo" style="height:32px;">
+        </div>
     </div>
+</div>
+
+<div class="toolbar no-print">
+    <button onclick="window.print()">Print Document</button>
+    <span>Click the ruled blanks (page numbers, measurements, term) to fill them in before printing.</span>
+</div>
+
 </body>
 </html>

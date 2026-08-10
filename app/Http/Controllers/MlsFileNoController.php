@@ -3662,49 +3662,13 @@ class MlsFileNoController extends Controller
      */
     private function takenInFileIndexings(array $candidates): array
     {
-        $candidates = array_values(array_unique(array_filter($candidates, 'strlen')));
-        if (empty($candidates)) {
-            return [];
-        }
-
-        $normalized = "LTRIM(RTRIM(REPLACE(REPLACE(file_number, CHAR(13), ''), CHAR(10), '')))";
-        $placeholders = implode(',', array_fill(0, count($candidates), '?'));
-
-        $found = DB::connection('sqlsrv')->table('file_indexings')
-            ->whereRaw("{$normalized} IN ({$placeholders})", $candidates)
-            ->selectRaw("{$normalized} AS normalized_file_number")
-            ->pluck('normalized_file_number')
-            ->all();
-
-        return array_flip($found);
+        return app(\App\Services\MlsSerialAllocationService::class)->takenInFileIndexings($candidates);
     }
 
     private function allocateNextFreeSerial(string $landUse, int $year, string $suffix = '', int $maxTries = 200): array
     {
-        $skipped = [];
-        $tries = 0;
-        $serial = null;
-        $candidate = null;
-
-        do {
-            $serial = \App\Models\MlsSerialControl::getNextSerial($landUse, $year);
-            $candidate = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $serial) . $suffix;
-
-            $taken = \App\Models\MlsFileNo::where('full_file_number', $candidate)->exists()
-                || DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $candidate)->exists()
-                || count($this->takenInFileIndexings([$candidate])) > 0;
-
-            if ($taken) {
-                $skipped[] = ['serial' => $serial, 'file_number' => $candidate];
-            }
-            $tries++;
-        } while ($taken && $tries < $maxTries);
-
-        if ($taken) {
-            throw new \RuntimeException("Could not find a free file number for {$landUse}-{$year} after {$maxTries} attempts. Too many consecutive serials are already in use.");
-        }
-
-        return ['serial' => $serial, 'file_number' => $candidate, 'skipped' => $skipped];
+        return app(\App\Services\MlsSerialAllocationService::class)
+            ->allocateNextFreeSerial($landUse, $year, $suffix, $maxTries);
     }
 
     private function findNextAvailableFileNumber(string $landUse, int $year, int $currentSerial, string $suffix = ''): string

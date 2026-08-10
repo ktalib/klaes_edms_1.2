@@ -7,6 +7,12 @@
   <title>@yield('page-title', 'KLAES')</title>
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <meta name="app-base-url" content="{{ url('/') }}">
+  @auth
+    {{-- Read by the Flutter WebView wrapper to decide whether to apply FLAG_SECURE.
+         Match on user-is-super-admin, not on the role string. --}}
+    <meta name="user-role" content="{{ auth()->user()->assign_role }}">
+    <meta name="user-is-super-admin" content="{{ auth()->user()->isSuperAdmin() ? 'true' : 'false' }}">
+  @endauth
   <meta name="activity-personal-alert" content="{{ route('activity-monitoring.personal-alert') }}">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">

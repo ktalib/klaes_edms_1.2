@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
   <meta name="theme-color" content="#f4f5fb">
   <meta name="csrf-token" content="{{ csrf_token() }}">
+  @auth
+    {{-- Read by the Flutter WebView wrapper to decide whether to apply FLAG_SECURE.
+         Match on user-is-super-admin, not on the role string. --}}
+    <meta name="user-role" content="{{ auth()->user()->assign_role }}">
+    <meta name="user-is-super-admin" content="{{ auth()->user()->isSuperAdmin() ? 'true' : 'false' }}">
+  @endauth
   <title>KLAES File Tracker</title>
   {{-- Set theme before paint to avoid flash --}}
   <script>

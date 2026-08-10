@@ -457,6 +457,35 @@
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
         }
+
+        /* ── Re-issuance: Duplicate / Triplicate are black & white ─────────
+           Only the ORIGINAL copy carries colour (red superseding notice, red
+           ministry banner, colour coat of arms / KLAES logo). The office copies
+           print monochrome, so images are desaturated and every coloured text
+           rule is overridden to black — grayscale alone would leave the red and
+           blue as mid-greys instead of black.
+           Desaturating the whole wrapper (rather than each image) is what takes
+           the ornate frame with it: the frame is a border-image, which no img
+           rule can reach. */
+        .copy-bw .content-wrapper {
+            filter: grayscale(100%);
+            -webkit-filter: grayscale(100%);
+        }
+        .copy-bw .supersede-notice {
+            color: #000 !important;
+        }
+        .copy-bw .reissuance-watermark {
+            color: rgba(0, 0, 0, 0.13) !important;
+        }
+        .copy-bw .title-center {
+            color: #000 !important;
+        }
+        .copy-bw .version-label {
+            color: #000 !important;
+        }
+        .copy-bw [data-rofo-badge] {
+            background: #000 !important;
+        }
     </style>
 </head>
 <body spellcheck="false">
@@ -508,10 +537,15 @@
     @endphp
 
     @foreach($printVersions as $index => $version)
+    @php
+        // Only the ORIGINAL re-issued copy prints in colour; the Duplicate and
+        // Triplicate (issued for a legacy re-issuance) go out black & white.
+        $isBwCopy = $isReissuance && $version !== 'Original';
+    @endphp
     <!-- PAGE 1 – Signature line uses exact CSS technique, no double lines -->
         {{-- <div class="page-container" id="page1-{{ $index }}" style="{{ $index > 0 ? 'page-break-before: always;' : '' }} background-image: url('/assets/images/pages/backgrand.jpg'); background-size: cover; background-position: center; background-repeat: no-repeat;">     --}}
 
-                 <div class="page-container" id="page1-{{ $index }}">
+                 <div class="page-container{{ $isBwCopy ? ' copy-bw' : '' }}" id="page1-{{ $index }}">
 
 
         <div class="security-bg"></div>
@@ -531,7 +565,7 @@
             <div class="inner-content" style="position: relative;">
                 <!-- Version & Security Code (absolutely positioned top-right) -->
                 <div style="position: absolute; top: 10px; right: 10px; text-align: right; font-weight: bold; font-size: 16px; letter-spacing: 0.35em; z-index: 2;">
-                    @if($version !== 'CTC')<span style="color: {{ $versionColors[$version] ?? '#ff0000' }}; text-transform: uppercase;">{{ $version }}</span>@endif
+                    @if($version !== 'CTC')<span class="version-label" style="color: {{ $versionColors[$version] ?? '#ff0000' }}; text-transform: uppercase;">{{ $version }}</span>@endif
                     
                     @if(isset($securityCode))
                         @php
@@ -769,7 +803,7 @@
     </div>
 
     <!-- PAGE 2 – Acceptance Letter -->
-    <div class="page-container" id="page2-{{ $index }}" style="page-break-before: always;">
+    <div class="page-container{{ $isBwCopy ? ' copy-bw' : '' }}" id="page2-{{ $index }}" style="page-break-before: always;">
         <div class="security-bg"></div>
 
         @if($isReissuance)
@@ -956,7 +990,10 @@
             var frameUrl = '{{ asset('assets/images/pages/1779539656370(1).png') }}';
             var css = '.ornate-border { border-image-source: url("' + frameUrl + '") !important; }\n';
             document.getElementById('scheme-override').textContent = css;
+            // Black & white copies keep the black banner set in CSS; only the
+            // colour copies get the red ministry banner.
             document.querySelectorAll('[data-rofo-badge]').forEach(function(badge) {
+                if (badge.closest('.copy-bw')) return;
                 badge.style.background = '#c90202';
             });
         });

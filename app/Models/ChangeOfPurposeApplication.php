@@ -43,6 +43,16 @@ class ChangeOfPurposeApplication extends Model
         'knupda_remarks',
         'application_generated_at',
         'recommendation_generated_at',
+        // Recommendation memo fields — captured on the Generate Recommendation card.
+        'rec_page_application',
+        'rec_page_planning',
+        'rec_page_site_plan',
+        'rec_title_alias',
+        'rec_measurement_a',
+        'rec_measurement_b',
+        'rec_term_years',
+        'rec_commencement_date',
+        'rec_residual_years',
         'site_plan',
         'is_deleted',
         'deleted_by',
@@ -52,5 +62,6 @@ class ChangeOfPurposeApplication extends Model
     protected $casts = [
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+        'rec_commencement_date' => 'date',
     ];
 }

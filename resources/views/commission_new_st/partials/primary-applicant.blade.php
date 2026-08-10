@@ -60,37 +60,56 @@
         </div>
     </div>
 
+    {{-- Gender leads the applicant details and applies to every applicant type:
+         Male/Female for an individual, Corporate for a company, Joint for multiple
+         owners. Same four values the MLS generator uses (GenderNormalizer::CANON).
+         Kept outside the per-type blocks so it stays visible for all three. --}}
+    {{-- Row 1: Gender + Title. Gender applies to every applicant type (Male/Female
+         for an individual, Corporate for a company, Joint for multiple owners), so it
+         lives outside the per-type blocks; Title is individual-only and is toggled
+         with them by the script at the bottom of this partial. --}}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div>
+            <label for="primary_gender" class="block text-sm font-medium text-gray-700 mb-2">
+                Gender <span class="text-red-500">*</span>
+            </label>
+            <x-gender-select id="primary_gender" required
+                    class="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white" />
+        </div>
+        <div id="primary_title_field">
+            <label for="primary_title" class="block text-sm font-medium text-gray-700 mb-2">
+                Title
+            </label>
+            <select id="primary_title" name="title"
+                    class="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white">
+                <option value="">Select Title</option>
+                @if(isset($titles) && count($titles) > 0)
+                    @foreach($titles as $title)
+                        <option value="{{ $title->display_name }}">{{ $title->display_name }}</option>
+                    @endforeach
+                @else
+                    <option value="Mr">Mr</option>
+                    <option value="Mrs">Mrs</option>
+                    <option value="Miss">Miss</option>
+                    <option value="Ms">Ms</option>
+                    <option value="Dr">Dr</option>
+                    <option value="Prof">Prof</option>
+                    <option value="Eng">Eng</option>
+                    <option value="Arch">Arch</option>
+                @endif
+            </select>
+        </div>
+    </div>
+
     <!-- Individual Fields (Default Visible) -->
     <div id="primary_individual_fields" class="space-y-4">
+        {{-- Row 2: the three name fields. --}}
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-                <label for="primary_title" class="block text-sm font-medium text-gray-700 mb-2">
-                    Title
-                </label>
-                <select id="primary_title" name="title" 
-                        class="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                    <option value="">Select Title</option>
-                    @if(isset($titles) && count($titles) > 0)
-                        @foreach($titles as $title)
-                            <option value="{{ $title->display_name }}">{{ $title->display_name }}</option>
-                        @endforeach
-                    @else
-                        <option value="Mr">Mr</option>
-                        <option value="Mrs">Mrs</option>
-                        <option value="Miss">Miss</option>
-                        <option value="Ms">Ms</option>
-                        <option value="Dr">Dr</option>
-                        <option value="Prof">Prof</option>
-                        <option value="Eng">Eng</option>
-                        <option value="Arch">Arch</option>
-                    @endif
-                </select>
-            </div>
             <div>
                 <label for="primary_first_name" class="block text-sm font-medium text-gray-700 mb-2">
                     First Name <span class="text-red-500">*</span>
                 </label>
-                <input type="text" id="primary_first_name" name="first_name" 
+                <input type="text" id="primary_first_name" name="first_name"
                        class="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
             </div>
             <div>
@@ -212,7 +231,13 @@
                     document.getElementById('primary_individual_fields').style.display = 'none';
                     document.getElementById('primary_corporate_fields').style.display = 'none';
                     document.getElementById('primary_multiple_fields').style.display = 'none';
-                    
+
+                    // Title sits on the Gender row but belongs to the individual form.
+                    const titleField = document.getElementById('primary_title_field');
+                    if (titleField) {
+                        titleField.style.display = (this.value === 'Individual') ? 'block' : 'none';
+                    }
+
                     // Show selected section
                     if (this.value === 'Individual') {
                         document.getElementById('primary_individual_fields').style.display = 'block';

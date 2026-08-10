@@ -5,6 +5,9 @@
 
 const primaryTrackingState = {
     requestId: 0,
+    // Was the last rendered Allocation Type a Conversion? Drives whether the minted
+    // tracking ID survives a switch back to Direct Allocation.
+    wasConversion: false,
 };
 
 function setPrimaryTrackingDisplay(value) {
@@ -190,14 +193,39 @@ function setAppliedFileValidationState(isValid, message = '') {
 }
 
 function validateAppliedFileNumber(showAlert = false) {
+    const isConversion = typeof getSelectedApplicationType === 'function'
+        && getSelectedApplicationType() === 'Conversion';
+    const isExistingConversion = isConversion
+        && typeof getConversionMode === 'function' && getConversionMode() === 'existing';
+
+    // A New CON-P links to no existing file — the CON mother file is created here.
+    if (isConversion && !isExistingConversion) {
+        setAppliedFileValidationState(true);
+        return true;
+    }
+
     const appliedFileField = document.getElementById('applied-file-number');
     const value = appliedFileField ? appliedFileField.value.trim() : '';
-    const isValid = value.length > 0;
+    let isValid = value.length > 0;
 
-    setAppliedFileValidationState(isValid, 'Please select an existing file number from Browse Files.');
+    // An Existing/Extant conversion must point at a CON file.
+    if (isValid && isExistingConversion && !/^CON-/i.test(value)) {
+        isValid = false;
+        setAppliedFileValidationState(false, 'Select a conversion (CON-) file.');
+        if (showAlert) {
+            alert('An Existing / Extant Conversion must link to a CON- file.');
+        }
+        return false;
+    }
+
+    setAppliedFileValidationState(isValid, isExistingConversion
+        ? 'Please select the existing conversion file.'
+        : 'Please select an existing file number from Browse Files.');
 
     if (!isValid && showAlert) {
-        alert('Please select an existing file number from File Number Information before generating ST file number.');
+        alert(isExistingConversion
+            ? 'Please select the existing conversion (CON-) file this ST primary belongs to.'
+            : 'Please select an existing file number from File Number Information before generating ST file number.');
     }
 
     return isValid;
@@ -335,6 +363,108 @@ function handleLandUseChange(selectedCheckbox) {
     }
 }
 
+// Currently selected Allocation Type ("Direct Allocation" / "Conversion")
+function getSelectedApplicationType() {
+    const checked = document.querySelector('#commissionPrimaryForm input[name="application_type"]:checked')
+        || document.querySelector('input[name="application_type"]:checked');
+    return checked ? checked.value : 'Direct Allocation';
+}
+
+/** 'new' (commission a fresh CON file) or 'existing' (pick an extant one). */
+function getConversionMode() {
+    const checked = document.querySelector('#commissionPrimaryForm input[name="conversion_mode"]:checked');
+    return checked ? checked.value : 'new';
+}
+
+/** Which files the Applied File Number picker may offer. */
+function getAppliedFileClass() {
+    return (getSelectedApplicationType() === 'Conversion') ? 'conversion' : 'direct';
+}
+
+/**
+ * Show the Applied File Number picker or the generated conversion number.
+ *
+ * Three states:
+ *   Direct Allocation       -> picker, direct-allocation files only
+ *   Conversion / New CON-P  -> no picker; the CON number about to be commissioned
+ *   Conversion / Existing   -> picker, CON files only (that file becomes the mother)
+ */
+function syncAllocationTypeUi() {
+    const isConversion = getSelectedApplicationType() === 'Conversion';
+    const isExistingConversion = isConversion && getConversionMode() === 'existing';
+    const usesPicker = !isConversion || isExistingConversion;
+
+    const appliedBlock = document.getElementById('appliedFileNumberBlock');
+    const conversionBlock = document.getElementById('conversionFileNumberBlock');
+    const modeBlock = document.getElementById('conversionModeBlock');
+
+    if (modeBlock) modeBlock.classList.toggle('hidden', !isConversion);
+    if (appliedBlock) appliedBlock.classList.toggle('hidden', !usesPicker);
+    if (conversionBlock) conversionBlock.classList.toggle('hidden', !isConversion || isExistingConversion);
+
+    const label = document.getElementById('appliedFileNumberLabel');
+    if (label) {
+        label.textContent = isExistingConversion ? 'Existing Conversion File (Mother File)' : 'Applied File Number';
+    }
+    const hint = document.getElementById('appliedFileNumberHint');
+    if (hint) {
+        hint.textContent = isExistingConversion
+            ? 'Pick the extant CON file this ST primary belongs to — it becomes the mother file.'
+            : 'Link this application to an existing file number from the registry.';
+    }
+
+    // The picker offers a different set of files per mode, so a selection made
+    // under the previous mode must not survive the switch.
+    const appliedField = document.getElementById('applied-file-number');
+    if (appliedField && appliedField.value) {
+        appliedField.value = '';
+        if (window.jQuery && jQuery(appliedField).data('select2')) {
+            jQuery(appliedField).val(null).trigger('change.select2');
+        }
+    }
+    const error = document.getElementById('applied-file-number-error');
+    if (error) error.remove();
+
+    // The tracking ID must be re-sourced: minted by the server for a New CON-P,
+    // read from the selected file whenever one is picked.
+    if (isConversion && !isExistingConversion) {
+        const trackingInput = document.getElementById('primary-tracking-id');
+        if (trackingInput && !trackingInput.value.trim()) {
+            setPrimaryTrackingDisplay('Generating...');
+            setPrimaryTrackingStatus('Generating tracking ID for this conversion...', 'muted');
+        }
+    } else if (primaryTrackingState.wasConversion || usesPicker) {
+        // A file-linked mode must take its ID from the file it links to, and a minted
+        // ID belongs to a conversion that was never commissioned.
+        resetPrimaryTracking();
+    }
+
+    primaryTrackingState.wasConversion = isConversion && !isExistingConversion;
+}
+
+/** Conversion Type radios (New CON-P / Existing / Extant Conversion). */
+function handleConversionModeChange() {
+    syncAllocationTypeUi();
+
+    // Only a New CON-P previews a CON number, but the ST number is previewed either way.
+    if (typeof window.updateNPFNDisplay === 'function') {
+        const selectedLandUse = document.querySelector('input[name="selectedLandUse"]:checked')
+            || document.querySelector('input[name="land_use"]');
+        if (selectedLandUse && selectedLandUse.value) {
+            window.updateNPFNDisplay(selectedLandUse.value);
+        }
+    }
+}
+
+// ST-COM-2025-001 -> "COM"; the conversion form ST-CON-IND-2026-1308 -> "CON-IND"
+function extractLandUseCodeFromStFileNo(fileNo) {
+    const match = /^ST-(CON-)?([A-Z]+)-\d{4}-\d+$/i.exec(String(fileNo || '').trim());
+    if (!match) {
+        return String(fileNo || '').split('-')[1] || '';
+    }
+    return ((match[1] || '') + match[2]).toUpperCase();
+}
+
 // Update NPFN display based on selected land use - REAL PREVIEW with actual serial numbers
 function updateNPFNDisplay(landUse) {
     console.log('Updating NPFN display for land use:', landUse);
@@ -357,7 +487,10 @@ function updateNPFNDisplay(landUse) {
         },
         body: JSON.stringify({
             land_use: landUse,
-            type: 'PRIMARY'
+            type: 'PRIMARY',
+            // A Conversion is numbered off the MLS CON-* serial stream, so the
+            // preview has to be asked for in those terms too.
+            application_type: getSelectedApplicationType()
         })
     })
     .then(response => {
@@ -401,10 +534,29 @@ function updateNPFNDisplay(landUse) {
                 serialSpan.style.color = '#3b82f6'; // Blue color for preview
             }
             
+            // Conversion: show the CON mother file number in place of the picker
+            const conversionField = document.getElementById('conversion-fileno-display');
+            if (conversionField) {
+                conversionField.value = data.data.conversion_file_number || '';
+            }
+
+            // A conversion has no selected file to read a tracking ID from, so the
+            // server mints one for the NPFN. Keep the first one handed out — a land-use
+            // change re-previews and must not renumber the tracking ID under the user.
+            if (data.data.tracking_id) {
+                const trackingInput = document.getElementById('primary-tracking-id');
+                if (!trackingInput || !trackingInput.value.trim()) {
+                    applyPrimaryTrackingId(data.data.tracking_id, 'Tracking ID generated for this conversion.', {
+                        statusTone: 'success'
+                    });
+                }
+            }
+
             // Update land use code display
             const landUseSpan = document.querySelector('.land-use-code-display');
             if (landUseSpan) {
-                const landUseCode = previewFileNo.split('-')[1]; // Extract from ST-COM-2025-001
+                // ST-COM-2025-001 -> COM, ST-CON-IND-2026-1308 -> CON-IND
+                const landUseCode = extractLandUseCodeFromStFileNo(previewFileNo);
                 landUseSpan.textContent = landUseCode;
                 landUseSpan.style.color = '#3b82f6'; // Blue color for preview
             }
@@ -488,21 +640,34 @@ function commissionFileNumber() {
         }
     }
 
-    const appliedFileNumber = document.getElementById('applied-file-number')?.value || '';
+    // Get application type (required field)
+    const applicationTypeRadio = form.querySelector('input[name="application_type"]:checked');
+    const applicationType = applicationTypeRadio ? applicationTypeRadio.value : '';
+
+    // A New CON-P has no applied file number — the CON mother file is created here.
+    // An Existing/Extant conversion picks its mother from the registry.
+    const conversionMode = getConversionMode();
+    const usesPicker = applicationType !== 'Conversion' || conversionMode === 'existing';
+    const appliedFileNumber = usesPicker
+        ? (document.getElementById('applied-file-number')?.value || '')
+        : '';
 
     if (!validateAppliedFileNumber(true)) {
         return;
     }
     
-    // Get application type (required field)
-    const applicationTypeRadio = form.querySelector('input[name="application_type"]:checked');
-    const applicationType = applicationTypeRadio ? applicationTypeRadio.value : '';
-    
     console.log('Application Type:', applicationType);
     
     // Validate application type
     if (!applicationType) {
-        alert('Please select an application type (Direct Allocation or Conversion) before generating ST file number.');
+        alert('Please select an application type (Direct Allocation or ST Conversion) before generating ST file number.');
+        return;
+    }
+
+    const gender = document.getElementById('primary_gender')?.value || '';
+    if (!gender) {
+        alert('Please select a gender before generating ST file number.');
+        document.getElementById('primary_gender')?.focus();
         return;
     }
     
@@ -511,11 +676,13 @@ function commissionFileNumber() {
 
     const payload = {
         np_fileno: npFileNo,
-        applied_file_number: appliedFileNumber,
+        applied_file_number: appliedFileNumber || null,
         fileno: appliedFileNumber || null,
         tracking_id: trackingId || null,
         application_type: applicationType, // REQUIRED: Application Type
+        conversion_mode: applicationType === 'Conversion' ? conversionMode : null,
         applicant_type: applicantType,
+        gender: gender, // REQUIRED
         land_use: landUse,
         commissioned_by: formData.get('commissioned_by') || document.querySelector('input[name="commissioned_by"]')?.value || '',
         commissioned_date: formData.get('commissioned_date') || document.querySelector('input[name="commissioned_date"]')?.value || '',
@@ -588,19 +755,26 @@ function commissionFileNumber() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
+                // A Conversion is renumbered server-side off the MLS CON-* stream,
+                // so report the number that was actually committed, not the preview.
+                const commissionedNo = data.fileNumber || npFileNo;
+                const successText = data.conversionFileNumber
+                    ? `ST file number ${commissionedNo} has been commissioned successfully under conversion file ${data.conversionFileNumber}!`
+                    : `ST file number ${commissionedNo} has been commissioned successfully!`;
+
                 // Shared commissioning card (sua_commission.js): where the record
                 // went, plus the EDMS scan folder created for the file.
                 if (typeof showStCommissioningCard === 'function') {
-                    showStCommissioningCard(data, `ST file number ${npFileNo} has been commissioned successfully!`);
+                    showStCommissioningCard(data, successText);
                 } else {
                     Swal.fire({
                         icon: 'success',
                         title: 'Success!',
-                        text: `ST file number ${npFileNo} has been commissioned successfully!`,
+                        text: successText,
                         confirmButtonColor: '#10b981'
                     });
                 }
-                console.log('ST file number commissioned:', npFileNo);
+                console.log('ST file number commissioned:', commissionedNo);
                 
                 // Optional: Redirect or refresh form
                 // window.location.reload();
@@ -671,6 +845,12 @@ window.updateSerialNumber = updateSerialNumber;
 window.openFileNumberModal = openFileNumberModal;
 window.handleLandUseChange = handleLandUseChange;
 window.updateNPFNDisplay = updateNPFNDisplay;
+window.getSelectedApplicationType = getSelectedApplicationType;
+window.syncAllocationTypeUi = syncAllocationTypeUi;
+window.getConversionMode = getConversionMode;
+window.getAppliedFileClass = getAppliedFileClass;
+window.handleConversionModeChange = handleConversionModeChange;
+window.extractLandUseCodeFromStFileNo = extractLandUseCodeFromStFileNo;
 window.commissionFileNumber = commissionFileNumber;
 window.initializeFileModalIntegration = initializeFileModalIntegration;
 

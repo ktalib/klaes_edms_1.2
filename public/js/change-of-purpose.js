@@ -646,17 +646,8 @@
         } catch (error) { Swal.fire('Error', 'Failed to generate', 'error'); }
     };
 
-    window.copGenerateRecommendation = async function(id) {
-        try {
-            const response = await fetch(`/change-of-purpose/${id}/generate-recommendation`, {
-                method: 'POST',
-                headers: { 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' }
-            });
-            const res = await response.json();
-            if (res.success) Swal.fire('Success', 'Recommendation generated.', 'success');
-            else Swal.fire('Error', res.message || 'Recommendation failed.', 'error');
-        } catch (error) { Swal.fire('Error', 'Failed to generate', 'error'); }
-    };
+    /* copGenerateRecommendation lives further down — it opens the memo-details
+       card before posting. */
 
     /* ----------------------------------------
        Acknowledgement
@@ -833,33 +824,154 @@
         }
     };
 
+    /* ----------------------------------------
+       Recommendation memo details card
+
+       The printed memo needs folio page references, the site-plan measurements
+       and the term of the existing grant — none of which the application form
+       captures. The card collects them, saves them on the record and stamps
+       recommendation_generated_at in the same request.
+       ---------------------------------------- */
     window.copGenerateRecommendation = async function (id) {
-        var confirm = await Swal.fire({
-            title: 'Generate Recommendation?',
-            text: "Are you sure you want to generate the recommendation document?",
-            icon: 'question',
+        var data = {};
+        try {
+            var lookup = await fetch('/change-of-purpose/' + id, { headers: { 'Accept': 'application/json' } });
+            var payload = await lookup.json();
+            if (payload.success) data = payload.data || {};
+        } catch (e) { /* card still opens empty — the fields are all optional */ }
+
+        var result = await Swal.fire({
+            title: 'Recommendation Details',
+            width: 640,
             showCancelButton: true,
-            confirmButtonText: 'Yes, Generate',
-            confirmButtonColor: '#10b981'
+            confirmButtonText: 'Generate',
+            confirmButtonColor: '#10b981',
+            cancelButtonText: 'Cancel',
+            focusConfirm: false,
+            html: `
+                <div class="text-left text-sm space-y-4 p-1">
+                    <p class="text-xs text-slate-500">
+                        These values print on the memo. Leave any of them blank to print a ruled space and fill it in by hand.
+                    </p>
+
+                    <div class="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-4">
+                        <div class="grid grid-cols-3 gap-3">
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Page (Application)</label>
+                                <input type="text" id="rec_page_application" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white" placeholder="69" value="${escAttr(data.rec_page_application)}">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Page (Planning Letter)</label>
+                                <input type="text" id="rec_page_planning" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white" placeholder="75" value="${escAttr(data.rec_page_planning)}">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Page (Site Plan)</label>
+                                <input type="text" id="rec_page_site_plan" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white" placeholder="75" value="${escAttr(data.rec_page_site_plan)}">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">KANGIS / Alias No. <span class="normal-case font-normal text-slate-400">(printed in brackets after the title number)</span></label>
+                            <input type="text" id="rec_title_alias" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white" placeholder="MNKL 02930" value="${escAttr(data.rec_title_alias || data.plan_no)}">
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-3">
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Part A Measurements</label>
+                            <textarea id="rec_measurement_a" rows="2" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white" placeholder="135.01m x 40.01m x 103.11m ... (6.443Ha)">${escAttr(data.rec_measurement_a)}</textarea>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Part B Measurements <span class="normal-case font-normal text-slate-400">(optional)</span></label>
+                            <textarea id="rec_measurement_b" rows="2" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white" placeholder="13.92m x 85.44m x 25.88m ... (0.1551Ha)">${escAttr(data.rec_measurement_b)}</textarea>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-50 rounded-2xl p-4 border border-slate-200">
+                        <div class="grid grid-cols-3 gap-3">
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Term (Years)</label>
+                                <input type="number" id="rec_term_years" min="0" max="999" oninput="copCalcResidualTerm()" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white" placeholder="40" value="${escAttr(data.rec_term_years)}">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Commencing From</label>
+                                <input type="date" id="rec_commencement_date" onchange="copCalcResidualTerm()" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white" value="${escAttr(String(data.rec_commencement_date || '').slice(0, 10))}">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Residual Term (Years)</label>
+                                <input type="number" id="rec_residual_years" min="0" max="999" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white" placeholder="4" value="${escAttr(data.rec_residual_years)}">
+                            </div>
+                        </div>
+                        <p class="text-[10px] text-slate-400 mt-2">Residual term is worked out from the term and commencement date; overwrite it if the file says otherwise.</p>
+                    </div>
+                </div>
+            `,
+            didOpen: function () {
+                // Only auto-fill an empty residual term, never clobber a saved one.
+                if (!document.getElementById('rec_residual_years').value) window.copCalcResidualTerm();
+            },
+            preConfirm: function () {
+                var val = function (elId) { return (document.getElementById(elId).value || '').trim(); };
+                return {
+                    rec_page_application: val('rec_page_application'),
+                    rec_page_planning: val('rec_page_planning'),
+                    rec_page_site_plan: val('rec_page_site_plan'),
+                    rec_title_alias: val('rec_title_alias'),
+                    rec_measurement_a: val('rec_measurement_a'),
+                    rec_measurement_b: val('rec_measurement_b'),
+                    rec_term_years: val('rec_term_years'),
+                    rec_commencement_date: val('rec_commencement_date'),
+                    rec_residual_years: val('rec_residual_years')
+                };
+            }
         });
 
-        if (!confirm.isConfirmed) return;
+        if (!result.isConfirmed) return;
+
+        // Blank inputs post as null so they clear a previously saved value
+        // instead of failing the integer/date rules with an empty string.
+        var body = {};
+        Object.keys(result.value).forEach(function (k) {
+            body[k] = result.value[k] === '' ? null : result.value[k];
+        });
 
         try {
             var response = await fetch('/change-of-purpose/' + id + '/generate-recommendation', {
                 method: 'POST',
-                headers: { 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' }
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(body)
             });
             var res = await response.json();
             if (res.success) {
                 await Swal.fire('Success', 'Recommendation generated. You can now print it.', 'success');
                 location.reload();
             } else {
-                Swal.fire('Error', res.message || 'Recommendation can only be generated for Approved applications.', 'error');
+                Swal.fire('Error', res.message || 'Recommendation could not be generated.', 'error');
             }
         } catch (error) {
             Swal.fire('Error', 'Failed to generate recommendation', 'error');
         }
+    };
+
+    /* Residual term = whole years left between today and (commencement + term). */
+    window.copCalcResidualTerm = function () {
+        var termEl = document.getElementById('rec_term_years');
+        var startEl = document.getElementById('rec_commencement_date');
+        var residualEl = document.getElementById('rec_residual_years');
+        if (!termEl || !startEl || !residualEl) return;
+
+        var term = parseInt(termEl.value, 10);
+        var start = startEl.value ? new Date(startEl.value) : null;
+        if (!term || !start || isNaN(start.getTime())) return;
+
+        var expiry = new Date(start.getTime());
+        expiry.setFullYear(expiry.getFullYear() + term);
+        var years = Math.floor((expiry - new Date()) / (365.25 * 24 * 60 * 60 * 1000));
+        residualEl.value = years > 0 ? years : 0;
     };
 
     /* ----------------------------------------
@@ -869,6 +981,15 @@
         var tr = btn.closest('tr');
         if (!tr) return null;
         try { return JSON.parse(tr.getAttribute('data-record')); } catch (e) { return null; }
+    }
+
+    /* Escapes a value for use inside an HTML attribute. Unlike safe(), a missing
+       value yields an empty string — these feed form inputs, not display text. */
+    function escAttr(value) {
+        if (value == null) return '';
+        return String(value).replace(/[&<>"']/g, function (m) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[m];
+        });
     }
 
     function safe(value) {

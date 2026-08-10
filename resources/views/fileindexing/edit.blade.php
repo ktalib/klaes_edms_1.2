@@ -395,14 +395,8 @@
 
                                         <div>
                                             <label for="gender" class="form-label-clean">Gender <span class="text-red-500">*</span></label>
-                                            @php $currentGender = old('gender', $fileIndexing->gender); @endphp
-                                            <select id="gender" name="gender" class="w-full form-input-clean h-[42px]" required>
-                                                <option value="">Select Gender</option>
-                                                <option value="Male" {{ $currentGender === 'Male' ? 'selected' : '' }}>Male</option>
-                                                <option value="Female" {{ $currentGender === 'Female' ? 'selected' : '' }}>Female</option>
-                                                <option value="Corporate" {{ $currentGender === 'Corporate' ? 'selected' : '' }}>Corporate</option>
-                                                <option value="Joint" {{ $currentGender === 'Joint' ? 'selected' : '' }}>Joint</option>
-                                            </select>
+                                            <x-gender-select :selected="old('gender', $fileIndexing->gender)"
+                                                class="w-full form-input-clean h-[42px]" required />
                                         </div>
 
                     </div>

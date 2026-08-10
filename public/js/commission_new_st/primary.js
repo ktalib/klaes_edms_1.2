@@ -418,20 +418,83 @@ function handlePrimaryApplicationTypeChange(radioElement) {
         label.classList.add('selected');
     }
     
-    // Store value for later use
+    // Conversion hides the Applied File Number picker (there is no existing file to
+    // link to) and shows the CON mother number that will be commissioned instead.
+    if (typeof window.syncAllocationTypeUi === 'function') {
+        window.syncAllocationTypeUi();
+    }
+
+    // A Conversion is numbered from the MLS CON-* serial stream instead of the ST
+    // pool, so the NPFN preview has to be re-fetched when the type changes.
+    if (typeof window.updateNPFNDisplay === 'function') {
+        const selectedLandUse = document.querySelector('input[name="selectedLandUse"]:checked')
+            || document.querySelector('input[name="land_use"]');
+        if (selectedLandUse && selectedLandUse.value) {
+            window.updateNPFNDisplay(selectedLandUse.value);
+        }
+    }
+
+    // Keep the DAP / CON-P tabs in step with the value.
+    paintPrimaryAllocationTabs(radioElement.value);
+
     console.log('✅ Application Type set to:', radioElement.value);
 }
+
+/**
+ * DAP / CON-P tabs — the only control for Allocation Type.
+ *
+ * The radios below them are disabled mirrors, so everything that reads
+ * `input[name="application_type"]:checked` (the payload, the NPFN preview, the
+ * Applied File Number / CON panels) keeps working unchanged.
+ */
+function selectPrimaryAllocationTab(applicationType) {
+    // Scoped: the SuA tab carries radios of the same name.
+    const radio = document.querySelector(
+        `#commissionPrimaryForm input[name="application_type"][value="${applicationType}"]`
+    );
+    if (!radio || radio.checked) {
+        paintPrimaryAllocationTabs(applicationType);
+        return;
+    }
+
+    radio.checked = true;
+    handlePrimaryApplicationTypeChange(radio);
+}
+
+function paintPrimaryAllocationTabs(applicationType) {
+    // Each tab carries its own palette (DAP blue, CON-P indigo) in data attributes,
+    // so the colours live with the markup rather than being hardcoded here.
+    document.querySelectorAll('.primary-allocation-tab').forEach(tab => {
+        const activeClasses = (tab.dataset.activeClass || '').split(' ').filter(Boolean);
+        const idleClasses = (tab.dataset.idleClass || '').split(' ').filter(Boolean);
+        const isActive = tab.dataset.allocation === applicationType;
+
+        tab.classList.remove(...activeClasses, ...idleClasses);
+        tab.classList.add(...(isActive ? activeClasses : idleClasses));
+        tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+}
+
+window.selectPrimaryAllocationTab = selectPrimaryAllocationTab;
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
     window.primaryManager = new PrimaryApplicationsManager();
-    
-    // Initialize application type selection
-    const selectedAppType = document.querySelector('input[name="application_type"]:checked');
+
+    // Initialize application type selection (primary form only — SuA has its own)
+    const selectedAppType = document.querySelector('#commissionPrimaryForm input[name="application_type"]:checked')
+        || document.querySelector('input[name="application_type"]:checked');
     if (selectedAppType) {
         const label = selectedAppType.closest('.application-type-option');
         if (label) {
             label.classList.add('selected');
         }
+    }
+
+    // Match the tabs and the picker / CON-number panels to whatever is checked on load.
+    paintPrimaryAllocationTabs(selectedAppType ? selectedAppType.value : 'Direct Allocation');
+
+    if (typeof window.syncAllocationTypeUi === 'function') {
+        window.syncAllocationTypeUi();
     }
 });

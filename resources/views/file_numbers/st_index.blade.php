@@ -618,8 +618,7 @@
                                             onclick="sortTable('status')">
                                             Status <i data-lucide="chevrons-up-down" class="inline h-3 w-3"></i>
                                         </th>
-                                        <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider"
-                                            style="display: none;">
+                                        <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Actions
                                         </th>
                                     </tr>
@@ -718,6 +717,8 @@
 
             <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
             <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+            {{-- window.generateConversionApplication — shared with the MLS File Commissioning table. --}}
+            <script src="{{ asset('js/shared/conversion-application-print.js') }}?v={{ @filemtime(public_path('js/shared/conversion-application-print.js')) }}"></script>
             <script>
                 // Global variables
                 let allFileNumbers = [];
@@ -1032,7 +1033,9 @@
 
                         if (file.file_no_type === 'PRIMARY') {
                             stFileNo = file.np_fileno || 'N/A';
-                            mlsFileNo = file.fileno || 'N/A';
+                            // A conversion carries its CON mother file number in
+                            // mls_fileno; for every other primary the two are the same.
+                            mlsFileNo = file.mls_fileno || file.fileno || 'N/A';
                         } else if (file.file_no_type === 'PUA') {
                             stFileNo = file.fileno || 'N/A';
                             mlsFileNo = file.np_fileno || 'N/A';
@@ -1040,6 +1043,10 @@
                             stFileNo = file.fileno || 'N/A';
                             mlsFileNo = file.np_fileno || 'N/A';
                         }
+
+                        // Only a conversion has a CON- mother file, and only that file has
+                        // an LGA Confirmation Sheet to print.
+                        const isConversionFile = /^CON-/i.test(String(mlsFileNo || '').trim());
 
                         return `
                             <tr class="hover:bg-gray-50 transition-colors">
@@ -1110,16 +1117,38 @@
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <span class="status-badge status-${getStatusClass(file.status)}">${getStatusDisplay(file.status)}</span>
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium" style="display: none;">
-                                    <button onclick='viewDetails(${JSON.stringify(file).replace(/'/g, "&apos;")})' class="text-blue-600 hover:text-blue-900 mr-3" title="View Details">
-                                        <i data-lucide="eye" class="h-4 w-4"></i>
-                                    </button>
-                                    <button onclick="editFile(${file.id})" class="text-green-600 hover:text-green-900 mr-3" title="Edit">
-                                        <i data-lucide="edit" class="h-4 w-4"></i>
-                                    </button>
-                                    <button onclick="printFile(${file.id})" class="text-purple-600 hover:text-purple-900" title="Print">
-                                        <i data-lucide="printer" class="h-4 w-4"></i>
-                                    </button>
+                                <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
+                                    <div class="relative inline-block text-left">
+                                        <button type="button" onclick="toggleStActionMenu(event, 'st-actions-${file.id}')"
+                                                class="p-1.5 rounded-md text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors" title="Actions">
+                                            <i data-lucide="more-vertical" class="h-4 w-4"></i>
+                                        </button>
+                                        <div id="st-actions-${file.id}"
+                                             class="st-action-menu hidden absolute right-0 z-50 mt-1 w-64 rounded-lg border border-gray-200 bg-white py-1 shadow-lg text-left">
+                                            <button type="button" onclick='viewDetails(${JSON.stringify(file).replace(/'/g, "&apos;")})'
+                                                    class="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                                                <i data-lucide="eye" class="h-4 w-4 mr-2 text-gray-500"></i>
+                                                View/Edit Details
+                                            </button>
+                                            <div class="my-1 border-t border-gray-100"></div>
+                                            <button type="button" onclick='printStCommissioningSheet(${JSON.stringify(file).replace(/'/g, "&apos;")})'
+                                                    class="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                                                <i data-lucide="file-text" class="h-4 w-4 mr-2 text-blue-600"></i>
+                                                ST Commissioning Sheet (FCS)
+                                            </button>
+                                            ${isConversionFile ? `
+                                            <button type="button" onclick="generateConversionApplication(${file.id}, '${mlsFileNo}')"
+                                                    class="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                                                <i data-lucide="refresh-cw" class="h-4 w-4 mr-2 text-indigo-600"></i>
+                                                LGA Confirmation Sheet (LCS)
+                                            </button>` : `
+                                            <span class="flex w-full items-center px-4 py-2 text-sm text-gray-300 cursor-not-allowed"
+                                                  title="Only conversion files have an LGA Confirmation Sheet">
+                                                <i data-lucide="refresh-cw" class="h-4 w-4 mr-2"></i>
+                                                LGA Confirmation Sheet (LCS)
+                                            </span>`}
+                                        </div>
+                                    </div>
                                 </td>
                             </tr>
                         `;
@@ -1281,9 +1310,9 @@
 
                         <div class="mt-6 flex justify-end gap-3">
                             <button onclick="closeDetailsModal()" class="btn btn-secondary">Close</button>
-                            <button onclick="printFile(${file.id})" class="btn btn-primary">
+                            <button onclick='printStCommissioningSheet(${JSON.stringify(file).replace(/'/g, "&apos;")})' class="btn btn-primary">
                                 <i data-lucide="printer" class="h-4 w-4 mr-2"></i>
-                                Print Details
+                                ST Commissioning Sheet (FCS)
                             </button>
                         </div>
                     `;
@@ -1384,13 +1413,86 @@
                     });
                 }
 
-                // Print file
-                function printFile(id) {
-                    Swal.fire({
-                        icon: 'info',
-                        title: 'Print File Number',
-                        text: 'Print functionality coming soon!',
-                        confirmButtonColor: '#3b82f6'
+                // Row actions menu — only one open at a time.
+                function toggleStActionMenu(event, menuId) {
+                    event.stopPropagation();
+                    const menu = document.getElementById(menuId);
+                    if (!menu) return;
+
+                    document.querySelectorAll('.st-action-menu').forEach(m => {
+                        if (m !== menu) m.classList.add('hidden');
+                    });
+                    menu.classList.toggle('hidden');
+                    if (typeof lucide !== 'undefined') lucide.createIcons();
+                }
+
+                document.addEventListener('click', function () {
+                    document.querySelectorAll('.st-action-menu').forEach(m => m.classList.add('hidden'));
+                });
+
+                /**
+                 * File Commissioning Sheet for an ST file.
+                 *
+                 * Same two steps as the OSS and MLS screens: save the sheet, then open
+                 * the printable view. A conversion is filed under its CON mother number,
+                 * which is also what lets the controller resolve the sheet's related-file
+                 * line ("Conversion") from mls_file_no.source.
+                 */
+                function printStCommissioningSheet(file) {
+                    const stFileNo = file.file_no_type === 'PRIMARY'
+                        ? (file.np_fileno || file.fileno)
+                        : (file.fileno || file.np_fileno);
+                    const mlsFileNo = file.mls_fileno || '';
+                    const sheetFileNo = /^CON-/i.test(String(mlsFileNo).trim()) ? mlsFileNo : stFileNo;
+
+                    const applicantName = file.corporate_name ||
+                        `${file.first_name || ''} ${file.middle_name || ''} ${file.surname || ''}`.trim() ||
+                        '';
+                    const commissionedAt = file.date_commissioned || file.created_at || null;
+
+                    const payload = {
+                        file_number: sheetFileNo,
+                        file_name: applicantName,
+                        name_or_allottee: applicantName,
+                        plot_number: file.property_plot_no || '',
+                        location: file.property_street_name || file.property_district || '',
+                        lga: file.property_lga || '',
+                        date_created: commissionedAt ? new Date(commissionedAt).toISOString() : '',
+                        created_by: file.created_by_name || '',
+                        commissioning_time: commissionedAt ? new Date(commissionedAt).toLocaleTimeString() : '',
+                        related_file_number: sheetFileNo === stFileNo ? '' : stFileNo
+                    };
+
+                    fetch('{{ route('commissioning-sheet.generate-print') }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: JSON.stringify(payload)
+                    })
+                    .then(response => response.json())
+                    .then(result => {
+                        if (!result.success) {
+                            throw new Error(result.message || 'Could not save the commissioning sheet');
+                        }
+                        // source=st puts "DEPARTMENT OF SECTIONAL TITLING" on the sheet —
+                        // a conversion is filed under its CON number, so the number alone
+                        // cannot say which department commissioned it.
+                        const params = new URLSearchParams({ source: 'st' });
+                        if (payload.commissioning_time) {
+                            params.set('commissioning_time', payload.commissioning_time);
+                        }
+                        window.open('{{ url('commissioning-sheet/print') }}/' + result.data.id + '?' + params.toString(), '_blank');
+                    })
+                    .catch(error => {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Commissioning Sheet',
+                            text: error.message || 'Could not generate the commissioning sheet',
+                            confirmButtonColor: '#3b82f6'
+                        });
                     });
                 }
 

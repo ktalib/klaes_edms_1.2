@@ -965,6 +965,18 @@
                                 </div>`;
                         }
 
+                        // An ST conversion commissions the CON land file (shown above) and
+                        // its ST primary together — show the ST number stacked underneath.
+                        const stFileNo = String(row.stFileNo || '').trim();
+                        if (stFileNo && stFileNo !== 'N/A' && stFileNo !== display) {
+                            html += `
+                                <div class="mt-1">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200" title="ST file number">
+                                        ${stFileNo}
+                                    </span>
+                                </div>`;
+                        }
+
                         return html;
                     }
                 },
@@ -1560,11 +1572,9 @@
 
         // Get existing file number from Alpine.js component instead of DOM
         let existingFileNo = '';
-        let extensionType = 'file';
         const modalContainer = document.querySelector('[x-data="fileNumberGenerator()"]');
         if (modalContainer && modalContainer._x_dataStack && modalContainer._x_dataStack[0]) {
             existingFileNo = modalContainer._x_dataStack[0].existingFileNo;
-            extensionType = modalContainer._x_dataStack[0].extensionType || 'file';
         }
 
         const middlePrefix = document.getElementById('middlePrefix')?.value || '';
@@ -1575,7 +1585,7 @@
 
         if (fileOption === 'extension' && existingFileNo) {
             const baseExt = existingFileNo.trim().replace(/-$/, '');
-            previewText = extensionType === 'plot' ? baseExt : baseExt + ' AND EXTENSION';
+            previewText = baseExt + ' AND EXTENSION';
         } else if (fileOption === 'temporary' && existingFileNo) {
             previewText = existingFileNo + '(T)';
         } else if (fileOption === 'miscellaneous' && middlePrefix && serialNo && year) {
@@ -1620,11 +1630,9 @@
 
         // Get existing file number from Alpine.js component instead of DOM
         let existingFileNo = '';
-        let extensionType = 'file';
         const modalContainer = document.querySelector('[x-data="fileNumberGenerator()"]');
         if (modalContainer && modalContainer._x_dataStack && modalContainer._x_dataStack[0]) {
             existingFileNo = modalContainer._x_dataStack[0].existingFileNo;
-            extensionType = modalContainer._x_dataStack[0].extensionType || 'file';
         }
 
         const middlePrefix = document.getElementById('middlePrefix')?.value || '';
@@ -1697,7 +1705,7 @@
 
         if (fileOption === 'extension') {
             const baseExt = (existingFileNo || baseFileNumber).trim().replace(/-$/, '');
-            previewText = extensionType === 'plot' ? baseExt : baseExt + ' AND EXTENSION';
+            previewText = baseExt + ' AND EXTENSION';
         } else if (fileOption === 'temporary') {
             previewText = (existingFileNo || baseFileNumber) + '(T)';
         } else if (fileOption === 'miscellaneous' && middlePrefix && serialNo && year) {
@@ -2079,13 +2087,6 @@
             // If batch mode is active, show summary modal instead
             if (alpineData.batchMode) {
                 showBatchSummaryModal(alpineData);
-                return;
-            }
-
-            // Plot Extension: isolated workflow that keeps the original file number.
-            // Routed to its own endpoint instead of the standard generate flow.
-            if (alpineData.fileOption === 'extension' && alpineData.extensionType === 'plot') {
-                submitPlotExtension(event, alpineData);
                 return;
             }
         }
@@ -4319,7 +4320,8 @@
             fileTypeWorkflow: '',
             // Reason captured for SIT files
             sitReason: '',
-            // Extension category: 'file' (existing AND EXTENSION flow) or 'plot' (keep original number)
+            // Extension has a single form: a new file number suffixed " AND EXTENSION".
+            // Retained so the existing `extension_type` form field still posts a value.
             extensionType: 'file',
             _lastFileOption: 'normal', // tracks previous fileOption to detect transitions
             existingFileNo: '',
@@ -5875,8 +5877,8 @@
             },
 
             updateFileOption() {
-                // Detect a fresh transition INTO the extension file type so we can
-                // prompt for the extension category (File vs Plot) exactly once.
+                // Detect a fresh transition INTO the extension file type, so the existing-file
+                // selector opens exactly once rather than on every re-render.
                 const switchingToExtension = this.fileOption === 'extension' && this._lastFileOption !== 'extension';
 
                 // Clear serial number when changing file option to special types
@@ -5906,10 +5908,6 @@
                     this.address = '';
                     this.rep_phone_no = '';
                     this.rep_address = '';
-                    if (this.fileOption === 'extension') {
-                        // Reset category until the user explicitly picks one in the popup.
-                        this.extensionType = '';
-                    }
                 } else if (this.fileOption === 'normal' || this.fileOption === 'regrant' || this.fileOption === 'resettlement' || this.fileOption === 'reissuance') {
                     this.isInherited = false;
                     // Reset SIT-specific overrides if switching from SIT
@@ -5945,9 +5943,10 @@
 
                 this._lastFileOption = this.fileOption;
 
-                // Prompt for extension category (File vs Plot) on a fresh switch to Extension.
-                if (switchingToExtension && typeof window.openExtensionTypeModal === 'function') {
-                    window.openExtensionTypeModal();
+                // An extension always extends an existing file, so open the selector straight
+                // away — the removed File-vs-Plot modal used to do this after the choice.
+                if (switchingToExtension && typeof window.openExtensionFileSelector === 'function') {
+                    window.openExtensionFileSelector();
                 }
 
                 this.updatePreview();
@@ -5987,8 +5986,7 @@
 
                 if (this.fileOption === 'extension') {
                     const baseExt = (this.existingFileNo || baseFileNumber).trim().replace(/-$/, '');
-                    // Plot Extension retains the original file number unchanged.
-                    previewText = this.extensionType === 'plot' ? baseExt : baseExt + ' AND EXTENSION';
+                    previewText = baseExt + ' AND EXTENSION';
                 } else if (this.fileOption === 'temporary') {
                     // For temporary files, use baseFileNumber (next available) + (T) as per user request
                     previewText = baseFileNumber + '(T)';
@@ -6592,141 +6590,11 @@
         return null;
     }
 
-    window.openExtensionTypeModal = function () {
-        const modal = document.getElementById('extensionTypeModal');
-        if (modal) {
-            modal.classList.remove('hidden');
-            if (window.lucide && typeof window.lucide.createIcons === 'function') {
-                window.lucide.createIcons();
-            }
-        }
-    };
-
-    function closeExtensionTypeModal() {
-        const modal = document.getElementById('extensionTypeModal');
-        if (modal) modal.classList.add('hidden');
-    }
-
-    window.selectExtensionType = function (type) {
-        const data = getGeneratorAlpineData();
-        if (data) {
-            data.extensionType = type;
-            if (typeof data.updatePreview === 'function') data.updatePreview();
-        }
-        closeExtensionTypeModal();
-        // Both kinds require picking an existing file — open the selector for convenience.
-        if (typeof window.openExtensionFileSelector === 'function') {
-            window.openExtensionFileSelector();
-        }
-    };
-
-    // Cancelling the choice reverts the file type back to Normal.
-    window.cancelExtensionTypeSelection = function () {
-        closeExtensionTypeModal();
-        const data = getGeneratorAlpineData();
-        if (data) {
-            data.fileOption = 'normal';
-            data.extensionType = 'file';
-            if (typeof data.updateFileOption === 'function') {
-                data.updateFileOption();
-            } else if (typeof data.updatePreview === 'function') {
-                data.updatePreview();
-            }
-        }
-    };
-
-    // Plot Extension submission: keep the original file number, save an isolated transaction.
-    function submitPlotExtension(event, alpineData) {
-        const originalFileNo = (alpineData.existingFileNo || '').toString().trim();
-        if (!originalFileNo) {
-            Swal.fire({
-                icon: 'warning',
-                title: 'Existing File Required',
-                text: 'Please select an existing file number for the Plot Extension.',
-                confirmButtonColor: '#f59e0b'
-            });
-            return;
-        }
-
-        const fileNameValue = (alpineData.fileName || '').toString().trim();
-        if (!fileNameValue) {
-            Swal.fire({
-                icon: 'warning',
-                title: 'File Name Required',
-                text: 'Please enter a File Name for the Plot Extension.',
-                confirmButtonColor: '#f59e0b'
-            });
-            return;
-        }
-
-        const submitBtn = event.submitter || event.target.querySelector('button[type="submit"]');
-        const originalText = submitBtn ? submitBtn.innerHTML : '';
-        if (submitBtn) showLoadingButton(submitBtn, originalText);
-        showGlobalLoading('Saving Plot Extension...');
-
-        const payload = {
-            original_file_no: originalFileNo,
-            tracking_id: (document.getElementById('trackingIdInput')?.value || '').trim(),
-            file_name: fileNameValue,
-            land_use: alpineData.landUse || '',
-            purpose_id: alpineData.purpose || '',
-            location: alpineData.location || '',
-            lga: alpineData.lga || '',
-            district: alpineData.district || '',
-            plot_no: alpineData.plotNo || '',
-            tp_no: alpineData.tpNo || '',
-            customer_type: alpineData.customerType || '',
-            phone_no: alpineData.phone_no || '',
-            address: alpineData.address || '',
-            // isInherited is set when the lookup auto-populated details for an indexed file
-            is_indexed: alpineData.isInherited ? 1 : 0,
-        };
-
-        fetch('{{ route("mls-fileno.plot-extension.store") }}', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-            },
-            body: JSON.stringify(payload)
-        })
-            .then(response => response.json())
-            .then(data => {
-                hideGlobalLoading();
-                if (submitBtn) hideLoadingButton(submitBtn, originalText);
-
-                if (data.success) {
-                    if (typeof closeGenerateModal === 'function') closeGenerateModal();
-                    try { table.ajax.reload(); } catch (e) { /* server-rendered fallback */ }
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Plot Extension Saved',
-                        text: data.message || ('Plot Extension saved for ' + originalFileNo + '.'),
-                        confirmButtonColor: '#10b981'
-                    });
-                } else {
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Save Failed',
-                        text: data.message || 'Could not save the Plot Extension.',
-                        confirmButtonColor: '#ef4444'
-                    });
-                }
-            })
-            .catch(err => {
-                hideGlobalLoading();
-                if (submitBtn) hideLoadingButton(submitBtn, originalText);
-                console.error('[PlotExtension] submit failed', err);
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Network Error',
-                    text: 'Failed to save the Plot Extension. Please try again.',
-                    confirmButtonColor: '#ef4444'
-                });
-            });
-    }
-
+    // The File-vs-Plot extension choice was collapsed into a single "… AND EXTENSION"
+    // extension, so the chooser modal (openExtensionTypeModal / selectExtensionType /
+    // cancelExtensionTypeSelection) and the Plot Extension submitter that kept the original
+    // file number are gone. Existing plot_extensions records are untouched and still render
+    // in the file-numbers list; only the path that CREATES new ones was removed.
     // Support function to fetch tracking ID and auto-populate fields
     async function fetchTrackingIdForFile(fileNumber) {
         if (!fileNumber) return;
@@ -7920,91 +7788,8 @@
         loadSerialStatus();
     };
 
-    window.generateConversionApplication = function (id, fileNo) {
-        Swal.fire({
-            title: 'Property Acquisition Method',
-            html: `
-                <div class="text-left space-y-3 p-2">
-                    <p class="text-sm text-gray-600 mb-4">Please select how the property for <strong>${fileNo}</strong> was acquired:</p>
-                    <div class="space-y-2">
-                        <label class="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-md cursor-pointer border border-transparent hover:border-blue-200 transition-all">
-                            <input type="radio" name="acquisition_method" value="a" class="w-4 h-4 text-blue-600" checked>
-                            <span class="text-sm font-medium text-gray-700">a. By Purchase</span>
-                        </label>
-                        <label class="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-md cursor-pointer border border-transparent hover:border-blue-200 transition-all">
-                            <input type="radio" name="acquisition_method" value="b" class="w-4 h-4 text-blue-600">
-                            <span class="text-sm font-medium text-gray-700">b. By Inheritance</span>
-                        </label>
-                        <label class="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-md cursor-pointer border border-transparent hover:border-blue-200 transition-all">
-                            <input type="radio" name="acquisition_method" value="c" class="w-4 h-4 text-blue-600">
-                            <span class="text-sm font-medium text-gray-700">c. By Gift</span>
-                        </label>
-                        <label class="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-md cursor-pointer border border-transparent hover:border-blue-200 transition-all">
-                            <input type="radio" name="acquisition_method" value="d" class="w-4 h-4 text-blue-600">
-                            <span class="text-sm font-medium text-gray-700">d. Direct Local Government Allocation</span>
-                        </label>
-                        <label class="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-md cursor-pointer border border-transparent hover:border-blue-200 transition-all">
-                            <input type="radio" name="acquisition_method" value="e" class="w-4 h-4 text-blue-600" id="method_other_radio">
-                            <span class="text-sm font-medium text-gray-700">e. Any other (Specify)</span>
-                        </label>
-                    </div>
-                    <div id="other_specify_container" class="mt-3 hidden animate-fadeIn">
-                        <input type="text" id="other_specify_input" 
-                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" 
-                               placeholder="Please specify other method...">
-                    </div>
-                </div>
-            `,
-            showCancelButton: true,
-            confirmButtonColor: '#2563eb',
-            cancelButtonColor: '#d33',
-            confirmButtonText: 'Generate Document',
-            cancelButtonText: 'Cancel',
-            didOpen: () => {
-                const radios = document.querySelectorAll('input[name="acquisition_method"]');
-                const otherContainer = document.getElementById('other_specify_container');
-                const otherInput = document.getElementById('other_specify_input');
-
-                radios.forEach(radio => {
-                    radio.addEventListener('change', (e) => {
-                        if (e.target.value === 'e') {
-                            otherContainer.classList.remove('hidden');
-                            otherInput.focus();
-                        } else {
-                            otherContainer.classList.add('hidden');
-                        }
-                    });
-                });
-            },
-            preConfirm: () => {
-                const selectedMethod = document.querySelector('input[name="acquisition_method"]:checked').value;
-                const otherValue = document.getElementById('other_specify_input').value;
-
-                if (selectedMethod === 'e' && !otherValue.trim()) {
-                    Swal.showValidationMessage('Please specify the other acquisition method');
-                    return false;
-                }
-
-                return { method: selectedMethod, other: otherValue };
-            }
-        }).then((result) => {
-            if (result.isConfirmed) {
-                const { method, other } = result.value;
-                // Prefer the file number string over the numeric id so the backend can
-                // resolve by fileNumber.mlsfNo and fall back to plot_extensions. This also
-                // avoids loading a different row that shares the same numeric id.
-                const convKey = (fileNo && fileNo !== '--' && fileNo !== 'N/A')
-                    ? encodeURIComponent(fileNo)
-                    : id;
-                let url = `/file-numbers/conversion-application/${convKey}?method=${method}`;
-                if (method === 'e' && other) {
-                    url += `&other=${encodeURIComponent(other)}`;
-                }
-                // Open in new tab
-                window.open(url, '_blank');
-            }
-        });
-    }
+    // window.generateConversionApplication lives in js/shared/conversion-application-print.js
+    // — the ST File Commissioning table prints the same sheet.
 
     window.generateBatchConversionApplication = function (batchNo) {
         Swal.fire({
@@ -8812,15 +8597,20 @@
      * Batch Capture OP stepper; Single leaves Batch Mode off.
      */
     function promptOpBatchOrSingle(alpineData, normalized, opType) {
-        // Third way out, offered as a footer link because the three buttons are already spoken
-        // for. Both paths above end in commissioning a NEW file number; this one is for a file
-        // that was already commissioned without an OP, so it skips commissioning entirely and
-        // goes straight to the Capture OP card. Only offered where that card is on the page.
-        const hasCommissionedFlow = typeof window.openCaptureOpForCommissionedFile === 'function';
+        // Third way out. Batch and Single both end in commissioning a NEW file number; Match OP
+        // is for a file already commissioned without an OP, so it skips commissioning entirely
+        // and opens the Capture OP dialog in commissioned-file mode. SweetAlert only exposes
+        // three action buttons, so it is appended into the actions row by hand (didOpen) to sit
+        // with the others. Only offered on pages where that dialog is present.
+        const hasCommissionedFlow = typeof window.openOpForCommissionedFile === 'function';
 
         Swal.fire({
             title: 'Occupancy Permit (OP)',
-            html: `<p class="text-sm text-gray-600">Are you capturing a <strong>single</strong> OP, or a <strong>batch</strong> of OPs for ${opType}?</p>`,
+            html: `<p class="text-sm text-gray-600">Are you capturing a <strong>single</strong> OP, or a <strong>batch</strong> of OPs for ${opType}?</p>`
+                + (hasCommissionedFlow
+                    ? '<p class="text-xs text-gray-500 mt-2">If the file number was commissioned without an OP,'
+                        + ' choose <strong>Match OP</strong> — no new file number is generated.</p>'
+                    : ''),
             icon: 'question',
             showCancelButton: true,
             showDenyButton: true,
@@ -8829,15 +8619,35 @@
             cancelButtonText: 'Cancel',
             confirmButtonColor: '#2563eb',
             denyButtonColor: '#059669',
-            footer: hasCommissionedFlow
-                ? '<button type="button" id="opAlreadyCommissionedLink" class="text-sm text-blue-600 hover:text-blue-800 hover:underline font-medium">'
-                    + 'The file number is already commissioned — capture the OP for it'
-                    + '</button>'
-                : '',
             didOpen: () => {
-                const link = document.getElementById('opAlreadyCommissionedLink');
-                if (!link) return;
-                link.addEventListener('click', () => {
+                if (!hasCommissionedFlow) return;
+
+                // Built here rather than passed as `footer` so it can join the real actions row.
+                // swal2-styled gives it the same metrics as the built-in buttons; only the
+                // colour is ours.
+                const actions = typeof Swal.getActions === 'function' ? Swal.getActions() : null;
+                if (!actions) return;
+
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.id = 'opAlreadyCommissionedBtn';
+                btn.className = 'swal2-styled';
+                btn.style.backgroundColor = '#7c3aed';
+                // swal2-styled sets no colour of its own, so the button would inherit the
+                // dialog's dark body text and read as unclickable against the violet.
+                btn.style.color = '#fff';
+                btn.textContent = 'Match OP';
+
+                // Cancel stays last — it is the way out, and the affirmative choices belong
+                // together ahead of it.
+                const cancelBtn = typeof Swal.getCancelButton === 'function' ? Swal.getCancelButton() : null;
+                if (cancelBtn && cancelBtn.parentNode === actions) {
+                    actions.insertBefore(btn, cancelBtn);
+                } else {
+                    actions.appendChild(btn);
+                }
+
+                btn.addEventListener('click', () => {
                     // Closing resolves the promise as a dismissal, which resets the OP type
                     // selection below — correct here, since we are not commissioning.
                     Swal.close();
@@ -8849,7 +8659,7 @@
                         const m = document.getElementById('generateModal');
                         if (m) m.classList.add('hidden');
                     }
-                    window.openCaptureOpForCommissionedFile();
+                    window.openOpForCommissionedFile();
                 });
             },
         }).then((result) => {

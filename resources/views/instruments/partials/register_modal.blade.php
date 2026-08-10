@@ -77,6 +77,59 @@
                     </button>
                 </div>
                 
+                {{-- Commissioned-file mode. Shown only when this dialog was opened to capture the
+                     OP behind a file number that was already commissioned without one: submit
+                     then writes the OP and its Transfer of Title instead of registering an
+                     instrument. Driven by window.opCommissionedFileMode in instruments-capture.js. --}}
+                <div id="opcf-band" class="hidden bg-blue-50/60 border border-blue-200 rounded-2xl p-4 mb-6">
+                    <div class="flex items-start gap-3 mb-3">
+                        <div class="bg-blue-500/10 p-2 rounded-lg">
+                            <i data-lucide="file-check-2" class="h-4 w-4 text-blue-600"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm font-bold text-blue-900 leading-none">Already-Commissioned File</p>
+                            <p class="text-[11px] text-blue-700/80 mt-1">
+                                Pick the commissioned file this OP belongs to. Saving writes one PRA row —
+                                the Occupancy Permit itself, on this file number. No Transfer of Title is
+                                created: the permit is simply being recorded, the holder is not changing.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap items-end gap-3">
+                        <div class="flex-1 min-w-[16rem]">
+                            <label for="opcf-file-no" class="text-xs font-semibold text-gray-800 mb-1 block">
+                                Commissioned File Number <span class="text-rose-500">*</span>
+                            </label>
+                            {{-- Disabled: the number is only ever set by the Select picker, which
+                                 runs the lookup itself — there is nothing to type or confirm. --}}
+                            <div class="flex items-center gap-2">
+                                <input type="text" id="opcf-file-no" placeholder="No file selected" disabled
+                                    class="flex-1 px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-700 font-mono text-sm uppercase">
+                                <button type="button" id="opcf-select-btn"
+                                    class="px-3 py-2 bg-white text-blue-600 font-medium rounded-lg border border-blue-200 hover:bg-blue-50 text-sm whitespace-nowrap">
+                                    Select
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="opcf-result" class="hidden mt-3 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                        <div>
+                            <div class="text-gray-400 font-semibold uppercase tracking-wide text-[10px]">Commissioned To</div>
+                            <div id="opcf-file-name" class="font-semibold text-gray-800 mt-0.5">—</div>
+                        </div>
+                        <div>
+                            <div class="text-gray-400 font-semibold uppercase tracking-wide text-[10px]">Prop ID</div>
+                            <div id="opcf-prop-id" class="font-mono text-gray-700 mt-0.5">—</div>
+                        </div>
+                        <div>
+                            <div class="text-gray-400 font-semibold uppercase tracking-wide text-[10px]">Plot / Location</div>
+                            <div id="opcf-plot" class="text-gray-700 mt-0.5">—</div>
+                        </div>
+                    </div>
+                    <div id="opcf-error" class="hidden mt-3 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-800"></div>
+                </div>
+
                 @php
                     $storeRoute = isset($isEdit) && $isEdit ? route('instruments.update', $record->id) : route('instruments.store');
                     $method = isset($isEdit) && $isEdit ? 'PUT' : 'POST';

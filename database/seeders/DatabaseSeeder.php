@@ -14,6 +14,7 @@ class DatabaseSeeder extends Seeder
     public function run()
     {
         $this->call(DefaultDataUsersTableSeeder::class);
+        $this->call(GenderSeeder::class);
         $this->call(LgaDistrictSeeder::class);
         $this->call(DuplicateFilenoSeeder::class);
         $this->call(PayrollPeriodsSeeder::class);

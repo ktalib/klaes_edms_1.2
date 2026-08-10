@@ -25,6 +25,21 @@
         $status = request('status', 'Original');
         $isCtc = request('isCTC') == '1';
         $isOss = request('source') === 'oss';
+
+        // Which department issued the file. ST files are commissioned by Sectional
+        // Titling, not DCIV — recognised from the caller's ?source=st or, failing
+        // that, from the number itself (ST-… and its conversion form ST-CON-…).
+        $isSt = request('source') === 'st' || stripos((string) $fileNumber, 'ST-') === 0;
+        $department = $isSt
+            ? 'DEPARTMENT OF SECTIONAL TITLING'
+            : ($isOss ? 'DEPARTMENT OF LAND' : 'DEPARTMENT OF COMPLAINT INVESTIGATION AND VERIFICATION');
+
+        // The file type printed beside the number comes from mls_file_no.source, which
+        // says "Conversion" for both a land and a Sectional Titling conversion.
+        $fileType = trim((string) ($data['related_file_title'] ?? ''));
+        if ($isSt && strcasecmp($fileType, 'Conversion') === 0) {
+            $fileType = 'ST Conversion';
+        }
         $watermarkText = $isCtc ? 'CERTIFIED TRUE COPY' : (($status === 'Certified True Copy') ? 'CERTIFIED TRUE COPY' : 'ORIGINAL');
         $qrPayload = $trackingId ?: $fileNumber;
 
@@ -295,8 +310,8 @@
                     </td>
                     <td class="title-cell">
                         <h1 class="title-main">MINISTRY OF LAND &amp; PHYSICAL PLANNING</h1>
-                        <h2 class="title-sub">{{ $isOss ? 'DEPARTMENT OF LAND' : 'DEPARTMENT OF COMPLAINT INVESTIGATION AND VERIFICATION' }}</h2>
-                        <h3 class="title-doc">FILE COMMISSIONING SHEET</h3>
+                        <h2 class="title-sub">{{ $department }}</h2>
+                        <h3 class="title-doc">{{ $isSt ? 'ST FILE COMMISSIONING SHEET' : 'FILE COMMISSIONING SHEET' }}</h3>
                     </td>
                     <td class="logo-cell logo-cell-right">
                         <img src="{{ asset('assets/logo/logo3.jpeg') }}" alt="Right Logo" onerror="this.style.display='none'">
@@ -310,16 +325,31 @@
                     <div class="qr-subtitle" style="color:#ea1b1b">LANDS ONE STOP SHOP</div>
                     @endif
             <div class="fields">
+                {{-- On an ST sheet the ST number leads and the CON mother file follows;
+                     everywhere else the file's own number comes first. --}}
+                @if($isSt && !empty($data['related_file_number']))
+                <div class="row">
+                    <div class="label">ST FileNo:</div>
+                    {{-- The file type describes the ST application, so it rides with the
+                         ST number; the CON line below is the plain land file number. --}}
+                    <div class="value-line">
+                        {{ $data['related_file_number'] }}
+                        @if(!empty($fileType))
+                            ({{ $fileType }})
+                        @endif
+                    </div>
+                </div>
+                @endif
                 <div class="row">
                     <div class="label">File No/(File Type):</div>
                     <div class="value-line">
                         {{ $fileNumber }}
-                        @if(!empty($data['related_file_title']))
-                            ({{ $data['related_file_title'] }})
+                        @if(!empty($fileType) && !$isSt)
+                            ({{ $fileType }})
                         @endif
                     </div>
                 </div>
-                @if(!empty($data['related_file_number']))
+                @if(!$isSt && !empty($data['related_file_number']))
                 <div class="row">
                     <div class="label">Related File No:</div>
                     <div class="value-line">{{ $data['related_file_number'] }}</div>
@@ -328,7 +358,8 @@
                 @if(!empty($allottee))
                 <div class="row">
                     <div class="label">File Title:</div>
-                    <div class="value-line">{{ $allottee }}</div>
+                    {{-- Names print in full caps on this sheet. --}}
+                    <div class="value-line">{{ mb_strtoupper($allottee) }}</div>
                 </div>
                 @endif
                 @if(!empty($originalOpHolder))
@@ -337,10 +368,14 @@
                     <div class="value-line">{{ $originalOpHolder }}</div>
                 </div>
                 @endif
+                {{-- ST files carry no commissioning reason, so the row is dropped
+                     rather than printed empty. --}}
+                @unless($isSt)
                 <div class="row">
                     <div class="label">{{ $isOss ? 'Plot No:' : 'Reason:' }}</div>
                     <div class="value-line{{ $isOss ? '' : ' wrap' }}">{{ $reason }}</div>
                 </div>
+                @endunless
                 <div class="row">
                     <div class="label">TP No:</div>
                     <div class="value-line">{{ $tpNumber }}</div>

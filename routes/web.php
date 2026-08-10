@@ -72,6 +72,19 @@ Route::prefix('mobile')->name('mobile.')->group(function () {
         Route::post('/logout',          [MobileController::class, 'logout'])->name('logout');
     });
 });
+
+// Role probe for the Flutter WebView wrapper (decides whether to apply FLAG_SECURE).
+// Session-authenticated via the cookie the WebView already holds — no token handling.
+// Stable response contract: {"role": string, "is_super_admin": boolean}.
+// Clients must match on is_super_admin, never on the role string.
+Route::middleware(['auth'])->get('/user/role', function (Request $request) {
+    $user = $request->user();
+
+    return response()->json([
+        'role'           => (string) $user->assign_role,
+        'is_super_admin' => $user->isSuperAdmin(),
+    ]);
+})->name('user.role');
 // ─────────────────────────────────────────────────────────────────────────
 Route::get('/clear-all-caches', function () {
     try {

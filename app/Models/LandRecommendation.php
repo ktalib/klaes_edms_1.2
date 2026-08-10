@@ -113,6 +113,7 @@ class LandRecommendation extends Model
         'dimensions_text',
         'page_survey_report',
         'survey_report',
+        'physical_planning_comment',
         'improvement',
         'revision_period',
         'time_of_erection',

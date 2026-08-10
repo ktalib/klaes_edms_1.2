@@ -1247,12 +1247,16 @@ class ScanUploadsController extends Controller
         $validated = $request->validate([
             'search' => 'nullable|string|max:100',
             'registry' => 'nullable|string|max:100',
+            // 'conversion' -> only CON- files, 'direct' -> everything else. ST
+            // commissioning offers different pickers for the two allocation types.
+            'file_class' => 'nullable|string|in:conversion,direct',
             'per_page' => 'nullable|integer|min:5|max:50',
         ]);
 
         try {
             $search = $validated['search'] ?? '';
             $registry = $validated['registry'] ?? null;
+            $fileClass = $validated['file_class'] ?? null;
             $perPage = $validated['per_page'] ?? 25;
 
             // Search file_indexings for matching file numbers
@@ -1270,7 +1274,14 @@ class ScanUploadsController extends Controller
             if ($registry) {
                 $query->where('registry', $registry);
             }
-            
+
+            // A conversion file is identified by its CON- prefix.
+            if ($fileClass === 'conversion') {
+                $query->where('file_number', 'like', 'CON-%');
+            } elseif ($fileClass === 'direct') {
+                $query->where('file_number', 'not like', 'CON-%');
+            }
+
             $files = $query
                 ->select(
                     'file_number', 'file_title', 'registry', 'tracking_id',

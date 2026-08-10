@@ -924,14 +924,8 @@
                                                    Gender
                                                 </label>
                                                 <div class="flex items-center h-[42px]">
-                                                    <select id="gender" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                                                        name="gender" x-model="gender" required>
-                                                        <option value="">Select Gender</option>
-                                                        <option value="Male">Male</option>
-                                                        <option value="Female">Female</option>
-                                                        <option value="Corporate">Corporate</option>
-                                                        <option value="Joint">Joint</option>
-                                                    </select>
+                                                    <x-gender-select class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                                                        x-model="gender" required />
                                                 </div>
                                             </div>
 
@@ -992,12 +986,8 @@
                                         <div x-show="fileOption === 'extension'">
                                             <label class="block text-sm font-medium text-gray-700 mb-2">
                                                 <i data-lucide="link" class="w-4 h-4 inline mr-1"></i>
-                                                <span x-text="extensionType === 'plot' ? 'Select Existing File (Plot Extension) — original number is retained' : 'Select Existing MLS File Number to Extend'"></span>
+                                                Select Existing MLS File Number to Extend
                                             </label>
-                                            <div x-show="extensionType === 'plot'" class="mb-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800">
-                                                <i data-lucide="git-branch" class="w-3 h-3 mr-1"></i>
-                                                Plot Extension
-                                            </div>
 
                                             <div class="flex space-x-2">
                                                 <div class="relative flex-grow">
@@ -1024,7 +1014,7 @@
 
                                             <p class="mt-2 text-xs text-gray-500">
                                                 <i data-lucide="info" class="w-3 h-3 inline mr-1"></i>
-                                                <span x-text="extensionType === 'plot' ? 'Search and select the existing file. Its original file number will be kept; details auto-fill if indexed.' : 'Search and select the file you wish to extend.'"></span>
+                                                Search and select the file you wish to extend.
                                             </p>
                                         </div>
 
@@ -2717,44 +2707,6 @@
     <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
     <script src="{{ asset('js/instruments-capture.js') }}?v={{ time() }}"></script>
 
-    <!-- Extension Type Selection Modal (File Extension vs Plot Extension) -->
-    <div id="extensionTypeModal" class="fixed inset-0 bg-gray-900 bg-opacity-70 hidden overflow-y-auto h-full w-full z-[70]">
-        <div class="relative top-32 mx-auto p-6 border w-full max-w-md shadow-xl rounded-lg bg-white">
-            <div class="flex items-center justify-between mb-4 pb-3 border-b border-gray-200">
-                <h3 class="text-lg font-semibold text-gray-900">
-                    <i data-lucide="git-branch" class="w-5 h-5 inline mr-1 text-blue-600"></i>
-                    Select Extension Type
-                </h3>
-                <button type="button" onclick="cancelExtensionTypeSelection()" class="text-gray-400 hover:text-gray-600 transition-colors">
-                    <i data-lucide="x" class="w-5 h-5"></i>
-                </button>
-            </div>
-            <p class="text-sm text-gray-500 mb-4">Choose how this extension should be processed.</p>
-            <div class="space-y-3">
-                <button type="button" onclick="selectExtensionType('file')"
-                        class="w-full text-left p-4 rounded-lg border-2 border-gray-200 hover:border-blue-500 hover:bg-blue-50 transition-colors group">
-                    <div class="flex items-start gap-3">
-                        <i data-lucide="file-plus" class="w-5 h-5 text-blue-600 mt-0.5"></i>
-                        <div>
-                            <div class="text-sm font-semibold text-gray-900 group-hover:text-blue-700">File Extension</div>
-                            <div class="text-xs text-gray-500 mt-0.5">Generates a new file number (<span class="font-mono">… AND EXTENSION</span>). Existing workflow.</div>
-                        </div>
-                    </div>
-                </button>
-                <button type="button" onclick="selectExtensionType('plot')"
-                        class="w-full text-left p-4 rounded-lg border-2 border-gray-200 hover:border-rose-500 hover:bg-rose-50 transition-colors group">
-                    <div class="flex items-start gap-3">
-                        <i data-lucide="map-pin" class="w-5 h-5 text-rose-600 mt-0.5"></i>
-                        <div>
-                            <div class="text-sm font-semibold text-gray-900 group-hover:text-rose-700">Plot Extension</div>
-                            <div class="text-xs text-gray-500 mt-0.5">Keeps the original file number. Uses an existing file and saves a separate Plot Extension transaction.</div>
-                        </div>
-                    </div>
-                </button>
-            </div>
-        </div>
-    </div>
-
     <!-- Printer Manager Modal (Moved to Root-ish Level) -->
     <div id="printerManagerModal" class="fixed inset-0 bg-gray-900 bg-opacity-80 hidden overflow-y-auto h-full w-full z-50">
         <!-- Modal Panel -->
@@ -2980,6 +2932,8 @@
              and ST commissioning. Must load before mls_js, whose Commission Summary
              card calls renderRecordSummaryGroups(). --}}
         <script src="{{ asset('js/shared/record-summary-card.js') }}?v={{ @filemtime(public_path('js/shared/record-summary-card.js')) }}"></script>
+        {{-- window.generateConversionApplication — shared with the ST File Commissioning table. --}}
+        <script src="{{ asset('js/shared/conversion-application-print.js') }}?v={{ @filemtime(public_path('js/shared/conversion-application-print.js')) }}"></script>
         @include('generate_fileno.mls_js')
         @include('generate_fileno.view_batches')
         <script src="{{ asset('js/global-fileno-modal.js') }}"></script>

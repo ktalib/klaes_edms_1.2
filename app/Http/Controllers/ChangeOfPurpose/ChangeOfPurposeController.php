@@ -500,20 +500,75 @@ class ChangeOfPurposeController extends Controller
         return $this->printAcknowledgement($id);
     }
 
-    public function generateRecommendation(int $id): JsonResponse
+    public function generateRecommendation(Request $request, int $id): JsonResponse
     {
-        $record = ChangeOfPurposeApplication::where('status', ChangeOfPurposeApplication::STATUS_APPROVED)->findOrFail($id);
-        $record->update([
+        // The recommendation memo is the document that goes UP to the Permanent
+        // Secretary/Honourable Commissioner for approval, so it must be available
+        // while the application is still pending. The only precondition — the one
+        // the listing menu enforces — is KNUPDA clearance.
+        $record = ChangeOfPurposeApplication::query()
+            ->where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
+            ->find($id);
+
+        if (!$record) {
+            return response()->json(['success' => false, 'message' => 'Application not found.'], 404);
+        }
+
+        if (strcasecmp((string) $record->knupda_status, 'Approved') !== 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'KNUPDA approval is required before the recommendation can be generated.',
+            ], 422);
+        }
+
+        // Memo details entered on the Generate Recommendation card. All optional —
+        // an officer may print the sheet with blanks and complete it by hand.
+        $validator = Validator::make($request->all(), [
+            'rec_page_application'  => 'nullable|string|max:50',
+            'rec_page_planning'     => 'nullable|string|max:50',
+            'rec_page_site_plan'    => 'nullable|string|max:50',
+            'rec_title_alias'       => 'nullable|string|max:100',
+            'rec_measurement_a'     => 'nullable|string|max:2000',
+            'rec_measurement_b'     => 'nullable|string|max:2000',
+            'rec_term_years'        => 'nullable|integer|min:0|max:999',
+            'rec_commencement_date' => 'nullable|date',
+            'rec_residual_years'    => 'nullable|integer|min:0|max:999',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $record->update($validator->validated() + [
             'recommendation_generated_at' => now(),
             'updated_by' => Auth::id(),
         ]);
+
         return response()->json(['success' => true, 'message' => 'Recommendation generated.']);
     }
 
     public function printRecommendation(int $id)
     {
         $record = ChangeOfPurposeApplication::findOrFail($id);
-        return view('change_of_purpose.print.recommendation', compact('record'));
+
+        // `purpose` holds the code (COM/RES/...), `land_use` the current use as
+        // captured — resolve both to the labels the memo reads in prose.
+        $currentUseLabel = self::LAND_USE_OPTIONS[strtoupper((string) $record->land_use)]
+            ?? ($record->land_use ?: null);
+        $newPurposeLabel = self::LAND_USE_OPTIONS[strtoupper((string) $record->purpose)]
+            ?? ($record->new_purpose ?: $record->purpose);
+
+        return view('change_of_purpose.print.recommendation', compact(
+            'record',
+            'currentUseLabel',
+            'newPurposeLabel'
+        ));
     }
 
     public function updateKnupda(Request $request, int $id): JsonResponse

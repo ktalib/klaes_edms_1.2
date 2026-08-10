@@ -1079,11 +1079,7 @@
 
           <div class="form-group">
             <label for="gender" class="form-label required">Gender</label>
-            <select id="gender" class="input" required>
-              <option value="">Select Gender</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-            </select>
+            <x-gender-select class="input" required />
           </div>
         </div>
 

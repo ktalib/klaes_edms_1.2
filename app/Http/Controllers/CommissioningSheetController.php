@@ -63,6 +63,76 @@ class CommissioningSheetController extends Controller
     }
 
     /**
+     * Fill blank property fields from the file's indexing record.
+     *
+     * An ST primary keeps its location in file_indexings — only unit files store it
+     * on the ST row — so a sheet printed straight off the ST table has no Location,
+     * TP No, Plot No or LGA to send. Only empty fields are touched, so a caller that
+     * supplied its own values (MLS, OSS) is never overridden.
+     *
+     * @param array $data Sheet payload keyed like file_commissioning_sheets.
+     */
+    private function fillPropertyFieldsFromIndexing(array $data): array
+    {
+        $fileNo = trim((string) ($data['file_number'] ?? ''));
+        if ($fileNo === '') {
+            return $data;
+        }
+
+        $missing = empty($data['location']) || empty($data['tp_number'])
+            || empty($data['plot_number']) || empty($data['lga']);
+        if (!$missing) {
+            return $data;
+        }
+
+        $indexing = DB::connection('sqlsrv')
+            ->table('file_indexings')
+            ->where(function ($q) use ($fileNo) {
+                $q->where('file_number', $fileNo)->orWhere('mls_file_no', $fileNo);
+            })
+            ->where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
+            ->orderByDesc('id')
+            ->first();
+
+        if (!$indexing) {
+            return $data;
+        }
+
+        if (empty($data['location'])) {
+            // District and LGA only — the street name belongs to the address, not to
+            // the Location line on this sheet. The LGA is upper-cased to match the
+            // district, which is stored that way. Stored location is the last resort.
+            $data['location'] = implode(', ', array_filter([
+                trim((string) ($indexing->district ?? '')),
+                mb_strtoupper(trim((string) ($indexing->lga ?? ''))),
+            ])) ?: ($indexing->location ?: null);
+        }
+        if (empty($data['plot_number'])) {
+            $data['plot_number'] = $indexing->plot_number ?: null;
+        }
+        if (empty($data['lga'])) {
+            $data['lga'] = $indexing->lga ?: null;
+        }
+
+        // file_indexings holds no TP number — that lives on the MLS record.
+        if (empty($data['tp_number'])) {
+            $mlsRow = DB::connection('sqlsrv')
+                ->table('mls_file_no')
+                ->where('full_file_number', $fileNo)
+                ->orderByDesc('id')
+                ->first();
+
+            if ($mlsRow && !empty($mlsRow->tp_no)) {
+                $data['tp_number'] = $mlsRow->tp_no;
+            }
+        }
+
+        return $data;
+    }
+
+    /**
      * Generate and save commissioning sheet data (PDF generated on frontend)
      */
     public function generateAndPrint(Request $request)
@@ -157,6 +227,9 @@ class CommissioningSheetController extends Controller
                     $data['related_file_number'] = $fnRow->related_fileno;
                 }
             }
+
+            // 3. Fill the property fields the caller left blank from the indexed record.
+            $data = $this->fillPropertyFieldsFromIndexing($data);
 
             // commissioning_time is not a DB column; store it temporarily for the print view
             $commissioningTime = $data['commissioning_time'] ?? null;
@@ -369,6 +442,21 @@ class CommissioningSheetController extends Controller
                 $data['commissioning_date'] = $dcivMeta->commissioning_date;
                 $data['commissioning_time'] = $dcivMeta->commissioning_time;
                 $data['tracking_id'] = $dcivMeta->tracking_id;
+            }
+
+            // Sheets saved before the location fallback existed (and any saved with the
+            // fields blank) still print the property details from the indexed record.
+            $data = $this->fillPropertyFieldsFromIndexing($data);
+
+            // The LGA prints in caps wherever it appears in the Location line — including
+            // on sheets stored before that rule existed.
+            $lga = trim((string) ($data['lga'] ?? ''));
+            if ($lga !== '' && !empty($data['location'])) {
+                $data['location'] = preg_replace(
+                    '/' . preg_quote($lga, '/') . '/i',
+                    mb_strtoupper($lga),
+                    (string) $data['location']
+                );
             }
 
             // Accept commissioning_time from query param (passed from OSS table)

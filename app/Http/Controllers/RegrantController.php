@@ -68,7 +68,9 @@ class RegrantController extends Controller
     private function registerQuery(string $search)
     {
         return TitleStatusApplication::query()
-            ->where('title_type', TitleStatusApplication::TYPE_REGRANT)
+            // Both directions belong in the register: "Re-granted From" on the new file
+            // and "Re-granted To" on the old one, alongside legacy bare 'Re-grant' rows.
+            ->whereIn('title_type', TitleStatusApplication::REGRANT_TYPES)
             ->where(function ($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
             })
@@ -152,7 +154,7 @@ class RegrantController extends Controller
     private function stats(): array
     {
         $registerTotal = TitleStatusApplication::query()
-            ->where('title_type', TitleStatusApplication::TYPE_REGRANT)
+            ->whereIn('title_type', TitleStatusApplication::REGRANT_TYPES)
             ->where(function ($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
             })
@@ -184,7 +186,7 @@ class RegrantController extends Controller
         }
 
         $existing = TitleStatusApplication::where('file_no', $fileNo)
-            ->where('title_type', TitleStatusApplication::TYPE_REGRANT)
+            ->whereIn('title_type', TitleStatusApplication::REGRANT_TYPES)
             ->where(function ($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
             })

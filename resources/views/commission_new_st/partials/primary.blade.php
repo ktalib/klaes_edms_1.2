@@ -9,8 +9,64 @@
                         </div>
 
                         <div class="mb-6">
-                           
+
                             <p class="text-gray-600">Generate and commission a new primary file number for sectional titling</p>
+                        </div>
+
+                        {{-- Allocation tabs: the single control for Allocation Type. The
+                             radios further down mirror the choice but are not clickable,
+                             so there is only one way to switch. --}}
+                        <div class="mb-6 border-b border-gray-200" id="primaryAllocationTabs">
+                            <nav class="-mb-px flex gap-3" aria-label="Allocation type">
+                                <button type="button"
+                                        data-allocation="Direct Allocation"
+                                        data-active-class="border-blue-600 bg-blue-50 text-blue-700"
+                                        data-idle-class="border-transparent text-blue-400 hover:text-blue-600 hover:bg-blue-50/60"
+                                        onclick="selectPrimaryAllocationTab('Direct Allocation')"
+                                        class="primary-allocation-tab flex items-center gap-2 rounded-t-lg border-b-2 px-4 pb-3 pt-2 text-sm font-semibold transition-colors">
+                                    <i data-lucide="file-plus" class="w-4 h-4"></i>
+                                    <span>Direct Allocation Primary (DAP)</span>
+                                </button>
+                                <button type="button"
+                                        data-allocation="Conversion"
+                                        data-active-class="border-indigo-600 bg-indigo-50 text-indigo-700"
+                                        data-idle-class="border-transparent text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50/60"
+                                        onclick="selectPrimaryAllocationTab('Conversion')"
+                                        class="primary-allocation-tab flex items-center gap-2 rounded-t-lg border-b-2 px-4 pb-3 pt-2 text-sm font-semibold transition-colors">
+                                    <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                                    <span>Conversion Primary (CON-P)</span>
+                                </button>
+                            </nav>
+                        </div>
+
+                        {{-- Conversion sub-type — sits directly under the CON-P tab it
+                             belongs to: commission a brand-new CON land file, or hang the
+                             ST primary off a conversion that already exists. --}}
+                        <div id="conversionModeBlock" class="hidden mb-6 bg-indigo-50/60 border border-indigo-200 rounded-xl p-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-3">
+                                <i data-lucide="git-branch" class="w-4 h-4 inline mr-1"></i>
+                                Conversion Type <span class="text-red-500">*</span>
+                            </label>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <label class="flex items-start p-3 bg-white rounded-lg border-2 border-indigo-200 cursor-pointer hover:border-indigo-400 transition-colors">
+                                    <input type="radio" name="conversion_mode" value="new" checked
+                                           onchange="handleConversionModeChange(this)"
+                                           class="mt-0.5 w-4 h-4 text-indigo-600 border-gray-300 focus:ring-indigo-500">
+                                    <span class="ml-2">
+                                        <span class="block text-sm font-medium text-gray-900">New CON-P</span>
+                                        <span class="block text-xs text-gray-500">Commission a new CON land file as the mother</span>
+                                    </span>
+                                </label>
+                                <label class="flex items-start p-3 bg-white rounded-lg border-2 border-gray-200 cursor-pointer hover:border-indigo-400 transition-colors">
+                                    <input type="radio" name="conversion_mode" value="existing"
+                                           onchange="handleConversionModeChange(this)"
+                                           class="mt-0.5 w-4 h-4 text-indigo-600 border-gray-300 focus:ring-indigo-500">
+                                    <span class="ml-2">
+                                        <span class="block text-sm font-medium text-gray-900">Existing / Extant Conversion</span>
+                                        <span class="block text-xs text-gray-500">Pick a CON file already in the registry</span>
+                                    </span>
+                                </label>
+                            </div>
                         </div>
 
                         {{-- Land Use Selection Section --}}
@@ -216,76 +272,118 @@
                                     </div>
                                     
                                     <div class="bg-white rounded-lg border border-green-100 p-6 shadow-inner">
-                                        <div class="flex items-center justify-between mb-4">
-                                            <label class="block text-sm font-medium text-gray-700">
-                                                <i data-lucide="hash" class="w-4 h-4 inline mr-1"></i>
-                                                Applied File Number
-                                            </label>
-                                        </div>
-
-                                        <div class="relative">
-                                            <select id="applied-file-number"
-                                                    name="applied_file_number"
-                                                    class="w-full bg-gray-50 border-2 border-green-200 rounded-lg text-gray-900 font-mono text-lg select2-file-number"
-                                                    style="width:100%">
-                                                <option value="">Search and select file number...</option>
-                                            </select>
-                                        </div>
-                                        
-                                        <div class="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
-                                            <div class="flex items-start">
-                                                <i data-lucide="info" class="w-4 h-4 text-green-600 mr-2 mt-0.5 flex-shrink-0"></i>
-                                                <p class="text-xs text-green-800">
-                                                    Link this application to an existing file number from the registry.
-                                                </p>
-                                            </div>
-                                        </div>
-
-                                        {{-- Allocation Type Section (inside green card) --}}
-                                        <div class="mt-6 pt-6 border-t border-green-200">
+                                        {{-- Allocation Type comes first: it decides whether the rest of
+                                             this card asks for an existing file or shows the CON number
+                                             that will be commissioned. --}}
+                                        <div class="mb-6 pb-6 border-b border-green-200">
                                             <div class="flex items-center mb-4">
                                                 <div class="bg-orange-500 p-2 rounded-lg mr-2">
                                                     <i data-lucide="clipboard-list" class="w-4 h-4 text-white"></i>
                                                 </div>
                                                 <div>
                                                     <h4 class="text-sm font-semibold text-gray-900">Allocation Type <span class="text-red-500">*</span></h4>
-                                                    <p class="text-xs text-gray-600">Select the type of application</p>
+                                                    <p class="text-xs text-gray-600">Set by the DAP / CON-P tab at the top of this form</p>
                                                 </div>
                                             </div>
-                                            
-                                            <div class="flex items-center space-x-6 bg-white rounded-lg p-3 border border-gray-200">
+
+                                            {{-- Mirrors the tab; disabled so the tab stays the only control.
+                                                 A disabled radio still answers :checked, which is how the
+                                                 payload and the preview read the selection. --}}
+                                            <div class="flex items-center space-x-6 bg-gray-50 rounded-lg p-3 border border-gray-200">
                                                 {{-- Direct Allocation Option --}}
-                                                <label class="flex items-center cursor-pointer">
-                                                    <input type="radio" 
-                                                           name="application_type" 
-                                                           value="Direct Allocation" 
-                                                           checked 
-                                                           onchange="handlePrimaryApplicationTypeChange(this)"
+                                                <label class="flex items-center cursor-not-allowed">
+                                                    <input type="radio"
+                                                           name="application_type"
+                                                           value="Direct Allocation"
+                                                           checked
+                                                           disabled
                                                            class="w-4 h-4 text-green-600 border-gray-300 focus:ring-green-500">
-                                                    <span class="ml-2 text-sm font-medium text-gray-900">Direct Allocation</span>
+                                                    <span class="ml-2 text-sm font-medium text-gray-700">Direct Allocation</span>
                                                 </label>
-                                                
+
                                                 {{-- Conversion Option --}}
-                                                <label class="flex items-center cursor-pointer">
-                                                    <input type="radio" 
-                                                           name="application_type" 
-                                                           value="Conversion" 
-                                                           onchange="handlePrimaryApplicationTypeChange(this)"
+                                                <label class="flex items-center cursor-not-allowed">
+                                                    <input type="radio"
+                                                           name="application_type"
+                                                           value="Conversion"
+                                                           disabled
                                                            class="w-4 h-4 text-green-600 border-gray-300 focus:ring-green-500">
-                                                    <span class="ml-2 text-sm font-medium text-gray-900">Conversion</span>
+                                                    <span class="ml-2 text-sm font-medium text-gray-700">ST Conversion</span>
                                                 </label>
                                             </div>
-                                            
+
                                             <div class="mt-3 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
                                                 <div class="flex items-start">
                                                     <i data-lucide="info" class="w-4 h-4 text-yellow-700 mr-2 mt-0.5 flex-shrink-0"></i>
                                                     <p class="text-xs text-yellow-800">
-                                                        <strong>Direct Allocation:</strong> New application with immediate file number assignment. 
-                                                        <strong>Conversion:</strong> Converting an existing application.
+                                                        <strong>Direct Allocation:</strong> New application linked to an existing file number (ST-{CODE}-{YEAR}-{SERIAL}).
+                                                        <strong>ST Conversion:</strong> Commissions a new CON land file as the mother file, with the ST number created under it (e.g. ST-CON-IND-{{ date('Y') }}-{SERIAL}).
                                                     </p>
                                                 </div>
                                             </div>
                                         </div>
+
+                                        {{-- Direct Allocation: link to a file that already exists in the registry. --}}
+                                        <div id="appliedFileNumberBlock">
+                                            <div class="flex items-center justify-between mb-4">
+                                                <label class="block text-sm font-medium text-gray-700">
+                                                    <i data-lucide="hash" class="w-4 h-4 inline mr-1"></i>
+                                                    <span id="appliedFileNumberLabel">Applied File Number</span>
+                                                </label>
+                                            </div>
+
+                                            <div class="relative">
+                                                <select id="applied-file-number"
+                                                        name="applied_file_number"
+                                                        class="w-full bg-gray-50 border-2 border-green-200 rounded-lg text-gray-900 font-mono text-lg select2-file-number"
+                                                        style="width:100%">
+                                                    <option value="">Search and select file number...</option>
+                                                </select>
+                                            </div>
+
+                                            <div class="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
+                                                <div class="flex items-start">
+                                                    <i data-lucide="info" class="w-4 h-4 text-green-600 mr-2 mt-0.5 flex-shrink-0"></i>
+                                                    <p class="text-xs text-green-800" id="appliedFileNumberHint">
+                                                        Link this application to an existing file number from the registry.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {{-- New CON-P: the CON land file does not exist yet — it is
+                                             commissioned here, as the mother file of the ST primary. --}}
+                                        <div id="conversionFileNumberBlock" class="hidden">
+                                            <div class="flex items-center justify-between mb-4">
+                                                <label class="block text-sm font-medium text-gray-700">
+                                                    <i data-lucide="refresh-cw" class="w-4 h-4 inline mr-1"></i>
+                                                    Conversion File Number (Mother File)
+                                                </label>
+                                                <span class="bg-green-500 px-2 py-0.5 rounded-full text-white text-[10px] font-medium">AUTO</span>
+                                            </div>
+
+                                            <div class="relative">
+                                                <input type="text"
+                                                       id="conversion-fileno-display"
+                                                       class="w-full px-4 py-4 bg-green-50 border-2 border-green-200 rounded-lg text-green-900 font-mono text-xl font-bold cursor-not-allowed"
+                                                       value=""
+                                                       readonly
+                                                       title="Conversion File Number - Auto Generated">
+                                                <div class="absolute inset-y-0 right-0 flex items-center pr-4">
+                                                    <i data-lucide="lock" class="w-6 h-6 text-green-500"></i>
+                                                </div>
+                                            </div>
+
+                                            <div class="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
+                                                <div class="flex items-start">
+                                                    <i data-lucide="info" class="w-4 h-4 text-green-600 mr-2 mt-0.5 flex-shrink-0"></i>
+                                                    <p class="text-xs text-green-800">
+                                                        Commissioned together with the ST file number: this CON file becomes the mother file, and the ST number on the left is created under it.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
                                     </div>
                                 </div>
                             </div>
@@ -545,7 +643,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 dataType: 'json',
                 delay: 250,
                 data: function (params) {
-                    return { search: params.term, per_page: 20 };
+                    // Direct Allocation lists everything except CON- files; an
+                    // Existing/Extant conversion lists only CON- files.
+                    return {
+                        search: params.term,
+                        per_page: 20,
+                        file_class: (typeof getAppliedFileClass === 'function') ? getAppliedFileClass() : 'direct'
+                    };
                 },
                 processResults: function (data) {
                     return {

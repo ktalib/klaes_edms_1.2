@@ -1341,35 +1341,85 @@
 
               <!-- Section: Conversion Specific Fields (Conditional) -->
                     <div id="conversion-fields-section" class="{{ old('type', $recommendation->type ?? '') == 'Conversion' ? '' : 'hidden' }} bg-amber-50/50 border border-amber-200 rounded-xl p-6 space-y-4 col-span-2">
-                        <div class="flex items-center gap-2 mb-2">
+                        <div class="flex flex-wrap items-center gap-2 mb-2">
                             <i data-lucide="refresh-cw" class="h-4 w-4 text-amber-600"></i>
                             <h3 class="text-sm font-bold text-amber-900 uppercase tracking-tight">Page Number details</h3>
+
+                            {{-- Regular batch only. A conversion batch is a set of unrelated
+                                 files, and the survey report and Physical Planning comment are
+                                 read off each file separately — so this card steps the batch
+                                 the same way Grant Conditions does, on the same shared index,
+                                 which keeps all three cards showing one file at a time. --}}
+                            <div class="per-file-step-nav hidden ml-auto flex items-center gap-2">
+                                <span class="per-file-step-file font-mono text-[11px] font-bold text-slate-700 truncate max-w-[200px]"></span>
+                                <span class="per-file-step-untick hidden px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 text-slate-600 uppercase tracking-wide"
+                                      title="This file is unticked in the table, so these values will not be saved">Not in batch</span>
+                                <div class="flex items-center gap-1 rounded-lg border border-amber-200 bg-white p-0.5">
+                                    <button type="button" class="per-file-step-prev p-1.5 rounded-md text-amber-700 hover:bg-amber-50 disabled:opacity-30 disabled:cursor-not-allowed transition" title="Previous file">
+                                        <i data-lucide="chevron-left" class="h-4 w-4"></i>
+                                    </button>
+                                    <span class="per-file-step-label px-2 text-[11px] font-bold text-slate-700 tabular-nums whitespace-nowrap">1 of 1</span>
+                                    <button type="button" class="per-file-step-next p-1.5 rounded-md text-amber-700 hover:bg-amber-50 disabled:opacity-30 disabled:cursor-not-allowed transition" title="Next file">
+                                        <i data-lucide="chevron-right" class="h-4 w-4"></i>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                        
-                        {{-- Ordered the way the file is worked through: the application
-                             first, then Physical Planning's page, then the survey report
-                             and the detail that goes with it. --}}
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Application Page No</label>
-                                <input type="text" name="page" value="{{ old('page', $recommendation->page ?? '') }}"
-                                    class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
+
+                        {{-- The Application and Physical Planning page numbers are captured
+                             per child in the batch table (the Pg / Memo boxes), so they are
+                             stood down here rather than offering a second, batch-wide place
+                             to key the same two numbers. --}}
+                        <p data-batch-only class="text-[11px] font-semibold text-amber-900 bg-white/70 border border-amber-200 rounded-lg px-3 py-2">
+                            Application Page No and Physical Planning Page No are keyed per file in the
+                            table above &mdash; the <span class="font-mono">Pg</span> and
+                            <span class="font-mono">Memo</span> boxes.
+                            What is below is captured for the file named on the stepper.
+                        </p>
+
+                        {{-- Laid out the way the page numbers are read off the file: the
+                             application page on its own, then each page number paired on
+                             one line with the detail it belongs to (survey report, then
+                             Physical Planning's comment). The page-number inputs are
+                             narrow because they only ever hold a page number. --}}
+                        <div class="space-y-4 mb-6">
+                            <div class="grid grid-cols-12 gap-4" data-batch-child>
+                                <div class="col-span-6 sm:col-span-4 md:col-span-3">
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono whitespace-nowrap">Application Page No</label>
+                                    <input type="text" name="page" value="{{ old('page', $recommendation->page ?? '') }}"
+                                        title="Application Page No" placeholder="App pg"
+                                        class="w-full max-w-[96px] border border-slate-200 rounded-lg px-3 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
+                                </div>
                             </div>
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Physical Planning Page No</label>
-                                <input type="text" name="page_2" value="{{ old('page_2', $recommendation->page_2 ?? '') }}"
-                                    class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
+
+                            <div class="grid grid-cols-12 gap-4">
+                                <div class="col-span-6 sm:col-span-4 md:col-span-3">
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono whitespace-nowrap">Survey Report Page No</label>
+                                    <input type="text" name="page_survey_report" value="{{ old('page_survey_report', $recommendation->page_survey_report ?? '') }}"
+                                        title="Survey Report Page No" placeholder="Rpt pg"
+                                        class="w-full max-w-[96px] border border-slate-200 rounded-lg px-3 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
+                                </div>
+                                <div class="pp-detail-col col-span-6 sm:col-span-8 md:col-span-9">
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Survey Report Detail</label>
+                                    <input type="text" name="survey_report" value="{{ old('survey_report', $recommendation->survey_report ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition"
+                                        placeholder="Surveyor's report reference / findings">
+                                </div>
                             </div>
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Survey Report Page No</label>
-                                <input type="text" name="page_survey_report" value="{{ old('page_survey_report', $recommendation->page_survey_report ?? '') }}"
-                                    class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Survey Report Detail</label>
-                                <input type="text" name="survey_report" value="{{ old('survey_report', $recommendation->survey_report ?? '') }}"
-                                    class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition"
-                                    placeholder="Reference/Description">
+
+                            <div class="grid grid-cols-12 gap-4">
+                                <div class="col-span-6 sm:col-span-4 md:col-span-3" data-batch-child>
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono whitespace-nowrap">Physical Planning Page No</label>
+                                    <input type="text" name="page_2" value="{{ old('page_2', $recommendation->page_2 ?? '') }}"
+                                        title="Physical Planning Page No" placeholder="PP pg"
+                                        class="w-full max-w-[96px] border border-slate-200 rounded-lg px-3 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
+                                </div>
+                                <div class="pp-detail-col col-span-6 sm:col-span-8 md:col-span-9">
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Physical Planning Comment</label>
+                                    <input type="text" name="physical_planning_comment" value="{{ old('physical_planning_comment', $recommendation->physical_planning_comment ?? '') }}"
+                                        class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition"
+                                        placeholder="Physical Planning's comment / recommendation">
+                                </div>
                             </div>
                         </div>
 
@@ -1378,16 +1428,19 @@
                             <div>
                                 <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Improvement</label>
                                 <input type="text" name="improvement" value="{{ old('improvement', $recommendation->improvement ?? '') }}"
+                                    placeholder="Improvement on the land"
                                     class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
                             </div>
                             <div>
                                 <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Revision Period</label>
                                 <input type="text" name="revision_period" value="{{ old('revision_period', $recommendation->revision_period ?? '') }}"
+                                    placeholder="Rent revision period"
                                     class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
                             </div>
                             <div>
                                 <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono">Time of Erection</label>
                                 <input type="text" name="time_of_erection" value="{{ old('time_of_erection', $recommendation->time_of_erection ?? '') }}"
+                                    placeholder="When the building was erected"
                                     class="w-full border border-slate-200 rounded-lg px-4 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
                             </div>
                         </div>
@@ -1759,6 +1812,17 @@ document.addEventListener('DOMContentLoaded', function () {
        `hidden` class on #app-type-extra independently. */
     #land-recommendation-form.batch-mode [data-batch-child] { display: none !important; }
 
+    /* The mirror of the above: notes that only make sense while a batch is on. */
+    #land-recommendation-form:not(.batch-mode) [data-batch-only] { display: none !important; }
+
+    /* Page Number details: with the Application / Physical Planning page numbers
+       stood down (the table owns them), the
+       detail box beside each would otherwise keep its 10-column width and leave a
+       gap where the page number used to be. */
+    #land-recommendation-form.batch-mode #conversion-fields-section .pp-detail-col {
+        grid-column: span 12 / span 12;
+    }
+
     /* The row Apply-to-all copies from. A bar down the left edge rather than a row
        background, because each column carries its own tint for what Apply-to-all
        does to it and a row colour would sit under all of them. */
@@ -1872,11 +1936,13 @@ document.addEventListener('DOMContentLoaded', function () {
     // undefined at that point.
     //
     // Every field a regular batch captures once per file, by input name, across
-    // both stepped cards. Order matters on the way in — preparation_fees is
+    // the stepped cards. Order matters on the way in — preparation_fees is
     // written before preparation_fees_words so the derived wording cannot
-    // overwrite the stored one. Anything added to either card must be listed here,
-    // and in LandRecommendationController::PER_CHILD_GRANT_FIELDS, or it will not
-    // travel per file.
+    // overwrite the stored one. Anything added to any stepped card must be listed
+    // here, and in LandRecommendationController::PER_CHILD_GRANT_FIELDS, or it
+    // will not travel per file. Each name must match exactly one input on the
+    // form: the lookup is a querySelector by name and would otherwise step a
+    // different card's field.
     var PER_FILE_FIELDS = [
         // Grant Conditions
         'cofo_year', 'selected_year', 'term', 'development_value',
@@ -1885,7 +1951,16 @@ document.addEventListener('DOMContentLoaded', function () {
         // Applicant & Property. A hand-picked set spans layouts, so TP No. cannot
         // be captured once for the whole batch. Application Date stays batch-wide
         // — one date for the batch is fine.
-        'layout_plan_no'
+        'layout_plan_no',
+        // Page Number details — the whole card, not just the page numbers: once it
+        // steps, a field left inside it that stayed batch-wide would read as
+        // per-file and save as shared.
+        // Application Page No (page) and Physical Planning Page No (page_2) are
+        // the exception, and are NOT here: the
+        // batch table already captures those per child in its Pg / Memo boxes, so
+        // a second source would post two children[i][page] inputs for one value.
+        'page_survey_report', 'survey_report', 'physical_planning_comment',
+        'improvement', 'revision_period', 'time_of_erection'
     ];
     var grantStore  = [];
     var grantIndex  = 0;

@@ -29,6 +29,11 @@ class LandRecommendationController extends Controller
         'preparation_fees', 'preparation_fees_words',
         // A hand-picked batch spans layouts, so TP No. is captured per file too.
         'layout_plan_no',
+        // Page Number details, stepped per file on the same card. APN (page) and
+        // PPPN (page_2) are excluded on purpose: those come off the batch table's
+        // own columns and are written from $child directly, further down.
+        'page_survey_report', 'survey_report', 'physical_planning_comment',
+        'improvement', 'revision_period', 'time_of_erection',
     ];
 
     public function index(Request $request)
@@ -845,6 +850,7 @@ class LandRecommendationController extends Controller
             'page' => 'nullable|string',
             'page_survey_report' => 'nullable|string',
             'survey_report' => 'nullable|string',
+            'physical_planning_comment' => 'nullable|string',
             'improvement' => 'nullable|string',
             'revision_period' => 'nullable|string',
             'time_of_erection' => 'nullable|string',
@@ -1540,6 +1546,14 @@ class LandRecommendationController extends Controller
             'children.*.preparation_fees_words' => 'nullable|string',
             'children.*.layout_plan_no'     => 'nullable|string',
 
+            // Per-file Page Number details, from the same stepper.
+            'children.*.page_survey_report'        => 'nullable|string',
+            'children.*.survey_report'             => 'nullable|string',
+            'children.*.physical_planning_comment' => 'nullable|string',
+            'children.*.improvement'               => 'nullable|string',
+            'children.*.revision_period'           => 'nullable|string',
+            'children.*.time_of_erection'          => 'nullable|string',
+
             // Common fields — captured once and copied onto every child.
             // applicant_address is NOT here: it is captured per child in the table,
             // because subdivided plots routinely go to different owners.
@@ -1572,6 +1586,7 @@ class LandRecommendationController extends Controller
             'time_of_erection'   => 'nullable|string',
             'survey_report'      => 'nullable|string',
             'page_survey_report' => 'nullable|string',
+            'physical_planning_comment' => 'nullable|string',
             'rofo_survey_method' => 'nullable|string|in:DIRECTOR,LICENSED',
 
             // The autosaved draft this batch was keyed in, so it can be closed out
@@ -1813,6 +1828,7 @@ class LandRecommendationController extends Controller
             'page' => 'nullable|string',
             'page_survey_report' => 'nullable|string',
             'survey_report' => 'nullable|string',
+            'physical_planning_comment' => 'nullable|string',
             'improvement' => 'nullable|string',
             'revision_period' => 'nullable|string',
             'time_of_erection' => 'nullable|string',

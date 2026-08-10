@@ -1345,16 +1345,19 @@ class FileTrackerApiController extends Controller
                 $dailyActivity[] = \App\Models\FileSearchRequest::whereBetween('created_at', [$bucketStart, $bucketEnd])->count();
             }
 
-            // Weekly Activity: files logged per day over the last 7 days, oldest first
-            // and ending today. Seven cheap indexed counts rather than a GROUP BY, so
-            // the day bucketing behaves identically on SQL Server and MySQL.
+            // Weekly Activity: the current calendar week, Monday → Sunday (rather than a
+            // rolling 7-day window, which made the axis start on whatever weekday it was
+            // 6 days ago). Days later in the week than today simply count zero until they
+            // arrive. Seven cheap indexed counts rather than a GROUP BY, so the day
+            // bucketing behaves identically on SQL Server and MySQL.
+            $weekStart = now()->startOfWeek(\Carbon\Carbon::MONDAY);
             $weeklyLabels = [];
             $weeklyActivity = [];
             $weeklyFound = [];
             $weeklyNotFound = [];
             $weeklyAwaiting = [];
-            for ($i = 6; $i >= 0; $i--) {
-                $day = now()->subDays($i);
+            for ($i = 0; $i < 7; $i++) {
+                $day = $weekStart->copy()->addDays($i);
                 $start = $day->copy()->startOfDay();
                 $end = $day->copy()->endOfDay();
                 $weeklyLabels[] = $day->format('D');

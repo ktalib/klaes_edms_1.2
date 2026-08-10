@@ -1435,6 +1435,25 @@ class OpResettlementApplicationController extends Controller
         $existingTot = $praRows->first($isTot);
         $placeholder = $praRows->first(fn ($r) => !$isTot($r));
 
+        // Resolve the parcel identity now, so the card can show the real prop_id instead of a
+        // promise. PropID_Master is the authority: allocateOrRetrievePropId returns the
+        // registered id when there is one and registers a new one when there is not, and is
+        // idempotent per file number — so the save below lands on this exact same id.
+        $propId = $placeholder->prop_id ?? null;
+        if (empty($propId)) {
+            try {
+                $propId = app(\App\Services\PropertyIdAllocationService::class)
+                    ->allocateOrRetrievePropId($fileNo, $fileNo);
+            } catch (\Throwable $e) {
+                // A lookup must never fail outright over this; the save will try again and
+                // report properly if the file genuinely cannot be identified.
+                Log::channel('op_batch')->warning('Commissioned-file lookup could not resolve a prop_id', [
+                    'file_no' => $fileNo, 'error' => $e->getMessage(),
+                ]);
+                $propId = null;
+            }
+        }
+
         return response()->json([
             'success' => true,
             'file_no' => $fileNo,
@@ -1444,39 +1463,38 @@ class OpResettlementApplicationController extends Controller
             'tp_no' => trim((string) ($fn->tp_no ?? $placeholder->tp_no ?? '')),
             'lga' => trim((string) ($fn->lga ?? $placeholder->lgsaOrCity ?? '')),
             'location' => trim((string) ($fn->location ?? $placeholder->location ?? '')),
-            'prop_id' => $placeholder->prop_id ?? null,
+            'prop_id' => $propId,
             'commissioned_at' => $mfn->con_commissioned_at ?? null,
             'placeholder_pra_id' => $placeholder->id ?? null,
-            // A file that already has a ToT is not a candidate — capturing here would give it a
-            // second one. The card blocks on this rather than letting the POST 409.
+            // A file with a Transfer of Title is a change-of-name file, which this flow is not
+            // for — its OP belongs to the ToT and must be linked, not captured standalone. The
+            // card blocks on this rather than letting the POST 409.
             'has_tot' => (bool) $existingTot,
             'tot_pra_id' => $existingTot->id ?? null,
         ]);
     }
 
     /**
-     * Capture an OP against a file number that was commissioned without one, writing BOTH pra
-     * rows the pair needs: the Occupancy Permit and its Transfer of Title.
+     * Capture the Occupancy Permit for a file number that was commissioned without one.
      *
-     *   Row 1 (OP)  — mlsFNo NULL, carries its own TEMP-XXXXX. Kano State Government → allottee.
-     *   Row 2 (ToT) — carries the commissioned mlsFNo. Allottee → new holder, and points back at
-     *                 Row 1 through source_op_id, so the pair never relies on prop_id coincidence.
+     * Writes ONE pra row — the OP itself: Kano State Government → the allottee, carrying the
+     * commissioned mlsFNo plus its own TEMP-XXXXX, on the file's prop_id.
      *
-     * Both share the file's prop_id. The ToT deliberately does NOT copy the OP's temp_fileno —
-     * the listing already resolves the OP's TEMP for display through the shared prop_id
-     * (source_temp_fileno in index()), and keeping them distinct avoids the file-number ambiguity
-     * documented in docs/op-tot-mismatch-rootcause.md §3 D.
+     * No Transfer of Title is written, deliberately. Nothing is changing hands here: the file is
+     * simply missing the record of the grant it already has, and the allottee keeps the property.
+     * A ToT would assert a transfer that never happened — and, with the holder unchanged, would
+     * read as a self-transfer (party_1 = party_2). Files that ARE changing hands go through the
+     * Change of Name flow instead, which is why a file that already has a ToT is rejected above.
      *
-     * The placeholder OP row that commissioning left behind is intentionally left untouched, so
-     * the file ends up with two live Occupancy Permit rows on one prop_id. That is the shape
-     * /maintenance/tot reports as a mismatch; clear it there with Archive Selected.
+     * The placeholder OP row that commissioning left behind is intentionally left untouched, per
+     * an explicit decision — so a file that has one ends up with two Occupancy Permit rows on a
+     * single prop_id. /maintenance/tot reports that shape; clear it there with Archive Selected.
      */
     public function opCaptureForCommissionedFile(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'file_no' => 'required|string|max:100',
-            'grantee' => 'required|string|max:255',        // the allottee — OP party 2, ToT party 1
-            'new_holder' => 'required|string|max:255',     // ToT party 2
+            'grantee' => 'required|string|max:255',        // the allottee — OP party 2
             'op_type' => 'required|string|in:OP Resettlement,OP Direct Allocation',
             'status' => 'required|string|in:Normal',
             'system_fileno' => 'nullable|string|max:50',
@@ -1496,7 +1514,6 @@ class OpResettlementApplicationController extends Controller
 
         $fileNo = trim($validated['file_no']);
         $allottee = trim($validated['grantee']);
-        $newHolder = trim($validated['new_holder']);
 
         $mfn = DB::connection('sqlsrv')->table('mls_file_no')
             ->whereRaw('LTRIM(RTRIM(full_file_number)) = ?', [$fileNo])
@@ -1529,19 +1546,22 @@ class OpResettlementApplicationController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'This file already has a Transfer of Title (pra #' . $existingTot->id
-                    . '). Capturing here would give it a second one — use the OP Batch card to link '
-                    . 'an OP to the existing ToT instead.',
+                    . '), so it is a change-of-name file — its OP has to be linked to that ToT. '
+                    . 'Use the OP Batch card instead.',
             ], 409);
         }
 
         $placeholder = $praRows->first();
+        // Same call the lookup made, and idempotent per file number — so this returns the very
+        // prop_id the operator was shown on the card.
         $propId = $placeholder->prop_id ?? null;
         if (empty($propId)) {
             $propId = app(\App\Services\PropertyIdAllocationService::class)
-                ->allocateOrRetrievePropId($fileNo, $fileNo, null, null, []);
+                ->allocateOrRetrievePropId($fileNo, $fileNo);
         }
 
-        // The OP carries a TEMP file number, never the commissioned one — that belongs to the ToT.
+        // The OP carries the commissioned number — with no ToT to hold it, the OP is what
+        // represents this file — and keeps the capture's TEMP alongside it as its own trace.
         $systemFileno = trim((string) ($validated['system_fileno'] ?? ''));
         if (!preg_match('/^TEMP-\d+$/i', $systemFileno)) {
             $seqId = DB::connection('sqlsrv')->table('temp_fileno_sequence')->insertGetId([
@@ -1557,8 +1577,7 @@ class OpResettlementApplicationController extends Controller
         $tpNo = $placeholder->tp_no ?? null;
         $now = now();
 
-        // Fields both rows share, so the pair can never drift apart on the property itself.
-        $shared = [
+        $row = [
             'prop_id' => $propId,
             'status' => $validated['status'],
             'op_type' => $validated['op_type'],
@@ -1585,36 +1604,17 @@ class OpResettlementApplicationController extends Controller
         ];
 
         try {
-            [$opId, $totId] = DB::connection('sqlsrv')->transaction(function () use ($shared, $systemFileno, $fileNo, $allottee, $newHolder) {
-                $opId = DB::connection('sqlsrv')->table('pra')->insertGetId($shared + [
-                    'mlsFNo' => null,
-                    'fileno' => $systemFileno,
-                    'temp_fileno' => $systemFileno,
-                    'transaction_type' => 'Occupancy Permit (OP)',
-                    'instrument_type' => 'Occupancy Permit (OP)',
-                    'Grantor' => 'Kano State Government',
-                    'party_1' => 'Kano State Government',
-                    'Grantee' => $allottee,
-                    'party_2' => $allottee,
-                ]);
-
-                $totId = DB::connection('sqlsrv')->table('pra')->insertGetId($shared + [
-                    'mlsFNo' => $fileNo,
-                    'fileno' => $fileNo,
-                    'temp_fileno' => null,
-                    'transaction_type' => 'Transfer of Title',
-                    'instrument_type' => 'Transfer of Title',
-                    'Grantor' => $allottee,
-                    'party_1' => $allottee,
-                    'Grantee' => $newHolder,
-                    'party_2' => $newHolder,
-                    // Hard OP→ToT link, so the pair never depends on prop_id coincidence.
-                    'source_op_table' => 'pra',
-                    'source_op_id' => $opId,
-                ]);
-
-                return [$opId, $totId];
-            });
+            $opId = DB::connection('sqlsrv')->table('pra')->insertGetId($row + [
+                'mlsFNo' => $fileNo,
+                'fileno' => $fileNo,
+                'temp_fileno' => $systemFileno,
+                'transaction_type' => 'Occupancy Permit (OP)',
+                'instrument_type' => 'Occupancy Permit (OP)',
+                'Grantor' => 'Kano State Government',
+                'party_1' => 'Kano State Government',
+                'Grantee' => $allottee,
+                'party_2' => $allottee,
+            ]);
         } catch (\Throwable $e) {
             Log::channel('op_batch')->error('Capture OP for commissioned file failed', [
                 'user' => Auth::id(), 'file_no' => $fileNo, 'error' => $e->getMessage(),
@@ -1622,23 +1622,21 @@ class OpResettlementApplicationController extends Controller
             return response()->json(['success' => false, 'message' => 'Capture failed: ' . $e->getMessage()], 500);
         }
 
-        Log::channel('op_batch')->info('Captured OP + ToT for commissioned file', [
+        Log::channel('op_batch')->info('Captured OP for commissioned file', [
             'user' => Auth::id(),
             'file_no' => $fileNo,
             'prop_id' => $propId,
             'op_pra_id' => $opId,
-            'tot_pra_id' => $totId,
             'temp_fileno' => $systemFileno,
             'allottee' => $allottee,
-            'new_holder' => $newHolder,
             'placeholder_pra_id' => $placeholder->id ?? null,
         ]);
 
         return response()->json([
             'success' => true,
-            'message' => 'OP and Transfer of Title created for ' . $fileNo . '. The OP carries ' . $systemFileno . '.',
+            'message' => 'Occupancy Permit created for ' . $fileNo . ' (Prop ID ' . $propId . '), '
+                . 'carrying ' . $systemFileno . '. No Transfer of Title was written — the holder is unchanged.',
             'op_pra_id' => $opId,
-            'tot_pra_id' => $totId,
             'temp_fileno' => $systemFileno,
             'prop_id' => $propId,
         ]);

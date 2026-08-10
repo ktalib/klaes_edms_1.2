@@ -26,13 +26,20 @@ class TitleStatusService
         TitleStatusApplication::TYPE_AMENDMENT     => 'amendment',
         TitleStatusApplication::TYPE_SURRENDER     => 'surrendered',
         TitleStatusApplication::TYPE_REGRANT       => 'regranted',
+        TitleStatusApplication::TYPE_REGRANT_FROM  => 'regranted',
+        TitleStatusApplication::TYPE_REGRANT_TO    => 'regranted',
         TitleStatusApplication::TYPE_RESETTLEMENT  => 'resettled',
+        TitleStatusApplication::TYPE_RESETTLED_FROM => 'resettled',
+        TitleStatusApplication::TYPE_RESETTLED_TO   => 'resettled',
         TitleStatusApplication::TYPE_SUBDIVISION   => 'subdivision',
         TitleStatusApplication::TYPE_MERGER        => 'merger',
         TitleStatusApplication::TYPE_PURPOSE       => 'change_of_purpose',
         TitleStatusApplication::TYPE_EXTENSION     => 'extension',
         TitleStatusApplication::TYPE_CHANGE_NAME   => 'change_of_name',
         TitleStatusApplication::TYPE_SEPARATION    => 'separation',
+        TitleStatusApplication::TYPE_CLOSED           => 'closed',
+        TitleStatusApplication::TYPE_CLOSED_TO        => 'closed',
+        TitleStatusApplication::TYPE_CONTINUED_FROM   => 'closed',
     ];
 
     private const TYPE_VERB = [
@@ -43,13 +50,20 @@ class TitleStatusService
         TitleStatusApplication::TYPE_AMENDMENT     => 'Amendment/Reconsideration',
         TitleStatusApplication::TYPE_SURRENDER     => 'Surrender',
         TitleStatusApplication::TYPE_REGRANT       => 'Re-grant',
+        TitleStatusApplication::TYPE_REGRANT_FROM  => 'Re-grant',
+        TitleStatusApplication::TYPE_REGRANT_TO    => 'Re-grant',
         TitleStatusApplication::TYPE_RESETTLEMENT  => 'Resettlement',
+        TitleStatusApplication::TYPE_RESETTLED_FROM => 'Resettlement',
+        TitleStatusApplication::TYPE_RESETTLED_TO   => 'Resettlement',
         TitleStatusApplication::TYPE_SUBDIVISION   => 'Subdivision',
         TitleStatusApplication::TYPE_MERGER        => 'Merger',
         TitleStatusApplication::TYPE_PURPOSE       => 'Change of Purpose',
         TitleStatusApplication::TYPE_EXTENSION     => 'Extension',
         TitleStatusApplication::TYPE_CHANGE_NAME   => 'Change of Name',
         TitleStatusApplication::TYPE_SEPARATION    => 'Separation',
+        TitleStatusApplication::TYPE_CLOSED           => 'Closure',
+        TitleStatusApplication::TYPE_CLOSED_TO        => 'Closure',
+        TitleStatusApplication::TYPE_CONTINUED_FROM   => 'Continuation',
     ];
 
     private const SOURCE_TABLES = [
@@ -83,10 +97,42 @@ class TitleStatusService
      */
     public function generateRemark(string $titleType, string $initiatedBy, string $reason, string $applicantName = '', string $fileNo = '', string $seeFileno = ''): string
     {
-        if ($titleType === TitleStatusApplication::TYPE_REGRANT) {
+        // Re-grant reads as a direction: "From" points back at the old file this one
+        // replaced, "To" points forward at the file that replaced this one. The bare
+        // TYPE_REGRANT keeps its original "from" wording.
+        if (in_array($titleType, TitleStatusApplication::REGRANT_TYPES, true)) {
+            if ($seeFileno === '') {
+                return 'This File has been Re-granted';
+            }
+
+            return $titleType === TitleStatusApplication::TYPE_REGRANT_TO
+                ? "This File has been Re-granted to {$seeFileno}"
+                : "This File has been Re-granted from {$seeFileno}";
+        }
+
+        // Resettlement mirrors Re-grant, and uses the same wording recordResettlement() writes.
+        if (in_array($titleType, [TitleStatusApplication::TYPE_RESETTLED_FROM, TitleStatusApplication::TYPE_RESETTLED_TO], true)) {
+            if ($seeFileno === '') {
+                return 'This File has been Resettled';
+            }
+
+            return $titleType === TitleStatusApplication::TYPE_RESETTLED_TO
+                ? "This File has been Resettled to {$seeFileno}"
+                : "This File has been Resettled from {$seeFileno}";
+        }
+
+        // Closure reads as a direction too: "Closed To" points forward at the file this one
+        // continues in, "Continued From" points back at the closed file it carries on.
+        if ($titleType === TitleStatusApplication::TYPE_CONTINUED_FROM) {
             return $seeFileno !== ''
-                ? "This File has been Re-granted from {$seeFileno}"
-                : 'This File has been Re-granted';
+                ? "This File is Continued From {$seeFileno}"
+                : 'This File is a Continuation of a Closed File';
+        }
+
+        if (in_array($titleType, [TitleStatusApplication::TYPE_CLOSED, TitleStatusApplication::TYPE_CLOSED_TO], true)) {
+            return $seeFileno !== ''
+                ? "This File has been Closed and Continued in {$seeFileno}"
+                : 'This File has been Closed';
         }
 
         $statusType = self::TYPE_VERB[$titleType] ?? $titleType;

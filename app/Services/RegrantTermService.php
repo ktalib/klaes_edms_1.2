@@ -362,11 +362,13 @@ class RegrantTermService
           AND (c.grant_year IS NOT NULL OR r.grant_year IS NOT NULL)
           AND {$term} IS NOT NULL
           AND ({$grantYear} + {$term}) <= ?
-          -- A file already carrying a Re-grant is no longer 'to be re-granted'.
+          -- A file already carrying a Re-grant is no longer 'to be re-granted'. Either
+          -- direction counts: 'Re-granted From' (this file replaced an older one) and
+          -- 'Re-granted To' (this file has been replaced) both close the question.
           AND NOT EXISTS (
               SELECT 1 FROM title_status_applications t
               WHERE t.file_no = fi.file_number
-                AND t.title_type = 'Re-grant'
+                AND t.title_type IN ('Re-grant', 'Re-granted From', 'Re-granted To')
                 AND (t.is_deleted IS NULL OR t.is_deleted = 0)
           )
         ORDER BY years_overdue DESC, file_no";

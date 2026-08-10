@@ -19,8 +19,18 @@
             print-color-adjust: exact;
         }
 
+        /* Scan of the blank MLPP Right of Occupancy security paper — embossed
+           Kano State arms, "Right of Occupancy" watermark and the KSG-MLPP
+           barcode. Downsampled to ~150dpi A4 (216KB) from the 5.2MB original;
+           the watermarks are low-contrast so the compression is invisible.
+           Needs print-color-adjust (already set below) or the print dialog's
+           "background graphics" default drops it. */
         .page-container {
-            background: white;
+            background-color: white;
+            background-image: url("{{ asset('assets/letterhead/rofo-security-paper.jpg') }}");
+            background-size: 210mm 297mm;
+            background-position: top left;
+            background-repeat: no-repeat;
             width: 210mm;
             height: 297mm;
             box-shadow: 0 0 30px rgba(0,0,0,0.3);

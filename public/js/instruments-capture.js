@@ -2543,6 +2543,273 @@ document.addEventListener('DOMContentLoaded', function () {
         return window.ffrExistingManualRegistration === true;
     }
 
+    /* ══════════════════════════════════════════════════════════════════════════
+       Commissioned-file mode.
+
+       A file number can be commissioned with no OP behind it, in which case no
+       Transfer of Title row is written either and the file never reaches the
+       Change of Name listing. This mode reuses this dialog to capture that OP:
+       the operator picks the commissioned file, fills the usual OP details, and
+       submit writes BOTH pra rows (the OP on its TEMP number, the ToT on the
+       commissioned one) instead of registering an instrument.
+
+       Entered through window.openOpForCommissionedFile(); every other flow in
+       this file is untouched because the submit intercept is gated on the flag.
+       ══════════════════════════════════════════════════════════════════════════ */
+    const OPCF_LOOKUP_URL = '/lands-one-stop-shop/applications/op-resettlement/op-commissioned-file';
+    const OPCF_SAVE_URL = '/lands-one-stop-shop/applications/op-resettlement/op-capture-commissioned';
+    let opcfFile = null;        // resolved commissioned file; null until Check succeeds
+    let opcfWired = false;      // band listeners are attached once, lazily
+
+    function isOpCommissionedFileMode() {
+        return window.opCommissionedFileMode === true;
+    }
+
+    function opcfEl(id) {
+        return document.getElementById(id);
+    }
+
+    function opcfSetBandVisible(on) {
+        const band = opcfEl('opcf-band');
+        if (band) band.classList.toggle('hidden', !on);
+        if (on) {
+            opcfWireBand();
+        } else {
+            opcfResetLookup();
+        }
+    }
+
+    // Any edit to the file number invalidates the previous Check — submit is gated on
+    // opcfFile, so this is what stops a stale file being saved.
+    function opcfResetLookup() {
+        opcfFile = null;
+        const result = opcfEl('opcf-result');
+        const error = opcfEl('opcf-error');
+        if (result) result.classList.add('hidden');
+        if (error) error.classList.add('hidden');
+    }
+
+    function opcfShowError(message) {
+        const box = opcfEl('opcf-error');
+        const result = opcfEl('opcf-result');
+        if (result) result.classList.add('hidden');
+        if (!box) return;
+        box.textContent = message;
+        box.classList.remove('hidden');
+    }
+
+    function opcfWireBand() {
+        if (opcfWired) return;
+        opcfWired = true;
+
+        const input = opcfEl('opcf-file-no');
+
+        // Same picker the rest of the app uses, scoped to MLS — a commissioned OP file
+        // is always an MLS number. The field is disabled, so this is the only way in, and
+        // the lookup runs straight off the selection rather than a separate confirm step.
+        const selectBtn = opcfEl('opcf-select-btn');
+        if (selectBtn) {
+            selectBtn.addEventListener('click', () => {
+                if (typeof window.GlobalFileNoModal === 'undefined' || typeof window.GlobalFileNoModal.open !== 'function') {
+                    opcfShowError('The global file selector is not loaded on this page — type the file number instead.');
+                    return;
+                }
+                window.GlobalFileNoModal.open({
+                    allowedTabs: ['mls'],
+                    autoPopulateGenericFields: false,
+                    callback: function (fileData) {
+                        const picked = (fileData && fileData.fileNumber ? fileData.fileNumber : '')
+                            .toString().trim().replace(/-+$/, '');
+                        if (!picked) return;
+                        if (input) input.value = picked.toUpperCase();
+                        opcfResetLookup();
+                        opcfLookup();
+                    },
+                });
+            });
+        }
+    }
+
+    function opcfLookup() {
+        const input = opcfEl('opcf-file-no');
+        const fileNo = (input?.value || '').trim().toUpperCase();
+        if (input) input.value = fileNo;
+        opcfResetLookup();
+
+        if (!fileNo) {
+            opcfShowError('Select the commissioned file number.');
+            return;
+        }
+
+        fetch(OPCF_LOOKUP_URL + '?file_no=' + encodeURIComponent(fileNo), {
+            headers: { 'Accept': 'application/json' },
+            credentials: 'same-origin',
+        })
+            .then(r => r.json().then(d => ({ ok: r.ok, d })))
+            .then(({ ok, d }) => {
+                if (!ok || !d.success) {
+                    opcfShowError(d.message || 'That file number could not be resolved.');
+                    return;
+                }
+                if (d.has_tot) {
+                    opcfShowError('This file already has a Transfer of Title (pra #' + d.tot_pra_id
+                        + '). Capturing here would give it a second one.');
+                    return;
+                }
+
+                opcfFile = d;
+                const set = (id, val) => { const el = opcfEl(id); if (el) el.textContent = val; };
+                set('opcf-file-name', d.file_name || '—');
+                set('opcf-prop-id', d.prop_id || 'will be allocated');
+                set('opcf-plot', [d.plot_no, d.location].filter(Boolean).join(' · ') || '—');
+                opcfEl('opcf-result')?.classList.remove('hidden');
+
+                // Seed the dialog's own fields with what the file already knows.
+                const seed = (id, val) => {
+                    const el = document.getElementById(id);
+                    if (el && val && !String(el.value || '').trim()) el.value = val;
+                };
+                seed('plotNumber', d.plot_no);
+                seed('propertyDescription', d.location);
+                seed('lga', d.lga);
+            })
+            .catch(err => {
+                console.error('Commissioned file lookup failed', err);
+                opcfShowError('Lookup failed — see the console for details.');
+            });
+    }
+
+    // Which OP type radio is selected, mapped to the values the endpoint accepts.
+    function opcfSelectedOpType() {
+        return document.getElementById('op_type_resettlement')?.checked
+            ? 'OP Resettlement'
+            : (document.getElementById('op_type_direct_allocation')?.checked ? 'OP Direct Allocation' : '');
+    }
+
+    // Save the OP + ToT pair. Returns nothing; owns its own dialogs.
+    function opcfSubmit() {
+        const val = id => (document.getElementById(id)?.value || '').toString().trim();
+
+        if (!opcfFile) {
+            Swal.fire({
+                icon: 'warning', title: 'Select the file first',
+                text: 'Use Select to pick the commissioned file this OP belongs to.',
+            });
+            return;
+        }
+
+        const opType = opcfSelectedOpType();
+        const allottee = val('secondPartyName');
+        const systemFileno = val('display_fileno') || (window._generatedTempFileno || '');
+
+        if (!opType) {
+            Swal.fire({ icon: 'warning', title: 'OP Type required', text: 'Select Resettlement or Direct Allocation.' });
+            return;
+        }
+        if (!allottee) {
+            Swal.fire({
+                icon: 'warning', title: 'Party 2 required',
+                text: 'Party 2 is the allottee the permit was granted to, so it cannot be blank.',
+            });
+            return;
+        }
+
+        const purposeSelect = document.getElementById('purpose_id');
+        const purposeName = val('purpose')
+            || (purposeSelect?.selectedOptions?.[0]?.text || '').trim().replace(/^Select Purpose$/, '');
+
+        const payload = {
+            file_no: opcfFile.file_no,
+            grantee: allottee,
+            op_type: opType,
+            status: 'Normal',
+            system_fileno: systemFileno,
+            op_serial_number: val('op_serial_number'),
+            transaction_date: val('transactionDate') || null,
+            land_use: val('land_use'),
+            purpose: purposeName,
+            lga: val('lga'),
+            location: val('propertyDescription'),
+            plot_no: val('plotNumber'),
+            serial_no: val('serial_no'),
+            page_no: val('reg_page_no') || val('reg_page_no_display'),
+            volume_no: val('volume_no'),
+            deeds_date: val('registrationDate'),
+            deeds_time: val('registrationTime'),
+        };
+
+        Swal.fire({
+            icon: 'question',
+            title: 'Capture OP and Match?',
+            html: `This writes one PRA row — the Occupancy Permit for <b>${opcfFile.file_no}</b>.
+                   <div class="mt-3 text-left text-xs bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-1">
+                     <div><b>OP:</b> Kano State Government &rarr; <span class="text-emerald-700 font-semibold">${allottee}</span></div>
+                     <div><b>File No:</b> ${opcfFile.file_no} <span class="text-gray-400">(system ${systemFileno || 'TEMP'})</span></div>
+                     <div><b>Prop ID:</b> ${opcfFile.prop_id || 'will be allocated'}</div>
+                   </div>
+                   <p class="mt-2 text-left text-xs text-gray-500">No Transfer of Title is created — the
+                   holder is not changing.</p>`,
+            showCancelButton: true,
+            confirmButtonText: 'Yes, Capture',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#2563eb',
+        }).then(result => {
+            if (!result.isConfirmed) return;
+
+            const csrf = document.querySelector('input[name="_token"]')?.value
+                || document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+            fetch(OPCF_SAVE_URL, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                },
+                body: JSON.stringify(payload),
+            })
+                .then(r => r.json().then(d => ({ ok: r.ok, d })).catch(() => ({ ok: r.ok, d: {} })))
+                .then(({ ok, d }) => {
+                    if (!ok || !d.success) {
+                        Swal.fire({ icon: 'error', title: 'Could not capture', text: d.message || 'Unknown error.' });
+                        return;
+                    }
+                    window._opCaptureSubmitted = true;
+                    window.opCommissionedFileMode = false;
+                    if (typeof closeRegistrationDialog === 'function') closeRegistrationDialog();
+                    Swal.fire({ icon: 'success', title: 'Occupancy Permit created', text: d.message })
+                        .then(() => window.location.reload());
+                })
+                .catch(err => {
+                    console.error('Commissioned-file capture failed', err);
+                    Swal.fire({ icon: 'error', title: 'Request failed', text: 'See the console for details.' });
+                });
+        });
+    }
+
+    /**
+     * Open this dialog to capture the OP behind an already-commissioned file number.
+     * Public entry point for the OP prompt and the OSS listing button.
+     */
+    window.openOpForCommissionedFile = function () {
+        window.opCommissionedFileMode = true;
+        // Not a commissioning hand-off, so the OSS/FEFR contexts must be off or submit
+        // would route into one of their branches.
+        window.ossOpContext = false;
+        window.ffrExistingManualRegistration = false;
+        window.ffrDirectOpMode = false;
+        window.requireOpLookupForCommission = false;
+        window.ossOpSubmitLabel = 'Capture OP + Match';
+        window._opCaptureSubmitted = false;
+
+        const input = opcfEl('opcf-file-no');
+        if (input) input.value = '';
+        opcfResetLookup();
+
+        openRegistrationDialog('occupancy-permit');
+    };
+
     function restoreCommissionOpSelection(preferredType) {
         const modalContainer = document.querySelector('#generateModal [x-data="fileNumberGenerator()"]');
         const component = modalContainer && modalContainer._x_dataStack ? modalContainer._x_dataStack[0] : null;
@@ -3753,6 +4020,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
         currentInstrumentType = typeKey;
         normalizeAssignmentGiftBookletCode();
+        // Commissioned-file mode only makes sense for an OP; switching type leaves it.
+        opcfSetBandVisible(isOpCommissionedFileMode() && typeKey === 'occupancy-permit');
         resetSubmitButton(); // Ensure button label is correct for the type
         updateOpSubmitAvailability();
         const isEditMode = document.getElementById('instrument_id') && document.getElementById('instrument_id').value !== '';
@@ -4328,6 +4597,14 @@ document.addEventListener('DOMContentLoaded', function () {
         const wasSubmitted = window._opCaptureSubmitted === true;
 
         window.prefillOpTypeFromCommission = null;
+
+        // Leave commissioned-file mode with the dialog, so a later open of this dialog for any
+        // other purpose cannot inherit it and hijack its submit.
+        if (isOpCommissionedFileMode()) {
+            window.opCommissionedFileMode = false;
+            window.ossOpSubmitLabel = '';
+            opcfSetBandVisible(false);
+        }
 
         // ── Clear all user-entered data before hiding ──
         // Reset OP lookup state
@@ -5427,6 +5704,14 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         normalizeAssignmentGiftBookletCode();
+
+        // Commissioned-file mode owns the submit outright: it writes the OP + ToT pair itself
+        // rather than registering an instrument, so it must intercept ahead of every branch
+        // below. Gated on the flag, so no other flow is affected.
+        if (currentInstrumentType === 'occupancy-permit' && isOpCommissionedFileMode()) {
+            opcfSubmit();
+            return;
+        }
 
         const submitLabel = getSubmitLabel().toLowerCase();
         const isCaptureExistingOpSubmit = submitLabel === 'capture existing op';

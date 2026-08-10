@@ -331,9 +331,19 @@ class CommissionNewSTController extends Controller
             $validated = $request->validate([
                 'np_fileno' => 'required|string',
                 'fileno' => 'nullable|string',
-                'applied_file_number' => 'required|string',
+                // A New CON-P commissions a brand-new CON land file, so there is no
+                // existing file to link to — the picker is hidden on that path. Every
+                // other path (Direct Allocation, Existing/Extant conversion) needs one.
+                'applied_file_number' => 'required_unless:conversion_mode,new|nullable|string',
                 'application_type' => 'required|string|in:Direct Allocation,Conversion',
+                // Conversion sub-type: 'new' commissions the CON mother file here,
+                // 'existing' hangs the ST primary off an extant CON file.
+                'conversion_mode' => 'nullable|string|in:new,existing',
+                // Minted by the preview endpoint and shown on the form for a conversion,
+                // so what was displayed is what gets stored.
+                'tracking_id' => 'nullable|string|max:50',
                 'applicant_type' => 'required|string|in:individual,corporate,multiple',
+                'gender' => 'required|string|in:Male,Female,Corporate,Joint',
                 'land_use' => 'required|string|in:COMMERCIAL,RESIDENTIAL,INDUSTRIAL,MIXED',
                 'first_name' => 'nullable|string',
                 'middle_name' => 'nullable|string',
@@ -353,29 +363,55 @@ class CommissionNewSTController extends Controller
                 'longitude' => 'nullable|numeric|between:-180,180'
             ]);
 
-            // Extract components from file number (e.g., ST-COM-2025-5)
-            $fileNumberParts = explode('-', $validated['np_fileno']);
-            $landUseCode = $fileNumberParts[1] ?? '';
-            $year = intval($fileNumberParts[2] ?? date('Y'));
-            $serialNo = intval($fileNumberParts[3] ?? 1);
+            $isConversion = ($validated['application_type'] ?? '') === 'Conversion';
+            // An extant conversion reuses a CON file that is already commissioned; a
+            // new one mints it here. Only the latter consumes an MLS serial.
+            $reusesExistingConversion = $isConversion
+                && ($validated['conversion_mode'] ?? 'new') === 'existing';
 
-            // Map land use code to full name
-            $landUseMapping = [
-                'COM' => 'COMMERCIAL',
-                'RES' => 'RESIDENTIAL',
-                'IND' => 'INDUSTRIAL',
-                'MIXED' => 'MIXED'
-            ];
-            $landUseFullName = $landUseMapping[$landUseCode] ?? $validated['land_use'];
+            if ($reusesExistingConversion
+                && !preg_match('/^CON-/i', trim((string) ($validated['applied_file_number'] ?? '')))) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'applied_file_number' => 'An Existing / Extant Conversion must link to a CON- file.',
+                ]);
+            }
+
+            // Extract components from file number (e.g., ST-COM-2025-5)
+            $parsed = $this->parseStFileNumber($validated['np_fileno']);
+            $landUseCode = $parsed['land_use_code'] ?? '';
+            $year = $parsed['year'] ?? intval(date('Y'));
+            $serialNo = $parsed['serial'] ?? 1;
+
+            $landUseFullName = $this->landUseFullNameFromCode($landUseCode) ?? $validated['land_use'];
+
+            if ($isConversion) {
+                // Two numbers are issued, each off its own stream:
+                //   the CON land file  -> MLS conversion serial (mls_serial_control)
+                //   the ST primary     -> the ST serial for the land use, same pool a
+                //                         Direct Allocation would have drawn from
+                // The posted NPFN was only a preview; both are allocated in the
+                // transaction below.
+                $landUseFullName = strtoupper(trim($validated['land_use']));
+                // ST conversions count on their own pool per land use, starting at 1
+                // (ST-CON-COM-2026-1), independent of direct allocations.
+                $landUseCode = 'CON-' . $this->baseLandUseCode($landUseFullName);
+                $year = intval(date('Y'));
+                $serialNo = null;
+            }
 
             $creatorName = Auth::user()->name ?? Auth::user()->email ?? 'System';
             $commissionedAt = !empty($validated['commissioned_date'])
                 ? Carbon::parse($validated['commissioned_date'])->setTimeFrom(now())
                 : now();
 
-            $transactionResult = DB::connection('sqlsrv')->transaction(function () use ($validated, $landUseFullName, $landUseCode, $year, $serialNo, $creatorName, $commissionedAt) {
+            $transactionResult = DB::connection('sqlsrv')->transaction(function () use ($validated, $isConversion, $reusesExistingConversion, $landUseFullName, $landUseCode, $year, $serialNo, $creatorName, $commissionedAt) {
                 $connection = DB::connection('sqlsrv');
-                $tra = $this->generateTra();
+                // A conversion's tracking ID was minted for the preview and shown on the
+                // form; keep it so the operator sees the same ID before and after. Every
+                // other path still mints one here.
+                $tra = $isConversion
+                    ? $this->useOrMintTrackingId($validated['tracking_id'] ?? null)
+                    : $this->generateTra();
                 $npFileNo = $validated['np_fileno'];
                 $fileno = $validated['fileno'] ?? null;
                 if (empty($fileno)) {
@@ -384,6 +420,42 @@ class CommissionNewSTController extends Controller
                 $stFileNo = $npFileNo;
                 $mlsFileNo = $fileno;
                 $fileNoType = 'PRIMARY';
+                $conversionFileNo = null;
+                $conversionLandUse = null;
+                $conversionSerial = null;
+
+                if ($isConversion) {
+                    if ($reusesExistingConversion) {
+                        // The CON file already exists and is already numbered: reuse it
+                        // as the mother, consuming no MLS serial.
+                        $conversionFileNo = trim((string) $validated['applied_file_number']);
+                    } else {
+                        // The CON land file takes the next serial from the shared MLS
+                        // conversion stream, so it can never be re-issued to a land
+                        // conversion: CON-COM-2026-484.
+                        $conversionLandUse = $this->conversionPrefix($landUseFullName);
+                        $allocation = app(\App\Services\MlsSerialAllocationService::class)
+                            ->allocateNextFreeSerial($conversionLandUse, $year);
+                        $conversionFileNo = $allocation['file_number'];
+                        $conversionSerial = (int) $allocation['serial'];
+
+                        if (!empty($allocation['skipped'])) {
+                            Log::info('ST conversion skipped taken CON serials', [
+                                'land_use' => $conversionLandUse,
+                                'skipped' => $allocation['skipped'],
+                            ]);
+                        }
+                    }
+
+                    // Either way the ST primary counts on the ST conversion pool for
+                    // its land use, which starts at 1: ST-CON-COM-2026-1.
+                    $serialNo = $this->nextPrimarySerial($landUseCode, $year);
+                    $npFileNo = "ST-{$landUseCode}-{$year}-{$serialNo}";
+                    $stFileNo = $npFileNo;
+                    $mlsFileNo = $conversionFileNo;
+                    // The CON file — new or extant — is the file this ST primary belongs to.
+                    $fileno = $conversionFileNo;
+                }
 
                 $stFileNumberId = $connection->table('st_file_numbers')->insertGetId([
                     'np_fileno' => $npFileNo,
@@ -391,6 +463,7 @@ class CommissionNewSTController extends Controller
                     'mls_fileno' => $mlsFileNo,
                     'land_use' => $landUseFullName,
                     'land_use_code' => $landUseCode,
+                    'gender' => $validated['gender'] ?? null,
                     'serial_no' => $serialNo,
                     'unit_sequence' => null,
                     'year' => $year,
@@ -428,6 +501,39 @@ class CommissionNewSTController extends Controller
                     null
                 );
 
+                if ($isConversion && !$reusesExistingConversion) {
+                    // The conversion number is a real MLS file number: register it in
+                    // mls_file_no so it shows on the MLS File Commissioning table and
+                    // can never be handed out again. An extant CON file is already there.
+                    \App\Models\MlsFileNo::create([
+                        'land_use'         => $conversionLandUse,
+                        'year'             => $year,
+                        'serial_number'    => $conversionSerial,
+                        'full_file_number' => $conversionFileNo,
+                        'file_name'        => $fileName,
+                        'plot_no'          => $validated['property_plot_no'] ?? null,
+                        // Same composition the commissioning sheet prints, so the MLS
+                        // list and the sheet never disagree about the location.
+                        'location'         => $this->composeLocation(
+                            $validated['property_district'] ?? null,
+                            $validated['property_lga'] ?? null,
+                            $validated['property_street_name'] ?? null
+                        ),
+                        'lga'              => $validated['property_lga'] ?? null,
+                        'district'         => $validated['property_district'] ?? null,
+                        'tracking_id'      => $tra,
+                        'customer_type'    => ucfirst($validated['applicant_type']),
+                        'file_option'      => 'normal',
+                        // Distinguishes a Sectional Titling conversion from a land
+                        // conversion on the MLS File Commissioning list.
+                        'source'           => 'ST Conversion',
+                        'gender'           => $validated['gender'] ?? null,
+                        'system_sub_type'  => \App\Support\OssOpCommissionFilter::MLS,
+                        'created_by'       => $creatorName,
+                        'commissioning_date' => $commissionedAt,
+                    ]);
+                }
+
                 $fileNumberId = $this->mirrorStToFileNumber([
                     'tracking_id' => $tra,
                     'mlsfNo' => $mlsFileNo,
@@ -451,6 +557,25 @@ class CommissionNewSTController extends Controller
                     'mlsf_no'           => $mlsFileNo,
                     'st_file_no'        => $npFileNo
                 ];
+
+                // Whatever file this ST primary was raised on is taken over by it: the
+                // CON mother on a conversion, the linked file on a direct allocation.
+                // It keeps every other record; this only logs the handover.
+                $motherFileNo = $isConversion
+                    ? $conversionFileNo
+                    : trim((string) ($validated['applied_file_number'] ?? ''));
+
+                if (!empty($motherFileNo)) {
+                    $this->recordMotherDecommissioning(
+                        $motherFileNo,
+                        $npFileNo,
+                        $fileName,
+                        $fileNumberId,
+                        $creatorName,
+                        $commissionedAt,
+                        $isConversion
+                    );
+                }
 
                 // -------------------------------------------------------
                 // Create file_indexings record for the NPFN.
@@ -503,16 +628,22 @@ class CommissionNewSTController extends Controller
                     $latitude = $validated['latitude'] ?? null;
                     $longitude = $validated['longitude'] ?? null;
 
-                    $connection->table('file_indexings')->insert([
-                        'file_number'    => $npFileNo,
+                    $indexingRow = [
                         'file_title'     => $fileName,
                         'tracking_id'    => $tra,
                         'land_use_type'  => $landUseFullName,
-                        'related_fileno' => $appliedFileNo ?: null,
                         'source'         => 'ST Commissioning',
+                        // Both files are commissioned by Sectional Titling — without this
+                        // the registry falls back to Lands Registry.
+                        'registry'       => 'ST Registry',
+                        'gender'         => $validated['gender'] ?? null,
+                        'gender_source'  => !empty($validated['gender']) ? \App\Services\GenderNormalizer::SOURCE_CAPTURED : null,
                         'file_type'      => 'PRIMARY',
                         'status'         => 'ACTIVE',
-                        'location'       => $sourceIndexing->location ?? null,
+                        // District + LGA when the form supplied them, otherwise whatever
+                        // the linked file was indexed with.
+                        'location'       => $this->composeLocation($district, $lga)
+                            ?? ($sourceIndexing->location ?? null),
                         'latitude'       => $latitude !== null && $latitude !== '' ? $latitude : ($sourceIndexing->latitude ?? null),
                         'longitude'      => $longitude !== null && $longitude !== '' ? $longitude : ($sourceIndexing->longitude ?? null),
                         'district'       => $district !== null && $district !== '' ? $district : ($sourceIndexing->district ?? null),
@@ -520,47 +651,114 @@ class CommissionNewSTController extends Controller
                         'street_name'    => $streetName !== null && $streetName !== '' ? $streetName : ($sourceIndexing->street_name ?? null),
                         'plot_number'    => $plotNumber !== null && $plotNumber !== '' ? $plotNumber : ($sourceIndexing->plot_number ?? null),
                         'plot_size'      => $sourceIndexing->plot_size ?? null,
-                        'parent_prop_id' => $sourceIndexing->prop_id ?? null,
                         'created_by'     => Auth::id(),
                         'created_at'     => $commissionedAt,
                         'updated_at'     => $commissionedAt,
-                    ]);
+                    ];
+
+                    // A conversion commissions TWO files: the CON land file is the
+                    // mother, and the ST primary hangs under it. The mother carries the
+                    // parcel's prop_id; the ST row points up at it.
+                    $motherPropId = null;
+                    if ($isConversion) {
+                        try {
+                            $motherPropId = app(\App\Services\PropertyIdAllocationService::class)
+                                ->allocateOrRetrievePropId($conversionFileNo, $conversionFileNo);
+                        } catch (\Throwable $e) {
+                            Log::warning('Could not allocate prop_id for ST conversion mother file', [
+                                'file_number' => $conversionFileNo,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+
+                        // An extant conversion is already indexed — $sourceIndexing IS
+                        // its row. Only a new CON file needs a mother row written.
+                        if (!$reusesExistingConversion) {
+                            $connection->table('file_indexings')->insert(array_merge($indexingRow, [
+                                'file_number'    => $conversionFileNo,
+                                'mls_file_no'    => $conversionFileNo,
+                                'file_type'      => 'MOTHER',
+                                'related_fileno' => $appliedFileNo !== '' ? json_encode([$appliedFileNo]) : null,
+                                'prop_id'        => $motherPropId,
+                                'parent_prop_id' => $sourceIndexing->prop_id ?? null,
+                            ]));
+
+                            Log::info('file_indexings mother record created for ST conversion', [
+                                'file_number' => $conversionFileNo,
+                                'prop_id'     => $motherPropId,
+                                'tracking_id' => $tra,
+                            ]);
+                        }
+                    }
+
+                    // On an extant conversion the applied file IS the mother, so it must
+                    // not be listed twice.
+                    $relatedForSt = $isConversion
+                        ? array_values(array_unique(array_filter([$conversionFileNo, $appliedFileNo ?: null])))
+                        : array_values(array_filter([$appliedFileNo ?: null]));
+
+                    $stIndexingId = $connection->table('file_indexings')->insertGetId(array_merge($indexingRow, [
+                        'file_number'    => $npFileNo,
+                        'mls_file_no'    => $isConversion ? $conversionFileNo : null,
+                        'related_fileno' => $isConversion
+                            ? (!empty($relatedForSt) ? json_encode($relatedForSt) : null)
+                            : ($appliedFileNo ?: null),
+                        'parent_prop_id' => $isConversion
+                            ? ($motherPropId ?? ($sourceIndexing->prop_id ?? null))
+                            : ($sourceIndexing->prop_id ?? null),
+                    ]));
 
                     Log::info('file_indexings record created for Primary NPFN', [
                         'file_number'    => $npFileNo,
-                        'related_fileno' => $appliedFileNo,
+                        'related_fileno' => $relatedForSt,
                         'tracking_id'    => $tra,
                         'location_copied_from' => $sourceIndexing->id ?? null,
-                        'parent_prop_id' => $sourceIndexing->prop_id ?? null,
+                        'parent_prop_id' => $isConversion ? $motherPropId : ($sourceIndexing->prop_id ?? null),
                     ]);
+
+                    // Typed link: the CON file is this ST primary's mother file.
+                    if ($isConversion && $stIndexingId) {
+                        $this->storeMotherFileLink($npFileNo, $fileName, $conversionFileNo, $motherPropId, $stIndexingId);
+                    }
                 }
 
                 // Sync to staging tables
                 $this->syncToStaging($validated, $npFileNo);
 
+                $syncResult['conversion_file_number'] = $conversionFileNo;
+
                 return $syncResult;
             });
+
+            // A conversion is renumbered server-side, so the committed ST number --
+            // not the previewed one posted by the form -- is what everything downstream
+            // (EDMS folder, storage summary, the success card) must use.
+            $commissionedFileNo = $transactionResult['st_file_no'];
 
             Log::info('ST File Number Commissioned Successfully', [
                 'user_id' => Auth::id(),
                 'st_file_number_id' => $transactionResult['st_file_number_id'],
                 'file_number_id' => $transactionResult['file_number_id'],
-                'file_number' => $validated['np_fileno'],
+                'file_number' => $commissionedFileNo,
                 'mlsf_no' => $transactionResult['mlsf_no'],
+                'conversion_file_number' => $transactionResult['conversion_file_number'],
                 'applicant_type' => $validated['applicant_type'],
                 'tracking_id' => $transactionResult['tracking_id'],
                 'data' => $validated
             ]);
 
-            $edmsFolder = $this->ensureEdmsScanFolder($validated['np_fileno']);
+            $edmsFolder = $this->ensureEdmsScanFolder($commissionedFileNo);
 
             return response()->json([
                 'success' => true,
-                'fileNumber' => $validated['np_fileno'],
+                'fileNumber' => $commissionedFileNo,
+                'conversionFileNumber' => $transactionResult['conversion_file_number'],
                 'message' => 'ST file number commissioned successfully and saved to database',
                 'edms_folder' => $edmsFolder,
-                'storage_summary' => $this->buildStorageSummary($validated['np_fileno']),
+                'storage_summary' => $this->buildStorageSummary($commissionedFileNo),
                 'data' => array_merge($validated, [
+                    'np_fileno' => $commissionedFileNo,
+                    'conversion_file_number' => $transactionResult['conversion_file_number'],
                     'st_file_number_id' => $transactionResult['st_file_number_id'],
                     'file_number_id' => $transactionResult['file_number_id'],
                     'tracking_id' => $transactionResult['tracking_id'],
@@ -581,6 +779,223 @@ class CommissionNewSTController extends Controller
                 'success' => false,
                 'message' => 'Error commissioning file number: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Split an ST file number into its parts.
+     *
+     * Two shapes exist and a conversion number has FIVE segments, so nothing may
+     * index into explode('-') positionally any more:
+     *   ST-IND-2026-7            direct allocation (ST serial pool)
+     *   ST-CON-IND-2026-1308     conversion (MLS CON-IND serial pool)
+     *
+     * @return array{land_use_code:string,year:int,serial:int,is_conversion:bool}|null
+     */
+    private function parseStFileNumber(?string $fileNo): ?array
+    {
+        if (!preg_match('/^ST-(CON-)?([A-Z]+)-(\d{4})-(\d+)$/i', trim((string) $fileNo), $m)) {
+            return null;
+        }
+
+        return [
+            // A conversion has its own serial pool, so the CON- prefix is part of the
+            // pool key: 'CON-COM' is not 'COM'.
+            'land_use_code' => ($m[1] !== '' ? 'CON-' : '') . strtoupper($m[2]),
+            'year'          => (int) $m[3],
+            'serial'        => (int) $m[4],
+            'is_conversion' => $m[1] !== '',
+        ];
+    }
+
+    /**
+     * ST land-use code for a land use name (the ST serial pool key).
+     */
+    private function baseLandUseCode(?string $landUse): string
+    {
+        return [
+            'COMMERCIAL'   => 'COM',
+            'RESIDENTIAL'  => 'RES',
+            'INDUSTRIAL'   => 'IND',
+            'AGRICULTURAL' => 'AG',
+            'MIXED'        => 'MIXED',
+        ][strtoupper(trim((string) $landUse))] ?? 'COM';
+    }
+
+    /**
+     * Next ST primary serial for a pool key — 'COM' for direct allocations, 'CON-COM'
+     * for conversions, one pool per key per year.
+     *
+     * The conversion pools started life sharing the direct-allocation counter, so a
+     * handful of ST-CON numbers are recorded under the plain code. The composed number
+     * is checked against np_fileno and the serial skipped if it is already issued,
+     * which stops the fresh CON pool from re-minting one of them.
+     */
+    private function nextPrimarySerial(string $landUseCode, int $year): int
+    {
+        $maxSerial = DB::connection('sqlsrv')
+            ->table('st_file_numbers')
+            ->where('land_use_code', $landUseCode)
+            ->where('year', $year)
+            ->lockForUpdate()
+            ->max('serial_no');
+
+        $serial = (int) ($maxSerial ?? 0) + 1;
+
+        for ($guard = 0; $guard < 500; $guard++) {
+            $taken = DB::connection('sqlsrv')
+                ->table('st_file_numbers')
+                ->where('np_fileno', "ST-{$landUseCode}-{$year}-{$serial}")
+                ->exists();
+
+            if (!$taken) {
+                break;
+            }
+
+            Log::info('ST primary serial already issued, skipping', [
+                'file_number' => "ST-{$landUseCode}-{$year}-{$serial}",
+            ]);
+            $serial++;
+        }
+
+        return $serial;
+    }
+
+    /**
+     * Full land use name for a land-use code, conversion prefix included
+     * ('IND' and 'CON-IND' are both Industrial). Null when unrecognised.
+     */
+    private function landUseFullNameFromCode(?string $landUseCode): ?string
+    {
+        $code = strtoupper(trim((string) $landUseCode));
+        $code = preg_replace('/^CON-/', '', $code);
+
+        return [
+            'COM'   => 'COMMERCIAL',
+            'RES'   => 'RESIDENTIAL',
+            'IND'   => 'INDUSTRIAL',
+            'AG'    => 'AGRICULTURAL',
+            'MIX'   => 'MIXED',
+            'MIXED' => 'MIXED',
+        ][$code] ?? null;
+    }
+
+    /**
+     * The Location line: district and LGA, with the LGA in caps.
+     *
+     * The same string the commissioning sheet prints, so the MLS File Commissioning
+     * list and the sheet agree. Falls back to the street name when the file was
+     * captured without a district.
+     */
+    private function composeLocation(?string $district, ?string $lga, ?string $streetName = null): ?string
+    {
+        $parts = array_filter([
+            trim((string) $district),
+            mb_strtoupper(trim((string) $lga)),
+        ]);
+
+        return implode(', ', $parts) ?: (trim((string) $streetName) ?: null);
+    }
+
+    /**
+     * MLS conversion prefix for a land use — the mls_serial_control stream the
+     * conversion serial is drawn from.
+     */
+    private function conversionPrefix(?string $landUse): string
+    {
+        return [
+            'COMMERCIAL'   => 'CON-COM',
+            'RESIDENTIAL'  => 'CON-RES',
+            'INDUSTRIAL'   => 'CON-IND',
+            'AGRICULTURAL' => 'CON-AG',
+            'MIXED'        => 'CON-MIXED',
+        ][strtoupper(trim((string) $landUse))] ?? 'CON-RES';
+    }
+
+    /**
+     * Log the file an ST primary was raised on as decommissioned by that primary —
+     * the CON mother on a conversion, the linked file on a direct allocation.
+     *
+     * The land file keeps all its other records (file_indexings, fileNumber,
+     * mls_file_no) — this row only marks that Sectional Titling has taken it over.
+     * false_decommissioning = 2 is the ST marker: the file is not gone, it lives on
+     * under its ST primary.
+     */
+    private function recordMotherDecommissioning(
+        string $motherFileNo,
+        string $stFileNo,
+        ?string $fileName,
+        ?int $fileNumberId,
+        string $creatorName,
+        $commissionedAt,
+        bool $isConversion = true
+    ): void {
+        try {
+            $connection = DB::connection('sqlsrv');
+
+            $already = $connection->table('decommissioned_files')
+                ->where('file_no', $motherFileNo)
+                ->where('successor_file_no', $stFileNo)
+                ->exists();
+
+            if ($already) {
+                return;
+            }
+
+            $connection->table('decommissioned_files')->insert([
+                'file_number_id'         => $fileNumberId,
+                'file_no'                => $motherFileNo,
+                'mls_file_no'            => $motherFileNo,
+                'file_name'              => $fileName,
+                'commissioning_date'     => $commissionedAt,
+                'decommissioning_date'   => $commissionedAt,
+                'decommissioning_reason' => ($isConversion ? 'ST Conversion' : 'ST Direct Allocation') . " → {$stFileNo}",
+                'decommissioned_by'      => $creatorName,
+                'successor_file_no'      => $stFileNo,
+                'event_type'             => 'ST Decommissioning',
+                'false_decommissioning'  => 2,
+                'created_at'             => $commissionedAt,
+                'updated_at'             => $commissionedAt,
+            ]);
+        } catch (\Exception $e) {
+            // The file number is already issued; a missing log entry must not undo it.
+            Log::warning('Failed to record ST mother file decommissioning', [
+                'mother_file' => $motherFileNo,
+                'st_file_no'  => $stFileNo,
+                'error'       => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Record the CON land file as the mother file of a commissioned ST primary.
+     *
+     * The plain numbers already live in file_indexings.related_fileno as JSON;
+     * related_file_number is where the RELATIONSHIP TYPE fits.
+     */
+    private function storeMotherFileLink(string $fileNumber, ?string $fileTitle, string $motherFileNo, $propId, int $sourceIndexingId): void
+    {
+        try {
+            DB::connection('sqlsrv')->table('related_file_number')->insert([
+                'related_fileno'   => $motherFileNo,
+                'prop_id'          => $propId,
+                'source_table'     => 'file_indexings',
+                'source_id'        => $sourceIndexingId,
+                'file_number'      => $fileNumber,
+                'file_title'       => $fileTitle,
+                'location'         => null,
+                'comment'          => "Mother File of {$motherFileNo} for {$fileNumber}",
+                'transaction_type' => 'Mother File',
+                'created_at'       => now(),
+                'updated_at'       => now(),
+            ]);
+        } catch (\Exception $e) {
+            // A failed link must not roll back a successfully commissioned file number.
+            Log::warning('Failed to store ST conversion mother file link', [
+                'file_number' => $fileNumber,
+                'mother_file' => $motherFileNo,
+                'error'       => $e->getMessage(),
+            ]);
         }
     }
 
@@ -844,11 +1259,11 @@ class CommissionNewSTController extends Controller
                 ], 404);
             }
 
-            // Generate PuA file number based on parent
-            $parentParts = explode('-', $validated['parent_file_number']); // ST-COM-2025-5
-            $landUseCode = $parentParts[1] ?? '';
-            $year = intval($parentParts[2] ?? date('Y'));
-            $parentSerial = intval($parentParts[3] ?? 1);
+            // Generate PuA file number based on parent (ST-COM-2025-5 or ST-CON-IND-2026-1308)
+            $parentParts = $this->parseStFileNumber($validated['parent_file_number']);
+            $landUseCode = $parentParts['land_use_code'] ?? '';
+            $year = $parentParts['year'] ?? intval(date('Y'));
+            $parentSerial = $parentParts['serial'] ?? 1;
 
             // Get next unit sequence for this parent
             // IMPORTANT: Check BOTH PUA and SUA types to avoid duplicates
@@ -876,13 +1291,7 @@ class CommissionNewSTController extends Controller
             }
 
             // Map land use code to full name
-            $landUseMapping = [
-                'COM' => 'COMMERCIAL',
-                'RES' => 'RESIDENTIAL',
-                'IND' => 'INDUSTRIAL',
-                'MIXED' => 'MIXED'
-            ];
-            $landUseFullName = $landUseMapping[$landUseCode] ?? 'COMMERCIAL';
+            $landUseFullName = $this->landUseFullNameFromCode($landUseCode) ?? 'COMMERCIAL';
             $creatorName = Auth::user()->name ?? Auth::user()->email ?? 'System';
             $commissionedAt = !empty($validated['commissioned_date'])
                 ? Carbon::parse($validated['commissioned_date'])->setTimeFrom(now())
@@ -1127,6 +1536,23 @@ class CommissionNewSTController extends Controller
     private function generateTra(): string
     {
         return 'TRK-' . strtoupper(Str::random(8)) . '-' . strtoupper(Str::random(5));
+    }
+
+    /**
+     * Keep the tracking ID the form displayed, unless it is malformed or already
+     * taken — in which case mint a fresh one rather than fail the commissioning.
+     */
+    private function useOrMintTrackingId(?string $trackingId): string
+    {
+        $trackingId = strtoupper(trim((string) $trackingId));
+
+        if (!preg_match('/^TRK-[A-Z0-9]{4,12}-[A-Z0-9]{3,8}$/', $trackingId)) {
+            return $this->generateTra();
+        }
+
+        $taken = DB::connection('sqlsrv')->table('st_file_numbers')->where('tra', $trackingId)->exists();
+
+        return $taken ? $this->generateTra() : $trackingId;
     }
 
     /**
@@ -1465,14 +1891,7 @@ class CommissionNewSTController extends Controller
     private function getNextAvailablePrimaryFileNo($landUseCode, $year)
     {
         try {
-            // Get the latest serial number from unified st_file_numbers table
-            $maxSerial = DB::connection('sqlsrv')
-                ->table('st_file_numbers')
-                ->where('land_use_code', $landUseCode)
-                ->where('year', $year)
-                ->max('serial_no');
-
-            $nextSerial = ($maxSerial ?? 0) + 1;
+            $nextSerial = $this->nextPrimarySerial($landUseCode, (int) $year);
 
             return "ST-{$landUseCode}-{$year}-{$nextSerial}";
 
@@ -1496,13 +1915,9 @@ class CommissionNewSTController extends Controller
     private function extractSerialFromFileNo($fileNo)
     {
         try {
-            // Split by dash and get the last part
-            $parts = explode('-', $fileNo);
-            if (count($parts) >= 4) {
-                return (int) $parts[3]; // ST-COM-2025-5 -> 5
-            }
+            $parsed = $this->parseStFileNumber($fileNo);
 
-            return 1; // Fallback
+            return $parsed['serial'] ?? 1; // ST-COM-2025-5 -> 5
 
         } catch (\Exception $e) {
             Log::warning('Error extracting serial from file number', [
@@ -1561,12 +1976,23 @@ class CommissionNewSTController extends Controller
                 ]
             );
 
-            // 2. Build property address. The Location Details section posts a
-            // composed address; fall back to assembling one from loose fields.
+            // 2. Build property address. The Location Details section posts a composed
+            // address on some paths; otherwise assemble one from the property_* fields
+            // the form actually sends (house no, plot, street, district, LGA, state).
             $addressParts = [];
-            if (!empty($data['plot_no'])) $addressParts[] = "Plot " . $data['plot_no'];
-            if (!empty($data['location'])) $addressParts[] = $data['location'];
-            if (!empty($data['lga'])) $addressParts[] = $data['lga'];
+            if (!empty($data['property_house_no'])) $addressParts[] = 'No. ' . $data['property_house_no'];
+            if (!empty($data['property_plot_no']))  $addressParts[] = 'Plot ' . $data['property_plot_no'];
+            foreach (['property_street_name', 'property_district', 'property_lga', 'property_state'] as $key) {
+                if (!empty($data[$key])) {
+                    $addressParts[] = trim((string) $data[$key]);
+                }
+            }
+            // Legacy loose keys, kept for callers that still pass them.
+            if (empty($addressParts)) {
+                if (!empty($data['plot_no'])) $addressParts[] = 'Plot ' . $data['plot_no'];
+                if (!empty($data['location'])) $addressParts[] = $data['location'];
+                if (!empty($data['lga'])) $addressParts[] = $data['lga'];
+            }
             $propertyAddress = trim((string) ($data['property_address'] ?? ''))
                 ?: (implode(', ', $addressParts) ?: 'N/A');
 

@@ -229,6 +229,12 @@
             font-family: Arial, sans-serif;
         }
 
+        /* Each half is placed by its own <br>; never let a long line re-wrap and add
+           a third row to the box. */
+        .main-subject-banner h2.two-line {
+            white-space: nowrap;
+        }
+
         /* 6. Letter Content Body */
         .letter-content {
             font-size: 17.5px;
@@ -401,6 +407,13 @@
             font-family: Arial, sans-serif;
         }
 
+        /* The File Copy prints black and white; only the Original is in colour.
+           Applied on screen too, so what is previewed is what comes out. */
+        .page.file-copy {
+            filter: grayscale(100%);
+            -webkit-filter: grayscale(100%);
+        }
+
         /* Print Override */
         @media print {
             body {
@@ -427,6 +440,13 @@
             .title-banner {
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
+            }
+
+            /* Keep the grayscale on the File Copy: exact colour rendering above would
+               otherwise print its banners and sidebars in full colour. */
+            .page.file-copy {
+                filter: grayscale(100%);
+                -webkit-filter: grayscale(100%);
             }
         }
     </style>
@@ -504,8 +524,19 @@
             </div>
 
             <!-- 5. Subject Banner -->
+            @php
+                // A Sectional Titling conversion carries the ST file number on its
+                // fileNumber row; that, or an explicit ?source=st, selects the ST wording.
+                $isStRecord = request('source') === 'st' || !empty($record->st_file_no);
+            @endphp
             <div class="main-subject-banner">
-                <h2>Application for conversion of customary to<br>statutory right of occupancy</h2>
+                @if($isStRecord)
+                    {{-- Broken after "titling" so the banner stays two lines, like the
+                         land variant — the whole phrase on one line wraps to three. --}}
+                    <h2 class="two-line">Application for sectional titling<br>statutory right of occupancy</h2>
+                @else
+                    <h2>Application for conversion of customary to<br>statutory right of occupancy</h2>
+                @endif
             </div>
 
             <!-- 6. Content -->

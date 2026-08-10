@@ -69,62 +69,6 @@
             </div>
         </div>
 
-        {{-- Mode switch (single-record flow only). Off = link to an Awaiting TOT; on = attach a
-             brand-new OP + ToT pair to a file number that was commissioned without an OP. --}}
-        <div id="copModeToggle" class="px-6 pt-3">
-            <label class="inline-flex items-start gap-2 text-xs text-slate-700 cursor-pointer">
-                <input type="checkbox" id="copUseCommissionedFile" onchange="copToggleCommissionedMode()"
-                       class="mt-0.5 w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500">
-                <span>
-                    <span class="font-semibold">This OP is for a file number already commissioned</span>
-                    <span class="block text-slate-500">Pick the commissioned file, fill the OP details, and
-                        both the OP and its Transfer of Title are created.</span>
-                </span>
-            </label>
-        </div>
-
-        {{-- Commissioned-file mode: choose the file, then confirm what the pair will be written as. --}}
-        <div id="copCommissionedBand" class="hidden px-6 py-3 bg-blue-50/60 border-b border-blue-100">
-            <div class="flex flex-wrap items-end gap-3">
-                <div class="flex-1 min-w-[16rem]">
-                    <label class="block text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1">
-                        Commissioned File Number <span class="text-rose-500">*</span>
-                    </label>
-                    <input type="text" id="copCommFileNo" placeholder="e.g. RES-2026-13"
-                           onkeydown="if(event.key==='Enter'){event.preventDefault();copLookupCommissionedFile();}"
-                           oninput="copResetCommissionedLookup()"
-                           class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono uppercase">
-                </div>
-                <button type="button" onclick="copLookupCommissionedFile()"
-                        class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition">
-                    Check File
-                </button>
-            </div>
-            {{-- Populated by the lookup; the Capture button stays disabled until this is filled. --}}
-            <div id="copCommResult" class="hidden mt-3 grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
-                <div>
-                    <div class="text-slate-400 font-semibold uppercase tracking-wide text-[10px]">Commissioned To</div>
-                    <div id="copCommFileName" class="font-semibold text-slate-800 mt-0.5">—</div>
-                </div>
-                <div>
-                    <div class="text-slate-400 font-semibold uppercase tracking-wide text-[10px]">Prop ID</div>
-                    <div id="copCommPropId" class="font-mono text-slate-700 mt-0.5">—</div>
-                </div>
-                <div>
-                    <div class="text-slate-400 font-semibold uppercase tracking-wide text-[10px]">Plot / Location</div>
-                    <div id="copCommPlot" class="text-slate-700 mt-0.5">—</div>
-                </div>
-                <div>
-                    <label class="block text-slate-400 font-semibold uppercase tracking-wide text-[10px] mb-1">
-                        New Holder — ToT Party 2 <span class="text-rose-500">*</span>
-                    </label>
-                    <input type="text" id="copCommNewHolder" placeholder="ENTER NEW HOLDER"
-                           class="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs">
-                </div>
-            </div>
-            <div id="copCommError" class="hidden mt-3 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-800"></div>
-        </div>
-
         {{-- The TOT being linked (single-record flow only) --}}
         <div id="copTotBand" class="px-6 py-3 bg-amber-50/60 border-b border-amber-100">
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
@@ -269,7 +213,7 @@
                         class="px-4 py-2 border border-slate-300 rounded-lg text-sm text-slate-700 hover:bg-white transition">
                     Cancel
                 </button>
-                <button type="button" id="copCaptureBtn" onclick="copCaptureSubmit()"
+                <button type="button" id="copCaptureBtn" onclick="copCaptureAndLink()"
                         class="px-5 py-2 bg-violet-600 text-white rounded-lg text-sm font-semibold hover:bg-violet-700 transition">
                     <i data-lucide="plus" class="w-4 h-4 inline"></i> Capture OP
                 </button>
@@ -294,7 +238,6 @@
        through a shared prop_id. (OP serial search / matching is disabled for now.)
        ═══════════════════════════════════════════════════════════════════ */
     let copTot = null;            // the Awaiting TOT being linked (single-record flow)
-    let copCommFile = null;       // the resolved commissioned file (commissioned-file flow)
 
     /* ─── Location Builder: Plot No + District (searchable) → Full Location ─── */
     let opDistrictsCache = null;
@@ -416,13 +359,6 @@
         copSetBatchMode(false);   // single-record TOT flow: hide the batch stepper UI
         copTot = row;
 
-        // Opened from an Awaiting TOT, so start in TOT mode — but leave the switch usable, since
-        // the same card serves both flows.
-        const modeToggle = document.getElementById('copUseCommissionedFile');
-        modeToggle.disabled = false;
-        modeToggle.checked = false;
-        copToggleCommissionedMode();
-
         document.getElementById('copTotFileNo').textContent = row.file_number;
         // Party 1 is still the placeholder 'Kano State Government' until an OP is linked — hide it.
         const p1 = (row.party_1 || '').trim();
@@ -486,311 +422,7 @@
         if (typeof copShowDupWarn === 'function') copShowDupWarn('');
         copTot = null;
         copBatch = null;
-        copCommFile = null;
     };
-
-    /* ═══════════════════════════════════════════════════════════════════
-       Commissioned-file mode — capture an OP for a file number that was
-       commissioned without one. Unlike the TOT flow there is nothing to
-       link to: the submit writes BOTH pra rows (the OP and its ToT).
-       ═══════════════════════════════════════════════════════════════════ */
-
-    // Open the card with no Awaiting TOT, straight into commissioned-file mode.
-    window.openCaptureOpForCommissionedFile = function () {
-        copBatch = null;
-        copTot = null;
-        copSetBatchMode(false);
-        copResetCardFields();
-
-        document.getElementById('copUseCommissionedFile').checked = true;
-        copToggleCommissionedMode();
-        // No TOT band to fall back to here, so the toggle must stay on.
-        document.getElementById('copUseCommissionedFile').disabled = true;
-
-        copAllocateTempFileno();
-        const modal = document.getElementById('captureOpModal');
-        initLocationBuilder('cop', modal);
-        copFillLandUseOptions(copAlpine());
-        copFillLgaOptions();
-        copLoadPurposesForLandUse('', '');   // unfiltered until a Land Use is chosen
-        modal.classList.remove('hidden');
-        document.body.style.overflow = 'hidden';
-        if (window.lucide) window.lucide.createIcons();
-    };
-
-    // Blank every OP field. Shared by the commissioned-file opener; the TOT opener seeds
-    // its own values from the row and so clears them inline.
-    function copResetCardFields() {
-        ['copOpSerial','copGrantee','copSerialNo','copPageNo','copVolNo','copDeedsTime']
-            .forEach(id => { document.getElementById(id).value = ''; });
-        ['copTxDate','copDeedsDate'].forEach(id => copSetDateValue(id, ''));
-        document.getElementById('copLandUse').value = '';
-        document.getElementById('copStatus').value = 'Normal';
-        document.getElementById('copOpType').value = '';
-        resetLocationBuilder('cop', '');
-        copShowDupWarn('');
-    }
-
-    window.copToggleCommissionedMode = function () {
-        const on = document.getElementById('copUseCommissionedFile').checked;
-        document.getElementById('copCommissionedBand').classList.toggle('hidden', !on);
-        document.getElementById('copTotBand').classList.toggle('hidden', on);
-        copResetCommissionedLookup();
-        document.getElementById('copCardTitle').textContent = on ? 'Capture OP for Commissioned File' : 'Capture OP';
-        document.getElementById('copCardSubtitle').textContent = on
-            ? 'Select the commissioned file, then capture the OP behind it — the Transfer of Title is created with it.'
-            : 'Match an existing OP, or capture a new one and link it to this Awaiting TOT';
-        document.getElementById('copModeHint').textContent = on
-            ? 'Creates two PRA rows: the Occupancy Permit (on a TEMP number) and the Transfer of Title (on the commissioned number).'
-            : (copTot ? 'Capturing a new OP and linking it to this Awaiting TOT via the shared Prop ID.' : '');
-    };
-
-    // Any edit to the file number invalidates a previous lookup — the Capture button is gated
-    // on copCommFile, so this is what stops a stale file being submitted.
-    window.copResetCommissionedLookup = function () {
-        copCommFile = null;
-        document.getElementById('copCommResult').classList.add('hidden');
-        document.getElementById('copCommError').classList.add('hidden');
-    };
-
-    function copCommShowError(message) {
-        const box = document.getElementById('copCommError');
-        box.textContent = message;
-        box.classList.remove('hidden');
-        document.getElementById('copCommResult').classList.add('hidden');
-    }
-
-    window.copLookupCommissionedFile = function () {
-        const fileNo = (document.getElementById('copCommFileNo').value || '').trim().toUpperCase();
-        document.getElementById('copCommFileNo').value = fileNo;
-        copResetCommissionedLookup();
-        if (!fileNo) {
-            copCommShowError('Enter the commissioned file number.');
-            return;
-        }
-
-        const url = '{{ route("lands-one-stop-shop.applications.op-commissioned-file") }}?file_no=' + encodeURIComponent(fileNo);
-        fetch(url, { headers: { 'Accept': 'application/json' } })
-            .then(r => r.json().then(d => ({ ok: r.ok, d })))
-            .then(({ ok, d }) => {
-                if (!ok || !d.success) {
-                    copCommShowError(d.message || 'That file number could not be resolved.');
-                    return;
-                }
-                if (d.has_tot) {
-                    copCommShowError('This file already has a Transfer of Title (pra #' + d.tot_pra_id
-                        + '). Capturing here would give it a second one.');
-                    return;
-                }
-
-                copCommFile = d;
-                document.getElementById('copCommFileName').textContent = d.file_name || '—';
-                document.getElementById('copCommPropId').textContent = d.prop_id || 'will be allocated';
-                document.getElementById('copCommPlot').textContent =
-                    [d.plot_no, d.location].filter(Boolean).join(' · ') || '—';
-                // The commissioned holder is the ToT's new party 2 by default — it is the name the
-                // file was commissioned to. Editable, because the card may be catching up on a
-                // transfer that happened after commissioning.
-                document.getElementById('copCommNewHolder').value = d.file_name || '';
-                document.getElementById('copCommResult').classList.remove('hidden');
-
-                // Seed the OP fields the file already knows about; the user fills the rest.
-                if (d.plot_no) document.getElementById('copPlot').value = d.plot_no;
-                if (d.location) document.getElementById('copLocation').value = d.location;
-                if (d.lga) document.getElementById('copLga').value = d.lga;
-                if (d.land_use) {
-                    document.getElementById('copLandUse').value = d.land_use;
-                    // Setting .value fires no change event, so refilter Purpose by hand.
-                    copOnLandUseChange();
-                }
-            })
-            .catch(err => {
-                console.error('Commissioned file lookup failed', err);
-                copCommShowError('Lookup failed — see the console for details.');
-            });
-    };
-
-    // Capture button router: the card has two single-record flows behind one button.
-    window.copCaptureSubmit = function () {
-        if (document.getElementById('copUseCommissionedFile').checked) {
-            copCaptureForCommissionedFile();
-            return;
-        }
-        copCaptureAndLink();
-    };
-
-    function copCaptureForCommissionedFile() {
-        copNormalizeNumberFields();
-        if (!copCommFile) {
-            Swal.fire({ icon: 'warning', title: 'Check the file first',
-                text: 'Enter the commissioned file number and press Check File.' });
-            return;
-        }
-        const opType = document.getElementById('copOpType').value;
-        const status = document.getElementById('copStatus').value;
-        const grantee = document.getElementById('copGrantee').value.trim();
-        const newHolder = document.getElementById('copCommNewHolder').value.trim();
-        if (!opType) {
-            Swal.fire({ icon: 'warning', title: 'OP Type required', text: 'Select the Occupancy Permit (OP) Type.' });
-            return;
-        }
-        if (!status) {
-            Swal.fire({ icon: 'warning', title: 'Status required', text: 'Select a Status.' });
-            return;
-        }
-        if (!grantee) {
-            Swal.fire({ icon: 'warning', title: 'Party 2 required',
-                text: "Party 2 is the allottee — it becomes the Transfer of Title's Party 1, so it can't be blank." });
-            return;
-        }
-        if (!newHolder) {
-            Swal.fire({ icon: 'warning', title: 'New holder required',
-                text: "The Transfer of Title's Party 2 is who the file is being held by now." });
-            return;
-        }
-
-        const purposeSel = document.getElementById('copPurpose');
-        let purposeName = (purposeSel.selectedOptions[0]?.text || '').trim();
-        if (purposeName === 'Select Purpose') purposeName = '';
-
-        Swal.fire({
-            icon: 'question',
-            title: 'Capture OP and Transfer of Title?',
-            html: `This writes two PRA rows for <b>${copCommFile.file_no}</b>.
-                   <div class="mt-3 text-left text-xs bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1">
-                     <div><b>OP:</b> Kano State Government → <span class="text-emerald-700 font-semibold">${grantee}</span>
-                          <span class="text-slate-400">(on ${document.getElementById('copFileNo').value || 'a TEMP number'})</span></div>
-                     <div><b>ToT:</b> ${grantee} → <span class="text-emerald-700 font-semibold">${newHolder}</span>
-                          <span class="text-slate-400">(on ${copCommFile.file_no})</span></div>
-                     <div><b>Prop ID:</b> ${copCommFile.prop_id || 'will be allocated'}</div>
-                   </div>`,
-            showCancelButton: true,
-            confirmButtonText: 'Yes, Capture',
-            cancelButtonText: 'Cancel',
-            confirmButtonColor: '#2563eb',
-        }).then(result => {
-            if (!result.isConfirmed) return;
-            copFetch('{{ route("lands-one-stop-shop.applications.op-capture-commissioned") }}', {
-                file_no: copCommFile.file_no,
-                grantee: grantee,
-                new_holder: newHolder,
-                op_type: opType,
-                status: status,
-                system_fileno: document.getElementById('copFileNo').value,
-                op_serial_number: document.getElementById('copOpSerial').value,
-                transaction_date: document.getElementById('copTxDate').value || null,
-                land_use: document.getElementById('copLandUse').value,
-                purpose: purposeName,
-                lga: document.getElementById('copLga').value,
-                location: document.getElementById('copLocation').value,
-                plot_no: document.getElementById('copPlot').value,
-                serial_no: document.getElementById('copSerialNo').value,
-                page_no: document.getElementById('copPageNo').value,
-                volume_no: document.getElementById('copVolNo').value,
-                deeds_date: document.getElementById('copDeedsDate').value,
-                deeds_time: document.getElementById('copDeedsTime').value,
-            }).then(({ ok, status: httpStatus, d }) => {
-                if (httpStatus === 419 || httpStatus === 401 || httpStatus === 403) {
-                    copSessionExpiredDialog(() => copCaptureForCommissionedFile());
-                    return;
-                }
-                if (!ok || !d.success) {
-                    Swal.fire({ icon: 'error', title: 'Could not capture', text: d.message || 'Unknown error.' });
-                    return;
-                }
-                closeCaptureOpModal();
-                Swal.fire({ icon: 'success', title: 'OP and ToT created', text: d.message })
-                    .then(() => window.location.reload());
-            }).catch(err => {
-                console.error('Commissioned-file capture failed', err);
-                Swal.fire({ icon: 'error', title: 'Request failed', text: 'See the console for details.' });
-            });
-        });
-    }
-
-    // Capture the OP directly and link it to the TOT. No serial matching / search.
-    window.copCaptureAndLink = function () {
-        if (!copTot) return;
-        copNormalizeNumberFields();   // 007 -> 7 before it is stored
-        const opType = document.getElementById('copOpType').value;
-        const status = document.getElementById('copStatus').value;
-        const grantee = document.getElementById('copGrantee').value.trim();
-        // Required-field validation (Instrument Type is fixed, so it's always valid).
-        if (!opType) {
-            Swal.fire({ icon: 'warning', title: 'OP Type required', text: 'Select the Occupancy Permit (OP) Type.' });
-            return;
-        }
-        if (!status) {
-            Swal.fire({ icon: 'warning', title: 'Status required', text: 'Select a Status.' });
-            return;
-        }
-        if (!grantee) {
-            Swal.fire({ icon: 'warning', title: 'Party 2 required',
-                text: "Party 2 is the allottee — it becomes the TOT's Party 1, so it can't be blank." });
-            return;
-        }
-        Swal.fire({
-            icon: 'question',
-            title: 'Capture OP?',
-            html: `This creates the OP record and links it to the Awaiting TOT through the shared Prop ID.
-                   <div class="mt-3 text-left text-xs bg-slate-50 border border-slate-200 rounded-lg p-3">
-                     <div><b>TOT:</b> ${copTot.file_number} (${copTot.op_batch})</div>
-                     <div><b>Prop ID:</b> ${copTot.prop_id}</div>
-                     <div class="mt-1"><b>Allottee (Party 1):</b> <span class="text-rose-600">${copTot.party_1}</span> → <span class="text-emerald-700 font-semibold">${grantee}</span></div>
-                   </div>`,
-            showCancelButton: true,
-            confirmButtonText: 'Yes, Capture OP',
-            cancelButtonText: 'Cancel',
-            confirmButtonColor: '#7c3aed',
-        }).then(result => {
-            if (!result.isConfirmed) return;
-            copPost('{{ route("lands-one-stop-shop.applications.op-capture-and-link") }}', {
-                tot_pra_id: copTot.pra_id,
-                grantee: grantee,
-                op_type: opType,
-                status: status,
-                system_fileno: document.getElementById('copFileNo').value,
-                op_serial_number: document.getElementById('copOpSerial').value,
-                transaction_date: document.getElementById('copTxDate').value || null,
-                land_use: document.getElementById('copLandUse').value,
-                location: document.getElementById('copLocation').value,
-                plot_no: document.getElementById('copPlot').value,
-                serial_no: document.getElementById('copSerialNo').value,
-                page_no: document.getElementById('copPageNo').value,
-                volume_no: document.getElementById('copVolNo').value,
-                deeds_date: document.getElementById('copDeedsDate').value,
-                deeds_time: document.getElementById('copDeedsTime').value,
-            });
-        });
-    };
-
-    function copPost(url, payload) {
-        const batchNo = copTot ? copTot.batch_no : null;
-        fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRF-TOKEN': copCsrf(),
-            },
-            body: JSON.stringify(payload),
-        })
-            .then(r => r.json().then(d => ({ ok: r.ok, d })))
-            .then(({ ok, d }) => {
-                if (!ok || !d.success) {
-                    Swal.fire({ icon: 'error', title: 'Could not link', text: d.message || 'Unknown error.' });
-                    return;
-                }
-                Swal.fire({ icon: 'success', title: 'Linked', text: d.message, timer: 2600, showConfirmButton: false });
-                closeCaptureOpModal();
-                // Refresh the batch list — the OP Batch modal only exists on the OSS page.
-                if (batchNo && typeof window.openOpBatchModal === 'function') window.openOpBatchModal(batchNo);
-            })
-            .catch(err => {
-                console.error('Link request failed', err);
-                Swal.fire({ icon: 'error', title: 'Request failed', text: 'See the console for details.' });
-            });
-    }
 
     /* ═══════════════════════════════════════════════════════════════════
        Batch Capture OP — reuse this same card as a Prev/Next stepper.
@@ -931,9 +563,6 @@
         document.querySelectorAll('.cop-batch-req').forEach(el => el.classList.toggle('hidden', !on));
         document.getElementById('copBatchBar').classList.toggle('hidden', !on);
         document.getElementById('copTotBand').classList.toggle('hidden', on);
-        // Commissioned-file mode is a single-record flow — a batch has no one file to attach to.
-        document.getElementById('copModeToggle').classList.toggle('hidden', on);
-        if (on) document.getElementById('copCommissionedBand').classList.add('hidden');
         document.getElementById('copCaptureBtn').classList.toggle('hidden', on);
         document.getElementById('copSaveBatchBtn').classList.toggle('hidden', !on);
         if (on) {

@@ -55,17 +55,16 @@
         <!-- Gender -->
         <div class="form-group">
             <label class="block text-sm font-medium text-gray-700 mb-2">Gender <span class="text-red-500">*</span></label>
-            <select :id="'gender-' + index"
-                    :name="'gender[' + index + ']'"
+            {{-- id/name are built per file by Alpine, so the component's static ones
+                 are switched off with :name="null" / :id="null" and the `::` bindings
+                 below are passed straight through. The gender-select class is what
+                 create-indexing-dialog.js validates on. --}}
+            <x-gender-select :name="null" :id="null"
+                    ::id="'gender-' + index"
+                    ::name="'gender[' + index + ']'"
                     x-model="param.gender"
                     class="gender-select block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                    required>
-                <option value="">Select Gender</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-                <option value="Corporate">Corporate</option>
-                <option value="Joint">Joint</option>
-            </select>
+                    required />
         </div>
 
         <!-- Date of Birth -->

@@ -563,13 +563,14 @@ class STFileNumberService
      */
     private function parseFileNumber(string $fileNumber): ?array
     {
-        // Expected format: ST-{LAND_USE}-{YEAR}-{SERIAL}
-        if (preg_match('/^ST-([A-Z]+)-(\d{4})-(\d+)$/', $fileNumber, $matches)) {
+        // Expected format: ST-{LAND_USE}-{YEAR}-{SERIAL}, or the conversion form
+        // ST-CON-{LAND_USE}-{YEAR}-{SERIAL} whose serial comes from the MLS CON pool.
+        if (preg_match('/^ST-(CON-)?([A-Z]+)-(\d{4})-(\d+)$/', $fileNumber, $matches)) {
             return [
                 'prefix' => 'ST',
-                'land_use_code' => $matches[1],
-                'year' => (int)$matches[2],
-                'serial' => (int)$matches[3]
+                'land_use_code' => ($matches[1] !== '' ? 'CON-' : '') . $matches[2],
+                'year' => (int)$matches[3],
+                'serial' => (int)$matches[4]
             ];
         }
         
