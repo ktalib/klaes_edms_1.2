@@ -392,9 +392,10 @@ class CommissionNewSTController extends Controller
                 // The posted NPFN was only a preview; both are allocated in the
                 // transaction below.
                 $landUseFullName = strtoupper(trim($validated['land_use']));
-                // ST conversions count on their own pool per land use, starting at 1
-                // (ST-CON-COM-2026-1), independent of direct allocations.
-                $landUseCode = 'CON-' . $this->baseLandUseCode($landUseFullName);
+                // The ST number carries no CON marker: a conversion primary is numbered
+                // exactly like a direct allocation (ST-COM-2026-18) off the shared ST
+                // pool. Only the mother file it points at says it is a conversion.
+                $landUseCode = $this->baseLandUseCode($landUseFullName);
                 $year = intval(date('Y'));
                 $serialNo = null;
             }
@@ -447,8 +448,8 @@ class CommissionNewSTController extends Controller
                         }
                     }
 
-                    // Either way the ST primary counts on the ST conversion pool for
-                    // its land use, which starts at 1: ST-CON-COM-2026-1.
+                    // Either way the ST primary is numbered off the shared ST pool for
+                    // its land use, exactly like a direct allocation: ST-COM-2026-18.
                     $serialNo = $this->nextPrimarySerial($landUseCode, $year);
                     $npFileNo = "ST-{$landUseCode}-{$year}-{$serialNo}";
                     $stFileNo = $npFileNo;
@@ -918,6 +919,196 @@ class CommissionNewSTController extends Controller
             'AGRICULTURAL' => 'CON-AG',
             'MIXED'        => 'CON-MIXED',
         ][strtoupper(trim((string) $landUse))] ?? 'CON-RES';
+    }
+
+    /**
+     * MASTER DELETE — erase an ST file number from every table it was written to.
+     *
+     * Destructive and irreversible: commissioning fans out across st_file_numbers,
+     * fileNumber, file_indexings, mls_file_no, the staging tables, related_file_number,
+     * decommissioned_files, commissioning sheets and the EDMS folder, and this removes
+     * all of them in one transaction.
+     *
+     * Two things are deliberately NOT touched:
+     *  - a fileNumber row that existed before the ST file was attached to it (a direct
+     *    allocation links to a land file) — only the ST columns are cleared;
+     *  - the land file a conversion was raised on when it was already extant. Only a
+     *    CON file this commissioning itself created is removed with it.
+     *
+     * @param Request $request  requires confirm = the exact file number
+     */
+    public function masterDestroy(Request $request)
+    {
+        $validated = $request->validate([
+            'file_number' => 'required|string',
+            'confirm'     => 'required|string',
+        ]);
+
+        $fileNo = trim($validated['file_number']);
+
+        if (trim($validated['confirm']) !== $fileNo) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Confirmation text does not match the file number.',
+            ], 422);
+        }
+
+        $user = Auth::user();
+        if (($user->assign_role ?? null) !== 'Supper Admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only a Super Admin may delete a file number across all tables.',
+            ], 403);
+        }
+
+        try {
+            $connection = DB::connection('sqlsrv');
+
+            $stRow = $connection->table('st_file_numbers')
+                ->where('np_fileno', $fileNo)
+                ->orWhere('fileno', $fileNo)
+                ->orderBy('id')
+                ->first();
+
+            if (!$stRow) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "No ST file number found for {$fileNo}.",
+                ], 404);
+            }
+
+            $isPrimary = ($stRow->file_no_type ?? '') === 'PRIMARY';
+            $motherFileNo = trim((string) ($stRow->mls_fileno ?? ''));
+
+            // Only remove the land file if this commissioning created it: an ST
+            // conversion stamps mls_file_no.source, and an extant file predates it.
+            $motherIsOurs = false;
+            if ($isPrimary && $motherFileNo !== '' && stripos($motherFileNo, 'CON-') === 0) {
+                $motherIsOurs = $connection->table('mls_file_no')
+                    ->where('full_file_number', $motherFileNo)
+                    ->where('source', 'ST Conversion')
+                    ->exists();
+
+                // Another ST file still standing on it? Then it is not ours to delete.
+                if ($motherIsOurs) {
+                    $others = $connection->table('st_file_numbers')
+                        ->where('mls_fileno', $motherFileNo)
+                        ->where('id', '<>', $stRow->id)
+                        ->exists();
+                    $motherIsOurs = !$others;
+                }
+            }
+
+            $deleted = $connection->transaction(function () use ($connection, $stRow, $fileNo, $isPrimary, $motherFileNo, $motherIsOurs) {
+                $counts = [];
+
+                // Units hang off a primary by np_fileno; a unit deletes only itself.
+                $stQuery = $isPrimary
+                    ? $connection->table('st_file_numbers')->where('np_fileno', $fileNo)
+                    : $connection->table('st_file_numbers')->where('id', $stRow->id);
+                $counts['st_file_numbers'] = $stQuery->delete();
+
+                $indexedNumbers = array_values(array_filter([$fileNo, $motherIsOurs ? $motherFileNo : null]));
+                $counts['file_indexings'] = $connection->table('file_indexings')
+                    ->whereIn('file_number', $indexedNumbers)->delete();
+
+                $counts['related_file_number'] = $connection->table('related_file_number')
+                    ->whereIn('file_number', $indexedNumbers)->delete();
+
+                $counts['decommissioned_files'] = $connection->table('decommissioned_files')
+                    ->where('successor_file_no', $fileNo)->delete();
+
+                $counts['entities_staging'] = $connection->table('entities_staging')
+                    ->where('file_number', $fileNo)->delete();
+                $counts['customers_staging'] = $connection->table('customers_staging')
+                    ->where('file_number', $fileNo)->delete();
+
+                $counts['file_commissioning_sheets'] = $connection->table('file_commissioning_sheets')
+                    ->whereIn('file_number', $indexedNumbers)->delete();
+
+                // fileNumber: drop rows this commissioning created, and unhook the ST
+                // columns from a land file that was here first.
+                $counts['fileNumber_deleted'] = 0;
+                $counts['fileNumber_unlinked'] = 0;
+                foreach ($connection->table('fileNumber')->where('st_file_no', $fileNo)->get() as $mirror) {
+                    $ours = $motherIsOurs && trim((string) $mirror->mlsfNo) === $motherFileNo;
+                    if ($ours) {
+                        $connection->table('fileNumber')->where('id', $mirror->id)->delete();
+                        $counts['fileNumber_deleted']++;
+                    } else {
+                        $connection->table('fileNumber')->where('id', $mirror->id)
+                            ->update(['st_file_no' => null, 'updated_at' => now()]);
+                        $counts['fileNumber_unlinked']++;
+                    }
+                }
+
+                $counts['mls_file_no'] = 0;
+                $counts['conversion_applications'] = 0;
+                if ($motherIsOurs) {
+                    $counts['conversion_applications'] = $connection->table('conversion_applications')
+                        ->where('full_file_number', $motherFileNo)->delete();
+                    $counts['mls_file_no'] = $connection->table('mls_file_no')
+                        ->where('full_file_number', $motherFileNo)->delete();
+                }
+
+                return $counts;
+            });
+
+            $folderRemoved = $this->removeEdmsScanFolder($fileNo);
+
+            Log::warning('ST file number master-deleted', [
+                'file_number'    => $fileNo,
+                'mother_file'    => $motherFileNo,
+                'mother_deleted' => $motherIsOurs,
+                'deleted'        => $deleted,
+                'edms_removed'   => $folderRemoved,
+                'user_id'        => Auth::id(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "{$fileNo} deleted from all tables.",
+                'data' => [
+                    'file_number'    => $fileNo,
+                    'mother_file'    => $motherFileNo ?: null,
+                    'mother_deleted' => $motherIsOurs,
+                    'deleted'        => $deleted,
+                    'edms_removed'   => $folderRemoved,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error in CommissionNewSTController@masterDestroy: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error deleting file number: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete the EDMS scan folder for a file number, but only when it holds no scans —
+     * documents are never destroyed by a record deletion.
+     */
+    private function removeEdmsScanFolder(string $fileNo): bool
+    {
+        try {
+            $dir = storage_path('app/public/EDMS/SCAN_UPLOAD/ST_Registry/' . str_replace(['/', '\\'], '_', $fileNo));
+            if (!is_dir($dir)) {
+                return false;
+            }
+
+            $entries = array_diff(scandir($dir) ?: [], ['.', '..']);
+            if (!empty($entries)) {
+                Log::info('EDMS folder kept during master delete: it holds scans', ['dir' => $dir]);
+
+                return false;
+            }
+
+            return @rmdir($dir);
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 
     /**

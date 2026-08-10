@@ -29,6 +29,22 @@ document.addEventListener('DOMContentLoaded', function () {
     const consentVariant = window.consentFormVariant || 'letter';
     const letterDateInput = document.getElementById('letter_date');
     const applicationDateInput = document.getElementById('application_submitted_date');
+
+    // admin/header.blade.php enhances every input[type=date] with flatpickr (altInput),
+    // so the original input is hidden and setting .value leaves the visible field stale.
+    // Go through the flatpickr instance when there is one.
+    const setDateInputValue = (input, value) => {
+        if (!input) return;
+        if (input._flatpickr) {
+            if (value) {
+                input._flatpickr.setDate(value, false);
+            } else {
+                input._flatpickr.clear(false);
+            }
+            return;
+        }
+        input.value = value || '';
+    };
     const applicationTypeInput = document.getElementById('application_type');
     const rightOfOccupancyNumberHiddenInput = document.getElementById('right_of_occupancy_number');
     const rightOfOccupancyNumberDisplayInput = document.getElementById('right_of_occupancy_number_display');
@@ -68,12 +84,12 @@ document.addEventListener('DOMContentLoaded', function () {
         if (letterDateInput) {
             letterDateInput.required = !isApplication;
             letterDateInput.disabled = isApplication;
-            if (isApplication) letterDateInput.value = '';
+            if (isApplication) setDateInputValue(letterDateInput, '');
         }
         if (applicationDateInput) {
             applicationDateInput.required = isApplication;
             applicationDateInput.disabled = !isApplication;
-            if (!isApplication) applicationDateInput.value = '';
+            if (!isApplication) setDateInputValue(applicationDateInput, '');
         }
 
         if (applicationTypeInput) {
@@ -660,10 +676,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 const correspondenceState = document.getElementById('correspondence_state');
                 if (correspondenceState) correspondenceState.value = 'Kano';
 
-                // Set default application date
+                // Letter Date defaults to today; Application Date is the date on the
+                // applicant's own letter, so it is left blank for the user to enter.
                 const today = new Date().toISOString().split('T')[0];
-                if (letterDateInput) letterDateInput.value = today;
-                if (applicationDateInput) applicationDateInput.value = today;
+                if (letterDateInput) setDateInputValue(letterDateInput, today);
+                if (applicationDateInput) setDateInputValue(applicationDateInput, '');
                 setRightOfOccupancyNumber('');
                 if (rightOfOccupancyLandUseSelect) rightOfOccupancyLandUseSelect.value = '';
                 if (rightOfOccupancyPurposeSelect) rightOfOccupancyPurposeSelect.value = '';
@@ -814,9 +831,10 @@ document.addEventListener('DOMContentLoaded', function () {
             document.querySelector('input[name="party_name"]').value = appData.party_name;
             updateApplicantNamePreview();
             const letterDate = appData.application_date ? appData.application_date.split(' ')[0] : new Date().toISOString().split('T')[0];
-            if (letterDateInput) letterDateInput.value = letterDate;
-            const applicationDate = appData.application_submitted_date ? appData.application_submitted_date.split(' ')[0] : new Date().toISOString().split('T')[0];
-            if (applicationDateInput) applicationDateInput.value = applicationDate;
+            if (letterDateInput) setDateInputValue(letterDateInput, letterDate);
+            // Blank when the record has none — never substitute today's date.
+            const applicationDate = appData.application_submitted_date ? appData.application_submitted_date.split(' ')[0] : '';
+            if (applicationDateInput) setDateInputValue(applicationDateInput, applicationDate);
 
             const setInputValue = (name, value) => {
                 const input = document.querySelector(`[name="${name}"]`);

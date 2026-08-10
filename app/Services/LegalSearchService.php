@@ -2598,7 +2598,7 @@ class LegalSearchService
                     $qq->whereNull('is_deleted')->orWhere('is_deleted', 0);
                 });
             })
-            ->orderByRaw('TRY_CONVERT(DATE, deeds_date) ASC')
+            ->orderByRaw($this->sqlDateExpr('deeds_date') . ' ASC')
             ->orderBy('id')
             ->first(['grantor']);
 
@@ -3154,6 +3154,30 @@ class LegalSearchService
         return null;
     }
 
+    /**
+     * SQL that converts one of the staging tables' free-text date columns to a DATE,
+     * tolerating the day-first values they actually contain.
+     *
+     * TRY_CONVERT without a style uses the connection's language. This server runs
+     * us_english (mdy), so a day-first string like '17-06-1982' has no valid month and
+     * converts to NULL — silently. The row then reaches the timeline carrying no date at
+     * all and sinks to the bottom whatever its real date is, which is what pinned the 1982
+     * C of O on CON-AG-1982-172 below a 1984 assignment. CofO_staging alone stores ~5,971
+     * transaction_date and ~5,319 cofo_date values in that format.
+     *
+     * Order matters: the default (mdy) conversion is tried FIRST, so a genuinely ambiguous
+     * value — both parts <= 12, e.g. '06-07-1984' — keeps the mdy reading it has always
+     * had. Styles 105 (dd-mm-yyyy) and 103 (dd/mm/yyyy) only rescue values that currently
+     * yield NULL, so no row already displaying a date changes meaning.
+     */
+    private function sqlDateExpr(string $column): string
+    {
+        return "COALESCE("
+            . "TRY_CONVERT(DATE, $column), "
+            . "TRY_CONVERT(DATE, $column, 105), "
+            . "TRY_CONVERT(DATE, $column, 103))";
+    }
+
     // --- file_history_staging ----------------------------------------
     // Actual columns: NO size, NO caveat. Has plot_size, is_caveated (bit), caveated_comment
 
@@ -3168,7 +3192,7 @@ class LegalSearchService
                 'kangisFileNo',
                 'NewKANGISFileno',
                 'transaction_type',
-                DB::raw("TRY_CONVERT(DATE, transaction_date) AS transaction_date"),
+                DB::raw($this->sqlDateExpr('transaction_date') . " AS transaction_date"),
                 'party_1',
                 'party_2',
                 'party_3',
@@ -3230,7 +3254,7 @@ class LegalSearchService
                 'kangisFileNo',
                 'NewKANGISFileno',
                 'transaction_type',
-                DB::raw("TRY_CONVERT(DATE, transaction_date) AS transaction_date"),
+                DB::raw($this->sqlDateExpr('transaction_date') . " AS transaction_date"),
                 'party_1',
                 'party_2',
                 'party_3',
@@ -3294,7 +3318,7 @@ class LegalSearchService
                 'kangisFileNo',
                 'NewKANGISFileno',
                 'transaction_type',
-                DB::raw("TRY_CONVERT(DATE, transaction_date) AS transaction_date"),
+                DB::raw($this->sqlDateExpr('transaction_date') . " AS transaction_date"),
                 'party_1',
                 'party_2',
                 'party_3',
@@ -3357,7 +3381,7 @@ class LegalSearchService
                 DB::raw("NULL AS kangisFileNo"),
                 DB::raw("NULL AS NewKANGISFileno"),
                 DB::raw("instrument_type AS transaction_type"),
-                DB::raw("TRY_CONVERT(DATE, deeds_date) AS transaction_date"),
+                DB::raw($this->sqlDateExpr('deeds_date') . " AS transaction_date"),
                 DB::raw("grantor AS party_1"),
                 DB::raw("grantee AS party_2"),
                 DB::raw("NULL AS party_3"),
@@ -3711,7 +3735,7 @@ class LegalSearchService
                 'kangisFileNo',
                 'NewKANGISFileno',
                 'transaction_type',
-                DB::raw("TRY_CONVERT(DATE, transaction_date) AS transaction_date"),
+                DB::raw($this->sqlDateExpr('transaction_date') . " AS transaction_date"),
                 'party_1',
                 'party_2',
                 'party_3',
@@ -3751,7 +3775,7 @@ class LegalSearchService
                 'kangisFileNo',
                 'NewKANGISFileno',
                 'transaction_type',
-                DB::raw("TRY_CONVERT(DATE, transaction_date) AS transaction_date"),
+                DB::raw($this->sqlDateExpr('transaction_date') . " AS transaction_date"),
                 DB::raw("NULL AS party_1"),
                 DB::raw("NULL AS party_2"),
                 DB::raw("NULL AS party_3"),
@@ -3790,7 +3814,7 @@ class LegalSearchService
                 'kangisFileNo',
                 'NewKANGISFileno',
                 'transaction_type',
-                DB::raw("TRY_CONVERT(DATE, transaction_date) AS transaction_date"),
+                DB::raw($this->sqlDateExpr('transaction_date') . " AS transaction_date"),
                 'party_1',
                 'party_2',
                 'party_3',
@@ -3831,7 +3855,7 @@ class LegalSearchService
                 DB::raw("NULL AS kangisFileNo"),
                 DB::raw("NULL AS NewKANGISFileno"),
                 DB::raw("instrument_type AS transaction_type"),
-                DB::raw("TRY_CONVERT(DATE, deeds_date) AS transaction_date"),
+                DB::raw($this->sqlDateExpr('deeds_date') . " AS transaction_date"),
                 DB::raw("grantor AS party_1"),
                 DB::raw("grantee AS party_2"),
                 DB::raw("NULL AS party_3"),
@@ -5459,7 +5483,7 @@ class LegalSearchService
 
         // Weights come from the shared map so the printed slip and the on-screen timeline
         // (resources/views/legal_search/js.blade.php) order a file identically. Returns null
-        // for floating events — parcel updates, decommissionings — which are injected
+        // for floating events — the C of O, parcel updates, decommissionings — which are injected
         // chronologically rather than ranked. See LegalSearchTimelineWeights.
         $getTransPriorityWeight = function (array $row) use ($canonicalTransactionType): ?int {
             $txType = $canonicalTransactionType($row['transaction_type'] ?? ($row['instrument_type'] ?? ''));
@@ -8773,10 +8797,9 @@ class LegalSearchService
             return $raw;
         };
 
-        $weightOf = function (array $row) use ($canonicalTransactionType): int {
+        $weightOf = function (array $row) use ($canonicalTransactionType): ?int {
             $txType = $canonicalTransactionType($row['transaction_type'] ?? ($row['instrument_type'] ?? ''));
-            $w = \App\Support\LegalSearchTimelineWeights::weightFor($row, $txType);
-            return $w ?? 0;
+            return \App\Support\LegalSearchTimelineWeights::weightFor($row, $txType);
         };
 
         // OP / TOT / RofO carry their operative date in transaction_date; every other event —
@@ -8813,20 +8836,33 @@ class LegalSearchService
 
             foreach ($candidates as $c) {
                 $d = trim((string) $c);
-                if ($d !== '' && $d !== '-') {
-                    $parsed = rescue(fn () => \Carbon\Carbon::parse($d)->getTimestamp(), null, false);
-                    if ($parsed !== null) return $parsed;
+                if ($d === '' || $d === '-') {
+                    continue;
                 }
+
+                // A bare commissioning year ("1982") must anchor to 1 January. Carbon::parse()
+                // fills the missing month and day from TODAY, so it read that row as 10 Aug
+                // 1982 on this run and as a different date tomorrow — enough to sort the year's
+                // own C of O above the commissioning line, and to make the order drift with the
+                // calendar. Mirrors the same branch in buildPrintReport()'s parser.
+                if (preg_match('/^(?:19|20)\d{2}$/', $d)) {
+                    $parsed = rescue(fn () => \Carbon\Carbon::create((int) $d, 1, 1, 0, 0, 0)?->getTimestamp(), null, false);
+                    if ($parsed !== null) return $parsed;
+                    continue;
+                }
+
+                $parsed = rescue(fn () => \Carbon\Carbon::parse($d)->getTimestamp(), null, false);
+                if ($parsed !== null) return $parsed;
             }
             return null;
         };
 
-        usort($transactions, function (array $a, array $b) use ($weightOf, $ts): int {
-            $wa = $weightOf($a);
-            $wb = $weightOf($b);
-            if ($wa !== $wb) {
-                return $wb <=> $wa;
-            }
+        // Two phases, matching buildPrintReport() and sortTimelineChronologically() in
+        // js.blade.php. This sorter used to read a null weight as 0 and rank floating events
+        // in one pass with the weighted ones — which pinned every floater to the C of O's old
+        // rank and sank it beneath the file's dealings, silently undoing the chronological
+        // placement the other two sorters had already agreed on.
+        $compareByDateThenSn = function (array $a, array $b) use ($ts): int {
             $ta = $ts($a);
             $tb = $ts($b);
             if ($ta === null && $tb === null) {
@@ -8834,8 +8870,63 @@ class LegalSearchService
             }
             if ($ta === null) return 1;
             if ($tb === null) return -1;
-            return $ta <=> $tb;
+            if ($ta !== $tb) return $ta <=> $tb;
+            return ((int) ($a['sn'] ?? 0)) <=> ((int) ($b['sn'] ?? 0));
+        };
+
+        $weightedRows = [];
+        $floatingRows = [];
+        foreach ($transactions as $t) {
+            if ($weightOf($t) === null) {
+                $floatingRows[] = $t;
+            } else {
+                $weightedRows[] = $t;
+            }
+        }
+
+        // Phase 1 — weight DESC, then timestamp ASC, then sn.
+        usort($weightedRows, function (array $a, array $b) use ($weightOf, $compareByDateThenSn): int {
+            $wa = $weightOf($a);
+            $wb = $weightOf($b);
+            if ($wa !== $wb) {
+                return $wb <=> $wa;
+            }
+            return $compareByDateThenSn($a, $b);
         });
+
+        // Phase 2 — inject each floater after the last DATED weighted event on or before it.
+        usort($floatingRows, $compareByDateThenSn);
+
+        $isDatedWeighted = function (array $item) use ($weightOf, $ts): bool {
+            return $weightOf($item) !== null && $ts($item) !== null;
+        };
+
+        $transactions = $weightedRows;
+        foreach ($floatingRows as $floater) {
+            $floaterTs = $ts($floater);
+            if ($floaterTs === null) {
+                $transactions[] = $floater;
+                continue;
+            }
+
+            $insertAt = 0;
+            foreach ($transactions as $i => $existing) {
+                if (!$isDatedWeighted($existing)) {
+                    continue;
+                }
+                if ($ts($existing) <= $floaterTs) {
+                    $insertAt = $i + 1;
+                }
+            }
+            // Past floaters already parked on this anchor, and past UNDATED weighted rows,
+            // which have no position in time and must stay with their weight group.
+            $count = count($transactions);
+            while ($insertAt < $count && !$isDatedWeighted($transactions[$insertAt])) {
+                $insertAt++;
+            }
+            array_splice($transactions, $insertAt, 0, [$floater]);
+        }
+        $transactions = array_values($transactions);
 
         // Recertification/CoFO pairing executes strictly inside this lifecycle's
         // transaction phase so rows never leave their lifecycle group.

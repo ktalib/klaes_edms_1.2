@@ -416,14 +416,15 @@ class STFileNumberController extends Controller
                 // For PRIMARY and SUA
                 $isConversion = strcasecmp(trim((string) $request->input('application_type')), 'Conversion') === 0;
 
-                // Conversions count on their own pool per land use (CON-COM), so their
-                // serials start at 1 and never touch the direct-allocation run.
+                // The ST number is the same shape either way — a conversion is numbered
+                // off the shared ST pool, like a direct allocation. Only the CON mother
+                // file it is raised on marks it as a conversion.
+                $nextSerial = $this->getNextSerialPreview($landUseInfo['code'], $year);
+                $npFileNo = "ST-{$landUseInfo['code']}-{$year}-{$nextSerial}";
                 $conversionFileNo = null;
                 $trackingId = null;
 
                 if ($isConversion && $type === 'PRIMARY') {
-                    $nextSerial = $this->getNextSerialPreview('CON-' . $landUseInfo['code'], $year);
-                    $npFileNo = "ST-CON-{$landUseInfo['code']}-{$year}-{$nextSerial}";
 
                     // The CON land file commissioned alongside it draws from the shared
                     // MLS conversion stream. Peek only -- commissioning consumes it.
@@ -435,9 +436,6 @@ class STFileNumberController extends Controller
                     // record to read a tracking ID from — it is minted here so the form
                     // can show it, and commissioning stores the one it displayed.
                     $trackingId = $this->reserveTrackingId();
-                } else {
-                    $nextSerial = $this->getNextSerialPreview($landUseInfo['code'], $year);
-                    $npFileNo = "ST-{$landUseInfo['code']}-{$year}-{$nextSerial}";
                 }
 
                 if ($type === 'SUA') {

@@ -164,17 +164,84 @@
                     </div>
                 </div>
 
-                <!-- Certificate of Occupancy Type Selection -->
-                <div id="coo-type-container" class="hidden mb-6 bg-teal-50 p-3 rounded-lg border border-teal-100">
-                    <label class="block text-sm font-semibold text-teal-800 mb-2">Certificate of Occupancy Type</label>
-                    <div class="flex items-center gap-6">
-                        <select id="cofoType" name="cofo_type"
-                            class="w-full px-3 py-2 bg-white border border-teal-200 rounded-lg text-sm focus:ring-1 focus:ring-teal-500 outline-none">
-                            <option value="">Select C of O Type</option>
-                            <option value="Direct Allocation">Direct Allocation</option>
-                            <option value="Recertification">Recertification</option>
-                            <option value="Conversion">Conversion</option>
-                        </select>
+                {{--
+                    Certificate of Occupancy variant + type.
+
+                    The three tabs pick which KIND of CofO is being captured. Each
+                    carries the exact instrument_type string the backend stores;
+                    InstrumentCaptureService::syncCofoStaging() maps those onto the
+                    CofO_staging title types (C of O / SLTR C of O / ST C of O), and
+                    everything else that branches on the type — registration
+                    numbering, the shared vault, isCofoInstrument() — matches on the
+                    "Certificate of Occupancy" substring, so all three keep working.
+
+                    "Certificate of Occupancy Type" (Direct Allocation /
+                    Recertification / Conversion) applies to the REGULAR variant
+                    only. SLTR and ST files are titled through their own programmes
+                    and have no such subtype, so the dropdown is hidden — and
+                    cleared, so a value picked on Regular can never ride along with
+                    an SLTR or ST capture.
+                --}}
+                {{-- Tailwind 2 does not ship a focus-visible variant, so the keyboard
+                     focus ring is plain CSS. A mouse click leaves no ring; tabbing does. --}}
+                <style>
+                    .cofo-variant-tab:focus { outline: none; }
+                    .cofo-variant-tab:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+                </style>
+
+                <div id="cofo-variant-container" class="hidden mb-6">
+                    <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                        Certificate of Occupancy Variant
+                    </label>
+
+                    <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+                        {{-- A segmented control rather than folder tabs: it stays legible at
+                             three short labels and needs no border-merging with the panel
+                             below, which is what made the first version look detached.
+
+                             Each variant carries its own accent so the three are told apart by
+                             colour as well as position. The accent classes are built from
+                             $accent — safe here because Tailwind is loaded as the full CDN
+                             build (no purge step to miss a dynamically composed name). --}}
+                        <div class="inline-flex items-center gap-1 p-1 bg-gray-100 rounded-lg border border-gray-200"
+                            role="tablist" aria-label="Certificate of Occupancy variant">
+                            @foreach ([
+                                ['regular', 'Regular', 'Certificate of Occupancy', 'teal'],
+                                ['sltr', 'SLTR', 'SLTR Certificate of Occupancy', 'indigo'],
+                                ['st', 'ST', 'ST Certificate of Occupancy', 'purple'],
+                            ] as [$variant, $tabLabel, $instrumentType, $accent])
+                                {{-- Regular carries the active classes on first paint;
+                                     setCofoVariant() in instruments-capture.js owns them after that. --}}
+                                <button type="button"
+                                    class="cofo-variant-tab px-5 py-2 text-sm font-semibold rounded-md transition-all {{ $variant === 'regular' ? "bg-{$accent}-600 text-white shadow-sm" : "text-gray-600 hover:text-{$accent}-700 hover:bg-white" }}"
+                                    data-variant="{{ $variant }}" data-instrument-type="{{ $instrumentType }}"
+                                    data-accent="{{ $accent }}"
+                                    role="tab" aria-selected="{{ $variant === 'regular' ? 'true' : 'false' }}"
+                                    aria-controls="cofo-variant-panel">{{ $tabLabel }}</button>
+                            @endforeach
+                        </div>
+
+                        {{-- Shown for SLTR / ST, where the panel below is empty — it explains
+                             the absence of the C of O Type instead of leaving a blank box.
+                             setCofoVariant() writes into the inner span, so the icon survives. --}}
+                        <p id="cofo-variant-note" class="hidden items-center gap-1.5 text-xs text-gray-500">
+                            <i data-lucide="info" class="h-3.5 w-3.5 flex-shrink-0 text-gray-400"></i>
+                            <span id="cofo-variant-note-text"></span>
+                        </p>
+                    </div>
+
+                    <div id="cofo-variant-panel" role="tabpanel">
+                        <!-- Certificate of Occupancy Type Selection (Regular only) -->
+                        <div id="coo-type-container" class="mt-3 bg-teal-50 p-3 rounded-lg border border-teal-100">
+                            <label for="cofoType" class="block text-xs font-semibold text-teal-800 uppercase tracking-wide mb-1.5">Certificate of Occupancy Type</label>
+                            <select id="cofoType" name="cofo_type"
+                                class="w-full max-w-sm px-3 py-2 bg-white border border-teal-200 rounded-lg text-sm focus:ring-1 focus:ring-teal-500 outline-none">
+                                <option value="">Select C of O Type</option>
+                                <option value="Direct Allocation">Direct Allocation</option>
+                                <option value="Recertification">Recertification</option>
+                                <option value="Conversion">Conversion</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 

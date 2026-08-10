@@ -701,7 +701,8 @@
                                 <label
                                     class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Application
                                     Date <span class="text-red-500">*</span></label>
-                                <input type="date" name="application_submitted_date" id="application_submitted_date" value="{{ date('Y-m-d') }}"
+                                {{-- No default value: the applicant's own application date must be entered by the user. --}}
+                                <input type="date" name="application_submitted_date" id="application_submitted_date"
                                     class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition focus:bg-white text-sm font-medium">
                             </div>
                         </div>

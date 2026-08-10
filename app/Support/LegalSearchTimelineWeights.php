@@ -49,16 +49,20 @@ class LegalSearchTimelineWeights
         self::FILE_COMMISSIONING       => 12,
         self::TEMP_FILE_COMMISSIONING  => 12,
         self::RIGHT_OF_OCCUPANCY       => 11,
-        // 8 keeps a recertification above the C of O it produced (First and Second alike —
-        // they share this band). placeKangisRecertBeforeCofo() still enforces adjacency
-        // when both share a timestamp.
+        // 8 ranks a recertification within the weighted band. It no longer needs to sit
+        // above the C of O it produced by weight alone — the C of O floats (see below) and
+        // placeKangisRecertBeforeCofo() pulls the recert down to sit immediately above it,
+        // wherever chronology puts it.
         self::KANGIS_RECERTIFICATION   => 8,
-        // A file's own dealings (assignments, mortgages, surrenders…) rank above the C of O,
-        // which closes the band at 0 — except for current-year dealings, see -1 below.
-        // Dealings still order among THEMSELVES by date — see getTransactionTimestamp(),
-        // which keys them off registration date.
+        // A file's own dealings (assignments, mortgages, surrenders…) rank here — except for
+        // current-year dealings, see -1 below. Dealings still order among THEMSELVES by date —
+        // see getTransactionTimestamp(), which keys them off registration date.
         self::OTHER_INSTRUMENTS        => 1,
-        self::CERTIFICATE_OF_OCCUPANCY => 0,
+        // The C of O FLOATS: it carries no rank and is injected at its own date, so it sits
+        // above dealings registered after it and below those registered before it. It
+        // previously closed the band at 0, which sank a 1982 C of O beneath a 1984 assignment
+        // on the same file regardless of date.
+        self::CERTIFICATE_OF_OCCUPANCY => null,
         // Client exception to the band above: a dealing whose date falls in the CURRENT
         // year is the file's live transaction and must CLOSE the timeline, below even the
         // C of O. Ranked rather than floated so several current-year dealings still order
@@ -220,8 +224,9 @@ class LegalSearchTimelineWeights
      * surrender…) dated in the year we are in now.
      *
      * Deliberately scoped to OTHER_INSTRUMENTS. The grants (OP/ToT/RofO), the commissioning
-     * tier, recertifications and the C of O keep their fixed rank however recently they were
-     * registered — a 2026 Right of Occupancy still opens the file, it does not close it.
+     * tier and recertifications keep their fixed rank however recently they were registered —
+     * a 2026 Right of Occupancy still opens the file, it does not close it. The C of O is
+     * unaffected for a different reason: it floats, so it is dated into place either way.
      */
     public static function isCurrentYearInstrument(array $row, string $eventKey): bool
     {

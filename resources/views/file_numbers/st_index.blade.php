@@ -1147,6 +1147,14 @@
                                                 <i data-lucide="refresh-cw" class="h-4 w-4 mr-2"></i>
                                                 LGA Confirmation Sheet (LCS)
                                             </span>`}
+                                            @if(Auth::check() && Auth::user()->assign_role === 'Supper Admin')
+                                            <div class="my-1 border-t border-gray-100"></div>
+                                            <button type="button" onclick='masterDeleteStFile(${JSON.stringify(file).replace(/'/g, "&apos;")})'
+                                                    class="flex w-full items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50">
+                                                <i data-lucide="trash-2" class="h-4 w-4 mr-2"></i>
+                                                Master Delete
+                                            </button>
+                                            @endif
                                         </div>
                                     </div>
                                 </td>
@@ -1429,6 +1437,112 @@
                 document.addEventListener('click', function () {
                     document.querySelectorAll('.st-action-menu').forEach(m => m.classList.add('hidden'));
                 });
+
+                /**
+                 * MASTER DELETE — wipes the ST file number from every table.
+                 *
+                 * Irreversible, so it asks twice: a red warning listing exactly what
+                 * goes, then the file number typed out by hand.
+                 */
+                function masterDeleteStFile(file) {
+                    const stFileNo = file.file_no_type === 'PRIMARY'
+                        ? (file.np_fileno || file.fileno)
+                        : (file.fileno || file.np_fileno);
+                    const mlsFileNo = file.mls_fileno || '';
+                    const isConversion = /^CON-/i.test(String(mlsFileNo).trim());
+                    const isPrimary = file.file_no_type === 'PRIMARY';
+
+                    const targets = [
+                        'ST file number record' + (isPrimary ? ' <b>and all its unit files</b>' : ''),
+                        'File indexing record',
+                        'Legacy file number (fileNumber) link',
+                        'Customer &amp; entity staging records',
+                        'Related file links and decommissioning log',
+                        'Saved commissioning sheets'
+                    ];
+                    if (isConversion) {
+                        targets.push('The CON mother file <b>' + mlsFileNo + '</b> — only if this commissioning created it');
+                    }
+
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Destructive action',
+                        html: `
+                            <div style="text-align:left;font-size:13px">
+                                <p style="margin-bottom:8px">This permanently deletes <b>${stFileNo}</b> from <b>every table</b>. It cannot be undone.</p>
+                                <p style="margin-bottom:4px;font-weight:600">What will be removed:</p>
+                                <ul style="margin:0 0 10px 18px;list-style:disc">${targets.map(t => `<li>${t}</li>`).join('')}</ul>
+                                <p style="color:#b91c1c;font-weight:600;margin:0">Scanned documents are never deleted — the EDMS folder is kept if it holds any.</p>
+                            </div>`,
+                        showCancelButton: true,
+                        confirmButtonColor: '#dc2626',
+                        confirmButtonText: 'Continue',
+                        cancelButtonText: 'Cancel',
+                        focusCancel: true
+                    }).then(step => {
+                        if (!step.isConfirmed) return;
+
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Type the file number to confirm',
+                            input: 'text',
+                            inputPlaceholder: stFileNo,
+                            html: `<p style="font-size:13px">Type <b>${stFileNo}</b> exactly to delete it everywhere.</p>`,
+                            showCancelButton: true,
+                            confirmButtonColor: '#dc2626',
+                            confirmButtonText: 'Delete permanently',
+                            focusCancel: true,
+                            preConfirm: (value) => {
+                                if ((value || '').trim() !== stFileNo) {
+                                    Swal.showValidationMessage('The file number does not match.');
+                                    return false;
+                                }
+                                return value.trim();
+                            }
+                        }).then(confirmStep => {
+                            if (!confirmStep.isConfirmed) return;
+
+                            fetch('{{ route('st-file-numbers.master-destroy') }}', {
+                                method: 'DELETE',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                                    'X-Requested-With': 'XMLHttpRequest'
+                                },
+                                body: JSON.stringify({ file_number: stFileNo, confirm: confirmStep.value })
+                            })
+                            .then(r => r.json())
+                            .then(result => {
+                                if (!result.success) {
+                                    throw new Error(result.message || 'Delete failed');
+                                }
+                                const d = result.data.deleted || {};
+                                const lines = Object.keys(d).filter(k => d[k]).map(k => `${k}: ${d[k]}`);
+                                if (result.data.mother_deleted) {
+                                    lines.push(`mother file ${result.data.mother_file} removed`);
+                                }
+                                Swal.fire({
+                                    icon: 'success',
+                                    title: 'Deleted',
+                                    html: `<div style="text-align:left;font-size:13px"><p>${stFileNo} removed.</p>
+                                           <ul style="margin:6px 0 0 18px;list-style:disc">${lines.map(l => `<li>${l}</li>`).join('')}</ul></div>`,
+                                    confirmButtonColor: '#3b82f6'
+                                }).then(() => {
+                                    loadFileNumbers();
+                                    loadStatistics();
+                                });
+                            })
+                            .catch(error => {
+                                Swal.fire({
+                                    icon: 'error',
+                                    title: 'Delete failed',
+                                    text: error.message || 'Could not delete the file number',
+                                    confirmButtonColor: '#3b82f6'
+                                });
+                            });
+                        });
+                    });
+                }
 
                 /**
                  * File Commissioning Sheet for an ST file.

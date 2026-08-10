@@ -209,6 +209,7 @@ document.addEventListener('DOMContentLoaded', function () {
         opSerialNumberInput: document.getElementById('op_serial_number'),
         opTypeContainer: document.getElementById('op-type-container'),
         cofoTypeContainer: document.getElementById('coo-type-container'),
+        cofoVariantContainer: document.getElementById('cofo-variant-container'),
 
         opRegistrationDetails: document.getElementById('op-registration-details'),
         regSerialInput: document.getElementById('serial_no'),
@@ -948,6 +949,11 @@ document.addEventListener('DOMContentLoaded', function () {
             propIdInput.value = '';
         }
 
+        // A reset returns a CofO capture to the default Regular variant.
+        if (currentInstrumentType === 'certificate-of-occupancy') {
+            setCofoVariant('regular');
+        }
+
         // Reset toggles (checkboxes) if they are checked
         ['hasCoMortgagor', 'hasThirdParty', 'hasFourthParty', 'includeSolicitorSidebar', 'includeSolicitor', 'coo_recertification', 'coo_conversion'].forEach(id => {
             const cb = document.getElementById(id);
@@ -1140,6 +1146,132 @@ document.addEventListener('DOMContentLoaded', function () {
 
         safeSetValue('secondPartyGender', d.owner_gender);
     }
+
+    // --- Certificate of Occupancy variant tabs (Regular / SLTR / ST) ---
+
+    /**
+     * The three CofO variants, keyed by the tab's data-variant.
+     *
+     * `instrumentType` is the exact string stored on instrument_capture and read
+     * back by InstrumentCaptureService::syncCofoStaging(), which maps it to the
+     * CofO_staging title type. Everything else that branches on the instrument
+     * type matches the "Certificate of Occupancy" substring, so all three
+     * variants register and number identically — only the mirror row differs.
+     *
+     * `hasType` marks the one variant that carries the Direct Allocation /
+     * Recertification / Conversion subtype. SLTR and ST files are titled through
+     * their own programmes and have no subtype.
+     */
+    const cofoVariants = {
+        regular: {
+            instrumentType: 'Certificate of Occupancy',
+            hasType: true,
+            accent: 'teal',
+            note: ''
+        },
+        sltr: {
+            instrumentType: 'SLTR Certificate of Occupancy',
+            hasType: false,
+            accent: 'indigo',
+            note: 'Systematic Land Titling and Registration — no C of O type applies.'
+        },
+        st: {
+            instrumentType: 'ST Certificate of Occupancy',
+            hasType: false,
+            accent: 'purple',
+            note: 'Sectional Titling — no C of O type applies.'
+        }
+    };
+
+    /**
+     * Per-variant segmented-control states, built from the accent each tab carries
+     * in data-accent. Must stay in step with the first-paint classes the blade
+     * composes in register_modal.blade.php.
+     *
+     * Every tab is stripped of ALL accents' classes before its own are applied —
+     * switching from SLTR (indigo) to ST (purple) has to clear the indigo, and a
+     * single shared class list could not do that.
+     */
+    const cofoTabAccentClasses = (accent) => ({
+        active: [`bg-${accent}-600`, 'text-white', 'shadow-sm'],
+        idle: ['text-gray-600', `hover:text-${accent}-700`, 'hover:bg-white']
+    });
+
+    function allCofoTabClasses() {
+        return Object.values(cofoVariants).flatMap((v) => {
+            const c = cofoTabAccentClasses(v.accent);
+            return [...c.active, ...c.idle];
+        });
+    }
+
+    let currentCofoVariant = 'regular';
+
+    function getCofoVariant() {
+        return cofoVariants[currentCofoVariant] ? currentCofoVariant : 'regular';
+    }
+
+    /**
+     * Select a CofO variant tab.
+     *
+     * Accepts either a variant key ('sltr') or a stored instrument_type string
+     * ('SLTR Certificate of Occupancy'), so edit mode can restore the tab
+     * straight from the record. Anything unrecognised falls back to Regular.
+     */
+    function setCofoVariant(variantOrInstrumentType) {
+        const raw = String(variantOrInstrumentType || '').trim();
+        let variant = cofoVariants[raw.toLowerCase()] ? raw.toLowerCase() : null;
+
+        if (!variant) {
+            variant = Object.keys(cofoVariants).find(
+                key => cofoVariants[key].instrumentType.toLowerCase() === raw.toLowerCase()
+            ) || 'regular';
+        }
+
+        currentCofoVariant = variant;
+        const config = cofoVariants[variant];
+
+        const staleClasses = allCofoTabClasses();
+        document.querySelectorAll('.cofo-variant-tab').forEach((tab) => {
+            const isActive = tab.dataset.variant === variant;
+            const accent = tab.dataset.accent || cofoVariants[tab.dataset.variant]?.accent || 'teal';
+            const states = cofoTabAccentClasses(accent);
+
+            tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            tab.classList.remove(...staleClasses);
+            tab.classList.add(...(isActive ? states.active : states.idle));
+        });
+
+        const typeContainer = elements.cofoTypeContainer;
+        const cofoTypeSelect = document.getElementById('cofoType');
+        if (typeContainer) typeContainer.classList.toggle('hidden', !config.hasType);
+
+        // Clear the subtype when it does not apply, so a value picked on Regular
+        // can never be submitted with an SLTR or ST capture.
+        if (!config.hasType && cofoTypeSelect && cofoTypeSelect.value) {
+            cofoTypeSelect.value = '';
+            cofoTypeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        const note = document.getElementById('cofo-variant-note');
+        if (note) {
+            // Write into the inner span, not the <p> — textContent on the <p>
+            // would delete the info icon sitting alongside it.
+            const noteText = document.getElementById('cofo-variant-note-text') || note;
+            noteText.textContent = config.note;
+            // Toggle the display class explicitly rather than relying on `hidden`
+            // to out-specify `inline-flex`, which depends on stylesheet order.
+            note.classList.toggle('hidden', !config.note);
+            note.classList.toggle('inline-flex', !!config.note);
+        }
+
+        // Keep the submitted instrument_type in step with the tab.
+        setHidden('instrument_type', config.instrumentType);
+    }
+
+    document.addEventListener('click', (event) => {
+        const tab = event.target.closest('.cofo-variant-tab');
+        if (tab) setCofoVariant(tab.dataset.variant);
+    });
 
     // --- Duplicate Check Logic (Updated) ---
 
@@ -3554,6 +3686,12 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
 
+        // Restore the CofO variant tab from the stored instrument_type, so
+        // editing an SLTR or ST record does not silently reopen as Regular.
+        if (currentInstrumentType === 'certificate-of-occupancy') {
+            setCofoVariant(data.instrument_type);
+        }
+
         // New Fields
         safeSetValue('cofoTerm', data.cofoTerm || data.cofo_term);
         safeSetDateValue('cofoDate', data.cofoDate || data.cofo_date);
@@ -4199,11 +4337,14 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
 
-        if (elements.cofoTypeContainer) {
+        if (elements.cofoVariantContainer) {
             if (typeKey === 'certificate-of-occupancy') {
-                elements.cofoTypeContainer.classList.remove('hidden');
+                elements.cofoVariantContainer.classList.remove('hidden');
+                // Fresh dialog opens start on Regular; edit mode restores the
+                // record's own variant afterwards, from populateForm().
+                if (!isEditMode) setCofoVariant('regular');
             } else {
-                elements.cofoTypeContainer.classList.add('hidden');
+                elements.cofoVariantContainer.classList.add('hidden');
             }
         }
 
@@ -5685,7 +5826,11 @@ document.addEventListener('DOMContentLoaded', function () {
             return false;
         }
 
-        const instrumentName = type.name;
+        // For a CofO the confirmation must name the variant being registered —
+        // "SLTR Certificate of Occupancy", not a bare "Certificate of Occupancy".
+        const instrumentName = currentInstrumentType === 'certificate-of-occupancy'
+            ? cofoVariants[getCofoVariant()].instrumentType
+            : type.name;
         let subType = '';
 
         if (currentInstrumentType === 'occupancy-permit') {
@@ -5696,10 +5841,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 return false;
             }
         } else if (currentInstrumentType === 'certificate-of-occupancy') {
-            subType = document.getElementById('cofoType')?.value || '';
-            if (!subType) {
-                Swal.fire('Required', 'Please select a Certificate of Occupancy type first.', 'info');
-                return false;
+            // Only the Regular variant has a subtype to confirm; SLTR and ST are
+            // fully described by the variant itself.
+            if (cofoVariants[getCofoVariant()].hasType) {
+                subType = document.getElementById('cofoType')?.value || '';
+                if (!subType) {
+                    Swal.fire('Required', 'Please select a Certificate of Occupancy type first.', 'info');
+                    return false;
+                }
             }
         } else {
             subType = instrumentName;
@@ -6303,7 +6452,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (currentInstrumentType === 'occupancy-permit') {
             formData.set('instrument_type', 'Occupancy Permit (OP)');
         } else if (currentInstrumentType === 'certificate-of-occupancy') {
-            formData.set('instrument_type', 'Certificate of Occupancy');
+            // Regular / SLTR / ST — whichever variant tab is active.
+            formData.set('instrument_type', cofoVariants[getCofoVariant()].instrumentType);
         }
 
         if (districtSelect && districtSelect.value === 'Others' && manualDistrictInput) {
@@ -7365,11 +7515,15 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
 
-        // Certificate of Occupancy Specific Validation
+        // Certificate of Occupancy Specific Validation.
+        // The C of O Type only exists on the Regular variant — requiring it on
+        // SLTR or ST would block a capture that has no such field on screen.
         if (typeId === 'certificate-of-occupancy' || typeId === 'Certificate of Occupancy') {
-            const cofoType = document.getElementById('cofoType')?.value;
-            if (!cofoType) {
-                errors.push('Certificate of Occupancy Type is required.');
+            if (cofoVariants[getCofoVariant()].hasType) {
+                const cofoType = document.getElementById('cofoType')?.value;
+                if (!cofoType) {
+                    errors.push('Certificate of Occupancy Type is required.');
+                }
             }
         }
 

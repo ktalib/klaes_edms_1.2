@@ -510,6 +510,28 @@ class InstrumentRegistrationService
             return 'Power of Attorney';
         }
 
+        // SLTR and Sectional Titling certificates paginate from their OWN vaults,
+        // configured under Manage Instrument Types ('SLTR CofO Pagination' and
+        // 'Sectional Titling CofO'). These must be tested BEFORE the generic
+        // "Certificate of Occupancy" branch below, which would otherwise swallow
+        // "SLTR Certificate of Occupancy" / "ST Certificate of Occupancy" and burn
+        // numbers out of the regular CofO vault.
+        if ($this->looksLikeCofo($normalized)) {
+            if (stripos($normalized, 'SLTR') !== false) {
+                return 'SLTR CofO Pagination';
+            }
+
+            // "Sectional Titling …" spelled out, or the "ST " prefix the capture
+            // form submits. Word-anchored so it cannot fire on an unrelated type
+            // that merely contains the letters (e.g. "First Registration").
+            if (
+                stripos($normalized, 'Sectional Titling') !== false ||
+                preg_match('/\bST\b/i', $normalized) === 1
+            ) {
+                return 'Sectional Titling CofO';
+            }
+        }
+
         if (
             stripos($normalized, 'Regular CofO') !== false ||
             stripos($normalized, 'Certificate of Occupancy') !== false
@@ -563,14 +585,28 @@ class InstrumentRegistrationService
             return 'ST Fragmentation';
         }
 
-        if (
-            stripos($normalized, 'Sectional Titling CofO') !== false
-        ) {
-            return 'Sectional Titling CofO';
-        }
+        // NOTE: the old 'Sectional Titling CofO' branch that used to sit here is
+        // now handled by the CofO block above, which catches the spelled-out name
+        // AND the "ST Certificate of Occupancy" the capture form submits.
 
         // Default: 1-to-1 mapping
         return $instrumentType;
+    }
+
+    /**
+     * Whether an instrument type names a Certificate of Occupancy in any of the
+     * spellings in use: "Certificate of Occupancy", "CofO", "C of O".
+     *
+     * Used to qualify the SLTR / Sectional Titling vault checks, so a type that
+     * merely starts with "ST " — "ST Assignment (Transfer of Title)",
+     * "ST Fragmentation" — keeps its own vault instead of being pulled into the
+     * Sectional Titling CofO pagination.
+     */
+    private function looksLikeCofo(string $instrumentType): bool
+    {
+        return stripos($instrumentType, 'Certificate of Occupancy') !== false
+            || stripos($instrumentType, 'CofO') !== false
+            || stripos($instrumentType, 'C of O') !== false;
     }
 
     /**

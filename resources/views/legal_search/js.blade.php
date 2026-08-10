@@ -1660,7 +1660,7 @@ const executeSearchAjax = (filters, searchData) => {
 
   // Rule B: event weight for the Timeline sort. The numbers come from
   // App\Support\LegalSearchTimelineWeights so this table and the printed slip cannot drift
-  // apart. A null weight marks a "floating" event (parcel updates, decommissionings): it
+  // apart. A null weight marks a "floating" event (the C of O, parcel updates, decommissionings): it
   // carries no rank and is injected chronologically by sortTimelineChronologically().
   const TIMELINE_WEIGHTS = @json(\App\Support\LegalSearchTimelineWeights::MAP);
   const PARCEL_UPDATE_PATTERN = /subdivision|merger|change of purpose|plot extension|separation|parcel update/;
@@ -3476,7 +3476,7 @@ const executeSearchAjax = (filters, searchData) => {
   // events are ranked on different keys and must not be compared to each other:
   //
   //   1. Weighted events (weight !== null) sort by weight DESC, then timestamp ASC, then id.
-  //   2. Floating events (weight === null — parcel updates, decommissionings, DCIV rows)
+  //   2. Floating events (weight === null — the C of O, parcel updates, decommissionings, DCIV rows)
   //      have no rank of their own. Each is injected after the last weighted event that is
   //      no later than it, so it lands chronologically without disturbing the hierarchy.
   //
@@ -4676,12 +4676,12 @@ const executeSearchAjax = (filters, searchData) => {
       }
     }
 
-    // Sort transactions by weight DESC, then by date ASC, then ID ASC
-    transactions.sort((a, b) => {
-      const wa = recordPriorityWeight(a) ?? 0;
-      const wb = recordPriorityWeight(b) ?? 0;
-      if (wa !== wb) return wb - wa;
-
+    // Two phases, matching arrangeLifecycleFileRows() in LegalSearchService. This sorter used
+    // to read a null weight as 0 and rank floating events in one pass with the weighted ones —
+    // which pinned every floater to the C of O's old rank and sank it beneath the file's
+    // dealings, silently undoing the chronological placement sortTimelineChronologically()
+    // had already agreed on.
+    const compareByDateThenId = (a, b) => {
       const ta = getTransactionTimestamp(a);
       const tb = getTransactionTimestamp(b);
       if (ta === null && tb === null) return (Number(a.id) || 0) - (Number(b.id) || 0);
@@ -4689,9 +4689,47 @@ const executeSearchAjax = (filters, searchData) => {
       if (tb === null) return -1;
       if (ta !== tb) return ta - tb;
       return (Number(a.id) || 0) - (Number(b.id) || 0);
+    };
+
+    const weightedRows = [];
+    const floatingRows = [];
+    for (const t of transactions) {
+      (recordPriorityWeight(t) === null ? floatingRows : weightedRows).push(t);
+    }
+
+    // Phase 1 — weight DESC, then date ASC, then id ASC.
+    weightedRows.sort((a, b) => {
+      const wa = recordPriorityWeight(a);
+      const wb = recordPriorityWeight(b);
+      if (wa !== wb) return wb - wa;
+      return compareByDateThenId(a, b);
     });
 
-    let arrangedTransactions = placeKangisRecertBeforeCofo(transactions);
+    // Phase 2 — inject each floater after the last DATED weighted event on or before it.
+    floatingRows.sort(compareByDateThenId);
+
+    const isDatedWeighted = (item) =>
+      recordPriorityWeight(item) !== null && getTransactionTimestamp(item) !== null;
+
+    const ordered = [...weightedRows];
+    for (const floater of floatingRows) {
+      const ts = getTransactionTimestamp(floater);
+      if (ts === null) { ordered.push(floater); continue; }
+
+      let insertAt = 0;
+      ordered.forEach((existing, i) => {
+        if (!isDatedWeighted(existing)) return;
+        if (getTransactionTimestamp(existing) <= ts) insertAt = i + 1;
+      });
+      // Past floaters already parked on this anchor, and past UNDATED weighted rows, which
+      // have no position in time and must stay with their weight group.
+      while (insertAt < ordered.length && !isDatedWeighted(ordered[insertAt])) {
+        insertAt++;
+      }
+      ordered.splice(insertAt, 0, floater);
+    }
+
+    let arrangedTransactions = placeKangisRecertBeforeCofo(ordered);
 
     // A File Commissioning row is NO LONGER hoisted to the head of its block — it takes the
     // position its weight earns, so an Occupancy Permit (14) and its Transfer of Title (13)

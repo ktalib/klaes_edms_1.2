@@ -316,8 +316,9 @@
                                                 <div class="flex items-start">
                                                     <i data-lucide="info" class="w-4 h-4 text-yellow-700 mr-2 mt-0.5 flex-shrink-0"></i>
                                                     <p class="text-xs text-yellow-800">
-                                                        <strong>Direct Allocation:</strong> New application linked to an existing file number (ST-{CODE}-{YEAR}-{SERIAL}).
-                                                        <strong>ST Conversion:</strong> Commissions a new CON land file as the mother file, with the ST number created under it (e.g. ST-CON-IND-{{ date('Y') }}-{SERIAL}).
+                                                        <strong>Direct Allocation:</strong> New application linked to an existing file number.
+                                                        <strong>ST Conversion:</strong> Raised on a CON land file — newly commissioned or extant — which becomes the mother file.
+                                                        Either way the ST number is ST-{CODE}-{YEAR}-{SERIAL} (e.g. ST-COM-{{ date('Y') }}-18).
                                                     </p>
                                                 </div>
                                             </div>

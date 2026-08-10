@@ -1015,7 +1015,6 @@ function streetValue() {
 
 function updateManualLocationPreview() {
     const parts = [
-        document.getElementById('plot_number')?.value ? document.getElementById('plot_number').value.trim() : '',
         document.getElementById('house_no')?.value    ? 'House ' + document.getElementById('house_no').value.trim()   : '',
         streetValue(),
         districtValue(),

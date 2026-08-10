@@ -64,6 +64,11 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'st-file-numbers'], f
     Route::get('/', function () {
         return view('file_numbers.st_index');
     })->name('st-file-numbers.index');
+
+    // Master delete — removes the ST file number from every table it was written to.
+    // Super Admin only, and the request must echo back the exact file number.
+    Route::delete('/master-destroy', [\App\Http\Controllers\CommissionNewSTController::class, 'masterDestroy'])
+        ->name('st-file-numbers.master-destroy');
 });
 
 // Capture Existing File Numbers Routes
