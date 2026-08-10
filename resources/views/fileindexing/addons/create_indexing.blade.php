@@ -278,20 +278,17 @@
                         <div id="ts-status-fields" class="hidden mt-6 rounded-lg border border-teal-200 bg-teal-50/40 p-6 space-y-5">
                            
 
-                            {{-- See (Additional File No.) — Re-grant only (OPTIONAL) --}}
+                            {{-- Counterpart file number for Re-grant / Resettlement / Closed.
+                                 It is NOT typed here: the number is whatever the officer entered
+                                 in the "Related File Number" card below, so the two can never
+                                 disagree. A single related file selects itself; with several, the
+                                 officer says which one this title status refers to. --}}
                             <div id="ts-see-row" class="form-group hidden">
                                 <input type="hidden" id="ts-see-fileno">
-                                <label class="block text-sm font-medium text-gray-700 mb-2"><span id="ts-see-label">Initial FileNo</span> <span class="text-xs font-normal text-gray-500">(Optional)</span></label>
-                                <div class="flex items-stretch gap-2">
-                                    <input type="text" id="ts-see-fileno-display" readonly
-                                        class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 sm:text-sm"
-                                        placeholder="Click Select to choose the additional file number...">
-                                    <button type="button" id="ts-see-select-btn"
-                                        class="px-4 py-2 rounded-md bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 transition">Select</button>
-                                    <button type="button" id="ts-see-clear-btn"
-                                        class="px-3 py-2 rounded-md border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 transition">Clear</button>
-                                </div>
-                                <p class="text-[11px] text-gray-400 mt-1" id="ts-see-hint">The related file number written as "See ..." on the physical file. This field is optional.</p>
+                                <label for="ts-see-picker" class="block text-sm font-medium text-gray-700 mb-2"><span id="ts-see-label">Initial FileNo</span> <span class="text-xs font-normal text-gray-500">(Optional)</span></label>
+                                <select id="ts-see-picker"
+                                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm bg-white"></select>
+                                <p class="text-[11px] text-gray-400 mt-1" id="ts-see-hint">Taken from the Related File Number section below.</p>
                             </div>
 
                             {{-- Reason. Hidden for the statuses whose remark is a fixed sentence
@@ -304,8 +301,10 @@
                                     placeholder="Reason for this title status action..."></textarea>
                             </div>
 
-                            {{-- Remark / Comment --}}
-                            <div class="form-group">
+                            {{-- Remark / Comment. Hidden for the statuses the system words itself
+                                 from the related file number (Re-grant / Resettlement / Closed);
+                                 it is still submitted, just not shown or edited. --}}
+                            <div class="form-group" id="ts-remark-row">
                                 <label class="block text-sm font-medium text-gray-700 mb-2">Remark / Comment</label>
                                 <textarea id="ts-remark" rows="3"
                                     class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm"></textarea>
@@ -1138,7 +1137,7 @@
             const statusBlock  = document.getElementById('ts-status-fields');
             const seeRow       = document.getElementById('ts-see-row');
             const seeHidden    = document.getElementById('ts-see-fileno');
-            const seeDisplay   = document.getElementById('ts-see-fileno-display');
+            const seePicker    = document.getElementById('ts-see-picker');
             const reasonEl     = document.getElementById('ts-reason');
             const remarkEl     = document.getElementById('ts-remark');
             const extKindEl    = document.getElementById('ts-extension-kind');
@@ -1152,6 +1151,7 @@
             const seeLabelEl   = document.getElementById('ts-see-label');
             const seeHintEl    = document.getElementById('ts-see-hint');
             const reasonRow    = document.getElementById('ts-reason-row');
+            const remarkRow    = document.getElementById('ts-remark-row');
 
             if (!typeGroup) return;
 
@@ -1230,6 +1230,10 @@
             const isRemarkType = (t) => t !== '' && t !== 'Normal';
             const getRemarkTypes = () => getSelectedTypes().filter(isRemarkType);
 
+            // Statuses that name a counterpart file. They take that number from the Related File
+            // Number card instead of a field of their own, and the system words their remark.
+            const RELATED_SOURCED_TYPES = ['Re-grant', 'Resettlement', 'Closed'];
+
             // Statuses whose auto remark is a fixed sentence about a counterpart file, so the
             // Reason box has nothing to feed. Kept in step with buildRemarkFor() below: a bare
             // "Resettlement" with no direction still falls through to the generic sentence.
@@ -1300,7 +1304,7 @@
                 const isClosed  = actionable.includes('Closed');
                 const isResettle = actionable.includes('Resettlement');
                 // These statuses all point at a counterpart file, so they share the See row.
-                const needsSee  = isRegrant || isClosed || isResettle;
+                const needsSee  = seeApplies();
 
                 // Deselecting happens silently in two cases — the Title Status Update radios
                 // replace each other, and ticking "Normal" clears the rest in code — so neither
@@ -1310,29 +1314,32 @@
                 if (!isResettle && getResettleKind()) setResettleKind('');
                 if (!actionable.includes('Extension') && getExtensionKind()) setExtensionKind('');
 
+                // Label the counterpart picker for whichever direction was chosen. The trailing
+                // sentence is the same everywhere: the officer picks, they do not type.
+                const fromRelated = ' Picked from the Related File Number section below; optional.';
                 if (isRegrant) {
                     const to = getRegrantKind() === REGRANT_TO;
                     if (seeLabelEl) seeLabelEl.textContent = to ? 'Re-granted To FileNo' : 'Initial FileNo';
                     if (seeHintEl) {
-                        seeHintEl.textContent = to
-                            ? 'The NEW file number this file was re-granted to. This field is optional.'
-                            : 'The OLD file number this file was re-granted from, written as "See ..." on the physical file. This field is optional.';
+                        seeHintEl.textContent = (to
+                            ? 'The NEW file number this file was re-granted to.'
+                            : 'The OLD file number this file was re-granted from.') + fromRelated;
                     }
                 } else if (isClosed) {
                     const from = getClosedKind() === CONTINUED_FROM;
                     if (seeLabelEl) seeLabelEl.textContent = from ? 'Continued From FileNo' : 'Continued In FileNo';
                     if (seeHintEl) {
-                        seeHintEl.textContent = from
-                            ? 'The CLOSED file number this file carries on from. This field is optional.'
-                            : 'The file number this file continues in now that it is closed. This field is optional.';
+                        seeHintEl.textContent = (from
+                            ? 'The CLOSED file number this file carries on from.'
+                            : 'The file number this file continues in now that it is closed.') + fromRelated;
                     }
                 } else if (isResettle) {
                     const to = getResettleKind() === RESETTLED_TO;
                     if (seeLabelEl) seeLabelEl.textContent = to ? 'Resettled To FileNo' : 'Resettled From FileNo';
                     if (seeHintEl) {
-                        seeHintEl.textContent = to
-                            ? 'The NEW file number this file was resettled to. This field is optional.'
-                            : 'The OLD file number this file was resettled from. This field is optional.';
+                        seeHintEl.textContent = (to
+                            ? 'The NEW file number this file was resettled to.'
+                            : 'The OLD file number this file was resettled from.') + fromRelated;
                     }
                 }
 
@@ -1342,11 +1349,21 @@
                 reasonRow?.classList.toggle('hidden', !needsReason);
                 if (!needsReason && reasonEl) reasonEl.value = '';
 
+                // The system words these remarks itself from the related file number, so the
+                // box is hidden rather than editable — it is still submitted.
+                const remarkEditable = remarkTypes.some(t => !RELATED_SOURCED_TYPES.includes(t));
+                remarkRow?.classList.toggle('hidden', hasType && !remarkEditable);
+
                 statusBlock?.classList.toggle('hidden', !hasType);
-                seeRow?.classList.toggle('hidden', !needsSee);
-                // NOTE: the See file number (see_fileno) is OPTIONAL for Re-grant and Closed
-                // Do NOT add required validation on this field
-                if (!needsSee && seeHidden) { seeHidden.value = ''; if (seeDisplay) seeDisplay.value = ''; }
+                // NOTE: the counterpart file number (see_fileno) is OPTIONAL for all three
+                // statuses. Do NOT add required validation on it. syncSeeOptions() owns the
+                // row's visibility, since that depends on how many related files there are.
+                if (needsSee) {
+                    syncSeeOptions();
+                } else {
+                    seeRow?.classList.add('hidden');
+                    resetSeeFileno();
+                }
                 if (typeof lucide !== 'undefined') lucide.createIcons();
             }
 
@@ -1392,11 +1409,52 @@
                 });
             }
 
-            // Re-grant and Closed share the See row, so a fresh pick must not inherit the
-            // counterpart file left behind by the other status.
+            // Is a status that names a counterpart file currently selected?
+            const seeApplies = () => getActionableTypes().some(t => RELATED_SOURCED_TYPES.includes(t));
+
+            // The file numbers entered in the Related File Number card, de-duplicated.
+            function relatedFileNos() {
+                return Array.from(document.querySelectorAll('#related-files-wrapper .related-file-input'))
+                    .map(i => (i.value || '').trim())
+                    .filter(Boolean)
+                    .filter((v, i, a) => a.indexOf(v) === i);
+            }
+
+            // Mirror those numbers into the counterpart picker. One related file selects itself;
+            // several force an explicit choice, since only the officer knows which one the title
+            // status refers to. A pick already made survives as long as it is still on the list.
+            function syncSeeOptions() {
+                if (!seePicker) return;
+                const nos     = relatedFileNos();
+                const current = (seeHidden?.value || '').trim();
+
+                seePicker.innerHTML = '';
+                if (!nos.length) {
+                    seePicker.appendChild(new Option('No related file number entered yet', ''));
+                    seePicker.disabled = true;
+                } else {
+                    seePicker.disabled = false;
+                    if (nos.length > 1) {
+                        seePicker.appendChild(new Option('— Select the related file this applies to —', ''));
+                    }
+                    nos.forEach(n => seePicker.appendChild(new Option(n, n)));
+                }
+
+                const next = nos.includes(current) ? current : (nos.length === 1 ? nos[0] : '');
+                seePicker.value = next;
+                if (seeHidden) seeHidden.value = next;
+
+                // Only shown when there is a genuine choice to make. A lone related file
+                // selects itself and none leaves nothing to pick, so the row stays out of
+                // the way in both cases — the number is still used to word the remark.
+                seeRow?.classList.toggle('hidden', !seeApplies() || nos.length < 2);
+                refreshRemark();
+            }
+
+            // A freshly picked status must not inherit the counterpart chosen for the previous one.
             function resetSeeFileno() {
-                if (seeHidden)  seeHidden.value = '';
-                if (seeDisplay) seeDisplay.value = '';
+                if (seeHidden) seeHidden.value = '';
+                if (seePicker) seePicker.value = '';
             }
 
             // Ask which way the re-grant runs when "Re-grant" is picked. Cancelling clears the
@@ -1558,24 +1616,23 @@
             });
             reasonEl?.addEventListener('input', refreshRemark);
 
-            // See (Additional File No.) picker
-            document.getElementById('ts-see-select-btn')?.addEventListener('click', function () {
-                if (!window.GlobalFileNoModal) return;
-                GlobalFileNoModal.open({
-                    // Do NOT write into the main #fileno / file_number inputs — the See file
-                    // is a separate reference and must not overwrite the main file number.
-                    autoPopulateGenericFields: false,
-                    callback: function (data) {
-                        if (!data || !data.fileNumber) return;
-                        seeHidden.value = data.fileNumber;
-                        seeDisplay.value = data.fileNumber;
-                        refreshRemark();
-                    }
-                });
+            // The counterpart file number always comes from the Related File Number card, so
+            // there is one place to enter it and the two can never disagree.
+            seePicker?.addEventListener('change', function () {
+                if (seeHidden) seeHidden.value = seePicker.value || '';
+                refreshRemark();
             });
-            document.getElementById('ts-see-clear-btn')?.addEventListener('click', function () {
-                resetSeeFileno();
-                refreshRemark(); // the cleared number is quoted in the auto remark
+
+            // The related rows are readonly inputs driven by their own picker/modal. The picker
+            // dispatches 'input', but Clear and Remove only mutate the DOM — so watch for both,
+            // deferring the click so the row is already gone when we re-read the list.
+            const relatedWrapper = document.getElementById('related-files-wrapper');
+            relatedWrapper?.addEventListener('input', function (e) {
+                if (e.target?.classList?.contains('related-file-input')) syncSeeOptions();
+            });
+            relatedWrapper?.addEventListener('click', function () { setTimeout(syncSeeOptions, 0); });
+            document.getElementById('has-related-file')?.addEventListener('change', function () {
+                setTimeout(syncSeeOptions, 0);
             });
 
             // Called by handleRegistryFieldToggling() when the chosen registry (SLTR /
@@ -1587,10 +1644,9 @@
                 setRegrantKind('');
                 setClosedKind('');
                 setResettleKind('');
-                if (reasonEl)   reasonEl.value = '';
-                if (remarkEl)   remarkEl.value = '';
-                if (seeHidden)  seeHidden.value = '';
-                if (seeDisplay) seeDisplay.value = '';
+                if (reasonEl) reasonEl.value = '';
+                if (remarkEl) remarkEl.value = '';
+                resetSeeFileno();
                 toggleStatusFields();
             };
 
@@ -1606,6 +1662,12 @@
                 const fileNo = getFileNo() || pick(formData.file_number);
                 if (!fileNo) return;
 
+                // The statuses that name a counterpart file take it from the Related File Number
+                // card. Re-read it here: the related picker can write a value without firing an
+                // event, so the box on screen may be a step behind the form being submitted.
+                const usesSee = types.some(t => RELATED_SOURCED_TYPES.includes(t));
+                if (usesSee) syncSeeOptions();
+
                 const reason = (reasonEl?.value || '').trim();
                 const customRemark = (remarkEl?.value || '').trim();
                 // When classification flags are also selected, the Remark box holds their lines
@@ -1613,14 +1675,13 @@
                 const hasClassification = !!document.querySelector('.ts-classification-cb:checked');
 
                 // Per-type remarks (parallel to `title_types`). A single selection may keep the
-                // user-edited remark; otherwise each type gets its own generated remark.
+                // user-edited remark; otherwise each type gets its own generated remark. The
+                // related-sourced statuses are always regenerated — their box is not editable.
                 const remarks = types.map(function (type) {
-                    return (types.length === 1 && customRemark && !hasClassification) ? customRemark : buildRemarkFor(type);
+                    const reuseCustom = types.length === 1 && customRemark && !hasClassification
+                        && !RELATED_SOURCED_TYPES.includes(type);
+                    return reuseCustom ? customRemark : buildRemarkFor(type);
                 });
-                // The statuses that reference a counterpart file via the shared See row.
-                const usesSee = types.includes('Re-grant')
-                    || types.includes('Closed')
-                    || types.includes('Resettlement');
 
                 // Report the chosen sub-kinds — Plot/File Extension, and Re-granted From/To —
                 // in place of the generic "Extension"/"Re-grant" so they persist distinctly.

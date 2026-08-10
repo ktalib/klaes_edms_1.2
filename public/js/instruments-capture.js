@@ -903,7 +903,8 @@ document.addEventListener('DOMContentLoaded', function () {
         // Clear all populated fields
         const fieldsToClear = [
             'firstPartyName', 'secondPartyName', 'firstPartyStreet', 'firstPartyPhone',
-            'secondPartyStreet', 'secondPartyPhone', 'coMortgagorName', 'coMortgagorAddress',
+            'secondPartyStreet', 'secondPartyPhone', 'secondPartyGender',
+            'coMortgagorName', 'coMortgagorAddress',
             'coMortgagorDistrict', 'coMortgagorState', 'coMortgagorLga', 'coMortgagorPhone',
             'thirdPartyName', 'thirdPartyAddress', 'thirdPartyDistrict', 'thirdPartyState',
             'thirdPartyLga', 'thirdPartyPhone', 'party5Name', 'party5Address',
@@ -1099,12 +1100,45 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             }
 
+            backfillSecondPartyGenderFromFile(d);
+
             return true;
         } catch (e) {
             window._suppressPropertyDescUpdate = false;
             console.warn('backfillPropertyFromFile failed', e);
             return false;
         }
+    }
+
+    /**
+     * Fill Party 2's gender from the selected file's indexing record.
+     *
+     * The gender follows the OWNER, so it is only applied when Party 2 actually
+     * is the file's owner — that is, when the Party 2 name we ended up with
+     * matches owner_name. That covers the grant-type instruments (CofO / OP,
+     * where the block above just wrote the owner in as grantee) and any path
+     * that already put the owner there.
+     *
+     * On an assignment or a mortgage Party 2 is the INCOMING party — the
+     * assignee, the mortgagee — and the file only knows the outgoing owner's
+     * gender, so the dropdown is deliberately left blank rather than stamping
+     * the wrong person's gender onto the record. Same for a file indexed before
+     * the gender column existed (owner_gender comes back null): nothing to
+     * backfill, leave it to the clerk.
+     *
+     * Never overwrites a gender the clerk has already chosen.
+     */
+    function backfillSecondPartyGenderFromFile(d) {
+        if (!d || !d.owner_gender) return;
+
+        const genderEl = document.getElementById('secondPartyGender');
+        if (!genderEl || genderEl.value) return;
+
+        const norm = (v) => String(v || '').trim().toUpperCase().replace(/\s+/g, ' ');
+        const ownerName = norm(d.owner_name);
+        if (!ownerName || norm(document.getElementById('secondPartyName')?.value) !== ownerName) return;
+
+        safeSetValue('secondPartyGender', d.owner_gender);
     }
 
     // --- Duplicate Check Logic (Updated) ---
@@ -3413,6 +3447,7 @@ document.addEventListener('DOMContentLoaded', function () {
         safeSetValue('firstPartyPhone', data.party_1_phone);
         safeSetValue('secondPartyStreet', data.party_2_address);
         safeSetValue('secondPartyPhone', data.party_2_phone);
+        safeSetValue('secondPartyGender', data.party_2_gender);
 
         if (data.party_3_name) {
             const toggle = document.getElementById('hasCoMortgagor');
@@ -4895,6 +4930,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (data.party_1_name) safeSetValue('firstPartyName', data.party_1_name);
         if (data.party_2_name) safeSetValue('secondPartyName', data.party_2_name);
+        if (data.party_2_gender) safeSetValue('secondPartyGender', data.party_2_gender);
         if (data.plot_number) safeSetValue('plotNumber', data.plot_number);
         if (data.tp_no) safeSetValue('tp_no', data.tp_no);
         if (data.survey_plan_no) safeSetValue('surveyPlanNo', data.survey_plan_no);

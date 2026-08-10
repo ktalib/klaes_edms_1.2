@@ -169,6 +169,13 @@ class PraRecordController extends Controller
                 'owner_name'           => $this->normalizeHolderName($row->current_holder ?? null)
                     ?: $this->normalizeHolderName($row->original_holder ?? null)
                     ?: (trim((string) ($row->file_title ?? '')) ?: null),
+                // Gender of that owner, for the Party 2 gender field on the
+                // instrument capture form. Normalised so legacy lowercase rows
+                // still match an option in the `genders` lookup. Null on the ~60%
+                // of files indexed before the gender column existed — the form
+                // just leaves the dropdown empty.
+                'owner_gender'         => app(\App\Services\GenderNormalizer::class)
+                    ->normalize($row->gender ?? null),
             ],
         ]);
     }

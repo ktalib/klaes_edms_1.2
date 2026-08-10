@@ -464,8 +464,18 @@
                                 <x-instrument-select id="secondPartyState" label="" icon="map-pin"
                                     :options="$states" placeholder="State" value="{{ $record->party_2_state ?? 'Kano' }}" />
                             </div>
-                            <x-instrument-input id="secondPartyPhone" label="" icon="phone"
-                                placeholder="Phone Number" value="{{ $record->party_2_phone ?? '' }}" />
+                            <div class="grid grid-cols-2 gap-3">
+                                <x-instrument-input id="secondPartyPhone" label="" icon="phone"
+                                    placeholder="Phone Number" value="{{ $record->party_2_phone ?? '' }}" />
+                                {{-- Options come from the `genders` lookup table, never hard-coded — see
+                                     App\Models\Gender::options() and the <x-gender-select> component. The
+                                     stored value is the NAME, not the id, to match file_indexings.gender.
+                                     Backfilled from the selected file's indexing record: see
+                                     backfillPropertyFromFile() in public/js/instruments-capture.js. --}}
+                                <x-instrument-select id="secondPartyGender" label="" icon="users"
+                                    :options="\App\Models\Gender::options()" placeholder="Select Gender"
+                                    value="{{ app(\App\Services\GenderNormalizer::class)->normalize($record->party_2_gender ?? null) }}" />
+                            </div>
                         </div>
                     </div>
 

@@ -539,6 +539,7 @@ class InstrumentController extends Controller
                 'deeds_serial_no',
                 'party_1_name',
                 'party_2_name',
+                'party_2_gender',
                 'plot_number',
                 'tp_no',
                 'survey_plan_no',

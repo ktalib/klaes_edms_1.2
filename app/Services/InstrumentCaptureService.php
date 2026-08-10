@@ -216,6 +216,7 @@ class InstrumentCaptureService
                 'party_1_district' => $data['firstPartyDistrict'] ?? null,
 
                 'party_2_name' => $parties['party_2']['name'],
+                'party_2_gender' => $this->normalizeGender($data['secondPartyGender'] ?? null),
                 'party_2_address' => $parties['party_2']['address'],
                 'party_2_phone' => $parties['party_2']['phone'],
                 'party_2_nationality' => $parties['party_2']['nationality'],
@@ -507,6 +508,19 @@ class InstrumentCaptureService
             'id_number' => $source["{$prefix}_id_number"] ?? ($source['donorIdNumber'] ?? ($source['doneeIdNumber'] ?? null)),
         ];
     }
+
+    /**
+     * Canonicalise a submitted gender to one of GenderNormalizer::CANON.
+     *
+     * The form posts the NAME from the `genders` lookup, not an id, so this only
+     * has to guard against legacy/hand-edited values ("male", "M", "Government")
+     * and the empty placeholder — anything unrecognised is stored as null rather
+     * than polluting the column with a fifth vocabulary.
+     */
+    private function normalizeGender($raw): ?string
+    {
+        return app(GenderNormalizer::class)->normalize(is_string($raw) ? $raw : null);
+    }
     /**
      * Whether the given instrument type is a Certificate of Occupancy variant
      * (regular, ST or SLTR) that should also be mirrored into CofO_staging.
@@ -754,6 +768,10 @@ class InstrumentCaptureService
                 'party_1_district' => $data['firstPartyDistrict'] ?? ($existing->party_1_district ?? null),
 
                 'party_2_name' => $parties['party_2']['name'],
+                // Keep the stored value when the edit form submits a blank gender,
+                // the way every other party_2 field below falls back to $existing.
+                'party_2_gender' => $this->normalizeGender($data['secondPartyGender'] ?? null)
+                    ?? ($existing->party_2_gender ?? null),
                 'party_2_address' => $parties['party_2']['address'],
                 'party_2_phone' => $parties['party_2']['phone'],
                 'party_2_nationality' => $parties['party_2']['nationality'],
