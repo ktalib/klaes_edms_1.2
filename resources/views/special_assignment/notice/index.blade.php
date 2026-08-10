@@ -17,7 +17,7 @@
         </div>
 
         {{-- Stats --}}
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
             <div class="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
                 <div class="p-3 rounded-full" style="background:rgba(186,191,12,.12)"><i data-lucide="send" class="h-5 w-5 text-[rgb(186,191,12)]"></i></div>
                 <div><p class="text-xs text-gray-500">First Serves</p><p class="text-xl font-bold text-gray-800">{{ $stats['first_total'] }}</p></div>
@@ -29,6 +29,10 @@
             <div class="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
                 <div class="p-3 rounded-full bg-amber-50"><i data-lucide="clock" class="h-5 w-5 text-amber-500"></i></div>
                 <div><p class="text-xs text-gray-500">Pending</p><p class="text-xl font-bold text-gray-800">{{ $stats['pending'] }}</p></div>
+            </div>
+            <div class="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
+                <div class="p-3 rounded-full bg-red-50"><i data-lucide="alarm-clock" class="h-5 w-5 text-red-500"></i></div>
+                <div><p class="text-xs text-gray-500">Due for 2nd Serve</p><p class="text-xl font-bold text-gray-800">{{ $stats['second_due'] ?? 0 }}</p></div>
             </div>
         </div>
 
@@ -64,14 +68,18 @@
         {{-- Second Serve Table --}}
         <div id="tab-second-serve" class="tab-content hidden">
             <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div class="px-5 py-4 border-b border-gray-100"><h2 class="text-sm font-semibold text-gray-700">Second Serve Notices</h2></div>
+                <div class="px-5 py-4 border-b border-gray-100">
+                    <h2 class="text-sm font-semibold text-gray-700">Second Serve Notices</h2>
+                    <p class="text-xs text-gray-500 mt-0.5">First serves that have reached 14 days. Second serves are issued automatically — use <span class="font-medium">Issue Now</span> only to send one ahead of the daily run.</p>
+                </div>
                 <div class="p-4">
                     <table id="second-serve-table" class="w-full text-sm" style="width:100%">
                         <thead><tr class="text-left text-xs text-gray-500 uppercase">
                             <th class="px-3 py-2">#</th><th class="px-3 py-2">File No</th>
                             <th class="px-3 py-2">Recipient</th><th class="px-3 py-2">Phone</th>
-                            <th class="px-3 py-2">Date Served</th><th class="px-3 py-2">SMS</th>
-                            <th class="px-3 py-2">Status</th>
+                            <th class="px-3 py-2">1st Serve</th><th class="px-3 py-2">Days Since</th>
+                            <th class="px-3 py-2">2nd Serve</th><th class="px-3 py-2">SMS</th>
+                            <th class="px-3 py-2">Status</th><th class="px-3 py-2">Action</th>
                         </tr></thead>
                         <tbody></tbody>
                     </table>
@@ -153,6 +161,8 @@ $(document).ready(function () {
         if (btn) btn.classList.add('active');
         const content = document.getElementById('tab-' + tabKey);
         if (content) content.classList.remove('hidden');
+        // Second serves are automatic — nothing to issue by hand from the header.
+        document.getElementById('btn-issue-notice').classList.toggle('hidden', tabKey === 'second-serve');
         setTimeout(() => $.fn.DataTable.tables({ visible:true, api:true }).columns.adjust(), 50);
     }
 
@@ -181,15 +191,18 @@ $(document).ready(function () {
     ];
     const secondCols = [
         { data:'DT_RowIndex', orderable:false, searchable:false }, { data:'file_number' },
-        { data:'recipient' }, { data:'phone' }, { data:'served_date' }, { data:'sms_sent' },
+        { data:'recipient' }, { data:'phone' }, { data:'first_date' },
+        { data:'days_ago', render: d => d != null ? `<span class="px-2 py-0.5 rounded-full text-xs ${d>=14?'bg-red-100 text-red-700':'bg-green-100 text-green-700'}">${d}d ago</span>` : '—' },
+        { data:'served_date' }, { data:'sms_sent' },
         { data:'status', render: d => `<span class="px-2 py-0.5 rounded-full text-xs font-medium ${d==='served'?'bg-green-100 text-green-700':'bg-amber-100 text-amber-700'}">${d||'—'}</span>` },
+        { data:'action', orderable:false, searchable:false },
     ];
 
     const firstTable  = $('#first-serve-table').DataTable({ processing:true, serverSide:true, ajax:{ url: window.location.href, data: d=>({...d, ajax:1, type:'first'}) }, columns: firstCols });
     const secondTable = $('#second-serve-table').DataTable({ processing:true, serverSide:true, ajax:{ url: window.location.href, data: d=>({...d, ajax:1, type:'second'}) }, columns: secondCols });
 
     // ── Trigger 2nd serve ───────────────────────────────────────────────────
-    $('#first-serve-table').on('click', '.btn-trigger-second', async function() {
+    $('#first-serve-table, #second-serve-table').on('click', '.btn-trigger-second', async function() {
         const id  = $(this).data('id');
         const app = $(this).data('app');
         const ok  = await Swal.fire({ icon:'question', title:'Trigger Second Serve?', text:'An SMS will be sent and a second serve record created.', showCancelButton:true, confirmButtonText:'Yes, trigger' });

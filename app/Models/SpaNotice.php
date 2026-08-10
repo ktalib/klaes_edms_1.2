@@ -6,6 +6,9 @@ use Illuminate\Database\Eloquent\Model;
 
 class SpaNotice extends Model
 {
+    /** A second serve notice falls due this many days after the first serve. */
+    public const SECOND_SERVE_AFTER_DAYS = 14;
+
     protected $connection = 'sqlsrv';
     protected $table      = 'spa_notices';
 

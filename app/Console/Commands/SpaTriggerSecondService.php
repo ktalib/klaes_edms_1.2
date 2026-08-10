@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Http\Controllers\SpecialAssignmentController;
 use App\Models\SpaNotice;
 use App\Services\EBulkSmsService;
 use Carbon\Carbon;
@@ -16,16 +17,29 @@ class SpaTriggerSecondService extends Command
 
     public function handle(): int
     {
-        $cutoff = Carbon::today()->subDays(14);
+        $cutoff = Carbon::today()->subDays(SpaNotice::SECOND_SERVE_AFTER_DAYS);
 
-        // Find first-serve notices where: served_date <= 14 days ago AND no second serve exists
+        // Find first-serve notices where: served_date <= 14 days ago AND no second
+        // serve exists. Free-style notices carry no application id, so they are
+        // matched on file number instead — matching on a NULL id never holds in SQL
+        // and would re-issue their second serve on every run.
         $eligible = SpaNotice::where('notice_type', 'first')
+            ->whereNotNull('served_date')
             ->where('served_date', '<=', $cutoff)
             ->whereNotExists(function ($query) {
                 $query->select(DB::raw(1))
                       ->from('spa_notices as sn2')
-                      ->whereColumn('sn2.spa_application_id', 'spa_notices.spa_application_id')
-                      ->where('sn2.notice_type', 'second');
+                      ->where('sn2.notice_type', 'second')
+                      ->where(function ($q) {
+                          $q->where(function ($q2) {
+                              $q2->whereNotNull('spa_notices.spa_application_id')
+                                 ->whereColumn('sn2.spa_application_id', 'spa_notices.spa_application_id');
+                          })->orWhere(function ($q2) {
+                              $q2->whereNull('spa_notices.spa_application_id')
+                                 ->whereNull('sn2.spa_application_id')
+                                 ->whereColumn('sn2.file_number', 'spa_notices.file_number');
+                          });
+                      });
             })
             ->with('application')
             ->get();
@@ -40,9 +54,11 @@ class SpaTriggerSecondService extends Command
         $failed = 0;
 
         foreach ($eligible as $first) {
-            // Double-check no second serve exists for this application
-            $alreadyExists = SpaNotice::where('spa_application_id', $first->spa_application_id)
-                ->where('notice_type', 'second')
+            // Double-check no second serve exists for this application / file
+            $alreadyExists = SpaNotice::where('notice_type', 'second')
+                ->when($first->spa_application_id,
+                    fn($q) => $q->where('spa_application_id', $first->spa_application_id),
+                    fn($q) => $q->whereNull('spa_application_id')->where('file_number', $first->file_number))
                 ->exists();
 
             if ($alreadyExists) {

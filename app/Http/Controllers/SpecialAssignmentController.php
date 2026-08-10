@@ -344,37 +344,45 @@ class SpecialAssignmentController extends Controller
                 ]);
             }
 
-            $query = SpaNotice::where('notice_type', $type)->orderByDesc('created_at');
+            // ── Second Serve: driven automatically by the age of the first serve ──
+            // A second serve is due 14 days after the first serve, so this tab lists
+            // the first-serve notices that have reached that age. The scheduled
+            // command (spa:trigger-second-service) issues them; a row that has not
+            // been picked up yet shows as "Due" and can be triggered manually.
+            $cutoff = now()->subDays(SpaNotice::SECOND_SERVE_AFTER_DAYS)->toDateString();
+
+            $query = SpaNotice::where('notice_type', 'first')
+                              ->whereNotNull('served_date')
+                              ->whereDate('served_date', '<=', $cutoff)
+                              ->orderBy('served_date');          // most overdue first
             $total = $query->count();
             $data  = $query->skip($request->input('start', 0))
                            ->take($request->input('length', 10))
                            ->get()
                            ->map(function ($n, $i) use ($request) {
-                               $daysAgo  = $n->served_date ? now()->diffInDays($n->served_date) : null;
-                               $hasSecond = ($n->notice_type === 'first')
-                                   ? SpaNotice::where('notice_type', 'second')
+                               $daysAgo = $n->served_date ? (int) $n->served_date->diffInDays(now()) : null;
+
+                               $second = SpaNotice::where('notice_type', 'second')
                                               ->when($n->spa_application_id,
                                                   fn($q) => $q->where('spa_application_id', $n->spa_application_id),
                                                   fn($q) => $q->whereNull('spa_application_id')->where('file_number', $n->file_number))
-                                              ->exists()
-                                   : null;
+                                              ->orderByDesc('created_at')->first();
 
                                return [
                                    'DT_RowIndex'   => $request->input('start', 0) + $i + 1,
-                                   'notice_type'   => ucfirst($n->notice_type),
                                    'file_number'   => $n->file_number ?? '—',
                                    'recipient'     => $n->recipient_name ?? '—',
                                    'phone'         => $n->phone ?? '—',
-                                   'served_date'   => $n->served_date?->format('d/m/Y') ?? '—',
-                                   'sms_sent'      => $n->sms_sent ? '<span class="text-green-600 text-xs">✓ Sent</span>' : '<span class="text-gray-400 text-xs">—</span>',
-                                   'status'        => $n->status,
+                                   'first_date'    => $n->served_date?->format('d/m/Y') ?? '—',
                                    'days_ago'      => $daysAgo,
-                                   'has_second'    => $hasSecond,
-                                   'action'        => $n->notice_type === 'first'
-                                       ? ($hasSecond
-                                           ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"><svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Served</span>'
-                                           : '<button data-id="'.$n->id.'" data-app="'.$n->spa_application_id.'" class="btn-trigger-second inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200"><svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>Not Served</button>')
-                                       : '<span class="text-xs text-gray-400">—</span>',
+                                   'served_date'   => $second?->served_date?->format('d/m/Y') ?? '—',
+                                   'sms_sent'      => $second && $second->sms_sent
+                                       ? '<span class="text-green-600 text-xs">✓ Sent</span>'
+                                       : '<span class="text-gray-400 text-xs">—</span>',
+                                   'status'        => $second ? ($second->status ?: 'served') : 'due',
+                                   'action'        => $second
+                                       ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"><svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Issued</span>'
+                                       : '<button data-id="'.$n->id.'" data-app="'.$n->spa_application_id.'" class="btn-trigger-second inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200"><svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>Issue Now</button>',
                                ];
                            });
 
@@ -392,6 +400,11 @@ class SpecialAssignmentController extends Controller
             'first_total'  => SpaNotice::where('notice_type', 'first')->count(),
             'second_total' => SpaNotice::where('notice_type', 'second')->count(),
             'pending'      => SpaNotice::where('status', 'pending')->count(),
+            // First serves that have reached 14 days — the second-serve queue.
+            'second_due'   => SpaNotice::where('notice_type', 'first')
+                                       ->whereNotNull('served_date')
+                                       ->whereDate('served_date', '<=', now()->subDays(SpaNotice::SECOND_SERVE_AFTER_DAYS)->toDateString())
+                                       ->count(),
         ];
 
         return view('special_assignment.notice.index', compact('PageTitle', 'PageDescription', 'stats'));
