@@ -999,7 +999,11 @@ class LandRecommendationController extends Controller
             ]);
         }
 
-        $payload = $this->hydrateBatchRows($childFileNumbers, $legacyByChild);
+        // See batchFileDetails(): while a saved batch is being edited its own
+        // members must not read as files that already carry a recommendation.
+        $excludeBatchId = trim((string) $request->query('exclude_batch_id', '')) ?: null;
+
+        $payload = $this->hydrateBatchRows($childFileNumbers, $legacyByChild, true, $excludeBatchId);
 
         return response()->json([
             'success'  => true,
@@ -1020,8 +1024,13 @@ class LandRecommendationController extends Controller
      *
      * $legacyByChild is only ever populated by the subdivision path; a regular
      * batch has no linkage rows to draw on.
+     *
+     * $excludeBatchId — the batch being edited. Its own members already carry a
+     * recommendation by definition, and flagging them "has a recommendation" would
+     * untick every row of the batch the officer is re-keying. Their saved values
+     * are still read (that is the backfill), only the exclusion flag is dropped.
      */
-    private function hydrateBatchRows($fileNumbers, $legacyByChild = null, bool $sortByPlot = true)
+    private function hydrateBatchRows($fileNumbers, $legacyByChild = null, bool $sortByPlot = true, ?string $excludeBatchId = null)
     {
         $fileNumbers  = collect($fileNumbers)->map(fn ($f) => trim((string) $f))->filter()->unique()->values();
 
@@ -1066,7 +1075,7 @@ class LandRecommendationController extends Controller
             ->get([
                 'id', 'file_number', 'applicant_name', 'applicant_address', 'plot_number',
                 'location', 'land_use_id', 'purpose_id', 'page', 'page_2', 'page_3',
-                'status', 'rofo_status',
+                'status', 'rofo_status', 'rofo_batch_id',
             ])
             ->keyBy(fn ($r) => $key($r->file_number));
 
@@ -1079,12 +1088,16 @@ class LandRecommendationController extends Controller
             ->all();
 
         $payload = $childFileNumbers
-            ->map(function ($fileNo) use ($mlsByFile, $indexByFile, $legacyByChild, $existingByFile, $canonToLandUseId, $normalizer, $key) {
+            ->map(function ($fileNo) use ($mlsByFile, $indexByFile, $legacyByChild, $existingByFile, $canonToLandUseId, $normalizer, $key, $excludeBatchId) {
                 $lookup = $key($fileNo);
                 $mls    = $mlsByFile[$lookup] ?? null;
                 $index  = $indexByFile[$lookup] ?? null;
                 $legacy = $legacyByChild[$lookup] ?? null;
                 $rec    = $existingByFile[$lookup] ?? null;
+
+                // A member of the batch being edited is not a clash with itself.
+                $ownBatch = $rec !== null && $excludeBatchId !== null
+                    && (string) $rec->rofo_batch_id === $excludeBatchId;
 
                 // Land use is not recorded on a manual linkage, so a legacy child
                 // falls back to the indexing row and finally to its file-number prefix.
@@ -1155,7 +1168,7 @@ class LandRecommendationController extends Controller
                     // was picked deliberately — but the picker says so, because an
                     // empty row is otherwise indistinguishable from a load that failed.
                     'is_unknown'     => $mls === null && $index === null && $legacy === null && $rec === null,
-                    'has_recommendation' => $rec !== null,
+                    'has_recommendation' => $rec !== null && !$ownBatch,
                     // Shown on the row so the reason it is excluded is visible.
                     'existing_status' => $rec
                         ? trim(($rec->status ?: 'pending') . ' · RofO ' . ($rec->rofo_status ?: 'pending'))
@@ -1335,7 +1348,11 @@ class LandRecommendationController extends Controller
         // on it — the officer chose it deliberately and can key the details by hand.
         // Rows nothing is known about are flagged so a blank row cannot be mistaken
         // for a load that failed.
-        $rows = $this->hydrateBatchRows($numbers, null, false);
+        // Sent while a saved batch is being edited, so its own members come back
+        // ticked instead of reading as files that already carry a recommendation.
+        $excludeBatchId = trim((string) $request->input('exclude_batch_id', '')) ?: null;
+
+        $rows = $this->hydrateBatchRows($numbers, null, false, $excludeBatchId);
 
         return response()->json([
             'success'  => true,
@@ -1490,23 +1507,14 @@ class LandRecommendationController extends Controller
     }
 
     /**
-     * Save a batch: one recommendation per selected file, all sharing a
-     * rofo_batch_id so the RofO table can group them back together.
-     *
-     * Two kinds, one path. A `subdivision` batch is keyed to a mother file and
-     * covers its commissioned children; a `regular` batch is an arbitrary set of
-     * files the officer picked, with no lineage between them. Everything after the
-     * mother-file rules is identical — the same common fields are copied onto the
-     * same per-file rows — so the two share this method rather than drifting.
+     * The rules a batch post is validated against, shared by storeBatch() and
+     * updateBatch(). Editing a batch keys exactly the same form as capturing one,
+     * so the two must accept exactly the same fields — a rule added to only one of
+     * them is a value that saves on create and is silently dropped on edit.
      */
-    public function storeBatch(Request $request)
+    private function batchRules(string $kind): array
     {
-        // Absent means subdivision: the only kind that existed before regular
-        // batches, so an old form (or a resumed draft keyed by one) still posts
-        // exactly what it always did.
-        $kind = $request->input('batch_kind') === 'regular' ? 'regular' : 'subdivision';
-
-        $validated = $request->validate([
+        return [
             'batch_kind' => 'nullable|string|in:subdivision,regular',
             // Only a subdivision batch has a mother; a regular batch is a set of
             // unrelated files and has nothing to group under.
@@ -1596,7 +1604,27 @@ class LandRecommendationController extends Controller
 
             // How many children the browser posted. See the truncation guard below.
             'children_expected'  => 'nullable|integer|min:0',
-        ]);
+        ];
+    }
+
+    /**
+     * Save a batch: one recommendation per selected file, all sharing a
+     * rofo_batch_id so the RofO table can group them back together.
+     *
+     * Two kinds, one path. A `subdivision` batch is keyed to a mother file and
+     * covers its commissioned children; a `regular` batch is an arbitrary set of
+     * files the officer picked, with no lineage between them. Everything after the
+     * mother-file rules is identical — the same common fields are copied onto the
+     * same per-file rows — so the two share this method rather than drifting.
+     */
+    public function storeBatch(Request $request)
+    {
+        // Absent means subdivision: the only kind that existed before regular
+        // batches, so an old form (or a resumed draft keyed by one) still posts
+        // exactly what it always did.
+        $kind = $request->input('batch_kind') === 'regular' ? 'regular' : 'subdivision';
+
+        $validated = $request->validate($this->batchRules($kind));
 
         // A 200-child batch is over 2,000 form fields. PHP discards everything past
         // max_input_vars silently, so a truncated post would save a short batch and
@@ -1735,6 +1763,248 @@ class LandRecommendationController extends Controller
             : "Batch saved — {$created} recommendations created for the selected files.";
 
         return redirect()->route('land-recommendations.index', ['type' => 'ROFO', 'batch' => $batchId])
+            ->with('success', $summary);
+    }
+
+    /**
+     * Re-open a saved batch in the capture form.
+     *
+     * The same screen that captured it, filled back in: the common fields render
+     * from the first child (every child carries the common set, which is what
+     * "common" means here), and the table plus the per-file steppers are seeded
+     * from $batchEdit. Nothing is re-read from the registry — the saved records
+     * are what the officer is editing, and a registry backfill would quietly
+     * replace values that were keyed by hand.
+     */
+    public function editBatch(Request $request, string $batchId)
+    {
+        $children = LandRecommendation::where('rofo_batch_id', $batchId)
+            ->orderBy('batch_seq')
+            ->orderBy('id')
+            ->get();
+
+        if ($children->isEmpty()) {
+            abort(404, 'No batch found under ' . $batchId . '.');
+        }
+
+        // The first child is the form's model: it carries the whole common set, and
+        // every field on the form outside the batch table reads from it.
+        $recommendation = $children->first();
+
+        $mother = trim((string) ($recommendation->batch_mother_file_no ?? ''));
+
+        $batchEdit = [
+            'batch_id'         => $batchId,
+            'kind'             => $mother !== '' ? 'subdivision' : 'regular',
+            'mother_file_no'   => $mother,
+            'application_type' => (string) ($recommendation->application_type ?? ''),
+            'picked_files'     => $children->pluck('file_number')->map(fn ($f) => trim((string) $f))->values()->all(),
+            'children'         => $children->map(function (LandRecommendation $child, $i) {
+                $grant = [];
+                foreach (self::PER_CHILD_GRANT_FIELDS as $field) {
+                    $grant[$field] = (string) ($child->{$field} ?? '');
+                }
+
+                return [
+                    'file_number'       => (string) $child->file_number,
+                    'applicant_name'    => (string) ($child->applicant_name ?? ''),
+                    'applicant_address' => (string) ($child->applicant_address ?? ''),
+                    'plot_number'       => (string) ($child->plot_number ?? ''),
+                    'location'          => (string) ($child->location ?? ''),
+                    'land_use_id'       => $child->land_use_id,
+                    'purpose_id'        => $child->purpose_id,
+                    'page'              => (string) ($child->page ?? ''),
+                    'page_2'            => (string) ($child->page_2 ?? ''),
+                    'page_3'            => (string) ($child->page_3 ?? ''),
+                    'tracking_id'       => (string) ($child->tracking_id ?? ''),
+                    // Every row is a saved member of this batch, so none of the
+                    // "already has a recommendation" apparatus applies: they are
+                    // ticked, and unticking one is how the officer leaves it as it
+                    // stands rather than how it is excluded from a new batch.
+                    'has_recommendation' => false,
+                    'existing_status'    => trim(($child->status ?: 'pending') . ' · RofO ' . ($child->rofo_status ?: 'pending')),
+                    'is_unknown'         => false,
+                    'checked'            => true,
+                    'is_source'          => $i === 0,
+                    'grant'              => $grant,
+                ];
+            })->values()->all(),
+        ];
+
+        $PageTitle = 'Edit Batch — Recommendation For Grant Of Statutory Right Of Occupancy';
+        $landUses  = LandUse::orderBy('landuse')->get();
+        $purposes  = [];
+        if ($recommendation->land_use_id) {
+            $purposes = Purpose::where('landuseid', $recommendation->land_use_id)->orderBy('name')->get();
+        }
+
+        $isEdit = true;
+
+        return view('land_recommendations.form', compact(
+            'recommendation', 'PageTitle', 'landUses', 'purposes', 'isEdit', 'batchEdit'
+        ));
+    }
+
+    /**
+     * Save a batch that was re-opened for editing.
+     *
+     * Deliberately the mirror of storeBatch(): the same rules, the same common /
+     * per-child split, so a value that saves on capture saves on edit. What differs
+     * is only what happens to a row —
+     *   ticked and already in the batch  → updated in place
+     *   ticked and new to the batch      → created and joined to the batch
+     *   unticked                         → not posted at all, so left exactly as it
+     *                                      is. Nothing is ever deleted here: a
+     *                                      recommendation may already be approved,
+     *                                      printed, or carry a RofO serial.
+     */
+    public function updateBatch(Request $request, string $batchId)
+    {
+        $existing = LandRecommendation::where('rofo_batch_id', $batchId)->get();
+
+        if ($existing->isEmpty()) {
+            abort(404, 'No batch found under ' . $batchId . '.');
+        }
+
+        $kind = $request->input('batch_kind') === 'regular' ? 'regular' : 'subdivision';
+
+        $validated = $request->validate($this->batchRules($kind));
+
+        // Same truncation guard as the capture path — see storeBatch().
+        $expected = (int) ($validated['children_expected'] ?? 0);
+        if ($expected > 0 && $expected !== count($validated['children'])) {
+            throw ValidationException::withMessages([
+                'children' => 'Only ' . count($validated['children']) . ' of ' . $expected
+                    . ' children reached the server — the form is larger than this server accepts in one post '
+                    . '(PHP max_input_vars is ' . ini_get('max_input_vars') . '). Nothing was saved. '
+                    . 'Save the batch in smaller groups, or ask an administrator to raise max_input_vars.',
+            ]);
+        }
+
+        $key = fn ($v) => mb_strtoupper(trim((string) $v));
+        $byFile = $existing->keyBy(fn ($r) => $key($r->file_number));
+
+        // A file already in this batch is not a clash with itself; one being added
+        // to it is held to the same rule as a fresh capture.
+        $clashes = [];
+        foreach ($validated['children'] as $child) {
+            if ($byFile->has($key($child['file_number']))) {
+                continue;
+            }
+            if ($this->findDuplicate($child['file_number'])) {
+                $clashes[] = $child['file_number'];
+            }
+        }
+        if ($clashes) {
+            throw ValidationException::withMessages([
+                'children' => 'These files already have a recommendation outside this batch: ' . implode(', ', $clashes)
+                    . '. Untick them and save again.',
+            ]);
+        }
+
+        $mother = trim((string) ($validated['batch_mother_file_no'] ?? ''));
+
+        $common = collect($validated)
+            ->except(['children', 'batch_kind', 'batch_mother_file_no', 'rofo_survey_method', 'draft_key', 'children_expected'])
+            ->all();
+        $common['rofo_director_survey']   = ($request->rofo_survey_method === 'DIRECTOR') ? 'YES' : 'NO';
+        $common['rofo_licensed_surveyor'] = ($request->rofo_survey_method === 'LICENSED') ? 'YES' : 'NO';
+        $common['use_standard_template']  = $request->boolean('use_standard_template');
+        $common['updated_by']             = Auth::id();
+
+        // Files posted that are not yet in the batch — they join it.
+        $incomingKeys = collect($validated['children'])->map(fn ($c) => $key($c['file_number']));
+        $joining      = $incomingKeys->reject(fn ($k) => $byFile->has($k))->count();
+
+        if ($kind === 'subdivision') {
+            $common['old_file_number']      = $mother;
+            $common['batch_mother_file_no'] = $mother;
+            $common['application_type']     = 'Plot Subdivision';
+            // The size of the split is the whole batch, not the slice that was
+            // ticked on this pass.
+            $common['num_plots']            = (string) ($existing->count() + $joining);
+        }
+
+        $purposeNames = Purpose::pluck('name', 'id')->all();
+        $landUseNames = LandUse::pluck('landuse', 'id')->all();
+
+        // New members carry on from the last sequence rather than restarting at 1.
+        $nextSeq = (int) $existing->max('batch_seq');
+
+        DB::connection('sqlsrv')->beginTransaction();
+        try {
+            $updated = 0;
+            $created = 0;
+
+            foreach (array_values($validated['children']) as $child) {
+                $row = $common;
+                $row['file_number']       = trim($child['file_number']);
+                $row['applicant_name']    = $child['applicant_name'];
+                $row['applicant_address'] = $child['applicant_address'];
+                $row['plot_number']       = $child['plot_number'] ?? null;
+                $row['location']          = $child['location'] ?? null;
+                $row['tracking_id']       = $child['tracking_id'] ?? null;
+                $row['land_use_id']       = $child['land_use_id'];
+                $row['land_use']          = $landUseNames[$child['land_use_id']] ?? null;
+                $row['page']              = $child['page'] ?? null;
+                $row['page_2']            = $child['page_2'] ?? null;
+                $row['page_3']            = $child['page_3'] ?? null;
+
+                // Same rule as the capture path: a per-file value wins over the
+                // common set, and a key present but blank is an answer.
+                foreach (self::PER_CHILD_GRANT_FIELDS as $field) {
+                    if (array_key_exists($field, $child)) {
+                        $row[$field] = ($child[$field] === '' ? null : $child[$field]);
+                    }
+                }
+
+                // Purpose is per child and has no common fallback, so a blank one
+                // leaves whatever the record already carries — it is not a
+                // deliberate "no purpose", it is a row the table could not offer a
+                // matching option for.
+                $purposeId = $child['purpose_id'] ?? null;
+                if ($purposeId === 'other') {
+                    $row['purpose_id']        = null;
+                    $row['purpose_of_clause'] = $child['purpose_id_other'] ?? null;
+                } elseif ($purposeId) {
+                    $row['purpose_id']        = $purposeId;
+                    $row['purpose_of_clause'] = $purposeNames[$purposeId] ?? null;
+                }
+
+                $record = $byFile->get($key($child['file_number']));
+
+                if ($record) {
+                    $record->fill($row);
+                    $record->save();
+                    $updated++;
+                } else {
+                    $row['rofo_batch_id'] = $batchId;
+                    $row['batch_seq']     = ++$nextSeq;
+                    $row['created_by']    = Auth::id();
+
+                    $record = new LandRecommendation();
+                    $record->fill($row);
+                    $record->save();
+                    $created++;
+                }
+            }
+
+            DB::connection('sqlsrv')->commit();
+        } catch (\Throwable $e) {
+            DB::connection('sqlsrv')->rollBack();
+
+            return back()->withInput()
+                ->with('error', 'Batch could not be saved: ' . $e->getMessage());
+        }
+
+        $untouched = $existing->count() - $updated;
+
+        $summary = "Batch {$batchId} saved — {$updated} recommendation(s) updated"
+            . ($created ? ", {$created} added to the batch" : '')
+            . ($untouched > 0 ? ", {$untouched} left unchanged (unticked)" : '')
+            . '.';
+
+        return redirect()->route('land-recommendations.index', ['type' => 'ROFO', 'tab' => 'batches'])
             ->with('success', $summary);
     }
 

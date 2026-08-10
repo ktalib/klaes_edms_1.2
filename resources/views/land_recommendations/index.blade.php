@@ -211,6 +211,14 @@
                                 <td class="px-6 py-4 text-slate-600 whitespace-nowrap">{{ $creator ? trim($creator->first_name . ' ' . $creator->last_name) : '—' }}</td>
                                 <td class="px-6 py-4 text-slate-500 whitespace-nowrap text-xs">{{ $b->created_at ? \Carbon\Carbon::parse($b->created_at)->format('d/m/Y H:i') : '—' }}</td>
                                 <td class="px-6 py-4 text-right whitespace-nowrap" onclick="event.stopPropagation()">
+                                    {{-- Re-opens the whole batch in the capture form, filled
+                                         back in. Editing one child at a time is still there on
+                                         the main list; this is for a correction that runs
+                                         across the batch. --}}
+                                    <a href="{{ route('land-recommendations.batch-edit', $b->rofo_batch_id) }}"
+                                        class="inline-flex items-center gap-1.5 px-3 py-1.5 mr-1.5 bg-white border border-slate-300 text-slate-700 text-[11px] font-bold rounded-lg hover:bg-slate-50 transition">
+                                        <i data-lucide="pencil" class="h-3.5 w-3.5"></i> Edit batch
+                                    </a>
                                     @if($pending > 0)
                                         <button type="button" onclick='approveWholeBatch(@json($b->rofo_batch_id))'
                                             class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-[11px] font-bold rounded-lg hover:bg-green-700 transition">

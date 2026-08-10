@@ -36,17 +36,33 @@
             box-sizing: border-box;
         }
 
+        /* The security paper the letter is printed on. It replaces the inline SVG
+           wave that stood in for it, and it is a full-bleed layer under
+           .content-wrapper (z-index 1), so nothing on the page has to move for it.
+
+           --security-bg-opacity is the one dial: 1 is the artwork as supplied, and
+           lowering it fades the paper back if it reads too strong against the text
+           on the real printer. body already carries print-color-adjust: exact, so
+           what is on screen is what comes out. */
+        .page-container {
+            --security-bg-opacity: 1;
+        }
+
         .security-bg {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            opacity: 0.04;
+            opacity: var(--security-bg-opacity);
             pointer-events: none;
-            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="20" viewBox="0 0 100 20"><path d="M0 10 Q 25 0 50 10 T 100 10" fill="none" stroke="black" stroke-width="0.5"/></svg>');
-            background-size: 60px 12px;
+            background-image: url("{{ asset('assets/letterhead/rofo-security-paper.jpg') }}");
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
             z-index: 0;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
         }
 
         .content-wrapper {
@@ -468,6 +484,13 @@
            the ornate frame with it: the frame is a border-image, which no img
            rule can reach. */
         .copy-bw .content-wrapper {
+            filter: grayscale(100%);
+            -webkit-filter: grayscale(100%);
+        }
+        /* The security paper is a sibling of .content-wrapper, so the grayscale
+           above does not reach it — a black-and-white copy would otherwise print
+           on colour paper. */
+        .copy-bw .security-bg {
             filter: grayscale(100%);
             -webkit-filter: grayscale(100%);
         }

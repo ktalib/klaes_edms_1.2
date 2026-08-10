@@ -10,6 +10,14 @@
     $reissuanceSource = $reissuanceSource
         ?? (($recommendation->is_reissuance ?? false) ? $recommendation->reissuance_source : null);
     $reissuedFromId   = $reissuedFromId ?? null;
+
+    // Editing a whole saved batch. The form is the capture screen filled back in:
+    // the common fields render from the first child (below, exactly as any edit
+    // does) and $batchEdit seeds the table and the per-file steppers. It is an
+    // edit AND a batch, which is why the batch markup can no longer hang off
+    // "not an edit".
+    $batchEdit    = $batchEdit ?? null;
+    $batchCapture = !$isEdit || $batchEdit;
 @endphp
 {{-- "relative" is load-bearing — see the .flex-1.overflow-auto rule in app-layout.css. --}}
 <div class="flex-1 overflow-auto bg-slate-50/60 relative">
@@ -30,7 +38,7 @@
                 </div>
             </div>
 
-            <form id="land-recommendation-form" action="{{ $isEdit ? route('land-recommendations.update', $recommendation->id) : route('land-recommendations.store') }}" method="POST" class="p-8 space-y-8"
+            <form id="land-recommendation-form" action="{{ $batchEdit ? route('land-recommendations.batch-update', $batchEdit['batch_id']) : ($isEdit ? route('land-recommendations.update', $recommendation->id) : route('land-recommendations.store')) }}" method="POST" class="p-8 space-y-8"
                 data-dupcheck-url="{{ route('land-recommendations.check-duplicate') }}"
                 data-record-id="{{ $recommendation->id ?? '' }}">
                 {{-- Hidden inputs live inside a [hidden] wrapper on purpose: space-y-8 uses
@@ -125,16 +133,66 @@
                     </div>
                 @endif
 
+                {{-- This record was captured as part of a batch, and is being edited on
+                     its own. Both are valid — a correction to one file belongs here —
+                     but a correction that runs across the batch does not, so the way
+                     to the whole batch is offered rather than left to be found. --}}
+                @if($isEdit && !$batchEdit && !empty($recommendation->rofo_batch_id))
+                    <div class="bg-violet-50/60 border border-violet-200 rounded-xl px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+                        <p class="text-xs text-violet-900">
+                            <span class="font-bold">Part of batch</span>
+                            <span class="font-mono font-bold">{{ $recommendation->rofo_batch_id }}</span>
+                            &mdash; changes here affect this file only.
+                        </p>
+                        <a href="{{ route('land-recommendations.batch-edit', $recommendation->rofo_batch_id) }}"
+                           class="px-4 py-2 text-xs font-bold text-white bg-violet-600 rounded-lg hover:bg-violet-700 transition">
+                            Edit the whole batch
+                        </a>
+                    </div>
+                @endif
+
                 {{-- ── Batch Mode ────────────────────────────────────────────────
                      Two kinds of batch, one table. A Plot Subdivision produces many
                      child files off one mother file; a regular batch is any set of
                      files the officer picks. Either way the common grant conditions
                      are keyed once below and only the values that differ per file go
-                     in the table. Edit mode is a single record by definition, so the
-                     switch is create-only. --}}
-                @unless($isEdit)
+                     in the table. Present on capture, and again when a saved batch is
+                     re-opened for editing — a single-record edit has no use for it. --}}
+                @if($batchCapture)
+                @if($batchEdit)
+                    {{-- Editing a saved batch: the mode is not a choice here, so the
+                         switch and the kind radios are replaced by what is being
+                         edited. The switch itself still exists (hidden, and forced on
+                         by the script) because every branch below reads it. --}}
+                    <div class="bg-violet-50/60 border-2 border-violet-300 rounded-xl p-6">
+                        <div class="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                                <label class="block text-sm font-extrabold text-slate-900 uppercase tracking-wider">Editing Batch</label>
+                                <span class="inline-flex items-center gap-1.5 mt-1.5 px-2.5 py-1 rounded-full bg-white border border-violet-200 text-violet-800">
+                                    <i data-lucide="layers" class="h-3.5 w-3.5 flex-shrink-0"></i>
+                                    <span class="text-xs font-mono font-bold leading-none">{{ $batchEdit['batch_id'] }}</span>
+                                </span>
+                            </div>
+                            <a href="{{ route('land-recommendations.index', ['type' => 'ROFO', 'tab' => 'batches']) }}"
+                               class="px-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition">
+                                Back to batches
+                            </a>
+                        </div>
+                        <ul class="mt-3 space-y-1 text-[11px] text-violet-900 list-disc list-inside">
+                            <li>Every value below is what was saved &mdash; change what needs changing and save the batch.</li>
+                            <li>Use the <span class="font-semibold">1 of N</span> arrows on the stepped cards to move between the files.</li>
+                            <li>A <span class="font-semibold">ticked</span> row is written back. An <span class="font-semibold">unticked</span> one is left exactly as it stands &mdash; nothing is ever deleted here.</li>
+                        </ul>
+                    </div>
+                @endif
                 <div id="batch-mode-card" class="bg-violet-50/60 border border-violet-200 rounded-xl p-6">
-                    <div class="flex flex-wrap items-center justify-between gap-3">
+                    {{-- Editing a saved batch: the mode is not a choice, so the switch
+                         is stood down. The checkbox itself stays in the DOM — every
+                         branch of the batch script reads it. The kind chooser goes the
+                         same way, but from the script, which owns its visibility.
+                         Everything else in this card (the file picker, the regular-batch
+                         note) is still live while editing. --}}
+                    <div class="flex flex-wrap items-center justify-between gap-3 {{ $batchEdit ? 'hidden' : '' }}">
                         <div>
                             <label class="block text-sm font-extrabold text-slate-900 uppercase tracking-wider">Batch Mode</label>
                             <span class="inline-flex items-center gap-1.5 mt-1.5 px-2.5 py-1 rounded-full bg-violet-50 border border-violet-200 text-violet-800">
@@ -458,7 +516,7 @@
                         </p>
                     </div>
                 </div>
-                @endunless
+                @endif
 
                 <!-- File Number Selector -->
                 <div id="file-number-card" class="bg-blue-50/50 rounded-xl p-6 border border-blue-100/50">
@@ -1345,15 +1403,30 @@
                             <i data-lucide="refresh-cw" class="h-4 w-4 text-amber-600"></i>
                             <h3 class="text-sm font-bold text-amber-900 uppercase tracking-tight">Page Number details</h3>
 
-                            {{-- Regular batch only. A conversion batch is a set of unrelated
-                                 files, and the survey report and Physical Planning comment are
-                                 read off each file separately — so this card steps the batch
-                                 the same way Grant Conditions does, on the same shared index,
-                                 which keeps all three cards showing one file at a time. --}}
+                            {{-- Stepped per file, on the same shared index as Grant Conditions
+                                 and Applicant & Property, so all three cards always show the
+                                 same file. The survey report and Physical Planning's comment
+                                 are read off each file separately, which is what makes them
+                                 per-file rather than batch-wide.
+
+                                 Apply-to-all is here and not on the other two because these
+                                 are the values a batch most often shares verbatim: one survey
+                                 report reference, one Physical Planning comment, read once and
+                                 carried across the set. --}}
                             <div class="per-file-step-nav hidden ml-auto flex items-center gap-2">
                                 <span class="per-file-step-file font-mono text-[11px] font-bold text-slate-700 truncate max-w-[200px]"></span>
                                 <span class="per-file-step-untick hidden px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 text-slate-600 uppercase tracking-wide"
                                       title="This file is unticked in the table, so these values will not be saved">Not in batch</span>
+                                {{-- data-card-fields is the card's own share of PER_FILE_FIELDS.
+                                     Anything added to this card and not listed here is a value
+                                     Apply-to-all silently leaves behind on the other files. --}}
+                                <button type="button" id="page-card-apply-all"
+                                        data-card-fields="page_survey_report,survey_report,physical_planning_comment,improvement,revision_period,time_of_erection"
+                                        class="px-2.5 py-1.5 text-[11px] font-bold bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed transition inline-flex items-center gap-1.5"
+                                        title="Copy every value on this card onto every file in the batch">
+                                    <i data-lucide="copy" class="h-3.5 w-3.5"></i>
+                                    Apply to all
+                                </button>
                                 <div class="flex items-center gap-1 rounded-lg border border-amber-200 bg-white p-0.5">
                                     <button type="button" class="per-file-step-prev p-1.5 rounded-md text-amber-700 hover:bg-amber-50 disabled:opacity-30 disabled:cursor-not-allowed transition" title="Previous file">
                                         <i data-lucide="chevron-left" class="h-4 w-4"></i>
@@ -1366,15 +1439,25 @@
                             </div>
                         </div>
 
-                        {{-- The Application and Physical Planning page numbers are captured
-                             per child in the batch table (the Pg / Memo boxes), so they are
-                             stood down here rather than offering a second, batch-wide place
-                             to key the same two numbers. --}}
-                        <p data-batch-only class="text-[11px] font-semibold text-amber-900 bg-white/70 border border-amber-200 rounded-lg px-3 py-2">
+                        {{-- The Application and Physical Planning page numbers belong to the
+                             batch TABLE — its Pg / Memo columns are where they are stored and
+                             posted from. Where there is a stepper there is also one current
+                             file, so the card shows those two boxes for that file as a mirror
+                             of its row: type in either, both change. Where there is no stepper
+                             (a subdivision capture, whose children are keyed straight down the
+                             table) there is no current file for them to mean, so they stay
+                             stood down and the note below says where they went. --}}
+                        <p data-batch-only data-batch-no-mirror class="text-[11px] font-semibold text-amber-900 bg-white/70 border border-amber-200 rounded-lg px-3 py-2">
                             Application Page No and Physical Planning Page No are keyed per file in the
                             table above &mdash; the <span class="font-mono">Pg</span> and
                             <span class="font-mono">Memo</span> boxes.
                             What is below is captured for the file named on the stepper.
+                        </p>
+                        <p data-batch-only data-batch-mirror-note class="hidden text-[11px] font-semibold text-amber-900 bg-white/70 border border-amber-200 rounded-lg px-3 py-2">
+                            Everything on this card belongs to the file named on the stepper.
+                            Application Page No and Physical Planning Page No are the same two boxes as
+                            that file's <span class="font-mono">Pg</span> and <span class="font-mono">Memo</span>
+                            in the table above &mdash; change either one.
                         </p>
 
                         {{-- Laid out the way the page numbers are read off the file: the
@@ -1383,10 +1466,15 @@
                              Physical Planning's comment). The page-number inputs are
                              narrow because they only ever hold a page number. --}}
                         <div class="space-y-4 mb-6">
-                            <div class="grid grid-cols-12 gap-4" data-batch-child>
+                            {{-- data-batch-mirror: hidden in batch mode like any other
+                                 [data-batch-child], EXCEPT while a stepper is on, where it
+                                 comes back bound to the current file's table row (see
+                                 writeMirrors / the mirror listeners). data-f names the table
+                                 column it mirrors. --}}
+                            <div class="grid grid-cols-12 gap-4" data-batch-child data-batch-mirror>
                                 <div class="col-span-6 sm:col-span-4 md:col-span-3">
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono whitespace-nowrap">Application Page No</label>
-                                    <input type="text" name="page" value="{{ old('page', $recommendation->page ?? '') }}"
+                                    <input type="text" name="page" data-mirror-f="page" value="{{ old('page', $recommendation->page ?? '') }}"
                                         title="Application Page No" placeholder="App pg"
                                         class="w-full max-w-[96px] border border-slate-200 rounded-lg px-3 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
                                 </div>
@@ -1408,9 +1496,9 @@
                             </div>
 
                             <div class="flex flex-wrap items-end gap-8">
-                                <div class="shrink-0" data-batch-child>
+                                <div class="shrink-0" data-batch-child data-batch-mirror>
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5 font-mono whitespace-nowrap">Physical Planning Page No</label>
-                                    <input type="text" name="page_2" value="{{ old('page_2', $recommendation->page_2 ?? '') }}"
+                                    <input type="text" name="page_2" data-mirror-f="page_2" value="{{ old('page_2', $recommendation->page_2 ?? '') }}"
                                         title="Physical Planning Page No" placeholder="PP pg"
                                         class="w-full max-w-[96px] border border-slate-200 rounded-lg px-3 py-2.5 bg-white shadow-sm outline-none focus:ring-1 focus:ring-amber-500 transition">
                                 </div>
@@ -1549,7 +1637,7 @@
                 <!-- Action Footer -->
                 <div class="pt-8 border-t border-slate-100 flex justify-end gap-3">
                     <button type="submit" class="px-8 py-3 bg-slate-900 text-white font-bold rounded-lg hover:bg-slate-800 transition shadow-lg">
-                        {{ $isEdit ? 'Update' : ($reissuanceSource ? 'Save Re-issuance' : 'Generate Recommendation') }}
+                        {{ $batchEdit ? 'Save Batch Changes' : ($isEdit ? 'Update' : ($reissuanceSource ? 'Save Re-issuance' : 'Generate Recommendation')) }}
                     </button>
                 </div>
             </form>
@@ -1805,7 +1893,7 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>
 
-@unless($isEdit)
+@if($batchCapture)
 <style>
     /* Values the batch table owns are suppressed on the main form while batch
        mode is on. !important because the application-type script toggles the
@@ -1818,10 +1906,22 @@ document.addEventListener('DOMContentLoaded', function () {
     /* Page Number details: the detail rows are flex, so the page-number box sits
        only as wide as it needs and the detail beside it starts right after —
        and when the page number is stood down in batch mode (the table owns it),
-       the detail simply takes the whole row. */
-    #land-recommendation-form.batch-mode #conversion-fields-section .pp-detail-col {
+       the detail simply takes the whole row. Once a stepper is on, the page
+       numbers come back as a mirror of the current file's row, so the card reads
+       exactly as it does outside a batch and this no longer applies. */
+    #land-recommendation-form.batch-mode:not(.per-file-capture) #conversion-fields-section .pp-detail-col {
         min-width: 100%;
     }
+
+    /* The two boxes the batch table owns, shown again for the file on the stepper.
+       Beats the [data-batch-child] rule above on specificity, and only while there
+       is a current file for them to belong to. */
+    #land-recommendation-form.batch-mode.per-file-capture [data-batch-mirror] { display: block !important; }
+
+    /* One note or the other, never both: which of the two applies follows the same
+       switch as the mirror itself. */
+    #land-recommendation-form.batch-mode.per-file-capture [data-batch-no-mirror] { display: none !important; }
+    #land-recommendation-form.batch-mode.per-file-capture [data-batch-mirror-note] { display: block !important; }
 
     /* The row Apply-to-all copies from. A bar down the left edge rather than a row
        background, because each column carries its own tint for what Apply-to-all
@@ -1860,10 +1960,23 @@ document.addEventListener('DOMContentLoaded', function () {
     var BATCH_TYPE     = 'Plot Subdivision';
     var MOTHERS_URL    = '{{ route('land-recommendations.subdivision-mothers') }}';
     var CHILDREN_URL   = '{{ route('land-recommendations.subdivision-children') }}';
-    var BATCH_ACTION   = '{{ route('land-recommendations.store-batch') }}';
+    // Where switching batch mode on points the form. On an edit that is the batch
+    // it is editing, NOT the capture endpoint — applyBatchMode() writes this over
+    // whatever the markup set, so a create URL here sends the edit's spoofed PUT
+    // to /land-recommendations/batch, which the resource route then reads as a
+    // record whose id is the word "batch".
+    var BATCH_ACTION   = '{{ $batchEdit ? route('land-recommendations.batch-update', $batchEdit['batch_id']) : route('land-recommendations.store-batch') }}';
     var FILES_URL      = '{{ route('land-recommendations.batch-files') }}';
     var FILE_DETAIL_URL = '{{ route('land-recommendations.batch-file-details') }}';
     var PURPOSES_URL   = '{{ url('api/reference/purposes') }}';
+
+    // Null on capture; the saved batch being re-opened otherwise. Everything it
+    // changes is a variation on the capture screen rather than a second screen:
+    // the mode and the kind stop being choices, the registry is never re-read over
+    // what was saved, autosave is off (there is nothing to lose — the records
+    // already exist), and every card that steps per file does so for BOTH kinds,
+    // because in an edit each child is a record with values of its own.
+    var BATCH_EDIT = @json($batchEdit);
 
     var toggle      = document.getElementById('batch-mode-toggle');
     var hint        = document.getElementById('batch-mode-hint');
@@ -2011,6 +2124,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function isRegular() { return currentKind() === 'regular'; }
 
+    // Whether the stepped cards (Grant Conditions, Applicant & Property, Page
+    // Number details) capture one set of values per file rather than one for the
+    // batch. On capture that is the regular kind only — a subdivision's children
+    // share one grant. On an edit it is both kinds: every child is already a saved
+    // record with its own values, and holding them behind a single shared card
+    // would write one child's figures onto all of them.
+    function perFileOn() { return isRegular() || !!BATCH_EDIT; }
+
     // Fields the table now owns are hidden AND disabled — disabled inputs are not
     // submitted, which also stands down their `required` so the browser cannot
     // block the batch post on a field the user can no longer see.
@@ -2038,12 +2159,13 @@ document.addEventListener('DOMContentLoaded', function () {
     function applyBatchMode(on) {
         if (kindRow) kindRow.classList.toggle('hidden', !on);
 
-        // Autosave only exists for a batch — a single record is short enough that
-        // losing it to a timeout is an annoyance rather than a day's work.
-        if (draftBar) draftBar.classList.toggle('hidden', !on);
-        if (draftKeyInput) draftKeyInput.disabled = !on;
+        // Autosave only exists for a batch being captured — a single record is
+        // short enough that losing it to a timeout is an annoyance rather than a
+        // day's work, and an edit of a saved batch has nothing to lose at all.
+        if (draftBar) draftBar.classList.toggle('hidden', !on || !!BATCH_EDIT);
+        if (draftKeyInput) draftKeyInput.disabled = !on || !!BATCH_EDIT;
         if (expectedInput) expectedInput.disabled = !on;
-        if (on) bootstrapDrafts();
+        if (on && !BATCH_EDIT) bootstrapDrafts();
 
         // The batch has no single file number — each child carries its own.
         if (fileNoCard) fileNoCard.classList.toggle('hidden', on);
@@ -2191,12 +2313,26 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         // Grant conditions are per file in a regular batch and shared in a
-        // subdivision, so the stepper appears with the kind.
+        // subdivision, so the stepper appears with the kind — except on an edit,
+        // where every child has its own saved set whichever kind it is.
+        var stepped = on && perFileOn();
         Array.prototype.forEach.call(stepNavs, function (nav) {
-            nav.classList.toggle('hidden', !regular);
+            nav.classList.toggle('hidden', !stepped);
         });
+
+        // With a stepper there is one current file, so the two columns the table
+        // owns are shown on the Page Number card as a mirror of its row. The class
+        // is what the stylesheet keys the mirror (and its note) off; the inputs are
+        // re-enabled by hand because standDownPerChildFields() disabled them along
+        // with every other [data-batch-child] on the way in.
+        recForm.classList.toggle('per-file-capture', stepped);
+        mirrorEls().forEach(function (el) {
+            el.disabled = !stepped && on;
+            if (el.dataset.batchWasDisabled !== undefined) el.dataset.batchWasDisabled = '0';
+        });
+        if (stepped) writeMirrors();
         if (batchInfo) batchInfo.classList.toggle('hidden', !regular);
-        if (regular) {
+        if (stepped) {
             rebuildGrantStore();
         } else {
             grantStore = [];
@@ -2216,11 +2352,16 @@ document.addEventListener('DOMContentLoaded', function () {
         if (motherLabel) motherLabel.classList.toggle('hidden', regular);
         if (colFileNo)  colFileNo.textContent = regular ? 'File No' : 'Child File No';
         if (footerNote) {
-            footerNote.textContent = regular
-                ? 'Untick any file that should not receive a recommendation. Every ticked row is saved as its own '
-                    + 'RofO recommendation, grouped under one batch.'
-                : 'Untick any child that should not receive a recommendation. Every ticked row is saved as its own '
-                    + 'RofO recommendation, grouped under one batch.';
+            footerNote.textContent = BATCH_EDIT
+                // An unticked row on an edit is not an exclusion — the record
+                // already exists and simply is not written to on this pass.
+                ? 'Every ticked row is written back to its saved recommendation. An unticked row is left exactly '
+                    + 'as it stands — nothing is deleted here. A file added to the table joins this batch.'
+                : (regular
+                    ? 'Untick any file that should not receive a recommendation. Every ticked row is saved as its own '
+                        + 'RofO recommendation, grouped under one batch.'
+                    : 'Untick any child that should not receive a recommendation. Every ticked row is saved as its own '
+                        + 'RofO recommendation, grouped under one batch.');
         }
 
         if (!on) return;
@@ -2767,6 +2908,10 @@ document.addEventListener('DOMContentLoaded', function () {
         var body = new FormData();
         body.append('_token', csrfToken());
         files.forEach(function (f) { body.append('file_numbers[]', f); });
+        // While a saved batch is being edited its own members must not come back
+        // flagged "already has a recommendation" — they would arrive unticked and
+        // pressing Apply would drop the whole batch out of its own edit.
+        if (BATCH_EDIT) body.append('exclude_batch_id', BATCH_EDIT.batch_id);
 
         return fetch(FILE_DETAIL_URL, {
             method: 'POST',
@@ -2870,7 +3015,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // Park whatever is on screen into the current slot. Called before every move
     // and before the batch is posted, so nothing keyed is left only in the DOM.
     function commitGrant() {
-        if (!isRegular() || !grantStore.length) return;
+        if (!perFileOn() || !grantStore.length) return;
         if (grantIndex < 0 || grantIndex >= grantStore.length) return;
         grantStore[grantIndex] = readGrantCard();
     }
@@ -2895,7 +3040,59 @@ document.addEventListener('DOMContentLoaded', function () {
         eachStep('.per-file-step-untick', function (el) {
             el.classList.toggle('hidden', !!ticked);
         });
+
+        // Nothing to copy onto with fewer than two files in the batch.
+        var pageApply = document.getElementById('page-card-apply-all');
+        if (pageApply) pageApply.disabled = total < 2;
+
+        writeMirrors();
     }
+
+    /* ── Mirrored table columns on the Page Number card ──────────────────────
+       Application Page No and Physical Planning Page No live in the batch table
+       (its Pg / Memo columns) — that is where they are stored and what posts
+       them. But the card they belong to steps one file at a time, and a card
+       missing two of its boxes reads as a card with two fields lost rather than
+       two fields moved. So while a stepper is on they are shown here too, bound
+       to the current file's row: whichever one is typed into, both change and the
+       row stays the single source. They are NOT in PER_FILE_FIELDS and never
+       enter grantStore — the row is the store. The card's own inputs keep their
+       names (`page`, `page_2`) and do post, but no batch rule accepts either at
+       the top level, so the value is dropped and only children[i][page] counts. */
+
+    function mirrorEls() {
+        return Array.prototype.slice.call(
+            document.querySelectorAll('#conversion-fields-section [data-mirror-f]')
+        );
+    }
+
+    // The table cell a mirror is bound to, for the file currently on the stepper.
+    function mirrorCell(field) {
+        var tr = grantRows()[grantIndex];
+        return tr ? tr.querySelector('[data-f="' + field + '"]') : null;
+    }
+
+    // Row → card. Called after every step and every re-render.
+    function writeMirrors() {
+        if (!perFileOn()) return;
+        mirrorEls().forEach(function (el) {
+            var cell = mirrorCell(el.dataset.mirrorF);
+            var next = cell ? cell.value : '';
+            if (el.value !== next) el.value = next;
+        });
+    }
+
+    // Card → row.
+    mirrorEls().forEach(function (el) {
+        el.addEventListener('input', function () {
+            if (!toggle.checked || !perFileOn()) return;
+            var cell = mirrorCell(el.dataset.mirrorF);
+            if (!cell || cell.value === el.value) return;
+            cell.value = el.value;
+            // The table's own change handling (and the draft) hang off this.
+            cell.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+    });
 
     function gotoGrant(i) {
         var total = grantStore.length;
@@ -2960,7 +3157,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function syncGrantInputs() {
         if (!grantInputs) return;
         grantInputs.innerHTML = '';
-        if (!toggle.checked || !isRegular()) return;
+        if (!toggle.checked || !perFileOn()) return;
 
         commitGrant();
         var baseline = readGrantCard();
@@ -2980,6 +3177,43 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     eachStep('.per-file-step-next', function (el) {
         el.addEventListener('click', function () { gotoGrant(grantIndex + 1); });
+    });
+
+    // Apply-to-all for one stepped card: the file on screen is copied onto every
+    // other file in the batch, for that card's fields only. Deliberately the whole
+    // card and not just the page numbers — a card that steps as a unit has to copy
+    // as one, or the survey report travels and the page it is on does not.
+    //
+    // Distinct from the table's Apply-to-all, which copies one ROW onto the others.
+    // This one copies the stepper's current position, and it overwrites: it is
+    // pressed precisely because the other files should read the same.
+    var pageApplyAll = document.getElementById('page-card-apply-all');
+    if (pageApplyAll) pageApplyAll.addEventListener('click', function () {
+        var fields = (pageApplyAll.dataset.cardFields || '').split(',')
+            .map(function (f) { return f.trim(); })
+            .filter(function (f) { return PER_FILE_FIELDS.indexOf(f) !== -1; });
+        if (!fields.length) return;
+
+        commitGrant();
+        var source = grantStore[grantIndex];
+        if (!source || grantStore.length < 2) return;
+
+        if (!confirm('Copy the Page Number details on screen onto all '
+                + grantStore.length + ' files in this batch? Whatever those files '
+                + 'currently hold in these fields is replaced.')) {
+            return;
+        }
+
+        grantStore.forEach(function (g, i) {
+            if (i === grantIndex || !g) return;
+            fields.forEach(function (f) { g[f] = source[f]; });
+        });
+
+        renderGrantStep();
+        setStatus('Page Number details copied onto ' + (grantStore.length - 1) + ' other file(s).', 'warn');
+        // Real work, and a lot of it at once — drafted rather than left waiting on
+        // the next keystroke. No-op while a saved batch is being edited.
+        scheduleSave();
     });
 
     /* ═══════════════════════════════════════════════════════════════════
@@ -3096,14 +3330,18 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         // The table is the batch, so the per-file grant store follows it. Values
-        // already keyed survive by file number; a draft's are passed in as the seed.
-        if (isRegular()) {
+        // already keyed survive by file number; a draft's — or, on an edit, the
+        // saved record's — are passed in as the seed.
+        if (perFileOn()) {
             rebuildGrantStore(children.map(function (c) {
                 if (!c || !c.grant) return null;
                 var g = Object.assign({}, c.grant);
                 g.__file = c.file_number;
                 return g;
             }).filter(Boolean));
+        }
+
+        if (isRegular()) {
             // Row markup is rebuilt from scratch, so the source column has to be
             // hidden again on the new cells.
             rowsBody.querySelectorAll('.batch-src-cell').forEach(function (td) { td.classList.add('hidden'); });
@@ -3279,6 +3517,18 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    // The other half of the mirror: a page number typed into the table itself has
+    // to reach the card, but only while the row being typed into is the one the
+    // stepper is showing. `input`, not `change`, so it tracks keystroke by
+    // keystroke the way the card → row direction does.
+    rowsBody.addEventListener('input', function (e) {
+        var f = e.target && e.target.dataset ? e.target.dataset.f : null;
+        if (!f || !perFileOn()) return;
+        if (e.target.closest('tr') !== grantRows()[grantIndex]) return;
+        var el = document.querySelector('#conversion-fields-section [data-mirror-f="' + f + '"]');
+        if (el && el.value !== e.target.value) el.value = e.target.value;
+    });
+
     rowsBody.addEventListener('change', function (e) {
         if (e.target.classList.contains('batch-row-source')) {
             syncSourceLabel();
@@ -3331,6 +3581,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (from && dst) dst.value = from.value;
             });
         });
+
+        // The page numbers this just copied are mirrored on the Page Number card,
+        // which would otherwise keep showing the value it had before the copy.
+        writeMirrors();
 
         // The copy is real work, so it is drafted rather than waiting on the next
         // keystroke — 100 rows changed at once is exactly what should not be lost.
@@ -3451,7 +3705,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // Park whatever is on the Grant Conditions stepper first, then key the store
         // by file number so each row picks up its own set below.
         var grantByFile = {};
-        if (isRegular()) {
+        if (perFileOn()) {
             serializeGrant().forEach(function (g) {
                 if (g && g.__file) grantByFile[g.__file] = g;
             });
@@ -3546,6 +3800,10 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function saveDraft(reason) {
+        // A saved batch has nothing to draft: the records already exist, and a
+        // draft written from an edit would come back as a "resume" offering to
+        // create the batch a second time.
+        if (BATCH_EDIT) return Promise.resolve();
         if (restoring || !toggle.checked) return Promise.resolve();
         if (draftSaving) { draftDirty = true; return Promise.resolve(); }
 
@@ -3626,6 +3884,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function scheduleSave() {
+        if (BATCH_EDIT) return;
         draftDirty = true;
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(function () { saveDraft('debounce'); }, DEBOUNCE_MS);
@@ -4062,6 +4321,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // A draft can be opened straight from a link (?draft=KEY), which is how the
     // "Resume" action on the RofO table hands one back to this form.
     (function () {
+        if (BATCH_EDIT) return;
         var params = new URLSearchParams(window.location.search);
         var key = params.get('draft');
         if (!key) return;
@@ -4069,11 +4329,27 @@ document.addEventListener('DOMContentLoaded', function () {
         restoreDraft(key);
     })();
 
+    // An edit is not drafted, so draftDirty never rises for one. It still has
+    // unsaved work to lose, so it keeps its own flag for the unload guard.
+    var editDirty = false;
+    if (BATCH_EDIT) {
+        ['input', 'change'].forEach(function (evt) {
+            recForm.addEventListener(evt, function (e) {
+                // Painting the batch back onto the form fires change on every field
+                // it writes (writeGrantCard does so deliberately, to keep the derived
+                // wording in step). That is the page loading, not the user typing.
+                if (restoring) return;
+                if (e.target && e.target.name === '_token') return;
+                editDirty = true;
+            }, true);
+        });
+    }
+
     // Leaving with work the server has not accepted is the one thing this feature
     // exists to prevent, so it is worth the browser's confirm dialog.
     window.addEventListener('beforeunload', function (e) {
         if (!toggle.checked) return;
-        if (!draftDirty && !sessionLost) return;
+        if (!draftDirty && !sessionLost && !editDirty) return;
         e.preventDefault();
         e.returnValue = '';
     });
@@ -4168,10 +4444,66 @@ document.addEventListener('DOMContentLoaded', function () {
         // down — storeBatch() closes the draft out once the rows are committed.
         draftDirty = false;
         sessionLost = false;
+        editDirty = false;
     });
+
+    // ── Editing a saved batch ──────────────────────────────────────────────
+    // Paint the batch back onto the capture screen. Everything here runs once,
+    // last, so it lands on top of the state applyBatchMode()/applyKind() leave
+    // behind rather than being overwritten by it.
+    //
+    // The registry is never consulted: these rows are saved recommendations, and
+    // a backfill would put registry values back over details that were keyed by
+    // hand when the batch was captured. suppressChildLoad therefore stays on for
+    // good — it is what stops the mother-file listener from re-loading children
+    // over the table.
+    if (BATCH_EDIT) (function () {
+        suppressChildLoad = true;
+        restoring = true;
+
+        var kindRadio = document.querySelector('.batch-kind-radio[value="' + BATCH_EDIT.kind + '"]');
+        if (kindRadio) kindRadio.checked = true;
+
+        toggle.checked = true;
+        applyBatchMode(true);
+
+        // Neither the mode nor the kind is a choice once a batch exists: changing
+        // either would mean a different set of files, which is a new batch.
+        toggle.disabled = true;
+        kindRadios.forEach(function (r) { r.disabled = true; });
+        if (kindRow)    kindRow.classList.add('hidden');
+        if (hint)       hint.classList.add('hidden');
+        // Reload re-reads the mother's children from the registry — on an edit
+        // that would discard every saved value in the table.
+        if (reloadBtn)  reloadBtn.classList.add('hidden');
+        // The mother is what the batch is grouped under, so it is shown and not
+        // editable. A different mother is a different batch.
+        if (motherPick) motherPick.classList.add('hidden');
+        if (motherSel)  motherSel.disabled = true;
+
+        var mother = BATCH_EDIT.mother_file_no || '';
+        if (oldFileNo)   oldFileNo.value = mother;
+        if (motherField) motherField.value = mother;
+        if (motherLabel) motherLabel.textContent = mother || '—';
+
+        if (BATCH_EDIT.kind === 'regular') {
+            // The picker still works: files can be added to a saved batch, and
+            // batchFileDetails is told which batch this is so its own members do
+            // not come back flagged as files that already have a recommendation.
+            initFileSelect();
+            setPickedFiles(BATCH_EDIT.picked_files || []);
+        }
+
+        if (card) card.classList.remove('hidden');
+        renderChildren(BATCH_EDIT.children || []);
+        setStatus('');
+
+        restoring = false;
+        if (window.lucide) window.lucide.createIcons();
+    })();
 });
 </script>
-@endunless
+@endif
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         // TP No Select2 — lazy search against tp_lookups (200k+ rows)

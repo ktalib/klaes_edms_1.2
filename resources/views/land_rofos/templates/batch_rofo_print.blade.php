@@ -29,11 +29,16 @@
             margin-bottom: 20px;
             box-sizing: border-box;
         }
+        /* Same security paper as the single RofO print — see the note there. Kept
+           identical on purpose: a batch is the same letter, many times. */
+        .page-container { --security-bg-opacity: 1; }
         .security-bg {
             position: absolute; top:0; left:0; width:100%; height:100%;
-            opacity: 0.04; pointer-events: none;
-            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="20" viewBox="0 0 100 20"><path d="M0 10 Q 25 0 50 10 T 100 10" fill="none" stroke="black" stroke-width="0.5"/></svg>');
-            background-size: 60px 12px; z-index:0;
+            opacity: var(--security-bg-opacity); pointer-events: none;
+            background-image: url("{{ asset('assets/letterhead/rofo-security-paper.jpg') }}");
+            background-size: cover; background-position: center; background-repeat: no-repeat;
+            z-index:0;
+            -webkit-print-color-adjust: exact; print-color-adjust: exact;
         }
         .content-wrapper { flex:1; margin:6mm 8mm 0 8mm; position:relative; z-index:1; display:flex; flex-direction:column; }
         .ornate-border {
@@ -86,6 +91,9 @@
            are overridden to black because grayscale alone leaves red and blue as
            mid-greys. */
         .copy-bw .content-wrapper { filter:grayscale(100%); -webkit-filter:grayscale(100%); }
+        /* The security paper is a sibling of .content-wrapper, so it needs its own
+           grayscale or a black-and-white copy prints on colour paper. */
+        .copy-bw .security-bg { filter:grayscale(100%); -webkit-filter:grayscale(100%); }
         .copy-bw .title-center { color:#000!important; }
         .copy-bw .version-label { color:#000!important; }
         /* Batch print button */

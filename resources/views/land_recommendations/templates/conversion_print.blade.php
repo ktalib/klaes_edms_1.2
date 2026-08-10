@@ -237,47 +237,60 @@
             <p class="text-center font-bold text-[13px] mb-0.5 uppercase tracking-wide">
               PLANNING RECOMMENDATION (IF ANY)
             </p>
+            {{-- Physical Planning's comment, captured on the Page Number details card
+                 beside the page it is read off. It was printing `recommendation` — the
+                 officer's own recommendation text, a different field on a different
+                 card — so the letter carried the wrong sentence here. Blank when there
+                 is none: this line is "if any", and "NONE PROVIDED" printed on a letter
+                 reads as a finding rather than an empty box. --}}
             <div class="space-y-2 px-2 py-1 border border-slate-200 rounded-lg min-h-[24px] text-[13px]">
-                {{ $recommendation->recommendation ?? 'NONE PROVIDED' }}
+                {{ $recommendation->physical_planning_comment ?? '' }}
             </div>
           </div>
 
-          <!-- Terms Table -->
+          {{-- Terms Table. Each row is its own grid, so the label column is a fixed
+               width rather than `auto` — auto would size each row to its own label and
+               the five rule lines would start at five different places. That width has
+               to clear the longest label, "Time of Erection:", which at 100px wrapped
+               to two lines: "Time of" sat above the row and, because the row is
+               items-end, "Erection:" dropped to the baseline beside (e) with the rule
+               line beside only that. whitespace-nowrap holds every label to one line,
+               so none of them can break a row again. --}}
           <div class="text-black text-[13px] space-y-0.5 mb-1 shrink-0">
             <p class="font-bold underline italic">
               The grant of Right of Occupancy is recommended on the terms set out as follows:
             </p>
-            <div class="grid grid-cols-[20px_100px_1fr] items-end px-2">
+            <div class="grid grid-cols-[20px_128px_1fr] items-end px-2">
               <span>(a)</span>
-              <span class="italic font-bold">Rents:</span>
+              <span class="italic font-bold whitespace-nowrap">Rents:</span>
               <div class="border-b border-black h-4 px-2">
                   ₦ {{ number_format($recommendation->ground_rent, 2) }}
               </div>
             </div>
-            <div class="grid grid-cols-[20px_100px_1fr] items-end px-2">
+            <div class="grid grid-cols-[20px_128px_1fr] items-end px-2">
               <span>(b)</span>
-              <span class="italic font-bold">Terms:</span>
+              <span class="italic font-bold whitespace-nowrap">Terms:</span>
               <div class="border-b border-black h-4 px-2">
                   {{ $recommendation->term ?? '99' }} YEARS
               </div>
             </div>
-            <div class="grid grid-cols-[20px_100px_1fr] items-end px-2">
+            <div class="grid grid-cols-[20px_128px_1fr] items-end px-2">
               <span>(c)</span>
-              <span class="italic font-bold">Improvement:</span>
+              <span class="italic font-bold whitespace-nowrap">Improvement:</span>
               <div class="border-b border-black h-4 px-2">
                   {{ $recommendation->improvement }}
               </div>
             </div>
-            <div class="grid grid-cols-[20px_100px_1fr] items-end px-2">
+            <div class="grid grid-cols-[20px_128px_1fr] items-end px-2">
               <span>(d)</span>
-              <span class="italic font-bold">Revision Period:</span>
+              <span class="italic font-bold whitespace-nowrap">Revision Period:</span>
               <div class="border-b border-black h-4 px-2">
                   {{ $recommendation->revision_period }}
               </div>
             </div>
-            <div class="grid grid-cols-[20px_100px_1fr] items-end px-2">
+            <div class="grid grid-cols-[20px_128px_1fr] items-end px-2">
               <span>(e)</span>
-              <span class="italic font-bold">Time of Erection:</span>
+              <span class="italic font-bold whitespace-nowrap">Time of Erection:</span>
               <div class="border-b border-black h-4 px-2">
                   {{ $recommendation->time_of_erection }}
               </div>
