@@ -222,8 +222,8 @@
                     }
 
                     // Applications derived from an existing file (Plot Subdivision / Plot
-                    // Merger / Change of Purpose) cite the parent file number in place of
-                    // the plan number on the "as per plan No." line.
+                    // Merger / Change of Purpose / Regrant) cite the parent file number in
+                    // place of the plan number on the "as per plan No." line.
                     $oldFileNumber = trim((string) ($recommendation->old_file_number ?? ''));
                     $layoutPlanNo  = trim((string) ($recommendation->layout_plan_no ?? ''));
                     $planNoRef     = $oldFileNumber !== '' ? $oldFileNumber : $layoutPlanNo;

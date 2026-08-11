@@ -1452,7 +1452,17 @@ class FileIndexingController extends Controller
 
                 $fileIndexingModel = FileIndexing::on('sqlsrv')->find($id);
                 if ($fileIndexingModel) {
-                    $this->syncRelatedFileLinks($fileIndexingModel, $relatedFileNos, $relatedDetails);
+                    // Read the raw request, not $validated: related_fileno is re-seeded to null
+                    // above for every update, so $validated can no longer tell "submitted empty"
+                    // apart from "never sent".
+                    $explicitRelatedSubmission = $request->has('related_fileno');
+
+                    $this->syncRelatedFileLinks(
+                        $fileIndexingModel,
+                        $relatedFileNos,
+                        $relatedDetails,
+                        $explicitRelatedSubmission
+                    );
                     $this->syncMasterDcivLinks($fileIndexingModel, $relatedFileNos, $relatedDetails);
                 }
             });
@@ -6400,11 +6410,24 @@ class FileIndexingController extends Controller
     /**
      * Sync related file links
      */
-    protected function syncRelatedFileLinks($mainRecord, array $relatedFileNos, array $relatedDetails = [])
+    /**
+     * @param bool $allowClear Caller confirmed the submission explicitly carried a related-file
+     *                         list. Only then does an empty list mean "remove them all"; without
+     *                         it an empty list is treated as "not submitted" and links are kept.
+     */
+    protected function syncRelatedFileLinks($mainRecord, array $relatedFileNos, array $relatedDetails = [], bool $allowClear = false)
     {
         // If no related file data is provided, skip the sync to prevent accidental deletion
         // of existing links (especially since the form section might have been removed).
+        // An edit that explicitly submitted an empty list is the one case where the operator
+        // really did remove the last related file, and the links must go with it — otherwise
+        // file_indexings.related_fileno is nulled while file_indexing_links keeps the row,
+        // and the related file reappears from the links side.
         if (empty($relatedFileNos)) {
+            if ($allowClear) {
+                FileIndexingLink::on('sqlsrv')->where('file_indexing_id', $mainRecord->id)->delete();
+            }
+
             return;
         }
 

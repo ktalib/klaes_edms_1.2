@@ -1527,10 +1527,18 @@
             // Mirror those numbers into the counterpart picker. One related file selects itself;
             // several force an explicit choice, since only the officer knows which one the title
             // status refers to. A pick already made survives as long as it is still on the list.
+            //
+            // When a pick DISAPPEARS from the list it is never silently replaced. In edit mode
+            // the list can change behind this form's back — unlinking a related file elsewhere
+            // removes it — and auto-adopting "the only one left" would re-point a Re-grant /
+            // Resettlement / Closed at a file the officer never chose. Instead the pick is
+            // dropped and the row is forced open so the choice is made again explicitly.
             function syncSeeOptions() {
                 if (!seePicker) return;
                 const nos     = relatedFileNos();
                 const current = (seeHidden?.value || '').trim();
+                const pickDropped = current !== '' && !nos.includes(current);
+                const mustChoose  = nos.length > 1 || pickDropped;
 
                 seePicker.innerHTML = '';
                 if (!nos.length) {
@@ -1538,20 +1546,30 @@
                     seePicker.disabled = true;
                 } else {
                     seePicker.disabled = false;
-                    if (nos.length > 1) {
+                    if (mustChoose) {
                         seePicker.appendChild(new Option('— Select the related file this applies to —', ''));
                     }
                     nos.forEach(n => seePicker.appendChild(new Option(n, n)));
                 }
 
-                const next = nos.includes(current) ? current : (nos.length === 1 ? nos[0] : '');
+                // Auto-select the lone related file only when nothing was chosen before.
+                const next = nos.includes(current)
+                    ? current
+                    : ((!pickDropped && nos.length === 1) ? nos[0] : '');
                 seePicker.value = next;
                 if (seeHidden) seeHidden.value = next;
+
+                if (pickDropped) {
+                    console.warn(
+                        `Title status counterpart "${current}" is no longer a related file number of this record; the choice was cleared.`
+                    );
+                }
 
                 // Only shown when there is a genuine choice to make. A lone related file
                 // selects itself and none leaves nothing to pick, so the row stays out of
                 // the way in both cases — the number is still used to word the remark.
-                seeRow?.classList.toggle('hidden', !seeApplies() || nos.length < 2);
+                // A dropped pick always shows, otherwise it would be cleared invisibly.
+                seeRow?.classList.toggle('hidden', !seeApplies() || !mustChoose);
                 refreshRemark();
             }
 

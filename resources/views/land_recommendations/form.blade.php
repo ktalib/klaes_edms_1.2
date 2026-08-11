@@ -528,9 +528,6 @@
                                 placeholder="NO FILE SELECTED"
                                 class="w-full bg-white border border-blue-200 rounded-lg px-4 py-3 text-slate-900 font-bold font-mono placeholder:text-slate-400 text-lg shadow-sm outline-none focus:ring-2 focus:ring-blue-500 transition">
                             <input type="hidden" name="tracking_id" id="tracking_id" value="{{ old('tracking_id', $recommendation->tracking_id ?? '') }}">
-                            {{-- Set to 1 only when the user answers "Save Anyway" on the duplicate prompt;
-                                 the server rejects a duplicate file number unless this is present. --}}
-                            <input type="hidden" name="duplicate_confirmed" id="duplicate_confirmed" value="0">
                         </div>
                         <div class="flex flex-shrink-0 items-end">
                             <button type="button" id="select-fileno-btn"
@@ -542,8 +539,26 @@
                     </div>
                 </div>
 
+                {{-- Everything below describes one file, and most of it is filled from the
+                     file's own record, so nothing is shown until a file number is picked.
+                     Batch Mode is the exception: it has no single file number — the table
+                     carries one row per file — so it unlocks the form on its own. --}}
+                @php
+                    $formUnlocked = $isEdit || $batchEdit
+                        || trim((string) old('file_number', $recommendation->file_number ?? '')) !== '';
+                @endphp
+
+                <!-- Shown until a file number is selected -->
+                <div id="awaiting-file-notice" class="{{ $formUnlocked ? 'hidden' : '' }} rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/60 px-6 py-12 text-center">
+                    <i data-lucide="folder-search" class="h-8 w-8 text-slate-300 mx-auto"></i>
+                    <p class="mt-3 text-sm font-bold text-slate-700">Select a file number to begin</p>
+                    <p class="mt-1 text-xs text-slate-500">
+                        The rest of the form is filled from the selected file, so it stays hidden until one is chosen.
+                    </p>
+                </div>
+
                 <!-- Form Grid -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div id="form-body" class="{{ $formUnlocked ? '' : 'hidden' }} grid grid-cols-1 md:grid-cols-2 gap-6">
                     @php
                         $savedAppType = old('application_type', $recommendation->application_type ?? '');
                         $hasAppType   = $savedAppType !== '';
@@ -641,6 +656,7 @@
                                     'Temporary File No',
                                     'Ministry of Works',
                                     'Change of Purpose',
+                                    'Regrant',
                                 ] as $appType)
                                 <label class="flex items-center gap-3 cursor-pointer p-3 bg-white border border-slate-200 rounded-xl hover:border-blue-400 transition shadow-sm group">
                                     <input type="radio" name="application_type_radio" value="{{ $appType }}"
@@ -1109,11 +1125,18 @@
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div class="md:col-span-2" data-batch-child>
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Name of Applicant</label>
-                                    <input type="text" name="applicant_name" id="applicant_name" required value="{{ old('applicant_name', $recommendation->applicant_name ?? '') }}"
-                                        class="w-full border @error('applicant_name') border-red-500 @else border-slate-200 @enderror rounded-lg px-4 py-2.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition bg-white shadow-sm">
+                                    {{-- The name belongs to the file, not to this letter: it is filled from the
+                                         record behind the selected file number and is not typed here. `readonly`
+                                         rather than `disabled` — a disabled field posts nothing, and the name is
+                                         required on save. --}}
+                                    <input type="text" name="applicant_name" id="applicant_name" required readonly tabindex="-1"
+                                        value="{{ old('applicant_name', $recommendation->applicant_name ?? '') }}"
+                                        placeholder="Filled from the selected file number"
+                                        class="w-full border @error('applicant_name') border-red-500 @else border-slate-200 @enderror rounded-lg px-4 py-2.5 bg-slate-100 text-slate-500 outline-none transition shadow-sm cursor-not-allowed">
                                     @error('applicant_name')
                                         <p class="text-red-500 text-[10px] mt-1 font-semibold uppercase">{{ $message }}</p>
                                     @enderror
+                                    <p class="mt-1 text-[10px] text-slate-400">Taken from the selected file number.</p>
                                 </div>
                                 <div>
                                     <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Application Date</label>
@@ -1635,7 +1658,7 @@
                 </div>
 
                 <!-- Action Footer -->
-                <div class="pt-8 border-t border-slate-100 flex justify-end gap-3">
+                <div id="form-action-footer" class="{{ $formUnlocked ? '' : 'hidden' }} pt-8 border-t border-slate-100 flex justify-end gap-3">
                     <button type="submit" class="px-8 py-3 bg-slate-900 text-white font-bold rounded-lg hover:bg-slate-800 transition shadow-lg">
                         {{ $batchEdit ? 'Save Batch Changes' : ($isEdit ? 'Update' : ($reissuanceSource ? 'Save Re-issuance' : 'Generate Recommendation')) }}
                     </button>
@@ -1744,10 +1767,10 @@
 <script src="{{ asset('js/land_recommendations.js') }}?v={{ time() + 1 }}"></script>
 <script>
 // ── Old File Number capture for derived application types ──────────────────
-// Plot Subdivision / Plot Merger / Change of Purpose always come off an existing
-// file, so selecting one of those types prompts for the parent file number.
+// Plot Subdivision / Plot Merger / Change of Purpose / Regrant always come off an
+// existing file, so selecting one of those types prompts for the parent file number.
 document.addEventListener('DOMContentLoaded', function () {
-    var TYPES_NEEDING_OLD_FILENO = ['Plot Subdivision', 'Plot Merger', 'Change of Purpose'];
+    var TYPES_NEEDING_OLD_FILENO = ['Plot Subdivision', 'Plot Merger', 'Change of Purpose', 'Regrant'];
 
     var row          = document.getElementById('atx-old-fileno-row');
     var field        = document.getElementById('old_file_number');
@@ -1890,6 +1913,47 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Initial state (edit mode / validation redisplay)
     syncRow(currentAppType());
+});
+
+// ── Form gate: nothing below the file number card until a file is chosen ──────
+// The fields describe one file and most are filled from its record, so an empty
+// form is only an invitation to key a letter against no file at all. Batch Mode
+// unlocks it on its own — there the table carries a row per file and the shared
+// fields above it apply to all of them.
+document.addEventListener('DOMContentLoaded', function () {
+    var recForm     = document.getElementById('land-recommendation-form');
+    var fileNoInput = document.getElementById('file_number');
+    var body        = document.getElementById('form-body');
+    var footer      = document.getElementById('form-action-footer');
+    var notice      = document.getElementById('awaiting-file-notice');
+    var batchToggle = document.getElementById('batch-mode-toggle');
+
+    if (!recForm || !fileNoInput || !body) return;
+
+    function unlocked() {
+        if (batchToggle && batchToggle.checked) return true;
+        return fileNoInput.value.trim() !== '';
+    }
+
+    function sync() {
+        var on = unlocked();
+        body.classList.toggle('hidden', !on);
+        if (footer) footer.classList.toggle('hidden', !on);
+        if (notice) notice.classList.toggle('hidden', on);
+        if (on && window.lucide) window.lucide.createIcons();
+    }
+
+    // The file-number selector writes the field with jQuery's .val().trigger('change'),
+    // which never reaches a native listener — so bind through jQuery as well.
+    fileNoInput.addEventListener('change', sync);
+    fileNoInput.addEventListener('input', sync);
+    if (window.jQuery) window.jQuery(fileNoInput).on('change input', sync);
+
+    // Batch Mode both unlocks the form and disables the file number field, so its
+    // toggle has to re-run the gate either way.
+    if (batchToggle) batchToggle.addEventListener('change', sync);
+
+    sync();
 });
 </script>
 

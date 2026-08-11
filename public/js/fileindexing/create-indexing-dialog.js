@@ -915,9 +915,14 @@
         setCheckboxState('merged-plot', record.is_merged);
         setCheckboxState('is-problematic', record.is_problematic);
 
-        // Populate Related File Numbers
+        // Populate Related File Numbers.
+        //
+        // This runs every time the operator switches to another indexed record on the same
+        // page (type file number A -> edit, then file number B -> edit). The rows therefore
+        // have to be rebuilt from THIS record every time: leaving the previous record's rows
+        // in place would submit them against the new file and create links it never had.
         const relatedFileno = record.related_fileno;
-        if (relatedFileno) {
+        {
             let relatedFiles = [];
             try {
                 if (typeof relatedFileno === 'string') {
@@ -932,11 +937,26 @@
                 }
             } catch (e) {
                 console.error('Error parsing related_fileno:', e);
-                relatedFiles = [relatedFileno];
+                relatedFiles = relatedFileno ? [relatedFileno] : [];
             }
 
             // Filter out empty values
             relatedFiles = relatedFiles.filter(f => f && String(f).trim() !== '');
+
+            if (relatedFiles.length === 0) {
+                // No related files on this record — clear anything a previously edited
+                // record left behind, so nothing is carried over.
+                const wrapper = document.getElementById('related-files-wrapper');
+                if (wrapper) {
+                    wrapper.innerHTML = '';
+                }
+
+                const hasRelatedCheckbox = document.getElementById('has-related-file');
+                if (hasRelatedCheckbox && hasRelatedCheckbox.checked) {
+                    hasRelatedCheckbox.checked = false;
+                    hasRelatedCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }
 
             if (relatedFiles.length > 0) {
                 const hasRelatedCheckbox = document.getElementById('has-related-file');
@@ -6072,6 +6092,14 @@
             ground_rent_receipt_no: collectArrayValues('ground_rent_receipt_no'),
             ground_rent_receipt_date: collectArrayValues('ground_rent_receipt_date'),
         };
+
+        // Editing must be able to remove the LAST related file number. Sending an explicit
+        // empty array is what distinguishes "the operator cleared them" from "this form had
+        // no related-file section at all" — the server only deletes the link rows for the
+        // former (see FileIndexingController::syncRelatedFileLinks).
+        if (editModeState.isEditing) {
+            formData.related_fileno = relatedFileValues;
+        }
 
         // Add related file numbers and details to formData
         if (relatedFileValues.length > 0 || indexingType === 'Block') {

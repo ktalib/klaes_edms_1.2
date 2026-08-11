@@ -232,13 +232,12 @@ document.addEventListener('DOMContentLoaded', function () {
     // On the edit page the current record is excluded via data-record-id.
     const dupCheckUrl = form?.dataset.dupcheckUrl || '';
     const excludeId   = form?.dataset.recordId || '';
-    const dupConfirmedInput = document.getElementById('duplicate_confirmed');
     let lastDuplicate = null; // cache the most recent check result
 
     function checkDuplicateFileNo(fileNo) {
         lastDuplicate = null;
-        // Any fresh check invalidates a previous "Save Anyway" — picking a
-        // different file number must not inherit the earlier confirmation.
+        // Any fresh check invalidates a previous clean result — picking a
+        // different file number must not inherit the earlier clearance.
         if (typeof window._resetDupConfirmation === 'function') window._resetDupConfirmation();
         if (!dupCheckUrl || !fileNo) return Promise.resolve(null);
 
@@ -270,9 +269,11 @@ document.addEventListener('DOMContentLoaded', function () {
                     '<div><strong>Status:</strong> ' + (dup.status || '—') + '</div>' +
                     '<div><strong>Created:</strong> ' + (dup.created_at || '—') + '</div>' +
                 '</div>',
+            // No "Continue Anyway": a second recommendation for the same file is
+            // not allowed, so the only way forward is the existing record.
             showCancelButton: true,
             confirmButtonText: 'Open Existing',
-            cancelButtonText: 'Continue Anyway',
+            cancelButtonText: 'Close',
             confirmButtonColor: '#2563eb',
             cancelButtonColor: '#64748b',
         }).then(result => {
@@ -322,31 +323,43 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Form submission validation
     if (form) {
-        let dupConfirmed = false; // set once the user chooses to save despite a duplicate
+        // Set only once a check has come back clean, so the re-submit that follows
+        // the async check is not blocked by a second check. It is never a user
+        // override — a real duplicate can no longer be confirmed through.
+        let dupConfirmed = false;
 
         window._resetDupConfirmation = function () {
             dupConfirmed = false;
-            if (dupConfirmedInput) dupConfirmedInput.value = '0';
         };
 
+        // A duplicate is a hard stop — the save never proceeds. The only action
+        // offered is opening the record that already covers this file number.
         function promptDuplicate(dup) {
             Swal.fire({
-                icon: 'warning',
-                title: 'Possible Duplicate',
-                html: 'A recommendation already exists for <strong>' + (dup.file_number || fileNoInput.value) + '</strong>.<br>Save this one anyway?',
-                showCancelButton: true,
-                confirmButtonText: 'Save Anyway',
-                cancelButtonText: 'Cancel',
-                confirmButtonColor: '#dc2626',
+                icon: 'error',
+                title: 'Duplicate File Number',
+                html:
+                    'A recommendation already exists for <strong>' + (dup.file_number || fileNoInput.value) + '</strong>.' +
+                    '<div style="text-align:left;margin-top:10px;font-size:0.85rem;color:#475569">' +
+                        '<div><strong>Applicant:</strong> ' + (dup.applicant_name || '—') + '</div>' +
+                        '<div><strong>Status:</strong> ' + (dup.status || '—') + '</div>' +
+                        '<div><strong>Created:</strong> ' + (dup.created_at || '—') + '</div>' +
+                    '</div>' +
+                    '<div style="margin-top:10px">This file cannot be captured twice.</div>',
+                showCancelButton: !!dup.edit_url,
+                confirmButtonText: dup.edit_url ? 'Open Existing' : 'Close',
+                cancelButtonText: 'Close',
+                confirmButtonColor: '#2563eb',
                 cancelButtonColor: '#64748b',
             }).then(result => {
-                if (result.isConfirmed) {
-                    dupConfirmed = true;
-                    // The server rejects a duplicate unless this flag comes with the post.
-                    if (dupConfirmedInput) dupConfirmedInput.value = '1';
-                    form.requestSubmit ? form.requestSubmit() : form.submit();
+                if (result.isConfirmed && dup.edit_url) {
+                    window.location.href = dup.edit_url;
                 }
             });
+
+            if (submitBtn) {
+                submitBtn.disabled = false;
+            }
         }
 
         form.addEventListener('submit', function (e) {

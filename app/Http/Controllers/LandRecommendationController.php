@@ -740,18 +740,14 @@ class LandRecommendationController extends Controller
     }
 
     /**
-     * Reject a save that would duplicate an existing file number, unless the
-     * user explicitly confirmed it (the "Save Anyway" path sets
-     * `duplicate_confirmed`). The client-side check is only a warning — this is
-     * what actually stops a duplicate from a stale page, a failed fetch or a
-     * direct POST.
+     * Reject a save that would duplicate an existing file number. There is no
+     * override: the same file cannot be captured twice (a deliberate second
+     * record is a re-issuance, which is exempted by its caller). The
+     * client-side check only warns — this is what actually stops a duplicate
+     * from a stale page, a failed fetch or a direct POST.
      */
     private function guardAgainstDuplicate(Request $request, $excludeId = null): void
     {
-        if ($request->boolean('duplicate_confirmed')) {
-            return;
-        }
-
         $existing = $this->findDuplicate((string) $request->input('file_number', ''), $excludeId);
 
         if (!$existing) {
@@ -760,7 +756,7 @@ class LandRecommendationController extends Controller
 
         throw ValidationException::withMessages([
             'file_number' => sprintf(
-                'A recommendation already exists for %s (applicant: %s, status: %s, created %s). Re-select the file number and choose "Save Anyway" if this is intentional.',
+                'A recommendation already exists for %s (applicant: %s, status: %s, created %s). This file cannot be captured twice — open the existing recommendation instead.',
                 $existing->file_number,
                 $existing->applicant_name ?: '—',
                 $existing->status ?: '—',
