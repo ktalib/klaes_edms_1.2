@@ -519,7 +519,13 @@
             @endphp
             <div class="meta-line">
                 <div>
-                    Our Ref: <span class="underline-box" style="min-width: 320px;">{{ $ourRef }}@if(!empty($record->source_derived)) ({{ $record->source_derived }})@endif</span>
+                    {{-- Only a conversion label belongs on a conversion document: a SuA
+                         raised by direct allocation must not print "(Direct Allocation)". --}}
+                    @php
+                        $refSuffix = trim((string) ($record->source_derived ?? ''));
+                        $refSuffix = stripos($refSuffix, 'conversion') !== false ? $refSuffix : '';
+                    @endphp
+                    Our Ref: <span class="underline-box" style="min-width: 320px;">{{ $ourRef }}@if($refSuffix !== '') ({{ $refSuffix }})@endif</span>
                 </div>
                 <div>
                     Date: <span class="underline-box" style="min-width: 150px;">{{ date('d/m/Y') }}</span>

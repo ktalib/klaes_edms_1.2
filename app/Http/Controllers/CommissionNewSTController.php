@@ -130,7 +130,7 @@ class CommissionNewSTController extends Controller
     }
 
     /**
-     * Get SuA (Sub Application) data for AJAX requests
+     * Get SuA (Standalone unit Application) data for AJAX requests
      *
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
@@ -158,7 +158,7 @@ class CommissionNewSTController extends Controller
     }
 
     /**
-     * Get PuA (Public Application) data for AJAX requests
+     * Get PuA (Parented unit Application aka Sub Application) data for AJAX requests
      *
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse

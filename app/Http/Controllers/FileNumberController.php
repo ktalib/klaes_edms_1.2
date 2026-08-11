@@ -2548,94 +2548,190 @@ class FileNumberController extends Controller
     }
 
     /**
+     * The option letters printed on the LGA Confirmation Sheet's "Property
+     * Acquisition Method" list. 'e' is the free-text one.
+     */
+    private const ACQUISITION_METHODS = ['a', 'b', 'c', 'd', 'e'];
+
+    /**
+     * An option letter, or null for anything that isn't one — so a hand-edited URL
+     * cannot put junk on the sheet or in the stored answer.
+     */
+    private function normalizeAcquisitionMethod($method): ?string
+    {
+        $method = strtolower(trim((string) $method));
+
+        return in_array($method, self::ACQUISITION_METHODS, true) ? $method : null;
+    }
+
+    /**
+     * Resolve the file an "Application for Conversion" (LGA Confirmation Sheet) is
+     * printed from. Shared by the print route and the saved-acquisition-method
+     * lookup so the two can never disagree about which record they mean.
+     *
+     * @param  string|int $id  numeric fileNumber.id OR a file number string
+     * @return array{record: object|null, is_plot_extension: bool}
+     */
+    private function resolveConversionApplicationRecord($id): array
+    {
+        // $id may be a numeric fileNumber.id OR a file number string (plot extensions
+        // are passed by their original file number to avoid id collisions).
+        $isNumeric = is_numeric($id);
+
+        $record = DB::connection('sqlsrv')
+            ->table('fileNumber')
+            ->select([
+                'fileNumber.*',
+                DB::raw("(SELECT TOP 1 land_use FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as land_use_derived"),
+                DB::raw("(SELECT TOP 1 lga FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as lga_derived"),
+                DB::raw("(SELECT TOP 1 created_by FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as created_by_derived"),
+                DB::raw("(SELECT TOP 1 source FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as source_derived"),
+                'mls_file_no.batch_no'
+            ])
+            ->leftJoin('mls_file_no', 'fileNumber.mlsfNo', '=', 'mls_file_no.full_file_number')
+            ->where(function ($q) use ($id, $isNumeric) {
+                if ($isNumeric) {
+                    $q->where('fileNumber.id', (int) $id)->orWhere('fileNumber.mlsfNo', $id);
+                } else {
+                    // An ST file (SuA especially) is filed under st_file_no with no
+                    // mlsfNo of its own, so match either column.
+                    $q->where('fileNumber.mlsfNo', $id)->orWhere('fileNumber.st_file_no', $id);
+                }
+            })
+            ->first();
+
+        // A file already present in fileNumber (e.g. legacy indexed files) has no
+        // mls_file_no.source of its own — but if it was later run through the Plot
+        // Extension flow, that's the real reason this document is being generated.
+        // Without this, source_derived stays empty and the "(Conversion)" label is
+        // wrongly displayed just because the file number happens to start with CON-.
+        if ($record && empty($record->source_derived)) {
+            $hasPlotExtension = DB::connection('sqlsrv')
+                ->table('plot_extensions')
+                ->where('original_file_no', $record->mlsfNo)
+                ->where(function ($q) {
+                    $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                })
+                ->exists();
+
+            if ($hasPlotExtension) {
+                $record->source_derived = 'Plot Extension';
+            }
+        }
+
+        // A SuA has no mls_file_no row to derive the LGA from — the unit keeps its own
+        // in subapplications, and that is the Local Government the sheet is addressed to.
+        if ($record && empty($record->lga_derived) && !empty($record->st_file_no)) {
+            $unit = DB::connection('sqlsrv')
+                ->table('subapplications')
+                ->where('fileno', trim((string) $record->st_file_no))
+                ->orderByDesc('id')
+                ->first(['unit_lga', 'unit_district']);
+
+            if ($unit && !empty($unit->unit_lga)) {
+                $record->lga_derived = $unit->unit_lga;
+            }
+        }
+
+        // Plot Extension fallback: retains the original file number but lives only in
+        // the isolated plot_extensions table. Resolve the conversion document from it
+        // when the original file row is absent from fileNumber (e.g. on production).
+        $isPlotExtension = false;
+        if (!$record) {
+            $pe = DB::connection('sqlsrv')
+                ->table('plot_extensions')
+                ->where(function ($q) use ($id, $isNumeric) {
+                    $q->where('original_file_no', $id);
+                    if ($isNumeric) {
+                        $q->orWhere('id', (int) $id);
+                    }
+                })
+                ->where(function ($q) {
+                    $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                })
+                ->orderByDesc('id')
+                ->first();
+
+            if ($pe) {
+                $isPlotExtension = true;
+                $record = (object) [
+                    'id'                 => $pe->id,
+                    'mlsfNo'             => $pe->original_file_no,
+                    'tracking_id'        => $pe->tracking_id,
+                    'FileName'           => $pe->file_name,
+                    'plot_no'            => $pe->plot_no,
+                    'tp_no'              => $pe->tp_no,
+                    'location'           => $pe->location,
+                    'lga'                => $pe->lga,
+                    'land_use_derived'   => $pe->land_use,
+                    'lga_derived'        => $pe->lga,
+                    'created_by_derived' => $pe->created_by,
+                    'source_derived'     => 'Plot Extension',
+                    'batch_no'           => null,
+                ];
+            }
+        }
+
+        return ['record' => $record, 'is_plot_extension' => $isPlotExtension];
+    }
+
+    /**
+     * The conversion_applications row for a resolved record — one per LGA
+     * Confirmation Sheet. Plot extensions key off the file number (they have no
+     * mls_file_no_id); everything else keys off mls_file_no_id.
+     */
+    private function conversionApplicationQuery(object $record, bool $isPlotExtension)
+    {
+        return DB::connection('sqlsrv')
+            ->table('conversion_applications')
+            ->when($isPlotExtension,
+                fn ($q) => $q->where('full_file_number', $record->mlsfNo),
+                fn ($q) => $q->where('mls_file_no_id', $record->id)
+            );
+    }
+
+    /**
+     * The Property Acquisition Method saved for a file's LGA Confirmation Sheet.
+     * The Print LCS action calls this first: an answered sheet reprints straight
+     * away instead of re-opening the "Property Acquisition Method" card.
+     */
+    public function getConversionAcquisitionMethod(Request $request, $id)
+    {
+        try {
+            ['record' => $record, 'is_plot_extension' => $isPlotExtension] =
+                $this->resolveConversionApplicationRecord($id);
+
+            if (!$record) {
+                return response()->json(['success' => false, 'method' => null, 'other' => null]);
+            }
+
+            $existingApp = $this->conversionApplicationQuery($record, $isPlotExtension)->first();
+            // null until the question has been answered once for this sheet.
+            $method = $this->normalizeAcquisitionMethod($existingApp->acquisition_method ?? null);
+
+            return response()->json([
+                'success' => true,
+                'method'  => $method,
+                'other'   => $method === 'e'
+                    ? (trim((string) ($existingApp->acquisition_other ?? '')) ?: null)
+                    : null,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error reading saved acquisition method: ' . $e->getMessage());
+
+            // Never block printing on this — the caller just asks the question.
+            return response()->json(['success' => false, 'method' => null, 'other' => null]);
+        }
+    }
+
+    /**
      * Generate "Application for Conversion" document
      */
     public function generateConversionApplication(Request $request, $id)
     {
         try {
-            // $id may be a numeric fileNumber.id OR a file number string (plot extensions
-            // are passed by their original file number to avoid id collisions).
-            $isNumeric = is_numeric($id);
-
-            $record = DB::connection('sqlsrv')
-                ->table('fileNumber')
-                ->select([
-                    'fileNumber.*',
-                    DB::raw("(SELECT TOP 1 land_use FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as land_use_derived"),
-                    DB::raw("(SELECT TOP 1 lga FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as lga_derived"),
-                    DB::raw("(SELECT TOP 1 created_by FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as created_by_derived"),
-                    DB::raw("(SELECT TOP 1 source FROM mls_file_no WHERE full_file_number = fileNumber.mlsfNo ORDER BY id DESC) as source_derived"),
-                    'mls_file_no.batch_no'
-                ])
-                ->leftJoin('mls_file_no', 'fileNumber.mlsfNo', '=', 'mls_file_no.full_file_number')
-                ->where(function ($q) use ($id, $isNumeric) {
-                    if ($isNumeric) {
-                        $q->where('fileNumber.id', (int) $id)->orWhere('fileNumber.mlsfNo', $id);
-                    } else {
-                        // An ST file (SuA especially) is filed under st_file_no with no
-                        // mlsfNo of its own, so match either column.
-                        $q->where('fileNumber.mlsfNo', $id)->orWhere('fileNumber.st_file_no', $id);
-                    }
-                })
-                ->first();
-
-            // A file already present in fileNumber (e.g. legacy indexed files) has no
-            // mls_file_no.source of its own — but if it was later run through the Plot
-            // Extension flow, that's the real reason this document is being generated.
-            // Without this, source_derived stays empty and the "(Conversion)" label is
-            // wrongly displayed just because the file number happens to start with CON-.
-            if ($record && empty($record->source_derived)) {
-                $hasPlotExtension = DB::connection('sqlsrv')
-                    ->table('plot_extensions')
-                    ->where('original_file_no', $record->mlsfNo)
-                    ->where(function ($q) {
-                        $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
-                    })
-                    ->exists();
-
-                if ($hasPlotExtension) {
-                    $record->source_derived = 'Plot Extension';
-                }
-            }
-
-            // Plot Extension fallback: retains the original file number but lives only in
-            // the isolated plot_extensions table. Resolve the conversion document from it
-            // when the original file row is absent from fileNumber (e.g. on production).
-            $isPlotExtension = false;
-            if (!$record) {
-                $pe = DB::connection('sqlsrv')
-                    ->table('plot_extensions')
-                    ->where(function ($q) use ($id, $isNumeric) {
-                        $q->where('original_file_no', $id);
-                        if ($isNumeric) {
-                            $q->orWhere('id', (int) $id);
-                        }
-                    })
-                    ->where(function ($q) {
-                        $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
-                    })
-                    ->orderByDesc('id')
-                    ->first();
-
-                if ($pe) {
-                    $isPlotExtension = true;
-                    $record = (object) [
-                        'id'                 => $pe->id,
-                        'mlsfNo'             => $pe->original_file_no,
-                        'tracking_id'        => $pe->tracking_id,
-                        'FileName'           => $pe->file_name,
-                        'plot_no'            => $pe->plot_no,
-                        'tp_no'              => $pe->tp_no,
-                        'location'           => $pe->location,
-                        'lga'                => $pe->lga,
-                        'land_use_derived'   => $pe->land_use,
-                        'lga_derived'        => $pe->lga,
-                        'created_by_derived' => $pe->created_by,
-                        'source_derived'     => 'Plot Extension',
-                        'batch_no'           => null,
-                    ];
-                }
-            }
+            ['record' => $record, 'is_plot_extension' => $isPlotExtension] =
+                $this->resolveConversionApplicationRecord($id);
 
             if (!$record) {
                 return abort(404, 'Record not found');
@@ -2645,21 +2741,38 @@ class FileNumberController extends Controller
             $records = collect([$record]);
 
             // Capture acquisition method from request
-            $acquisitionMethod = $request->query('method');
-            $specifyOther = $request->query('other');
+            $acquisitionMethod = $this->normalizeAcquisitionMethod($request->query('method'));
+            $specifyOther = $acquisitionMethod === 'e'
+                ? (trim((string) $request->query('other')) ?: null)
+                : null;
 
-            // Check for existing Serial Number. Plot extensions key off the file number
-            // (no mls_file_no_id), everything else keys off mls_file_no_id as before.
-            $existingApp = DB::connection('sqlsrv')
-                ->table('conversion_applications')
-                ->when($isPlotExtension,
-                    fn ($q) => $q->where('full_file_number', $record->mlsfNo),
-                    fn ($q) => $q->where('mls_file_no_id', $record->id)
-                )
-                ->first();
+            // Check for existing Serial Number.
+            $existingApp = $this->conversionApplicationQuery($record, $isPlotExtension)->first();
+
+            // The answer is remembered per sheet, so a reprint neither has to ask
+            // again nor can quietly contradict the copy already issued.
+            $savedMethod = $this->normalizeAcquisitionMethod($existingApp->acquisition_method ?? null);
+            $savedOther = $savedMethod === 'e'
+                ? (trim((string) ($existingApp->acquisition_other ?? '')) ?: null)
+                : null;
+
+            if ($acquisitionMethod === null && $savedMethod !== null) {
+                $acquisitionMethod = $savedMethod;
+                $specifyOther = $savedOther;
+            }
 
             if ($existingApp && $existingApp->serial_no) {
                 $serialNo = $existingApp->serial_no;
+
+                // A freshly answered question (or a corrected one) is written back.
+                if ($acquisitionMethod !== null
+                    && ($acquisitionMethod !== $savedMethod || $specifyOther !== $savedOther)) {
+                    $this->conversionApplicationQuery($record, $isPlotExtension)->update([
+                        'acquisition_method' => $acquisitionMethod,
+                        'acquisition_other'  => $specifyOther,
+                        'updated_at'         => now(),
+                    ]);
+                }
             } else {
                 // Generate new Serial Number
                 $maxSerial = DB::connection('sqlsrv')->table('conversion_applications')->max('serial_no');
@@ -2675,6 +2788,8 @@ class FileNumberController extends Controller
                         // st_file_no, and the column is NOT NULL.
                         'full_file_number' => $record->mlsfNo ?: ($record->st_file_no ?? null),
                         'serial_no' => $serialNo,
+                        'acquisition_method' => $acquisitionMethod,
+                        'acquisition_other' => $specifyOther,
                         'generated_by' => (Auth::user()->first_name . ' ' . Auth::user()->last_name) ?: Auth::user()->name ?: Auth::user()->email ?: 'System',
                         'created_at' => now(),
                         'updated_at' => now()
@@ -2727,8 +2842,10 @@ class FileNumberController extends Controller
             }
 
             // Capture acquisition method from request
-            $acquisitionMethod = $request->query('method');
-            $specifyOther = $request->query('other');
+            $acquisitionMethod = $this->normalizeAcquisitionMethod($request->query('method'));
+            $specifyOther = $acquisitionMethod === 'e'
+                ? (trim((string) $request->query('other')) ?: null)
+                : null;
 
             $generateBy = (Auth::user()->first_name . ' ' . Auth::user()->last_name) ?: Auth::user()->name ?: Auth::user()->email ?: 'System';
 
@@ -2770,6 +2887,11 @@ class FileNumberController extends Controller
                         'tracking_id' => $record->tracking_id,
                         'full_file_number' => $record->mlsfNo,
                         'serial_no' => $record->serial_no,
+                        // The batch answers the question once for every file in it.
+                        // Only rows created here are stamped — a file that already
+                        // has a sheet keeps the answer given for it individually.
+                        'acquisition_method' => $acquisitionMethod,
+                        'acquisition_other' => $acquisitionMethod === 'e' ? $specifyOther : null,
                         'generated_by' => $generateBy,
                         'created_at' => now(),
                         'updated_at' => now()
@@ -2853,8 +2975,10 @@ class FileNumberController extends Controller
                 return abort(404, 'No conversion files found for ' . $date);
             }
 
-            $acquisitionMethod = $request->query('method');
-            $specifyOther = $request->query('other');
+            $acquisitionMethod = $this->normalizeAcquisitionMethod($request->query('method'));
+            $specifyOther = $acquisitionMethod === 'e'
+                ? (trim((string) $request->query('other')) ?: null)
+                : null;
 
             $generateBy = (Auth::user()->first_name . ' ' . Auth::user()->last_name) ?: Auth::user()->name ?: Auth::user()->email ?: 'System';
 
@@ -2891,6 +3015,11 @@ class FileNumberController extends Controller
                         'tracking_id' => $record->tracking_id,
                         'full_file_number' => $record->mlsfNo,
                         'serial_no' => $record->serial_no,
+                        // Answered once for the whole date run. Only rows created
+                        // here are stamped — a file that already has a sheet keeps
+                        // the answer given for it individually.
+                        'acquisition_method' => $acquisitionMethod,
+                        'acquisition_other' => $acquisitionMethod === 'e' ? $specifyOther : null,
                         'generated_by' => $generateBy,
                         'created_at' => now(),
                         'updated_at' => now()

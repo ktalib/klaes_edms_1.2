@@ -13,7 +13,38 @@
 (function (window) {
     'use strict';
 
-    function promptAcquisitionMethod(fileNo) {
+    /**
+     * The answer given the first time this sheet was printed, or null if it has
+     * never been answered. Saved server-side on conversion_applications, so a
+     * reprint doesn't have to ask again.
+     *
+     * Any failure resolves to null — the prompt then simply appears, which is the
+     * old behaviour. Printing must never be blocked by this lookup.
+     */
+    function fetchSavedAcquisitionMethod(convKey) {
+        return fetch(`/file-numbers/conversion-application/${convKey}/acquisition-method`, {
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(response => (response.ok ? response.json() : null))
+            .then(payload => {
+                const method = payload && payload.method ? String(payload.method) : '';
+                if (!method) {
+                    return null;
+                }
+                return { method: method, other: (payload.other || '') };
+            })
+            .catch(() => null);
+    }
+
+    /**
+     * @param {string} fileNo   shown in the prompt
+     * @param {object} [saved]  { method, other } to pre-select, when re-answering
+     */
+    function promptAcquisitionMethod(fileNo, saved) {
+        const savedMethod = (saved && saved.method) ? String(saved.method) : 'a';
+        const savedOther = (saved && saved.other) ? String(saved.other) : '';
+        const checkedAttr = (letter) => (savedMethod === letter ? ' checked' : '');
+
         return Swal.fire({
             title: 'Property Acquisition Method',
             html: `
@@ -21,28 +52,28 @@
                     <p class="text-sm text-gray-600 mb-4">Please select how the property for <strong>${fileNo}</strong> was acquired:</p>
                     <div class="space-y-2">
                         <label class="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-md cursor-pointer border border-transparent hover:border-blue-200 transition-all">
-                            <input type="radio" name="acquisition_method" value="a" class="w-4 h-4 text-blue-600" checked>
+                            <input type="radio" name="acquisition_method" value="a" class="w-4 h-4 text-blue-600"${checkedAttr('a')}>
                             <span class="text-sm font-medium text-gray-700">a. By Purchase</span>
                         </label>
                         <label class="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-md cursor-pointer border border-transparent hover:border-blue-200 transition-all">
-                            <input type="radio" name="acquisition_method" value="b" class="w-4 h-4 text-blue-600">
+                            <input type="radio" name="acquisition_method" value="b" class="w-4 h-4 text-blue-600"${checkedAttr('b')}>
                             <span class="text-sm font-medium text-gray-700">b. By Inheritance</span>
                         </label>
                         <label class="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-md cursor-pointer border border-transparent hover:border-blue-200 transition-all">
-                            <input type="radio" name="acquisition_method" value="c" class="w-4 h-4 text-blue-600">
+                            <input type="radio" name="acquisition_method" value="c" class="w-4 h-4 text-blue-600"${checkedAttr('c')}>
                             <span class="text-sm font-medium text-gray-700">c. By Gift</span>
                         </label>
                         <label class="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-md cursor-pointer border border-transparent hover:border-blue-200 transition-all">
-                            <input type="radio" name="acquisition_method" value="d" class="w-4 h-4 text-blue-600">
+                            <input type="radio" name="acquisition_method" value="d" class="w-4 h-4 text-blue-600"${checkedAttr('d')}>
                             <span class="text-sm font-medium text-gray-700">d. Direct Local Government Allocation</span>
                         </label>
                         <label class="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-md cursor-pointer border border-transparent hover:border-blue-200 transition-all">
-                            <input type="radio" name="acquisition_method" value="e" class="w-4 h-4 text-blue-600" id="method_other_radio">
+                            <input type="radio" name="acquisition_method" value="e" class="w-4 h-4 text-blue-600" id="method_other_radio"${checkedAttr('e')}>
                             <span class="text-sm font-medium text-gray-700">e. Any other (Specify)</span>
                         </label>
                     </div>
-                    <div id="other_specify_container" class="mt-3 hidden animate-fadeIn">
-                        <input type="text" id="other_specify_input"
+                    <div id="other_specify_container" class="mt-3 ${savedMethod === 'e' ? '' : 'hidden'} animate-fadeIn">
+                        <input type="text" id="other_specify_input" value="${savedOther.replace(/"/g, '&quot;')}"
                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
                                placeholder="Please specify other method...">
                     </div>

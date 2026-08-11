@@ -44,6 +44,8 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'file-numbers'], func
     Route::get('/existing', [FileNumberController::class, 'getExistingFileNumbers'])->name('file-numbers.existing');
     Route::post('/store', [FileNumberController::class, 'store'])->name('file-numbers.store');
     Route::post('/migrate', [FileNumberController::class, 'migrate'])->name('file-numbers.migrate');
+    // Must precede the {id} route below, or "acquisition-method" is read as an id.
+    Route::get('/conversion-application/{id}/acquisition-method', [FileNumberController::class, 'getConversionAcquisitionMethod'])->name('file-numbers.conversion-acquisition-method');
     Route::get('/conversion-application/{id}', [FileNumberController::class, 'generateConversionApplication'])->name('file-numbers.conversion-application');
     Route::get('/batch-conversion-application/{batchNo}', [FileNumberController::class, 'generateBatchConversionApplication'])->name('file-numbers.batch-conversion-application');
     Route::get('/date-conversion-application', [FileNumberController::class, 'generateDateConversionApplication'])->name('file-numbers.date-conversion-application');

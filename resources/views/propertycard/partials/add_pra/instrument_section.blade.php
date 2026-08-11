@@ -76,10 +76,7 @@
                 <div>
                     <label for="cofo_type" class="text-xs">CofO Type</label>
                     <select id="cofo_type" name="cofo_type" class="form-select text-xs py-1" data-model="cofoType">
-                        <option value="">Select CofO type</option>
-                        <option value="Old CofO (Ministry)">Old CofO (Ministry)</option>
-                        <option value="KANGIS CofO">KANGIS CofO</option>
-                        <option value="New KANGIS CofO">New KANGIS CofO</option>
+                        @include('partials.cofo_type_options', ['selected' => old('cofo_type')])
                     </select>
                 </div>
             </div>

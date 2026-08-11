@@ -1050,8 +1050,19 @@
                         const conversionMotherNo = [mlsFileNo, file.mls_fileno, file.parent_mls_fileno]
                             .map(v => String(v || '').trim())
                             .find(v => /^CON-/i.test(v)) || '';
-                        const isConversionFile = conversionMotherNo !== ''
-                            || String(file.application_type || '').toLowerCase() === 'conversion';
+                        const applicationType = String(file.application_type || '').trim().toLowerCase();
+                        // A CON- number is a conversion whatever the record says.
+                        const isConversionFile = conversionMotherNo !== '' || applicationType === 'conversion';
+
+                        // Sub-label under the type badge. Legacy files (KANGIS and anything
+                        // commissioned before the DAP / CON-P split) carry no application
+                        // type, and must not be labelled either way.
+                        let allocationLabel = '';
+                        if (isConversionFile) {
+                            allocationLabel = 'Conversion';
+                        } else if (applicationType === 'direct allocation' && file.file_no_type === 'PRIMARY') {
+                            allocationLabel = 'Direct';
+                        }
 
                         // The LGA Confirmation Sheet belongs to a SuA (always) and to a
                         // conversion primary; a PuA unit never gets one.
@@ -1085,8 +1096,12 @@
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <span class="type-badge type-${(file.file_no_type || 'primary').toLowerCase()}">${file.file_no_type || 'N/A'}</span>
-                                    ${isConversionFile ? `
-                                    <div class="mt-1 text-[10px] font-bold uppercase tracking-wide text-indigo-600">Conversion</div>` : ''}
+                                    ${allocationLabel ? `
+                                    <div class="mt-1">
+                                        <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${allocationLabel === 'Conversion'
+                                            ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                            : 'border-emerald-200 bg-emerald-50 text-emerald-700'}">${allocationLabel}</span>
+                                    </div>` : ''}
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <span class="land-use-badge land-use-${(file.land_use || '').toLowerCase().replace('-', '')}">${file.land_use || 'N/A'}</span>

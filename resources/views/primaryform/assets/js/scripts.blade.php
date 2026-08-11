@@ -12,8 +12,8 @@
 <script src="{{ asset('js/primaryform/summary.js') }}?v={{ time() }}"></script>
 <script src="{{ asset('js/primaryform/init.js') }}?v={{ time() }}"></script>
 
-{{-- Google Maps — powers the Property Location Map in step 1 --}}
-<script src="https://maps.googleapis.com/maps/api/js?key={{ config('services.google_maps.key') }}" defer></script>
+{{-- Map stack — powers the Property Location Map in step 1 --}}
+@include('partials.maps_scripts')
 
 {{-- Inline initialization script --}}
 <script>

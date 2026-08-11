@@ -995,6 +995,7 @@ class FileIndexingController extends Controller
             'occupancy_permit_instrument_type' => $record->instrument_type ?? 'Occupancy Permit',
             'occupancy_permit_op_type' => $record->op_type ?? null,
             'occupancy_permit_op_serial_number' => $record->op_serial_number ?? null,
+            'occupancy_permit_cofo_type' => $record->cofo_type ?? null,
             'occupancy_permit_date' => $this->formatDateForForm($record->transaction_date ?? null),
             'occupancy_permit_file_number' => $record->mlsFNo ?? $fileNumber,
             'occupancy_permit_land_use' => $record->land_use ?? null,
@@ -1155,7 +1156,9 @@ class FileIndexingController extends Controller
                 'occupancy_permit_vol_no' => 'nullable|string|max:100',
                 'occupancy_permit_deeds_time' => 'nullable|string|max:10',
                 'occupancy_permit_deeds_date' => 'nullable|date',
+                'occupancy_permit_cofo_type' => 'nullable|string|max:100',
                 'cofo_status' => 'nullable|string|max:50',
+                'cofo_type' => 'nullable|string|max:100',
                 'has_temp_file' => 'nullable|boolean',
                 'temp_file_no' => 'nullable|string|max:255',
                 // KANGIS placeholder is required only when KANGIS registry is selected.
@@ -3412,7 +3415,9 @@ class FileIndexingController extends Controller
                 'occupancy_permit_vol_no' => 'nullable|string|max:100',
                 'occupancy_permit_deeds_time' => 'nullable|string|max:10',
                 'occupancy_permit_deeds_date' => 'nullable|date',
+                'occupancy_permit_cofo_type' => 'nullable|string|max:100',
                 'cofo_status' => 'nullable|string|max:50',
+                'cofo_type' => 'nullable|string|max:100',
                 'has_temp_file' => 'nullable|boolean',
                 'temp_file_no' => 'nullable|string|max:255',
                 // KANGIS placeholder is required only when KANGIS registry is selected.
@@ -4952,6 +4957,7 @@ class FileIndexingController extends Controller
             'volumeNo' => $this->normalizeValue($request->input('occupancy_permit_vol_no')),
             'deeds_time' => $this->normalizeValue($request->input('occupancy_permit_deeds_time')),
             'deeds_date' => $this->normalizeValue($request->input('occupancy_permit_deeds_date')),
+            'cofo_type' => $this->normalizeValue($request->input('occupancy_permit_cofo_type')),
         ];
 
         $payloadFields = array_filter($permitPayload, static function ($value) {
@@ -4989,6 +4995,7 @@ class FileIndexingController extends Controller
             'volumeNo' => $permitPayload['volumeNo'] ?? null,
             'deeds_time' => $permitPayload['deeds_time'] ?? null,
             'deeds_date' => $permitPayload['deeds_date'] ?? null,
+            'cofo_type' => $permitPayload['cofo_type'] ?? null,
             'land_use' => $permitPayload['land_use'] ?? $fileIndexing->land_use_type,
             'property_description' => $fileIndexing->location ?? $fileIndexing->district,
             'location' => $fileIndexing->location ?? $fileIndexing->district,

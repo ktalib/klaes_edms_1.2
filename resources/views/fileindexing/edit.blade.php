@@ -1145,10 +1145,10 @@
                             <label for="cofo_type" class="form-label-clean">CofO Type</label>
                             @php $cofoTypeValue = $cofoValue('cofo_type', null); @endphp
                             <select id="cofo_type" name="cofo_type" class="w-full form-input-clean">
-                                <option value="" {{ !$cofoTypeValue ? 'selected' : '' }}>Select CofO Type</option>
-                                <option value="Old CofO (Ministry)" {{ $cofoTypeValue === 'Old CofO (Ministry)' ? 'selected' : '' }}>Old CofO (Ministry)</option>
-                                <option value="KANGIS CofO" {{ $cofoTypeValue === 'KANGIS CofO' ? 'selected' : '' }}>KANGIS CofO</option>
-                                <option value="New KANGIS CofO" {{ $cofoTypeValue === 'New KANGIS CofO' ? 'selected' : '' }}>New KANGIS CofO</option>
+                                @include('partials.cofo_type_options', [
+                                    'selected' => $cofoTypeValue,
+                                    'placeholder' => 'Select CofO Type',
+                                ])
                             </select>
                         </div>
                         <div>
@@ -3247,8 +3247,8 @@
     </script>
 
     @push('scripts')
-        {{-- Google Maps JS — powers the Property Location Map geocoder/pin --}}
-        <script src="https://maps.googleapis.com/maps/api/js?key={{ config('services.google_maps.key') }}" defer></script>
+        {{-- Map stack — powers the Property Location Map geocoder/pin --}}
+        @include('partials.maps_scripts')
     @endpush
 
 @endsection

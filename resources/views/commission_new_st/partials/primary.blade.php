@@ -927,22 +927,24 @@ function setPropertyPin(lat, lng, recenter, sourceLabel) {
 }
 window.setPropertyPin = setPropertyPin;
 
-function renderPropertyMap(lat, lng, recenter) {
-    if (typeof google === 'undefined' || !google.maps) {
-        // Maps API still loading — retry shortly.
-        setTimeout(function () { renderPropertyMap(lat, lng, recenter); }, 400);
-        return;
-    }
+// Where the map opens when an address cannot be resolved and the officer has
+// to find the plot on the satellite imagery.
+var PROPERTY_MAP_KANO_CENTER = { lat: 12.0022, lng: 8.5920 };
 
+/**
+ * Create (or recentre) the map itself. Split out from renderPropertyMap so the
+ * map can also be opened with no marker for manual pinning.
+ */
+function ensurePropertyMap(lat, lng, zoom, recenter) {
     var mapEl = document.getElementById('propertyMapCanvas');
-    if (!mapEl) return;
+    if (!mapEl) return false;
 
     var pos = { lat: lat, lng: lng };
 
     if (!propertyMap) {
         propertyMap = new google.maps.Map(mapEl, {
             center: pos,
-            zoom: 17,
+            zoom: zoom || 17,
             mapTypeId: 'satellite',
             streetViewControl: true,
             fullscreenControl: true
@@ -957,6 +959,42 @@ function renderPropertyMap(lat, lng, recenter) {
         google.maps.event.trigger(propertyMap, 'resize');
         propertyMap.setCenter(pos);
     }
+    return true;
+}
+
+/**
+ * Open the map with no pin, centred on Kano, so the officer can click the
+ * property directly. Used when address lookup finds nothing.
+ */
+function openPropertyMapForManualPin() {
+    if (typeof google === 'undefined' || !google.maps) {
+        setTimeout(openPropertyMapForManualPin, 400);
+        return;
+    }
+
+    var wrapper = document.getElementById('propertyMapWrapper');
+    var empty = document.getElementById('propertyMapEmpty');
+    var hint = document.getElementById('propertyMapDragHint');
+    var srcEl = document.getElementById('propertyMapCoordSource');
+    if (wrapper) wrapper.classList.remove('hidden');
+    if (empty) empty.classList.add('hidden');
+    if (hint) { hint.classList.remove('hidden'); hint.classList.add('inline-flex'); }
+    if (srcEl) srcEl.textContent = '(click the property on the map to pin it)';
+
+    ensurePropertyMap(PROPERTY_MAP_KANO_CENTER.lat, PROPERTY_MAP_KANO_CENTER.lng, 13, true);
+}
+window.openPropertyMapForManualPin = openPropertyMapForManualPin;
+
+function renderPropertyMap(lat, lng, recenter) {
+    if (typeof google === 'undefined' || !google.maps) {
+        // Map library still loading — retry shortly.
+        setTimeout(function () { renderPropertyMap(lat, lng, recenter); }, 400);
+        return;
+    }
+
+    if (!ensurePropertyMap(lat, lng, 17, recenter)) return;
+
+    var pos = { lat: lat, lng: lng };
 
     if (!propertyMarker) {
         propertyMarker = new google.maps.Marker({
@@ -1025,7 +1063,7 @@ function geocodePropertyLocation() {
 
     if (typeof google === 'undefined' || !google.maps) {
         if (typeof Swal !== 'undefined') {
-            Swal.fire({ icon: 'error', title: 'Map not ready', text: 'Google Maps is still loading. Please try again in a moment.' });
+            Swal.fire({ icon: 'error', title: 'Map not ready', text: 'The map is still loading. Please try again in a moment.' });
         }
         return;
     }
@@ -1035,6 +1073,29 @@ function geocodePropertyLocation() {
         if (status === 'OK' && results[0]) {
             var pos = results[0].geometry.location;
             setPropertyPin(pos.lat(), pos.lng(), true, 'Geocoded from address');
+            return;
+        }
+
+        // Address lookup has poor coverage of Kano plot/street addresses, so a
+        // miss opens the map for manual pinning rather than stopping.
+        openPropertyMapForManualPin();
+
+        if (typeof Swal === 'undefined') return;
+
+        if (status === 'ZERO_RESULTS') {
+            Swal.fire({
+                icon: 'info',
+                title: 'Address not found — pin it manually',
+                text: 'No match for: ' + address + '. The satellite map is now open at Kano; '
+                    + 'zoom to the property and click it to drop the pin.'
+            });
+        } else {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Address lookup unavailable',
+                text: 'The address lookup service could not be reached. '
+                    + 'Zoom to the property on the satellite map and click it to drop the pin.'
+            });
         } else if (status === 'ZERO_RESULTS') {
             if (typeof Swal !== 'undefined') {
                 Swal.fire({ icon: 'warning', title: 'Location not found', text: 'Google could not find: ' + address });

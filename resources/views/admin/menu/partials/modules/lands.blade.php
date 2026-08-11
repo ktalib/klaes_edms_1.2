@@ -223,7 +223,7 @@
       @endif
 
       <!-- c. Letter of Grant (RofO) -->
-      @if($hasRole('Letter of Grant (RofO)'))
+      @if($hasRole('Letter of Grant (RofO)') || $hasRole('Regrant'))
         <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
           data-section="rofo-lands">
           <div class="flex items-center gap-2">

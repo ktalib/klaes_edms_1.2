@@ -1046,6 +1046,7 @@
             const occupancyPermitFieldMap = {
                 'occupancy-permit-op-type': record.occupancy_permit_op_type,
                 'occupancy-permit-op-serial-number': record.occupancy_permit_op_serial_number,
+                'occupancy-permit-cofo-type': record.occupancy_permit_cofo_type,
                 'occupancy-permit-date': record.occupancy_permit_date,
                 'occupancy-permit-file-number': record.occupancy_permit_file_number || record.file_number,
                 'occupancy-permit-land-use': record.occupancy_permit_land_use,
@@ -5416,6 +5417,7 @@
         const occupancyPermitFields = [
             'occupancy-permit-op-type',
             'occupancy-permit-op-serial-number',
+            'occupancy-permit-cofo-type',
             'occupancy-permit-date',
             'occupancy-permit-file-number',
             'occupancy-permit-grantee',
@@ -5991,6 +5993,7 @@
             cofo_period: document.getElementById('cofo-period')?.value || '',
             cofo_period_unit: document.getElementById('cofo-period-unit')?.value || 'Years',
             cofo_status: document.getElementById('cofo-status')?.value || 'Active',
+            cofo_type: document.getElementById('cofo-type')?.value || '',
             has_rofo: document.getElementById('has-rofo-toggle')?.checked || false,
             rofo_instrument_type: document.getElementById('rofo-instrument-type')?.value || '',
             rofo_date: document.getElementById('rofo-date')?.value || '',
@@ -6004,6 +6007,7 @@
             occupancy_permit_instrument_type: document.getElementById('occupancy-permit-instrument-type')?.value || '',
             occupancy_permit_op_type: document.getElementById('occupancy-permit-op-type')?.value || '',
             occupancy_permit_op_serial_number: document.getElementById('occupancy-permit-op-serial-number')?.value || '',
+            occupancy_permit_cofo_type: document.getElementById('occupancy-permit-cofo-type')?.value || '',
             occupancy_permit_date: document.getElementById('occupancy-permit-date')?.value || '',
             occupancy_permit_file_number: document.getElementById('occupancy-permit-file-number')?.value || '',
             occupancy_permit_land_use: document.getElementById('occupancy-permit-land-use')?.value || '',

@@ -477,8 +477,9 @@
 {{-- Leaflet.draw — lets the surveyor trace the plot boundary on the inspection map --}}
 <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-{{-- Google Maps JS — used only to geocode the file location for the inspection map pin (same key as File Indexing). --}}
-<script src="https://maps.googleapis.com/maps/api/js?key={{ config('services.google_maps.key') }}" defer></script>
+{{-- Geocoding for the inspection map pin. Leaflet is already loaded just above,
+     so pull in the google.maps shim only (same stack as File Indexing). --}}
+@include('partials.maps_scripts', ['skipLeaflet' => true])
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 
 <style>

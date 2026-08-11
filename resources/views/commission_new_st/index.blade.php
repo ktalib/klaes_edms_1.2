@@ -118,8 +118,8 @@
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 <script src="{{ asset('js/primaryform/init.js') }}"></script>
 
-{{-- Google Maps — powers the Property Location Map in Location Details --}}
-<script src="https://maps.googleapis.com/maps/api/js?key={{ config('services.google_maps.key') }}" defer></script>
+{{-- Map stack — powers the Property Location Map in Location Details --}}
+@include('partials.maps_scripts')
 
 {{-- CSRF Token for JavaScript --}}
 <script>

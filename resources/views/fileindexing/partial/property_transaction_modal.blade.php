@@ -280,10 +280,17 @@
             },
 
             // Detects Certificate of Occupancy transactions (and its ST/SLTR variants),
-            // which require a CofO Type (Old CofO (Ministry) / KANGIS CofO / New KANGIS CofO).
+            // which require a CofO Type (Land / KANGIS Old & New / SLTR / ST).
             isCofOTransaction(transactionType) {
                 if (!transactionType) return false;
                 return /CERTIFICATE OF OCCUPANCY/i.test(String(transactionType));
+            },
+
+            // Mirrors the canonical list in resources/views/partials/cofo_type_options.blade.php.
+            // Used only to decide whether a stored value needs a legacy <option>.
+            isKnownCofoType(value) {
+                return ['Land CofO', 'KANGIS CofO - Old', 'KANGIS CofO - New', 'SLTR CofO', 'ST CofO']
+                    .includes(String(value || ''));
             },
 
             // Detects Right of Occupancy / Customary Right of Occupancy transactions.
@@ -745,10 +752,13 @@
                                         <select x-model="transaction.cofoType"
                                             :name="'transactions[' + index + '][cofo_type]'"
                                             class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors bg-white">
-                                            <option value="">Select CofO type</option>
-                                            <option value="Old CofO (Ministry)">Old CofO (Ministry)</option>
-                                            <option value="KANGIS CofO">KANGIS CofO</option>
-                                            <option value="New KANGIS CofO">New KANGIS CofO</option>
+                                            {{-- Options are static; x-model holds the value, so no server-side $selected. --}}
+                                            @include('partials.cofo_type_options', ['selected' => null, 'placeholder' => 'Select CofO type'])
+                                            {{-- Keeps a legacy stored value (e.g. "Old CofO (Ministry)") selectable
+                                                 so loading an old record does not silently blank its CofO Type. --}}
+                                            <template x-if="transaction.cofoType && !isKnownCofoType(transaction.cofoType)">
+                                                <option :value="transaction.cofoType" x-text="transaction.cofoType + ' (legacy)'"></option>
+                                            </template>
                                         </select>
                                     </div>
                                 </div>

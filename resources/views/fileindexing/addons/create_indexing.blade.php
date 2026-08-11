@@ -603,6 +603,10 @@
                     };
                 },
 
+                // Kano city centre — where the map opens when an address cannot be
+                // resolved and the officer has to locate the plot on the imagery.
+                _kanoCenter: { lat: 12.0022, lng: 8.5920 },
+
                 setPin(param, index, lat, lng, recenter = false) {
                     param.latitude  = this._roundCoord(lat);
                     param.longitude = this._roundCoord(lng);
@@ -613,36 +617,62 @@
                         const pos = { lat: param.latitude, lng: param.longitude };
                         marker.setPosition(pos);
                         if (recenter) map.panTo(pos);
+                    } else {
+                        // First pin dropped by clicking a map that opened empty —
+                        // renderPropertyMap creates the marker.
+                        this.renderPropertyMap(param, index);
                     }
+                },
+
+                /**
+                 * Create (or reuse) the Leaflet map for a file tab.
+                 * Returns null while the map container or the map library is
+                 * not ready yet.
+                 */
+                _ensureMap(param, index, center, zoom) {
+                    const mapEl = document.getElementById('map-' + index);
+                    if (!mapEl || typeof google === 'undefined' || !google.maps) return null;
+
+                    let map = this._maps[index];
+                    if (!map) {
+                        map = new google.maps.Map(mapEl, {
+                            center: center,
+                            zoom: zoom,
+                            mapTypeId: 'satellite',
+                            streetViewControl: true,
+                            fullscreenControl: true,
+                        });
+                        this._maps[index] = map;
+
+                        // Click anywhere on the map to move the pin there.
+                        map.addListener('click', (e) => {
+                            this.setPin(param, index, e.latLng.lat(), e.latLng.lng());
+                        });
+                    } else {
+                        map.setCenter(center);
+                        // Container may have been display:none while hidden — nudge a resize.
+                        google.maps.event.trigger(map, 'resize');
+                    }
+                    return map;
+                },
+
+                /**
+                 * Open the map with no pin so the officer can click the property
+                 * directly. Used when address lookup finds nothing — which is
+                 * common for Kano plot addresses, so it must not be a dead end.
+                 */
+                openMapForManualPin(param, index) {
+                    param.awaitingManualPin = true;
+                    this.$nextTick(() => {
+                        this._ensureMap(param, index, this._kanoCenter, 13);
+                    });
                 },
 
                 renderPropertyMap(param, index) {
                     this.$nextTick(() => {
-                        const mapEl = document.getElementById('map-' + index);
-                        if (!mapEl) return;
-
                         const pos = { lat: param.latitude, lng: param.longitude };
-                        let map = this._maps[index];
-
-                        if (!map) {
-                            map = new google.maps.Map(mapEl, {
-                                center: pos,
-                                zoom: 17,
-                                mapTypeId: 'satellite',
-                                streetViewControl: true,
-                                fullscreenControl: true,
-                            });
-                            this._maps[index] = map;
-
-                            // Click anywhere on the map to move the pin there.
-                            map.addListener('click', (e) => {
-                                this.setPin(param, index, e.latLng.lat(), e.latLng.lng());
-                            });
-                        } else {
-                            map.setCenter(pos);
-                            // Container may have been display:none while hidden — nudge a resize.
-                            google.maps.event.trigger(map, 'resize');
-                        }
+                        const map = this._ensureMap(param, index, pos, 17);
+                        if (!map) return;
 
                         let marker = this._markers[index];
                         if (!marker) {
@@ -675,7 +705,7 @@
                         Swal.fire({
                             icon: 'error',
                             title: 'Map not ready',
-                            text: 'Google Maps is still loading. Please try again in a moment.'
+                            text: 'The map is still loading. Please try again in a moment.'
                         });
                         return;
                     }
@@ -688,16 +718,22 @@
                             param.longitude = this._roundCoord(pos.lng());
                             this.renderPropertyMap(param, index);
                         } else if (status === 'ZERO_RESULTS') {
+                            // Common for Kano plot/street addresses — the map data
+                            // simply has no entry. Pinning by hand is the fallback.
+                            this.openMapForManualPin(param, index);
                             Swal.fire({
-                                icon: 'warning',
-                                title: 'Location not found',
-                                text: 'Google could not find: ' + address
+                                icon: 'info',
+                                title: 'Address not found — pin it manually',
+                                text: 'No match for: ' + address + '. The satellite map is now open at Kano; '
+                                    + 'zoom to the property and click it to drop the pin.'
                             });
                         } else {
+                            this.openMapForManualPin(param, index);
                             Swal.fire({
-                                icon: 'error',
-                                title: 'Geocoding failed (' + status + ')',
-                                text: 'The map service rejected the request. Check that Billing and the Geocoding API are enabled for the API key.'
+                                icon: 'warning',
+                                title: 'Address lookup unavailable',
+                                text: 'The address lookup service could not be reached. '
+                                    + 'Zoom to the property on the satellite map and click it to drop the pin.'
                             });
                         }
                     });
@@ -1736,6 +1772,6 @@
 @endsection
 
 @push('scripts')
-    {{-- Google Maps JS — used by the Property Details "Apply & Pin on Map" geocoder --}}
-    <script src="https://maps.googleapis.com/maps/api/js?key={{ config('services.google_maps.key') }}" defer></script>
+    {{-- Map stack — used by the Property Details "Apply & Pin on Map" geocoder --}}
+    @include('partials.maps_scripts')
 @endpush
