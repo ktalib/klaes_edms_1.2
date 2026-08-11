@@ -63,7 +63,7 @@
                                            class="mt-0.5 w-4 h-4 text-indigo-600 border-gray-300 focus:ring-indigo-500">
                                     <span class="ml-2">
                                         <span class="block text-sm font-medium text-gray-900">Existing / Extant Conversion</span>
-                                        <span class="block text-xs text-gray-500">Pick a CON file already in the registry</span>
+                                        <span class="block text-xs text-gray-500">Pick a CON, KANGIS or SLTR file already in the registry</span>
                                     </span>
                                 </label>
                             </div>
@@ -645,7 +645,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 delay: 250,
                 data: function (params) {
                     // Direct Allocation lists everything except CON- files; an
-                    // Existing/Extant conversion lists only CON- files.
+                    // Existing/Extant conversion lists the files a conversion can
+                    // stand on — CON-, KANGIS and SLTR.
                     return {
                         search: params.term,
                         per_page: 20,

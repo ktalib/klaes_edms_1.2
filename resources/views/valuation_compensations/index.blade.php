@@ -10,6 +10,8 @@
     - This view serves as the central hub for managing compensation records.
     - It provides high-level statistics and groups individual valuation records by project.
 --}}
+
+
 <script>window.VFC = {};</script>
 <div x-data="{}" class="flex-1 overflow-auto bg-slate-50/60">
     @include('admin.header', [

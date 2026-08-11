@@ -18,7 +18,7 @@ window.VFC = {
     records: window.VFC_RECORDS || {},
     projectsData: [],
     currentProjectSubTotal: 0,
-    currentProjectApplyPercentage: 100,
+    currentProjectApplyPercentage: 0,
     pendingSubProjectId: null,
     pendingWorkerId: null,
     batchRecords: [],
@@ -80,7 +80,10 @@ window.VFC = {
 
         // Confirm Apply Percent
         $(document).on('click', '#confirm-apply-percent', function () {
-            const percent = parseFloat($('#apply-percentage-input').val()) || 10;
+            // Blank input means "no adjustment" (0), and an explicit 0 must stay 0 —
+            // never fall back to a hard-coded default here.
+            const rawPercent = parseFloat($('#apply-percentage-input').val());
+            const percent = isNaN(rawPercent) ? 0 : rawPercent;
             self.currentProjectApplyPercentage = percent;
 
             console.log('VFC: Calculation confirmed. Applied percentage:', percent);
@@ -112,7 +115,8 @@ window.VFC = {
     printBatch: function (btn) {
         const $btn = $(btn);
         const projectId = $btn.data('project-id');
-        const percent = $btn.data('apply-percentage') || 100;
+        const rawPercent = parseFloat($btn.data('apply-percentage'));
+        const percent = isNaN(rawPercent) ? this.currentProjectApplyPercentage : rawPercent;
         console.log('VFC: printBatch called', { projectId, percent });
 
         if (!projectId) {
@@ -1296,7 +1300,8 @@ window.VFC = {
 
             // 4. Final Project Sub Total
             this.currentProjectSubTotal = projectGrandTotal;
-            this.currentProjectApplyPercentage = project ? (project.apply_percentage || 10) : 10;
+            const projectPercent = project ? parseFloat(project.apply_percentage) : NaN;
+            this.currentProjectApplyPercentage = isNaN(projectPercent) ? 0 : projectPercent;
 
             // Reset Batch Workflow Buttons
             $('#generate-batch-btn').removeClass('hidden');

@@ -369,10 +369,13 @@ class CommissionNewSTController extends Controller
             $reusesExistingConversion = $isConversion
                 && ($validated['conversion_mode'] ?? 'new') === 'existing';
 
+            // The mother may be an MLS conversion file or a parcel already titled in
+            // the KANGIS / SLTR registries — but never an ordinary land file, which
+            // belongs to a New CON-P.
             if ($reusesExistingConversion
-                && !preg_match('/^CON-/i', trim((string) ($validated['applied_file_number'] ?? '')))) {
+                && !\App\Models\FileIndexing::isExtantConversionFileNumber($validated['applied_file_number'] ?? null)) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
-                    'applied_file_number' => 'An Existing / Extant Conversion must link to a CON- file.',
+                    'applied_file_number' => 'An Existing / Extant Conversion must link to a CON-, KANGIS or SLTR file.',
                 ]);
             }
 

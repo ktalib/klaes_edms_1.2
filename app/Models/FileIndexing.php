@@ -493,6 +493,40 @@ class FileIndexing extends Model
     }
 
     /**
+     * File-number prefixes a Sectional Titling "Existing / Extant Conversion" may
+     * stand on. An ST primary converts a parcel that is already titled somewhere:
+     * an MLS conversion file (CON-), a KANGIS file (KN*, MLKN*, MNKL*) or an SLTR
+     * file. Ordered longest-first only for readability — matching is by prefix.
+     */
+    public const EXTANT_CONVERSION_PREFIXES = ['CON-', 'SLTR-', 'SLTR/', 'MLKN', 'MNKL', 'KN'];
+
+    /**
+     * registry values on those same files. KANGIS numbers are not all prefix-
+     * detectable (plain "KN900" alongside "KNML 1093"), so the registry column is
+     * the second way in.
+     */
+    public const EXTANT_CONVERSION_REGISTRIES = ['KANGIS', 'SLTR', 'KANGIS Registry', 'SLTR Registry'];
+
+    /**
+     * May this file number be picked as the mother of an ST conversion primary?
+     */
+    public static function isExtantConversionFileNumber(?string $fileNumber): bool
+    {
+        $f = strtoupper(trim((string) $fileNumber));
+        if ($f === '') {
+            return false;
+        }
+
+        foreach (self::EXTANT_CONVERSION_PREFIXES as $prefix) {
+            if (str_starts_with($f, $prefix)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Detect the general registry name from a file number prefix.
      * Returns null if file number is empty or unrecognizable.
      */

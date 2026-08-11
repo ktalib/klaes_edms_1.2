@@ -352,7 +352,10 @@ class ValuationCompensationController extends Controller
         }
 
         $project = $records->first()->project;
-        $customPercentage = $request->query('apply_percentage');
+        // A supplied 0 is a real choice ("no adjustment"), so only treat a missing
+        // or non-numeric value as "fall back to the project's stored percentage".
+        $requestedPercentage = $request->query('apply_percentage');
+        $customPercentage = is_numeric($requestedPercentage) ? (float) $requestedPercentage : null;
 
         return view('valuation_compensations.batch_template', compact('records', 'project', 'customPercentage'));
     }

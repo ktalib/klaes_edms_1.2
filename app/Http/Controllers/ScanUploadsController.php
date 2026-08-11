@@ -1275,9 +1275,17 @@ class ScanUploadsController extends Controller
                 $query->where('registry', $registry);
             }
 
-            // A conversion file is identified by its CON- prefix.
+            // An ST conversion primary stands on a parcel that is already titled:
+            // an MLS conversion file (CON-), or a KANGIS / SLTR file held in its own
+            // registry. KANGIS numbers are not uniformly prefixed ("KN900" next to
+            // "KNML 1093"), so the registry column backs up the prefix match.
             if ($fileClass === 'conversion') {
-                $query->where('file_number', 'like', 'CON-%');
+                $query->where(function ($q) {
+                    foreach (FileIndexing::EXTANT_CONVERSION_PREFIXES as $prefix) {
+                        $q->orWhere('file_number', 'like', $prefix . '%');
+                    }
+                    $q->orWhereIn('registry', FileIndexing::EXTANT_CONVERSION_REGISTRIES);
+                });
             } elseif ($fileClass === 'direct') {
                 $query->where('file_number', 'not like', 'CON-%');
             }

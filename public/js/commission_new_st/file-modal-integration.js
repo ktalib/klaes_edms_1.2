@@ -169,6 +169,13 @@ function loadPrimaryTrackingId(fileNumber) {
 }
 
 
+/**
+ * File numbers an Existing / Extant Conversion may be raised on — the JS mirror of
+ * FileIndexing::EXTANT_CONVERSION_PREFIXES: MLS conversion (CON-), SLTR, and the
+ * KANGIS families (KN900, KNML 1093, MLKN 4484, MNKL …).
+ */
+const EXTANT_CONVERSION_PATTERN = /^(CON-|SLTR[-/]|MLKN|MNKL|KN)/i;
+
 function setAppliedFileValidationState(isValid, message = '') {
     const appliedFileField = document.getElementById('applied-file-number');
     if (!appliedFileField) {
@@ -208,12 +215,14 @@ function validateAppliedFileNumber(showAlert = false) {
     const value = appliedFileField ? appliedFileField.value.trim() : '';
     let isValid = value.length > 0;
 
-    // An Existing/Extant conversion must point at a CON file.
-    if (isValid && isExistingConversion && !/^CON-/i.test(value)) {
+    // An Existing/Extant conversion stands on a parcel already titled elsewhere:
+    // an MLS conversion file, or a KANGIS / SLTR file. Mirrors
+    // FileIndexing::EXTANT_CONVERSION_PREFIXES.
+    if (isValid && isExistingConversion && !EXTANT_CONVERSION_PATTERN.test(value)) {
         isValid = false;
-        setAppliedFileValidationState(false, 'Select a conversion (CON-) file.');
+        setAppliedFileValidationState(false, 'Select a conversion (CON-), KANGIS or SLTR file.');
         if (showAlert) {
-            alert('An Existing / Extant Conversion must link to a CON- file.');
+            alert('An Existing / Extant Conversion must link to a CON-, KANGIS or SLTR file.');
         }
         return false;
     }
@@ -224,7 +233,7 @@ function validateAppliedFileNumber(showAlert = false) {
 
     if (!isValid && showAlert) {
         alert(isExistingConversion
-            ? 'Please select the existing conversion (CON-) file this ST primary belongs to.'
+            ? 'Please select the existing CON-, KANGIS or SLTR file this ST primary belongs to.'
             : 'Please select an existing file number from File Number Information before generating ST file number.');
     }
 
@@ -409,7 +418,7 @@ function syncAllocationTypeUi() {
     const hint = document.getElementById('appliedFileNumberHint');
     if (hint) {
         hint.textContent = isExistingConversion
-            ? 'Pick the extant CON file this ST primary belongs to — it becomes the mother file.'
+            ? 'Pick the extant CON, KANGIS or SLTR file this ST primary belongs to — it becomes the mother file.'
             : 'Link this application to an existing file number from the registry.';
     }
 
