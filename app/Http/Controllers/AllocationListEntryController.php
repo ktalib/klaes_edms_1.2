@@ -105,6 +105,57 @@ class AllocationListEntryController extends Controller
         }
     }
 
+    // ─── Dashboard ────────────────────────────────────────────────────────────
+
+    /**
+     * Headline numbers plus the two breakdowns the dashboard draws as bar lists.
+     *
+     * Aggregated in SQL rather than by pulling the rows down — the list grows
+     * without bound and the page asks for this on every save.
+     */
+    public function stats()
+    {
+        try {
+            $table = fn() => AllocationListEntry::query();
+
+            $hasFileNo = fn($q) => $q->whereNotNull('file_no')
+                ->whereRaw("LTRIM(RTRIM(file_no)) <> ''");
+
+            $byYear = $table()
+                ->whereNotNull('allocation_year')
+                ->whereRaw("LTRIM(RTRIM(allocation_year)) <> ''")
+                ->groupBy('allocation_year')
+                ->selectRaw('allocation_year as label, COUNT(*) as value')
+                ->orderByDesc('allocation_year')
+                ->limit(8)
+                ->get();
+
+            $byLga = $table()
+                ->whereNotNull('lga')
+                ->whereRaw("LTRIM(RTRIM(lga)) <> ''")
+                ->groupBy('lga')
+                ->selectRaw('lga as label, COUNT(*) as value')
+                ->orderByDesc(DB::raw('COUNT(*)'))
+                ->limit(8)
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'today'      => $table()->where('created_at', '>=', now()->startOfDay())->count(),
+                    'total'      => $table()->count(),
+                    'captured'   => $hasFileNo($table())->count(),
+                    'this_month' => $table()->where('created_at', '>=', now()->startOfMonth())->count(),
+                    'by_year'    => $byYear,
+                    'by_lga'     => $byLga,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('AllocationListEntry stats: ' . $e->getMessage());
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
     // ─── Existing allocation capture ──────────────────────────────────────────
 
     /**

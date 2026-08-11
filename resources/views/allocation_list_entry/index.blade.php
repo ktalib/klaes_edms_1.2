@@ -18,6 +18,7 @@
         csrf : '{{ csrf_token() }}', 
         urls : {
             data       : '{{ route("allocation-list.data") }}',
+            stats      : '{{ route("allocation-list.stats") }}',
             store      : '{{ route("allocation-list.store") }}',
             storeExisting: '{{ route("allocation-list.store-existing") }}',
             fileLookup : '{{ route("allocation-list.file-lookup") }}',
@@ -38,16 +39,85 @@
     <div class="p-6">
         <main class="max-w-7xl mx-auto space-y-6">
 
-            {{-- ── Stats Cards ──────────────────────────────────────────── --}}
-            <div class="grid grid-cols-1 md:grid-cols-1 gap-6">
-                {{-- Total --}}
-                <div class="ale-stat-card bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
-                        <i data-lucide="users" class="w-6 h-6"></i>
+            {{-- ── Dashboard ────────────────────────────────────────────────
+                 Headline numbers are stat tiles, not charts. The two breakdowns
+                 are bar lists — one hue for every bar, with the count beside it,
+                 so each panel doubles as its own table view.
+            --}}
+            {{-- Page header --}}
+            <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-900 leading-tight">{{ $pageTitle }}</h1>
+                    <p class="text-sm text-gray-500 mt-1">{{ $pageDescription }}</p>
+                </div>
+                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                    {{ now()->format('l, d M Y') }}
+                </p>
+            </div>
+
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {{-- Today leads: it is the number the operator is working against. --}}
+                <div class="ale-stat-card bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
+                    <div class="w-11 h-11 shrink-0 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+                        <i data-lucide="calendar-check" class="w-5 h-5"></i>
                     </div>
-                    <div>
+                    <div class="min-w-0">
+                        <div class="text-2xl font-bold text-gray-900 leading-none" id="stat-today">—</div>
+                        <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mt-1">Today</div>
+                    </div>
+                </div>
+
+                <div class="ale-stat-card bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
+                    <div class="w-11 h-11 shrink-0 rounded-xl bg-gray-50 flex items-center justify-center text-gray-500">
+                        <i data-lucide="users" class="w-5 h-5"></i>
+                    </div>
+                    <div class="min-w-0">
                         <div class="text-2xl font-bold text-gray-900 leading-none" id="stat-total">—</div>
-                        <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mt-1">Total Entries</div>
+                        <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mt-1">Total Entries</div>
+                    </div>
+                </div>
+
+                <div class="ale-stat-card bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
+                    <div class="w-11 h-11 shrink-0 rounded-xl bg-gray-50 flex items-center justify-center text-gray-500">
+                        <i data-lucide="folder-check" class="w-5 h-5"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <div class="text-2xl font-bold text-gray-900 leading-none" id="stat-captured">—</div>
+                        <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mt-1">With FileNo</div>
+                    </div>
+                </div>
+
+                <div class="ale-stat-card bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
+                    <div class="w-11 h-11 shrink-0 rounded-xl bg-gray-50 flex items-center justify-center text-gray-500">
+                        <i data-lucide="calendar-plus" class="w-5 h-5"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <div class="text-2xl font-bold text-gray-900 leading-none" id="stat-month">—</div>
+                        <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mt-1">This Month</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {{-- Allocations by year --}}
+                <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                    <div class="flex items-baseline justify-between mb-4">
+                        <h3 class="text-sm font-bold text-gray-800">Allocations by Year</h3>
+                        <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Top 8</span>
+                    </div>
+                    <div id="ale-chart-years" class="space-y-2.5">
+                        <p class="text-sm text-gray-400 py-6 text-center">No years captured yet.</p>
+                    </div>
+                </div>
+
+                {{-- Allocations by LGA --}}
+                <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                    <div class="flex items-baseline justify-between mb-4">
+                        <h3 class="text-sm font-bold text-gray-800">Allocations by LGA</h3>
+                        <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Top 8</span>
+                    </div>
+                    <div id="ale-chart-lgas" class="space-y-2.5">
+                        <p class="text-sm text-gray-400 py-6 text-center">No locations captured yet.</p>
                     </div>
                 </div>
             </div>
@@ -58,9 +128,11 @@
                 {{-- Header bar --}}
                 <div class="px-6 py-5 border-b border-gray-100 bg-white">
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        {{-- The page header above carries the title, so this one
+                             just names the table. --}}
                         <div>
-                            <h2 class="text-xl font-bold text-gray-800">{{ $pageTitle }}</h2>
-                            <p class="text-sm text-gray-500 mt-1">{{ $pageDescription }}</p>
+                            <h2 class="text-lg font-bold text-gray-800">All Allocations</h2>
+                            <p class="text-sm text-gray-500 mt-1">Newest captured first</p>
                         </div>
                         <div class="flex items-center gap-2 flex-wrap">
                             {{-- Export buttons container --}}

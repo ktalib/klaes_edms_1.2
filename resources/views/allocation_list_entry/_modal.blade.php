@@ -30,7 +30,10 @@
         <div class="flex-1 overflow-auto p-6 bg-gray-50">
 
             {{-- ── Capture form ──────────────────────────────────────────── --}}
-            <form id="ale-form" class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm" novalidate>
+            {{-- onsubmit is a hard guard: a real submit reloads the page, which
+                 looks like the modal closing by itself and loses the session. --}}
+            <form id="ale-form" class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm"
+                novalidate onsubmit="return false;">
                 @csrf
                 <input type="hidden" id="ale-entry-id" value="">
 

@@ -20,6 +20,33 @@ let aleSession  = [];     // Entries captured since the modal was opened
 // district / LGA for the builder to work from.
 let aleRawLocation = '';
 
+/**
+ * Feedback goes to a corner toast. The capture form is meant to stay open and
+ * keep taking entries, so a centred dialog that has to be dismissed after every
+ * save would break that rhythm.
+ *
+ * Confirmations still use a real dialog — a toast cannot take an answer.
+ */
+function aleToast(icon, title, text) {
+    if (!window.Swal) return;
+
+    Swal.fire({
+        toast             : true,
+        position          : 'top-end',
+        icon              : icon,
+        title             : title,
+        text              : text || undefined,
+        showConfirmButton : false,
+        // Errors are worth reading; successes should get out of the way.
+        timer             : icon === 'error' || icon === 'warning' ? 4000 : 2200,
+        timerProgressBar  : true,
+        didOpen: el => {
+            el.addEventListener('mouseenter', Swal.stopTimer);
+            el.addEventListener('mouseleave', Swal.resumeTimer);
+        },
+    });
+}
+
 $(document).ready(function () {
     // ── Build DataTable ────────────────────────────────────────────────────
     aleTable = $('#allocationTable').DataTable({
@@ -29,7 +56,7 @@ $(document).ready(function () {
         dom        : "<'dt-top-bar'fl>t<'dt-bottom-bar'ip>",
         pageLength : 25,
         lengthMenu : [[10, 25, 50, 100, -1], ['10', '25', '50', '100', 'All']],
-        order      : [[6, 'desc']], // Date Added
+        order      : [[6, 'desc']], // Captured — newest first
         columns    : [
             { data: null, render: (d, t, r, m) => m.row + 1, orderable: false, searchable: false, width: '40px' },
             { data: 'file_no', render: v => v || '—', defaultContent: '—' },
@@ -45,11 +72,22 @@ $(document).ready(function () {
             { data: 'allocation_year', render: v => v || '—', defaultContent: '—' },
             {
                 data: 'created_at',
-                render: val => {
+                // Sort on the timestamp, not on the rendered date. Without this
+                // DataTables compares the display strings, so "01 AUG" lands
+                // before "17 JUL" and the newest rows are not on top.
+                render: (val, type) => {
+                    if (type === 'sort' || type === 'type') {
+                        return val ? new Date(val).getTime() : 0;
+                    }
                     if (!val) return '—';
+
                     const d = new Date(val);
                     const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
                     const timeStr = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+                    // Search the dates the reader can see, not the markup.
+                    if (type === 'filter') return `${dateStr} ${timeStr}`;
+
                     return `<div class="flex flex-col"><span class="font-medium">${dateStr}</span><span class="text-[10px] text-gray-400 font-bold uppercase">${timeStr}</span></div>`;
                 },
                 defaultContent: ''
@@ -98,16 +136,22 @@ $(document).ready(function () {
         }
     });
 
-    // Backdrop click closes the capture modal
-    $('#aleModal').on('click', function(e) {
-        if (e.target === this) aleCloseModal();
+    // The capture modal only closes on the X or Close button. A stray click on
+    // the backdrop used to discard the form and the whole session table, so
+    // there is deliberately no backdrop-click handler here.
+
+    // The form must never actually submit — a real submit reloads the page,
+    // which reads as the modal closing by itself and loses the session.
+    $('#ale-form').on('submit', function (e) {
+        e.preventDefault();
     });
 
-    // The three builder fields rebuild the Location as they are filled.
+    // The two builder fields rebuild the Location as they are filled.
     $('#ale-form').on('input change', '.ale-loc-part', aleUpdateLocation);
 
-    // Enter anywhere in the form saves, so capture stays keyboard-only.
-    $('#ale-form').on('keydown', 'input', function (e) {
+    // Enter anywhere in the form saves, so capture stays keyboard-only. Bound
+    // to selects as well: Enter on a native select submits the form otherwise.
+    $('#ale-form').on('keydown', 'input, select, textarea', function (e) {
         if (e.key === 'Enter') {
             e.preventDefault();
             aleSubmit();
@@ -240,7 +284,7 @@ async function aleOpenEdit(id) {
 
         aleOpenModal();
     } catch (err) {
-        Swal.fire({ icon: 'error', title: 'Error', text: err.message });
+        aleToast('error', 'Error', err.message);
     }
 }
 
@@ -395,7 +439,7 @@ function aleSetLga(value) {
  */
 function aleOpenFileSelector() {
     if (!window.GlobalFileNoModal) {
-        Swal.fire({ icon: 'error', text: 'File number selector is unavailable.' });
+        aleToast('error', 'File number selector is unavailable.');
         return;
     }
 
@@ -564,7 +608,7 @@ async function aleSubmit() {
         return;
     }
     if (!name) {
-        Swal.fire({ icon: 'warning', text: 'Name is required.' });
+        aleToast('warning', 'Name is required.');
         $('#ale-allottee-name').focus();
         return;
     }
@@ -602,7 +646,7 @@ async function aleSubmit() {
         // keep everything typed so the operator can just pick another file.
         if (!json.success && json.duplicate) {
             aleSetFileStatus('Already captured — pick a different file.', 'error');
-            Swal.fire({ icon: 'warning', title: 'Duplicate FileNo', text: json.message });
+            aleToast('warning', 'Duplicate FileNo', json.message);
             return;
         }
         if (!json.success) throw new Error(json.message);
@@ -612,7 +656,7 @@ async function aleSubmit() {
 
         if (isEdit) {
             aleCloseModal();
-            Swal.fire({ icon: 'success', title: 'Updated', text: json.message, timer: 1800, showConfirmButton: false });
+            aleToast('success', 'Entry updated');
             return;
         }
 
@@ -631,8 +675,9 @@ async function aleSubmit() {
         aleResetForm();
         $('#ale-file-no').focus();
         aleSetFileStatus(`${payload.file_no} saved.`, 'ok');
+        aleToast('success', 'Allocation saved', payload.file_no);
     } catch (err) {
-        Swal.fire({ icon: 'error', title: 'Error', text: err.message || 'An error occurred.' });
+        aleToast('error', 'Could not save', err.message || 'An error occurred.');
     } finally {
         btn.prop('disabled', false).removeClass('opacity-50 cursor-not-allowed');
         $('#ale-save-btn-text').text(originalText);
@@ -656,7 +701,7 @@ async function aleDeleteRecord(id) {
         aleRefreshStats();
         return true;
     } catch (err) {
-        Swal.fire({ icon: 'error', title: 'Error', text: err.message });
+        aleToast('error', 'Error', err.message);
         return false;
     }
 }
@@ -676,7 +721,7 @@ function aleDelete(id) {
         if (!ok) return;
         aleSession = aleSession.filter(e => e.id !== id);
         aleRenderSession();
-        Swal.fire({ icon: 'success', title: 'Deleted', text: 'Entry deleted successfully.', timer: 1800, showConfirmButton: false });
+        aleToast('success', 'Entry deleted');
     });
 }
 
@@ -706,12 +751,12 @@ function aleHandleImport(event) {
         }
 
         if (rows.length === 0) {
-            Swal.fire({ icon: 'warning', text: 'The CSV contains no data rows.' });
+            aleToast('warning', 'The CSV contains no data rows.');
             return;
         }
 
         if (rows.length > 100) {
-            Swal.fire({ icon: 'error', text: `Limit 100 records. File has ${rows.length}.` });
+            aleToast('error', 'Too many records', `Limit 100 records. File has ${rows.length}.`);
             event.target.value = '';
             return;
         }
@@ -727,11 +772,11 @@ function aleHandleImport(event) {
             });
             const json = await resp.json();
             if (!json.success) throw new Error(json.message);
-            Swal.fire({ icon: 'success', title: 'Imported', text: json.message });
+            aleToast('success', 'Imported', json.message);
             aleTable.ajax.reload(null, false);
             aleRefreshStats();
         } catch (err) {
-            Swal.fire({ icon: 'error', text: err.message });
+            aleToast('error', 'Import failed', err.message);
         } finally {
             event.target.value = '';
         }
@@ -739,12 +784,84 @@ function aleHandleImport(event) {
     reader.readAsText(file);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   DASHBOARD
+═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Refresh the headline tiles and the two breakdown panels.
+ *
+ * Aggregates come from the server, so this stays one small request no matter
+ * how long the list gets.
+ */
 async function aleRefreshStats() {
     try {
-        const resp  = await fetch(window.ALE.urls.data, { headers: { 'Accept': 'application/json' } });
-        const json  = await resp.json();
-        const total = json.total || 0;
+        const resp = await fetch(window.ALE.urls.stats, { headers: { 'Accept': 'application/json' } });
+        const json = await resp.json();
+        if (!json.success) return;
 
-        $('#stat-total').text(total);
+        const d = json.data || {};
+
+        $('#stat-today').text(aleNumber(d.today));
+        $('#stat-total').text(aleNumber(d.total));
+        $('#stat-captured').text(aleNumber(d.captured));
+        $('#stat-month').text(aleNumber(d.this_month));
+
+        aleRenderBars('#ale-chart-years', d.by_year, 'No years captured yet.');
+        aleRenderBars('#ale-chart-lgas',  d.by_lga,  'No locations captured yet.');
     } catch (_) {}
+}
+
+function aleNumber(value) {
+    return Number(value || 0).toLocaleString('en-GB');
+}
+
+/**
+ * A bar list: label, a proportional bar, and the count.
+ *
+ * One hue for every bar — length already encodes the magnitude, so shading each
+ * bar differently would double-encode it. The count sits beside each row, which
+ * makes the panel its own table view rather than hiding values in a tooltip.
+ */
+function aleRenderBars(selector, rows, emptyText) {
+    const container = $(selector);
+    container.empty();
+
+    if (!rows || !rows.length) {
+        container.append(
+            $('<p>').addClass('text-sm text-gray-400 py-6 text-center').text(emptyText)
+        );
+        return;
+    }
+
+    const max = Math.max(...rows.map(r => Number(r.value) || 0), 1);
+
+    rows.forEach(row => {
+        const value = Number(row.value) || 0;
+        const pct   = Math.max((value / max) * 100, 2); // keep a sliver visible
+
+        const line = $('<div>').addClass('flex items-center gap-3');
+
+        line.append(
+            $('<span>')
+                .addClass('w-28 shrink-0 truncate text-xs font-semibold text-gray-600')
+                .attr('title', row.label)
+                .text(row.label)
+        );
+
+        // Track + fill. Rounded ends, thin mark, recessive track.
+        line.append(
+            $('<div>').addClass('flex-1 h-2.5 bg-gray-100 rounded-full overflow-hidden').append(
+                $('<div>').addClass('h-full bg-blue-600 rounded-full').css('width', pct + '%')
+            )
+        );
+
+        line.append(
+            $('<span>')
+                .addClass('w-10 shrink-0 text-right text-xs font-bold text-gray-800 tabular-nums')
+                .text(aleNumber(value))
+        );
+
+        container.append(line);
+    });
 }

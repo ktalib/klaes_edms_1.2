@@ -21,6 +21,9 @@ Route::middleware(['auth'])->prefix('allocation-list')->name('allocation-list.')
     // Single row info for edit modal
     Route::get('/fetchrowinfo/{id}', [AllocationListEntryController::class, 'fetchrowinfo'])->name('fetchrowinfo');
 
+    // Dashboard headline numbers and breakdowns
+    Route::get('/stats', [AllocationListEntryController::class, 'stats'])->name('stats');
+
     // Resolve file title / location / year for a selected file number
     Route::get('/file-lookup', [AllocationListEntryController::class, 'lookupFile'])->name('file-lookup');
 
