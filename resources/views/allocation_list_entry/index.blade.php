@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="{{ asset('css/allocation_list_entry.css') }}">
 
 {{-- ── Global JS Config ───────────────────────────────────────────────── --}}
+
 <script>
     window.ALE = {
         csrf : '{{ csrf_token() }}', 

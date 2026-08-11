@@ -78,7 +78,7 @@
                         <input type="text" id="ale-allottee-name" required autocomplete="off"
                             placeholder="Allottee's name"
                             class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm uppercase focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all">
-                        <p class="text-[11px] mt-1 h-4 text-gray-400">Name on the existing allocation.</p>
+                        <p id="ale-name-hint" class="text-[11px] mt-1 h-4 text-gray-400">Fills in from the File Title — edit if it differs.</p>
                     </div>
                 </div>
 
@@ -102,9 +102,28 @@
                             <select id="ale-district" class="ale-loc-part w-full">
                                 <option value="">Select District</option>
                                 @foreach ($districts as $district)
+                                    @continue(strtoupper(trim($district)) === 'OTHER')
                                     <option value="{{ strtoupper($district) }}">{{ strtoupper($district) }}</option>
                                 @endforeach
+                                {{-- Kept last and added here so it exists even when
+                                     the districts table has no such row. --}}
+                                <option value="OTHER">OTHER</option>
                             </select>
+
+                            {{-- Shown only for OTHER: the typed name is what gets
+                                 saved and composed into the Location, since
+                                 "OTHER" on its own says nothing. --}}
+                            <div id="ale-district-other-wrap" class="hidden mt-2">
+                                <label class="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                                    Specify District <span class="text-red-500">*</span>
+                                </label>
+                                <input type="text" id="ale-district-other" autocomplete="off"
+                                    placeholder="Type the district name"
+                                    class="ale-loc-part w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm uppercase focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all">
+                                <p id="ale-district-other-hint" class="text-[11px] mt-1 h-4 text-gray-400">
+                                    Required — this replaces "OTHER" in the Location.
+                                </p>
+                            </div>
                         </div>
 
                         {{-- LGA --}}

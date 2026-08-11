@@ -20,6 +20,10 @@ let aleSession  = [];     // Entries captured since the modal was opened
 // district / LGA for the builder to work from.
 let aleRawLocation = '';
 
+// The Name is seeded from the File Title, but it stays a normal editable field.
+// Once the operator types in it, the backfill stops overwriting their version.
+let aleNameEdited = false;
+
 /**
  * Feedback goes to a corner toast. The capture form is meant to stay open and
  * keep taking entries, so a centred dialog that has to be dismissed after every
@@ -146,8 +150,20 @@ $(document).ready(function () {
         e.preventDefault();
     });
 
-    // The two builder fields rebuild the Location as they are filled.
+    // The builder fields rebuild the Location as they are filled.
     $('#ale-form').on('input change', '.ale-loc-part', aleUpdateLocation);
+
+    // OTHER needs a district typed out; anything else hides that field again.
+    $('#ale-form').on('change', '#ale-district', aleSyncDistrictOther);
+
+    // A title typed by hand seeds the Name the same way a backfilled one does.
+    $('#ale-form').on('input', '#ale-file-title', aleSetNameFromTitle);
+
+    // Typing a name takes it out of the File Title's hands for good.
+    $('#ale-form').on('input', '#ale-allottee-name', function () {
+        aleNameEdited = true;
+        $('#ale-name-hint').text('Edited — no longer follows the File Title.');
+    });
 
     // Enter anywhere in the form saves, so capture stays keyboard-only. Bound
     // to selects as well: Enter on a native select submits the form otherwise.
@@ -258,9 +274,16 @@ async function aleOpenEdit(id) {
         $('#ale-entry-id').val(id);
         $('#ale-file-no').val(r.file_no || '');
         $('#ale-file-title').val(r.file_title || '');
-        $('#ale-allottee-name').val(
-            r.allottee_name || [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')
-        );
+        const storedName = r.allottee_name
+            || [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ');
+        $('#ale-allottee-name').val(storedName);
+
+        // A stored name is the operator's own — the title backfill must not
+        // overwrite it while the row is being edited.
+        if (storedName.trim()) {
+            aleNameEdited = true;
+            $('#ale-name-hint').text('Name on the existing allocation.');
+        }
 
         // A stored row keeps its own parts, so the builder reloads from them
         // rather than re-deriving anything from the file.
@@ -290,11 +313,13 @@ async function aleOpenEdit(id) {
 
 function aleResetForm() {
     aleRawLocation = '';
+    aleNameEdited  = false;
 
     $('#ale-entry-id').val(aleEditId || '');
     $('#ale-file-no').val('');
     $('#ale-file-title').val('');
     $('#ale-allottee-name').val('');
+    $('#ale-name-hint').text('Fills in from the File Title — edit if it differs.');
     aleSetDistrict('');
     aleSetLga('');
 
@@ -317,6 +342,21 @@ function aleSetTitleLocked(locked) {
     field.attr('placeholder', locked ? 'Fills in from the FileNo' : 'Not on record — type the title');
 
     $('#ale-title-hint').text(locked ? '' : 'No title on record — enter it here.');
+}
+
+/**
+ * Seed the Name from the File Title. The title is the allottee on almost every
+ * file, so this saves retyping it — but the field stays editable and the seed
+ * backs off the moment the operator types their own.
+ */
+function aleSetNameFromTitle() {
+    if (aleNameEdited) return;
+
+    const title = ($('#ale-file-title').val() || '').trim().toUpperCase();
+    if (!title) return;
+
+    $('#ale-allottee-name').val(title);
+    $('#ale-name-hint').text('From the File Title — edit if it differs.');
 }
 
 function aleSetFileStatus(message, tone) {
@@ -383,10 +423,55 @@ function aleSetYearFromFileNo(fileNo) {
  * exactly what gets stored.
  */
 function aleComposeLocation() {
-    const district = ($('#ale-district').val() || '').trim().toUpperCase();
-    const lga      = ($('#ale-lga').val()      || '').trim().toUpperCase();
+    const district = aleEffectiveDistrict();
+    const lga      = ($('#ale-lga').val() || '').trim().toUpperCase();
 
     return [district, lga].filter(Boolean).join(', ');
+}
+
+/**
+ * The district as it is saved and composed into the Location. On OTHER that is
+ * the typed name — "OTHER, AJINGI" names no place — and the empty string until
+ * one is typed, so the Location never carries the placeholder.
+ */
+function aleEffectiveDistrict() {
+    const selected = ($('#ale-district').val() || '').trim().toUpperCase();
+
+    if (selected !== 'OTHER') return selected;
+
+    return ($('#ale-district-other').val() || '').trim().toUpperCase();
+}
+
+/**
+ * Show the "Specify District" field only for OTHER, and clear it on the way out
+ * so a stale name cannot survive into another district.
+ */
+function aleSyncDistrictOther() {
+    const isOther = ($('#ale-district').val() || '').trim().toUpperCase() === 'OTHER';
+
+    $('#ale-district-other-wrap').toggleClass('hidden', !isOther);
+    $('#ale-district-other').prop('required', isOther);
+
+    if (!isOther) {
+        $('#ale-district-other').val('');
+        aleClearDistrictOtherError();
+    } else {
+        setTimeout(() => $('#ale-district-other').focus(), 50);
+    }
+
+    aleUpdateLocation();
+}
+
+function aleMarkDistrictOtherError(message) {
+    $('#ale-district-other').addClass('border-red-400 ring-2 ring-red-500/20');
+    $('#ale-district-other-hint').removeClass('text-gray-400').addClass('text-red-600').text(message);
+}
+
+function aleClearDistrictOtherError() {
+    $('#ale-district-other').removeClass('border-red-400 ring-2 ring-red-500/20');
+    $('#ale-district-other-hint')
+        .removeClass('text-red-600').addClass('text-gray-400')
+        .text('Required — this replaces "OTHER" in the Location.');
 }
 
 /**
@@ -404,6 +489,10 @@ function aleSetDistrict(value) {
     // Select2 mirrors the underlying select, so it has to be told to redraw.
     select.val(district);
     if (select.data('select2')) select.trigger('change.select2');
+
+    // change.select2 deliberately skips the change handlers, and a plain .val()
+    // fires nothing at all, so the OTHER field is synced by hand.
+    aleSyncDistrictOther();
 }
 
 /**
@@ -452,6 +541,9 @@ function aleOpenFileSelector() {
             // from the last selection lingers in the builder.
             $('#ale-file-no').val(fileNo);
             $('#ale-file-title').val('');
+            // A name seeded from the previous title goes with it; one the
+            // operator typed is theirs and stays.
+            if (!aleNameEdited) $('#ale-allottee-name').val('');
             aleSetDistrict('');
             aleSetLga('');
             aleRawLocation = '';
@@ -462,7 +554,10 @@ function aleOpenFileSelector() {
             // The selector already carries the title for most registries — show
             // it immediately, then let the lookup confirm and fill the rest.
             const title = data.file_title || data.file_name || (data.record && data.record.file_name) || '';
-            if (title) $('#ale-file-title').val(title.toUpperCase());
+            if (title) {
+                $('#ale-file-title').val(title.toUpperCase());
+                aleSetNameFromTitle();
+            }
 
             aleLookupFile(fileNo);
             setTimeout(() => $('#ale-allottee-name').focus(), 150);
@@ -506,6 +601,7 @@ async function aleLookupFile(fileNo) {
         // The title stays locked only if one actually came back; otherwise it
         // opens up so the operator can supply it.
         aleSetTitleLocked(!!$('#ale-file-title').val().trim());
+        aleSetNameFromTitle();
 
         if (d.district && !$('#ale-district').val()) {
             aleSetDistrict(d.district);
@@ -613,12 +709,22 @@ async function aleSubmit() {
         return;
     }
 
+    // OTHER is a placeholder, not a district — it cannot be saved on its own.
+    const isOtherDistrict = ($('#ale-district').val() || '').trim().toUpperCase() === 'OTHER';
+    if (isOtherDistrict && !aleEffectiveDistrict()) {
+        aleMarkDistrictOtherError('Specify the district before saving.');
+        aleToast('warning', 'Specify the district.');
+        $('#ale-district-other').focus();
+        return;
+    }
+    aleClearDistrictOtherError();
+
     const isEdit = aleEditId !== null;
     const payload = {
         file_no         : fileNo.toUpperCase(),
         allottee_name   : name.toUpperCase(),
         file_title      : $('#ale-file-title').val().trim().toUpperCase(),
-        district        : ($('#ale-district').val() || '').trim().toUpperCase(),
+        district        : aleEffectiveDistrict(),
         lga             : ($('#ale-lga').val() || '').trim().toUpperCase(),
         location        : $('#ale-location').val().trim().toUpperCase(),
         allocation_year : $('#ale-allocation-year').val().trim(),
