@@ -219,10 +219,10 @@
                                     data-file-number="{{ $file->file_number }}"
                                     data-status-label="{{ e($statusLabel) }}"
                                 >
-                                    <div class="flex items-center space-x-1.5 min-w-0">
-                                        <span class="text-xs font-medium text-white whitespace-nowrap">
-                                            {{ $file->file_number }}
-                                        </span>
+                                    <span class="text-xs font-medium text-white whitespace-nowrap">
+                                        {{ $file->file_number }}
+                                    </span>
+                                    <div class="flex-1 flex items-center justify-center min-w-0 px-1.5">
                                         @include('filearchive.partials.shelf_badge', ['file' => $file])
                                     </div>
                                     <div class="flex items-center space-x-2">
