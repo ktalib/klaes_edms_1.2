@@ -30,6 +30,9 @@ class ShelfRackLocator
     private const CACHE_KEY = 'shelf_rack_ranges.lookup';
     private const CACHE_TTL = 3600;
 
+    /** Lowercased `registry` values that stand in for ids 1, 2 and 3. */
+    private const LANDS_REGISTRY_NAMES = ['lands registry', 'lands'];
+
     /** @var array<string, array<int, array{from:int,to:int,shelf:string}>>|null */
     private ?array $lookup = null;
 
@@ -71,7 +74,13 @@ class ShelfRackLocator
         }
 
         [$series, $serial] = $parsed;
-        $key = $this->key($registry, $series);
+        $registryId = $this->registryId($registry, $series);
+
+        if ($registryId === null) {
+            return null;
+        }
+
+        $key = $this->key($registryId, $series);
 
         foreach ($this->lookup()[$key] ?? [] as $range) {
             if ($serial >= $range['from'] && $serial <= $range['to']) {
@@ -102,6 +111,47 @@ class ShelfRackLocator
     private function key($registry, string $series): string
     {
         return trim((string) $registry) . '|' . $series;
+    }
+
+    /**
+     * The numeric registry id to look the series up under.
+     *
+     * `file_indexings.registry` is not consistent: most rows hold the numeric id
+     * the ranges table is keyed by, but some hold the registry's name instead, in
+     * which case the raw value can never match a key and the file silently
+     * resolves to nothing. For the Lands Registry set (ids 1, 2 and 3) the series
+     * itself identifies the id, so name-bearing rows are recovered from it.
+     *
+     * The series is used rather than a name->id table because the two are not
+     * 1:1, and because registry 3 carries 42 workbook rows that relabel CON-RES-*
+     * as RES-* (see the class docblock). Mapping every RES-* file to registry 3
+     * would match those and report a shelf the file is not on; mapping RES-* to
+     * registry 1, where it belongs, leaves it correctly unresolved instead.
+     *
+     * Registries outside that set are left alone: they have no workbook coverage,
+     * so there is nothing to recover them to.
+     */
+    private function registryId($registry, string $series): ?string
+    {
+        $registry = trim((string) $registry);
+
+        if ($registry === '') {
+            return null;
+        }
+
+        if (ctype_digit($registry)) {
+            return $registry;
+        }
+
+        if (!in_array(strtolower($registry), self::LANDS_REGISTRY_NAMES, true)) {
+            return null;
+        }
+
+        if (str_starts_with($series, 'CON-RES-')) {
+            return '3';
+        }
+
+        return preg_match('/^(RES|COM|IND|AG)-/', $series) === 1 ? '1' : null;
     }
 
     /**

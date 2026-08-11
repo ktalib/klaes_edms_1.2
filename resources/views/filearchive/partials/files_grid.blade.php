@@ -219,9 +219,12 @@
                                     data-file-number="{{ $file->file_number }}"
                                     data-status-label="{{ e($statusLabel) }}"
                                 >
-                                    <span class="text-xs font-medium text-white whitespace-nowrap">
-                                        {{ $file->file_number }}
-                                    </span>
+                                    <div class="flex items-center space-x-1.5 min-w-0">
+                                        <span class="text-xs font-medium text-white whitespace-nowrap">
+                                            {{ $file->file_number }}
+                                        </span>
+                                        @include('filearchive.partials.shelf_badge', ['file' => $file])
+                                    </div>
                                     <div class="flex items-center space-x-2">
                                         <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-white/20 text-white whitespace-nowrap">
                                                {{ (int) (($file->storage_page_count ?? 0) > 0 ? $file->storage_page_count : ($file->pagetypings_count ?? 0)) }} pages
