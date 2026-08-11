@@ -17,6 +17,13 @@ class AllocationListEntry extends Model
         'first_name',
         'middle_name',
         'last_name',
+        // Existing-allocation capture: the file number the allocation already
+        // carries, plus the details backfilled from it.
+        'file_no',
+        'file_title',
+        'allottee_name',
+        'location',
+        'allocation_year',
         'plot_number',
         'district',
         'lga',

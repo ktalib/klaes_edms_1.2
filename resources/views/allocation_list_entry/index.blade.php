@@ -19,6 +19,8 @@
         urls : {
             data       : '{{ route("allocation-list.data") }}',
             store      : '{{ route("allocation-list.store") }}',
+            storeExisting: '{{ route("allocation-list.store-existing") }}',
+            fileLookup : '{{ route("allocation-list.file-lookup") }}',
             update     : '{{ route("allocation-list.update", "__ID__") }}',
             destroy    : '{{ route("allocation-list.destroy", "__ID__") }}',
             fetchrowinfo: '{{ route("allocation-list.fetchrowinfo", "__ID__") }}',
@@ -79,11 +81,12 @@
                                 Template
                             </a>
 
-                            {{-- Add Entry --}}
-                            <button onclick="aleOpenAdd()" 
+                            {{-- Capture an existing allocation --}}
+                            <button onclick="aleOpenAdd()"
                                 class="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-all shadow-md flex items-center gap-2">
                                 <i data-lucide="plus" class="h-4 w-4"></i>
-Allocate                            </button>
+                                Capture Allocation
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -93,10 +96,13 @@ Allocate                            </button>
                     <table id="allocationTable" class="ale-table w-full">
                         <thead>
                             <tr>
-                                <th>#</th>
-                                <th>Title</th>
-                                <th>Full Name</th>
-                                <th>Allocation Date</th>
+                                <th>SN</th>
+                                <th>FileNo</th>
+                                <th>File Title</th>
+                                <th>Name</th>
+                                <th>Location</th>
+                                <th>Year</th>
+                                <th>Captured</th>
                                 <th class="text-center">Actions</th>
                             </tr>
                         </thead>
@@ -111,7 +117,12 @@ Allocate                            </button>
 </div>
 
 {{-- ── Modal ───────────────────────────────────────────────────────────── --}}
-@include('allocation_list_entry._modal', ['titles' => $titles])
+@include('allocation_list_entry._modal')
+
+{{-- Shared file number selector, opened by the "Select" button on the form.
+     Included inside the content section so its Select2 CDN <script> loads after
+     the jQuery in <head>. --}}
+@include('components.global-fileno-modal')
 
 {{-- ── Scripts ─────────────────────────────────────────────────────────── --}}
 {{-- jQuery is already in layouts.app --}}
@@ -124,7 +135,9 @@ Allocate                            </button>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
 <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
 <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.print.min.js"></script>
-{{-- SweetAlert2 and Lucide are already in layouts.app --}}
+{{-- SweetAlert2 and Lucide are already in layouts.app; Select2 ships with the
+     global file number modal include above. --}}
+<script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 <script src="{{ asset('js/allocation_list_entry.js') }}"></script>
 
 @endsection

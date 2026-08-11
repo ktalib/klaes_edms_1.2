@@ -48,7 +48,13 @@
             --security-bg-opacity: 1;
         }
 
+        /* OFF. The letter prints on plain stock again — the artwork was for preview.
+           To bring it back, delete the `display: none` line below; everything else
+           is left wired up, and --security-bg-opacity above dials it down if the
+           full-strength paper reads too heavy against the text. */
         .security-bg {
+            display: none;
+
             position: absolute;
             top: 0;
             left: 0;
@@ -74,20 +80,23 @@
             flex-direction: column;
         }
 
-        /* EXACT ORIGINAL DIMENSIONS - only margin adjusted */
+        /* The frame was 34px (38px in print), then 28/32, now 24/28. It reads the
+           same at arm's length, and every pixel it gives back on each axis goes
+           straight into the boxes below — width the applicant's address can use
+           instead of wrapping onto another line. */
         .ornate-border {
-            border: 34px solid transparent;
+            border: 24px solid transparent;
             border-image-source: url("{{ asset('assets/images/pages/1779539656370(1).png') }}");
             border-image-slice: 160;
             border-image-repeat: round;
-            border-image-width: 34px;
+            border-image-width: 24px;
             margin: 1mm 3mm 60mm 3mm;
         }
 
         @media print {
             .ornate-border {
-                border-width: 38px !important;
-                border-image-width: 38px !important;
+                border-width: 28px !important;
+                border-image-width: 28px !important;
             }
         }
 
@@ -131,9 +140,21 @@
             margin: 2px 0;
         }
 
+        /* The "To:" box holds free text — a name and an address of whatever length
+           the applicant has — while the right-hand box holds fixed labels against
+           fixed-width rules. So width given to the left is width that stops the
+           address wrapping, which is what was driving the whole letter down the
+           page and into the barcode band.
+
+           1.2fr / 1.3fr is the measured limit, not a guess. It was 1.1fr / 1.4fr
+           until the dotted rules opposite were trimmed; that lowered the right
+           box's min-content width and let this move another 25px. At 1.3fr the
+           right box hits its floor again and "R of O No:", "PLOT/PLAN No:" and
+           "DATE OF ISSUE:" each break across two lines. Re-measure before moving
+           it further — the limit follows those min-widths. */
         .ref-grid {
             display: grid;
-            grid-template-columns: 1fr 1.5fr;
+            grid-template-columns: 1.2fr 1.3fr;
             gap: 15px;
             margin: 8px 0;
         }
@@ -151,6 +172,32 @@
             font-weight: bold;
             text-decoration: underline;
             margin: 5px 0;
+        }
+
+        /* The right-hand details box. Each line used to be its own flex row with its
+           own min-width on the rule, so every rule started wherever its label
+           happened to end and stopped wherever its min-width happened to fall —
+           four labels of four different lengths, four rules at four different
+           positions. One grid for the whole box instead: the label column is sized
+           to the widest label, so every rule starts on the same x, and 1fr carries
+           them all to the same right edge. row-gap replaces the per-row margins
+           that used to space them. */
+        .ref-details {
+            display: grid;
+            grid-template-columns: max-content minmax(120px, 1fr);
+            column-gap: 6px;
+            row-gap: 10px;
+            align-items: baseline;
+        }
+        .ref-details .ref-label {
+            font-weight: bold;
+            white-space: nowrap;
+        }
+        /* The grid column owns the width here — the inline defaults would otherwise
+           re-introduce the ragged starts and ends this box exists to avoid. */
+        .ref-details .inline-data {
+            min-width: 0;
+            margin-left: 0;
         }
 
         /* SIGNATURE BLOCK - Commissioner line uses the exact CSS technique provided, no double lines */
@@ -532,6 +579,16 @@
             ? ['Original']
             : (($requestedStatus === 'Batch') ? ['Original', 'Duplicate', 'Triplicate'] : [$requestedStatus]);
 
+        // A batch printed "by copy" needs all the Originals first, then all the
+        // Duplicates, then all the Triplicates — so the caller renders each record
+        // once per copy and orders the passes itself. $printVersionsOnly is how it
+        // asks for a single copy out of the set. Intersected rather than assigned:
+        // a re-issued letter is the ORIGINAL alone, and that stays true however the
+        // batch is being ordered.
+        if (!empty($printVersionsOnly)) {
+            $printVersions = array_values(array_intersect($printVersions, (array) $printVersionsOnly));
+        }
+
         // Date the PREVIOUS letter was issued. Passed in via ?superseded_date=..., else:
         //   legacy — a new record was created for the re-issuance, so its own
         //            rofo_generated_at is today; the original date is the one keyed in
@@ -684,20 +741,27 @@
                             </div>
                         </div>
                     </div>
+                    {{-- Label / rule pairs, laid out by .ref-details as ONE grid so all
+                         four rules start and end on the same x. Each line used to be
+                         its own flex row carrying its own min-width, so a rule began
+                         wherever its label happened to end and stopped wherever its
+                         min-width happened to fall — four labels of four lengths, four
+                         rules at four positions. Those min-widths also set this box's
+                         minimum width, which capped how much room the "To:" box
+                         opposite could be given; the grid drops both problems at once. --}}
                     <div>
-                        <div class="bordered-section">
-                            <div class="row">
-                                R of O No:<span class="inline-data" style="min-width: 235px">{{ $recommendation->file_number }}</span>
-                            </div>
-                            <div class="row">
-                                PLOT/PLAN No:<span class="inline-data" style="min-width: 190px; margin-top: 10px">{{ $plotPlanNo }}</span>
-                            </div>
-                            <div class="row">
-                                LOCATION:<span class="inline-data" style="min-width: 220px; margin-top: 10px">{{ $printLocation }}</span>
-                            </div>
-                            <div class="row">
-                                DATE OF ISSUE:<span class="inline-data" style="min-width: 190px; margin-top: 10px">{{ $recommendation->rofo_generated_at ? $recommendation->rofo_generated_at->format('Y-m-d') : now()->format('Y-m-d') }}</span>
-                            </div>
+                        <div class="bordered-section ref-details">
+                            <span class="ref-label">R of O No:</span>
+                            <span class="inline-data">{{ $recommendation->file_number }}</span>
+
+                            <span class="ref-label">PLOT/PLAN No:</span>
+                            <span class="inline-data">{{ $plotPlanNo }}</span>
+
+                            <span class="ref-label">LOCATION:</span>
+                            <span class="inline-data">{{ $printLocation }}</span>
+
+                            <span class="ref-label">DATE OF ISSUE:</span>
+                            <span class="inline-data">{{ $recommendation->rofo_generated_at ? $recommendation->rofo_generated_at->format('Y-m-d') : now()->format('Y-m-d') }}</span>
                         </div>
                     </div>
                 </div>

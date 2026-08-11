@@ -1142,6 +1142,13 @@ class FileNumberApiController extends Controller
                     // Needed by the Actions menu: an ST conversion prints the
                     // Application for Conversion off its CON mother file number.
                     'st_file_numbers.application_type',
+                    // A unit (PuA/SuA) stores no mls_fileno of its own, so carry the
+                    // CON mother down from its primary — that is what the LGA
+                    // Confirmation Sheet is printed from.
+                    DB::raw('(SELECT TOP 1 p.mls_fileno FROM st_file_numbers p
+                              WHERE p.np_fileno = st_file_numbers.np_fileno
+                                AND p.file_no_type = \'PRIMARY\'
+                              ORDER BY p.id) AS parent_mls_fileno'),
                     'st_file_numbers.date_commissioned',
                     'st_file_numbers.property_plot_no',
                     'st_file_numbers.property_street_name',
@@ -1286,6 +1293,10 @@ class FileNumberApiController extends Controller
                         'np_fileno' => $item->np_fileno,
                         'fileno' => $item->fileno,
                         'mls_fileno' => $item->mls_fileno,
+                        // The primary's CON mother, so a unit can print the LGA
+                        // Confirmation Sheet its scheme was converted under.
+                        'parent_mls_fileno' => $item->parent_mls_fileno ?? null,
+                        'application_type' => $item->application_type ?? null,
                         'land_use' => $item->land_use,
                         'land_use_code' => $item->land_use_code,
                         'serial_no' => $item->serial_no,

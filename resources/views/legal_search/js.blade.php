@@ -12,7 +12,7 @@
     return `${prefix}/${prefix}/${suffix}`;
   }
 
-  // DOM Elements
+  // DOM elements 
   const searchModal = document.getElementById('search-modal');
   const searchRecordsBtn = document.getElementById('search-records-btn');
   const filterSelector = document.getElementById('filter-selector');

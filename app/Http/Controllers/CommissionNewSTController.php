@@ -1141,6 +1141,24 @@ class CommissionNewSTController extends Controller
                 return;
             }
 
+            // file_number_id is NOT NULL: fall back to the mother's own fileNumber row
+            // when the mirror did not hand one back.
+            if (empty($fileNumberId)) {
+                $fileNumberId = $connection->table('fileNumber')
+                    ->whereRaw('LTRIM(RTRIM(mlsfNo)) = ?', [$motherFileNo])
+                    ->orderByDesc('id')
+                    ->value('id');
+            }
+
+            if (empty($fileNumberId)) {
+                Log::warning('Skipped ST decommissioning log: no fileNumber row to anchor it', [
+                    'mother_file' => $motherFileNo,
+                    'st_file_no'  => $stFileNo,
+                ]);
+
+                return;
+            }
+
             $connection->table('decommissioned_files')->insert([
                 'file_number_id'         => $fileNumberId,
                 'file_no'                => $motherFileNo,

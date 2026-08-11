@@ -1044,9 +1044,13 @@
                             mlsFileNo = file.np_fileno || 'N/A';
                         }
 
-                        // Only a conversion has a CON- mother file, and only that file has
-                        // an LGA Confirmation Sheet to print.
-                        const isConversionFile = /^CON-/i.test(String(mlsFileNo || '').trim());
+                        // The CON mother file: a primary carries it in mls_fileno, a unit
+                        // (PuA/SuA) inherits its primary's via parent_mls_fileno. Only a
+                        // conversion has one, and only it has an LGA Confirmation Sheet.
+                        const conversionMotherNo = [mlsFileNo, file.mls_fileno, file.parent_mls_fileno]
+                            .map(v => String(v || '').trim())
+                            .find(v => /^CON-/i.test(v)) || '';
+                        const isConversionFile = conversionMotherNo !== '';
 
                         return `
                             <tr class="hover:bg-gray-50 transition-colors">
@@ -1137,7 +1141,7 @@
                                                 ST Commissioning Sheet (FCS)
                                             </button>
                                             ${isConversionFile ? `
-                                            <button type="button" onclick="generateConversionApplication(${file.id}, '${mlsFileNo}')"
+                                            <button type="button" onclick="generateConversionApplication(${file.id}, '${conversionMotherNo}')"
                                                     class="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
                                                 <i data-lucide="refresh-cw" class="h-4 w-4 mr-2 text-indigo-600"></i>
                                                 LGA Confirmation Sheet (LCS)

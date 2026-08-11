@@ -10,7 +10,7 @@ namespace App\Support;
  *   - the print slip, via LegalSearchService::buildPrintReport()
  *   - the on-screen timeline, via `@json(LegalSearchTimelineWeights::MAP)` in
  *     resources/views/legal_search/js.blade.php
- *
+ * //
  * Weights drive the PRIMARY sort (descending), with event timestamp ascending as the
  * secondary key. A null weight marks a "floating" event: it carries no rank of its own
  * and is injected chronologically without disturbing the weighted hierarchy around it.

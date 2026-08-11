@@ -18,7 +18,7 @@ class LegalSearchService
      * Searches across 4 staging tables: file_history_staging, CofO_staging, pra, deed_registrations.
      * Returns all records arranged chronologically by transaction date.
      * 
-     * 
+     * //
 
 
 

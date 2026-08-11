@@ -863,7 +863,20 @@ class LandRofoController extends Controller
         // matching what batchPrintLog() records.
         $request->merge(['status' => 'Batch']);
 
-        $views = $records->map(function ($rec) use ($securityCodeService) {
+        // How the sheets come off the printer:
+        //   'record' (default) — file by file, each one's Original, Duplicate and
+        //                        Triplicate together. What this has always done.
+        //   'copy'             — every Original first, then the office copies: each
+        //                        file's Duplicate and Triplicate together, because
+        //                        those two are issued as a pair and are the two that
+        //                        print black & white. Two bundles off the printer —
+        //                        the Originals to hand out, the office set to file —
+        //                        instead of collating by hand afterwards.
+        $copyOrder = $request->input('copy_order') === 'copy' ? 'copy' : 'record';
+
+        // Done once per record, before either ordering: the "by copy" pass renders
+        // each record three times and would otherwise repeat these lookups.
+        $records->each(function ($rec) {
             // Mirror the single print: fall back to the ids when the text columns are
             // empty, or the letter prints a blank purpose / land use.
             if (empty($rec->land_use) && $rec->land_use_id) {
@@ -874,7 +887,9 @@ class LandRofoController extends Controller
                 $p = \App\Models\Purpose::find($rec->purpose_id);
                 if ($p) $rec->purpose_of_clause = $p->name;
             }
+        });
 
+        $letterFor = function ($rec, ?array $onlyVersions = null) use ($securityCodeService) {
             return view('land_rofos.templates.rofo_print', [
                 'recommendation' => $rec,
                 'securityCode'   => $securityCodeService->getOrGenerateForDocument(
@@ -883,8 +898,20 @@ class LandRofoController extends Controller
                     'Land ROFO'
                 ),
                 'supersededDate' => '',
+                // Null lets the template emit the whole Original/Duplicate/Triplicate
+                // set for this record, which is the record-by-record ordering.
+                'printVersionsOnly' => $onlyVersions,
             ]);
-        });
+        };
+
+        // Two passes, not three: the Duplicate and Triplicate are issued as a pair,
+        // so they stay together within the second bundle (…D1 T1 D2 T2…) rather than
+        // being split into a bundle each.
+        $views = $copyOrder === 'copy'
+            ? collect([['Original'], ['Duplicate', 'Triplicate']])->flatMap(
+                fn ($versions) => $records->map(fn ($rec) => $letterFor($rec, $versions))
+            )
+            : $records->map(fn ($rec) => $letterFor($rec));
 
         $stitched = app(\App\Services\StitchedBatchPrint::class)->stitch($views);
 
@@ -893,7 +920,9 @@ class LandRofoController extends Controller
             'bodies'   => $stitched['bodies'],
             'title'    => 'Batch RofO Print (' . $records->count() . ' records)',
             'subtitle' => $records->count() . ' ' . \Illuminate\Support\Str::plural('RofO', $records->count())
-                . ' — Original, Duplicate and Triplicate of each',
+                . ($copyOrder === 'copy'
+                    ? ' — all Originals, then every Duplicate and Triplicate'
+                    : ' — Original, Duplicate and Triplicate of each'),
             // Empty on purpose: the RofO list records the batch through
             // batch-print-log before this page is opened, so logging here again
             // would double-count every print.

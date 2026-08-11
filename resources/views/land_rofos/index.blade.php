@@ -1304,17 +1304,29 @@ function printBatchGroup(batchId) {
 function printRofoBatch(ids) {
     if (!ids || !ids.length) return;
 
+    // Two ways to order the same sheets. Asked here rather than as a second button
+    // in the table, because the difference is only meaningful once explained — and
+    // this is the dialog that already stands between a click and a lot of paper.
     Swal.fire({
         icon: 'question',
         title: 'Print this batch?',
-        html: '<b>' + ids.length + '</b> RofO(s) will print as Original, Duplicate and Triplicate,'
-            + '<br>and be recorded as printed.',
+        html: '<b>' + ids.length + '</b> RofO(s) &times; 3 copies each = <b>' + (ids.length * 3) + '</b> letters,'
+            + '<br>recorded as printed either way.'
+            + '<div style="margin-top:14px;text-align:left;font-size:13px;line-height:1.5">'
+            +   '<div><b>File by file</b> &mdash; each file\'s Original, Duplicate and Triplicate together.</div>'
+            +   '<div style="margin-top:6px"><b>Copy by copy</b> &mdash; every Original first, then every Duplicate '
+            +     'and Triplicate. Comes off the printer already sorted into its two bundles.</div>'
+            + '</div>',
         showCancelButton: true,
-        confirmButtonText: 'Yes, print batch',
+        showDenyButton: true,
+        confirmButtonText: 'File by file',
+        denyButtonText: 'Copy by copy',
         cancelButtonText: 'Cancel',
         confirmButtonColor: '#7c3aed',
+        denyButtonColor: '#0f766e',
     }).then(function (r) {
-        if (!r.isConfirmed) return;
+        if (!r.isConfirmed && !r.isDenied) return;
+        var copyOrder = r.isDenied ? 'copy' : 'record';
 
         // Claim the tab now, while still inside the click that opened the dialog —
         // opening it after the await below is what pop-up blockers stop.
@@ -1330,7 +1342,7 @@ function printRofoBatch(ids) {
         .then(function (res) { return res.json(); })
         .then(function (data) {
             if (!data.success) throw new Error(data.message || 'Failed to record the print.');
-            submitBatchPrint(ids, csrf, printWindow);
+            submitBatchPrint(ids, csrf, printWindow, copyOrder);
         })
         .catch(function (err) {
             if (printWindow) { try { printWindow.close(); } catch (e) {} }
@@ -1340,7 +1352,10 @@ function printRofoBatch(ids) {
 }
 
 // Posts the ids to the print route, rendering into the tab already opened above.
-function submitBatchPrint(ids, csrf, printWindow) {
+// copyOrder: 'record' (each file's three copies together) or 'copy' (all Originals,
+// then all Duplicates, then all Triplicates). Absent reads as 'record' on the
+// server, so an older caller prints exactly what it always did.
+function submitBatchPrint(ids, csrf, printWindow, copyOrder) {
     var form = document.createElement('form');
     form.method = 'POST';
     form.action = '{{ route('land-rofos.batch-print') }}';
@@ -1349,6 +1364,10 @@ function submitBatchPrint(ids, csrf, printWindow) {
     var token = document.createElement('input');
     token.type = 'hidden'; token.name = '_token'; token.value = csrf;
     form.appendChild(token);
+
+    var order = document.createElement('input');
+    order.type = 'hidden'; order.name = 'copy_order'; order.value = copyOrder || 'record';
+    form.appendChild(order);
 
     ids.forEach(function (id) {
         var inp = document.createElement('input');

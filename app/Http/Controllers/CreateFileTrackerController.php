@@ -2555,24 +2555,17 @@ HTML;
         /** @var \App\Models\FileIndexing|null $indexing */
         $indexing = $result['indexing'] ?? null;
 
-        // When the file is in transit (logged out), surface the logout date + time
-        // taken from the current active movement (fallback to the tracker timestamps).
+        // When the file is in transit (logged out), surface the logout date + time.
+        // This is exactly the timestamp the "Duration with holder" clock runs from, so
+        // it must come from the resolver's held_since — which reads the current movement's
+        // accepted_at / log_in / log_out in that order. Deriving it separately here let the
+        // two rows disagree: a movement with only a log_out fell through to the tracker's
+        // updated_at, so any unrelated correction to the row (a re-typed officer name, a
+        // department fix) re-dated the logout to the moment of that edit while the duration
+        // kept counting from the real one. Never fall back to updated_at.
         $loggedOutAt = null;
         if ($result['status'] === FileLocationResolver::STATUS_IN_TRANSIT && $tracker) {
-            $current = $tracker->getCurrentMovement();
-            $raw = $current
-                ? trim(($current['log_in_date'] ?? '') . ' ' . ($current['log_in_time'] ?? ''))
-                : '';
-            if ($raw !== '') {
-                try { $loggedOutAt = \Carbon\Carbon::parse($raw)->format('Y-m-d g:i A'); }
-                catch (\Throwable $e) { $loggedOutAt = $raw; }
-            } elseif ($current && !empty($current['timestamp'])) {
-                try { $loggedOutAt = \Carbon\Carbon::parse($current['timestamp'])->format('Y-m-d g:i A'); }
-                catch (\Throwable $e) { $loggedOutAt = null; }
-            }
-            if (!$loggedOutAt) {
-                $loggedOutAt = optional($tracker->date_requested ?? $tracker->updated_at)?->format('Y-m-d g:i A');
-            }
+            $loggedOutAt = $result['held_since'] ?? null;
         }
 
         // If a File Search Request is already open for this file, surface when it was sent.

@@ -21,6 +21,12 @@ Route::middleware(['auth'])->prefix('allocation-list')->name('allocation-list.')
     // Single row info for edit modal
     Route::get('/fetchrowinfo/{id}', [AllocationListEntryController::class, 'fetchrowinfo'])->name('fetchrowinfo');
 
+    // Resolve file title / location / year for a selected file number
+    Route::get('/file-lookup', [AllocationListEntryController::class, 'lookupFile'])->name('file-lookup');
+
+    // Capture one existing allocation (file number based capture form)
+    Route::post('/existing', [AllocationListEntryController::class, 'storeExisting'])->name('store-existing');
+
     // Add entry
     Route::post('/', [AllocationListEntryController::class, 'store'])->name('store');
 

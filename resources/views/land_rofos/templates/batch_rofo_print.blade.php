@@ -32,7 +32,11 @@
         /* Same security paper as the single RofO print — see the note there. Kept
            identical on purpose: a batch is the same letter, many times. */
         .page-container { --security-bg-opacity: 1; }
+        /* OFF — see the note in rofo_print.blade.php. Delete `display:none` to bring
+           the security paper back; the rest stays wired up. */
         .security-bg {
+            display: none;
+
             position: absolute; top:0; left:0; width:100%; height:100%;
             opacity: var(--security-bg-opacity); pointer-events: none;
             background-image: url("{{ asset('assets/letterhead/rofo-security-paper.jpg') }}");
@@ -41,18 +45,31 @@
             -webkit-print-color-adjust: exact; print-color-adjust: exact;
         }
         .content-wrapper { flex:1; margin:6mm 8mm 0 8mm; position:relative; z-index:1; display:flex; flex-direction:column; }
+        /* Slimmed from 45px, in step with the single RofO print — the width it gives
+           back goes into the boxes below. */
         .ornate-border {
-            border: 45px solid transparent;
+            border: 32px solid transparent;
             border-image-source: url("http://app.klaes.ng/storage/template_frames/land.png");
-            border-image-slice: 160; border-image-repeat: round; border-image-width: 45px;
+            border-image-slice: 160; border-image-repeat: round; border-image-width: 32px;
             margin: 6mm 8mm -4mm 8mm;
         }
         .simple-margin { margin: 20mm; }
         .inner-content { padding:12px 30px 8px 30px; flex:1; box-sizing:border-box; font-size:14.5px; line-height:1.35; display:flex; flex-direction:column; }
         .row { display:flex; margin-bottom:3px; font-weight:bold; align-items:baseline; }
         .title-center { text-align:center; color:#c90202!important; font-size:15px; font-weight:bold; text-decoration:underline; margin:5px 0; }
-        .ref-grid { display:grid; grid-template-columns:1fr 1.5fr; gap:15px; margin:8px 0; }
+        /* Width moved into the free-text "To:" box so a long address wraps less.
+           1.2fr / 1.3fr is the measured limit once the dotted rules opposite are
+           trimmed — at 1.3fr the right box hits its min-content width and its
+           labels break across two lines. See the fuller note in
+           rofo_print.blade.php. */
+        .ref-grid { display:grid; grid-template-columns:1.2fr 1.3fr; gap:15px; margin:8px 0; }
         .bordered-section { border:2px solid #000; padding:10px 12px; margin-top:5px; background:#fff; height:100%; box-sizing:border-box; }
+        /* One grid for the whole details box, so all four dotted rules start and end
+           on the same x instead of each beginning where its own label ran out. See
+           the fuller note in rofo_print.blade.php. */
+        .ref-details { display:grid; grid-template-columns:max-content minmax(120px,1fr); column-gap:6px; row-gap:10px; align-items:baseline; }
+        .ref-details .ref-label { font-weight:bold; white-space:nowrap; }
+        .ref-details .inline-data { min-width:0; margin-left:0; }
         .inline-data { display:inline-block; border-bottom:1px dotted #000; min-width:45px; margin-left:5px; font-weight:normal; color:#000; padding-bottom:1px; }
         .conditions-list-fixed p { margin:4px 0; text-align:justify; line-height:1.4; }
         .condition-item { margin-bottom:8px; }
@@ -215,12 +232,22 @@
                     // present, otherwise whichever one exists (blank when neither does).
                     $plotPlanNo = implode(' / ', array_filter([$plotNo, $layoutPlanNo], fn ($v) => $v !== ''));
                 @endphp
+                {{-- Label / rule pairs in one grid — all four rules on the same x. The
+                     per-row min-widths that used to size them made the rules ragged and
+                     set this box's floor width; both go with them. --}}
                 <div>
-                    <div class="bordered-section">
-                        <div class="row">R of O No:<span class="inline-data" style="min-width:235px">{{ $recommendation->file_number }}</span></div>
-                        <div class="row">PLOT/PLAN No:<span class="inline-data" style="min-width:190px;margin-top:10px">{{ $plotPlanNo }}</span></div>
-                        <div class="row">LOCATION:<span class="inline-data" style="min-width:220px;margin-top:10px">{{ $printLocation }}</span></div>
-                        <div class="row">DATE OF ISSUE:<span class="inline-data" style="min-width:190px;margin-top:10px">{{ $recommendation->rofo_generated_at ? $recommendation->rofo_generated_at->format('Y-m-d') : now()->format('Y-m-d') }}</span></div>
+                    <div class="bordered-section ref-details">
+                        <span class="ref-label">R of O No:</span>
+                        <span class="inline-data">{{ $recommendation->file_number }}</span>
+
+                        <span class="ref-label">PLOT/PLAN No:</span>
+                        <span class="inline-data">{{ $plotPlanNo }}</span>
+
+                        <span class="ref-label">LOCATION:</span>
+                        <span class="inline-data">{{ $printLocation }}</span>
+
+                        <span class="ref-label">DATE OF ISSUE:</span>
+                        <span class="inline-data">{{ $recommendation->rofo_generated_at ? $recommendation->rofo_generated_at->format('Y-m-d') : now()->format('Y-m-d') }}</span>
                     </div>
                 </div>
             </div>
