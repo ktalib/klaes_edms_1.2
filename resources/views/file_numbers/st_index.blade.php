@@ -720,6 +720,11 @@
             {{-- window.generateConversionApplication — shared with the MLS File Commissioning table. --}}
             <script src="{{ asset('js/shared/conversion-application-print.js') }}?v={{ @filemtime(public_path('js/shared/conversion-application-print.js')) }}"></script>
             <script>
+                // Allocation Type (DAP / CON-P) only became a real choice on this date.
+                // Anything commissioned earlier stored whatever the old form defaulted to,
+                // so its Direct/Conversion label is not evidence of anything and is hidden.
+                const ALLOCATION_TYPE_KNOWN_FROM = Date.parse('2026-08-09T00:00:00');
+
                 // Global variables
                 let allFileNumbers = [];
                 let filteredFileNumbers = [];
@@ -1054,11 +1059,22 @@
                         // A CON- number is a conversion whatever the record says.
                         const isConversionFile = conversionMotherNo !== '' || applicationType === 'conversion';
 
-                        // Sub-label under the type badge. Legacy files (KANGIS and anything
-                        // commissioned before the DAP / CON-P split) carry no application
-                        // type, and must not be labelled either way.
+                        // Sub-label under the type badge.
+                        //
+                        // Files commissioned before the DAP / CON-P split carry an
+                        // application_type that was only ever a form default — a KANGIS
+                        // mother reading "Conversion" proves nothing — so they are left
+                        // unlabelled. A CON- number is self-evident and always labelled.
+                        const commissionedAt = Date.parse(file.date_commissioned || file.created_at || '');
+                        const allocationTypeIsReliable = !isNaN(commissionedAt)
+                            && commissionedAt >= ALLOCATION_TYPE_KNOWN_FROM;
+
                         let allocationLabel = '';
-                        if (isConversionFile) {
+                        if (conversionMotherNo !== '') {
+                            allocationLabel = 'Conversion';
+                        } else if (!allocationTypeIsReliable) {
+                            allocationLabel = '';
+                        } else if (applicationType === 'conversion') {
                             allocationLabel = 'Conversion';
                         } else if (applicationType === 'direct allocation' && file.file_no_type === 'PRIMARY') {
                             allocationLabel = 'Direct';

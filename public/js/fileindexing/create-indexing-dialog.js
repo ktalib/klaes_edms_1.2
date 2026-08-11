@@ -7438,11 +7438,22 @@
 
         let match = null;
 
-        match = dataArray.find(item => {
-            const itemText = item[textField] || item.name || item.label || '';
-            const normalizedItem = normalizeGeoText(itemText);
-            return normalizedItem === normalizedText;
-        });
+        // Records written while the id/name mix-up was live hold a bare id ("16") in
+        // district/lga. Resolve it back to its reference row so the field shows the
+        // real name and is rewritten correctly on the next save, rather than the
+        // number being carried forward again.
+        const rawText = text.toString().trim();
+        if (/^\d+$/.test(rawText)) {
+            match = dataArray.find(item => String(item.id) === rawText) || null;
+        }
+
+        if (!match) {
+            match = dataArray.find(item => {
+                const itemText = item[textField] || item.name || item.label || '';
+                const normalizedItem = normalizeGeoText(itemText);
+                return normalizedItem === normalizedText;
+            });
+        }
 
         if (!match) {
             match = dataArray.find(item => {
@@ -7486,22 +7497,37 @@
 
         if (match) {
             console.log('populateSelectFromText: Found match', match);
-            const optionValue = match.id != null ? String(match.id) : (match.value || match.name || '');
-            let option = Array.from(selectElement.options).find(opt => opt.value === optionValue);
 
-            if (!option && optionValue) {
+            const matchName = match.name || match.label || match.value || text;
+            const idValue = match.id != null ? String(match.id) : '';
+
+            // Two conventions are in play: the Blade-rendered per-file selects are
+            // name-keyed (<option value="ABBASA">) while the legacy JS-built ones are
+            // id-keyed (<option value="16">). Reusing an option that is ALREADY in this
+            // select adopts whichever convention it follows, so the stored value stays
+            // consistent with what a manual pick would have produced. Preferring the id
+            // outright used to append <option value="16">GAYA</option> to name-keyed
+            // selects — the dropdown read correctly but the id was what got saved.
+            let option = Array.from(selectElement.options).find(opt => {
+                if (opt.value === '' || opt.value === 'other') return false;
+                if (idValue && opt.value === idValue) return true;
+                return normalizeGeoText(opt.value) === normalizeGeoText(matchName)
+                    || normalizeGeoText(opt.textContent) === normalizeGeoText(matchName);
+            });
+
+            if (!option) {
+                // Genuinely absent — follow whatever the existing options use.
+                const optionsUseIds = Array.from(selectElement.options).some(opt =>
+                    opt.value !== '' && opt.value !== 'other' && /^\d+$/.test(opt.value)
+                );
                 option = document.createElement('option');
-                option.value = optionValue;
-                option.textContent = match.name || match.label || match.value || text;
+                option.value = (optionsUseIds && idValue) ? idValue : matchName;
+                option.textContent = matchName;
                 option.dataset.dynamic = 'true';
                 selectElement.appendChild(option);
             }
 
-            if (optionValue) {
-                selectElement.value = optionValue;
-            } else if (match.name) {
-                selectElement.value = match.name;
-            }
+            selectElement.value = option.value;
 
             if (selectElement.id) {
                 setAutoFilledValue(selectElement, selectElement.value);
@@ -7550,7 +7576,11 @@
         }
 
         if (matchingOption) {
-            setAutoFilledValue(landUseSelect, matchingOption.value);
+            // lock:false — Land Use Type is required and officer-editable, so it must
+            // never be left disabled. The autofill lock disables selects outright, and
+            // Alpine's x-model can afterwards clear the value, which stranded edit mode
+            // with an empty + disabled + required field that blocked saving.
+            setAutoFilledValue(landUseSelect, matchingOption.value, { lock: false });
         }
     }
 

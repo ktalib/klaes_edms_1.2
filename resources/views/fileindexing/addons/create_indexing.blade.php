@@ -668,10 +668,10 @@
                     });
                 },
 
-                renderPropertyMap(param, index) {
+                renderPropertyMap(param, index, zoom = 17) {
                     this.$nextTick(() => {
                         const pos = { lat: param.latitude, lng: param.longitude };
-                        const map = this._ensureMap(param, index, pos, 17);
+                        const map = this._ensureMap(param, index, pos, zoom);
                         if (!map) return;
 
                         let marker = this._markers[index];
@@ -697,6 +697,32 @@
                     });
                 },
 
+                /**
+                 * Non-blocking corner toast. Geocoding is best-effort — the officer
+                 * always finishes by dragging the pin — so its outcomes are reported
+                 * here rather than through a modal that has to be dismissed.
+                 */
+                _mapToast(icon, title, text = '') {
+                    if (typeof Swal === 'undefined') return;
+                    Swal.fire({
+                        toast: true,
+                        position: 'top-end',
+                        icon: icon,
+                        title: title,
+                        text: text,
+                        showConfirmButton: false,
+                        timer: 4500,
+                        timerProgressBar: true
+                    });
+                },
+
+                /** LGA-only address — the coarse fallback when the full one misses. */
+                buildLgaAddress(param) {
+                    const lga = (param.lga || '').toString().trim();
+                    if (!lga || /^select /i.test(lga)) return null;
+                    return [lga, 'KANO', 'NIGERIA'].join(', ');
+                },
+
                 geocodeLocation(param, index) {
                     const address = this.buildGeocodeAddress(param);
                     if (!address || !param.location) return;
@@ -718,23 +744,49 @@
                             param.longitude = this._roundCoord(pos.lng());
                             this.renderPropertyMap(param, index);
                         } else if (status === 'ZERO_RESULTS') {
-                            // Common for Kano plot/street addresses — the map data
-                            // simply has no entry. Pinning by hand is the fallback.
-                            this.openMapForManualPin(param, index);
-                            Swal.fire({
-                                icon: 'info',
-                                title: 'Address not found — pin it manually',
-                                text: 'No match for: ' + address + '. The satellite map is now open at Kano; '
-                                    + 'zoom to the property and click it to drop the pin.'
-                            });
+                            // Kano plot/street addresses are largely absent from the map
+                            // data, so a miss here is routine rather than exceptional.
+                            // Drop back to the LGA centroid, which gets the officer to the
+                            // right part of Kano to drag from.
+                            this._geocodeLgaFallback(param, index);
                         } else {
                             this.openMapForManualPin(param, index);
-                            Swal.fire({
-                                icon: 'warning',
-                                title: 'Address lookup unavailable',
-                                text: 'The address lookup service could not be reached. '
-                                    + 'Zoom to the property on the satellite map and click it to drop the pin.'
-                            });
+                            this._mapToast('warning', 'Address lookup unavailable',
+                                'Zoom to the property on the satellite map and click it to drop the pin.');
+                        }
+                    });
+                },
+
+                /**
+                 * Second, coarser geocode attempt using only the LGA. Lands the pin on
+                 * the LGA centroid at a wide zoom — deliberately approximate, and the
+                 * toast says so, because the officer still has to place it exactly.
+                 */
+                _geocodeLgaFallback(param, index) {
+                    const lgaAddress = this.buildLgaAddress(param);
+
+                    if (!lgaAddress) {
+                        this.openMapForManualPin(param, index);
+                        this._mapToast('info', 'Pin the property on the map',
+                            'The address could not be matched. Zoom in and click the property.');
+                        return;
+                    }
+
+                    const geocoder = new google.maps.Geocoder();
+                    geocoder.geocode({ address: lgaAddress, region: 'NG' }, (results, status) => {
+                        if (status === 'OK' && results[0]) {
+                            const pos = results[0].geometry.location;
+                            param.latitude  = this._roundCoord(pos.lat());
+                            param.longitude = this._roundCoord(pos.lng());
+                            // Zoom 13 ≈ whole LGA in view: honest about the precision and
+                            // gives room to pan to the actual plot.
+                            this.renderPropertyMap(param, index, 13);
+                            this._mapToast('info', 'Approximate location — ' + param.lga + ' LGA',
+                                'The exact address was not found. Drag the pin onto the property.');
+                        } else {
+                            this.openMapForManualPin(param, index);
+                            this._mapToast('info', 'Pin the property on the map',
+                                'The address could not be matched. Zoom in and click the property.');
                         }
                     });
                 },
@@ -954,6 +1006,22 @@
                             }];
                         }
                     }
+
+                    // The raw land_use_type stored on the record is not guaranteed to
+                    // match a <option value> in the dropdown, and x-model can only select
+                    // an option that exists — so an unmatched value silently renders as
+                    // the empty placeholder. populateLandUseFromRecord() resolves it
+                    // fuzzily (adding an option if truly unknown) and its change event
+                    // syncs the resolved value back into param.land_use_type. Runs in
+                    // $nextTick so the <select> and its options are in the DOM first.
+                    this.$nextTick(() => {
+                        if (typeof window.populateLandUseFromRecord !== 'function') return;
+                        this.fileParams.forEach((param, index) => {
+                            if (param.land_use_type) {
+                                window.populateLandUseFromRecord(param.land_use_type, index);
+                            }
+                        });
+                    });
 
                     // Watchers for title sync and batch apply
                     this.$watch('fileParams', (params, oldParams) => {

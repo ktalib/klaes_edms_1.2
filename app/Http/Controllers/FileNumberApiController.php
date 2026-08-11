@@ -1297,6 +1297,7 @@ class FileNumberApiController extends Controller
                         // Confirmation Sheet its scheme was converted under.
                         'parent_mls_fileno' => $item->parent_mls_fileno ?? null,
                         'application_type' => $item->application_type ?? null,
+                        'date_commissioned' => $item->date_commissioned ?? null,
                         'land_use' => $item->land_use,
                         'land_use_code' => $item->land_use_code,
                         'serial_no' => $item->serial_no,
