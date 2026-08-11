@@ -105,6 +105,42 @@ div.dataTables_filter input:focus {
     color: #1e40af;
 }
 
+/* ── District Select2 ──────────────────────────────────────────
+   Select2 replaces the <select> with its own markup, which ignores the
+   Tailwind classes on the original. Match it to the inputs beside it so the
+   Location Builder row reads as one set of fields.                          */
+#ale-district + .select2-container .select2-selection--single {
+    height: 42px;
+    padding: 0.5rem 0.75rem;
+    background-color: #fff;
+    border: 1px solid #d1d5db;
+    border-radius: 0.5rem;
+    display: flex;
+    align-items: center;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+#ale-district + .select2-container--open .select2-selection--single,
+#ale-district + .select2-container .select2-selection--single:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+#ale-district + .select2-container .select2-selection__rendered {
+    padding: 0;
+    line-height: 1.25rem;
+    font-size: 0.875rem;
+    color: #111827;
+}
+#ale-district + .select2-container .select2-selection__placeholder {
+    color: #9ca3af;
+}
+#ale-district + .select2-container .select2-selection__arrow {
+    height: 40px;
+}
+/* The modal is z-50; Select2 appends its dropdown to it, so lift it clear. */
+.select2-container--open {
+    z-index: 60;
+}
+
 /* ── Select & Input Fix ────────────────────────────────────── */
 select.w-full, input.form-control, select.form-select {
     color: #111827 !important; /* Force dark text */

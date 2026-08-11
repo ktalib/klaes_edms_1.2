@@ -41,10 +41,23 @@ class AllocationListEntryController extends Controller
         $pageTitle = __('Allocation List');
         $pageDescription = __('Capture and track existing land allocations');
 
-        // The capture form takes a file number, a name and the details that come
-        // back with the file, so the old titles / LGA dropdowns are gone and
-        // their queries with them.
-        return view('allocation_list_entry.index', compact('pageTitle', 'pageDescription'));
+        // Location builder reference data. Districts are free text backed by a
+        // datalist — the registries hold values outside this list and a strict
+        // <select> would silently drop them on backfill.
+        $districts = DB::connection('sqlsrv')
+            ->table('districts')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->pluck('name');
+
+        $lgas = DB::connection('sqlsrv')
+            ->table('StatLGAs')
+            ->join('States', 'StatLGAs.StateID', '=', 'States.StateID')
+            ->where('States.StateName', 'Kano')
+            ->orderBy('LGAName')
+            ->pluck('StatLGAs.LGAName');
+
+        return view('allocation_list_entry.index', compact('districts', 'lgas', 'pageTitle', 'pageDescription'));
     }
 
     // ─── AJAX: all entries as JSON ────────────────────────────────────────────
@@ -112,9 +125,17 @@ class AllocationListEntryController extends Controller
             return response()->json([
                 'success' => true,
                 'found'   => $details['found'],
+                // Warn at selection time rather than letting the operator fill
+                // the whole form before the save rejects it.
+                'already_captured' => $this->existingCaptureId($fileNo) !== null,
                 'data'    => [
                     'file_no'         => $fileNo,
                     'file_title'      => $details['file_title'],
+                    // The location-builder parts, plus the composed value the
+                    // form shows (falls back to the raw registry string when the
+                    // registry holds no parts to build from).
+                    'district'        => $details['district'],
+                    'lga'             => $details['lga'],
                     'location'        => $details['location'],
                     'allocation_year' => $this->detectYearFromFileNumber($fileNo),
                 ],
@@ -136,6 +157,8 @@ class AllocationListEntryController extends Controller
                 'file_no'         => 'required|string|max:100',
                 'allottee_name'   => 'required|string|max:255',
                 'file_title'      => 'nullable|string|max:255',
+                'district'        => 'nullable|string|max:100',
+                'lga'             => 'nullable|string|max:100',
                 'location'        => 'nullable|string|max:255',
                 'allocation_year' => 'nullable|digits:4',
             ], self::VALIDATION_MESSAGES);
@@ -143,15 +166,34 @@ class AllocationListEntryController extends Controller
             $fileNo = strtoupper(trim($validated['file_no']));
             $name   = $this->normalizeName($validated['allottee_name']);
 
-            $fileTitle = strtoupper(trim((string) ($validated['file_title'] ?? '')));
-            $location  = strtoupper(trim((string) ($validated['location'] ?? '')));
+            // One allocation per file number.
+            if ($this->existingCaptureId($fileNo) !== null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "{$fileNo} is already in the allocation list.",
+                    'duplicate' => true,
+                ], 422);
+            }
 
-            // The form backfills these on selection, but a number typed straight
-            // in (or a lookup that failed) still deserves whatever we can resolve.
+            $fileTitle = strtoupper(trim((string) ($validated['file_title'] ?? '')));
+            $parts     = $this->locationPartsFrom($validated);
+            $location  = $this->composeLocation($parts)
+                ?? strtoupper(trim((string) ($validated['location'] ?? '')));
+
+            // The form backfills these on selection, but a lookup that failed —
+            // or a file picked before the backfill landed — still deserves
+            // whatever we can resolve here.
             if ($fileTitle === '' || $location === '') {
                 $details = $this->resolveFileDetails($fileNo);
                 $fileTitle = $fileTitle !== '' ? $fileTitle : strtoupper((string) $details['file_title']);
-                $location  = $location !== '' ? $location : strtoupper((string) $details['location']);
+
+                if ($location === '') {
+                    $parts = [
+                        'district' => $parts['district'] ?: strtoupper((string) $details['district']),
+                        'lga'      => $parts['lga'] ?: strtoupper((string) $details['lga']),
+                    ];
+                    $location = $this->composeLocation($parts) ?? strtoupper((string) $details['location']);
+                }
             }
 
             // The year is derived from the number, so only trust a supplied value
@@ -164,6 +206,11 @@ class AllocationListEntryController extends Controller
                 'file_no'         => $fileNo,
                 'file_title'      => $fileTitle ?: null,
                 'allottee_name'   => $name,
+                // The builder parts are kept alongside the composed string so the
+                // row can be re-edited without re-parsing it.
+                'district'        => $parts['district'] ?: null,
+                'lga'             => $parts['lga'] ?: null,
+                'state'           => 'KANO',
                 'location'        => $location ?: null,
                 'allocation_year' => $year,
                 // Keep the legacy name columns populated so the MLS generator and
@@ -201,17 +248,30 @@ class AllocationListEntryController extends Controller
      * dbo.fileNumber first (the canonical register), then file_indexings, then
      * st_file_numbers — each one only filling in what the previous left blank.
      *
-     * @return array{found:bool, file_title:?string, location:?string}
+     * The location comes back both as its parts (for the builder fields) and as
+     * a composed string. Registries that only hold a free-text location and no
+     * parts fall back to that raw string, which is why both are returned.
+     *
+     * @return array{found:bool, file_title:?string, location:?string,
+     *               plot_no:?string, district:?string, lga:?string}
      */
     private function resolveFileDetails(string $fileNo): array
     {
-        $fileNo = trim($fileNo);
-        $found  = false;
-        $title  = null;
-        $location = null;
+        $fileNo   = trim($fileNo);
+        $found    = false;
+        $title    = null;
+        $rawLocation = null;
+        $plotNo   = null;
+        $district = null;
+        $lga      = null;
+
+        $empty = [
+            'found' => false, 'file_title' => null, 'location' => null,
+            'plot_no' => null, 'district' => null, 'lga' => null,
+        ];
 
         if ($fileNo === '') {
-            return ['found' => false, 'file_title' => null, 'location' => null];
+            return $empty;
         }
 
         // A temporary number is stored without its "(T)" marker in some columns,
@@ -232,23 +292,30 @@ class AllocationListEntryController extends Controller
             });
         };
 
+        // Everything resolved so far, so each source knows what is still missing.
+        $incomplete = fn() => $title === null || $plotNo === null
+            || $district === null || $lga === null;
+
         try {
             $row = $matchAny(
                 DB::connection('sqlsrv')->table('fileNumber')
-                    ->select('FileName', 'location', 'plot_no'),
+                    ->select('FileName', 'location', 'plot_no', 'district', 'lga'),
                 ['mlsfNo', 'kangisFileNo', 'NewKANGISFileNo', 'st_file_no', 'temp_file_no']
             )->orderByDesc('id')->first();
 
             if ($row) {
-                $found    = true;
-                $title    = $this->blankToNull($row->FileName);
-                $location = $this->blankToNull($row->location);
+                $found       = true;
+                $title       = $this->blankToNull($row->FileName);
+                $rawLocation = $this->blankToNull($row->location);
+                $plotNo      = $this->blankToNull($row->plot_no);
+                $district    = $this->blankToNull($row->district);
+                $lga         = $this->blankToNull($row->lga);
             }
         } catch (\Exception $e) {
             Log::warning('AllocationListEntry resolveFileDetails (fileNumber): ' . $e->getMessage());
         }
 
-        if ($title === null || $location === null) {
+        if ($incomplete()) {
             try {
                 $row = $matchAny(
                     DB::connection('sqlsrv')->table('file_indexings')
@@ -258,15 +325,17 @@ class AllocationListEntryController extends Controller
 
                 if ($row) {
                     $found    = true;
-                    $title    = $title ?? $this->blankToNull($row->file_title);
-                    $location = $location ?? $this->joinNonEmpty([$row->district, $row->lga]);
+                    $title    = $title    ?? $this->blankToNull($row->file_title);
+                    $plotNo   = $plotNo   ?? $this->blankToNull($row->plot_number);
+                    $district = $district ?? $this->blankToNull($row->district);
+                    $lga      = $lga      ?? $this->blankToNull($row->lga);
                 }
             } catch (\Exception $e) {
                 Log::warning('AllocationListEntry resolveFileDetails (file_indexings): ' . $e->getMessage());
             }
         }
 
-        if ($title === null || $location === null) {
+        if ($incomplete()) {
             try {
                 $row = DB::connection('sqlsrv')->table('st_file_numbers')
                     ->whereIn('fileno', $variants)
@@ -279,17 +348,32 @@ class AllocationListEntryController extends Controller
                         $row->corporate_name
                             ?: $this->joinNonEmpty([$row->first_name ?? null, $row->surname ?? null], ' ')
                     );
-                    $location = $location ?? $this->joinNonEmpty([
-                        $row->property_district ?? null,
-                        $row->property_lga ?? null,
-                    ]);
+                    $plotNo   = $plotNo   ?? $this->blankToNull($row->property_plot_no ?? null);
+                    $district = $district ?? $this->blankToNull($row->property_district ?? null);
+                    $lga      = $lga      ?? $this->blankToNull($row->property_lga ?? null);
                 }
             } catch (\Exception $e) {
                 Log::warning('AllocationListEntry resolveFileDetails (st_file_numbers): ' . $e->getMessage());
             }
         }
 
-        return ['found' => $found, 'file_title' => $title, 'location' => $location];
+        $parts = $this->locationPartsFrom([
+            'district' => $district,
+            'lga'      => $lga,
+        ]);
+
+        return [
+            'found'      => $found,
+            'file_title' => $title,
+            // Resolved but not part of the location while Plot No is out of the
+            // builder — kept so reinstating the field needs no new plumbing.
+            'plot_no'    => $plotNo,
+            'district'   => $district,
+            'lga'        => $lga,
+            // Built from the parts when there are any; otherwise the registry's
+            // own free-text location string.
+            'location'   => $this->composeLocation($parts) ?? $rawLocation,
+        ];
     }
 
     /**
@@ -319,6 +403,54 @@ class AllocationListEntryController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * The location-builder inputs, upper-cased and trimmed.
+     *
+     * Plot No is out of the builder for now, so the location is district + LGA.
+     *
+     * @return array{district:string, lga:string}
+     */
+    private function locationPartsFrom(array $input): array
+    {
+        return [
+            'district' => strtoupper(trim((string) ($input['district'] ?? ''))),
+            'lga'      => strtoupper(trim((string) ($input['lga'] ?? ''))),
+        ];
+    }
+
+    /**
+     * Build the location string out of district and LGA, e.g. "ADAKAWA, GAYA".
+     * Null when there is nothing to build from, so callers can fall back to
+     * whatever raw location they already hold.
+     *
+     * Mirrored by aleComposeLocation() in public/js/allocation_list_entry.js —
+     * the form previews exactly what gets stored.
+     */
+    private function composeLocation(array $parts): ?string
+    {
+        return $this->joinNonEmpty([$parts['district'], $parts['lga']]);
+    }
+
+    /**
+     * A file number may only be captured once. Returns the id of the row that
+     * already holds it, ignoring the row being edited.
+     */
+    private function existingCaptureId(string $fileNo, $ignoreId = null): ?int
+    {
+        $fileNo = trim($fileNo);
+        if ($fileNo === '') {
+            return null;
+        }
+
+        // Default CI collation makes this case- and trailing-space-insensitive.
+        $id = AllocationListEntry::where('file_no', $fileNo)
+            ->when($ignoreId, fn($q) => $q->where('id', '!=', $ignoreId))
+            ->orderBy('id')
+            ->value('id');
+
+        return $id ? (int) $id : null;
     }
 
     /**
@@ -438,6 +570,8 @@ class AllocationListEntryController extends Controller
                 'file_no'         => 'required|string|max:100',
                 'allottee_name'   => 'required|string|max:255',
                 'file_title'      => 'nullable|string|max:255',
+                'district'        => 'nullable|string|max:100',
+                'lga'             => 'nullable|string|max:100',
                 'location'        => 'nullable|string|max:255',
                 'allocation_year' => 'nullable|digits:4',
             ], self::VALIDATION_MESSAGES);
@@ -448,14 +582,29 @@ class AllocationListEntryController extends Controller
             }
 
             $fileNo    = strtoupper(trim($validated['file_no']));
+
+            // One allocation per file number — but this row may keep its own.
+            if ($this->existingCaptureId($fileNo, $id) !== null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "{$fileNo} is already in the allocation list.",
+                    'duplicate' => true,
+                ], 422);
+            }
+
             $name      = $this->normalizeName($validated['allottee_name']);
             $nameParts = $this->splitName($name);
+            $parts     = $this->locationPartsFrom($validated);
+            $location  = $this->composeLocation($parts)
+                ?? strtoupper(trim((string) ($validated['location'] ?? '')));
 
             $record->update([
                 'file_no'         => $fileNo,
                 'allottee_name'   => $name,
                 'file_title'      => $this->blankToNull(strtoupper((string) ($validated['file_title'] ?? ''))),
-                'location'        => $this->blankToNull(strtoupper((string) ($validated['location'] ?? ''))),
+                'district'        => $this->blankToNull($parts['district']),
+                'lga'             => $this->blankToNull($parts['lga']),
+                'location'        => $this->blankToNull($location),
                 'allocation_year' => $this->detectYearFromFileNumber($fileNo) ?? ($validated['allocation_year'] ?? null),
                 'first_name'      => $nameParts['first_name'],
                 'middle_name'     => $nameParts['middle_name'],

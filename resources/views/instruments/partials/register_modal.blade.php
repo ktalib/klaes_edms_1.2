@@ -206,9 +206,9 @@
                         <div class="inline-flex items-center gap-1 p-1 bg-gray-100 rounded-lg border border-gray-200"
                             role="tablist" aria-label="Certificate of Occupancy variant">
                             @foreach ([
-                                ['regular', 'Regular', 'Certificate of Occupancy', 'teal'],
-                                ['sltr', 'SLTR', 'SLTR Certificate of Occupancy', 'indigo'],
-                                ['st', 'ST', 'ST Certificate of Occupancy', 'purple'],
+                                ['regular', 'Regular', 'Certificate of Occupancy', 'red'],
+                                ['sltr', 'SLTR', 'SLTR Certificate of Occupancy', 'green'],
+                                ['st', 'ST', 'ST Certificate of Occupancy', 'blue'],
                             ] as [$variant, $tabLabel, $instrumentType, $accent])
                                 {{-- Regular carries the active classes on first paint;
                                      setCofoVariant() in instruments-capture.js owns them after that. --}}
@@ -232,10 +232,13 @@
 
                     <div id="cofo-variant-panel" role="tabpanel">
                         <!-- Certificate of Occupancy Type Selection (Regular only) -->
-                        <div id="coo-type-container" class="mt-3 bg-teal-50 p-3 rounded-lg border border-teal-100">
-                            <label for="cofoType" class="block text-xs font-semibold text-teal-800 uppercase tracking-wide mb-1.5">Certificate of Occupancy Type</label>
+                        {{-- Neutral, not tinted with the Regular accent. This panel only ever
+                             shows on Regular, and a red-tinted box around a required dropdown
+                             reads as a validation error. --}}
+                        <div id="coo-type-container" class="mt-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                            <label for="cofoType" class="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Certificate of Occupancy Type</label>
                             <select id="cofoType" name="cofo_type"
-                                class="w-full max-w-sm px-3 py-2 bg-white border border-teal-200 rounded-lg text-sm focus:ring-1 focus:ring-teal-500 outline-none">
+                                class="w-full max-w-sm px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-1 focus:ring-gray-400 outline-none">
                                 <option value="">Select C of O Type</option>
                                 <option value="Direct Allocation">Direct Allocation</option>
                                 <option value="Recertification">Recertification</option>

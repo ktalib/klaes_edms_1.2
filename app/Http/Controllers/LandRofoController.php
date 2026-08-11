@@ -863,19 +863,27 @@ class LandRofoController extends Controller
         // matching what batchPrintLog() records.
         $request->merge(['status' => 'Batch']);
 
-        // How the sheets come off the printer:
-        //   'record' (default) — file by file, each one's Original, Duplicate and
-        //                        Triplicate together. What this has always done.
-        //   'copy'             — every Original first, then the office copies: each
-        //                        file's Duplicate and Triplicate together, because
-        //                        those two are issued as a pair and are the two that
-        //                        print black & white. Two bundles off the printer —
-        //                        the Originals to hand out, the office set to file —
-        //                        instead of collating by hand afterwards.
-        $copyOrder = $request->input('copy_order') === 'copy' ? 'copy' : 'record';
+        // Which copies this run puts on paper:
+        //   'all'      (default) — every file's Original, Duplicate and Triplicate in
+        //                          one go. What this has always done.
+        //   'original'           — the Originals alone.
+        //   'office'             — the Duplicate and Triplicate alone, paired per file.
+        //
+        // The split exists because the two bundles are not printed on the same thing:
+        // the Original goes on the colour security stock, the office copies go on
+        // plain paper black & white. That is two passes through the printer with the
+        // paper changed in between, so it cannot be one continuous job — the caller
+        // runs 'original', the operator reloads the tray, then it runs 'office'.
+        $copies = in_array($request->input('copies'), ['original', 'office'], true)
+            ? $request->input('copies')
+            : 'all';
 
-        // Done once per record, before either ordering: the "by copy" pass renders
-        // each record three times and would otherwise repeat these lookups.
+        $versionsFor = [
+            'all'      => null,                             // null = the template's own full set
+            'original' => ['Original'],
+            'office'   => ['Duplicate', 'Triplicate'],
+        ][$copies];
+
         $records->each(function ($rec) {
             // Mirror the single print: fall back to the ids when the text columns are
             // empty, or the letter prints a blank purpose / land use.
@@ -899,30 +907,31 @@ class LandRofoController extends Controller
                 ),
                 'supersededDate' => '',
                 // Null lets the template emit the whole Original/Duplicate/Triplicate
-                // set for this record, which is the record-by-record ordering.
+                // set for this record — the 'all' run.
                 'printVersionsOnly' => $onlyVersions,
             ]);
         };
 
-        // Two passes, not three: the Duplicate and Triplicate are issued as a pair,
-        // so they stay together within the second bundle (…D1 T1 D2 T2…) rather than
-        // being split into a bundle each.
-        $views = $copyOrder === 'copy'
-            ? collect([['Original'], ['Duplicate', 'Triplicate']])->flatMap(
-                fn ($versions) => $records->map(fn ($rec) => $letterFor($rec, $versions))
-            )
-            : $records->map(fn ($rec) => $letterFor($rec));
+        $views = $records->map(fn ($rec) => $letterFor($rec, $versionsFor));
 
         $stitched = app(\App\Services\StitchedBatchPrint::class)->stitch($views);
+
+        // Says which run this is, on the bar above the letters — with two tabs open
+        // at once, the operator has to be able to tell them apart at a glance, and
+        // which paper is in the tray depends on getting that right.
+        $runLabel = [
+            'all'      => ' — Original, Duplicate and Triplicate of each',
+            'original' => ' — ORIGINALS ONLY (run 1 of 2) · colour / security paper',
+            'office'   => ' — DUPLICATE & TRIPLICATE ONLY (run 2 of 2) · plain paper, black & white',
+        ][$copies];
 
         return view('print.stitched_batch', [
             'head'     => $stitched['head'],
             'bodies'   => $stitched['bodies'],
-            'title'    => 'Batch RofO Print (' . $records->count() . ' records)',
+            'title'    => 'Batch RofO Print (' . $records->count() . ' records)'
+                . ($copies === 'all' ? '' : ' — ' . ucfirst($copies)),
             'subtitle' => $records->count() . ' ' . \Illuminate\Support\Str::plural('RofO', $records->count())
-                . ($copyOrder === 'copy'
-                    ? ' — all Originals, then every Duplicate and Triplicate'
-                    : ' — Original, Duplicate and Triplicate of each'),
+                . $runLabel,
             // Empty on purpose: the RofO list records the batch through
             // batch-print-log before this page is opened, so logging here again
             // would double-count every print.

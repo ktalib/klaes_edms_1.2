@@ -12,10 +12,13 @@
 // Fallback to avoid crashes if global config is missing
 window.ALE = window.ALE || { urls: {}, csrf: '', activeFilter: '' };
 
-let aleTable       = null;   // DataTable instance
-let aleEditId      = null;   // ID of record being edited (null = capture mode)
-let aleSession     = [];     // Entries captured since the modal was opened
-let aleLookupTimer = null;   // Debounce for the hand-typed file number lookup
+let aleTable    = null;   // DataTable instance
+let aleEditId   = null;   // ID of record being edited (null = capture mode)
+let aleSession  = [];     // Entries captured since the modal was opened
+
+// The registry's own free-text location, used when the file carries no plot /
+// district / LGA for the builder to work from.
+let aleRawLocation = '';
 
 $(document).ready(function () {
     // ── Build DataTable ────────────────────────────────────────────────────
@@ -100,14 +103,8 @@ $(document).ready(function () {
         if (e.target === this) aleCloseModal();
     });
 
-    // Typing a file number by hand backfills the same way selecting one does,
-    // once the operator stops typing.
-    $('#ale-file-no').on('input', function () {
-        clearTimeout(aleLookupTimer);
-        const value = this.value;
-        aleSetYearFromFileNo(value);
-        aleLookupTimer = setTimeout(() => aleLookupFile(value), 450);
-    });
+    // The three builder fields rebuild the Location as they are filled.
+    $('#ale-form').on('input change', '.ale-loc-part', aleUpdateLocation);
 
     // Enter anywhere in the form saves, so capture stays keyboard-only.
     $('#ale-form').on('keydown', 'input', function (e) {
@@ -145,7 +142,30 @@ function aleToggleDropdown(event, id) {
 function aleOpenModal() {
     $('#aleModal').removeClass('hidden').addClass('flex');
     $('body').addClass('overflow-hidden');
+    aleInitDistrictSelect();
     if (window.lucide) window.lucide.createIcons();
+}
+
+/**
+ * The district list runs to a couple of thousand entries, so it needs Select2's
+ * search box. Built on first open — Select2 sizes itself wrong against a hidden
+ * element — and only once.
+ */
+function aleInitDistrictSelect() {
+    const select = $('#ale-district');
+
+    if (!$.fn.select2 || select.data('select2')) return;
+
+    select.select2({
+        // Without this the dropdown renders behind the modal.
+        dropdownParent  : $('#aleModal'),
+        placeholder     : 'Search district…',
+        allowClear      : true,
+        width           : '100%',
+    });
+
+    // Select2 fires change on the original select, which the .ale-loc-part
+    // handler picks up to rebuild the Location.
 }
 
 /**
@@ -197,7 +217,18 @@ async function aleOpenEdit(id) {
         $('#ale-allottee-name').val(
             r.allottee_name || [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')
         );
-        $('#ale-location').val(r.location || '');
+
+        // A stored row keeps its own parts, so the builder reloads from them
+        // rather than re-deriving anything from the file.
+        aleSetDistrict(r.district);
+        aleSetLga(r.lga);
+        aleRawLocation = r.location || '';
+        aleUpdateLocation();
+
+        // A row saved without a title can have one added; one that has it keeps
+        // it locked, same as capture.
+        aleSetTitleLocked(!!(r.file_title || '').trim());
+
         aleSetYearFromFileNo(r.file_no);
         if (!$('#ale-allocation-year').val() && r.allocation_year) {
             $('#ale-allocation-year').val(r.allocation_year);
@@ -214,17 +245,34 @@ async function aleOpenEdit(id) {
 }
 
 function aleResetForm() {
-    // Drop any debounced lookup for the number being cleared, so it cannot land
-    // after the next entry has started and overwrite its fields or status.
-    clearTimeout(aleLookupTimer);
+    aleRawLocation = '';
 
     $('#ale-entry-id').val(aleEditId || '');
     $('#ale-file-no').val('');
     $('#ale-file-title').val('');
     $('#ale-allottee-name').val('');
-    $('#ale-location').val('');
+    aleSetDistrict('');
+    aleSetLga('');
+
+    aleSetTitleLocked(true);
+    aleUpdateLocation();
     aleSetYearFromFileNo('');
     aleSetFileStatus('', '');
+}
+
+/**
+ * The File Title is locked while it holds a value backfilled from the file
+ * number, and opened up only when the lookup could not supply one.
+ */
+function aleSetTitleLocked(locked) {
+    const field = $('#ale-file-title');
+
+    field.prop('readonly', locked);
+    field.toggleClass('bg-gray-100 text-gray-500 cursor-not-allowed', locked);
+    field.toggleClass('bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500', !locked);
+    field.attr('placeholder', locked ? 'Fills in from the FileNo' : 'Not on record — type the title');
+
+    $('#ale-title-hint').text(locked ? '' : 'No title on record — enter it here.');
 }
 
 function aleSetFileStatus(message, tone) {
@@ -265,24 +313,81 @@ function aleDetectYear(fileNo) {
     return '';
 }
 
-/**
- * The year belongs to the file number, so lock the field whenever one can be
- * read out of it — the server derives it the same way and would overwrite any
- * edit. Numbers that carry no year (KN1234) leave the field open to type in.
- */
 function aleCurrentFileNo() {
     return ($('#ale-file-no').val() || '').trim().toUpperCase();
 }
 
+/**
+ * The year belongs to the file number, so the field is display-only — the
+ * server derives it the same way and would overwrite anything typed here.
+ */
 function aleSetYearFromFileNo(fileNo) {
-    const year  = aleDetectYear(fileNo);
-    const field = $('#ale-allocation-year');
+    $('#ale-allocation-year')
+        .val(aleDetectYear(fileNo))
+        .attr('placeholder', fileNo ? 'No year in this file number' : 'From the FileNo');
+}
 
-    field.val(year);
-    field.prop('readonly', !!year);
-    field.attr('placeholder', year ? '' : 'No year in this file number');
-    field.toggleClass('bg-gray-100 text-gray-500 cursor-not-allowed', !!year);
-    field.toggleClass('bg-gray-50', !year);
+/* ═══════════════════════════════════════════════════════════════════════════
+   LOCATION BUILDER
+═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Build the location out of district and LGA, e.g. "ADAKAWA, GAYA". Empty when
+ * there is nothing to build from.
+ *
+ * Mirrors AllocationListEntryController::composeLocation() so the form shows
+ * exactly what gets stored.
+ */
+function aleComposeLocation() {
+    const district = ($('#ale-district').val() || '').trim().toUpperCase();
+    const lga      = ($('#ale-lga').val()      || '').trim().toUpperCase();
+
+    return [district, lga].filter(Boolean).join(', ');
+}
+
+/**
+ * Select a district, adding it as an option first when the registry supplied
+ * one outside the districts table — otherwise the backfill would drop it.
+ */
+function aleSetDistrict(value) {
+    const district = String(value || '').trim().toUpperCase();
+    const select   = $('#ale-district');
+
+    if (district && !select.find('option').filter((i, o) => o.value === district).length) {
+        select.append($('<option>').val(district).text(district));
+    }
+
+    // Select2 mirrors the underlying select, so it has to be told to redraw.
+    select.val(district);
+    if (select.data('select2')) select.trigger('change.select2');
+}
+
+/**
+ * Refresh the Location preview. The builder wins whenever it holds anything;
+ * an empty builder falls back to the location the registry supplied, so a file
+ * that only stores a free-text location does not lose it.
+ */
+function aleUpdateLocation() {
+    $('#ale-location').val(aleComposeLocation() || aleRawLocation);
+}
+
+/**
+ * Select an LGA, adding it as an option first when the registry supplied one
+ * outside the Kano list — otherwise the backfill would silently drop it.
+ */
+function aleSetLga(value) {
+    const lga    = String(value || '').trim().toUpperCase();
+    const select = $('#ale-lga');
+
+    if (!lga) {
+        select.val('');
+        return;
+    }
+
+    if (!select.find('option').filter((i, o) => o.value === lga).length) {
+        select.append($('<option>').val(lga).text(lga));
+    }
+    select.val(lga);
 }
 
 /**
@@ -290,20 +395,28 @@ function aleSetYearFromFileNo(fileNo) {
  */
 function aleOpenFileSelector() {
     if (!window.GlobalFileNoModal) {
-        Swal.fire({ icon: 'error', text: 'File number selector is unavailable. Type the number instead.' });
+        Swal.fire({ icon: 'error', text: 'File number selector is unavailable.' });
         return;
     }
 
     GlobalFileNoModal.open({
         callback: function (data) {
-            const fileNo = (data.fileNumber || '').trim();
+            const fileNo = (data.fileNumber || '').trim().toUpperCase();
             if (!fileNo) return;
 
+            // A different file replaces the previous one outright, so nothing
+            // from the last selection lingers in the builder.
             $('#ale-file-no').val(fileNo);
+            $('#ale-file-title').val('');
+            aleSetDistrict('');
+            aleSetLga('');
+            aleRawLocation = '';
+            aleSetTitleLocked(true);
+            aleUpdateLocation();
             aleSetYearFromFileNo(fileNo);
 
             // The selector already carries the title for most registries — show
-            // it immediately, then let the lookup fill in location and confirm.
+            // it immediately, then let the lookup confirm and fill the rest.
             const title = data.file_title || data.file_name || (data.record && data.record.file_name) || '';
             if (title) $('#ale-file-title').val(title.toUpperCase());
 
@@ -314,8 +427,8 @@ function aleOpenFileSelector() {
 }
 
 /**
- * Backfill file title and location for a file number. Blank fields only —
- * anything the operator has already typed is left alone.
+ * Backfill the title and the location parts for a file number. Blank fields
+ * only — anything the operator has already filled in is left alone.
  */
 async function aleLookupFile(fileNo) {
     const value = String(fileNo || '').trim();
@@ -346,14 +459,30 @@ async function aleLookupFile(fileNo) {
         if (d.file_title && !$('#ale-file-title').val().trim()) {
             $('#ale-file-title').val(String(d.file_title).toUpperCase());
         }
-        if (d.location && !$('#ale-location').val().trim()) {
-            $('#ale-location').val(String(d.location).toUpperCase());
+        // The title stays locked only if one actually came back; otherwise it
+        // opens up so the operator can supply it.
+        aleSetTitleLocked(!!$('#ale-file-title').val().trim());
+
+        if (d.district && !$('#ale-district').val()) {
+            aleSetDistrict(d.district);
         }
+        if (d.lga && !$('#ale-lga').val()) {
+            aleSetLga(d.lga);
+        }
+
+        // Registries that hold only a free-text location keep it as the
+        // fallback the builder falls back to while it is empty.
+        aleRawLocation = d.location ? String(d.location).toUpperCase() : '';
+        aleUpdateLocation();
+
         if (d.allocation_year) {
             $('#ale-allocation-year').val(d.allocation_year);
         }
 
-        if (json.found) {
+        // Already in the list — say so now rather than at save time.
+        if (json.already_captured) {
+            aleSetFileStatus('Already captured — this file is in the list.', 'error');
+        } else if (json.found) {
             aleSetFileStatus('File found — details backfilled.', 'ok');
         } else {
             aleSetFileStatus('No record for this file number — enter the details manually.', 'warn');
@@ -445,6 +574,8 @@ async function aleSubmit() {
         file_no         : fileNo.toUpperCase(),
         allottee_name   : name.toUpperCase(),
         file_title      : $('#ale-file-title').val().trim().toUpperCase(),
+        district        : ($('#ale-district').val() || '').trim().toUpperCase(),
+        lga             : ($('#ale-lga').val() || '').trim().toUpperCase(),
         location        : $('#ale-location').val().trim().toUpperCase(),
         allocation_year : $('#ale-allocation-year').val().trim(),
     };
@@ -467,6 +598,13 @@ async function aleSubmit() {
         });
         const json = await resp.json();
 
+        // A file number already in the list is a correction, not a failure —
+        // keep everything typed so the operator can just pick another file.
+        if (!json.success && json.duplicate) {
+            aleSetFileStatus('Already captured — pick a different file.', 'error');
+            Swal.fire({ icon: 'warning', title: 'Duplicate FileNo', text: json.message });
+            return;
+        }
         if (!json.success) throw new Error(json.message);
 
         aleTable.ajax.reload(null, false);

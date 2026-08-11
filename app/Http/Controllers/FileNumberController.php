@@ -2572,7 +2572,9 @@ class FileNumberController extends Controller
                     if ($isNumeric) {
                         $q->where('fileNumber.id', (int) $id)->orWhere('fileNumber.mlsfNo', $id);
                     } else {
-                        $q->where('fileNumber.mlsfNo', $id);
+                        // An ST file (SuA especially) is filed under st_file_no with no
+                        // mlsfNo of its own, so match either column.
+                        $q->where('fileNumber.mlsfNo', $id)->orWhere('fileNumber.st_file_no', $id);
                     }
                 })
                 ->first();
@@ -2669,7 +2671,9 @@ class FileNumberController extends Controller
                     ->insert([
                         'mls_file_no_id' => $isPlotExtension ? null : $record->id,
                         'tracking_id' => $record->tracking_id,
-                        'full_file_number' => $record->mlsfNo,
+                        // An ST file (SuA) has no mlsfNo of its own; it is filed under
+                        // st_file_no, and the column is NOT NULL.
+                        'full_file_number' => $record->mlsfNo ?: ($record->st_file_no ?? null),
                         'serial_no' => $serialNo,
                         'generated_by' => (Auth::user()->first_name . ' ' . Auth::user()->last_name) ?: Auth::user()->name ?: Auth::user()->email ?: 'System',
                         'created_at' => now(),

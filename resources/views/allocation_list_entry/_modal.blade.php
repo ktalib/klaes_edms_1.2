@@ -34,17 +34,19 @@
                 @csrf
                 <input type="hidden" id="ale-entry-id" value="">
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {{-- FileNo, File Title and Name across one row --}}
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
 
-                    {{-- Select FileNo --}}
+                    {{-- Select FileNo — filled by the selector only --}}
                     <div>
                         <label class="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
                             Select FileNo <span class="text-red-500">*</span>
                         </label>
                         <div class="flex gap-2">
-                            <input type="text" id="ale-file-no" required autocomplete="off"
-                                placeholder="e.g. RES-1982-2081"
-                                class="flex-1 min-w-0 px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm uppercase focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all">
+                            <input type="text" id="ale-file-no" required readonly autocomplete="off"
+                                onclick="aleOpenFileSelector()"
+                                placeholder="Use Select"
+                                class="flex-1 min-w-0 px-3 py-2 bg-gray-100 text-gray-500 border border-gray-300 rounded-lg text-sm uppercase cursor-pointer outline-none transition-all">
                             <button type="button" onclick="aleOpenFileSelector()" title="Browse file numbers"
                                 class="shrink-0 px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-sm font-semibold hover:bg-blue-100 transition-all flex items-center gap-1.5">
                                 <i data-lucide="search" class="h-4 w-4"></i>
@@ -52,6 +54,17 @@
                             </button>
                         </div>
                         <p id="ale-file-status" class="text-[11px] mt-1 h-4 text-gray-400"></p>
+                    </div>
+
+                    {{-- File Title — locked once it backfills, open when it cannot --}}
+                    <div>
+                        <label class="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                            File Title
+                        </label>
+                        <input type="text" id="ale-file-title" readonly autocomplete="off"
+                            placeholder="Fills in from the FileNo"
+                            class="w-full px-3 py-2 bg-gray-100 text-gray-500 border border-gray-300 rounded-lg text-sm uppercase cursor-not-allowed outline-none transition-all">
+                        <p id="ale-title-hint" class="text-[11px] mt-1 h-4 text-gray-400"></p>
                     </div>
 
                     {{-- Name --}}
@@ -64,36 +77,70 @@
                             class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm uppercase focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all">
                         <p class="text-[11px] mt-1 h-4 text-gray-400">Name on the existing allocation.</p>
                     </div>
+                </div>
 
-                    {{-- File Title (backfilled from the file number) --}}
-                    <div class="md:col-span-2">
-                        <label class="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-                            File Title
-                        </label>
-                        <input type="text" id="ale-file-title" autocomplete="off"
-                            placeholder="Fills in when the file number is selected"
-                            class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm uppercase focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all">
+                {{-- ── Location builder ──────────────────────────────────── --}}
+                <div class="mt-5 pt-4 border-t border-gray-100">
+                    <div class="flex items-center gap-2 mb-3">
+                        <i data-lucide="map-pin" class="h-4 w-4 text-gray-400"></i>
+                        <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider">Location Builder</h4>
+                        <span class="text-[11px] text-gray-400 normal-case">
+                            District and LGA form the Location
+                        </span>
                     </div>
 
-                    {{-- Location --}}
-                    <div>
-                        <label class="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-                            Location
-                        </label>
-                        <input type="text" id="ale-location" autocomplete="off"
-                            placeholder="District / LGA"
-                            class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm uppercase focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {{-- District — Select2, because the list runs to a few
+                             thousand and needs a real search box --}}
+                        <div>
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                                District
+                            </label>
+                            <select id="ale-district" class="ale-loc-part w-full">
+                                <option value="">Select District</option>
+                                @foreach ($districts as $district)
+                                    <option value="{{ strtoupper($district) }}">{{ strtoupper($district) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        {{-- LGA --}}
+                        <div>
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                                LGA
+                            </label>
+                            <select id="ale-lga"
+                                class="ale-loc-part w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all">
+                                <option value="">Select LGA</option>
+                                @foreach ($lgas as $lga)
+                                    <option value="{{ strtoupper($lga) }}">{{ strtoupper($lga) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
                     </div>
 
-                    {{-- Year --}}
-                    <div>
-                        <label class="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-                            Year
-                            <span class="normal-case font-medium text-gray-400">(auto detected from the FileNo)</span>
-                        </label>
-                        <input type="text" id="ale-allocation-year" inputmode="numeric" maxlength="4" autocomplete="off"
-                            placeholder="—"
-                            class="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm font-semibold tracking-wide focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                        {{-- Location — the composed result, shown as it will be saved --}}
+                        <div class="md:col-span-2">
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                                Location
+                                <span class="normal-case font-medium text-gray-400">(built from the fields above)</span>
+                            </label>
+                            <input type="text" id="ale-location" readonly autocomplete="off"
+                                placeholder="Builds from District and LGA"
+                                class="w-full px-3 py-2 bg-gray-100 text-gray-500 border border-gray-300 rounded-lg text-sm uppercase cursor-not-allowed outline-none transition-all">
+                        </div>
+
+                        {{-- Year --}}
+                        <div>
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                                Year
+                                <span class="normal-case font-medium text-gray-400">(auto detected)</span>
+                            </label>
+                            <input type="text" id="ale-allocation-year" readonly autocomplete="off"
+                                placeholder="From the FileNo"
+                                class="w-full px-3 py-2 bg-gray-100 text-gray-500 border border-gray-300 rounded-lg text-sm font-semibold tracking-wide cursor-not-allowed outline-none transition-all">
+                        </div>
                     </div>
                 </div>
 

@@ -1166,19 +1166,19 @@ document.addEventListener('DOMContentLoaded', function () {
         regular: {
             instrumentType: 'Certificate of Occupancy',
             hasType: true,
-            accent: 'teal',
+            accent: 'red',
             note: ''
         },
         sltr: {
             instrumentType: 'SLTR Certificate of Occupancy',
             hasType: false,
-            accent: 'indigo',
+            accent: 'green',
             note: 'Systematic Land Titling and Registration — no C of O type applies.'
         },
         st: {
             instrumentType: 'ST Certificate of Occupancy',
             hasType: false,
-            accent: 'purple',
+            accent: 'blue',
             note: 'Sectional Titling — no C of O type applies.'
         }
     };
@@ -1266,6 +1266,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Keep the submitted instrument_type in step with the tab.
         setHidden('instrument_type', config.instrumentType);
+
+        // Repaint the submit button in the tab's accent. Skipped when another
+        // piece of code owns the button's state — the already-captured lock, or
+        // update mode, where it is the amber "Update Instrument" and must stay so.
+        const inUpdateMode = !!elements.registrationForm?.querySelector('input[name="_method"]');
+        if (!alreadyCapturedLock && !inUpdateMode) {
+            applySubmitButtonLabel();
+        }
     }
 
     document.addEventListener('click', (event) => {
@@ -2693,10 +2701,33 @@ document.addEventListener('DOMContentLoaded', function () {
     function getSubmitLabel() {
         const override = (window.ossOpSubmitLabel || '').toString().trim();
         if (override) return override;
+        // A CofO draws its number from a pagination vault rather than the deed
+        // register, and the clerks call the action "paginating" — so the button
+        // says so, for all three variants.
+        if (currentInstrumentType === 'certificate-of-occupancy') {
+            return 'Paginate CofO';
+        }
         if (autoFilledSubmitMode) {
             return 'Register Instrument';
         }
         return 'Capture & Register Instrument';
+    }
+
+    /**
+     * Accent for the submit button: blue everywhere, except on a CofO capture
+     * where it follows the active variant tab, so the action visibly belongs to
+     * the variant being captured.
+     */
+    function submitButtonAccent() {
+        return currentInstrumentType === 'certificate-of-occupancy'
+            ? cofoVariants[getCofoVariant()].accent
+            : 'blue';
+    }
+
+    function submitButtonClassName(accent) {
+        return `px-6 py-2.5 text-white font-medium bg-${accent}-600 rounded-lg hover:bg-${accent}-700 `
+            + `focus:outline-none focus:ring-2 focus:ring-${accent}-500 focus:ring-offset-2 `
+            + 'transition-all shadow-md flex items-center gap-2';
     }
 
     function updateOpSubmitAvailability() {
@@ -2732,7 +2763,7 @@ document.addEventListener('DOMContentLoaded', function () {
         elements.submitBtn.disabled = false;
         elements.submitBtn.textContent = label;
         elements.submitBtn.innerHTML = `<i class="fas fa-save mr-2"></i> ${label}`;
-        elements.submitBtn.className = 'px-6 py-2.5 text-white font-medium bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all shadow-md flex items-center gap-2';
+        elements.submitBtn.className = submitButtonClassName(submitButtonAccent());
         updateOpSubmitAvailability();
     }
 

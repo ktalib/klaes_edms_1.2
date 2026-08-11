@@ -1050,7 +1050,19 @@
                         const conversionMotherNo = [mlsFileNo, file.mls_fileno, file.parent_mls_fileno]
                             .map(v => String(v || '').trim())
                             .find(v => /^CON-/i.test(v)) || '';
-                        const isConversionFile = conversionMotherNo !== '';
+                        const isConversionFile = conversionMotherNo !== ''
+                            || String(file.application_type || '').toLowerCase() === 'conversion';
+
+                        // The LGA Confirmation Sheet belongs to a SuA (always) and to a
+                        // conversion primary; a PuA unit never gets one.
+                        const isSua = file.file_no_type === 'SUA';
+                        const canPrintLcs = file.file_no_type !== 'PUA'
+                            && (isSua || conversionMotherNo !== '');
+
+                        // Printed off the CON mother when there is one, otherwise off the
+                        // file's own number — a SuA is filed under st_file_no.
+                        const lcsFileNo = conversionMotherNo
+                            || String(file.fileno || file.mls_fileno || file.np_fileno || '').trim();
 
                         return `
                             <tr class="hover:bg-gray-50 transition-colors">
@@ -1073,6 +1085,8 @@
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <span class="type-badge type-${(file.file_no_type || 'primary').toLowerCase()}">${file.file_no_type || 'N/A'}</span>
+                                    ${isConversionFile ? `
+                                    <div class="mt-1 text-[10px] font-bold uppercase tracking-wide text-indigo-600">Conversion</div>` : ''}
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <span class="land-use-badge land-use-${(file.land_use || '').toLowerCase().replace('-', '')}">${file.land_use || 'N/A'}</span>
@@ -1140,14 +1154,14 @@
                                                 <i data-lucide="file-text" class="h-4 w-4 mr-2 text-blue-600"></i>
                                                 ST Commissioning Sheet (FCS)
                                             </button>
-                                            ${isConversionFile ? `
-                                            <button type="button" onclick="generateConversionApplication(${file.id}, '${conversionMotherNo}')"
+                                            ${canPrintLcs ? `
+                                            <button type="button" onclick="generateConversionApplication(${file.id}, '${lcsFileNo}')"
                                                     class="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
                                                 <i data-lucide="refresh-cw" class="h-4 w-4 mr-2 text-indigo-600"></i>
                                                 LGA Confirmation Sheet (LCS)
                                             </button>` : `
                                             <span class="flex w-full items-center px-4 py-2 text-sm text-gray-300 cursor-not-allowed"
-                                                  title="Only conversion files have an LGA Confirmation Sheet">
+                                                  title="${file.file_no_type === 'PUA' ? 'A PuA unit has no LGA Confirmation Sheet' : 'Only conversion files have an LGA Confirmation Sheet'}">
                                                 <i data-lucide="refresh-cw" class="h-4 w-4 mr-2"></i>
                                                 LGA Confirmation Sheet (LCS)
                                             </span>`}

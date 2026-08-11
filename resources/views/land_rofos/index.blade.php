@@ -1304,36 +1304,40 @@ function printBatchGroup(batchId) {
 function printRofoBatch(ids) {
     if (!ids || !ids.length) return;
 
-    // Two ways to order the same sheets. Asked here rather than as a second button
-    // in the table, because the difference is only meaningful once explained — and
-    // this is the dialog that already stands between a click and a lot of paper.
+    // Two ways to put the same letters on paper. Asked here rather than as a second
+    // button in the table, because the difference is only meaningful once explained
+    // — and this is the dialog that already stands between a click and a lot of paper.
     Swal.fire({
         icon: 'question',
         title: 'Print this batch?',
         html: '<b>' + ids.length + '</b> RofO(s) &times; 3 copies each = <b>' + (ids.length * 3) + '</b> letters,'
             + '<br>recorded as printed either way.'
             + '<div style="margin-top:14px;text-align:left;font-size:13px;line-height:1.5">'
-            +   '<div><b>File by file</b> &mdash; each file\'s Original, Duplicate and Triplicate together.</div>'
-            +   '<div style="margin-top:6px"><b>Copy by copy</b> &mdash; every Original first, then every Duplicate '
-            +     'and Triplicate. Comes off the printer already sorted into its two bundles.</div>'
+            +   '<div><b>All at once</b> &mdash; one run: each file\'s Original, Duplicate and Triplicate together.</div>'
+            +   '<div style="margin-top:6px"><b>Originals first</b> &mdash; <b>two runs</b>. All the Originals print '
+            +     'on their own, so the colour / security paper goes in the tray for those alone. Change the paper, '
+            +     'then the second run prints every Duplicate and Triplicate.</div>'
             + '</div>',
         showCancelButton: true,
         showDenyButton: true,
-        confirmButtonText: 'File by file',
-        denyButtonText: 'Copy by copy',
+        confirmButtonText: 'All at once',
+        denyButtonText: 'Originals first',
         cancelButtonText: 'Cancel',
         confirmButtonColor: '#7c3aed',
         denyButtonColor: '#0f766e',
     }).then(function (r) {
         if (!r.isConfirmed && !r.isDenied) return;
-        var copyOrder = r.isDenied ? 'copy' : 'record';
+        var twoRuns = r.isDenied;
 
         // Claim the tab now, while still inside the click that opened the dialog —
         // opening it after the await below is what pop-up blockers stop.
-        var printWindow = window.open('', 'rofoBatchPrint');
+        var printWindow = window.open('', twoRuns ? 'rofoPrintOriginals' : 'rofoBatchPrint');
 
         var csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
+        // Logged once for the whole batch, on the first run. The second run puts the
+        // office copies of those same letters on paper — it is not a second print of
+        // the batch, and counting it again would overstate every batch by double.
         fetch('{{ route('land-rofos.batch-print-log') }}', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' },
@@ -1342,7 +1346,14 @@ function printRofoBatch(ids) {
         .then(function (res) { return res.json(); })
         .then(function (data) {
             if (!data.success) throw new Error(data.message || 'Failed to record the print.');
-            submitBatchPrint(ids, csrf, printWindow, copyOrder);
+
+            if (twoRuns) {
+                // No reload yet — this page has to stay alive to ask for run 2.
+                submitBatchPrint(ids, csrf, printWindow, 'original', 'rofoPrintOriginals', false);
+                promptOfficeCopiesRun(ids, csrf);
+            } else {
+                submitBatchPrint(ids, csrf, printWindow, 'all', 'rofoBatchPrint', true);
+            }
         })
         .catch(function (err) {
             if (printWindow) { try { printWindow.close(); } catch (e) {} }
@@ -1351,23 +1362,62 @@ function printRofoBatch(ids) {
     });
 }
 
+// Run 2 of the two-run print. Deliberately a button the operator presses rather
+// than something that fires on its own: between the runs the paper in the tray has
+// to be changed, and only they know when that is done. The second tab is opened
+// from inside this click, which is what keeps the pop-up blocker off it.
+function promptOfficeCopiesRun(ids, csrf) {
+    Swal.fire({
+        icon: 'info',
+        title: 'Originals are in the other tab',
+        html: 'Print them, then put <b>plain paper</b> in the tray.'
+            + '<div style="margin-top:12px;text-align:left;font-size:13px;line-height:1.5">'
+            +   'When that is done, run the second half: <b>' + (ids.length * 2) + '</b> office copies '
+            +   '(a Duplicate and a Triplicate for each of the ' + ids.length + ' files), black &amp; white.'
+            + '</div>',
+        showCancelButton: true,
+        confirmButtonText: 'Print Duplicate &amp; Triplicate',
+        cancelButtonText: 'Not now',
+        confirmButtonColor: '#0f766e',
+        allowOutsideClick: false,
+    }).then(function (r) {
+        if (!r.isConfirmed) {
+            // Declined for now. The batch is already recorded as printed, so the
+            // list still needs to catch up — and the office copies can be run again
+            // from the same button whenever the paper is ready.
+            window.location.reload();
+            return;
+        }
+        var officeWindow = window.open('', 'rofoPrintOffice');
+        submitBatchPrint(ids, csrf, officeWindow, 'office', 'rofoPrintOffice', true);
+    });
+}
+
 // Posts the ids to the print route, rendering into the tab already opened above.
-// copyOrder: 'record' (each file's three copies together) or 'copy' (all Originals,
-// then all Duplicates, then all Triplicates). Absent reads as 'record' on the
+//
+// copies: 'all' (every file's three copies in one run), 'original' (the Originals
+// alone) or 'office' (Duplicate + Triplicate alone). Absent reads as 'all' on the
 // server, so an older caller prints exactly what it always did.
-function submitBatchPrint(ids, csrf, printWindow, copyOrder) {
+//
+// windowName must match the name the tab was opened with, or the form posts into a
+// new blank tab and the one already open sits there empty.
+//
+// reload: the list behind this moves rows into Printed, so it is refreshed after
+// the post — EXCEPT on run 1 of a two-run print, where the page must survive long
+// enough to ask for run 2.
+function submitBatchPrint(ids, csrf, printWindow, copies, windowName, reload) {
     var form = document.createElement('form');
     form.method = 'POST';
     form.action = '{{ route('land-rofos.batch-print') }}';
-    form.target = printWindow ? 'rofoBatchPrint' : '_blank';
+    form.target = printWindow ? (windowName || 'rofoBatchPrint') : '_blank';
 
     var token = document.createElement('input');
     token.type = 'hidden'; token.name = '_token'; token.value = csrf;
     form.appendChild(token);
 
-    var order = document.createElement('input');
-    order.type = 'hidden'; order.name = 'copy_order'; order.value = copyOrder || 'record';
-    form.appendChild(order);
+    var which = document.createElement('input');
+    which.type = 'hidden'; which.name = 'copies'; which.value = copies || 'all';
+    form.appendChild(which);
 
     ids.forEach(function (id) {
         var inp = document.createElement('input');
@@ -1380,7 +1430,9 @@ function submitBatchPrint(ids, csrf, printWindow, copyOrder) {
     document.body.removeChild(form);
 
     // The rows have moved to Printed, so refresh the list behind the print tab.
-    setTimeout(function () { window.location.reload(); }, 800);
+    if (reload !== false) {
+        setTimeout(function () { window.location.reload(); }, 800);
+    }
 }
 
 </script>
