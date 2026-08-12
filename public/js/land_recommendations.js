@@ -232,12 +232,13 @@ document.addEventListener('DOMContentLoaded', function () {
     // On the edit page the current record is excluded via data-record-id.
     const dupCheckUrl = form?.dataset.dupcheckUrl || '';
     const excludeId   = form?.dataset.recordId || '';
+    const dupConfirmedInput = document.getElementById('duplicate_confirmed');
     let lastDuplicate = null; // cache the most recent check result
 
     function checkDuplicateFileNo(fileNo) {
         lastDuplicate = null;
-        // Any fresh check invalidates a previous clean result — picking a
-        // different file number must not inherit the earlier clearance.
+        // Any fresh check invalidates a previous "Save Anyway" — picking a
+        // different file number must not inherit the earlier confirmation.
         if (typeof window._resetDupConfirmation === 'function') window._resetDupConfirmation();
         if (!dupCheckUrl || !fileNo) return Promise.resolve(null);
 
@@ -269,11 +270,14 @@ document.addEventListener('DOMContentLoaded', function () {
                     '<div><strong>Status:</strong> ' + (dup.status || '—') + '</div>' +
                     '<div><strong>Created:</strong> ' + (dup.created_at || '—') + '</div>' +
                 '</div>',
-            // No "Continue Anyway": a second recommendation for the same file is
-            // not allowed, so the only way forward is the existing record.
+            // "Continue Anyway" carries on with a plain new recommendation — it is
+            // NOT a re-issuance (nothing here sets is_reissuance; that flag comes
+            // only from the re-issuance flow that opens this form with it). And
+            // "Open Existing" is an ordinary edit of the record that already exists.
+            // The save still confirms once more before it writes.
             showCancelButton: true,
             confirmButtonText: 'Open Existing',
-            cancelButtonText: 'Close',
+            cancelButtonText: 'Continue Anyway',
             confirmButtonColor: '#2563eb',
             cancelButtonColor: '#64748b',
         }).then(result => {
@@ -323,21 +327,23 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Form submission validation
     if (form) {
-        // Set only once a check has come back clean, so the re-submit that follows
-        // the async check is not blocked by a second check. It is never a user
-        // override — a real duplicate can no longer be confirmed through.
+        // Set either when a check comes back clean or when the user deliberately
+        // saves through a duplicate. Both mean "this submit may proceed".
         let dupConfirmed = false;
 
         window._resetDupConfirmation = function () {
             dupConfirmed = false;
+            if (dupConfirmedInput) dupConfirmedInput.value = '0';
         };
 
-        // A duplicate is a hard stop — the save never proceeds. The only action
-        // offered is opening the record that already covers this file number.
+        // The last word before a duplicate is written. Saving through it produces an
+        // ordinary second recommendation for the file — not a re-issuance: is_reissuance
+        // is set only by the re-issuance flow, which opens this form with its own hidden
+        // field and skips this guard entirely.
         function promptDuplicate(dup) {
             Swal.fire({
-                icon: 'error',
-                title: 'Duplicate File Number',
+                icon: 'warning',
+                title: 'Possible Duplicate',
                 html:
                     'A recommendation already exists for <strong>' + (dup.file_number || fileNoInput.value) + '</strong>.' +
                     '<div style="text-align:left;margin-top:10px;font-size:0.85rem;color:#475569">' +
@@ -345,21 +351,25 @@ document.addEventListener('DOMContentLoaded', function () {
                         '<div><strong>Status:</strong> ' + (dup.status || '—') + '</div>' +
                         '<div><strong>Created:</strong> ' + (dup.created_at || '—') + '</div>' +
                     '</div>' +
-                    '<div style="margin-top:10px">This file cannot be captured twice.</div>',
-                showCancelButton: !!dup.edit_url,
-                confirmButtonText: dup.edit_url ? 'Open Existing' : 'Close',
-                cancelButtonText: 'Close',
-                confirmButtonColor: '#2563eb',
+                    '<div style="margin-top:10px">Save this one anyway?</div>',
+                showCancelButton: true,
+                confirmButtonText: 'Save Anyway',
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: '#dc2626',
                 cancelButtonColor: '#64748b',
             }).then(result => {
-                if (result.isConfirmed && dup.edit_url) {
-                    window.location.href = dup.edit_url;
+                if (result.isConfirmed) {
+                    dupConfirmed = true;
+                    // The server rejects a duplicate unless this flag comes with the post.
+                    if (dupConfirmedInput) dupConfirmedInput.value = '1';
+                    form.requestSubmit ? form.requestSubmit() : form.submit();
+                    return;
+                }
+                // Cancelled: the save never started, so the button must come back.
+                if (submitBtn) {
+                    submitBtn.disabled = false;
                 }
             });
-
-            if (submitBtn) {
-                submitBtn.disabled = false;
-            }
         }
 
         form.addEventListener('submit', function (e) {

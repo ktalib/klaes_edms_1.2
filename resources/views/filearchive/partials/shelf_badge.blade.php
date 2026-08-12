@@ -12,7 +12,7 @@
     $shelfIsDerived = !empty($file->shelf_is_derived);
 @endphp
 @if($shelfLabel !== '')
-    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold leading-none bg-white/25 text-white whitespace-nowrap"
+    <span class="inline-flex items-center px-2 py-0.5 rounded text-sm font-bold leading-none bg-white text-black whitespace-nowrap"
           title="Shelf/Rack {{ $shelfLabel }}{{ $shelfIsDerived ? ' — derived from the shelf map, not recorded on the file' : '' }}">
         {{ $shelfLabel }}@if($shelfIsDerived)<span class="ml-0.5 opacity-70">&bull;</span>@endif
     </span>

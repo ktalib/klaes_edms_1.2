@@ -84,6 +84,16 @@ class CommissionNewSTController extends Controller
                 'np_file_no' => $npFileNo
             ];
 
+            // Edit mode: ?edit={st_file_numbers.id} from the ST Commissioning table's
+            // View/Edit card. The form is reused as-is; the file numbers it would have
+            // minted are replaced by the ones already issued to this record and locked.
+            $editRecord = $this->loadEditRecord(request()->query('edit'));
+            $editTab = match (strtoupper((string) ($editRecord['file_no_type'] ?? ''))) {
+                'SUA' => 'sua',
+                'PUA' => 'pua',
+                default => 'primary',
+            };
+
             return view('commission_new_st.index', compact(
                 'PageTitle',
                 'PageDescription',
@@ -93,11 +103,240 @@ class CommissionNewSTController extends Controller
                 'serialNo',
                 'draftMeta',
                 'titles',
-                'trackingId'
+                'trackingId',
+                'editRecord',
+                'editTab'
             ));
         } catch (\Exception $e) {
             Log::error('Error in CommissionNewSTController@index: ' . $e->getMessage());
             return redirect()->back()->with('error', 'An error occurred while loading the page.');
+        }
+    }
+
+    /**
+     * Load a commissioned ST record for the edit-mode form.
+     *
+     * A PRIMARY commissioning writes its location to file_indexings rather than
+     * onto st_file_numbers (only SuA/PuA fill the property_* columns), so the
+     * indexing row is merged in as the fallback for anything missing.
+     *
+     * @param  mixed  $editId
+     * @return array|null
+     */
+    private function loadEditRecord($editId): ?array
+    {
+        if (!$editId || !ctype_digit((string) $editId)) {
+            return null;
+        }
+
+        $connection = DB::connection('sqlsrv');
+
+        $row = $connection->table('st_file_numbers')->where('id', (int) $editId)->first();
+        if (!$row) {
+            return null;
+        }
+
+        $record = (array) $row;
+        $record['registry_file_number'] = $this->registryFileNumberFor($row);
+
+        $indexing = $connection->table('file_indexings')
+            ->where('file_number', $record['registry_file_number'])
+            ->where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
+            ->orderByDesc('id')
+            ->first();
+
+        if ($indexing) {
+            $fallbacks = [
+                'property_street_name' => $indexing->street_name ?? null,
+                'property_district'    => $indexing->district ?? null,
+                'property_lga'         => $indexing->lga ?? null,
+                'property_plot_no'     => $indexing->plot_number ?? null,
+                'latitude'             => $indexing->latitude ?? null,
+                'longitude'            => $indexing->longitude ?? null,
+            ];
+
+            foreach ($fallbacks as $key => $value) {
+                if (($record[$key] ?? null) === null || $record[$key] === '') {
+                    $record[$key] = $value;
+                }
+            }
+
+            $record['file_title'] = $indexing->file_title ?? null;
+        }
+
+        // What the form shows in its "Applied File Number" slot — the file this
+        // commissioning was raised on. On a PRIMARY that is st_file_numbers.fileno
+        // (the applied/mother file); related_fileno is the fallback.
+        $applied = $record['file_no_type'] === 'PRIMARY'
+            ? ($record['fileno'] ?: ($indexing->related_fileno ?? null))
+            : null;
+
+        if (is_string($applied) && str_starts_with(trim($applied), '[')) {
+            $decoded = json_decode($applied, true);
+            $applied = is_array($decoded) ? (reset($decoded) ?: null) : null;
+        }
+
+        $record['applied_file_number'] = $applied;
+
+        return $record;
+    }
+
+    /**
+     * The file number a record is registered under in file_indexings.
+     *
+     * A PRIMARY's own number is np_fileno — its `fileno` column holds the applied /
+     * mother file it was raised on. A SuA / PuA unit is registered under `fileno`.
+     */
+    private function registryFileNumberFor(object $row): string
+    {
+        return strtoupper((string) ($row->file_no_type ?? '')) === 'PRIMARY'
+            ? (string) $row->np_fileno
+            : (string) ($row->fileno ?: $row->np_fileno);
+    }
+
+    /**
+     * Save edits to an already-commissioned ST record.
+     *
+     * File numbers are immutable here: np_fileno / fileno / mls_fileno / land use /
+     * serial / year / application type are never touched, because they are already
+     * issued and referenced by the registry. Only the applicant, gender and
+     * property-location details a user can correct are written.
+     *
+     * @param Request $request
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function updateRecord(Request $request, $id)
+    {
+        try {
+            $connection = DB::connection('sqlsrv');
+
+            $existing = $connection->table('st_file_numbers')->where('id', (int) $id)->first();
+            if (!$existing) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'ST record not found.',
+                ], 404);
+            }
+
+            $validated = $request->validate([
+                'applicant_type' => 'required|string|in:individual,corporate,multiple,Individual,Corporate,Multiple',
+                'gender' => 'nullable|string|in:Male,Female,Corporate,Joint',
+                'applicant_title' => 'nullable|string|max:20',
+                'first_name' => 'nullable|string|max:100',
+                'middle_name' => 'nullable|string|max:100',
+                'surname' => 'nullable|string|max:100',
+                'corporate_name' => 'nullable|string|max:200',
+                'rc_number' => 'nullable|string|max:50',
+                'property_house_no' => 'nullable|string|max:100',
+                'property_plot_no' => 'nullable|string|max:100',
+                'property_street_name' => 'nullable|string|max:255',
+                'property_district' => 'nullable|string|max:255',
+                'property_lga' => 'nullable|string|max:255',
+                'property_state' => 'nullable|string|max:255',
+                'property_address' => 'nullable|string|max:500',
+                'latitude' => 'nullable|numeric|between:-90,90',
+                'longitude' => 'nullable|numeric|between:-180,180',
+            ]);
+
+            $applicantType = ucfirst(strtolower($validated['applicant_type']));
+
+            $fileName = $this->buildApplicantDisplayName(
+                strtolower($applicantType),
+                $validated['applicant_title'] ?? null,
+                $validated['first_name'] ?? null,
+                $validated['middle_name'] ?? null,
+                $validated['surname'] ?? null,
+                $validated['corporate_name'] ?? null,
+                null
+            );
+
+            $fileNumber = $this->registryFileNumberFor($existing);
+
+            $connection->transaction(function () use ($connection, $existing, $validated, $applicantType, $fileName, $fileNumber) {
+                $connection->table('st_file_numbers')
+                    ->where('id', $existing->id)
+                    ->update(array_merge($this->propertyLocationColumns($validated), [
+                        'applicant_type'  => $applicantType,
+                        'applicant_title' => $validated['applicant_title'] ?? null,
+                        'first_name'      => $validated['first_name'] ?? null,
+                        'middle_name'     => $validated['middle_name'] ?? null,
+                        'surname'         => $validated['surname'] ?? null,
+                        'corporate_name'  => $validated['corporate_name'] ?? null,
+                        'rc_number'       => $validated['rc_number'] ?? null,
+                        'gender'          => $validated['gender'] ?? $existing->gender,
+                        'updated_at'      => now(),
+                    ]));
+
+                // Keep the registry copy of the same facts in step.
+                $indexingUpdate = [
+                    'file_title'  => $fileName,
+                    'district'    => $validated['property_district'] ?? null,
+                    'lga'         => $validated['property_lga'] ?? null,
+                    'street_name' => $validated['property_street_name'] ?? null,
+                    'plot_number' => $validated['property_plot_no'] ?? null,
+                    'location'    => $this->composeLocation(
+                        $validated['property_district'] ?? null,
+                        $validated['property_lga'] ?? null
+                    ),
+                    'updated_at'  => now(),
+                ];
+
+                if (!empty($validated['gender'])) {
+                    $indexingUpdate['gender'] = $validated['gender'];
+                    $indexingUpdate['gender_source'] = \App\Services\GenderNormalizer::SOURCE_CAPTURED;
+                }
+                if (($validated['latitude'] ?? null) !== null && $validated['latitude'] !== '') {
+                    $indexingUpdate['latitude'] = $validated['latitude'];
+                }
+                if (($validated['longitude'] ?? null) !== null && $validated['longitude'] !== '') {
+                    $indexingUpdate['longitude'] = $validated['longitude'];
+                }
+
+                // Blank location fields mean "not supplied", not "clear it".
+                $indexingUpdate = array_filter($indexingUpdate, function ($value) {
+                    return $value !== null && $value !== '';
+                });
+
+                $connection->table('file_indexings')
+                    ->where('file_number', $fileNumber)
+                    ->update($indexingUpdate);
+            });
+
+            // Entity / customer staging rows carry the applicant name and address.
+            $this->syncToStaging(array_merge($validated, [
+                'applicant_type' => strtolower($applicantType),
+            ]), $fileNumber);
+
+            Log::info('ST record updated from edit mode', [
+                'user_id'     => Auth::id(),
+                'st_id'       => $existing->id,
+                'file_number' => $fileNumber,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Record for {$fileNumber} updated successfully.",
+                'fileNumber' => $fileNumber,
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => collect($e->errors())->flatten()->first() ?: 'Validation failed.',
+                'errors'  => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error in CommissionNewSTController@updateRecord: ' . $e->getMessage(), [
+                'st_id' => $id,
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error updating record: ' . $e->getMessage(),
+            ], 500);
         }
     }
 

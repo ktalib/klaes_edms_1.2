@@ -1421,6 +1421,10 @@
 
                         <div class="mt-6 flex justify-end gap-3">
                             <button onclick="closeDetailsModal()" class="btn btn-secondary">Close</button>
+                            <button onclick="editStRecord(${file.id})" class="btn btn-primary" style="background-color:#f59e0b;border-color:#f59e0b">
+                                <i data-lucide="pencil" class="h-4 w-4 mr-2"></i>
+                                Edit
+                            </button>
                             <button onclick='printStCommissioningSheet(${JSON.stringify(file).replace(/'/g, "&apos;")})' class="btn btn-primary">
                                 <i data-lucide="printer" class="h-4 w-4 mr-2"></i>
                                 ST Commissioning Sheet (FCS)
@@ -1514,14 +1518,22 @@
                     }
                 }
 
-                // Edit file
+                /**
+                 * Open the ST File Commissioning page in edit mode for this record.
+                 * The page reuses the commissioning form with the issued file
+                 * numbers locked — only applicant, gender and location are editable.
+                 */
+                function editStRecord(id) {
+                    if (!id) {
+                        Swal.fire({ icon: 'error', title: 'Cannot edit', text: 'This record has no id.' });
+                        return;
+                    }
+                    window.location.href = '/commission-new-st?edit=' + encodeURIComponent(id);
+                }
+
+                // Edit file (row shortcut) — same destination as the card's Edit button.
                 function editFile(id) {
-                    Swal.fire({
-                        icon: 'info',
-                        title: 'Edit File Number',
-                        text: 'Edit functionality coming soon!',
-                        confirmButtonColor: '#3b82f6'
-                    });
+                    editStRecord(id);
                 }
 
                 // Row actions menu — only one open at a time.

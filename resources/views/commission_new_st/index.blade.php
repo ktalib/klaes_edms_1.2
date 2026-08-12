@@ -30,6 +30,15 @@
     <script src="{{ asset('js/commission_new_st/pua.js') }}"></script>
     <script src="{{ asset('js/commission_new_st/file-modal-integration.js') }}"></script>
     <script src="{{ asset('js/commission_new_st/page-init.js') }}"></script>
+    @if(!empty($editRecord))
+        {{-- Edit mode payload — read by edit-mode.js to prefill the form and lock the
+             file-number controls. Loaded last so every form script is already defined. --}}
+        <script>
+            window.ST_EDIT_RECORD = @json($editRecord);
+            window.ST_EDIT_UPDATE_URL = '{{ route('commission-new-st.update', ['id' => $editRecord['id']]) }}';
+        </script>
+        <script src="{{ asset('js/commission_new_st/edit-mode.js') }}?v={{ @filemtime(public_path('js/commission_new_st/edit-mode.js')) }}"></script>
+    @endif
 
 
 
@@ -41,8 +50,36 @@
         <!-- Dashboard Content -->
         <div class="p-6">
 
+        @if(!empty($editRecord))
+            {{-- Edit mode badge: this page is normally a commissioning form, so it has
+                 to say plainly that it is editing an issued record instead. --}}
+            <div class="mb-6 flex flex-wrap items-start gap-3 rounded-xl border-2 border-amber-300 bg-amber-50 p-4 shadow-sm">
+                <span class="inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white">
+                    <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
+                    Edit Mode
+                </span>
+                <div class="min-w-0 flex-1">
+                    <p class="text-sm font-semibold text-amber-900">
+                        Editing commissioned record
+                        <span class="font-mono">{{ $editRecord['registry_file_number'] }}</span>
+                        <span class="ml-1 rounded bg-amber-200 px-2 py-0.5 text-xs font-bold text-amber-900">{{ $editRecord['file_no_type'] }}</span>
+                    </p>
+                    <p class="mt-1 text-xs text-amber-800">
+                        File numbers, land use and allocation type are locked — they are already
+                        issued and referenced across the registry. Applicant details, gender and
+                        location can be corrected and saved.
+                    </p>
+                </div>
+                <a href="{{ route('st-file-numbers.index') }}"
+                   class="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100">
+                    <i data-lucide="arrow-left" class="h-4 w-4"></i>
+                    Back to ST Commissioning
+                </a>
+            </div>
+        @endif
+
         <!-- ST File Number Commissioning Navigation -->
-        <div class="mb-6" x-data="{ activeTab: 'primary' }">
+        <div class="mb-6" x-data="{ activeTab: '{{ $editTab ?? 'primary' }}' }">
             <div class="border-b border-gray-200 bg-white rounded-t-lg">
             <nav class="flex space-x-2 px-6 py-5" aria-label="ST Workflow Tabs">
                 <button 

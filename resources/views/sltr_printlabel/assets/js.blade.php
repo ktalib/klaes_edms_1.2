@@ -288,17 +288,8 @@ document.addEventListener('DOMContentLoaded', function() {
         updateSubGroupSummary(capped?('Only '+n+' files loaded — divided into '+k+' sub groups (one file each).'):null);
     }
     function groupTitle(g){return g.label||('Sub Group '+g.index);}
-    function subGroupDuplicateLabels() {
-        var seen={},dups=[];
-        state.subGroups.forEach(function(g){
-            if(seen[g.fullLabel])dups.push(seen[g.fullLabel]+' & '+groupTitle(g)+' (“'+g.fullLabel+'”)');
-            else seen[g.fullLabel]=groupTitle(g);
-        });
-        return dups;
-    }
     function subGroupMetaText() {
-        var dups=subGroupDuplicateLabels();
-        if(dups.length)return 'Duplicate shelf/rack on '+dups.join(', ');
+        // Groups are allowed to share the same shelf/rack.
         var n=state.subGroups.length;
         var noun=groupMode()==='prefix'
             ? (n===1?'sub prefix':'sub prefixes')
@@ -339,7 +330,7 @@ document.addEventListener('DOMContentLoaded', function() {
         var meta=document.getElementById('subGroupPanelMeta');
         if(meta){
             meta.textContent=subGroupMetaText();
-            meta.className='text-xs font-medium '+(subGroupDuplicateLabels().length?'text-red-600':'text-slate-600');
+            meta.className='text-xs font-medium text-slate-600';
         }
 
         list.querySelectorAll('select[data-sg-index]').forEach(function(sel){
@@ -350,7 +341,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 g.fullLabel=buildSubGroupLabel(g);
                 var le=list.querySelector('[data-sg-label="'+g.index+'"]');if(le)le.textContent=g.fullLabel;
                 var meta2=document.getElementById('subGroupPanelMeta');
-                if(meta2){meta2.textContent=subGroupMetaText();meta2.className='text-xs font-medium '+(subGroupDuplicateLabels().length?'text-red-600':'text-slate-600');}
+                if(meta2){meta2.textContent=subGroupMetaText();meta2.className='text-xs font-medium text-slate-600';}
                 resetPreparedState();renderFileList();updateCounts();
             });
         });
@@ -457,8 +448,6 @@ document.addEventListener('DOMContentLoaded', function() {
             label_format:state.selectedTemplate,orientation:state.orientation};
 
         if(isSubGroupMode()){
-            var dups=subGroupDuplicateLabels();
-            if(dups.length)throw new Error(dups.join(', ')+' share the same shelf/rack. Give each group its own shelf.');
             var selSet=new Set(state.selectedFiles.map(String));
             var groups=state.subGroups.map(function(g){
                 return {file_ids:g.fileIds.filter(function(id){return selSet.has(String(id));}).map(Number),

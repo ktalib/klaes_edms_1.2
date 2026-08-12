@@ -16,7 +16,7 @@ use Illuminate\Validation\ValidationException;
 class SltrPrintLabelController extends Controller
 {
     const RACK_SHELF_CAPACITY = 999999;
-    const MAX_BATCH_SELECTION = 500;
+    const MAX_BATCH_SELECTION = 2000;
 
     const PREFIX = 'SLTR';
 
@@ -456,9 +456,8 @@ class SltrPrintLabelController extends Controller
 
         $groups = [];
         $seen   = [];
-        $labels = [];
 
-        foreach ($raw as $index => $group) {
+        foreach ($raw as $group) {
             $ids = array_values(array_unique(array_map('intval', $group['file_ids'])));
 
             foreach ($ids as $id) {
@@ -471,15 +470,9 @@ class SltrPrintLabelController extends Controller
             }
 
             $subPrefix = isset($group['sub_prefix']) ? (trim((string) $group['sub_prefix']) ?: null) : null;
-            $name      = $subPrefix !== null ? "sub prefix {$subPrefix}" : 'sub group ' . ($index + 1);
 
+            // Groups are allowed to share the same shelf/rack label.
             $label = strtoupper(trim($group['full_label']));
-            if (isset($labels[$label])) {
-                throw ValidationException::withMessages([
-                    'sub_groups' => "Groups " . $labels[$label] . " and {$name} share the shelf/rack {$label}. Give each group its own shelf.",
-                ]);
-            }
-            $labels[$label] = $name;
 
             $groups[] = [
                 'file_ids'       => $ids,

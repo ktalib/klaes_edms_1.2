@@ -1092,19 +1092,9 @@ function geocodePropertyLocation() {
         } else {
             Swal.fire({
                 icon: 'warning',
-                title: 'Address lookup unavailable',
+                title: 'Address lookup unavailable (' + status + ')',
                 text: 'The address lookup service could not be reached. '
                     + 'Zoom to the property on the satellite map and click it to drop the pin.'
-            });
-        } else if (status === 'ZERO_RESULTS') {
-            if (typeof Swal !== 'undefined') {
-                Swal.fire({ icon: 'warning', title: 'Location not found', text: 'Google could not find: ' + address });
-            }
-        } else if (typeof Swal !== 'undefined') {
-            Swal.fire({
-                icon: 'error',
-                title: 'Geocoding failed (' + status + ')',
-                text: 'The map service rejected the request. Check that Billing and the Geocoding API are enabled for the API key.'
             });
         }
     });

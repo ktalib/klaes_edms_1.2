@@ -205,6 +205,11 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/commission', [CommissionNewSTController::class, 'commission'])->name('commission');
         Route::post('/commission-sua', [CommissionNewSTController::class, 'commissionSuA'])->name('commission-sua');
         Route::post('/commission-pua', [CommissionNewSTController::class, 'commissionPuA'])->name('commission-pua');
+
+        // Edit mode: save changes to an already-commissioned ST record. File numbers
+        // are never changed here — only applicant, gender and location details.
+        Route::post('/{id}/update', [CommissionNewSTController::class, 'updateRecord'])
+            ->whereNumber('id')->name('update');
     });
 
     // GKN Generation Routes
