@@ -126,6 +126,18 @@ return [
             'days' => 30,
         ],
 
+        // Add/Edit Buyers (Sectional Titling buyers list). Officers report the
+        // capture form emptying itself mid-entry without an error, which nothing
+        // in laravel.log accounts for — so this channel carries both server-side
+        // CRUD and the browser's own account of the session (rows added/removed,
+        // submits, navigations, script errors, draft autosaves) on one timeline.
+        'buyer_list' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/buyer_list.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => 30,
+        ],
+
         // Plot Subdivision (Deeds → Parcel Update). Subdivision mutates parcel
         // lineage, so a per-application audit trail of who captured/approved/rejected
         // what is worth keeping separate from the general log.

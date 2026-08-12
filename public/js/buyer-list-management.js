@@ -492,6 +492,17 @@ document.addEventListener('DOMContentLoaded', function() {
             })
             .then(data => {
                 if (data.success) {
+                    // The rows are in buyer_list now, so the autosaved draft has
+                    // done its job and is closed rather than offered back on the
+                    // next visit. See buyer-list-diagnostics.js.
+                    if (window.__buyerListDiagnostics) {
+                        window.__buyerListDiagnostics.noteSaved({
+                            inserted: data.inserted,
+                            skipped: data.skipped,
+                            total: data.count
+                        });
+                    }
+
                     Swal.fire({
                         icon: 'success',
                         title: 'Success!',
@@ -500,6 +511,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     }).then(() => {
                         // Reset the form and refresh buyers list
                         buyersForm.reset();
+                        // Restore the trace id the reset just cleared, so the rest
+                        // of this page visit stays on one timeline in the log.
+                        const traceField = buyersForm.querySelector('input[name="client_trace_id"]');
+                        if (traceField && window.__buyerListDiagnostics) {
+                            traceField.value = window.__buyerListDiagnostics.traceId();
+                        }
                         // Restore application_id after reset
                         buyersForm.querySelector('input[name="application_id"]').value = applicationId;
                         // Reset Alpine.js buyers array

@@ -28,6 +28,8 @@
     $lhMinistry = $lhMinistry ?? 'Ministry of Land and Physical Planning';
     $lhState    = $lhState    ?? 'Kano State';
     $lhSpine    = $lhSpine    ?? $lhMinistry;
+    // Pass '' to suppress the address line under the rule.
+    $lhAddress  = $lhAddress  ?? "No. 2 Dr. Bala Moh'd Road, Nassarawa GRA, Kano PMB 3038 Kano-Nigeria.";
 
     // Pass false to drop the red spine text and the vertical rule beside it,
     // leaving just the crest, the titles and the horizontal rule.
@@ -65,7 +67,7 @@
         position: absolute;
         left: 18mm;
         right: 12mm;
-        top: 30mm;
+        top: 33mm;
         border-top: var(--lh-rule) solid var(--lh-green);
     }
 
@@ -115,8 +117,8 @@
         position: absolute;
         left: 34mm;
         right: 12mm;
-        top: 8mm;
-        height: 22mm; /* bottom edge lands on .lh-rule-top at 30mm */
+        top: 6mm;
+        height: 27mm; /* bottom edge lands on .lh-rule-top at 33mm */
         display: flex;
         align-items: flex-end;
         justify-content: flex-start;
@@ -147,6 +149,16 @@
         letter-spacing: 0.01em;
         white-space: nowrap; /* must stay on one line, as on the stationery */
     }
+    /* Third line of the title block, so it sits above the rule with the rest of
+       the header rather than stranded below it. */
+    .lh-address {
+        font-size: 8.5pt;
+        font-weight: 700;
+        letter-spacing: 0;
+        text-transform: none;
+        margin-top: 1.5mm;
+    }
+
     .lh-subtitle {
         font-size: 13pt; /* matches .lh-title */
         font-weight: 900;
@@ -175,6 +187,9 @@
         <div class="lh-titles">
             <div class="lh-title">{{ $lhMinistry }}</div>
             <div class="lh-subtitle">{{ $lhState }}</div>
+            @if($lhAddress)
+                <div class="lh-address">{{ $lhAddress }}</div>
+            @endif
         </div>
     </div>
 </div>

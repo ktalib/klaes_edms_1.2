@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\BuyerListLog as Log;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -28,6 +28,13 @@ use Illuminate\Support\Facades\Validator;
  * - unitMeasurement -> measurement (in st_unit_measurements table)
  * - cubicMeasurement -> cubic_easurement (in buyer_list table)
  * - landUse -> stored in buyer_list for reference
+ *
+ * Logging: every action here writes to storage/logs/buyer_list.log via
+ * {@see \App\Support\BuyerListLog}, interleaved with the browser's own trace from
+ * {@see BuyerListDiagnosticsController}. Officers report the capture form emptying
+ * itself mid-entry, which leaves no server-side trace at all — so the point of
+ * logging the accepted payload shape (not just the failures) is to establish
+ * whether a submit ever reached the server, and with how many rows.
  */
 class BuyerListController extends Controller
 {
@@ -73,7 +80,11 @@ class BuyerListController extends Controller
                 'count' => count($records)
             ]);
         } catch (\Exception $e) {
-            Log::error('Error retrieving buyers list: ' . $e->getMessage());
+            Log::error('getBuyersList failed', [
+                'application_id' => $applicationId,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile() . ':' . $e->getLine(),
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage()
@@ -90,11 +101,27 @@ class BuyerListController extends Controller
      */
     public function addBuyers(Request $request)
     {
+        $traceId = $request->input('client_trace_id');
+
         try {
             // Always extract application_id from the request
             $applicationId = $request->input('application_id');
-            
+
+            Log::info('addBuyers received', [
+                'trace_id' => $traceId,
+                'application_id' => $applicationId,
+                'source' => $request->input('client_source', 'form'),
+                'content_type' => $request->header('Content-Type'),
+                // The shape of what arrived, before any parsing: if the browser
+                // lost rows before POSTing, the loss is visible right here.
+                'records_type' => gettype($request->input('records')),
+                'records_count' => is_array($request->input('records')) ? count($request->input('records')) : null,
+                'payload_keys' => array_slice(array_keys($request->all()), 0, 25),
+            ]);
+
             if (!$applicationId) {
+                Log::warning('addBuyers rejected: no application_id', ['trace_id' => $traceId]);
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Application ID is required.',
@@ -125,6 +152,11 @@ class BuyerListController extends Controller
 
             // Validate records array
             if (!is_array($records) || count($records) < 1) {
+                Log::warning('addBuyers rejected: empty records', [
+                    'trace_id' => $traceId,
+                    'application_id' => $applicationId,
+                ]);
+
                 return response()->json([
                     'success' => false,
                     'message' => 'At least one buyer record is required.',
@@ -139,6 +171,14 @@ class BuyerListController extends Controller
                 $hasBuyerName = !empty($record['buyerName'] ?? '');
                 
                 if (!$hasNames && !$hasBuyerName) {
+                    Log::warning('addBuyers rejected: missing buyer name', [
+                        'trace_id' => $traceId,
+                        'application_id' => $applicationId,
+                        'row' => $i + 1,
+                        'row_count' => count($records),
+                        'row_keys' => array_keys((array) $record),
+                    ]);
+
                     return response()->json([
                         'success' => false,
                         'message' => "Buyer name is required for buyer " . ($i + 1),
@@ -147,6 +187,13 @@ class BuyerListController extends Controller
                 }
                 
                 if (empty($record['unit_no'] ?? '')) {
+                    Log::warning('addBuyers rejected: missing unit_no', [
+                        'trace_id' => $traceId,
+                        'application_id' => $applicationId,
+                        'row' => $i + 1,
+                        'row_count' => count($records),
+                    ]);
+
                     return response()->json([
                         'success' => false,
                         'message' => "Unit number is required for buyer " . ($i + 1),
@@ -155,6 +202,13 @@ class BuyerListController extends Controller
                 }
 
                 if (empty($record['sectionNumber'] ?? '')) {
+                    Log::warning('addBuyers rejected: missing sectionNumber', [
+                        'trace_id' => $traceId,
+                        'application_id' => $applicationId,
+                        'row' => $i + 1,
+                        'row_count' => count($records),
+                    ]);
+
                     return response()->json([
                         'success' => false,
                         'message' => "Section number is required for buyer " . ($i + 1),
@@ -169,6 +223,11 @@ class BuyerListController extends Controller
                 ->first();
 
             if (!$application) {
+                Log::warning('addBuyers rejected: application not found', [
+                    'trace_id' => $traceId,
+                    'application_id' => $applicationId,
+                ]);
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Application not found.'
@@ -176,8 +235,14 @@ class BuyerListController extends Controller
             }
 
             // Check if both application status and planning recommendation are approved
-            if ($application->application_status == 'Approved' && 
+            if ($application->application_status == 'Approved' &&
                 $application->planning_recommendation_status == 'Approved') {
+                Log::warning('addBuyers rejected: application approved and locked', [
+                    'trace_id' => $traceId,
+                    'application_id' => $applicationId,
+                    'row_count' => count($records),
+                ]);
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Cannot add buyers - Both Application Status and Planning Recommendation have been approved. No further modifications are allowed.'
@@ -219,6 +284,17 @@ class BuyerListController extends Controller
                     ->first();
 
                 if ($existing) {
+                    // Silent skips are the one outcome a user reads as "my row
+                    // vanished", so name the row that was dropped and why.
+                    Log::info('addBuyers skipped duplicate', [
+                        'trace_id' => $traceId,
+                        'application_id' => $applicationId,
+                        'buyer_name' => $buyerName,
+                        'unit_no' => $unitNo,
+                        'section_number' => $sectionNumber,
+                        'existing_buyer_id' => $existing->id ?? null,
+                    ]);
+
                     $skippedCount++;
                     continue;
                 }
@@ -284,6 +360,15 @@ class BuyerListController extends Controller
                 $message = "All buyers already exist. $skippedCount duplicate(s) skipped.";
             }
 
+            Log::info('addBuyers completed', [
+                'trace_id' => $traceId,
+                'application_id' => $applicationId,
+                'submitted' => count($records),
+                'inserted' => $insertedCount,
+                'skipped' => $skippedCount,
+                'total_now' => count($updatedRecords),
+            ]);
+
             return response()->json([
                 'success' => true,
                 'message' => $message,
@@ -293,8 +378,14 @@ class BuyerListController extends Controller
                 'skipped' => $skippedCount
             ]);
         } catch (\Exception $e) {
-            Log::error('Error adding buyers: ' . $e->getMessage());
-            Log::error('Stack trace: ' . $e->getTraceAsString());
+            Log::error('addBuyers failed', [
+                'trace_id' => $traceId,
+                'application_id' => $request->input('application_id'),
+                'error' => $e->getMessage(),
+                'file' => $e->getFile() . ':' . $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage()
@@ -326,6 +417,13 @@ class BuyerListController extends Controller
             ]);
 
             if ($validator->fails()) {
+                Log::warning('importCsv rejected by validation', [
+                    'trace_id' => $request->input('client_trace_id'),
+                    'application_id' => $request->input('application_id'),
+                    'rows' => is_array($request->input('records')) ? count($request->input('records')) : null,
+                    'errors' => $validator->errors()->toArray(),
+                ]);
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Validation failed',
@@ -337,7 +435,13 @@ class BuyerListController extends Controller
             return $this->addBuyers($request);
 
         } catch (\Exception $e) {
-            Log::error('Error importing CSV: ' . $e->getMessage());
+            Log::error('importCsv failed', [
+                'trace_id' => $request->input('client_trace_id'),
+                'application_id' => $request->input('application_id'),
+                'error' => $e->getMessage(),
+                'file' => $e->getFile() . ':' . $e->getLine(),
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage()
@@ -364,6 +468,14 @@ class BuyerListController extends Controller
                 'measurement'    => 'nullable|numeric',
                 'land_use'       => 'nullable|string',
                 'cubic_easurement' => 'nullable',
+            ]);
+
+            Log::info('updateBuyer received', [
+                'trace_id' => $request->input('client_trace_id'),
+                'application_id' => $validated['application_id'],
+                'buyer_id' => $validated['buyer_id'],
+                'unit_no' => $validated['unit_no'],
+                'section_number' => $validated['section_number'] ?? null,
             ]);
 
             // Check if the application exists and get its status
@@ -407,6 +519,11 @@ class BuyerListController extends Controller
                 ]);
 
             if (!$updated) {
+                Log::warning('updateBuyer matched no row', [
+                    'application_id' => $validated['application_id'],
+                    'buyer_id' => $validated['buyer_id'],
+                ]);
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Buyer not found or no changes made'
@@ -445,12 +562,38 @@ class BuyerListController extends Controller
                 }
             }
 
+            Log::info('updateBuyer saved', [
+                'application_id' => $validated['application_id'],
+                'buyer_id' => $validated['buyer_id'],
+            ]);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Buyer information updated successfully'
             ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            // Without this arm the generic catch below turns a field error into a
+            // 500 whose only message is "The given data was invalid", which tells
+            // the officer at the screen nothing about which box to fix.
+            Log::warning('updateBuyer rejected by validation', [
+                'application_id' => $request->input('application_id'),
+                'buyer_id' => $request->input('buyer_id'),
+                'errors' => $e->errors(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
-            Log::error('Error updating buyer: ' . $e->getMessage());
+            Log::error('updateBuyer failed', [
+                'application_id' => $request->input('application_id'),
+                'buyer_id' => $request->input('buyer_id'),
+                'error' => $e->getMessage(),
+                'file' => $e->getFile() . ':' . $e->getLine(),
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage()
@@ -517,6 +660,12 @@ class BuyerListController extends Controller
             // Get remaining records
             $records = $this->getBuyersListData($validated['application_id']);
 
+            Log::info('deleteBuyer removed row', [
+                'application_id' => $validated['application_id'],
+                'buyer_id' => $validated['buyer_id'],
+                'remaining' => count($records),
+            ]);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Buyer deleted successfully',
@@ -524,7 +673,13 @@ class BuyerListController extends Controller
                 'count' => count($records)
             ]);
         } catch (\Exception $e) {
-            Log::error('Error deleting buyer: ' . $e->getMessage());
+            Log::error('deleteBuyer failed', [
+                'application_id' => $request->input('application_id'),
+                'buyer_id' => $request->input('buyer_id'),
+                'error' => $e->getMessage(),
+                'file' => $e->getFile() . ':' . $e->getLine(),
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage()

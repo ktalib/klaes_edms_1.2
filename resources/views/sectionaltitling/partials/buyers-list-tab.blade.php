@@ -7,8 +7,14 @@
     @php
         $buyersReadOnly = $isReadOnly ?? $isApproved ?? false;
     @endphp
-    <input type="hidden" id="application_id" value="{{ $application->id }} ">
+    <input type="hidden" id="application_id" value="{{ $application->id }}">
+    {{-- The draft is keyed on the file number, so the autosave needs it on the page. --}}
+    <input type="hidden" id="buyer-draft-file-no" value="{{ $application->fileno ?? '' }}">
     <div class="bg-white p-6">
+        {{-- Resume banner for a capture that was left unsaved. Filled in by
+             buyer-list-diagnostics.js only when there is something to restore. --}}
+        <div id="buyer-draft-banner" class="mb-4" style="display: none;"></div>
+
         @if($buyersReadOnly)
             <div class="mb-4 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                 <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5"></i>
@@ -96,7 +102,14 @@
         </div>
         
         <div class="bg-gray-50 rounded-lg p-4 mb-6 {{ $buyersReadOnly ? 'opacity-50' : '' }}" id="buyers-form-container" style="display: none;">
-            <h3 class="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b">Add Buyers Manually</h3>
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-4 pb-2 border-b">
+                <h3 class="text-lg font-semibold text-gray-800">Add Buyers Manually</h3>
+                {{-- Autosave receipt. Hidden until the first draft is accepted, so
+                     it only ever appears when there is genuinely something kept. --}}
+                <span id="buyer-draft-status"
+                      class="items-center rounded-md bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700"
+                      style="display: none;"></span>
+            </div>
             @if($buyersReadOnly)
                 <div class="mb-4 p-3 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded">
                     <div class="flex items-center">
@@ -251,15 +264,30 @@
 
  
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+{{-- Session trace + draft autosave for this form. Included here rather than on the
+     pages so both screens that embed this partial are covered. See the file header
+     for what it records and why. --}}
+<script src="{{ asset('js/buyer-list-diagnostics.js') }}"></script>
 <script>
     // Define Alpine.js data function for buyers
     function buyersData() {
         return {
             // Initialize with a single empty buyer to show one form initially
             buyers: [{ showCustomTitle: false, customTitle: '' }],
+            init() {
+                // A second init on one page visit means Alpine rebuilt this
+                // component, which resets `buyers` to one empty row and takes
+                // every typed row with it. That is indistinguishable, from the
+                // officer's chair, from "the form just closed" — so it is
+                // recorded rather than guessed at.
+                if (window.__buyerListDiagnostics) {
+                    window.__buyerListDiagnostics.noteComponentInit(this.buyers.length);
+                }
+            },
             addBuyer() {
                 // Add exactly one buyer per click
                 this.buyers.push({ showCustomTitle: false, customTitle: '' });
+                this.trace('row_added', this.buyers.length);
             },
             removeBuyer(index) {
                 this.buyers.splice(index, 1);
@@ -267,10 +295,16 @@
                     // Always keep at least one form visible
                     this.buyers.push({ showCustomTitle: false, customTitle: '' });
                 }
+                this.trace('row_removed', this.buyers.length, { index: index });
             },
             resetBuyers() {
                 // Reset to a single empty form after successful save
                 this.buyers = [{ showCustomTitle: false, customTitle: '' }];
+                this.trace('rows_reset', this.buyers.length);
+            },
+            trace(event, rowCount, extra) {
+                if (!window.__buyerListDiagnostics) return;
+                window.__buyerListDiagnostics.log(event, Object.assign({ rows: rowCount }, extra || {}));
             },
             handleTitleChange(event, index) {
                 const selectedValue = event.target.value;
@@ -350,7 +384,12 @@
                 const formData = new FormData();
                 formData.append('application_id', applicationId);
                 formData.append('_token', '{{ csrf_token() }}');
-                
+                formData.append('client_source', 'csv');
+                if (window.__buyerListDiagnostics) {
+                    formData.append('client_trace_id', window.__buyerListDiagnostics.traceId());
+                    window.__buyerListDiagnostics.log('csv_import_started', { rows: buyers.length });
+                }
+
                 buyers.forEach((buyer, index) => {
                     // Clean unitMeasurement - remove 'sqm' and other non-numeric characters except decimal point
                     let cleanMeasurement = '';
@@ -383,6 +422,11 @@
                 .then(data => {
                     if (data.success) {
                         showCsvResult('success', `Successfully imported ${data.count} buyers`);
+                        if (window.__buyerListDiagnostics) {
+                            window.__buyerListDiagnostics.log('csv_import_done', {
+                                inserted: data.inserted, skipped: data.skipped, total: data.count
+                            });
+                        }
                         // Refresh buyers list
                         loadBuyersList();
                         // Clear file input

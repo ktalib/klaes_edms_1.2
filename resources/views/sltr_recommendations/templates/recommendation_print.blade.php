@@ -200,15 +200,15 @@
 
         .serial-box {
             position: absolute;
-            /* 4mm is about as close to the sheet edge as a laser printer will
+            /* 3mm is about as close to the sheet edge as a laser printer will
                render; the rest of the clearance from the letterhead title comes
-               from the tightened padding below. */
-            top: 4mm;
+               from the tightened padding and type sizes below. */
+            top: 3mm;
             right: 22mm; /* flush with the centred content column */
             border: 1px solid var(--primary-green);
-            padding: 3px 8px;
+            padding: 2px 8px;
             min-width: 110px;
-            font-size: 8pt;
+            font-size: 7.5pt;
             background: white;
             z-index: 20;
             text-align: center;
@@ -218,8 +218,8 @@
             text-transform: uppercase;
             border-bottom: 1px solid var(--primary-green);
             padding-bottom: 2px;
-            margin-bottom: 3px;
-            font-size: 8pt;
+            margin-bottom: 2px;
+            font-size: 7.5pt;
             color: var(--primary-green);
         }
         .serial-code-wrap {
