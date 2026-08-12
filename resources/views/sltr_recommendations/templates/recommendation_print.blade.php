@@ -44,9 +44,10 @@
 
         .main-container {
             flex: 1;
-            /* Keeps content clear of the letterhead drawn by
-               partials/ministry_letterhead: top rule at 38mm, vertical rule at 30mm. */
-            padding: 42mm 10mm 10px 34mm;
+            /* Top inset clears the letterhead rule at 30mm. Side insets are equal
+               so the column sits centred on the sheet; 22mm each side preserves
+               the previous 166mm column width exactly, so nothing re-wraps. */
+            padding: 42mm 22mm 10px 22mm;
             position: relative;
             z-index: 1;
             display: flex;
@@ -203,7 +204,7 @@
                render; the rest of the clearance from the letterhead title comes
                from the tightened padding below. */
             top: 4mm;
-            right: 12mm;
+            right: 22mm; /* flush with the centred content column */
             border: 1px solid var(--primary-green);
             padding: 3px 8px;
             min-width: 110px;

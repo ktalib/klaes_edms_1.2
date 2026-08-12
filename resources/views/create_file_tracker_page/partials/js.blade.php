@@ -2,7 +2,7 @@
     // CSRF Token for Laravel
     const csrfToken = '{{ csrf_token() }}';
 
-    // ── Tracking-ID display helper ─────────────────────────────────────────────
+    //   ── Tracking-ID display helper ─────────────────────────────────────────────
     // Shows a token-style encrypted string in the visible field (e.g. Q7yh%9775FGgtgW0l)
     // while the real value is stored in the hidden #tracking-id-real input.
     function _encryptTrackingId(str) {
@@ -8129,10 +8129,15 @@
     }
 
     // Print tracker details - routes to KANGIS landscape version for ?url=kangis and ?url=new_kangis, otherwise uses general portrait format
-    function printFileTrackerDetails(tracker) {
+    function printFileTrackerDetails(tracker, options = {}) {
         const urlView = new URLSearchParams(window.location.search).get('url');
         if (urlView === 'kangis' || urlView === 'new_kangis') {
-            printFileTrackerDetailsKangis(tracker);
+            // New KANGIS prints one row per log entry on screen, so "Print Log Sheet"
+            // there prints only the entry whose action menu was used. The aggregated
+            // ?url=kangis view has a single row already, so it keeps the full sheet.
+            printFileTrackerDetailsKangis(tracker, {
+                onlyLogId: urlView === 'new_kangis' ? (options.onlyLogId || null) : null
+            });
             return;
         }
 
@@ -8593,8 +8598,16 @@
     }
 
     // KANGIS-specific landscape File Request Sheet (?url=kangis only)
-    function printFileTrackerDetailsKangis(tracker) {
+    function printFileTrackerDetailsKangis(tracker, options = {}) {
         const baseUrl = (document.querySelector('meta[name="app-base-url"]')?.content || '').replace(/\/$/, '');
+        // "Print Log Sheet" scopes the Movement History to the single log entry whose
+        // action menu was used; "Print Complete Log Sheet" leaves it null and prints
+        // the aggregated record.
+        const onlyLogId = options.onlyLogId || null;
+        const scopedEntry = onlyLogId
+            ? (Array.isArray(tracker.logEntries) ? tracker.logEntries : [])
+                .find(e => String(e.logId) === String(onlyLogId)) || null
+            : null;
         const priorityText = tracker.priority.charAt(0) + tracker.priority.slice(1).toLowerCase();
         const now = new Date();
         const currentDateTime = now.toLocaleString();
@@ -8678,7 +8691,7 @@
                 <html>
                 <head>
                     <meta charset="UTF-8">
-                    <title>File Tracking Sheet - ${tracker.trackingId}</title>
+                    <title>${scopedEntry ? 'Log Sheet - ' + escapeHtml(scopedEntry.logId || '') : 'File Tracking Sheet - ' + tracker.trackingId}</title>
                     <style>
                         * { margin: 0; padding: 0; box-sizing: border-box; }
                         @page { size: A4 landscape; margin: 0; }
@@ -8831,12 +8844,25 @@
                         </div>
                         ` : ''}
 
-                        <!-- Movement history — single aggregated row -->
+                        <!-- Movement history — single aggregated row, or the one scoped log entry -->
                         <div class="section-title">
-                            Movement History &mdash; <span style="font-weight:600;">(PRIORITY: <span class="priority-${escapeHtml(tracker.priority || '')}">${priorityText}</span>)</span>
+                            ${scopedEntry ? `Log Entry &mdash; <span style="font-weight:600;">${escapeHtml(scopedEntry.logId || '')}</span> ` : 'Movement History '}&mdash; <span style="font-weight:600;">(PRIORITY: <span class="priority-${escapeHtml(tracker.priority || '')}">${priorityText}</span>)</span>
                         </div>
                         <table>
                             <thead>
+                                ${scopedEntry ? `
+                                <tr>
+                                    <th>Log ID</th>
+                                    <th>Office</th>
+                                    <th>Receiving Officer</th>
+                                    <th>Log In</th>
+                                    <th>Log Out</th>
+                                    <th>Status</th>
+                                    <th>Purpose</th>
+                                    <th>Timeline</th>
+                                    <th>Notes</th>
+                                </tr>
+                                ` : `
                                 <tr>
                                     <th>S/N</th>
                                     <th>Origin</th>
@@ -8848,9 +8874,38 @@
                                     <th>Timeline</th>
                                     <th>Status</th>
                                 </tr>
+                                `}
                             </thead>
                             <tbody>
                                 ${(() => {
+                                    // Row-scoped print: mirror the on-screen File Log Table row
+                                    // for this one log entry instead of the aggregated summary.
+                                    if (scopedEntry) {
+                                        const e = scopedEntry;
+                                        const statusMeta = resolveStatusDisplay(e, (e.status || ''));
+                                        const statusLabel = statusMeta.label || 'Log-out';
+                                        const statusColor = ['completed', 'log-in', 'in archive'].includes(statusLabel.toLowerCase())
+                                            ? '#059669'
+                                            : '#16a34a';
+                                        const stamp = (d, t) => d
+                                            ? `${escapeHtml(d)}${t ? ' @ ' + escapeHtml(toAmPm(t)) : ''}`
+                                            : '—';
+                                        const officeCell = escapeHtml(
+                                            e.officeName || e.office || officeData[e.officeId]?.name || e.officeId || '-'
+                                        );
+                                        return `<tr>
+                                            <td>${escapeHtml(e.logId || '-')}</td>
+                                            <td><strong>${officeCell}</strong></td>
+                                            <td>${escapeHtml(e.receivingOfficerName || tracker.receivingOfficerName || tracker.receivingOfficer?.name || '-')}</td>
+                                            <td>${stamp(e.logInDate, e.logInTime)}${e.acceptedByName ? `<br><span style="font-size:0.72rem;color:#6b7280;">Clocked in by ${escapeHtml(e.acceptedByName)}</span>` : ''}</td>
+                                            <td>${stamp(e.logOutDate, e.logOutTime)}</td>
+                                            <td><span style="font-weight:700;color:${statusColor};">${escapeHtml(statusLabel)}</span></td>
+                                            <td>${kangisRequestPurposeValue}${kangisExpectedReturnValue !== '-' ? `<br><span style="font-size:0.72rem;color:#6b7280;">Due ${kangisExpectedReturnValue}</span>` : ''}</td>
+                                            <td>${kangisTimelineCellFrozen}</td>
+                                            <td>${e.notes ? escapeHtml(e.notes) : '—'}${e.delayReason ? `<br><span style="font-size:0.72rem;color:#b45309;">Delay: ${escapeHtml(e.delayReason)}</span>` : ''}</td>
+                                        </tr>`;
+                                    }
+
                                     const allE = tracker.logEntries || [];
                                     const approvalPurposes = ['recommendation', 'approval'];
                                     const physE = allE.filter(e => !approvalPurposes.includes((e.purpose || '').toLowerCase()));
@@ -9487,10 +9542,15 @@
                         // Print Complete Log Sheet — prints the full tracking record
                         // (home/registry row + every logged movement). Stays available
                         // even after the file is logged back in.
+                        // Print Log Sheet — prints only the row the action was taken on
+                        // (see onlyLogId in printFileTrackerDetails).
                         {
                             const trackerToPrint = (window.fileTrackers || []).find(t => t.trackingId === trackerId);
                             if (trackerToPrint) {
-                                printFileTrackerDetails(trackerToPrint);
+                                printFileTrackerDetails(
+                                    trackerToPrint,
+                                    action === 'print-log' ? { onlyLogId: logId } : {}
+                                );
                             } else {
                                 showNotification('Tracker data not found for printing.', 'error');
                             }

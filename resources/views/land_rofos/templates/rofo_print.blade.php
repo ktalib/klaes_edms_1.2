@@ -48,11 +48,14 @@
             --security-bg-opacity: 1;
         }
 
-        /* The security paper the letter prints on. --security-bg-opacity above is
-           the dial: 1 is the artwork as supplied, lower fades it back if it reads
-           too heavy against the text on the real printer. Add `display: none` here
-           to take it off again. */
+        /* The security paper the letter prints on — currently OFF: the letters go on
+           pre-printed security stock, so printing the artwork under them as well would
+           only muddy the text. Delete the `display: none` below to bring it back.
+           --security-bg-opacity above is the other dial: 1 is the artwork as supplied,
+           lower fades it back if it reads too heavy on the real printer. The rest of
+           the rule is left intact so turning it back on is a one-line change. */
         .security-bg {
+            display: none;
             position: absolute;
             top: 0;
             left: 0;

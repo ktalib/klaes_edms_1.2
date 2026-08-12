@@ -363,6 +363,14 @@
                     </div>
                 </div>
 
+                {{-- Outside the children card on purpose. It used to sit inside it, which
+                     meant every message explaining why there are no children — "Select the
+                     mother file number above", "a subdivision batch covers Plot Subdivision
+                     only" — was written into a box that the very same code path had just
+                     hidden along with the card. The batch simply did nothing and said
+                     nothing. It has to outlive the card to be able to explain it. --}}
+                <div id="batch-children-status" class="hidden text-xs font-semibold rounded-lg px-3 py-2"></div>
+
                 {{-- ── Batch: children of the mother file ────────────────────────────
                      Sits directly under the Batch Mode switch so the captured rows stay
                      at the top of the form. Only per-child values live here; everything
@@ -441,8 +449,6 @@
                             </span>
                         </div>
                     </div>
-
-                    <div id="batch-children-status" class="hidden mx-5 mt-4 text-xs font-semibold rounded-lg px-3 py-2"></div>
 
                     <div class="overflow-x-auto max-h-[32rem] overflow-y-auto">
                         {{-- min-width must be at least the sum of the column widths below
@@ -551,8 +557,11 @@
                 <!-- Shown until a file number is selected -->
                 <div id="awaiting-file-notice" class="{{ $formUnlocked ? 'hidden' : '' }} rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/60 px-6 py-12 text-center">
                     <i data-lucide="folder-search" class="h-8 w-8 text-slate-300 mx-auto"></i>
-                    <p class="mt-3 text-sm font-bold text-slate-700">Select a file number to begin</p>
-                    <p class="mt-1 text-xs text-slate-500">
+                    {{-- Both lines are rewritten by the gate script under Batch Mode, where
+                         the question is which files are in the batch rather than which file
+                         this letter is for. --}}
+                    <p id="awaiting-file-title" class="mt-3 text-sm font-bold text-slate-700">Select a file number to begin</p>
+                    <p id="awaiting-file-hint" class="mt-1 text-xs text-slate-500">
                         The rest of the form is filled from the selected file, so it stays hidden until one is chosen.
                     </p>
                 </div>
@@ -759,11 +768,20 @@
                              children, so the whole-register file picker is the wrong tool —
                              the mother is chosen from that short list instead. The readonly
                              input above stays in the DOM and is still what posts. --}}
-                        <div id="batch-mother-picker" class="hidden">
+                        <div id="batch-mother-picker" class="hidden flex flex-wrap gap-2 items-center">
                             <select id="batch-mother-select"
                                 class="w-full md:w-96 border border-amber-300 rounded-lg px-3 py-2.5 bg-white text-sm font-mono outline-none shadow-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition cursor-pointer">
                                 <option value="">Loading subdivided files…</option>
                             </select>
+                            {{-- Loading the children off the select's own change event alone left
+                                 no way to say "go" — and no way back when the load was refused
+                                 for a reason the user has since fixed. Apply is that trigger,
+                                 and it is the same gesture the Regular files kind already uses. --}}
+                            <button type="button" id="batch-mother-apply"
+                                class="px-4 py-2.5 text-xs font-bold bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition whitespace-nowrap inline-flex items-center gap-1.5">
+                                <i data-lucide="check" class="h-3.5 w-3.5"></i>
+                                Apply
+                            </button>
                         </div>
 
                         <p class="mt-2 text-[11px] text-slate-500">
@@ -1922,21 +1940,43 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // ── Form gate: nothing below the file number card until a file is chosen ──────
 // The fields describe one file and most are filled from its record, so an empty
-// form is only an invitation to key a letter against no file at all. Batch Mode
-// unlocks it on its own — there the table carries a row per file and the shared
-// fields above it apply to all of them.
+// form is only an invitation to key a letter against no file at all.
+//
+// Batch Mode is gated too, but not by the same field — a batch has no single file
+// number. What opens it there is the batch having files in it: the mother's
+// children for a subdivision, or the picked set for a regular batch, both of which
+// land as rows in the batch table. Recommendation Type, Application Type and Old
+// File Number stay reachable throughout, because in a subdivision they are what you
+// answer FIRST — pick Plot Subdivision, then the mother, and only then is there a
+// batch to fill in. They are outside #form-body while batch mode is on (the batch
+// module lifts them up under the batch card), so hiding the body never touches them.
 document.addEventListener('DOMContentLoaded', function () {
     var recForm     = document.getElementById('land-recommendation-form');
     var fileNoInput = document.getElementById('file_number');
     var body        = document.getElementById('form-body');
     var footer      = document.getElementById('form-action-footer');
     var notice      = document.getElementById('awaiting-file-notice');
+    var noticeTitle = document.getElementById('awaiting-file-title');
+    var noticeHint  = document.getElementById('awaiting-file-hint');
     var batchToggle = document.getElementById('batch-mode-toggle');
+    var batchRows   = document.getElementById('batch-children-rows');
 
     if (!recForm || !fileNoInput || !body) return;
 
+    // An edit is never gated — the record already has its file, and a batch edit
+    // turns Batch Mode on without a change event and seeds its rows a moment later,
+    // which would otherwise blink the whole form out and back in on load.
+    var ALWAYS_OPEN = @json((bool) ($isEdit || $batchEdit));
+
+    function batchOn() {
+        return !!(batchToggle && batchToggle.checked);
+    }
+
     function unlocked() {
-        if (batchToggle && batchToggle.checked) return true;
+        if (ALWAYS_OPEN) return true;
+        // .batch-row, not any <tr>: the loader and the "no children found" empty
+        // state are rows too, and neither means the batch has files in it.
+        if (batchOn()) return !!(batchRows && batchRows.querySelector('.batch-row'));
         return fileNoInput.value.trim() !== '';
     }
 
@@ -1945,6 +1985,18 @@ document.addEventListener('DOMContentLoaded', function () {
         body.classList.toggle('hidden', !on);
         if (footer) footer.classList.toggle('hidden', !on);
         if (notice) notice.classList.toggle('hidden', on);
+
+        // Which file the user is being asked for is not the same question in a batch.
+        if (!on && noticeTitle && noticeHint) {
+            if (batchOn()) {
+                noticeTitle.textContent = 'Select the files for this batch to begin';
+                noticeHint.textContent  = 'Pick the mother file above (or the files for a regular batch) — the rest of the form is filled once the batch has files in it.';
+            } else {
+                noticeTitle.textContent = 'Select a file number to begin';
+                noticeHint.textContent  = 'The rest of the form is filled from the selected file, so it stays hidden until one is chosen.';
+            }
+        }
+
         if (on && window.lucide) window.lucide.createIcons();
     }
 
@@ -1954,9 +2006,12 @@ document.addEventListener('DOMContentLoaded', function () {
     fileNoInput.addEventListener('input', sync);
     if (window.jQuery) window.jQuery(fileNoInput).on('change input', sync);
 
-    // Batch Mode both unlocks the form and disables the file number field, so its
-    // toggle has to re-run the gate either way.
+    // Batch Mode changes both the answer and the question, so its toggle re-runs the
+    // gate; the rows arriving (or being cleared) is what opens and closes it after.
     if (batchToggle) batchToggle.addEventListener('change', sync);
+    if (batchRows && window.MutationObserver) {
+        new MutationObserver(sync).observe(batchRows, { childList: true });
+    }
 
     sync();
 });
@@ -2063,6 +2118,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var applyAllBtn = document.getElementById('batch-apply-all');
     var motherPick  = document.getElementById('batch-mother-picker');
     var motherSel   = document.getElementById('batch-mother-select');
+    var motherApply = document.getElementById('batch-mother-apply');
     var manualPick  = document.getElementById('atx-old-fileno-manual');
     var motherHelp  = document.getElementById('batch-mother-help');
     var manualHelp  = document.getElementById('atx-old-fileno-help');
@@ -3542,7 +3598,17 @@ document.addEventListener('DOMContentLoaded', function () {
             // A restore writes the mother in directly; re-fetching the children here
             // would wipe the very values being restored. In a regular batch this
             // field is just the old file number — it says nothing about the rows.
-            if (!toggle.checked || suppressChildLoad || isRegular() || currentAppType() !== BATCH_TYPE) return;
+            if (!toggle.checked || suppressChildLoad || isRegular()) return;
+
+            // Picking the mother is the second half of the subdivision flow; picking
+            // Plot Subdivision is the first. Returning quietly here is what made a
+            // chosen mother look like a broken picker — the children never loaded and
+            // nothing on the screen said why.
+            if (currentAppType() !== BATCH_TYPE) {
+                setStatus('Pick ' + BATCH_TYPE + ' as the Application Type above before choosing the mother file — a subdivision batch covers ' + BATCH_TYPE + ' only. For any other type, switch to Regular files.', 'warn');
+                return;
+            }
+
             var v = this.value.trim();
             if (motherField) motherField.value = v;
             if (v) { loadChildren(v); }
@@ -3557,6 +3623,55 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!oldFileNo) return;
             oldFileNo.value = this.value;
             oldFileNo.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+    }
+
+    // Apply: the explicit "load this mother's children" gesture, so the batch is
+    // never one un-repeatable change event away from working. It also settles the
+    // Application Type rather than refusing to go on — storeBatch() writes
+    // application_type = Plot Subdivision onto every child of a subdivision batch
+    // whatever the radio said, so anything else on screen was never going to be
+    // what got saved.
+    if (motherApply) {
+        motherApply.addEventListener('click', function () {
+            var v = motherSel ? motherSel.value.trim() : '';
+            if (!v) {
+                setStatus('Pick the mother file number first.', 'error');
+                return;
+            }
+            // Same warning Reload and the regular batch's Apply give, for the same
+            // reason: this repaints the table and discards whatever was keyed in.
+            if (rowsBody.querySelectorAll('.batch-row').length
+                && !confirm('Applying reloads the children from this mother file and discards everything keyed into the table. Continue?')) {
+                return;
+            }
+
+            if (oldFileNo)   oldFileNo.value = v;
+            if (motherField) motherField.value = v;
+
+            var forced = false;
+            if (currentAppType() !== BATCH_TYPE) {
+                if (appToggle && !appToggle.checked) {
+                    appToggle.checked = true;
+                    appToggle.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                var subRadio = document.querySelector('.app-type-radio[value="' + BATCH_TYPE + '"]');
+                if (subRadio) {
+                    subRadio.checked = true;
+                    // Everything that keys off the application type hangs on this event —
+                    // including syncForAppType(), which loads the children itself now that
+                    // old_file_number is already set above.
+                    subRadio.dispatchEvent(new Event('change', { bubbles: true }));
+                    forced = true;
+                }
+            }
+
+            if (!forced) loadChildren(v);
+
+            // After the load: loadChildren() clears the status box on its way in.
+            if (forced) {
+                setStatus('Application Type set to ' + BATCH_TYPE + ' — a subdivision batch saves every child as ' + BATCH_TYPE + '. Switch to Regular files for any other type.', 'warn');
+            }
         });
     }
 

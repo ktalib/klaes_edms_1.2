@@ -70,9 +70,14 @@
     }
 
     /* With no vertical rule there is no cross to form, so the top rule pulls
-       back to match the right-hand inset instead of overhanging into the gutter. */
+       back to match the right-hand inset instead of overhanging into the gutter,
+       and the crest starts at the host page's centred column edge rather than
+       at the 34mm inset that used to clear the spine. */
     .lh--no-spine .lh-rule-top {
         left: 12mm;
+    }
+    .lh--no-spine .lh-head {
+        left: 22mm;
     }
 
     /* Red spine: ministry name rotated to read bottom-to-top. */

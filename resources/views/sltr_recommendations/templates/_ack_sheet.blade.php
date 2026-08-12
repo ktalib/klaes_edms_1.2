@@ -16,11 +16,11 @@
     font-family: Arial, Helvetica, sans-serif;
     color: #000;
   }
-
+  
   /* Diagonal copy watermark. Sits behind the content and must survive the print
      dialog's "background graphics" default, hence print-color-adjust. */
   .ack-page .ack-watermark {
-    position: absolute;
+    position: absolute; 
     /* Anchored to a fixed offset from the top of the sheet and stretched full
        width, rather than centred on the box with top/left:50%. The box is taller
        than the printable page on the OSS layout, so a 50% anchor pushed the text
