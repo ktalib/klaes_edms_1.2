@@ -326,8 +326,11 @@
                             @if($file->land_use_type)
                                 <span class="badge text-xs font-medium bg-purple-100 text-purple-700">{{ $file->land_use_type }}</span>
                             @endif
-                            @if($file->district)
-                                <span class="badge text-xs font-medium bg-amber-100 text-amber-700">{{ $file->district }}</span>
+                            @php
+                                $districtName = \App\Support\GeoName::district($file->district);
+                            @endphp
+                            @if($districtName)
+                                <span class="badge text-xs font-medium bg-amber-100 text-amber-700">{{ $districtName }}</span>
                             @endif
                         </div>
 

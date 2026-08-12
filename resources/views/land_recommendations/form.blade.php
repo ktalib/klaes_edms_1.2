@@ -1633,7 +1633,7 @@
                     </script>
 
                     <!-- Section 3: Recommendation & Reasons -->
-                    <div class="bg-slate-50 border border-slate-100 rounded-xl p-6 space-y-4 col-span-2 hidden">
+                    <div class="bg-slate-50 border border-slate-100 rounded-xl p-6 space-y-4 col-span-2">
                         <div class="flex items-center gap-2 mb-2">
                             <i data-lucide="check-circle" class="h-4 w-4 text-blue-600"></i>
                             <h3 class="text-sm font-bold text-slate-900 uppercase tracking-tight">Recommendation & Reasons</h3>

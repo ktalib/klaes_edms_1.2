@@ -615,6 +615,10 @@ class FilearchiveController extends Controller
         $responseData = $file->toArray();
         $responseData['pagetypings'] = $transformedPageTypings;
 
+        // Rows written before geo:fix-numeric-ids still hold a bare reference id here.
+        $responseData['district'] = \App\Support\GeoName::district($responseData['district'] ?? null);
+        $responseData['lga'] = \App\Support\GeoName::lga($responseData['lga'] ?? null);
+
         return response()->json([
             'success' => true,
             'file' => $responseData

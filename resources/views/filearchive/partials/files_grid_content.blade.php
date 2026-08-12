@@ -152,8 +152,11 @@
                     @if($file->land_use_type)
                         <span class="badge badge-secondary text-xs">{{ $file->land_use_type }}</span>
                     @endif
-                    @if($file->district)
-                        <span class="badge badge-secondary text-xs">{{ $file->district }}</span>
+                    @php
+                        $districtName = \App\Support\GeoName::district($file->district);
+                    @endphp
+                    @if($districtName)
+                        <span class="badge badge-secondary text-xs">{{ $districtName }}</span>
                     @endif
                 </div>
             </div>
