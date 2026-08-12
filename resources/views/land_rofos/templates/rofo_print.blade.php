@@ -48,13 +48,11 @@
             --security-bg-opacity: 1;
         }
 
-        /* OFF. The letter prints on plain stock again — the artwork was for preview.
-           To bring it back, delete the `display: none` line below; everything else
-           is left wired up, and --security-bg-opacity above dials it down if the
-           full-strength paper reads too heavy against the text. */
+        /* The security paper the letter prints on. --security-bg-opacity above is
+           the dial: 1 is the artwork as supplied, lower fades it back if it reads
+           too heavy against the text on the real printer. Add `display: none` here
+           to take it off again. */
         .security-bg {
-            display: none;
-
             position: absolute;
             top: 0;
             left: 0;
@@ -158,6 +156,7 @@
             gap: 15px;
             margin: 8px 0;
         }
+
 
         .row {
             display: flex;
@@ -304,10 +303,40 @@
             box-sizing: border-box;
         }
 
+        /* The conditions take the page's slack, rather than the letter sitting tight
+           at the top with one lump of empty paper above the Commissioner's line.
+           .signature-block's margin-top:auto used to collect all of it; this block
+           grows into the frame first and spreads the surplus evenly between the
+           conditions, which is where a letter of grant can carry it without looking
+           gappy anywhere in particular.
+
+           On a full letter there is no surplus to spread and space-between has
+           nothing to do, so the page is exactly what it was. */
+        .conditions-list-fixed {
+            flex: 1 1 auto;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
         .conditions-list-fixed p {
             margin: 4px 0;
             text-align: justify;
             line-height: 1.4;
+        }
+
+        /* Flex items do not collapse margins the way blocks do, so without this the
+           4px bottom and 4px top of two adjacent conditions would start stacking to
+           8px where block flow gave 4px — about 25px of height conjured out of
+           nothing, on a page that is already tight. Bottom margins alone now set the
+           spacing, exactly as the collapsed values did.
+
+           Written as two child selectors rather than `> *` so it matches the
+           specificity of the `.conditions-list-fixed p` rule above and can override
+           it from here; it must also stay after it. */
+        .conditions-list-fixed > p,
+        .conditions-list-fixed > div {
+            margin-top: 0;
         }
 
         .condition-item {
@@ -716,9 +745,10 @@
                         $printLocation = mb_strtoupper($printLocation, 'UTF-8');
                     }
 
-                    // Applications derived from an existing file (Plot Subdivision / Plot
-                    // Merger / Change of Purpose / Regrant) cite the parent file number in
-                    // place of the plan number on the "as per plan No." line.
+                    // Every application type derives from an existing file, and those cite
+                    // the parent file number in place of the plan number on the
+                    // "as per plan No." line. A plain Direct / Conversion record has no old
+                    // file number, so it keeps the layout plan number.
                     $oldFileNumber = trim((string) ($recommendation->old_file_number ?? ''));
                     $layoutPlanNo  = trim((string) ($recommendation->layout_plan_no ?? ''));
                     $planNoRef     = $oldFileNumber !== '' ? $oldFileNumber : $layoutPlanNo;

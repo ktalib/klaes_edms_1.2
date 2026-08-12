@@ -2238,7 +2238,29 @@ class MlsFileNoController extends Controller
                     }
 
                     $serial = 0; // Use 0 to indicate no serial consumption
-                    $fullFileNumber = $existingFileNo . ' AND EXTENSION';
+
+                    // The " AND EXTENSION" suffix is opt-out: when the commissioning officer
+                    // ticks "keep the file number as-is", the extension is recorded against the
+                    // original number and only the plot number carries the "& EXTENSION" marker.
+                    $suppressSuffix = filter_var($request->input('suppress_extension_suffix', false), FILTER_VALIDATE_BOOLEAN);
+                    $fullFileNumber = $suppressSuffix
+                        ? $existingFileNo
+                        : $existingFileNo . ' AND EXTENSION';
+
+                    // full_file_number is unique, so an unsuffixed extension can only be raised
+                    // for a file that has not itself been commissioned here. Fail with a clear
+                    // message instead of letting the unique index throw a 500.
+                    if ($suppressSuffix) {
+                        $alreadyCommissioned = \App\Models\MlsFileNo::where('full_file_number', $fullFileNumber)->exists();
+                        if ($alreadyCommissioned) {
+                            return response()->json([
+                                'success' => false,
+                                'duplicate' => true,
+                                'conflicting_file_number' => $fullFileNumber,
+                                'message' => "{$fullFileNumber} is already commissioned, so the extension cannot reuse it. Untick \"Keep the file number as-is\" to commission it as \"{$fullFileNumber} AND EXTENSION\".",
+                            ], 409);
+                        }
+                    }
 
                 } elseif ($fileOption === 'sit') {
                     // SIT files: auto-serial via MlsSerialControl, no land use, customer type is always Government

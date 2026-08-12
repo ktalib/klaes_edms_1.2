@@ -980,10 +980,13 @@ class FileNumberController extends Controller
             ]);
 
             if ($fileOption === 'extension') {
-                // For extensions, use the existing file number with "AND EXTENSION"
+                // For extensions, use the existing file number with "AND EXTENSION" unless the
+                // officer opted out — see suppress_extension_suffix in the commission modal.
                 // Handle both dropdown (existing_file_no) and manual input (existing_file_no_manual)
                 $existingFileNo = $request->existing_file_no ?: $request->existing_file_no_manual;
-                $mlsfNo = $existingFileNo . ' AND EXTENSION';
+                $mlsfNo = filter_var($request->input('suppress_extension_suffix', false), FILTER_VALIDATE_BOOLEAN)
+                    ? $existingFileNo
+                    : $existingFileNo . ' AND EXTENSION';
             } elseif ($fileOption === 'temporary') {
                 // For temporary files, use the existing file number with "(T)"
                 // Handle both dropdown (existing_file_no) and manual input (existing_file_no_manual)
@@ -1005,8 +1008,10 @@ class FileNumberController extends Controller
 
             $trackingId = $this->getUniqueTrackingId($request->input('tracking_id'));
 
-            // Only validate for duplicates (skip validation for extension and temporary files)
-            if (!str_ends_with($mlsfNo, ' AND EXTENSION') && !str_ends_with($mlsfNo, '(T)')) {
+            // Only validate for duplicates (skip validation for extension and temporary files).
+            // An extension whose suffix was suppressed reuses the original number verbatim, so it
+            // is matched on $fileOption rather than on the suffix.
+            if ($fileOption !== 'extension' && !str_ends_with($mlsfNo, ' AND EXTENSION') && !str_ends_with($mlsfNo, '(T)')) {
                 $exists = DB::connection('sqlsrv')
                     ->table('fileNumber')
                     ->where('mlsfNo', $mlsfNo)
@@ -1124,8 +1129,11 @@ class FileNumberController extends Controller
             // Generate the complete file number based on file option
             if ($fileOption === 'extension') {
                 // Handle both dropdown (existing_file_no) and manual input (existing_file_no_manual)
+                // The suffix is opt-out — see suppress_extension_suffix in the commission modal.
                 $existingFileNo = $request->existing_file_no ?: $request->existing_file_no_manual;
-                $mlsfNo = $existingFileNo . ' AND EXTENSION';
+                $mlsfNo = filter_var($request->input('suppress_extension_suffix', false), FILTER_VALIDATE_BOOLEAN)
+                    ? $existingFileNo
+                    : $existingFileNo . ' AND EXTENSION';
             } elseif ($fileOption === 'temporary') {
                 // For temporary files, use the existing file number with "(T)"
                 // Handle both dropdown (existing_file_no) and manual input (existing_file_no_manual)
@@ -1146,8 +1154,10 @@ class FileNumberController extends Controller
 
             $trackingId = $this->getUniqueTrackingId($request->input('tracking_id'));
 
-            // Only validate for duplicates (skip validation for extension and temporary files)
-            if (!str_ends_with($mlsfNo, ' AND EXTENSION') && !str_ends_with($mlsfNo, '(T)')) {
+            // Only validate for duplicates (skip validation for extension and temporary files).
+            // An extension whose suffix was suppressed reuses the original number verbatim, so it
+            // is matched on $fileOption rather than on the suffix.
+            if ($fileOption !== 'extension' && !str_ends_with($mlsfNo, ' AND EXTENSION') && !str_ends_with($mlsfNo, '(T)')) {
                 $exists = DB::connection('sqlsrv')
                     ->table('fileNumber')
                     ->where('mlsfNo', $mlsfNo)

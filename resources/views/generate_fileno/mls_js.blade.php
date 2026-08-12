@@ -1563,6 +1563,28 @@
         updatePreview();
     }
 
+    // ----- Extension helpers -----
+    // An extension is marked on the PLOT number ("463 & EXTENSION"), which is always
+    // applied. The file number suffix (" AND EXTENSION") is optional: ticking the
+    // "keep file number as-is" checkbox in the extension panel drops it.
+    const EXTENSION_PLOT_SUFFIX = ' & EXTENSION';
+
+    function stripExtensionPlotSuffix(value) {
+        return (value || '').toString().replace(/\s*&\s*EXTENSION\s*$/i, '').trim();
+    }
+
+    function withExtensionPlotSuffix(value) {
+        const base = stripExtensionPlotSuffix(value);
+        return base ? base + EXTENSION_PLOT_SUFFIX : '';
+    }
+
+    // Builds the extension file number preview, honouring the "keep as-is" checkbox.
+    function buildExtensionPreview(baseFileNo, suppressSuffix) {
+        const base = (baseFileNo || '').toString().trim().replace(/-$/, '');
+        if (!base) return '';
+        return suppressSuffix ? base : base + ' AND EXTENSION';
+    }
+
     // Separate function for just updating preview without form manipulation
     function updatePreviewOnly() {
         const serialNo = document.getElementById('serialNo')?.value;
@@ -1572,9 +1594,11 @@
 
         // Get existing file number from Alpine.js component instead of DOM
         let existingFileNo = '';
+        let suppressExtensionSuffix = false;
         const modalContainer = document.querySelector('[x-data="fileNumberGenerator()"]');
         if (modalContainer && modalContainer._x_dataStack && modalContainer._x_dataStack[0]) {
             existingFileNo = modalContainer._x_dataStack[0].existingFileNo;
+            suppressExtensionSuffix = !!modalContainer._x_dataStack[0].suppressExtensionSuffix;
         }
 
         const middlePrefix = document.getElementById('middlePrefix')?.value || '';
@@ -1584,8 +1608,7 @@
         let previewText = '-';
 
         if (fileOption === 'extension' && existingFileNo) {
-            const baseExt = existingFileNo.trim().replace(/-$/, '');
-            previewText = baseExt + ' AND EXTENSION';
+            previewText = buildExtensionPreview(existingFileNo, suppressExtensionSuffix);
         } else if (fileOption === 'temporary' && existingFileNo) {
             previewText = existingFileNo + '(T)';
         } else if (fileOption === 'miscellaneous' && middlePrefix && serialNo && year) {
@@ -1630,9 +1653,11 @@
 
         // Get existing file number from Alpine.js component instead of DOM
         let existingFileNo = '';
+        let suppressExtensionSuffix = false;
         const modalContainer = document.querySelector('[x-data="fileNumberGenerator()"]');
         if (modalContainer && modalContainer._x_dataStack && modalContainer._x_dataStack[0]) {
             existingFileNo = modalContainer._x_dataStack[0].existingFileNo;
+            suppressExtensionSuffix = !!modalContainer._x_dataStack[0].suppressExtensionSuffix;
         }
 
         const middlePrefix = document.getElementById('middlePrefix')?.value || '';
@@ -1704,8 +1729,7 @@
         }
 
         if (fileOption === 'extension') {
-            const baseExt = (existingFileNo || baseFileNumber).trim().replace(/-$/, '');
-            previewText = baseExt + ' AND EXTENSION';
+            previewText = buildExtensionPreview(existingFileNo || baseFileNumber, suppressExtensionSuffix) || '-';
         } else if (fileOption === 'temporary') {
             previewText = (existingFileNo || baseFileNumber) + '(T)';
         } else if (fileOption === 'miscellaneous' && middlePrefix && serialNo && year) {
@@ -2229,6 +2253,16 @@
         }
         if (prefix && (fileOption === 'normal' || fileOption === 'regrant' || fileOption === 'resettlement')) {
             formData.set('land_use', prefix);
+        }
+
+        // Extension files: the plot number always carries the "& EXTENSION" marker, while
+        // the " AND EXTENSION" suffix on the file number itself is opt-out. Both are set
+        // here so a value inherited without passing through the input still posts correctly.
+        if (fileOption === 'extension') {
+            formData.set('plot_no', withExtensionPlotSuffix(formData.get('plot_no')));
+            formData.set('suppress_extension_suffix', (alpineData && alpineData.suppressExtensionSuffix) ? '1' : '0');
+        } else {
+            formData.delete('suppress_extension_suffix');
         }
 
         // SIT files: force land_use to 'SIT' and customer_type to 'Government'
@@ -4338,6 +4372,10 @@
             // Extension has a single form: a new file number suffixed " AND EXTENSION".
             // Retained so the existing `extension_type` form field still posts a value.
             extensionType: 'file',
+            // Ticked = commission the selected file number exactly as-is, with no
+            // " AND EXTENSION" suffix. The plot number still carries " & EXTENSION"
+            // either way — that is what identifies the record as an extension.
+            suppressExtensionSuffix: false,
             _lastFileOption: 'normal', // tracks previous fileOption to detect transitions
             existingFileNo: '',
             middlePrefix: 'KN',
@@ -4584,6 +4622,26 @@
                 if (this.batchMode) {
                     this.updateLocationEntry('location', loc);
                 }
+            },
+
+            // An extension file's plot number always reads "<plot> & EXTENSION" — that
+            // marker is what identifies the parcel as extended, and it stays even when
+            // the file number itself is kept as-is (suppressExtensionSuffix).
+            // Idempotent: safe to call on every blur / inherit / file-option change.
+            syncExtensionPlotSuffix() {
+                const apply = (value) => this.fileOption === 'extension'
+                    ? withExtensionPlotSuffix(value)
+                    : stripExtensionPlotSuffix(value);
+
+                if (this.batchMode && this.locationEntries[this.currentEntryIndex]) {
+                    const entry = this.locationEntries[this.currentEntryIndex];
+                    const next = apply(entry.plotNo);
+                    if (entry.plotNo !== next) this.updateLocationEntry('plotNo', next);
+                    return;
+                }
+
+                const next = apply(this.plotNo);
+                if (this.plotNo !== next) this.plotNo = next;
             },
 
             onDistrictChange(val) {
@@ -5913,6 +5971,7 @@
                 } else if (this.fileOption === 'extension' || this.fileOption === 'temporary') {
                     this.serialNo = '';
                     this.existingFileNo = ''; // Clear existing file selection
+                    this.suppressExtensionSuffix = false;
                     this.isInherited = false;
                     // Reset fields that might have been inherited
                     this.fileName = '';
@@ -5959,6 +6018,10 @@
 
                 this._lastFileOption = this.fileOption;
 
+                // Leaving the extension type must drop the "& EXTENSION" plot marker, and
+                // entering it must (re)apply it to whatever plot is already on the form.
+                this.syncExtensionPlotSuffix();
+
                 // An extension always extends an existing file, so open the selector straight
                 // away — the removed File-vs-Plot modal used to do this after the choice.
                 if (switchingToExtension && typeof window.openExtensionFileSelector === 'function') {
@@ -6001,8 +6064,7 @@
                 }
 
                 if (this.fileOption === 'extension') {
-                    const baseExt = (this.existingFileNo || baseFileNumber).trim().replace(/-$/, '');
-                    previewText = baseExt + ' AND EXTENSION';
+                    previewText = buildExtensionPreview(this.existingFileNo || baseFileNumber, this.suppressExtensionSuffix) || '-';
                 } else if (this.fileOption === 'temporary') {
                     // For temporary files, use baseFileNumber (next available) + (T) as per user request
                     previewText = baseFileNumber + '(T)';
@@ -6714,6 +6776,11 @@
                         alpineData.syncLocationSelects();
                     }
                     if (match.plot_no) alpineData.plotNo = match.plot_no;
+                    // The inherited plot must carry the extension marker (see
+                    // syncExtensionPlotSuffix); it is a no-op for every other file type.
+                    if (typeof alpineData.syncExtensionPlotSuffix === 'function') {
+                        alpineData.syncExtensionPlotSuffix();
+                    }
                     if (match.tp_no) alpineData.tpNo = match.tp_no;
                     if (match.phone_no) alpineData.phone_no = match.phone_no;
                     if (match.address) alpineData.address = match.address;

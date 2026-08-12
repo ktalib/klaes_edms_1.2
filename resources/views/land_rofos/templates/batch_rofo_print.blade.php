@@ -32,11 +32,9 @@
         /* Same security paper as the single RofO print — see the note there. Kept
            identical on purpose: a batch is the same letter, many times. */
         .page-container { --security-bg-opacity: 1; }
-        /* OFF — see the note in rofo_print.blade.php. Delete `display:none` to bring
-           the security paper back; the rest stays wired up. */
+        /* The security paper — see the note in rofo_print.blade.php. Add
+           `display:none` here to take it off again. */
         .security-bg {
-            display: none;
-
             position: absolute; top:0; left:0; width:100%; height:100%;
             opacity: var(--security-bg-opacity); pointer-events: none;
             background-image: url("{{ asset('assets/letterhead/rofo-security-paper.jpg') }}");
@@ -221,9 +219,10 @@
                         $printLocation = mb_strtoupper($printLocation, 'UTF-8');
                     }
 
-                    // Applications derived from an existing file (Plot Subdivision / Plot
-                    // Merger / Change of Purpose / Regrant) cite the parent file number in
-                    // place of the plan number on the "as per plan No." line.
+                    // Every application type derives from an existing file, and those cite
+                    // the parent file number in place of the plan number on the
+                    // "as per plan No." line. A plain Direct / Conversion record has no old
+                    // file number, so it keeps the layout plan number.
                     $oldFileNumber = trim((string) ($recommendation->old_file_number ?? ''));
                     $layoutPlanNo  = trim((string) ($recommendation->layout_plan_no ?? ''));
                     $planNoRef     = $oldFileNumber !== '' ? $oldFileNumber : $layoutPlanNo;

@@ -1033,9 +1033,23 @@
                                             <!-- Hidden input to store the actual value for form submission -->
                                             <input type="hidden" id="extensionFileNo" name="existing_file_no" x-model="existingFileNo">
 
+                                            <!-- Opt out of the " AND EXTENSION" suffix: the file keeps its original
+                                                 number and only the Plot Number carries the "& EXTENSION" marker. -->
+                                            <label class="mt-3 flex items-start gap-2 cursor-pointer">
+                                                <input type="checkbox" id="suppressExtensionSuffix"
+                                                       x-model="suppressExtensionSuffix"
+                                                       @change="updatePreview()"
+                                                       class="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                                <span class="text-xs text-gray-700">
+                                                    Keep the file number as-is (do not append <span class="font-semibold">AND EXTENSION</span>)
+                                                </span>
+                                            </label>
+                                            <input type="hidden" name="suppress_extension_suffix" :value="suppressExtensionSuffix ? 1 : 0">
+
                                             <p class="mt-2 text-xs text-gray-500">
                                                 <i data-lucide="info" class="w-3 h-3 inline mr-1"></i>
-                                                Search and select the file you wish to extend.
+                                                Search and select the file you wish to extend. The Plot Number always
+                                                carries <span class="font-semibold">&amp; EXTENSION</span>.
                                             </p>
                                         </div>
 
@@ -1619,8 +1633,9 @@
                                                 <input type="text" id="plotNo" name="plot_no"
                                                        :value="batchMode ? locationEntries[currentEntryIndex]?.plotNo : plotNo"
                                                        @input="batchMode ? updateLocationEntry('plotNo', $event.target.value) : plotNo = $event.target.value; buildLocation()"
+                                                       @blur="syncExtensionPlotSuffix()"
                                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                       placeholder="Enter plot number">
+                                                       :placeholder="fileOption === 'extension' ? 'Enter plot number (& EXTENSION is added)' : 'Enter plot number'">
                                             </div>
 
                                             <!-- District dropdown + "Other" specify -->

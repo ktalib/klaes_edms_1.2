@@ -1767,10 +1767,13 @@
 <script src="{{ asset('js/land_recommendations.js') }}?v={{ time() + 1 }}"></script>
 <script>
 // ── Old File Number capture for derived application types ──────────────────
-// Plot Subdivision / Plot Merger / Change of Purpose / Regrant always come off an
-// existing file, so selecting one of those types prompts for the parent file number.
+// Every application type comes off an existing file — Private Layout, Plot
+// Subdivision, Plot Merger, Plot Extension, Temporary File No, Ministry of Works,
+// Change of Purpose and Regrant alike — so picking any of them prompts for the
+// parent file number. The rule is "an application type is selected" rather than a
+// list of names, so a type added to the radio grid above cannot quietly slip
+// through without one.
 document.addEventListener('DOMContentLoaded', function () {
-    var TYPES_NEEDING_OLD_FILENO = ['Plot Subdivision', 'Plot Merger', 'Change of Purpose', 'Regrant'];
 
     var row          = document.getElementById('atx-old-fileno-row');
     var field        = document.getElementById('old_file_number');
@@ -1793,8 +1796,10 @@ document.addEventListener('DOMContentLoaded', function () {
         return checked ? checked.value : '';
     }
 
+    // currentAppType() already returns '' when the Application Type toggle is off,
+    // so this is false for a plain Direct / Conversion recommendation.
     function requiresOldFileNo(appType) {
-        return TYPES_NEEDING_OLD_FILENO.indexOf(appType) !== -1;
+        return !!appType;
     }
 
     function openModal(appType) {

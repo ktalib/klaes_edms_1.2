@@ -725,6 +725,38 @@
                 // so its Direct/Conversion label is not evidence of anything and is hidden.
                 const ALLOCATION_TYPE_KNOWN_FROM = Date.parse('2026-08-09T00:00:00');
 
+                /** The CON mother file behind a row, '' when there is none. */
+                function resolveConversionMother(file) {
+                    return [file.mls_fileno, file.parent_mls_fileno, file.np_fileno]
+                        .map(v => String(v || '').trim())
+                        .find(v => /^CON-/i.test(v)) || '';
+                }
+
+                /**
+                 * 'Conversion' | 'Direct' | '' — the one rule used by both the table and
+                 * the dashboard so they can never disagree.
+                 */
+                function resolveAllocationLabel(file) {
+                    if (resolveConversionMother(file) !== '') {
+                        return 'Conversion';
+                    }
+
+                    const commissionedAt = Date.parse(file.date_commissioned || file.created_at || '');
+                    if (isNaN(commissionedAt) || commissionedAt < ALLOCATION_TYPE_KNOWN_FROM) {
+                        return '';
+                    }
+
+                    const applicationType = String(file.application_type || '').trim().toLowerCase();
+                    if (applicationType === 'conversion') {
+                        return 'Conversion';
+                    }
+                    if (applicationType === 'direct allocation' && file.file_no_type === 'PRIMARY') {
+                        return 'Direct';
+                    }
+
+                    return '';
+                }
+
                 // Global variables
                 let allFileNumbers = [];
                 let filteredFileNumbers = [];
@@ -756,6 +788,42 @@
                     }
                 }
 
+                /**
+                 * Break the Primary Applications count down by allocation type.
+                 *
+                 * Counted from the loaded file list with the same rule the table uses, so
+                 * the card and the rows always agree. Files commissioned before the
+                 * DAP / CON-P split are counted as "Unspecified" rather than guessed.
+                 */
+                function updatePrimaryAllocationSplit() {
+                    const target = document.getElementById('primaryAllocationSplit');
+                    if (!target) return;
+
+                    const primaries = (allFileNumbers || []).filter(f => f.file_no_type === 'PRIMARY');
+                    if (primaries.length === 0) {
+                        target.innerHTML = '';
+                        return;
+                    }
+
+                    let direct = 0, conversion = 0, unspecified = 0;
+                    primaries.forEach(f => {
+                        const label = resolveAllocationLabel(f);
+                        if (label === 'Conversion') conversion++;
+                        else if (label === 'Direct') direct++;
+                        else unspecified++;
+                    });
+
+                    const pill = (count, text, classes) => count > 0
+                        ? `<span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${classes}">${count} ${text}</span>`
+                        : '';
+
+                    target.innerHTML = [
+                        pill(direct, 'Direct', 'border-emerald-200 bg-emerald-50 text-emerald-700'),
+                        pill(conversion, 'Conversion', 'border-amber-200 bg-amber-50 text-amber-700'),
+                        pill(unspecified, 'Unspecified', 'border-gray-200 bg-gray-50 text-gray-500'),
+                    ].join('');
+                }
+
                 // Display statistics
                 function displayStatistics(stats) {
                     const statsHtml = `
@@ -776,6 +844,8 @@
                                 <div>
                                     <p class="text-sm font-medium text-gray-600">Primary Applications</p>
                                     <p class="text-3xl font-bold text-gray-900 mt-2">${stats.primary_count || 0}</p>
+                                    {{-- Direct / Conversion split, filled once the file list loads --}}
+                                    <div id="primaryAllocationSplit" class="mt-2 flex flex-wrap gap-1"></div>
                                 </div>
                                 <div class="p-3 bg-green-100 rounded-lg">
                                     <i data-lucide="file-text" class="h-8 w-8 text-green-600"></i>
@@ -810,6 +880,9 @@
 
                     document.getElementById('statsCards').innerHTML = statsHtml;
                     lucide.createIcons();
+
+                    // The cards can render before or after the file list arrives.
+                    updatePrimaryAllocationSplit();
                 }
 
                 // Load FileNo
@@ -826,6 +899,7 @@
                             allFileNumbers = data.data;
                             filteredFileNumbers = [...allFileNumbers];
                             applyFilters();
+                            updatePrimaryAllocationSplit();
 
                             Swal.fire({
                                 toast: true,
@@ -1055,30 +1129,10 @@
                         const conversionMotherNo = [mlsFileNo, file.mls_fileno, file.parent_mls_fileno]
                             .map(v => String(v || '').trim())
                             .find(v => /^CON-/i.test(v)) || '';
-                        const applicationType = String(file.application_type || '').trim().toLowerCase();
-                        // A CON- number is a conversion whatever the record says.
-                        const isConversionFile = conversionMotherNo !== '' || applicationType === 'conversion';
-
-                        // Sub-label under the type badge.
-                        //
-                        // Files commissioned before the DAP / CON-P split carry an
-                        // application_type that was only ever a form default — a KANGIS
-                        // mother reading "Conversion" proves nothing — so they are left
-                        // unlabelled. A CON- number is self-evident and always labelled.
-                        const commissionedAt = Date.parse(file.date_commissioned || file.created_at || '');
-                        const allocationTypeIsReliable = !isNaN(commissionedAt)
-                            && commissionedAt >= ALLOCATION_TYPE_KNOWN_FROM;
-
-                        let allocationLabel = '';
-                        if (conversionMotherNo !== '') {
-                            allocationLabel = 'Conversion';
-                        } else if (!allocationTypeIsReliable) {
-                            allocationLabel = '';
-                        } else if (applicationType === 'conversion') {
-                            allocationLabel = 'Conversion';
-                        } else if (applicationType === 'direct allocation' && file.file_no_type === 'PRIMARY') {
-                            allocationLabel = 'Direct';
-                        }
+                        // Sub-label under the type badge. Files commissioned before the
+                        // DAP / CON-P split carry an application_type that was only ever a
+                        // form default, so they stay unlabelled — see resolveAllocationLabel().
+                        const allocationLabel = resolveAllocationLabel(file);
 
                         // The LGA Confirmation Sheet belongs to a SuA (always) and to a
                         // conversion primary; a PuA unit never gets one.
