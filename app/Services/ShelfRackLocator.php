@@ -24,6 +24,10 @@ use Illuminate\Support\Facades\DB;
  * UI can distinguish an inferred shelf from a recorded one. The registry-3 rows
  * from workbook set 2 relabel CON-RES-* as RES-*, which matches no real file
  * number, so they simply never resolve and need no special-casing here.
+ *
+ * When neither source yields a shelf the file is left unshelved — null, not a
+ * stand-in. Registry 2 (the Pool Office) has no workbook coverage at all, so
+ * its files never resolve; that is the correct answer, not a gap to paper over.
  */
 class ShelfRackLocator
 {
