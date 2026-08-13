@@ -3613,11 +3613,11 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             // Set fileName AFTER handleAllocationFilterChange() which resets it to ''.
-            // For Change of Name, do NOT prefill allottee name as File Name. Same
-            // reasoning applies on the MLS File Number Generator page: the OP is
-            // selected only to inherit property/location details, and the new file's
-            // owner must be entered fresh rather than defaulting to the OP's allottee.
-            if (component.subSource !== 'OP Change of Name' && !isMlsFileNumberGeneratorPage) {
+            // For Change of Name, do NOT prefill allottee name as File Name — the whole
+            // point of that flow is that the file changes hands, so the new owner is
+            // typed fresh. Every other OP hand-off (including the MLS File Number
+            // Generator page) backfills the OP's allottee as the File Name.
+            if (component.subSource !== 'OP Change of Name') {
                 component.fileName = fileName;
             }
         }
@@ -3674,7 +3674,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // Re-apply fileName after radio change events which reset it via handleAllocationFilterChange()
             // For Change of Name, do NOT prefill allottee name as File Name (same guard as the initial set).
-            if (component && fileName && component.subSource !== 'OP Change of Name' && !isMlsFileNumberGeneratorPage) {
+            if (component && fileName && component.subSource !== 'OP Change of Name') {
                 component.fileName = fileName;
             }
         }, 50);

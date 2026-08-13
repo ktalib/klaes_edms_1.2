@@ -243,6 +243,31 @@
                             class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 outline-none cursor-default">
                     </div>
 
+                    {{-- Customary Title only: there is no indexed file to read an
+                         address from, so the surveyor picks LGA + District and the
+                         inspection map geocodes from that. --}}
+                    <div id="customary-geo-wrap" class="hidden grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">LGA <span class="text-red-500">*</span></label>
+                            <select name="lga" id="f-lga" disabled
+                                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                                <option value="">Select LGA…</option>
+                                @foreach($lgaOptions as $lga)
+                                    <option value="{{ $lga }}">{{ $lga }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">District</label>
+                            {{-- Populated on demand from /api/reference/districts: there are
+                                 1,818 of them, far too many to render inline. --}}
+                            <select name="district" id="f-district" disabled
+                                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                                <option value="">Loading districts…</option>
+                            </select>
+                        </div>
+                    </div>
+
                     {{-- Location badge (shown after file lookup) --}}
                     <div id="location-badge-wrap" class="hidden">
                         <div class="flex items-start gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-800">
@@ -276,17 +301,31 @@
                     <input type="hidden" name="tracking_id"      id="h-tracking_id">
                     <input type="hidden" name="is_indexed"       id="h-is_indexed" value="0">
                     <input type="hidden" name="location"         id="h-location">
+                    {{-- Statutory path only — disabled (and so unsubmitted) for a
+                         customary title, where the #f-lga / #f-district selects
+                         carry these same names. --}}
                     <input type="hidden" name="lga"              id="h-lga">
+                    <input type="hidden" name="district"         id="h-district">
                     {{-- proposed_use is required server-side; mirror the applied land use --}}
                     <input type="hidden" name="proposed_use"     id="h-proposed_use">
 
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {{-- Applied Land Use – readonly auto-fill --}}
+                        {{-- General Landuse – auto-filled from the file for a statutory
+                             title; picked from a dropdown for a customary title, which
+                             has no indexed file to read it from. Only one of the two is
+                             ever enabled, so only one posts `land_use_type`. --}}
                         <div>
-                            <label class="block text-xs font-medium text-gray-600 mb-1">Applied Land Use</label>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">General Landuse (Observed around) - Special</label>
                             <input type="text" name="land_use_type" id="f-land_use_type" readonly
                                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 outline-none"
                                 placeholder="Auto-filled from file">
+                            <select name="land_use_type" id="f-land_use_type_select" disabled
+                                class="hidden w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                                <option value="">Select…</option>
+                                @foreach($customaryLandUses as $lut)
+                                    <option value="{{ $lut }}">{{ $lut }}</option>
+                                @endforeach
+                            </select>
                         </div>
 
                         {{-- Phone --}}
@@ -490,8 +529,12 @@ function createInspectionMapController({ mapId, coordsId, geometryId, statusId, 
     // resolves a Kano street address, so without the broader fallbacks the pin
     // simply never appeared and the coordinates stayed empty; landing on the
     // right district/LGA and letting the surveyor drag the pin beats nothing.
-    function geocode(location) {
+    // `opts.force` re-pins even when coordinates are already set — used when the
+    // surveyor changes the address itself (customary LGA / District), where the
+    // old pin is stale rather than something worth protecting.
+    function geocode(location, opts = {}) {
         const coordsEl = document.getElementById(coordsId);
+        if (opts.force && coordsEl) coordsEl.value = '';
         const candidates = (Array.isArray(location) ? location : [location])
             .map(v => (v == null ? '' : String(v)).trim())
             .filter(v => v && v !== '—')
@@ -944,6 +987,51 @@ $(document).ready(function () {
         if (el) el.addEventListener('click', closeSpaModal);
     });
 
+    // ── Customary address picker (LGA + District) ───────────────────────────
+    // Districts are fetched once, on the first switch to Customary Title, rather
+    // than rendered inline: there are 1,818 of them and inlining that list is
+    // what made the OSS applications page unusable.
+    let districtsPromise = null;
+    function loadDistricts() {
+        if (districtsPromise) return districtsPromise;
+        const sel = document.getElementById('f-district');
+        districtsPromise = fetch('{{ route("api.reference.districts") }}', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(r => r.json())
+            .then(d => {
+                const list = (d && d.data) || [];
+                sel.innerHTML = '<option value="">Select District…</option>'
+                    + list.map(x => `<option value="${x.name}">${x.name}</option>`).join('');
+            })
+            .catch(() => {
+                sel.innerHTML = '<option value="">Districts unavailable — pick the pin on the map</option>';
+                districtsPromise = null; // allow a retry on the next switch
+            });
+        return districtsPromise;
+    }
+
+    // LGA / District drive both the stored location and the map pin.
+    function applyCustomaryLocation() {
+        const lga      = document.getElementById('f-lga').value.trim();
+        const district = document.getElementById('f-district').value.trim();
+        const loc      = [district, lga].filter(Boolean).join(', ');
+
+        document.getElementById('h-location').value = loc;
+        const badgeWrap = document.getElementById('location-badge-wrap');
+        if (loc) {
+            document.getElementById('location-badge-text').textContent = loc + ', Kano';
+            badgeWrap.classList.remove('hidden');
+        } else {
+            badgeWrap.classList.add('hidden');
+        }
+
+        if (!lga && !district) return;
+        // force: the address just changed, so any earlier pin is stale.
+        arMapCtrl.geocode([loc, lga].filter(Boolean), { force: true });
+    }
+    ['f-lga', 'f-district'].forEach(id => {
+        document.getElementById(id).addEventListener('change', applyCustomaryLocation);
+    });
+
     // ── Land Title Type toggle ──────────────────────────────────────────────
     // Statutory: file number is picked from an existing indexed file.
     // Customary: no existing file — a temporary "SPAS-YYYY-####" number is
@@ -953,12 +1041,18 @@ $(document).ready(function () {
         const fileInput  = document.getElementById('display-file-number');
         const ownerInput = document.getElementById('f-owner_name');
         const msg        = document.getElementById('lookup-msg');
+        const luInput    = document.getElementById('f-land_use_type');
+        const luSelect   = document.getElementById('f-land_use_type_select');
+        const geoWrap    = document.getElementById('customary-geo-wrap');
+        const lgaSelect  = document.getElementById('f-lga');
+        const distSelect = document.getElementById('f-district');
 
         document.getElementById('h-file_number').value      = '';
         document.getElementById('h-file_indexing_id').value = '';
         document.getElementById('h-tracking_id').value      = '';
-        document.getElementById('h-location').value         = '';
+        document.getElementById('h-location').value          = '';
         document.getElementById('h-lga').value               = '';
+        document.getElementById('h-district').value          = '';
         document.getElementById('f-land_use_type').value    = '';
         document.getElementById('location-badge-wrap').classList.add('hidden');
         document.getElementById('dciv-banner-wrap').classList.add('hidden');
@@ -966,7 +1060,26 @@ $(document).ready(function () {
         ownerInput.value = '';
         fileInput.value  = '';
 
-        if (type === 'customary') {
+        // Only the active control carries each name (land_use_type / lga /
+        // district); its counterpart is disabled so the form never posts two.
+        luSelect.value = '';
+        const customary = type === 'customary';
+        luInput.classList.toggle('hidden', customary);
+        luInput.disabled = customary;
+        luSelect.classList.toggle('hidden', !customary);
+        luSelect.disabled = !customary;
+
+        lgaSelect.value  = '';
+        distSelect.value = '';
+        lgaSelect.disabled  = !customary;
+        distSelect.disabled = !customary;
+        document.getElementById('h-lga').disabled      = customary;
+        document.getElementById('h-district').disabled = customary;
+        geoWrap.classList.toggle('hidden', !customary);
+        geoWrap.classList.toggle('grid', customary);
+        if (customary) loadDistricts();
+
+        if (customary) {
             selectBtn.disabled = true;
             fileInput.placeholder = 'Generating…';
             ownerInput.readOnly = false;
@@ -1005,6 +1118,7 @@ $(document).ready(function () {
         document.getElementById('h-is_indexed').value        = '0';
         document.getElementById('h-location').value          = '';
         document.getElementById('h-lga').value               = '';
+        document.getElementById('h-district').value          = '';
         document.getElementById('h-proposed_use').value      = '';
         document.getElementById('f-owner_name').value        = '';
         document.getElementById('f-land_use_type').value     = '';
@@ -1047,6 +1161,7 @@ $(document).ready(function () {
                 document.getElementById('h-tracking_id').value      = d.tracking_id || '';
                 document.getElementById('h-location').value         = d.location || '';
                 document.getElementById('h-lga').value              = d.lga || '';
+                document.getElementById('h-district').value         = d.district || '';
                 document.getElementById('h-is_indexed').value       = '1';
 
                 const loc = [d.location, d.district, d.lga].filter(Boolean).join(', ');
@@ -1117,9 +1232,17 @@ $(document).ready(function () {
         });
     });
 
-    // Contravention check (Applied vs Prevailing)
+    // Whichever General Landuse control is active: the file-filled input for a
+    // statutory title, the dropdown for a customary one.
+    function currentLandUse() {
+        const sel = document.getElementById('f-land_use_type_select');
+        const el  = sel.disabled ? document.getElementById('f-land_use_type') : sel;
+        return (el.value || '').trim();
+    }
+
+    // Contravention check (General Landuse vs Prevailing)
     function checkContravention() {
-        const approved   = (document.getElementById('f-land_use_type').value || '').trim().toUpperCase();
+        const approved   = currentLandUse().toUpperCase();
         const prevailing = (document.getElementById('f-existing_use').value   || '').trim().toUpperCase();
         const badge      = document.getElementById('contravention-badge');
         if (approved && prevailing && approved !== prevailing) {
@@ -1131,6 +1254,11 @@ $(document).ready(function () {
         }
     }
     document.getElementById('f-existing_use').addEventListener('change', checkContravention);
+    document.getElementById('f-land_use_type_select').addEventListener('change', function () {
+        // proposed_use mirrors the general landuse, same as the statutory path
+        document.getElementById('h-proposed_use').value = this.value;
+        checkContravention();
+    });
 
     // Photo preview
     document.getElementById('f-photos').addEventListener('change', function () {
@@ -1200,20 +1328,33 @@ $(document).ready(function () {
             return;
         }
 
+        if (isCustomary && !document.getElementById('f-lga').value.trim()) {
+            Swal.fire({ icon:'warning', title:'Required', text:'Please select the LGA — a customary title has no file to take its location from.' });
+            return;
+        }
+
         const btn = document.getElementById('btn-save-record');
         btn.disabled = true; btn.textContent = 'Saving…';
 
         // proposed_use (Approved use) defaults to the applied use, then prevailing — server requires it
         const proposedEl = document.getElementById('h-proposed_use');
         if (!proposedEl.value.trim()) {
-            proposedEl.value = (document.getElementById('f-land_use_type').value
+            proposedEl.value = (currentLandUse()
                 || document.getElementById('f-existing_use').value || '').trim();
         }
 
         try {
             const fd  = new FormData(this);
-            const res = await fetch(LR_STORE, { method:'POST', headers:{ 'X-CSRF-TOKEN': CSRF }, body: fd });
+            const res = await fetch(LR_STORE, { method:'POST', headers:{ 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json' }, body: fd });
             const data = await res.json();
+
+            if (res.status === 422) {
+                // Surface the actual field error rather than a generic "Save failed"
+                const first = Object.values(data.errors || {})[0];
+                Swal.fire({ icon:'warning', title:'Check the form', text: (first && first[0]) || data.message || 'Please review the highlighted fields.' });
+                btn.disabled = false; btn.textContent = 'Save Record';
+                return;
+            }
 
             if (data.success) {
                 const inspectionNote = await saveInspectionFor({ id: data.id, file_number: data.file_number });

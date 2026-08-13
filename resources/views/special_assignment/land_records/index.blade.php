@@ -40,14 +40,28 @@
 
         {{-- DataTable --}}
         <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div class="px-5 py-4 border-b border-gray-100">
+            <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-4 flex-wrap">
                 <h2 class="text-sm font-semibold text-gray-700">All Land Records</h2>
+                {{-- Registry filter: MLS, KANGIS, SLTR and ST files all live in
+                     file_indexings, so this narrows the same list rather than
+                     switching data sources. --}}
+                <div class="flex items-center gap-2">
+                    <label for="registry-filter" class="text-xs font-medium text-gray-500">Registry</label>
+                    <select id="registry-filter" class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                        <option value="">All registries</option>
+                        <option value="MLS">MLS / Lands</option>
+                        <option value="KANGIS">KANGIS</option>
+                        <option value="SLTR">SLTR</option>
+                        <option value="ST">ST (Sectional Titling)</option>
+                    </select>
+                </div>
             </div>
             <div class="p-4">
                 <table id="land-records-table" class="w-full text-sm" style="width:100%">
                     <thead>
                         <tr class="text-left text-xs text-gray-500 uppercase tracking-wide">
                             <th class="px-3 py-2">#</th>
+                            <th class="px-3 py-2">Registry</th>
                             <th class="px-3 py-2">File No</th>
                             <th class="px-3 py-2">Owner Name</th>
                             <th class="px-3 py-2">Phone</th>
@@ -202,13 +216,30 @@ function luBadge(d) {
 
 $(document).ready(function () {
     // ── DataTable ──────────────────────────────────────────────────────────
+    const REGISTRY_CLS = {
+        MLS:    'bg-slate-100 text-slate-700',
+        KANGIS: 'bg-indigo-100 text-indigo-700',
+        SLTR:   'bg-teal-100 text-teal-700',
+        ST:     'bg-fuchsia-100 text-fuchsia-700',
+    };
+
     const table = $('#land-records-table').DataTable({
         processing : true,
         serverSide : true,
         scrollX    : true,
-        ajax       : { url: window.location.href, type: 'GET', data: d => ({ ...d, ajax: 1 }) },
+        pageLength : 25,
+        lengthMenu : [[10, 25, 50, 100], [10, 25, 50, 100]],
+        ajax       : {
+            url: window.location.href,
+            type: 'GET',
+            data: d => ({ ...d, ajax: 1, registry: $('#registry-filter').val() || '' }),
+        },
         columns: [
             { data: 'DT_RowIndex', orderable: false, searchable: false },
+            { data: 'registry', orderable: false, searchable: false, render: d => {
+                const key = (d || 'MLS').toUpperCase();
+                return `<span class="px-2 py-0.5 rounded-full text-xs font-semibold ${REGISTRY_CLS[key] || 'bg-gray-100 text-gray-600'}">${key}</span>`;
+            }},
             { data: 'file_number', render: d => `<span style="white-space:nowrap">${d||'—'}</span>` },
             { data: 'owner_name'   },
             { data: 'phone'        },
@@ -227,6 +258,9 @@ $(document).ready(function () {
             { data: 'created_at'   },
         ],
     });
+
+    // Registry filter → reload from the server (the list is server-side paged)
+    $('#registry-filter').on('change', () => table.ajax.reload());
 
     // ── SPAS modal open / close ─────────────────────────────────────────────
     const spaModal = document.getElementById('modal-add-record');

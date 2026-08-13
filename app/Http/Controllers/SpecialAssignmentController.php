@@ -20,12 +20,63 @@ class SpecialAssignmentController extends Controller
 {
     // ─── PAGE METHODS ──────────────────────────────────────────────────────────
 
+    /**
+     * Which registry a file_indexings row belongs to, as SQL.
+     *
+     * `file_indexings.registry` is unusable on its own — it holds batch ordinals
+     * ('1','2','3') as often as names — so this leans on `general_registry` and
+     * the file-number prefix, which are consistent across the whole table.
+     * Order matters: KANGIS is tested before ST so a KN* file never falls through.
+     */
+    private const REGISTRY_CASE_SQL = <<<'SQL'
+        CASE
+            WHEN UPPER(LTRIM(fi.file_number)) LIKE 'SLTR%'
+                 OR UPPER(ISNULL(fi.general_registry, '')) LIKE '%SLTR%' THEN 'SLTR'
+            WHEN UPPER(LTRIM(fi.file_number)) LIKE 'KN%'
+                 OR UPPER(LTRIM(fi.file_number)) LIKE 'MLKN%'
+                 OR UPPER(ISNULL(fi.general_registry, '')) LIKE '%KANGIS%' THEN 'KANGIS'
+            WHEN UPPER(LTRIM(fi.file_number)) LIKE 'ST-%'
+                 OR UPPER(LTRIM(fi.file_number)) LIKE 'ST/%'
+                 OR UPPER(ISNULL(fi.general_registry, '')) LIKE 'ST %' THEN 'ST'
+            ELSE 'MLS'
+        END
+        SQL;
+
+    /** Narrow a land-records query to one registry (see REGISTRY_CASE_SQL for the rules). */
+    private function applyRegistryFilter($query, string $registry)
+    {
+        switch (strtoupper($registry)) {
+            case 'SLTR':
+                return $query->where(function ($q) {
+                    $q->whereRaw("UPPER(LTRIM(fi.file_number)) LIKE 'SLTR%'")
+                      ->orWhereRaw("UPPER(ISNULL(fi.general_registry, '')) LIKE '%SLTR%'");
+                });
+            case 'KANGIS':
+                return $query->where(function ($q) {
+                    $q->whereRaw("UPPER(LTRIM(fi.file_number)) LIKE 'KN%'")
+                      ->orWhereRaw("UPPER(LTRIM(fi.file_number)) LIKE 'MLKN%'")
+                      ->orWhereRaw("UPPER(ISNULL(fi.general_registry, '')) LIKE '%KANGIS%'");
+                });
+            case 'ST':
+                return $query->where(function ($q) {
+                    $q->whereRaw("UPPER(LTRIM(fi.file_number)) LIKE 'ST-%'")
+                      ->orWhereRaw("UPPER(LTRIM(fi.file_number)) LIKE 'ST/%'")
+                      ->orWhereRaw("UPPER(ISNULL(fi.general_registry, '')) LIKE 'ST %'");
+                });
+            case 'MLS':
+                return $query->whereRaw('('.self::REGISTRY_CASE_SQL.") = 'MLS'");
+            default:
+                return $query;
+        }
+    }
+
     public function landRecords(Request $request)
     {
         if ($request->ajax() || $request->input('ajax')) {
-            $search = $request->input('search.value', $request->input('search', ''));
-            $start  = (int) $request->input('start', 0);
-            $length = (int) $request->input('length', 10);
+            $search   = $request->input('search.value', $request->input('search', ''));
+            $start    = (int) $request->input('start', 0);
+            $length   = (int) $request->input('length', 25);
+            $registry = trim((string) $request->input('registry', ''));
 
             $base = DB::connection('sqlsrv')
                 ->table('file_indexings as fi')
@@ -39,8 +90,13 @@ class SpecialAssignmentController extends Controller
                     'fi.location', 'fi.district', 'fi.lga', 'fi.phone', 'fi.tracking_id',
                     'fi.current_holder', 'fn.FileName as file_title',
                     'spa.id as spa_id', 'spa.owner_name as spa_owner', 'spa.status as spa_status',
-                    'spa.existing_use', 'spa.created_at as spa_created_at'
+                    'spa.existing_use', 'spa.created_at as spa_created_at',
+                    DB::raw('('.self::REGISTRY_CASE_SQL.') as registry_group')
                 );
+
+            if ($registry && strtoupper($registry) !== 'ALL') {
+                $this->applyRegistryFilter($base, $registry);
+            }
 
             if ($search) {
                 $base->where(function($q) use ($search) {
@@ -114,6 +170,7 @@ class SpecialAssignmentController extends Controller
                 return [
                     'DT_RowIndex'   => $start + $i + 1,
                     'id'            => $r->spa_id,
+                    'registry'      => $r->registry_group ?? 'MLS',
                     'file_number'   => $r->file_number ?? '—',
                     'owner_name'    => $ownerName,
                     'phone'         => $r->phone ?? '—',
@@ -242,6 +299,19 @@ class SpecialAssignmentController extends Controller
 
         $landUseTypes = DB::connection('sqlsrv')->table('klas.dbo.land_uses')->orderBy('landuse')->pluck('landuse');
 
+        // Customary land is only ever held for these three uses, so the General
+        // Landuse dropdown shown for a customary title omits Industrial.
+        $customaryLandUses = $landUseTypes
+            ->filter(fn ($u) => in_array(strtoupper(trim($u)), ['RESIDENTIAL', 'COMMERCIAL', 'AGRICULTURAL'], true))
+            ->values();
+
+        // Kano's 44 LGAs, for the customary-title address picker. Small enough to
+        // render inline; districts (1,818 of them) are fetched on demand instead.
+        $lgaOptions = DB::connection('sqlsrv')->table('lgas')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->pluck('name');
+
         $mapPoints = SpaFieldData::with('application')
             ->whereNotNull('coordinates')
             ->orderByDesc('created_at')
@@ -269,7 +339,7 @@ class SpecialAssignmentController extends Controller
                 ];
             });
 
-        return view('special_assignment.field_data.index', compact('PageTitle', 'PageDescription', 'mapPoints', 'landUseTypes'));
+        return view('special_assignment.field_data.index', compact('PageTitle', 'PageDescription', 'mapPoints', 'landUseTypes', 'customaryLandUses', 'lgaOptions'));
     }
 
     public function notice(Request $request)
@@ -711,7 +781,13 @@ class SpecialAssignmentController extends Controller
             'phone'           => 'nullable|string|max:20',
             'proposed_use'    => 'required|string|max:255',
             'existing_use'    => 'required|string|max:255',
+            // A customary title has no indexed file to inherit an address from,
+            // so the LGA is picked by hand and is the minimum needed to place it.
+            'lga'             => 'required_if:land_title_type,customary|nullable|string|max:255',
+            'district'        => 'nullable|string|max:255',
             'photos.*'        => 'nullable|image|max:5120',
+        ], [
+            'lga.required_if' => 'Please select the LGA for this customary title.',
         ]);
 
         $isCustomary = $request->land_title_type === 'customary';
