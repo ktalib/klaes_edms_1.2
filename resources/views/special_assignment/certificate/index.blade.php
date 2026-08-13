@@ -1,5 +1,5 @@
 @extends('layouts.app')
-@section('page-title'){{ $PageTitle ?? 'Special Assignment – Certificate' }}@endsection
+@section('page-title'){{ $PageTitle ?? 'Special Assignment – Change of Purpose Sheet' }}@endsection
 
 @section('content')
 <div class="flex-1 overflow-auto">
@@ -7,12 +7,12 @@
     <div class="p-6">
         <div class="flex items-center justify-between mb-6">
             <div>
-                <h1 class="text-2xl font-bold text-gray-800">Certificate of Change of Purpose</h1>
+                <h1 class="text-2xl font-bold text-gray-800">Change of Purpose Sheet</h1>
                 <p class="text-sm text-gray-500 mt-1">{{ $PageDescription ?? '' }}</p>
             </div>
             <button id="btn-issue-cert"
                 class="inline-flex items-center gap-2 px-4 py-2 bg-[rgb(186,191,12)] hover:opacity-90 text-white text-sm font-medium rounded-lg">
-                <i data-lucide="file-badge" class="h-4 w-4"></i> Issue Certificate
+                <i data-lucide="file-badge" class="h-4 w-4"></i> Issue Sheet
             </button>
         </div>
 
@@ -38,13 +38,13 @@
 
         {{-- DataTable --}}
         <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div class="px-5 py-4 border-b border-gray-100"><h2 class="text-sm font-semibold text-gray-700">Certificate Registry</h2></div>
+            <div class="px-5 py-4 border-b border-gray-100"><h2 class="text-sm font-semibold text-gray-700">Change of Purpose Sheet Registry</h2></div>
             <div class="p-4">
                 <table id="certificate-table" class="w-full text-sm" style="width:100%">
                     <thead>
                         <tr class="text-left text-xs text-gray-500 uppercase">
                             <th class="px-3 py-2">#</th>
-                            <th class="px-3 py-2">Cert No</th>
+                            <th class="px-3 py-2">Sheet No</th>
                             <th class="px-3 py-2">File No</th>
                             <th class="px-3 py-2">Holder Name</th>
                             <th class="px-3 py-2">From Use</th>
@@ -61,18 +61,18 @@
     </div>
 </div>
 
-{{-- Issue Certificate Modal --}}
+{{-- Issue Change of Purpose Sheet Modal --}}
 <div id="modal-issue-cert" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
     <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4">
         <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-            <h3 class="text-base font-semibold text-gray-800">Issue Certificate of Change of Purpose</h3>
+            <h3 class="text-base font-semibold text-gray-800">Issue Change of Purpose Sheet</h3>
             <button class="modal-close text-gray-400 hover:text-gray-600"><i data-lucide="x" class="h-5 w-5"></i></button>
         </div>
         <form id="form-issue-cert" class="p-6 space-y-4">
             @csrf
             <div class="p-3 bg-amber-50 rounded-lg text-xs text-amber-700 border border-amber-200">
                 <i data-lucide="info" class="h-3.5 w-3.5 inline mr-1"></i>
-                Certificate can only be issued for applications with an approved Commissioner memo.
+                A Change of Purpose Sheet can only be issued for applications with an approved Commissioner memo.
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div class="sm:col-span-2">
@@ -123,7 +123,7 @@
             </div>
             <div class="flex justify-end gap-3 pt-2">
                 <button type="button" class="modal-close px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-                <button type="submit" class="px-5 py-2 text-sm text-white bg-[rgb(186,191,12)] rounded-lg hover:opacity-90">Issue Certificate</button>
+                <button type="submit" class="px-5 py-2 text-sm text-white bg-[rgb(186,191,12)] rounded-lg hover:opacity-90">Issue Sheet</button>
             </div>
         </form>
     </div>
@@ -242,7 +242,7 @@ $(document).ready(function () {
                 modal.classList.add('hidden'); modal.classList.remove('flex');
                 this.reset();
                 table.ajax.reload();
-                Swal.fire({ icon:'success', title:'Certificate Issued', text:`${data.cert_number} has been issued.`, timer:3000, showConfirmButton:false });
+                Swal.fire({ icon:'success', title:'Sheet Issued', text:`${data.cert_number} has been issued.`, timer:3000, showConfirmButton:false });
             } else {
                 const errMsg = data.message
                     || (data.errors ? Object.values(data.errors).flat().join('\n') : '')
@@ -252,7 +252,7 @@ $(document).ready(function () {
         } catch (err) {
             Swal.fire({ icon:'error', title:'Error', text:'Network error. Please try again.' });
         } finally {
-            btn.disabled = false; btn.textContent = 'Issue Certificate';
+            btn.disabled = false; btn.textContent = 'Issue Sheet';
         }
     });
 });

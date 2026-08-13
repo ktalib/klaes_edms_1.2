@@ -570,7 +570,7 @@ class SpecialAssignmentController extends Controller
                                    'action'      => '<div class="relative inline-block">'
                                        .'<button class="btn-cert-toggle p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 border border-transparent hover:border-gray-200 transition-colors"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg></button>'
                                        .'<div class="cert-dropdown hidden absolute right-0 top-full z-50 mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">'
-                                       .'<button class="btn-print-cert w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2" data-id="'.$c->id.'"><svg class="w-3.5 h-3.5 text-[rgb(186,191,12)]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Print Certificate</button>'
+                                       .'<button class="btn-print-cert w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2" data-id="'.$c->id.'"><svg class="w-3.5 h-3.5 text-[rgb(186,191,12)]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Print Sheet</button>'
                                        .'</div></div>',
                                ];
                            });
@@ -583,8 +583,8 @@ class SpecialAssignmentController extends Controller
             ]);
         }
 
-        $PageTitle       = 'Special Assignment – Certificate';
-        $PageDescription = 'Issue and track Certificates of Change of Purpose.';
+        $PageTitle       = 'Special Assignment – Change of Purpose Sheet';
+        $PageDescription = 'Issue and track Change of Purpose Sheets.';
         $stats = [
             'total'     => SpaCertificate::count(),
             'issued'    => SpaCertificate::where('status', 'issued')->count(),
@@ -1165,7 +1165,7 @@ class SpecialAssignmentController extends Controller
 
         $app->update(['status' => 'certificate_issued']);
 
-        return response()->json(['success' => true, 'cert_number' => $cert->cert_number, 'message' => "Certificate {$cert->cert_number} issued."]);
+        return response()->json(['success' => true, 'cert_number' => $cert->cert_number, 'message' => "Change of Purpose Sheet {$cert->cert_number} issued."]);
     }
 
     public function printCertificate(int $id)

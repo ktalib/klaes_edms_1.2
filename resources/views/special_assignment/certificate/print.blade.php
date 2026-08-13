@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Certificate of Change of Purpose – {{ $cert->cert_number }}</title>
+    <title>Change of Purpose Sheet – {{ $cert->cert_number }}</title>
     <style>
         /* A4 Page Setup */
         @page {
@@ -216,7 +216,7 @@
 <body>
 
 <div class="toolbar">
-    <button class="btn-print" onclick="window.print()">Print Certificate</button>
+    <button class="btn-print" onclick="window.print()">Print Sheet</button>
     <button class="btn-close" onclick="window.close()">Close</button>
 </div>
 
@@ -230,7 +230,7 @@
         <div class="gov-title-container">
             <h1>Kano State Government</h1>
             <h2>Ministry of Land &amp; Physical Planning</h2>
-            <h3>Certificate of Change of Purpose</h3>
+            <h3>Change of Purpose Sheet</h3>
         </div>
 
         <div class="logo-box">
@@ -238,7 +238,7 @@
         </div>
     </div>
 
-    <p class="cert-no">Certificate No: <strong>{{ $cert->cert_number }}</strong></p>
+    <p class="cert-no">Sheet No: <strong>{{ $cert->cert_number }}</strong></p>
 
     <p class="declaration-text">
         The Application for change of purpose has been approved for the conversion of Land use from
