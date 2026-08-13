@@ -15,6 +15,14 @@
         ? 'Enter the property location manually, then pin it on the map'
         : 'Backfilled automatically from the selected file number (read-only)');
     $lockClasses = $isManual ? '' : ' bg-gray-100 text-gray-500 cursor-not-allowed';
+
+    // States/LGAs are rendered server-side so the dropdowns are usable on first
+    // paint. js/primaryform/states-lga.js only fetches this same JSON after the
+    // page loads, which left the selects empty whenever that fetch was slow or
+    // the tab was prefilled (edit mode) before it resolved.
+    $stStatesList = json_decode(@file_get_contents(public_path('js/primaryform/nigerian_states.json')) ?: '[]', true) ?: [];
+    $stDefaultState = 'Kano';
+    $stDefaultLgas = collect($stStatesList)->firstWhere('name', $stDefaultState)['local_governments'] ?? [];
 @endphp
 
 <div class="bg-gray-50 border border-gray-200 rounded-xl p-6 mb-6" id="{{ $prefix }}LocationDetailsCard">
@@ -85,6 +93,9 @@
                     onchange="STLocationMaps['{{ $prefix }}'].onStateChange();"
                     @unless($isManual) disabled @endunless>
                 <option value="">Select State</option>
+                @foreach($stStatesList as $stState)
+                    <option value="{{ $stState['name'] }}" @selected($stState['name'] === $stDefaultState)>{{ $stState['name'] }}</option>
+                @endforeach
             </select>
         </div>
         <div>
@@ -94,6 +105,9 @@
                     onchange="STLocationMaps['{{ $prefix }}'].updateAddress();"
                     @unless($isManual) disabled @endunless>
                 <option value="">Select LGA</option>
+                @foreach($stDefaultLgas as $stLga)
+                    <option value="{{ $stLga }}">{{ $stLga }}</option>
+                @endforeach
             </select>
         </div>
     </div>

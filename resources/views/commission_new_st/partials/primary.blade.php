@@ -435,16 +435,29 @@
                                             <option value="">Search district...</option>
                                         </select>
                                     </div>
-                                    <div>
-                                        <label class="block text-sm mb-1">LGA</label>
-                                        <select id="propertyLga" name="property_lga" class="location-detail-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" onchange="updatePropertyAddressDisplay();" disabled>
-                                            <option value="">Select LGA</option>
-                                        </select>
-                                    </div>
+                                    @php
+                                        // Rendered server-side (and defaulted to Kano) so the dropdowns work
+                                        // on first paint instead of waiting on the states-lga.js fetch.
+                                        $stStatesList = json_decode(@file_get_contents(public_path('js/primaryform/nigerian_states.json')) ?: '[]', true) ?: [];
+                                        $stDefaultState = 'Kano';
+                                        $stDefaultLgas = collect($stStatesList)->firstWhere('name', $stDefaultState)['local_governments'] ?? [];
+                                    @endphp
                                     <div>
                                         <label class="block text-sm mb-1">State</label>
                                         <select id="propertyState" name="property_state" class="location-detail-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" onchange="selectPropertyLGA(this); updatePropertyAddressDisplay();" disabled>
                                             <option value="">Select State</option>
+                                            @foreach($stStatesList as $stState)
+                                                <option value="{{ $stState['name'] }}" @selected($stState['name'] === $stDefaultState)>{{ $stState['name'] }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm mb-1">LGA</label>
+                                        <select id="propertyLga" name="property_lga" class="location-detail-field w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed" onchange="updatePropertyAddressDisplay();" disabled>
+                                            <option value="">Select LGA</option>
+                                            @foreach($stDefaultLgas as $stLga)
+                                                <option value="{{ $stLga }}">{{ $stLga }}</option>
+                                            @endforeach
                                         </select>
                                     </div>
                                 </div>

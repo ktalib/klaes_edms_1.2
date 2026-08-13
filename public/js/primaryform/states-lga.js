@@ -55,11 +55,15 @@ function initializeStateDropdowns() {
 
 // Populate a state select element with options
 function populateStateSelect(selectElement) {
+    // Keep whatever is already selected (server-rendered defaults, or a value a
+    // prefill set while this data was still loading).
+    const previousValue = selectElement.value;
+
     // Clear existing options except the first one
     while (selectElement.children.length > 1) {
         selectElement.removeChild(selectElement.lastChild);
     }
-    
+
     // Add state options
     nigerianStatesData.forEach(state => {
         const option = document.createElement('option');
@@ -69,6 +73,8 @@ function populateStateSelect(selectElement) {
         option.setAttribute('data-short-name', state.short_name);
         selectElement.appendChild(option);
     });
+
+    if (previousValue) selectElement.value = previousValue;
 }
 
 // Handle owner state selection and populate LGA

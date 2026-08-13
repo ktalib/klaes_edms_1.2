@@ -55,6 +55,11 @@ class Kernel extends ConsoleKernel
         // Keep PropID_Master synced with legacy tables to prevent collisions
         $schedule->command('propid:backfill')->dailyAt('01:00')->withoutOverlapping();
 
+        // Audit file_indexings.prop_id against PropID_Master. Read-only by design: raw-SQL
+        // and bulk-import writes bypass the controller's validation, so this drift report is
+        // the only thing that catches them. Review the CSV, then repair with --apply.
+        $schedule->command('propid:reconcile-indexing')->dailyAt('01:30')->withoutOverlapping();
+
         // Clean up expired Digital File Request temp copies daily at 03:00
         $schedule->command('dfr:cleanup-expired')->dailyAt('03:00')->withoutOverlapping();
 

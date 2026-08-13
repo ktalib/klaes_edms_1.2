@@ -32,6 +32,16 @@ use App\Services\EdmsScanUploadFolderService;
 class FileIndexingController extends Controller
 {
     private const COFO_TABLE = 'CofO_staging';
+
+    /** PropID_Master's pre-normalised (UPPER + trimmed) identifier columns. */
+    private const MASTER_ALIAS_COLUMNS = [
+        'primary_file_number_norm',
+        'mlsFNo_norm',
+        'kangisFileNo_norm',
+        'NewKANGISFileno_norm',
+        'temp_fileno_norm',
+    ];
+
     private PropertyIdAllocationService $propertyIdAllocationService;
     private CommissioningMirrorService $commissioningMirrorService;
     private FileIndexingBillService $fileIndexingBillService;
@@ -1276,11 +1286,13 @@ class FileIndexingController extends Controller
                 || (stripos($validated['file_number'] ?? '', 'cofo') !== false);
             $resolvedTestControl = $validated['test_control'] ?? $existingRecord->test_control ?? null;
 
-            $normalizedPropId = $this->normalizePropIdInput($request->input('prop_id'));
-
-            if ($normalizedPropId === null) {
-                $normalizedPropId = $this->determinePropIdForIndexing($existingRecord, $validated);
-            }
+            $normalizedPropId = $this->resolveTrustedPropId(
+                $request->input('prop_id'),
+                $validated['file_number'] ?? ($existingRecord->file_number ?? null),
+                $existingRecord->file_number ?? null,
+                $validated['related_fileno'] ?? null,
+                $existingRecord->related_fileno ?? null
+            );
 
             Log::info('FileIndexing::update - updating record', [
                 'id' => $id,
@@ -3892,15 +3904,13 @@ class FileIndexingController extends Controller
 
             $groupingAwaiting = $grouping->awaiting_fileno ?? $awaitingFileNo;
             $groupingIndexingMls = $grouping->indexing_mls_fileno ?? null;
-            $propIdForStore = $this->normalizePropIdInput($request->input('prop_id'));
-            if ($propIdForStore === null) {
-                $propIdForStore = $this->allocatePropIdForFileIndexing(
-                    $validated['file_number'] ?? null,
-                    $validated['related_fileno'] ?? null,
-                    $groupingAwaiting,
-                    $groupingIndexingMls
-                );
-            }
+            $propIdForStore = $this->resolveTrustedPropId(
+                $request->input('prop_id'),
+                $validated['file_number'] ?? null,
+                $validated['related_fileno'] ?? null,
+                $groupingAwaiting,
+                $groupingIndexingMls
+            );
 
             $groupingSyncPayload = [
                 'tracking_id' => $trackingId,
@@ -5454,6 +5464,133 @@ class FileIndexingController extends Controller
         $intValue = (int) $stringValue;
 
         return $intValue > 0 ? $intValue : null;
+    }
+
+    /**
+     * Resolve the prop_id to persist, treating PropID_Master — not the request — as the
+     * authority.
+     *
+     * The client posts a prop_id it scraped from the file-history panel, and this used to
+     * be written verbatim after nothing more than a ctype_digit check. That let a stale or
+     * mis-keyed value claim a prop_id belonging to an entirely different file, which then
+     * cross-contaminates Legal Search timelines (the LS guard treats a PropID_Master hit as
+     * proof of a legitimate alias, so a stray id launders itself into "same parcel").
+     *
+     * Precedence: the registry's answer for this file > a client value the registry cannot
+     * contradict > a freshly allocated id. A rejected value is logged, never silently kept.
+     */
+    protected function resolveTrustedPropId($rawInput, ?string $primary, ...$alternates): ?int
+    {
+        $client = $this->normalizePropIdInput($rawInput);
+        $canonical = $this->lookupCanonicalPropId($primary, $alternates);
+
+        if ($client === null) {
+            return $canonical ?? $this->allocatePropIdForFileIndexing($primary, $alternates);
+        }
+
+        // The registry already knows this file's prop_id — it wins over the request.
+        if ($canonical !== null && $canonical !== $client) {
+            Log::warning('FileIndexing::resolveTrustedPropId - rejected client prop_id (registry disagrees)', [
+                'file_number' => $primary,
+                'client_prop_id' => $client,
+                'canonical_prop_id' => $canonical,
+            ]);
+
+            return $canonical;
+        }
+
+        // The registry has no entry for this file, so it cannot confirm the client value.
+        // Reject it anyway if it demonstrably belongs to a DIFFERENT file.
+        if ($canonical === null) {
+            $owner = $this->propIdRegisteredOwner($client);
+            if ($owner !== null && !$this->identifiersMatch($owner, $primary, $alternates)) {
+                Log::warning('FileIndexing::resolveTrustedPropId - rejected client prop_id (owned by another file)', [
+                    'file_number' => $primary,
+                    'client_prop_id' => $client,
+                    'registered_to' => $owner,
+                ]);
+
+                return $this->allocatePropIdForFileIndexing($primary, $alternates);
+            }
+        }
+
+        return $client;
+    }
+
+    /** This file's prop_id according to PropID_Master, by any of its registered identifiers. */
+    protected function lookupCanonicalPropId(?string $primary, array $alternates = []): ?int
+    {
+        $candidates = [];
+        foreach (array_merge([$primary], $alternates) as $value) {
+            if (is_array($value)) {
+                foreach ($value as $sub) {
+                    $sub = $this->normalizeValue($sub);
+                    if ($sub !== null) {
+                        $candidates[] = strtoupper($sub);
+                    }
+                }
+                continue;
+            }
+            $value = $this->normalizeValue($value);
+            if ($value !== null) {
+                $candidates[] = strtoupper($value);
+            }
+        }
+
+        $candidates = array_values(array_unique($candidates));
+        if (empty($candidates)) {
+            return null;
+        }
+
+        try {
+            $propId = DB::connection('sqlsrv')->table('PropID_Master')
+                ->where(function ($q) use ($candidates) {
+                    foreach (self::MASTER_ALIAS_COLUMNS as $col) {
+                        $q->orWhereIn($col, $candidates);
+                    }
+                })
+                ->value('prop_id');
+
+            return ($propId !== null && (int) $propId > 0) ? (int) $propId : null;
+        } catch (\Throwable $exception) {
+            Log::warning('FileIndexing::lookupCanonicalPropId - failed', [
+                'file_number' => $primary,
+                'error' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /** The primary file number PropID_Master has registered against a prop_id, if any. */
+    protected function propIdRegisteredOwner(int $propId): ?string
+    {
+        try {
+            $owner = DB::connection('sqlsrv')->table('PropID_Master')
+                ->where('prop_id', $propId)
+                ->value('primary_file_number');
+
+            return $this->normalizeValue($owner);
+        } catch (\Throwable $exception) {
+            return null;
+        }
+    }
+
+    /** Is $owner one of the identifiers this record is being saved under? */
+    protected function identifiersMatch(string $owner, ?string $primary, array $alternates = []): bool
+    {
+        $owner = strtoupper($owner);
+        foreach (array_merge([$primary], $alternates) as $value) {
+            $values = is_array($value) ? $value : [$value];
+            foreach ($values as $sub) {
+                $sub = $this->normalizeValue($sub);
+                if ($sub !== null && strtoupper($sub) === $owner) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     protected function allocatePropIdForFileIndexing(?string $primary, ...$alternates): ?int

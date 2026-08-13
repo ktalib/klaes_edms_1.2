@@ -153,86 +153,6 @@
     </div>
 </div>
 
-{{-- Log Inspection Modal --}}
-<div id="modal-log-inspection" class="fixed inset-0 z-[1100] hidden items-center justify-center bg-black/40 p-4">
-    <div class="bg-white rounded-2xl shadow-xl w-full max-w-5xl mx-auto overflow-hidden max-h-[92vh] flex flex-col">
-        <div class="flex items-center justify-between px-6 py-3 border-b border-gray-100 flex-shrink-0">
-            <h3 class="text-base font-semibold text-gray-800">Log Field Inspection</h3>
-            <button class="modal-close text-gray-400 hover:text-gray-600"><i data-lucide="x" class="h-5 w-5"></i></button>
-        </div>
-
-        {{-- Land record details (read-only) --}}
-        <div id="li-details" class="px-6 pt-3 pb-2 bg-gray-50 border-b border-gray-100 flex-shrink-0">
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-sm">
-                <div><span class="text-xs text-gray-500 block">File Number</span><span id="li-file" class="font-semibold text-gray-800">—</span></div>
-                <div><span class="text-xs text-gray-500 block">Owner</span><span id="li-owner" class="font-semibold text-gray-800">—</span></div>
-                <div>
-                    <span class="text-xs text-gray-500 block">Approved Land Use</span>
-                    <span id="li-applied" class="font-medium text-gray-800">—</span>
-                </div>
-                <div>
-                    <span class="text-xs text-gray-500 block">Prevailing Land Use</span>
-                    <span id="li-prevailing" class="font-medium text-gray-800">—</span>
-                </div>
-                <div class="col-span-2 sm:col-span-3"><span class="text-xs text-gray-500 block">Location</span><span id="li-location" class="text-gray-700">—</span></div>
-                <div class="col-span-2 sm:col-span-1 flex sm:justify-end items-start">
-                    <span id="li-contravening-badge"></span>
-                </div>
-            </div>
-            {{-- Property photos --}}
-            <div id="li-photos-wrap" class="hidden pt-1.5 pb-1">
-                <p class="text-xs text-gray-500 mb-1">Property Photos</p>
-                <div id="li-photos" class="flex flex-wrap gap-2"></div>
-            </div>
-        </div>
-
-        <form id="form-log-inspection" enctype="multipart/form-data" class="p-6 flex-1 overflow-y-auto min-h-0">
-            @csrf
-            <input type="hidden" name="spa_application_id" id="li-app-id">
-            <input type="hidden" name="file_number"        id="li-file-no">
-            <input type="hidden" name="parcel_geometry"    id="f-geometry">
-
-            <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
-                {{-- Left: form fields --}}
-                <div class="lg:col-span-2 space-y-4">
-                    <div>
-                        <label class="block text-xs font-medium text-gray-600 mb-1">Inspection Date <span class="text-red-500">*</span></label>
-                        <input type="date" name="inspection_date" required class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-medium text-gray-600 mb-1">Coordinates (lat, lng) <span class="text-red-500">*</span></label>
-                        <input type="text" name="coordinates" id="f-coords" required placeholder="e.g. 12.0022, 8.5919"
-                            class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-medium text-gray-600 mb-1">Findings <span class="text-red-500">*</span></label>
-                        <textarea name="findings" rows="7" required
-                            class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none resize-none focus:border-[rgb(186,191,12)]"
-                            placeholder="Describe on-site observations…"></textarea>
-                    </div>
-                </div>
-
-                {{-- Right: map picker — click/drag the pin for a point, or trace the plot boundary --}}
-                <div class="lg:col-span-3">
-                    <div class="flex items-center justify-between mb-1">
-                        <label class="block text-xs font-medium text-gray-600">Pin Location &amp; Trace Boundary</label>
-                        <button type="button" id="li-locate" class="inline-flex items-center gap-1 text-xs text-[rgb(140,144,8)] hover:underline">
-                            <i data-lucide="locate-fixed" class="h-3.5 w-3.5"></i> Use my location
-                        </button>
-                    </div>
-                    <div id="li-map" class="rounded-lg overflow-hidden border border-gray-200" style="height:340px;width:100%;"></div>
-                    <p id="li-map-status" class="text-[11px] text-gray-400 mt-1">Click the map or drag the pin to set coordinates. Use the polygon tool (top-right) to trace the plot boundary.</p>
-                </div>
-            </div>
-
-            <div class="flex justify-end gap-3 pt-5">
-                <button type="button" class="modal-close px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-                <button type="submit" id="btn-save-inspection" class="px-5 py-2 text-sm text-white bg-[rgb(186,191,12)] rounded-lg hover:opacity-90">Save Inspection</button>
-            </div>
-        </form>
-    </div>
-</div>
-
 {{-- View Field Inspection Modal --}}
 <div id="modal-view-field" class="fixed inset-0 z-[1100] hidden items-center justify-center bg-black/40">
     <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl mx-4 overflow-hidden">
@@ -427,8 +347,11 @@
                                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
                         </div>
                         <div>
-                            <label class="block text-xs font-medium text-gray-600 mb-1">Coordinates (lat, lng)</label>
-                            <input type="text" id="ar-coords" placeholder="e.g. 12.0022, 8.5919"
+                            <label class="block text-xs font-medium text-gray-600 mb-1">
+                                Coordinates (lat, lng)
+                                <span class="font-normal text-gray-400">— auto-set from location</span>
+                            </label>
+                            <input type="text" id="ar-coords" placeholder="Set automatically once a file is selected"
                                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
                         </div>
                     </div>
@@ -559,11 +482,23 @@ function createInspectionMapController({ mapId, coordsId, geometryId, statusId, 
     }
 
     // Auto-pin from the file's stored location, then advise the surveyor to adjust.
-    // Uses the client-side Google geocoder (the API key is referer-restricted, so it
-    // only works in the browser) — same approach/key as Create File Indexing.
+    // Goes through google.maps.Geocoder, which on this deployment is the Leaflet
+    // shim backed by Nominatim (see partials/maps_scripts.blade.php).
+    //
+    // `location` may be a single string or an ordered list of candidates, most
+    // specific first (full address → district + LGA → LGA). Nominatim rarely
+    // resolves a Kano street address, so without the broader fallbacks the pin
+    // simply never appeared and the coordinates stayed empty; landing on the
+    // right district/LGA and letting the surveyor drag the pin beats nothing.
     function geocode(location) {
         const coordsEl = document.getElementById(coordsId);
-        if (!location || !location.trim() || location.trim() === '—') { setStatus('', ''); return; }
+        const candidates = (Array.isArray(location) ? location : [location])
+            .map(v => (v == null ? '' : String(v)).trim())
+            .filter(v => v && v !== '—')
+            // de-duplicate while preserving order
+            .filter((v, i, arr) => arr.indexOf(v) === i);
+
+        if (!candidates.length) { setStatus('', ''); return; }
         // Never overwrite coordinates the surveyor has already picked / typed.
         if (coordsEl && coordsEl.value.trim()) { setStatus('', ''); return; }
 
@@ -573,19 +508,30 @@ function createInspectionMapController({ mapId, coordsId, geometryId, statusId, 
         }
 
         setStatus('loading', 'Locating the file address on the map…');
-        // Bias toward Kano State; stored locations rarely name it.
-        const address = location.trim() + ', Kano, Nigeria';
-        new google.maps.Geocoder().geocode({ address, region: 'NG' }, (results, status) => {
-            if (status === 'OK' && results[0]) {
-                const pos = results[0].geometry.location;
-                placeMarker(pos.lat(), pos.lng(), true);
-                setStatus('ok', '📍 Pin auto-placed from the file location — drag the pin or click the map to adjust if it’s off.');
-            } else if (status === 'ZERO_RESULTS') {
+        const geocoder = new google.maps.Geocoder();
+
+        (function tryNext(i) {
+            if (i >= candidates.length) {
                 setStatus('warn', 'Couldn’t auto-locate this address — click the map to drop the pin manually.');
-            } else {
-                setStatus('warn', 'Auto-locate unavailable — click the map to drop the pin manually.');
+                return;
             }
-        });
+            // Bias toward Kano State; stored locations rarely name it.
+            const raw     = candidates[i];
+            const address = /kano/i.test(raw) ? raw + ', Nigeria' : raw + ', Kano, Nigeria';
+            geocoder.geocode({ address, region: 'NG' }, (results, status) => {
+                // A pin set by hand while the lookup was in flight wins.
+                if (coordsEl && coordsEl.value.trim()) { setStatus('', ''); return; }
+                if (status === 'OK' && results[0]) {
+                    const pos = results[0].geometry.location;
+                    placeMarker(pos.lat(), pos.lng(), true);
+                    setStatus('ok', i === 0
+                        ? '📍 Coordinates auto-set from the file location — drag the pin or click the map to adjust if it’s off.'
+                        : '📍 Exact address not found; pin placed on the surrounding area — drag it onto the plot to correct it.');
+                } else {
+                    tryNext(i + 1);
+                }
+            });
+        })(0);
     }
 
     function ensureMap() {
@@ -859,11 +805,6 @@ $(document).ready(function () {
         if (el) el.textContent = visible;
     });
 
-    // Allow clicking map to capture coordinates for form
-    map.on('click', e => {
-        document.getElementById('f-coords').value = `${e.latlng.lat.toFixed(6)},${e.latlng.lng.toFixed(6)}`;
-    });
-
     // ── Records DataTable ──────────────────────────────────────────────────
     const LU_CLS = { Residential:'bg-blue-100 text-blue-700', Commercial:'bg-orange-100 text-orange-700', Industrial:'bg-purple-100 text-purple-700', Agricultural:'bg-green-100 text-green-700' };
     function luBadge(d) {
@@ -965,92 +906,6 @@ $(document).ready(function () {
         });
     });
 
-    // ── Modal helpers ──────────────────────────────────────────────────────
-    const modal = document.getElementById('modal-log-inspection');
-    let _currentApp = null;
-
-    // ── Inspection map picker (Leaflet) ─────────────────────────────────────
-    const liMapCtrl = createInspectionMapController({
-        mapId: 'li-map', coordsId: 'f-coords', geometryId: 'f-geometry',
-        statusId: 'li-map-status', locateBtnId: 'li-locate',
-    });
-
-    function openInspectionModal(app) {
-        _currentApp = app;
-        document.getElementById('li-app-id').value  = app.id;
-        document.getElementById('li-file-no').value = app.file_number;
-        document.getElementById('li-file').textContent       = app.file_number    || '—';
-        document.getElementById('li-owner').textContent      = app.owner_name     || '—';
-        document.getElementById('li-location').textContent   = app.location       || '—';
-        document.getElementById('li-applied').textContent    = app.land_use_type  || '—';
-        document.getElementById('li-prevailing').textContent = app.existing_use   || '—';
-        const applied    = (app.land_use_type || '').trim().toUpperCase();
-        const prevailing = (app.existing_use  || '').trim().toUpperCase();
-        const isContravention = applied && prevailing && applied !== prevailing;
-        const cbEl = document.getElementById('li-contravening-badge');
-        if (isContravention) {
-            cbEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:99px;background:#fee2e2;border:1.5px solid #fca5a5;color:#dc2626;font-size:11px;font-weight:900;letter-spacing:.05em;">⚠ CONTRAVENTION</span>`;
-        } else if (applied && prevailing) {
-            cbEl.innerHTML = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 border border-green-200"><svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Compliant</span>`;
-        } else {
-            cbEl.innerHTML = '';
-        }
-        const photosDiv  = document.getElementById('li-photos');
-        const photosWrap = document.getElementById('li-photos-wrap');
-        photosDiv.innerHTML = '';
-        if (app.photos && app.photos.length) {
-            app.photos.forEach(url => {
-                photosDiv.innerHTML += `<a href="${url}" target="_blank"><img src="${url}" class="h-20 w-20 object-cover rounded border border-gray-200"></a>`;
-            });
-            photosWrap.classList.remove('hidden');
-        } else {
-            photosWrap.classList.add('hidden');
-        }
-        modal.classList.remove('hidden'); modal.classList.add('flex');
-        liMapCtrl.init(app.location);
-        lucide.createIcons();
-    }
-    function closeModal() { modal.classList.add('hidden'); modal.classList.remove('flex'); }
-    document.querySelectorAll('.modal-close').forEach(btn => btn.addEventListener('click', closeModal));
-
-
-    // ── Row action: Log Inspection ─────────────────────────────────────────
-    $(document).on('click', '.btn-log-inspection', function () {
-        $('.action-dropdown').addClass('hidden');
-        const app = JSON.parse($(this).attr('data-app'));
-        document.getElementById('form-log-inspection').reset();
-        openInspectionModal(app);
-    });
-
-    // ── Form submit ────────────────────────────────────────────────────────
-    document.getElementById('form-log-inspection').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const btn = document.getElementById('btn-save-inspection');
-        const fd = new FormData(this);
-        const coordStr = fd.get('coordinates');
-        if (coordStr) {
-            const parsed = parseLatLngInput(coordStr);
-            if (!parsed) {
-                Swal.fire({ icon:'warning', title:'Invalid coordinates', text:'Please pick a location on the map, or enter coordinates as "lat, lng".' });
-                return;
-            }
-            fd.set('coordinates', JSON.stringify(parsed));
-        }
-        btn.disabled = true; btn.textContent = 'Saving…';
-        try {
-            const res  = await fetch(STORE, { method:'POST', headers:{'X-CSRF-TOKEN':CSRF}, body:fd });
-            const data = await res.json();
-            if (data.success) {
-                closeModal(); this.reset();
-                fieldTable.ajax.reload();
-                if (data.mapPoint) window.plotFieldMapPoint(data.mapPoint);
-                Swal.fire({ icon:'success', title:'Saved', text:data.message, timer:2000, showConfirmButton:false });
-            } else {
-                Swal.fire({ icon:'error', title:'Error', text:data.message||'Save failed.' });
-            }
-        } catch(err) { Swal.fire({ icon:'error', title:'Error', text:'Unexpected error.' }); }
-        btn.disabled=false; btn.textContent='Save Inspection';
-    });
 });
 </script>
 
@@ -1201,8 +1056,14 @@ $(document).ready(function () {
                 } else {
                     document.getElementById('location-badge-wrap').classList.add('hidden');
                 }
-                // Try to auto-pin the inspection map from the file's address
-                arMapCtrl.geocode(loc);
+                // Auto-set the inspection coordinates from the file's address.
+                // Most specific first, then progressively broader, so a street
+                // address the geocoder doesn't know still lands on its district/LGA.
+                arMapCtrl.geocode([
+                    loc,
+                    [d.district, d.lga].filter(Boolean).join(', '),
+                    d.lga || '',
+                ]);
                 // DCIV investigation banner
                 const dcivWrap   = document.getElementById('dciv-banner-wrap');
                 const dcivFileNo = document.getElementById('dciv-banner-fileno');

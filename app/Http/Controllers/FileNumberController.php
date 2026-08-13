@@ -2629,6 +2629,28 @@ class FileNumberController extends Controller
             }
         }
 
+        // A file commissioned through ST File Number Commissioning keeps its captured
+        // location on st_file_numbers only — it has no mls_file_no row, and (for a
+        // directly commissioned SuA) no subapplications row either. This is also the
+        // row the commissioning edit screen writes back to, so it is checked first.
+        if ($record && !empty($record->st_file_no)
+            && (empty($record->lga_derived) || empty($record->plot_no))) {
+            $stFile = DB::connection('sqlsrv')
+                ->table('st_file_numbers')
+                ->where('fileno', trim((string) $record->st_file_no))
+                ->orderByDesc('id')
+                ->first(['property_lga', 'property_plot_no']);
+
+            if ($stFile) {
+                if (empty($record->lga_derived) && !empty($stFile->property_lga)) {
+                    $record->lga_derived = $stFile->property_lga;
+                }
+                if (empty($record->plot_no) && !empty($stFile->property_plot_no)) {
+                    $record->plot_no = $stFile->property_plot_no;
+                }
+            }
+        }
+
         // A SuA has no mls_file_no row to derive the LGA from — the unit keeps its own
         // in subapplications, and that is the Local Government the sheet is addressed to.
         if ($record && empty($record->lga_derived) && !empty($record->st_file_no)) {

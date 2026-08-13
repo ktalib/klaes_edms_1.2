@@ -175,36 +175,24 @@ class SpecialAssignmentController extends Controller
                                $inspection = $a->fieldData->first();
                                $hasInspection = $inspection !== null;
 
-                               // Property photos from land record
-                               $appPhotos = $a->photos ? array_map(fn($p) => asset('storage/'.$p), (array)$a->photos) : [];
-
                                // Contravening flag
                                $applied    = strtoupper(trim($a->land_use_type ?? ''));
                                $prevailing = strtoupper(trim($a->existing_use ?? ''));
                                $contravening = $applied && $prevailing && $applied !== $prevailing;
 
-                               // Build action dropdown
-                               $appData = e(json_encode([
-                                   'id'            => $a->id,
-                                   'file_number'   => $a->file_number,
-                                   'owner_name'    => $a->owner_name,
-                                   'location'      => $a->location,
-                                   'land_use_type' => $a->land_use_type,
-                                   'existing_use'  => $a->existing_use,
-                                   'photos'        => $appPhotos,
-                               ]));
+                               // Build action dropdown.
+                               // The inspection is captured inside the "Add Land Record" card, so the
+                               // row menu no longer offers "Log Inspection" — a record without an
+                               // inspection row simply has no actions to offer.
+                               $action = '';
 
-                               $action = '<div class="relative inline-block">'
-                                   . '<button class="btn-action-toggle p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 border border-transparent hover:border-gray-200 transition-colors">'
-                                   . '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>'
-                                   . '</button>'
-                                   . '<div class="action-dropdown hidden absolute right-0 top-full z-50 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">';
+                               if ($hasInspection) {
+                                   $action = '<div class="relative inline-block">'
+                                       . '<button class="btn-action-toggle p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 border border-transparent hover:border-gray-200 transition-colors">'
+                                       . '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>'
+                                       . '</button>'
+                                       . '<div class="action-dropdown hidden absolute right-0 top-full z-50 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">';
 
-                               if (!$hasInspection) {
-                                   $action .= '<button class="btn-log-inspection w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"'
-                                       . ' data-app=\''.$appData.'\''
-                                       . '><svg class="w-3.5 h-3.5 text-[rgb(186,191,12)]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Log Inspection</button>';
-                               } else {
                                    $inspector = optional($inspection->surveyor)->name ?? '—';
                                    $inspPhotos = $inspection->photos ? array_map(fn($p) => asset('storage/'.$p), $inspection->photos) : [];
                                    $viewData = e(json_encode([
@@ -219,8 +207,9 @@ class SpecialAssignmentController extends Controller
                                        . '><svg class="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>View</button>'
                                        . '<button class="btn-delete-field w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2" data-id="'.$inspection->id.'">'
                                        . '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>Delete</button>';
+
+                                   $action .= '</div></div>';
                                }
-                               $action .= '</div></div>';
 
                                return [
                                    'DT_RowIndex'         => $request->input('start', 0) + $i + 1,
@@ -231,7 +220,9 @@ class SpecialAssignmentController extends Controller
                                    'land_use_type'       => $a->land_use_type ?? '',
                                    'existing_use'        => $a->existing_use ?? '',
                                    'contravening'        => $contravening,
-                                   'inspection_status'   => $hasInspection ? 'inspected' : 'pending',
+                                   // A land record is only added from the field, with the inspection
+                                   // captured in the same card — so an added record counts as inspected.
+                                   'inspection_status'   => 'inspected',
                                    'inspection_date'     => $hasInspection ? ($inspection->inspection_date?->format('d/m/Y') ?? '—') : '—',
                                    'findings'            => $hasInspection ? \Str::limit($inspection->findings ?? '', 50) : '—',
                                    'action'       => $action,

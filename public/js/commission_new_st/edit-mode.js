@@ -27,7 +27,12 @@
     // would fetch a *next available* number and overwrite the issued one on screen,
     // and the commission endpoints would mint a second record.
     ['updateNPFNDisplay', 'updateSerialNumber', 'commissionFileNumber',
-     'generateSuaFileNumbers', 'commissionPuaFileNumber'].forEach(function (fn) {
+     'generateSuaFileNumbers', 'commissionPuaFileNumber',
+     // The SuA/PuA tabs preview (and clear) their numbers from the land-use
+     // selector. Selecting the record's land use below would otherwise blank the
+     // issued numbers via clearSuaFileNumbers() or replace them with a preview.
+     'showSuaFileNumberPreview', 'clearSuaFileNumbers',
+     'showPuaFileNumberPreview', 'clearPuaFileNumbers'].forEach(function (fn) {
         if (typeof window[fn] === 'function') {
             window[fn] = function () {
                 console.warn('[ST edit mode] ' + fn + '() suppressed — file numbers are locked.');
@@ -297,22 +302,47 @@
         var parentPicker = $('pua_parent_file_number');
         if (parentPicker) lock(parentPicker, 'Parent file — cannot be changed');
 
-        // Reflect the record's land use on the (now locked) selector.
-        var landUseCheckbox = document.querySelector(
-            'input[name="selectedLandUse"][value="' + String(record.land_use || '').toUpperCase() + '"]'
-        );
-        if (landUseCheckbox) {
-            document.querySelectorAll('input[name="selectedLandUse"]').forEach(function (cb) {
-                cb.checked = false;
-                var label = cb.closest('label');
-                if (label) label.classList.remove('selected');
-            });
-            landUseCheckbox.checked = true;
-            var label = landUseCheckbox.closest('label');
-            if (label) label.classList.add('selected');
+        reflectLandUse();
+    }
+
+    /**
+     * Tick the record's land use on its own tab's (now locked) selector.
+     *
+     * Each tab uses a different input name, and the SuA tab labels Industrial as
+     * INDUSTRY — without this a SuA/PuA edit opens with no land use selected.
+     */
+    function reflectLandUse() {
+        var landUse = String(record.land_use || '').toUpperCase();
+        if (!landUse) return;
+
+        var inputName = IS_PRIMARY
+            ? 'selectedLandUse'
+            : (PREFIX === 'sua' ? 'sua_selectedLandUse' : 'pua_land_use');
+
+        var boxes = document.querySelectorAll('input[name="' + inputName + '"]');
+        if (!boxes.length) return;
+
+        var wanted = (PREFIX === 'sua' && landUse === 'INDUSTRIAL') ? 'INDUSTRY' : landUse;
+        var match = Array.prototype.find.call(boxes, function (cb) {
+            return String(cb.value).toUpperCase() === wanted;
+        });
+
+        boxes.forEach(function (cb) {
+            cb.checked = false;
+            var label = cb.closest('label');
+            if (label) label.classList.remove('selected');
+        });
+
+        if (match) {
+            match.checked = true;
+            var matchedLabel = match.closest('label');
+            if (matchedLabel) matchedLabel.classList.add('selected');
         }
-        var hiddenLandUse = $('hiddenLandUse');
-        if (hiddenLandUse && record.land_use) hiddenLandUse.value = String(record.land_use).toUpperCase();
+
+        var hiddenId = IS_PRIMARY
+            ? 'hiddenLandUse'
+            : (PREFIX === 'sua' ? 'sua_land_use_hidden' : 'pua_land_use_hidden');
+        setValue(hiddenId, match ? match.value : landUse);
     }
 
     /* ------------------------------------------------- submit: update, not create */

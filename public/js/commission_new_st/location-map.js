@@ -16,6 +16,10 @@ window.STLocationMaps = window.STLocationMaps || {};
 // to find the plot on the satellite imagery.
 var KANO_CENTER = { lat: 12.0022, lng: 8.5920 };
 
+// Every file handled here is a Kano State registry file, so the State field
+// starts on Kano (and its LGA list preloaded) instead of blank.
+var DEFAULT_STATE = 'Kano';
+
 function initLocationDetailsMap(config) {
     var prefix = config.prefix;
     var manual = !!config.manual;
@@ -74,11 +78,15 @@ function initLocationDetailsMap(config) {
         /**
          * Populate the State dropdown from the shared Nigerian states dataset
          * (loaded asynchronously by js/primaryform/states-lga.js).
+         *
+         * The ST partial already renders the full list server-side, so this is a
+         * no-op there; it still runs for hosts that render only the placeholder.
          */
         populateStates: function (attemptsLeft) {
             attemptsLeft = typeof attemptsLeft === 'number' ? attemptsLeft : 20;
             var stateSelect = el('PropertyState');
             if (!stateSelect) return;
+            if (stateSelect.options.length > 1) return;
 
             if (typeof nigerianStatesData === 'undefined' || !nigerianStatesData.length) {
                 if (attemptsLeft > 0) {
@@ -98,20 +106,30 @@ function initLocationDetailsMap(config) {
                 option.textContent = state.name;
                 stateSelect.appendChild(option);
             });
-            if (current) stateSelect.value = current;
+            stateSelect.value = current || DEFAULT_STATE;
+            this.populateLgas();
         },
 
         /** Refill the LGA dropdown for the selected state. */
-        populateLgas: function (selectedLga) {
+        populateLgas: function (selectedLga, attemptsLeft) {
             var stateSelect = el('PropertyState');
             var lgaSelect = el('PropertyLga');
             if (!stateSelect || !lgaSelect) return;
 
-            lgaSelect.innerHTML = '<option value="">Select LGA</option>';
-
-            if (typeof nigerianStatesData === 'undefined' || !stateSelect.value) return;
+            // The reference data loads asynchronously — bail out before wiping the
+            // server-rendered list, otherwise the LGA field empties itself.
+            if (typeof nigerianStatesData === 'undefined' || !nigerianStatesData.length) {
+                attemptsLeft = typeof attemptsLeft === 'number' ? attemptsLeft : 20;
+                if (attemptsLeft > 0) {
+                    var self = this;
+                    setTimeout(function () { self.populateLgas(selectedLga, attemptsLeft - 1); }, 300);
+                }
+                return;
+            }
 
             var state = nigerianStatesData.find(function (s) { return s.name === stateSelect.value; });
+
+            lgaSelect.innerHTML = '<option value="">Select LGA</option>';
             if (!state || !state.local_governments) return;
 
             state.local_governments.forEach(function (lga) {
@@ -444,8 +462,8 @@ function initLocationDetailsMap(config) {
                 clearReferenceSelect(el('PropertyStreetName'), true);
                 clearReferenceSelect(el('PropertyDistrict'), true);
             }
-            if (el('PropertyState')) el('PropertyState').value = '';
-            if (el('PropertyLga')) el('PropertyLga').innerHTML = '<option value="">Select LGA</option>';
+            if (el('PropertyState')) el('PropertyState').value = DEFAULT_STATE;
+            this.populateLgas();
             this.clearPin();
             this.updateAddress();
         },
