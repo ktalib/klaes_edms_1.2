@@ -88,6 +88,11 @@
                                                 <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
                                                 <span>Code Assigned: {{ $unit->security_paper_code }}</span>
                                             </span>
+                                            <button type="button" class="dd-item"
+                                                onclick="closeAllDD(); resetSecurityPaperModal('{{ $unit->id }}', @js($unit->fileno), @js($unit->security_paper_code))">
+                                                <i data-lucide="rotate-ccw" class="w-4 h-4 text-red-500"></i>
+                                                <span class="text-red-600">Reset Security Paper Code</span>
+                                            </button>
                                         @elseif(($unit->print_counter ?? 0) < 1)
                                             <span class="dd-item disabled" title="Print the RoFO before entering a security code">
                                                 <i data-lucide="shield" class="w-4 h-4 text-slate-400"></i>

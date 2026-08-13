@@ -951,6 +951,20 @@
         );
     }
 
+    // Bridge to the global reset modal. A successful reset chains into the
+    // picker so the correct code can be keyed in before the page reloads.
+    function resetSecurityPaperModal(id, fileno, currentCode) {
+        openResetSecurityPaperModal(
+            id, fileno, currentCode,
+            '{{ url("programmes/rofo/reset-security-paper") }}/' + id,
+            {
+                assignEndpoint: '{{ url("programmes/rofo/assign-security-paper") }}/' + id,
+                codesApiUrl: '{{ url("security-paper-codes/available") }}',
+                fieldName: 'security_paper_code'
+            }
+        );
+    }
+
     document.addEventListener('click', function(event) {
         if (!event.target.closest('.dd')) {
             closeAllDD();
