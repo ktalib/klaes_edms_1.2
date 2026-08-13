@@ -183,6 +183,13 @@
                                                 <i data-lucide="hash" class="h-4 w-4"></i>
                                                 {{ $rec->sltr_rofo_serial_no ? 'Code: '.$rec->sltr_rofo_serial_no : 'Enter Security Paper Code' }}
                                             </button>
+                                            @if($rec->sltr_rofo_serial_no)
+                                            <button type="button"
+                                                    onclick="openResetSecurityPaperModal({{ $rec->id }}, @js($rec->sltr_number), @js($rec->sltr_rofo_serial_no), '{{ route('sltr-rofos.reset-security-paper', $rec->id) }}', { assignEndpoint: '{{ route('sltr-rofos.assign-security-paper', $rec->id) }}' })"
+                                                    class="flex w-full items-center px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition gap-2 font-bold">
+                                                <i data-lucide="rotate-ccw" class="h-4 w-4"></i> Reset Security Paper Code
+                                            </button>
+                                            @endif
                                         </div>
                                     </div>
                                 </td>

@@ -471,7 +471,7 @@
                                                 <button type="button" disabled class="flex w-full items-center px-4 py-2.5 text-sm text-slate-300 gap-2 font-bold cursor-not-allowed" title="Security paper code already assigned">
                                                     <i data-lucide="hash" class="h-4 w-4"></i> Enter Security Paper Code
                                                 </button>
-                                                <button type="button" onclick="resetSecurityPaperCode('{{ $rec->id }}', '{{ route('land-rofos.reset-security-paper', $rec->id) }}')" class="flex w-full items-center px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition gap-2 font-bold">
+                                                <button type="button" onclick="resetSecurityPaperCode('{{ $rec->id }}', '{{ route('land-rofos.reset-security-paper', $rec->id) }}', @js($rec->file_number), @js($rec->land_rofo_serial_no), '{{ route('land-rofos.assign-security-paper', $rec->id) }}')" class="flex w-full items-center px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition gap-2 font-bold">
                                                     <i data-lucide="rotate-ccw" class="h-4 w-4"></i> Reset Security Paper Code
                                                 </button>
                                                 @else
@@ -1914,45 +1914,16 @@ function submitBatchPrint(ids, csrf, printWindow, copies, windowName, reload) {
         });
     }
 
-    function resetSecurityPaperCode(id, url) {
-        Swal.fire({
-            title: 'Reset Security Paper Code?',
-            text: "This will remove the currently assigned security paper code and make it available again. You can assign a new code afterwards.",
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#d33',
-            cancelButtonColor: '#3085d6',
-            confirmButtonText: 'Yes, reset it!',
-            cancelButtonText: 'Cancel'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                Swal.fire({
-                    title: 'Resetting...',
-                    didOpen: () => Swal.showLoading(),
-                    allowOutsideClick: false
-                });
-
-                fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                        'Accept': 'application/json'
-                    }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        Swal.fire('Success', 'Security paper code reset successfully.', 'success')
-                        .then(() => window.location.reload());
-                    } else {
-                        Swal.fire('Error', data.message || 'Reset failed', 'error');
-                    }
-                })
-                .catch(error => {
-                    Swal.fire('Error', 'An unexpected error occurred.', 'error');
-                });
-            }
+    // Delegates to the shared reset-security-paper-modal component (included in
+    // layouts/app) so Land RofO, SLTR and ST offer the same reasons and honour
+    // the same void rules.
+    // NB: never write the component's angle-bracket tag form in this file.
+    // Blade compiles component tags even inside a JS comment, which renders the
+    // whole component here — its closing script tag then ends this block early
+    // and every function below it silently disappears.
+    function resetSecurityPaperCode(id, url, fileNumber, currentSerial, assignUrl) {
+        openResetSecurityPaperModal(id, fileNumber || '', currentSerial || '', url, {
+            assignEndpoint: assignUrl
         });
     }
 

@@ -137,6 +137,7 @@
   <script src="{{ asset('js/tailwind-modal.js') }}?v={{ time() }}"></script>
   <x-print-manager />
   <x-assign-security-paper-modal />
+  <x-reset-security-paper-modal />
   @livewireScripts
 </body>
 

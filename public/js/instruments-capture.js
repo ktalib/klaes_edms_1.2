@@ -1004,7 +1004,14 @@ document.addEventListener('DOMContentLoaded', function () {
         duplicateCheckState.praHistory = [];
         duplicateCheckState.isUpdateMode = false;
         duplicateCheckState.consentApp = null;
+        duplicateCheckState.consentApps = [];
         duplicateCheckState.priorInstrument = null;
+        // Drop any consent picked for the previous file/type — auto-fill re-stamps
+        // it, so a stale id can never ride along with a different capture.
+        setHidden('consent_application_id', '');
+        // A cleared form starts the consent conversation over, so the chooser is
+        // offered again for the same file.
+        lastConsentPromptKey = null;
         alreadyCapturedLock = false;
         resetSubmitButton();
     }
@@ -1289,6 +1296,10 @@ document.addEventListener('DOMContentLoaded', function () {
         praHistory: [],
         isUpdateMode: false,
         consentApp: null,
+        // Every consent application on the file, each flagged is_used / matches_type.
+        // Listed in the duplicate warning so the user can pick which consent this
+        // capture is for — a file often carries more than one over its life.
+        consentApps: [],
         priorInstrument: null
     };
 
@@ -1620,6 +1631,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const prior = priorInstrument || {};
         const cons = consent || {};
+
+        // Remember WHICH consent this capture was filled from, so the next
+        // duplicate check can grey it out instead of offering it again.
+        if (cons.id) {
+            setHidden('consent_application_id', cons.id);
+        }
 
         console.log('[autoFillFromConsent] consent keys:', consent ? Object.keys(cons) : 'none');
         console.log('[autoFillFromConsent] prior instrument keys:', priorInstrument ? Object.keys(prior) : 'none');
@@ -2136,7 +2153,11 @@ document.addEventListener('DOMContentLoaded', function () {
         duplicateCheckState.praHistory = [];
         duplicateCheckState.isUpdateMode = false;
         duplicateCheckState.consentApp = null;
+        duplicateCheckState.consentApps = [];
         duplicateCheckState.priorInstrument = null;
+        // Drop any consent picked for the previous file/type — auto-fill re-stamps
+        // it, so a stale id can never ride along with a different capture.
+        setHidden('consent_application_id', '');
         alreadyCapturedLock = false;
         resetSubmitButton();
 
@@ -2291,6 +2312,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 duplicateCheckState.existingRecord = data.instrument;
                 duplicateCheckState.propertyData = data.pra;
                 duplicateCheckState.consentApp = data.consent_app || null;
+                duplicateCheckState.consentApps = Array.isArray(data.consent_apps) ? data.consent_apps : [];
                 // If there is no separate prior record, reuse the duplicate record itself
                 // so Create New can still auto-fill from instrument_capture data.
                 duplicateCheckState.priorInstrument = data.prior_instrument || data.instrument || null;
@@ -2319,9 +2341,17 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                 }
 
+                // The duplicate modal carries the consent list itself — but it only
+                // exists on pages that render it, so fall back to the standalone
+                // chooser elsewhere (the OP / register modals, for instance).
+                const hasDuplicateModal = !!document.getElementById('duplicate-modal');
                 showDuplicateModal(data.instrument, data.pra, fileNo);
+                if (!hasDuplicateModal) {
+                    maybePromptConsentChoice(fileNo, typeName);
+                }
             } else {
                 console.log('checkDuplicate: No duplicate exists.');
+                duplicateCheckState.consentApps = Array.isArray(data.consent_apps) ? data.consent_apps : [];
 
                 // Auto-fill from Consent Application and/or prior instrument record
                 if (!duplicateCheckState.isUpdateMode) {
@@ -2331,6 +2361,10 @@ document.addEventListener('DOMContentLoaded', function () {
                         console.log('checkDuplicate: Auto-filling.', { consent: hasCons, prior: hasPrior });
                         autoFillFromConsent(data.consent_app, data.prior_instrument);
                     }
+
+                    // No duplicate to warn about, but the file may still hold more
+                    // than one consent — let the user say which one this capture is for.
+                    maybePromptConsentChoice(fileNo, typeName);
                 }
             }
         } catch (e) {
@@ -2420,6 +2454,201 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    function escapeHtmlText(value) {
+        if (value === null || value === undefined) return '';
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function formatShortDate(value) {
+        if (!value) return '';
+        const parsed = new Date(String(value).replace(' ', 'T'));
+        if (isNaN(parsed.getTime())) return String(value);
+        return parsed.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    /**
+     * The consent picker: every consent application on the file, listed.
+     *
+     * A file legitimately carries several consents over its life — this year's
+     * assignment to one buyer, next year's to another — and the same instrument
+     * type is captured against each in turn. The ones already registered are
+     * greyed out and unclickable; any consent still free can be picked to
+     * back-fill the capture form.
+     *
+     * Rendered in two places: inside the duplicate-registration warning, and in
+     * a standalone chooser when a file has more than one consent but no
+     * duplicate instrument to warn about.
+     */
+    function buildConsentOptionsHtml(consents, options = {}) {
+        if (!Array.isArray(consents) || consents.length === 0) return '';
+
+        const { withDivider = true, appliedId = null } = options;
+        const available = consents.filter(c => !c.is_used).length;
+
+        let html = `
+        <div class="${withDivider ? 'mt-3 pt-3 border-t border-gray-200' : ''} text-left" data-consent-picker>
+            <div class="flex items-center justify-between mb-2">
+                <span class="font-semibold text-gray-700">Consents on this file</span>
+                <span class="text-[11px] text-gray-500">${available} of ${consents.length} still available</span>
+            </div>
+            <p class="text-[11px] text-gray-500 mb-2">
+                Pick the consent this instrument is being captured against — its details are filled into the form.
+                Consents already registered are greyed out.
+            </p>
+            <div class="space-y-2 max-h-64 overflow-y-auto pr-1">
+        `;
+
+        consents.forEach((consent) => {
+            const ref = consent.application_tracking_no || `Consent #${consent.id}`;
+            const parties = `${consent.applicant_name || 'N/A'} → ${consent.party_name || 'N/A'}`;
+            const dated = formatShortDate(consent.application_date || consent.created_at);
+            const offType = consent.matches_type === false;
+            const isApplied = appliedId !== null && String(appliedId) === String(consent.id);
+
+            if (consent.is_used) {
+                const usedBy = consent.used_by || {};
+                const usedRef = usedBy.registration_number ? ` · ${usedBy.registration_number}` : '';
+                const usedWhen = formatShortDate(usedBy.reg_date || usedBy.captured_at);
+                const howKnown = usedBy.is_linked === false
+                    ? ' <span class="italic">(matched by party name)</span>'
+                    : '';
+
+                html += `
+                <div class="rounded-lg border border-gray-200 bg-gray-100 p-2.5 opacity-60 cursor-not-allowed"
+                     title="Already registered — this consent cannot be used again."
+                     aria-disabled="true">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <div class="text-xs font-semibold text-gray-600 line-through">${escapeHtmlText(consent.consent_type)} · ${escapeHtmlText(ref)}</div>
+                            <div class="text-[11px] text-gray-500 truncate">${escapeHtmlText(parties)}</div>
+                            ${dated ? `<div class="text-[11px] text-gray-400">Applied ${escapeHtmlText(dated)}</div>` : ''}
+                        </div>
+                        <span class="shrink-0 text-[10px] font-bold uppercase tracking-wide bg-gray-300 text-gray-700 rounded px-1.5 py-0.5">Used</span>
+                    </div>
+                    <div class="mt-1.5 text-[11px] text-gray-500">
+                        Registered as ${escapeHtmlText(usedBy.instrument_type || 'an instrument')}${escapeHtmlText(usedRef)}${usedWhen ? ` on ${escapeHtmlText(usedWhen)}` : ''}${howKnown}
+                    </div>
+                </div>
+                `;
+                return;
+            }
+
+            const tone = offType
+                ? 'border-amber-300 bg-amber-50 hover:bg-amber-100'
+                : 'border-indigo-200 bg-indigo-50 hover:bg-indigo-100';
+            const badgeTone = offType ? 'bg-amber-200 text-amber-800' : 'bg-indigo-200 text-indigo-800';
+
+            html += `
+            <button type="button" data-consent-id="${escapeHtmlText(consent.id)}"
+                class="w-full text-left rounded-lg border ${tone} ${isApplied ? 'ring-2 ring-indigo-500' : ''} p-2.5 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                        <div class="text-xs font-semibold text-gray-800">${escapeHtmlText(consent.consent_type)} · ${escapeHtmlText(ref)}</div>
+                        <div class="text-[11px] text-gray-600 truncate">${escapeHtmlText(parties)}</div>
+                        ${dated ? `<div class="text-[11px] text-gray-400">Applied ${escapeHtmlText(dated)}</div>` : ''}
+                    </div>
+                    <span class="shrink-0 text-[10px] font-bold uppercase tracking-wide ${isApplied ? 'bg-green-200 text-green-800' : badgeTone} rounded px-1.5 py-0.5">
+                        ${isApplied ? 'In form' : (offType ? 'Other type' : 'Use this')}
+                    </span>
+                </div>
+                ${offType ? `<div class="mt-1.5 text-[11px] text-amber-700">This consent is not for the instrument type currently selected.</div>` : ''}
+            </button>
+            `;
+        });
+
+        html += `
+            </div>
+        </div>
+        `;
+
+        return html;
+    }
+
+    /**
+     * Capture this instrument against the chosen consent: back-fill the form from
+     * it, stamp the link onto the submission, and release the duplicate lock —
+     * a fresh consent means this is a new dealing, not a re-registration.
+     */
+    function selectConsentForCapture(consent) {
+        if (!consent) return;
+
+        duplicateCheckState.consentApp = consent;
+        setHidden('consent_application_id', consent.id);
+
+        alreadyCapturedLock = false;
+        handleCreateNew();
+
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                icon: 'success',
+                title: 'Consent Applied',
+                html: `Form filled from the <strong>${escapeHtmlText(consent.consent_type)}</strong> consent`
+                    + (consent.application_tracking_no ? ` (<strong>${escapeHtmlText(consent.application_tracking_no)}</strong>)` : '')
+                    + '.<br>Review the details before capturing.',
+                timer: 3500,
+                timerProgressBar: true
+            });
+        }
+    }
+
+    /**
+     * Standalone consent chooser, for the common case where the file carries
+     * several consents but there is no duplicate instrument to warn about — the
+     * duplicate modal would never open, so the list needs its own surface.
+     *
+     * Only raised when there is an actual choice to make: more than one consent,
+     * or a single consent that has already been spent (worth knowing before the
+     * clerk captures against it). One prompt per file + instrument type, because
+     * the duplicate check re-fires on both `change` and `blur`.
+     */
+    let lastConsentPromptKey = null;
+
+    function maybePromptConsentChoice(fileNo, typeName) {
+        if (duplicateCheckState.isUpdateMode) return;
+        if (typeof Swal === 'undefined') return;
+
+        const consents = duplicateCheckState.consentApps || [];
+        if (consents.length === 0) return;
+
+        const needsChoice = consents.length > 1 || consents.some(c => c.is_used);
+        if (!needsChoice) return;
+
+        const key = `${fileNo}|${typeName}`;
+        if (lastConsentPromptKey === key) return;
+        lastConsentPromptKey = key;
+
+        const appliedId = duplicateCheckState.consentApp ? duplicateCheckState.consentApp.id : null;
+        const allSpent = consents.every(c => c.is_used);
+
+        Swal.fire({
+            icon: allSpent ? 'warning' : 'info',
+            title: allSpent ? 'All Consents Already Used' : 'Multiple Consents on This File',
+            html: `<div class="text-left text-sm text-gray-600 mb-2">File <strong>${escapeHtmlText(fileNo)}</strong> has `
+                + `${consents.length} consent application${consents.length === 1 ? '' : 's'}.</div>`
+                + buildConsentOptionsHtml(consents, { withDivider: false, appliedId }),
+            width: 640,
+            showConfirmButton: true,
+            confirmButtonText: 'Keep current details',
+            confirmButtonColor: '#6366f1',
+            didOpen: (popup) => {
+                popup.querySelectorAll('[data-consent-id]').forEach((optionBtn) => {
+                    optionBtn.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        const chosen = consents.find(c => String(c.id) === optionBtn.dataset.consentId);
+                        if (!chosen) return;
+                        Swal.close();
+                        selectConsentForCapture(chosen);
+                    });
+                });
+            }
+        });
+    }
+
     function showDuplicateModal(instrument, pra, fileNo) {
         const duplicateFileNo = (
             fileNo ||
@@ -2505,6 +2734,8 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
 
+        html += buildConsentOptionsHtml(duplicateCheckState.consentApps);
+
         detailsContainer.innerHTML = html;
         modal.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
@@ -2547,6 +2778,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 delete modal._duplicateEscHandler;
             }
         };
+
+        // Consent picker: choosing a free consent is itself the "create new"
+        // decision, so it fills the form and dismisses the warning.
+        detailsContainer.querySelectorAll('[data-consent-id]').forEach((optionBtn) => {
+            optionBtn.addEventListener('click', (event) => {
+                event.preventDefault();
+                const chosen = (duplicateCheckState.consentApps || [])
+                    .find(c => String(c.id) === optionBtn.dataset.consentId);
+                if (!chosen) return;
+                closeDuplicateModal();
+                selectConsentForCapture(chosen);
+            });
+        });
 
         if (!updateBtn || !createBtn) {
             console.error('Duplicate modal action buttons were not found.');
@@ -5774,6 +6018,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function setHidden(name, value) {
+        if (!elements.registrationForm) return;
         let control = elements.registrationForm.querySelector(`[name = "${name}"]`);
         if (!control) {
             control = document.createElement('input');

@@ -13,6 +13,7 @@ use Exception;
 class InstrumentCaptureService
 {
     private ?bool $instrumentCaptureHasRegTime = null;
+    private ?bool $instrumentCaptureHasConsentId = null;
 
     public function __construct(
         protected PropertyIdAllocationService $propIdService,
@@ -323,6 +324,10 @@ class InstrumentCaptureService
 
             if ($this->hasInstrumentCaptureRegTimeColumn()) {
                 $insertData['reg_time'] = $resolvedRegTime;
+            }
+
+            if ($this->hasInstrumentCaptureConsentColumn()) {
+                $insertData['consent_application_id'] = $this->resolveConsentApplicationId($data);
             }
 
             $id = DB::connection('sqlsrv')->table('instrument_capture')->insertGetId($insertData);
@@ -856,6 +861,15 @@ class InstrumentCaptureService
                 $updateData['reg_time'] = $data['registrationTime'] ?? ($data['reg_time'] ?? ($existing->reg_time ?? null));
             }
 
+            if ($this->hasInstrumentCaptureConsentColumn()) {
+                // Keep the existing link when the form doesn't carry one, so an
+                // edit never silently frees up a consent that was already used.
+                $updateData['consent_application_id'] = $this->resolveConsentApplicationId(
+                    $data,
+                    $existing->consent_application_id ?? null
+                );
+            }
+
             // Filter out keys that might overwrite with null if we want partial updates?
             // HTML forms usually submit all or nothing. We assume full submit.
 
@@ -873,6 +887,33 @@ class InstrumentCaptureService
                 'sync_result' => $syncResult
             ];
         });
+    }
+
+    /**
+     * Which consent application this capture is being registered against.
+     * Set by the duplicate-registration warning when the user picks one of the
+     * file's consents, so a spent consent can be greyed out next time.
+     */
+    private function resolveConsentApplicationId(array $data, $fallback = null): ?int
+    {
+        $raw = $data['consent_application_id'] ?? null;
+        if ($raw === null || $raw === '') {
+            $raw = $fallback;
+        }
+
+        $id = trim((string) $raw);
+
+        return (ctype_digit($id) && (int) $id > 0) ? (int) $id : null;
+    }
+
+    private function hasInstrumentCaptureConsentColumn(): bool
+    {
+        if ($this->instrumentCaptureHasConsentId === null) {
+            $this->instrumentCaptureHasConsentId = Schema::connection('sqlsrv')
+                ->hasColumn('instrument_capture', 'consent_application_id');
+        }
+
+        return $this->instrumentCaptureHasConsentId;
     }
 
     private function hasInstrumentCaptureRegTimeColumn(): bool

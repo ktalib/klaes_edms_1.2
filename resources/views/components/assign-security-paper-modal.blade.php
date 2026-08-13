@@ -26,6 +26,13 @@
         return _cache[apiUrl];
     }
 
+    // Codes are cached per endpoint, so anything that changes the pool from
+    // outside this modal (a reset returning a code) must drop the cache first —
+    // otherwise the freed code is missing from the list until a page reload.
+    window.invalidateSecurityPaperCodes = function (apiUrl) {
+        if (apiUrl) { delete _cache[apiUrl]; } else { _cache = {}; }
+    };
+
     window.openAssignSecurityPaperModal = function (id, fileNumber, currentSerial, postEndpoint, options) {
         var opts      = options || {};
         var codesApi  = opts.codesApiUrl || '{{ url("security-paper-codes/available") }}';
@@ -123,7 +130,12 @@
                     return paperCode;
                 }
             }).then(function (swalResult) {
-                if (!swalResult.isConfirmed) return;
+                if (!swalResult.isConfirmed) {
+                    // Callers that opened this as a follow-up step (e.g. after a
+                    // reset) still need the page refreshed on cancel.
+                    if (typeof opts.onDismiss === 'function') { opts.onDismiss(); }
+                    return;
+                }
 
                 Swal.fire({ title: 'Assigning...', allowOutsideClick: false, didOpen: function () { Swal.showLoading(); } });
 
@@ -144,7 +156,10 @@
                     if (data.success) {
                         delete _cache[codesApi]; // invalidate so next open re-fetches
                         Swal.fire({ icon: 'success', title: 'Code Assigned', timer: 1800, showConfirmButton: false })
-                            .then(function () { location.reload(); });
+                            .then(function () {
+                                if (typeof opts.onSuccess === 'function') { opts.onSuccess(data); }
+                                else { location.reload(); }
+                            });
                     } else {
                         Swal.fire({ icon: 'error', title: 'Error', text: data.message || 'Failed to assign code.' });
                     }

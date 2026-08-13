@@ -194,6 +194,16 @@
             <span>{{ $stRofoSerial ? 'Code: '.$stRofoSerial : 'Enter Security Paper Code' }}</span>
          </button>
       </li>
+      @if($stRofoSerial)
+      <li>
+         <button type="button"
+            class="w-full text-left px-4 py-2 hover:bg-red-50 flex items-center space-x-2 text-red-600 font-semibold"
+            onclick="openResetSecurityPaperModal({{ $app->id }}, @js($app->unit_number ?? $app->id), @js($stRofoSerial), '{{ url('programmes/rofo/reset-security-paper') }}/{{ $app->id }}', { assignEndpoint: '{{ url('programmes/rofo/assign-security-paper') }}/{{ $app->id }}', codesApiUrl: '{{ url('security-paper-codes/available') }}', fieldName: 'security_paper_code' })">
+            <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+            <span>Reset Security Paper Code</span>
+         </button>
+      </li>
+      @endif
       @endif
 
    </ul>

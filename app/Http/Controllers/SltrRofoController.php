@@ -4,9 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\SltrRecommendation;
 use App\Services\Pra\RofoPraSyncer;
+use App\Services\SecurityPaperCodeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class SltrRofoController extends Controller
 {
@@ -117,7 +119,13 @@ class SltrRofoController extends Controller
             $serial = DB::connection('sqlsrv')->table('global_security_paper_codes')
                 ->where('paper_code', $request->paper_code)->first();
 
+            if (($serial->status ?? null) === 'voided') {
+                DB::connection('sqlsrv')->rollBack();
+                return response()->json(['success' => false, 'message' => 'That security paper was voided (' . SecurityPaperCodeService::label($serial->void_reason ?? null) . ') and cannot be reissued.'], 422);
+            }
+
             if ($serial->is_used) {
+                DB::connection('sqlsrv')->rollBack();
                 return response()->json(['success' => false, 'message' => 'Security paper code already in use.'], 422);
             }
 
@@ -138,6 +146,40 @@ class SltrRofoController extends Controller
         } catch (\Exception $e) {
             DB::connection('sqlsrv')->rollBack();
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function resetSecurityPaperCode(Request $request, $id)
+    {
+        $request->validate([
+            'reason' => ['required', 'string', Rule::in(array_keys(SecurityPaperCodeService::REASONS))],
+            'note'   => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $rec = SltrRecommendation::findOrFail($id);
+
+        if (!$rec->sltr_rofo_serial_no) {
+            return response()->json(['success' => false, 'message' => 'No security paper code assigned to reset.'], 422);
+        }
+
+        DB::connection('sqlsrv')->beginTransaction();
+        try {
+            $oldCode = $rec->sltr_rofo_serial_no;
+
+            SecurityPaperCodeService::release($oldCode, $request->reason, 'SLTR ROFO', $request->note);
+
+            $rec->update(['sltr_rofo_serial_no' => null]);
+
+            DB::connection('sqlsrv')->commit();
+
+            return response()->json([
+                'success'          => true,
+                'returned_to_pool' => SecurityPaperCodeService::returnsToPool($request->reason),
+                'paper_code'       => $oldCode,
+            ]);
+        } catch (\Exception $e) {
+            DB::connection('sqlsrv')->rollBack();
+            return response()->json(['success' => false, 'message' => 'Failed to reset security paper code. ' . $e->getMessage()], 500);
         }
     }
 

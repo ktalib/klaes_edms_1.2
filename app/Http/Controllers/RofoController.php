@@ -10,16 +10,15 @@ use Illuminate\Support\Str;
 use Carbon\Carbon;
 
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 use App\Services\Pra\RofoPraSyncer;
+use App\Services\SecurityPaperCodeService;
 
 class RofoController extends Controller
 {
     private function getAvailableSecurityPapers()
     {
-        return DB::connection('sqlsrv')->table('global_security_paper_codes')
-            ->where('is_used', false)
-            ->orderBy('paper_code', 'asc')
-            ->get();
+        return SecurityPaperCodeService::availableQuery()->get();
     }
 
     public function assignSecurityPaper(Request $request, $id)
@@ -40,7 +39,13 @@ class RofoController extends Controller
                 ->where('paper_code', $request->security_paper_code)
                 ->first();
 
+            if (($paper->status ?? null) === 'voided') {
+                DB::connection('sqlsrv')->rollBack();
+                return response()->json(['success' => false, 'message' => 'That security paper was voided (' . SecurityPaperCodeService::label($paper->void_reason ?? null) . ') and cannot be reissued.'], 422);
+            }
+
             if ($paper->is_used) {
+                DB::connection('sqlsrv')->rollBack();
                 return response()->json(['success' => false, 'message' => 'Security paper code already in use.'], 422);
             }
 
@@ -97,6 +102,45 @@ class RofoController extends Controller
         } catch (\Exception $e) {
             DB::connection('sqlsrv')->rollBack();
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function resetSecurityPaper(Request $request, $id)
+    {
+        $request->validate([
+            'reason' => ['required', 'string', Rule::in(array_keys(SecurityPaperCodeService::REASONS))],
+            'note'   => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $rofo = DB::connection('sqlsrv')->table('rofo')->where('sub_application_id', $id)->first();
+        if (!$rofo) {
+            return response()->json(['success' => false, 'message' => 'RoFO record not found.'], 404);
+        }
+
+        if (!$rofo->security_paper_code) {
+            return response()->json(['success' => false, 'message' => 'No security paper code assigned to reset.'], 422);
+        }
+
+        DB::connection('sqlsrv')->beginTransaction();
+        try {
+            $oldCode = $rofo->security_paper_code;
+
+            SecurityPaperCodeService::release($oldCode, $request->reason, 'ST ROFO', $request->note);
+
+            DB::connection('sqlsrv')->table('rofo')
+                ->where('sub_application_id', $id)
+                ->update(['security_paper_code' => null]);
+
+            DB::connection('sqlsrv')->commit();
+
+            return response()->json([
+                'success'          => true,
+                'returned_to_pool' => SecurityPaperCodeService::returnsToPool($request->reason),
+                'paper_code'       => $oldCode,
+            ]);
+        } catch (\Exception $e) {
+            DB::connection('sqlsrv')->rollBack();
+            return response()->json(['success' => false, 'message' => 'Failed to reset security paper code. ' . $e->getMessage()], 500);
         }
     }
 

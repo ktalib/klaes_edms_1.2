@@ -1014,11 +1014,8 @@ Route::middleware(['auth'])->group(function () {
 
     // Global: available security paper codes (used by the shared modal component)
     Route::get('/security-paper-codes/available', function () {
-        $codes = \Illuminate\Support\Facades\DB::connection('sqlsrv')
-            ->table('global_security_paper_codes')
+        $codes = \App\Services\SecurityPaperCodeService::availableQuery()
             ->select('paper_code')
-            ->where('is_used', false)
-            ->orderBy('paper_code')
             ->pluck('paper_code');
         return response()->json(['codes' => $codes]);
     })->name('security-paper-codes.available');
@@ -1057,6 +1054,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/', [\App\Http\Controllers\SltrRofoController::class, 'index'])->name('index');
         Route::post('/{id}/generate', [\App\Http\Controllers\SltrRofoController::class, 'generate'])->name('generate');
         Route::post('/{id}/assign-security-paper', [\App\Http\Controllers\SltrRofoController::class, 'assignSecurityPaperCode'])->name('assign-security-paper');
+        Route::post('/{id}/reset-security-paper', [\App\Http\Controllers\SltrRofoController::class, 'resetSecurityPaperCode'])->name('reset-security-paper');
         Route::get('/{id}/print', [\App\Http\Controllers\SltrRofoController::class, 'print'])->name('print');
         Route::post('/{id}/log-print', [\App\Http\Controllers\SltrRofoController::class, 'logPrint'])->name('log-print');
     });

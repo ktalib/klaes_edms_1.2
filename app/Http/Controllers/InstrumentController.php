@@ -353,13 +353,21 @@ class InstrumentController extends Controller
         // Merge histories for the modal
         $combinedHistory = $praHistory->concat($deedHistory)->sortByDesc('created_at')->values();
 
-        // 4. Retrieve Latest Consent Application for Auto-fill
+        // 4. Retrieve the file's Consent Applications for Auto-fill
         // Map instrument type to consent_type for accurate party matching
         $consentTypeMap = [
             'Deed of Assignment' => 'Assignment',
             'Deed of Gift' => 'Gift',
             'Deed of Mortgage' => 'Mortgage',
             'Tripartite Mortgage' => 'Mortgage',
+        ];
+
+        // The reverse direction: which captured instrument types consume a consent
+        // of each type. Used to work out whether a consent has been spent already.
+        $consentInstrumentMap = [
+            'Assignment' => ['Deed of Assignment'],
+            'Gift' => ['Deed of Gift'],
+            'Mortgage' => ['Deed of Mortgage', 'Tripartite Mortgage'],
         ];
 
         // Normalize fileno for more robust matching
@@ -383,66 +391,99 @@ class InstrumentController extends Controller
                 }
             });
 
+        // Every consent on the file, newest first. The duplicate-registration
+        // warning lists them all so the user can see what is already spent and
+        // pick the one this capture is actually for.
+        $consentApps = (clone $consentQuery)
+            ->orderBy('created_at', 'desc')
+            ->orderBy('id', 'desc')
+            ->get();
+
+        // 5. Instrument captures on this file — the prior record used for auto-fill
+        //    fallback, and the basis for deciding which consents are already spent.
+        $captureFileMatch = function ($q) use ($fileno, $normalizedFileno) {
+            $q->where('mlsFNo', $fileno)
+                ->orWhere('mlsFNo', $normalizedFileno)
+                ->orWhere('kangisFileNo', $fileno)
+                ->orWhere('kangisFileNo', $normalizedFileno)
+                ->orWhere('NewKANGISFileno', $fileno)
+                ->orWhere('NewKANGISFileno', $normalizedFileno)
+                ->orWhere('temp_fileno', $fileno)
+                ->orWhere('temp_fileno', $normalizedFileno);
+
+            // Fuzzy match for instrument capture as well
+            $cleanFileno = preg_replace('/[^A-Z0-9]/', '', $normalizedFileno);
+            if ($cleanFileno) {
+                $q->orWhereRaw("REPLACE(REPLACE(REPLACE(mlsFNo, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno])
+                    ->orWhereRaw("REPLACE(REPLACE(REPLACE(kangisFileNo, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno])
+                    ->orWhereRaw("REPLACE(REPLACE(REPLACE(NewKANGISFileno, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno])
+                    ->orWhereRaw("REPLACE(REPLACE(REPLACE(temp_fileno, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno]);
+            }
+        };
+
+        $notDeleted = function ($q) {
+            $q->where('is_deleted', 0)
+                ->orWhereNull('is_deleted');
+        };
+
+        $fileCaptures = $consentApps->isEmpty()
+            ? collect()
+            : DB::connection('sqlsrv')->table('instrument_capture')
+                ->where($captureFileMatch)
+                ->where($notDeleted)
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+        $this->annotateConsentUsage($consentApps, $fileCaptures, $consentInstrumentMap, $type, $consentTypeMap);
+
+        // Default auto-fill consent: the most recent one whose type suits the
+        // instrument being captured AND that has not been used yet. A spent
+        // consent is only offered when there is nothing fresher, so the common
+        // "second assignment on the same file" case pre-fills from the new
+        // consent rather than the one already registered.
+        $pickConsent = function (array $types, bool $unusedOnly) use ($consentApps) {
+            foreach ($consentApps as $candidate) {
+                if (!in_array($candidate->consent_type, $types, true)) {
+                    continue;
+                }
+                if ($unusedOnly && $candidate->is_used) {
+                    continue;
+                }
+                return $candidate;
+            }
+            return null;
+        };
+
         $consentApp = null;
         if ($type && isset($consentTypeMap[$type])) {
-            // Priority 1: Match by specific consent type (strict match)
-            $consentApp = (clone $consentQuery)
-                ->where('consent_type', $consentTypeMap[$type])
-                ->orderBy('created_at', 'desc')
-                ->first();
+            $requestedType = $consentTypeMap[$type];
+            // Assignment and Gift are interchangeable enough to fall back on each
+            // other; a Mortgage consent never stands in for either.
+            $consentGroups = [
+                'Assignment' => ['Assignment', 'Gift'],
+                'Gift' => ['Assignment', 'Gift'],
+                'Mortgage' => ['Mortgage'],
+            ];
+            $allowedFallbackTypes = $consentGroups[$requestedType] ?? [$requestedType];
 
-            // Priority 2: Fallback within the same group (e.g., Assignment fallback to Gift and vice versa)
-            if (!$consentApp) {
-                $requestedType = $consentTypeMap[$type];
-                $consentGroups = [
-                    'Assignment' => ['Assignment', 'Gift'],
-                    'Gift' => ['Assignment', 'Gift'],
-                    'Mortgage' => ['Mortgage'],
-                ];
-                $allowedFallbackTypes = $consentGroups[$requestedType] ?? [$requestedType];
-
-                $consentApp = (clone $consentQuery)
-                    ->whereIn('consent_type', $allowedFallbackTypes)
-                    ->orderBy('created_at', 'desc')
-                    ->first();
-            }
+            $consentApp = $pickConsent([$requestedType], true)
+                ?: $pickConsent($allowedFallbackTypes, true)
+                ?: $pickConsent([$requestedType], false)
+                ?: $pickConsent($allowedFallbackTypes, false);
         }
 
         // Final fallback: If no type-specific or group-specific consent was found,
         // we generally do NOT want to auto-fill from a completely unrelated consent
         // (e.g. Mortgage consent should not auto-fill Assignment fields).
-        // However, we can still allow auto-fill if the instrument type is NOT in the gated map 
+        // However, we can still allow auto-fill if the instrument type is NOT in the gated map
         // (like Power of Attorney) to provide basic property info.
         if (!$consentApp && (!$type || !isset($consentTypeMap[$type]))) {
-            $consentApp = $consentQuery->orderBy('created_at', 'desc')->first();
+            $consentApp = $consentApps->firstWhere('is_used', false) ?: $consentApps->first();
         }
 
-        // 5. Retrieve latest prior instrument capture record for this file (any type)
-        //    Used as fallback for auto-filling property & solicitor details.
         $priorQuery = DB::connection('sqlsrv')->table('instrument_capture')
-            ->where(function ($q) use ($fileno, $normalizedFileno) {
-                $q->where('mlsFNo', $fileno)
-                    ->orWhere('mlsFNo', $normalizedFileno)
-                    ->orWhere('kangisFileNo', $fileno)
-                    ->orWhere('kangisFileNo', $normalizedFileno)
-                    ->orWhere('NewKANGISFileno', $fileno)
-                    ->orWhere('NewKANGISFileno', $normalizedFileno)
-                    ->orWhere('temp_fileno', $fileno)
-                    ->orWhere('temp_fileno', $normalizedFileno);
-
-                // Fuzzy match for instrument capture as well
-                $cleanFileno = preg_replace('/[^A-Z0-9]/', '', $normalizedFileno);
-                if ($cleanFileno) {
-                    $q->orWhereRaw("REPLACE(REPLACE(REPLACE(mlsFNo, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno])
-                        ->orWhereRaw("REPLACE(REPLACE(REPLACE(kangisFileNo, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno])
-                        ->orWhereRaw("REPLACE(REPLACE(REPLACE(NewKANGISFileno, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno])
-                        ->orWhereRaw("REPLACE(REPLACE(REPLACE(temp_fileno, ' ', ''), '-', ''), '/', '') = ?", [$cleanFileno]);
-                }
-            })
-            ->where(function ($q) {
-                $q->where('is_deleted', 0)
-                    ->orWhereNull('is_deleted');
-            });
+            ->where($captureFileMatch)
+            ->where($notDeleted);
 
         // Exclude the exact duplicate so prior_instrument is always a different record
         if ($instrument) {
@@ -463,8 +504,99 @@ class InstrumentController extends Controller
             'pra_history' => $combinedHistory,
             'pra' => $praHistory->first(),
             'consent_app' => $consentApp,
+            'consent_apps' => $consentApps->values(),
             'prior_instrument' => $priorInstrument
         ]);
+    }
+
+    /**
+     * Decide, for each consent on a file, whether an instrument has already been
+     * registered against it — and stamp `is_used` / `used_by` / `matches_type`
+     * onto the consent rows in place.
+     *
+     * Two ways a consent counts as used:
+     *   1. A capture carries consent_application_id pointing at it. Exact, and
+     *      the only signal for captures made since that column existed.
+     *   2. Legacy captures (no link) are inferred: same file, an instrument type
+     *      that consumes this consent's type, and the same second party. The
+     *      grantee is what distinguishes two consents of the same type on one
+     *      file, so it is the party that must match.
+     *
+     * A capture is attributed to at most one consent, so two consents of the
+     * same type are never both greyed out by a single registration.
+     */
+    private function annotateConsentUsage(
+        $consentApps,
+        $fileCaptures,
+        array $consentInstrumentMap,
+        ?string $type,
+        array $consentTypeMap
+    ): void {
+        $normalizeName = function ($value) {
+            return preg_replace('/[^A-Z0-9]/', '', strtoupper(trim((string) $value)));
+        };
+
+        $claimedCaptureIds = [];
+
+        foreach ($consentApps as $consent) {
+            $usedBy = null;
+
+            foreach ($fileCaptures as $capture) {
+                if (isset($claimedCaptureIds[$capture->id])) {
+                    continue;
+                }
+                if ((int) ($capture->consent_application_id ?? 0) === (int) $consent->id) {
+                    $usedBy = $capture;
+                    break;
+                }
+            }
+
+            if (!$usedBy) {
+                $consumingTypes = $consentInstrumentMap[$consent->consent_type] ?? [];
+                $consentParty = $normalizeName($consent->party_name ?? '');
+
+                foreach ($fileCaptures as $capture) {
+                    if (isset($claimedCaptureIds[$capture->id])) {
+                        continue;
+                    }
+                    // A linked capture already belongs to whichever consent it names.
+                    if (!empty($capture->consent_application_id)) {
+                        continue;
+                    }
+                    if (!in_array($capture->instrument_type, $consumingTypes, true)) {
+                        continue;
+                    }
+                    if ($consentParty === '' || $normalizeName($capture->party_2_name ?? '') !== $consentParty) {
+                        continue;
+                    }
+
+                    $usedBy = $capture;
+                    break;
+                }
+            }
+
+            if ($usedBy) {
+                $claimedCaptureIds[$usedBy->id] = true;
+            }
+
+            $consent->is_used = (bool) $usedBy;
+            $consent->used_by = $usedBy ? [
+                'id' => $usedBy->id,
+                'instrument_type' => $usedBy->instrument_type,
+                'registration_number' => $usedBy->registration_number ?? $usedBy->reg_no ?? null,
+                'reg_date' => $usedBy->reg_date ?? null,
+                'captured_at' => $usedBy->created_at ?? null,
+                'party_2_name' => $usedBy->party_2_name ?? null,
+                'is_linked' => !empty($usedBy->consent_application_id),
+            ] : null;
+
+            // Whether this consent's type suits the instrument being captured.
+            // Ungated instrument types (Power of Attorney and friends) can draw
+            // property details from any consent, so nothing is off-type there.
+            $consent->matches_type = ($type && isset($consentTypeMap[$type]))
+                ? $consent->consent_type === $consentTypeMap[$type]
+                : true;
+        }
     }
 
     /**

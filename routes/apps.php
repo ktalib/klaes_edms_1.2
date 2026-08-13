@@ -219,6 +219,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/rofo/pua-units/{primary}', [RofoController::class, 'showPuaUnits'])->name('programmes.rofo.pua-units');
         Route::get('/rofo/sua-units', [RofoController::class, 'showSuaUnits'])->name('programmes.rofo.sua-units');
         Route::post('/rofo/assign-security-paper/{id}', [RofoController::class, 'assignSecurityPaper'])->name('programmes.rofo.assign-security-paper');
+        Route::post('/rofo/reset-security-paper/{id}', [RofoController::class, 'resetSecurityPaper'])->name('programmes.rofo.reset-security-paper');
         Route::get('/cofo/sua-units', [CofoController::class, 'showSuaUnits'])->name('programmes.cofo.sua-units');
 
         Route::get('/view_cofo/{id}', [CofoController::class, 'ViewCofO'])->name('programmes.view_cofo');

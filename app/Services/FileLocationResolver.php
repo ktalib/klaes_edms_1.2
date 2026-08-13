@@ -1040,9 +1040,11 @@ class FileLocationResolver
     protected ?array $existingLabelTables = null;
 
     /**
-     * Physical rack/shelf for the file. Scans every registry's print-label table
-     * (KANGIS / SLTR / ST / Cadastral / DCIV / Lands), then falls back to
-     * file_indexings.shelf_location.
+     * Physical rack/shelf for the file, most authoritative source first:
+     * every registry's print-label table (KANGIS / SLTR / ST / Cadastral /
+     * DCIV / Lands), then file_indexings.shelf_location, then the shelf
+     * recorded on a Missing File report, and finally the rack workbooks via
+     * ShelfRackLocator — recorded beats derived at every step.
      */
     protected function getRackShelf(string $fileNumber, ?FileIndexing $indexing): ?string
     {
@@ -1106,6 +1108,19 @@ class FileLocationResolver
             } catch (\Throwable $e) {
                 // Fail open — leave shelf null if the table is missing.
             }
+        }
+
+        // Nothing recorded anywhere: derive the shelf from the rack workbooks,
+        // the same map the Digital Archive cards read. Ranked last so a recorded
+        // shelf always wins — this is an inference, and the workbooks carry a
+        // known rack-level drift for part of the set (see ShelfRackLocator).
+        // Without it the archive card and Quick Search disagree about the same
+        // file, since the map covers ~1,100 files that have no shelf on record.
+        if (!$shelf && $indexing) {
+            $shelf = app(ShelfRackLocator::class)->resolve(
+                $indexing->file_number ?? $fileNumber,
+                $indexing->registry ?? null
+            );
         }
 
         return $this->rackShelfCache[$key] = ($shelf ?: null);

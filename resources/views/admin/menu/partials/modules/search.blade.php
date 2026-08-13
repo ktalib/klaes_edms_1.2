@@ -58,7 +58,15 @@
       </div>
       @endif
 
-      <!-- c. Online Legal Search -->
+      <!-- c. Transaction Token Control (TTC) -->
+      @if($hasRole('Transaction Token Control') || auth()->user()->assign_role === 'Supper Admin')
+      <a href="{{ route('legal-search-tokens.index', ['url' => 'ls']) }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('legal-search-tokens.*') && request('url') === 'ls' ? 'active' : '' }}">
+        <i data-lucide="ticket" class="h-4 w-4 text-cyan-500"></i>
+        <span>Transaction Token Control (TTC)</span>
+      </a>
+      @endif
+
+      <!-- d. Online Legal Search -->
       <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md" data-section="onlineLegalSearch">
         <div class="flex items-center gap-2">
           <i data-lucide="globe" class="h-4 w-4 text-cyan-500"></i>
