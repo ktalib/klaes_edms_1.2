@@ -1,5 +1,11 @@
 @extends('layouts.app')
 
+@php
+    // Reached from the Legal Search module (?url=ls) every token is a legal search,
+    // so the reason is fixed rather than chosen.
+    $lockPaymentReason = request('url') === 'ls';
+@endphp
+
 @section('page-title')
     {{ __('Transaction Token Control (TTC)') }}
 @endsection
@@ -235,9 +241,11 @@
 
                     {{-- General Search (statutory body request) --}}
                     <div class="p-4 bg-amber-50/40 rounded-2xl border border-amber-100">
-                        <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+                        <label class="inline-flex items-center gap-2 select-none {{ $lockPaymentReason ? 'cursor-not-allowed pointer-events-none' : 'cursor-pointer' }}">
+                            {{-- checked + pointer-events-none rather than disabled, so the value still posts --}}
                             <input type="checkbox" id="is_general" name="is_general" value="1" checked
-                                class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30 cursor-pointer">
+                                @if($lockPaymentReason) tabindex="-1" aria-readonly="true" @endif
+                                class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/30 {{ $lockPaymentReason ? 'cursor-not-allowed opacity-70' : 'cursor-pointer' }}">
                             <span class="text-xs font-black text-slate-500 uppercase tracking-widest">General</span>
                         </label>
                         <div id="general-body-wrapper" class="hidden mt-3">
@@ -331,11 +339,16 @@
                         <div>
                             <label for="payment_reason" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Reason for Payment</label>
                             <select id="payment_reason" name="payment_reason" required
-                                class="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none">
-                                <option value="" disabled selected>Select a reason...</option>
-                                @foreach($paymentReasons as $reason)
-                                    <option value="{{ $reason->name }}">{{ $reason->name }}</option>
-                                @endforeach
+                                @if($lockPaymentReason) tabindex="-1" aria-readonly="true" @endif
+                                class="w-full px-3 py-2.5 {{ $lockPaymentReason ? 'bg-slate-100 text-slate-500 cursor-not-allowed pointer-events-none' : 'bg-white text-slate-700' }} border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none">
+                                @if($lockPaymentReason)
+                                    <option value="{{ \App\Models\LegalSearchToken::GENERAL_PAYMENT_REASON }}" selected>{{ \App\Models\LegalSearchToken::GENERAL_PAYMENT_REASON }}</option>
+                                @else
+                                    <option value="" disabled selected>Select a reason...</option>
+                                    @foreach($paymentReasons as $reason)
+                                        <option value="{{ $reason->name }}">{{ $reason->name }}</option>
+                                    @endforeach
+                                @endif
                             </select>
                         </div>
                     </div>
@@ -471,6 +484,7 @@
     // reason is fixed to the legal search payment.
     const GENERAL_RECEIPT = @json(\App\Models\LegalSearchToken::GENERAL_RECEIPT);
     const GENERAL_PAYMENT_REASON = @json(\App\Models\LegalSearchToken::GENERAL_PAYMENT_REASON);
+    const LOCK_PAYMENT_REASON = @json($lockPaymentReason);
 
     function toggleGeneralBody() {
         const isGeneral = $('#is_general').is(':checked');
@@ -494,7 +508,7 @@
             $reason.val(GENERAL_PAYMENT_REASON);
         } else {
             $('#general_body').val('');
-            $reason.val('');
+            $reason.val(LOCK_PAYMENT_REASON ? GENERAL_PAYMENT_REASON : '');
         }
     }
 

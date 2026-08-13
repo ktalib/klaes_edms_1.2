@@ -244,9 +244,19 @@
                     </div>
 
                     {{-- Customary Title only: there is no indexed file to read an
-                         address from, so the surveyor picks LGA + District and the
-                         inspection map geocodes from that. --}}
+                         address from, so the surveyor picks District + LGA and the
+                         inspection map geocodes from that. Ordered the way the
+                         location itself reads: "District, LGA". --}}
                     <div id="customary-geo-wrap" class="hidden grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">District</label>
+                            {{-- Populated on demand from /api/reference/districts: there are
+                                 1,818 of them, far too many to render inline. --}}
+                            <select name="district" id="f-district" disabled
+                                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                                <option value="">Loading districts…</option>
+                            </select>
+                        </div>
                         <div>
                             <label class="block text-xs font-medium text-gray-600 mb-1">LGA <span class="text-red-500">*</span></label>
                             <select name="lga" id="f-lga" disabled
@@ -255,15 +265,6 @@
                                 @foreach($lgaOptions as $lga)
                                     <option value="{{ $lga }}">{{ $lga }}</option>
                                 @endforeach
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-gray-600 mb-1">District</label>
-                            {{-- Populated on demand from /api/reference/districts: there are
-                                 1,818 of them, far too many to render inline. --}}
-                            <select name="district" id="f-district" disabled
-                                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
-                                <option value="">Loading districts…</option>
                             </select>
                         </div>
                     </div>

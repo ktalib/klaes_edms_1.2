@@ -3515,6 +3515,11 @@ document.addEventListener('DOMContentLoaded', function () {
         if (window.ossOpContext === true && !isFfrExistingManualRegistrationFlow() && window._isOngoingMerger !== true && record && record.skip_op_saved_dialog !== true) {
             const opSavedAction = await showOpSavedActionsDialog({ propId: record.prop_id });
 
+            if (opSavedAction === 'end') {
+                endAtOpCapture();
+                return;
+            }
+
             if (opSavedAction === 'merger') {
                 if (!window._mergerGroupId) {
                     window._mergerGroupId = generateMergerUuid();
@@ -7069,9 +7074,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // FileNo Commissioning: after each OP save, show type-selection dialog.
         // Subdivision and Merger are independent flags — user can apply both.
-        // Dialog never closes on its own; only Merger or Proceed buttons close it.
+        // Dialog never closes on its own; only Merger, Proceed or End close it.
         if (currentInstrumentType === 'occupancy-permit' && window.ossOpContext === true) {
             const opSavedAction = await showOpSavedActionsDialog({ propId: preSync.propId });
+
+            if (opSavedAction === 'end') {
+                endAtOpCapture();
+                return;
+            }
 
             if (opSavedAction === 'merger') {
                 if (!window._mergerGroupId) {
@@ -7191,6 +7201,57 @@ document.addEventListener('DOMContentLoaded', function () {
      * @param {{ propId: ?(string|number) }} opts
      * @returns {Promise<'merger'|'proceed'>}
      */
+    /**
+     * "End at OP Capture" from the OP Saved! dialog: the OP row is already persisted,
+     * so this is a completed transaction that simply stops short of commissioning —
+     * not a cancellation. Everything the commission hand-off would have consumed is
+     * cleared so a later capture cannot inherit this one's linkage.
+     */
+    function endAtOpCapture() {
+        // Must be set before closeRegistrationDialog(), which otherwise reads the
+        // close as an abandoned capture and warns the user the OP was not saved.
+        window._opCaptureSubmitted = true;
+        window.ossOpContext = false;
+        window.requireOpLookupForCommission = false;
+        window.prefillOpTypeFromCommission = null;
+        window.pendingExistingOpPraContext = null;
+        window.pendingNewOpFormData = null;
+        window.lastCommissionSourceOp = null;
+        opLookupMatchedRecord = null;
+
+        // A merger session only makes sense on the way to commissioning.
+        window._mergerGroupId = null;
+        window._isOngoingMerger = false;
+        window._mergerTransferGrantors = [];
+        window._mergerPlotNos = [];
+
+        if (elements.submitBtn) {
+            elements.submitBtn.disabled = false;
+            elements.submitBtn.dataset.submitting = '';
+            applySubmitButtonLabel();
+        }
+
+        closeRegistrationDialog();
+
+        // The commission modal was left open behind the OP dialog; it has nothing
+        // left to do now that commissioning is off the table.
+        if (typeof window.closeCommissionFileNoModal === 'function') {
+            window.closeCommissionFileNoModal();
+        } else if (typeof window.closeGenerateModal === 'function') {
+            window.closeGenerateModal();
+        } else {
+            const commissionModal = document.getElementById('generateModal');
+            if (commissionModal) commissionModal.classList.add('hidden');
+        }
+
+        Swal.fire({
+            icon: 'success',
+            title: 'OP Captured',
+            text: 'The Occupancy Permit has been saved. No file number was commissioned.',
+            confirmButtonColor: '#2563eb'
+        });
+    }
+
     function showOpSavedActionsDialog(opts) {
         var propId = opts && opts.propId ? opts.propId : null;
         return new Promise(function (resolve) {
@@ -7220,6 +7281,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     + '<button id="swal-btn-merger" class="swal2-confirm swal2-styled" style="background:#7c3aed;justify-content:center;width:100%;margin-bottom:0;">+ Merger &mdash; another OP will be added</button>'
                     + '</div>'
                     + '<button id="swal-btn-proceed" class="swal2-cancel swal2-styled" style="background:#2563eb;justify-content:center;width:100%;">Continue with File Commissioning</button>'
+                    + '<button id="swal-btn-end" class="swal2-cancel swal2-styled" style="background:#dc2626;color:#ffffff;justify-content:center;width:100%;margin:0;">End at OP Capture</button>'
                     + '</div>',
                 showConfirmButton: false,
                 showCancelButton: false,
@@ -7274,6 +7336,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
                     document.getElementById('swal-btn-proceed').onclick = function () {
                         finish('proceed');
+                    };
+
+                    // Stop here: the OP is saved, no file number is commissioned.
+                    document.getElementById('swal-btn-end').onclick = function () {
+                        finish('end');
                     };
                 },
             });
