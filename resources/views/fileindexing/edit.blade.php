@@ -833,6 +833,135 @@
                                         On update this KN file is indexed on the fly — a KANGIS Registry record is created if it doesn't exist yet, or updated in place if it does (never a duplicate).
                                     </p>
                                 </div>
+
+                                {{-- Has Transaction (New KANGIS) — same repeatable rows as the create form.
+                                     Rows typed here are appended to pra / CofO_staging on update; rows that
+                                     already exist are listed read-only above so nothing is re-keyed. --}}
+                                <div class="mt-4 pt-4 border-t border-gray-100">
+                                    <div class="flex items-center gap-2">
+                                        <input type="hidden" name="has_new_kangis_transaction" value="0">
+                                        <input type="checkbox" id="has-new-kangis-transaction" name="has_new_kangis_transaction" value="1"
+                                            class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                        <label for="has-new-kangis-transaction" class="text-sm font-medium text-gray-700 cursor-pointer">
+                                            Has Transaction
+                                        </label>
+                                    </div>
+
+                                    @if(!empty($newKangisTransactions))
+                                        <div class="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                                            <p class="text-xs font-semibold text-gray-600 mb-2">
+                                                Already saved ({{ count($newKangisTransactions) }})
+                                            </p>
+                                            <div class="space-y-1">
+                                                @foreach($newKangisTransactions as $txn)
+                                                    <div class="flex flex-wrap items-center gap-x-3 text-xs text-gray-600">
+                                                        <span class="font-medium text-gray-800">{{ $txn['instrument_type'] ?: '—' }}</span>
+                                                        @if($txn['transaction_date'])<span>{{ $txn['transaction_date'] }}</span>@endif
+                                                        @if($txn['reg_no'])<span class="font-mono">{{ $txn['reg_no'] }}</span>@endif
+                                                        @if($txn['grantor'] || $txn['grantee'])
+                                                            <span>{{ $txn['grantor'] ?: '—' }} → {{ $txn['grantee'] ?: '—' }}</span>
+                                                        @endif
+                                                        <span class="text-gray-400">({{ $txn['source_table'] }})</span>
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                            <p class="mt-2 text-xs text-gray-400">
+                                                Existing rows are read-only here — tick "Has Transaction" to add more.
+                                            </p>
+                                        </div>
+                                    @endif
+
+                                    <div id="nk-transaction-card" class="hidden mt-3">
+                                        <div id="nk-transaction-rows" class="space-y-4">
+                                            {{-- Template / first transaction row --}}
+                                            <div class="nk-transaction-row rounded-lg border border-blue-200 bg-blue-50/50 p-4">
+                                                <div class="flex items-center justify-between mb-3">
+                                                    <h5 class="text-sm font-semibold text-blue-900 flex items-center gap-2">
+                                                        <i data-lucide="receipt" class="h-4 w-4"></i>
+                                                        Transaction <span class="nk-txn-index">1</span>
+                                                    </h5>
+                                                    <button type="button" class="nk-txn-remove hidden inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-800">
+                                                        <i data-lucide="trash-2" class="h-3.5 w-3.5"></i> Remove
+                                                    </button>
+                                                </div>
+
+                                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label class="form-label-clean">Instrument Type</label>
+                                                        <select class="nk-txn-instrument w-full form-input-clean" data-nk-field="instrument_type">
+                                                            <option value="">Select Instrument Type</option>
+                                                            <option value="Certificate of Occupancy">Certificate of Occupancy</option>
+                                                            <option value="ST Certificate of Occupancy">ST Certificate of Occupancy</option>
+                                                            <option value="SLTR Certificate of Occupancy">SLTR Certificate of Occupancy</option>
+                                                            <option value="Customary Right of Occupancy">Customary Right of Occupancy</option>
+                                                            <option value="Deed of Transfer">Deed of Transfer</option>
+                                                            <option value="Deed of Assignment">Deed of Assignment</option>
+                                                            <option value="ST Assignment">ST Assignment</option>
+                                                            <option value="Deed of Mortgage">Deed of Mortgage</option>
+                                                            <option value="Tripartite Mortgage">Tripartite Mortgage</option>
+                                                            <option value="Deed of Sub Lease">Deed of Sub Lease</option>
+                                                            <option value="Deed of Sub Under Lease">Deed of Sub Under Lease</option>
+                                                            <option value="Power of Attorney">Power of Attorney</option>
+                                                            <option value="Irrevocable Power of Attorney">Irrevocable Power of Attorney</option>
+                                                            <option value="Conveyance">Conveyance</option>
+                                                            <option value="Deed of Gift">Deed of Gift</option>
+                                                            <option value="Court Affidavit">Court Affidavit</option>
+                                                            <option value="Consent Judgment">Consent Judgment</option>
+                                                            <option value="Right of Occupancy">Right of Occupancy</option>
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label class="form-label-clean">Transaction Date</label>
+                                                        <input type="date" class="nk-txn-date w-full form-input-clean" data-nk-field="transaction_date">
+                                                    </div>
+                                                </div>
+
+                                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-2">
+                                                    <div>
+                                                        <label class="form-label-clean">Serial No</label>
+                                                        <input type="text" class="nk-txn-serial w-full form-input-clean" data-nk-field="serial_no">
+                                                    </div>
+                                                    <div>
+                                                        <label class="form-label-clean">Page No</label>
+                                                        <input type="text" class="nk-txn-page w-full form-input-clean" data-nk-field="page_no">
+                                                    </div>
+                                                    <div>
+                                                        <label class="form-label-clean">Vol No</label>
+                                                        <input type="text" class="nk-txn-vol w-full form-input-clean" data-nk-field="vol_no">
+                                                    </div>
+                                                </div>
+
+                                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
+                                                    <div>
+                                                        <label class="form-label-clean">Registration Date</label>
+                                                        <input type="date" class="nk-txn-reg-date w-full form-input-clean" data-nk-field="reg_date">
+                                                    </div>
+                                                    <div>
+                                                        <label class="form-label-clean">Registration Time</label>
+                                                        <input type="time" class="nk-txn-reg-time w-full form-input-clean" data-nk-field="reg_time">
+                                                    </div>
+                                                </div>
+
+                                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
+                                                    <div>
+                                                        <label class="form-label-clean">Grantor</label>
+                                                        <input type="text" class="nk-txn-grantor w-full form-input-clean" data-nk-field="grantor">
+                                                    </div>
+                                                    <div>
+                                                        <label class="form-label-clean">Grantee</label>
+                                                        <input type="text" class="nk-txn-grantee w-full form-input-clean" data-nk-field="grantee" style="text-transform: uppercase;">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <button type="button" id="add-nk-transaction-btn"
+                                            class="mt-3 inline-flex items-center gap-1.5 px-3 py-2 border border-blue-300 text-sm font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50">
+                                            <i data-lucide="plus" class="h-4 w-4"></i>
+                                            Add Transaction
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- Location & Administrative Section -->
@@ -1581,6 +1710,69 @@
                 if (selectBtn) selectBtn.addEventListener('click', openPicker);
                 knDisplay.addEventListener('click', openPicker);
                 if (clearBtn) clearBtn.addEventListener('click', clearKn);
+            })();
+
+            // Has Transaction (New KANGIS) — repeatable rows, mirroring the create form.
+            // The edit form posts FormData, so each row's inputs are named
+            // transactions[i][field] from their data-nk-field on every reindex; the
+            // whole card is disabled while unchecked so nothing empty is submitted.
+            (function initEditNewKangisTransactions() {
+                const chk = document.getElementById('has-new-kangis-transaction');
+                const card = document.getElementById('nk-transaction-card');
+                const rowsWrap = document.getElementById('nk-transaction-rows');
+                const addBtn = document.getElementById('add-nk-transaction-btn');
+                if (!chk || !card || !rowsWrap) return;
+
+                function reindex() {
+                    const enabled = chk.checked;
+                    const rows = rowsWrap.querySelectorAll('.nk-transaction-row');
+                    rows.forEach((row, i) => {
+                        const label = row.querySelector('.nk-txn-index');
+                        if (label) label.textContent = String(i + 1);
+                        const removeBtn = row.querySelector('.nk-txn-remove');
+                        if (removeBtn) removeBtn.classList.toggle('hidden', i === 0);
+                        row.querySelectorAll('[data-nk-field]').forEach(field => {
+                            field.name = 'transactions[' + i + '][' + field.dataset.nkField + ']';
+                            field.disabled = !enabled;
+                        });
+                    });
+                }
+
+                chk.addEventListener('change', function () {
+                    card.classList.toggle('hidden', !this.checked);
+                    if (!this.checked) {
+                        // Collapse back to a single blank row.
+                        const rows = rowsWrap.querySelectorAll('.nk-transaction-row');
+                        rows.forEach((row, i) => { if (i > 0) row.remove(); });
+                        rowsWrap.querySelectorAll('[data-nk-field]').forEach(f => { f.value = ''; });
+                    }
+                    reindex();
+                    if (window.lucide && lucide.createIcons) lucide.createIcons();
+                });
+
+                if (addBtn) {
+                    addBtn.addEventListener('click', function () {
+                        const template = rowsWrap.querySelector('.nk-transaction-row');
+                        if (!template) return;
+                        const clone = template.cloneNode(true);
+                        clone.querySelectorAll('[data-nk-field]').forEach(f => { f.value = ''; });
+                        rowsWrap.appendChild(clone);
+                        reindex();
+                        if (window.lucide && lucide.createIcons) lucide.createIcons();
+                    });
+                }
+
+                rowsWrap.addEventListener('click', function (e) {
+                    const btn = e.target.closest('.nk-txn-remove');
+                    if (!btn) return;
+                    const row = btn.closest('.nk-transaction-row');
+                    if (row && rowsWrap.querySelectorAll('.nk-transaction-row').length > 1) {
+                        row.remove();
+                        reindex();
+                    }
+                });
+
+                reindex();
             })();
 
             // Form validation

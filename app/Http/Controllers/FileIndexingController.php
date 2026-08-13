@@ -831,6 +831,12 @@ class FileIndexingController extends Controller
                     ->exists()
             ));
 
+            // "Has Transaction" (New KANGIS): rows already saved for the KN-series file,
+            // shown read-only under the checkbox so they are never re-keyed.
+            $newKangisTransactions = $this->fetchNewKangisTransactionsForEdit(
+                (string) ($record->new_kangis_file_no ?? '')
+            );
+
             // Return the original Edit View as requested
             $PageTitle = 'Edit File Indexing';
             $PageDescription = '';
@@ -847,7 +853,8 @@ class FileIndexingController extends Controller
                 'cofoDetails',
                 'hasPropertyRecords',
                 'billBalances',
-                'grantRents'
+                'grantRents',
+                'newKangisTransactions'
             ))->with('fileIndexing', $record);
         } catch (\Throwable $e) {
             return redirect()->route('fileindex.index')->with('error', 'Error loading record: ' . $e->getMessage());
@@ -1191,6 +1198,19 @@ class FileIndexingController extends Controller
                     'string',
                     'max:255',
                 ],
+                // "Has Transaction" rows for the New KANGIS file — same shape as the create
+                // form; every field is nullable so partial rows never block the save.
+                'has_new_kangis_transaction' => 'nullable|boolean',
+                'transactions' => 'nullable|array',
+                'transactions.*.instrument_type'  => 'nullable|string|max:255',
+                'transactions.*.transaction_date' => 'nullable|date',
+                'transactions.*.serial_no'        => 'nullable|string|max:100',
+                'transactions.*.page_no'          => 'nullable|string|max:100',
+                'transactions.*.vol_no'           => 'nullable|string|max:100',
+                'transactions.*.reg_date'         => 'nullable|date',
+                'transactions.*.reg_time'         => 'nullable|string|max:20',
+                'transactions.*.grantor'          => 'nullable|string|max:500',
+                'transactions.*.grantee'          => 'nullable|string|max:500',
                 // Bill Balance & Grant Rent (repeatable: arrays). Kept permissive so
                 // partial/empty repeater rows never block submission; the
                 // FileIndexingBillService sanitizes each value.
@@ -1487,6 +1507,38 @@ class FileIndexingController extends Controller
             $billFileIndexing = FileIndexing::on('sqlsrv')->find($id);
             if ($billFileIndexing) {
                 $this->fileIndexingBillService->syncForFile($billFileIndexing, $request);
+            }
+
+            // "Has Transaction" (New KANGIS): persist the rows typed on the edit form. As on
+            // the create path they belong to the KN-series record when one is attached —
+            // its own prop_id, parent = this file's — otherwise to the file being edited.
+            // Rows already stored are skipped, so re-saving never duplicates them.
+            if ($billFileIndexing) {
+                $mainPropId = isset($updatedRecord->prop_id) && $updatedRecord->prop_id !== null
+                    ? (int) $updatedRecord->prop_id
+                    : null;
+                $txnTarget = $billFileIndexing;
+                $txnPropId = $mainPropId;
+                $txnParentPropId = isset($updatedRecord->parent_prop_id) && $updatedRecord->parent_prop_id !== null
+                    ? (int) $updatedRecord->parent_prop_id
+                    : null;
+
+                $knForTxn = trim((string) ($request->input('new_kangis_file_no')
+                    ?: ($updatedRecord->new_kangis_file_no ?? '')));
+
+                if ($knForTxn !== '') {
+                    $knRecord = FileIndexing::on('sqlsrv')
+                        ->whereRaw('UPPER(LTRIM(RTRIM(file_number))) = UPPER(?)', [$knForTxn])
+                        ->first();
+
+                    if ($knRecord) {
+                        $txnTarget = $knRecord;
+                        $txnPropId = $knRecord->prop_id !== null ? (int) $knRecord->prop_id : $mainPropId;
+                        $txnParentPropId = $mainPropId;
+                    }
+                }
+
+                $this->syncFileIndexingTransactions($request, $txnTarget, $txnPropId, $txnParentPropId);
             }
 
             $fileTransactions = $fileNumber
@@ -5198,6 +5250,69 @@ class FileIndexingController extends Controller
     }
 
     /**
+     * Edit page: the "Has Transaction" rows already saved against a New KANGIS (KN-series)
+     * file, from both destinations syncFileIndexingTransactions() writes to — `pra` and
+     * `CofO_staging`. Read-only display only; returns [] when the KN number is blank or the
+     * lookup fails (the edit page must still render).
+     */
+    protected function fetchNewKangisTransactionsForEdit(string $newKangisFileNo): array
+    {
+        $newKangisFileNo = trim($newKangisFileNo);
+        if ($newKangisFileNo === '') {
+            return [];
+        }
+
+        $match = function ($query) use ($newKangisFileNo) {
+            $query->whereRaw('UPPER(LTRIM(RTRIM(mlsFNo))) = UPPER(?)', [$newKangisFileNo])
+                ->orWhereRaw('UPPER(LTRIM(RTRIM(NewKANGISFileno))) = UPPER(?)', [$newKangisFileNo]);
+        };
+
+        $rows = [];
+
+        foreach (['pra', self::COFO_TABLE] as $table) {
+            try {
+                $records = DB::connection('sqlsrv')->table($table)
+                    ->where($match)
+                    ->orderBy('id')
+                    ->get();
+            } catch (\Throwable $e) {
+                Log::warning('fetchNewKangisTransactionsForEdit: lookup failed', [
+                    'table' => $table,
+                    'file_number' => $newKangisFileNo,
+                    'error' => $e->getMessage(),
+                ]);
+                continue;
+            }
+
+            foreach ($records as $record) {
+                $regNo = $this->normalizeValue($record->regNo ?? null)
+                    ?? $this->formatRegistrationNumber(
+                        $this->normalizeValue($record->serialNo ?? null),
+                        $this->normalizeValue($record->pageNo ?? null),
+                        $this->normalizeValue($record->volumeNo ?? null)
+                    );
+
+                $txnDate = $this->normalizeValue($record->transaction_date ?? null)
+                    ?? $this->normalizeValue($record->cofo_date ?? null);
+
+                $rows[] = [
+                    'instrument_type'  => $this->normalizeValue($record->instrument_type ?? null)
+                        ?? $this->normalizeValue($record->transaction_type ?? null),
+                    'transaction_date' => $txnDate ? substr((string) $txnDate, 0, 10) : null,
+                    'reg_no'           => $regNo,
+                    'grantor'          => $this->normalizeValue($record->Grantor ?? null)
+                        ?? $this->normalizeValue($record->party_1 ?? null),
+                    'grantee'          => $this->normalizeValue($record->Grantee ?? null)
+                        ?? $this->normalizeValue($record->party_2 ?? null),
+                    'source_table'     => $table,
+                ];
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
      * Persist "Has Transaction" rows captured during New KANGIS file indexing into the pra
      * table. Each row becomes one pra row; the target file's file number is stored as mlsFNo,
      * and every row shares $propId, so they all resolve to one property.
@@ -5291,6 +5406,12 @@ class FileIndexingController extends Controller
                 $payload['regNo'] = $this->formatRegistrationNumber($serial, $page, $vol);
             }
 
+            // Re-saving the edit form resubmits rows still sitting in the DOM, so skip a row
+            // that is already stored against this file with the same identifying values.
+            if ($this->newKangisTransactionExists($isCofo ? self::COFO_TABLE : 'pra', $fileIndexing->file_number, $instrument, $txnDate, $serial, $page, $vol)) {
+                continue;
+            }
+
             try {
                 ($isCofo ? $cofoTable : $praTable)->insert($payload);
                 $saved++;
@@ -5309,6 +5430,57 @@ class FileIndexingController extends Controller
             } catch (\Throwable $e) {
                 // non-fatal
             }
+        }
+    }
+
+    /**
+     * True when an identical "Has Transaction" row is already stored for this file — the
+     * guard that keeps a repeated save of the edit form from duplicating rows. Matches on
+     * the identifying values a user types; a genuinely different row differs in at least one.
+     */
+    protected function newKangisTransactionExists(
+        string $table,
+        ?string $fileNumber,
+        ?string $instrument,
+        ?string $txnDate,
+        ?string $serial,
+        ?string $page,
+        ?string $vol
+    ): bool {
+        $fileNumber = trim((string) $fileNumber);
+        if ($fileNumber === '') {
+            return false;
+        }
+
+        try {
+            $query = DB::connection('sqlsrv')->table($table)
+                ->whereRaw('UPPER(LTRIM(RTRIM(mlsFNo))) = UPPER(?)', [$fileNumber]);
+
+            foreach ([
+                'instrument_type'  => $instrument,
+                'transaction_date' => $txnDate,
+                'serialNo'         => $serial,
+                'pageNo'           => $page,
+                'volumeNo'         => $vol,
+            ] as $column => $value) {
+                if ($value === null || $value === '') {
+                    $query->where(function ($q) use ($column) {
+                        $q->whereNull($column)->orWhere($column, '');
+                    });
+                } else {
+                    $query->where($column, $value);
+                }
+            }
+
+            return $query->exists();
+        } catch (\Throwable $e) {
+            // Never let the guard block a legitimate save.
+            Log::warning('newKangisTransactionExists: duplicate check failed', [
+                'table' => $table,
+                'file_number' => $fileNumber,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
         }
     }
 
