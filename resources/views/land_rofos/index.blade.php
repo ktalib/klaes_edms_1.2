@@ -321,7 +321,9 @@
                                 <th class="px-6 py-4 whitespace-nowrap">Security Paper Code</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Date Generated</th>
                                 <th class="px-6 py-4 whitespace-nowrap text-green-600">Print Date</th>
+                                @if(!$ossViewOnly)
                                 <th class="px-6 py-4 text-right sticky right-0 bg-slate-50 border-l border-slate-200 z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap">Actions</th>
+                                @endif
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 text-sm">
@@ -420,6 +422,7 @@
                                 <td class="px-4 py-2 text-xs whitespace-nowrap {{ $printedAt ? 'text-green-700 font-semibold' : 'text-slate-400 italic' }}">
                                     {{ $printedAt ? \Carbon\Carbon::parse($printedAt)->format('Y-m-d h:i A') : 'Not printed' }}
                                 </td>
+                                @if(!$ossViewOnly)
                                 <td class="px-4 py-2 text-right sticky right-0 bg-white shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] border-l border-slate-100 z-10 whitespace-nowrap">
                                     <div x-data="{
                                         open: false,
@@ -501,10 +504,11 @@
                                         </div>
                                     </div>
                                 </td>
+                                @endif
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="21" class="px-8 py-12 text-center">
+                                <td colspan="{{ $ossViewOnly ? 20 : 21 }}" class="px-8 py-12 text-center">
                                     <div class="flex flex-col items-center">
                                         <div class="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 mb-4">
                                             <i data-lucide="file-text" class="h-6 w-6"></i>
