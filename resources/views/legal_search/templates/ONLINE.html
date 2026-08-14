@@ -317,6 +317,14 @@
       height: 26px;
     }
 
+    /* The Online Legal Search mark is a wide lockup (2.7:1), so it is capped on
+       width rather than height to stop it crowding the generated-by line. */
+    .footer-logo-left img.onls-brand {
+      height: auto;
+      width: 96px;
+      max-width: 96px;
+    }
+
     .watermark-copy {
       position: absolute;
       left: 50%;
@@ -653,7 +661,9 @@
 
     <div class="footer-bottom">
       <div class="footer-logo-left">
-        <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES" />
+        <!-- Online Legal Search brand mark. Root-relative so it resolves on
+             whichever host serves the page, unlike the older absolute URLs. -->
+        <img class="onls-brand" src="/assets/logo/online_ls.jpeg" alt="Online Legal Search — KLAES" />
       </div>
       <div class="gen-text" id="report-generated-by">Generated via Online Legal Search</div>
       <div class="footer-logo-right">

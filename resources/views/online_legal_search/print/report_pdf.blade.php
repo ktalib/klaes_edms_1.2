@@ -29,7 +29,12 @@
     // PAY-PER-SEARCH.html loads from the CDN — this one is embedded in an
     // email attachment, so the weight is charged to every recipient.
     $logoRight = $logo('assets/logo/ministry2.jpeg') ?: $logo('assets/logo/ministry2.png');
-    $logoKlaes = $logo('storage/upload/logo/logo.png');
+    // Online Legal Search brand mark. The 480px print variant is preferred over
+    // the 1536px original: it renders at ~92px here, and the full-resolution
+    // file added ~190KB to an attachment charged to every recipient.
+    $logoBrand = $logo('assets/logo/online_ls_print.jpeg')
+        ?: $logo('assets/logo/online_ls.jpeg')
+        ?: $logo('storage/upload/logo/logo.png');
     $logoLas   = $logo('assets/logo/las.jpg');
 
     $rows = $report['rows'] ?? [];
@@ -203,6 +208,8 @@
         .foot { width: 100%; border-collapse: collapse; border-top: 1px solid #000; padding-top: 4px; margin-top: 4px; }
         .foot td { vertical-align: middle; padding-top: 4px; }
         .foot img { height: 24px; }
+        /* Wide 2.7:1 lockup — sized on width so it does not tower over the row. */
+        .foot img.brand { height: auto; width: 92px; }
         .foot .mid { text-align: center; font-size: 9px; color: #333; }
         .foot .r { text-align: right; }
     </style>
@@ -379,7 +386,7 @@
 {{-- Footer --}}
 <table class="foot">
     <tr>
-        <td style="width:80px;">@if($logoKlaes)<img src="{{ $logoKlaes }}" alt="">@endif</td>
+        <td style="width:100px;">@if($logoBrand)<img class="brand" src="{{ $logoBrand }}" alt="">@endif</td>
         <td class="mid">
             {{ $report['generated_by'] ?? 'Generated via Online Legal Search' }} —
             request {{ $searchRequest->request_no }}, issued to {{ $searchRequest->requester_email }}.
