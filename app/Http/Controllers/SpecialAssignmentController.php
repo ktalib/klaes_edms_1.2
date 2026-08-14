@@ -9,7 +9,7 @@ use App\Models\SpaNotice;
 use App\Models\SpaDepartmentReferral;
 use App\Models\SpaMemo;
 use App\Models\SpaCertificate;
-use App\Services\EBulkSmsService;
+use App\Services\BetaSmsService;
 use App\Services\UserNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -1414,17 +1414,23 @@ class SpecialAssignmentController extends Controller
         return redirect()->route('special-assignment.mobile.login')->with('success', 'Password reset successfully. Please log in.');
     }
 
+    /**
+     * Send a contravention notice by SMS. The wording is fixed by the Ministry
+     * and lives on SpaNotice so this and the scheduled second-serve command
+     * always send the same text.
+     */
     private function sendNoticeSms(string $phone, string $name, string $type, ?string $fileNo): bool
     {
-        $ordinal  = $type === 'first' ? 'First' : 'Second';
-        $fileRef  = $fileNo ? " (File No: {$fileNo})" : '';
-        $message  = "Dear {$name}, this is a {$ordinal} Serve Notice from Kano State Ministry of Lands regarding your property{$fileRef}. Please visit the office within 14 days. KANGIS.";
-
         try {
-            $sms = app(EBulkSmsService::class);
-            return $sms->send($phone, $message);
+            return app(BetaSmsService::class)->send($phone, SpaNotice::smsBody($type));
         } catch (\Throwable $e) {
-            Log::warning('SPAS: SMS send failed', ['phone' => $phone, 'error' => $e->getMessage()]);
+            Log::warning('SPAS: SMS send failed', [
+                'phone'     => $phone,
+                'file_no'   => $fileNo,
+                'recipient' => $name,
+                'type'      => $type,
+                'error'     => $e->getMessage(),
+            ]);
             return false;
         }
     }

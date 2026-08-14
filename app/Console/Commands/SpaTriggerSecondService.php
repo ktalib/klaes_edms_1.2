@@ -2,9 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Http\Controllers\SpecialAssignmentController;
 use App\Models\SpaNotice;
-use App\Services\EBulkSmsService;
+use App\Services\BetaSmsService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -49,7 +48,7 @@ class SpaTriggerSecondService extends Command
             return 0;
         }
 
-        $sms    = app(EBulkSmsService::class);
+        $sms    = app(BetaSmsService::class);
         $count  = 0;
         $failed = 0;
 
@@ -78,12 +77,10 @@ class SpaTriggerSecondService extends Command
                     'created_by'         => 'system:spa-auto',
                 ]);
 
-                // Send SMS
+                // Send SMS — wording is the Ministry's, shared with the manual path
                 $smsSent = false;
                 try {
-                    $fileRef = $first->file_number ? " (File No: {$first->file_number})" : '';
-                    $message = "Dear {$first->recipient_name}, this is a Second Serve Notice from Kano State Ministry of Lands regarding your property{$fileRef}. You are required to comply immediately. KANGIS.";
-                    $smsSent = $sms->send($first->phone, $message);
+                    $smsSent = $sms->send($first->phone, SpaNotice::smsBody('second'));
                 } catch (\Throwable $e) {
                     Log::warning('SPAS auto-second-serve SMS failed', ['phone' => $first->phone, 'error' => $e->getMessage()]);
                 }

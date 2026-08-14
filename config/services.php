@@ -58,6 +58,13 @@ return [
         'sender' => env('EBULKSMS_SENDER', 'Klaesedms'),
     ],
 
+    // Gateway used for Special Assignment contravention notices (first / second serve)
+    'betasms' => [
+        'username' => env('BETASMS_USERNAME'),
+        'password' => env('BETASMS_PASSWORD'),
+        'sender'   => env('BETASMS_SENDER', 'KLASE'),
+    ],
+
     'bulksmsnigeria' => [
         'api_token' => env('BULKSMSNG_API_TOKEN', '488|sKKj8eoZkgxFWLvdaBobT2aISYSZT055IcFJjZA994a7f693'),
         'sender' => env('BULKSMSNG_SENDER', 'KANGIS'),
