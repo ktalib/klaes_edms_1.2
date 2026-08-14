@@ -37,6 +37,8 @@ class LegalSearchOnlineRequest extends Model
         'reviewed_by',
         'reviewer_name',
         'reviewer_rank',
+        'reviewer_signature_path',
+        'signed_at',
         'reviewed_at',
         'review_note',
         'rejection_reason',
@@ -48,6 +50,7 @@ class LegalSearchOnlineRequest extends Model
         'search_params' => 'array',
         'submitted_at'  => 'datetime',
         'reviewed_at'   => 'datetime',
+        'signed_at'     => 'datetime',
         'emailed_at'    => 'datetime',
     ];
 

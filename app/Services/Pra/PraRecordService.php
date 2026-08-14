@@ -162,11 +162,28 @@ class PraRecordService
 
         $payload = $this->prepareRecordPayload($input, $identifierSet, $userId, false);
 
-        if ($this->isOssTransferOfTitleOp($existing)) {
+        // A row can BECOME a Transfer of Title through the update itself, so the type
+        // must be judged on the merged post-update state. Testing $existing alone let a
+        // conversion escape both the 0/0/0 zeroing and the Party 1 guard below, which is
+        // how ToT rows with a NULL regNo and a NULL Grantor reached production.
+        $merged = array_merge($existing, $payload);
+
+        if ($this->isOssTransferOfTitleOp($merged)) {
             $payload['regNo'] = '0/0/0';
             $payload['serialNo'] = '0';
             $payload['pageNo'] = '0';
             $payload['volumeNo'] = '0';
+
+            // Enforced when this update is what turns the row into a Transfer of Title,
+            // or when it writes the party columns at all. A partial update to an already
+            // broken legacy row is left editable on purpose — those are repaired by
+            // oss:fix-op-transfer-grantor, and blocking them here would only strand them.
+            $becomesTot = ! $this->isOssTransferOfTitleOp($existing);
+            $touchesParties = array_key_exists('party_1', $payload) || array_key_exists('Grantor', $payload);
+
+            if ($becomesTot || $touchesParties) {
+                $this->assertTransferOfTitleHasPartyOne($merged);
+            }
         }
 
         $record = $this->records->updateByPropId((string) ($existing['prop_id'] ?? $propId), $payload) ?? $existing;

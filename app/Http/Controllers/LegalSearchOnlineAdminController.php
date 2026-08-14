@@ -7,7 +7,9 @@ use Illuminate\Support\Facades\DB;
 use App\Models\LegalSearchOnlinePayment;
 use App\Models\LegalSearchOnlineFeedback;
 use App\Models\LegalSearchOnlineRequest;
+use App\Services\LandOfficerSignatureService;
 use App\Services\LegalSearchApprovalService;
+use Carbon\Carbon;
 
 class LegalSearchOnlineAdminController extends Controller
 {
@@ -143,10 +145,30 @@ class LegalSearchOnlineAdminController extends Controller
             'rejected' => LegalSearchOnlineRequest::where('status', 'rejected')->count(),
         ];
 
+        // Oldest item still waiting — the number that tells an approver whether
+        // the queue is being kept current.
+        $oldestPending = LegalSearchOnlineRequest::where('status', 'pending')
+            ->orderBy('submitted_at')
+            ->value('submitted_at');
+
+        $stats = [
+            'pending'        => $counts['pending'],
+            'oldest_pending' => $oldestPending ? Carbon::parse($oldestPending) : null,
+            'approved_today' => LegalSearchOnlineRequest::where('status', 'approved')
+                                    ->whereDate('reviewed_at', today())->count(),
+            'approved_total' => $counts['approved'],
+            'rejected'       => $counts['rejected'],
+            // Approved but the report never reached the requester — these need
+            // a "Resend report" rather than a fresh approval.
+            'undelivered'    => LegalSearchOnlineRequest::where('status', 'approved')
+                                    ->whereNull('emailed_at')->count(),
+        ];
+
         return view('legal_search_online.requests', [
             'PageTitle'  => $PageTitle,
             'requests'   => $requests,
             'counts'     => $counts,
+            'stats'      => $stats,
             'status'     => $status,
             'q'          => $request->query('q', ''),
             'highlight'  => (int) $request->query('highlight', 0),
@@ -156,7 +178,11 @@ class LegalSearchOnlineAdminController extends Controller
 
     /**
      * Preview the report a request would release, so an approver can read it
-     * before signing off. Reuses the on-screen Legal Search print template.
+     * before signing off.
+     *
+     * Streams the actual PDF rather than an HTML lookalike — what the approver
+     * reads here is the same document the requester receives, produced by the
+     * same renderer. Nothing is sent; delivery happens only on approval.
      */
     public function requestPreview(int $id, LegalSearchApprovalService $approvalService)
     {
@@ -165,10 +191,12 @@ class LegalSearchOnlineAdminController extends Controller
         $searchRequest = LegalSearchOnlineRequest::findOrFail($id);
         $report = $approvalService->buildReport($searchRequest);
 
-        return view('legal_search_online.request_preview', [
-            'searchRequest' => $searchRequest,
-            'report'        => $report,
-        ]);
+        if (!$report) {
+            abort(404, 'The report for file ' . ($searchRequest->file_number ?: '—') . ' could not be generated. Approving this request will fail until the underlying record is fixed.');
+        }
+
+        return $approvalService->renderPdf($searchRequest, $report)
+            ->stream($approvalService->pdfFileName($searchRequest));
     }
 
     /**
@@ -180,7 +208,8 @@ class LegalSearchOnlineAdminController extends Controller
         abort_unless($approvalService->isApprover($user), 403, 'Only a Director or Deputy Director may approve Online Legal Search requests.');
 
         $validated = $request->validate([
-            'review_note' => 'nullable|string|max:1000',
+            'review_note'     => 'nullable|string|max:1000',
+            'apply_signature' => 'nullable|boolean',
         ]);
 
         $searchRequest = LegalSearchOnlineRequest::findOrFail($id);
@@ -189,10 +218,32 @@ class LegalSearchOnlineAdminController extends Controller
             return back()->with('error', 'Request ' . $searchRequest->request_no . ' has already been ' . $searchRequest->status . '.');
         }
 
+        $sign = (bool) ($validated['apply_signature'] ?? false);
+
+        if ($sign) {
+            // Signing was requested but no usable signature exists — stop rather
+            // than quietly issuing an unsigned report.
+            $signature = $approvalService->signatureFor($user);
+            if (!$signature['has_signature']) {
+                return back()->with('error', $this->signatureMessage($signature) . ' The report was not sent.');
+            }
+
+            // The dialog sets this flag client-side, so second-level auth is
+            // re-checked here before a signature is stamped on an issued report.
+            if (!$approvalService->signatureVerified($user)) {
+                return back()->with('error', 'Your signature verification has expired. Re-open the request, press Sign and confirm again.');
+            }
+        }
+
         try {
-            $emailed = $approvalService->approve($searchRequest, $user, $validated['review_note'] ?? null);
+            $emailed = $approvalService->approve($searchRequest, $user, $validated['review_note'] ?? null, $sign);
         } catch (\RuntimeException $e) {
             return back()->with('error', $e->getMessage());
+        }
+
+        // Each signature is authorised separately — the next one re-verifies.
+        if ($sign) {
+            $approvalService->forgetSignatureVerification($user);
         }
 
         return back()->with(
@@ -201,6 +252,122 @@ class LegalSearchOnlineAdminController extends Controller
                 ? 'Request ' . $searchRequest->request_no . ' approved. The report was emailed to ' . $searchRequest->requester_email . '.'
                 : 'Request ' . $searchRequest->request_no . ' was approved, but the email to ' . $searchRequest->requester_email . ' failed to send. Use "Resend report" to try again.'
         );
+    }
+
+    /**
+     * The signed-in approver's own digital signature, for the "Sign" button in
+     * the approve dialog to preview before the report goes out.
+     */
+    public function requestSignature(LegalSearchApprovalService $approvalService)
+    {
+        $user = auth()->user();
+        abort_unless($approvalService->isApprover($user), 403);
+
+        $signature = $approvalService->signatureFor($user);
+
+        return response()->json([
+            'has_signature' => $signature['has_signature'],
+            // Withheld until second-level auth passes, so the dialog cannot
+            // show a signature the approver has not yet authorised.
+            'data_uri'      => $approvalService->signatureVerified($user) ? $signature['data_uri'] : null,
+            'verified'      => $approvalService->signatureVerified($user),
+            'method'        => $signature['method'],
+            'registered'    => $signature['registered'],
+            'name'          => $signature['name'],
+            'rank'          => $signature['rank'],
+            'message'       => $this->signatureMessage($signature),
+        ]);
+    }
+
+    /**
+     * Why a signature cannot be used, in the approver's terms.
+     */
+    protected function signatureMessage(array $signature): ?string
+    {
+        if ($signature['has_signature']) {
+            return $signature['method'] ? null : 'No verification method is set for you in Digital Signature Control. Password confirmation will be used.';
+        }
+
+        if (!$signature['registered']) {
+            return 'You are not registered in Digital Signature Control, so no signature is available. Ask a system administrator to add you as a signing officer.';
+        }
+
+        return $signature['unreadable']
+            ? 'Your signature file could not be read on the server, so it cannot be added to the report. Please re-upload it in Digital Signature Control.'
+            : 'No signature file is saved against you in Digital Signature Control. Upload one there to sign reports.';
+    }
+
+    /**
+     * Send the OTP for approvers whose Digital Signature Control verification
+     * method is Email OTP or SMS OTP.
+     */
+    public function requestSignatureOtp(LegalSearchApprovalService $approvalService, LandOfficerSignatureService $signatureService)
+    {
+        $user = auth()->user();
+        abort_unless($approvalService->isApprover($user), 403);
+
+        $officer = $approvalService->signingOfficerFor($user);
+
+        if (!$officer) {
+            return response()->json(['success' => false, 'message' => 'You are not registered in Digital Signature Control.'], 422);
+        }
+
+        $method = $officer->notification_type ?: 'password';
+
+        if (!in_array($method, ['email', 'sms'], true)) {
+            return response()->json(['success' => false, 'message' => 'Your verification method does not use an OTP.'], 422);
+        }
+
+        $result = $signatureService->sendOtp($officer, $method);
+
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /**
+     * Clear second-level auth and release the signature to the dialog.
+     */
+    public function requestSignatureVerify(
+        Request $request,
+        LegalSearchApprovalService $approvalService,
+        LandOfficerSignatureService $signatureService
+    ) {
+        $user = auth()->user();
+        abort_unless($approvalService->isApprover($user), 403);
+
+        $validated = $request->validate([
+            'password' => 'nullable|string',
+            'otp_code' => 'nullable|string|max:10',
+        ]);
+
+        $signature = $approvalService->signatureFor($user);
+
+        if (!$signature['has_signature']) {
+            return response()->json(['success' => false, 'message' => $this->signatureMessage($signature)], 422);
+        }
+
+        $officer = $approvalService->signingOfficerFor($user);
+        $method  = $officer->notification_type ?: 'password';
+
+        $result = $signatureService->verifySecondLevelAuth(
+            $officer,
+            $method,
+            $validated['otp_code'] ?? null,
+            $validated['password'] ?? null
+        );
+
+        if (!$result['success']) {
+            return response()->json($result, 422);
+        }
+
+        $approvalService->markSignatureVerified($user);
+
+        return response()->json([
+            'success'  => true,
+            'message'  => $result['message'],
+            'data_uri' => $signature['data_uri'],
+            'name'     => $signature['name'],
+            'rank'     => $signature['rank'],
+        ]);
     }
 
     /**

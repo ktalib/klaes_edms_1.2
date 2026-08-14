@@ -1112,6 +1112,9 @@ Route::middleware(['auth'])->group(function () {
         // Director / Deputy Director approval queue for public search requests.
         Route::get('/requests', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestsIndex'])->name('requests');
         Route::get('/requests/{id}/preview', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestPreview'])->name('requests.preview');
+        Route::get('/requests/my-signature', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestSignature'])->name('requests.signature');
+        Route::post('/requests/my-signature/otp', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestSignatureOtp'])->name('requests.signature.otp');
+        Route::post('/requests/my-signature/verify', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestSignatureVerify'])->name('requests.signature.verify');
         Route::post('/requests/{id}/approve', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestApprove'])->name('requests.approve');
         Route::post('/requests/{id}/reject', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestReject'])->name('requests.reject');
         Route::post('/requests/{id}/resend', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestResend'])->name('requests.resend');

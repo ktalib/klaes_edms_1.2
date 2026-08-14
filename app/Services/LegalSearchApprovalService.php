@@ -6,6 +6,7 @@ use App\Mail\LegalSearchRequestApproved;
 use App\Mail\LegalSearchRequestPendingApproval;
 use App\Mail\LegalSearchRequestRejected;
 use App\Mail\LegalSearchRequestSubmitted;
+use App\Models\LandOfficer;
 use App\Models\LegalSearchOnlinePayment;
 use App\Models\LegalSearchOnlineRequest;
 use App\Models\User;
@@ -224,12 +225,131 @@ class LegalSearchApprovalService
     }
 
     /**
+     * Render the report exactly as the requester receives it.
+     *
+     * Single source of truth for the emailed attachment and the approver's
+     * preview, so what is reviewed is byte-for-byte what is delivered.
+     */
+    public function renderPdf(LegalSearchOnlineRequest $request, array $report): \Barryvdh\DomPDF\PDF
+    {
+        return \Barryvdh\DomPDF\Facade\Pdf::loadView('online_legal_search.print.report_pdf', [
+            'report'        => $report,
+            'searchRequest' => $request,
+            // Must be an inline data URI — DomPDF will not fetch over HTTP, so an
+            // unreadable signature has to render as a blank line, never a broken one.
+            'signature'     => \App\Support\SignatureImage::embeddable($request->reviewer_signature_path),
+        ])->setPaper('a4', 'landscape');
+    }
+
+    /**
+     * The signing user's own signature, ready to preview in the approve dialog.
+     *
+     * @return array{has_signature: bool, data_uri: ?string}
+     */
+    public function signatureFor(?User $user): array
+    {
+        $officer = $this->signingOfficerFor($user);
+
+        // Digital Signature Control (signing_officers) is the authority for a
+        // staff signature; users.signature is only a legacy fallback. This is
+        // the same precedence the Digital Signature Control listing uses.
+        $path = trim((string) ($officer->signature_file ?? '')) ?: trim((string) ($user->signature ?? ''));
+
+        // Deliberately the strict check: if the file cannot be read and inlined
+        // it will not appear on the issued PDF either, so the approver must be
+        // told it is unusable rather than shown a preview the report will not
+        // reproduce.
+        $dataUri = \App\Support\SignatureImage::embeddable($path);
+
+        return [
+            'has_signature' => $dataUri !== null,
+            'data_uri'      => $dataUri,
+            'path'          => $dataUri !== null ? $path : null,
+            // Distinguishes "never uploaded one" from "uploaded, file missing".
+            'unreadable'    => $path !== '' && $dataUri === null,
+            'registered'    => $officer !== null,
+            // Second-level auth required before the signature may be applied.
+            'method'        => $officer->notification_type ?? null,
+            'name'          => $officer->name ?? ($user->name ?? $user->username ?? null),
+            'rank'          => ($user->rank ?? null) ?: ($officer->rank ?? null),
+        ];
+    }
+
+    /**
+     * The Digital Signature Control record for a staff user, if registered.
+     */
+    public function signingOfficerFor(?User $user): ?LandOfficer
+    {
+        if (!$user) {
+            return null;
+        }
+
+        return LandOfficer::where('user_id', $user->id)->first();
+    }
+
+    /**
+     * Session key holding the moment this user last cleared second-level auth.
+     */
+    protected function signatureSessionKey(User $user): string
+    {
+        return 'ols_signature_verified_at_' . $user->id;
+    }
+
+    /**
+     * Record that the approver has just cleared their verification method.
+     */
+    public function markSignatureVerified(User $user): void
+    {
+        session([$this->signatureSessionKey($user) => now()->toIso8601String()]);
+    }
+
+    /**
+     * Has this user cleared second-level auth recently enough to sign?
+     *
+     * The dialog can set the "apply signature" flag on its own, so the server
+     * re-checks this before stamping a signature onto an issued report.
+     */
+    public function signatureVerified(User $user, int $withinMinutes = 15): bool
+    {
+        $at = session($this->signatureSessionKey($user));
+
+        if (!$at) {
+            return false;
+        }
+
+        try {
+            return \Carbon\Carbon::parse($at)->greaterThan(now()->subMinutes($withinMinutes));
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Clear the verification, so each signature is separately authorised.
+     */
+    public function forgetSignatureVerification(User $user): void
+    {
+        session()->forget($this->signatureSessionKey($user));
+    }
+
+    /**
+     * File name used for the attachment and the preview tab.
+     */
+    public function pdfFileName(LegalSearchOnlineRequest $request): string
+    {
+        $slug = preg_replace('/[^A-Za-z0-9]+/', '-', (string) ($request->file_number ?: 'report'));
+        $slug = trim((string) $slug, '-') ?: 'report';
+
+        return 'Legal-Search-Report-' . $slug . '.pdf';
+    }
+
+    /**
      * Approve a request and email the report to the requester as a PDF.
      * Returns true when the email went out.
      *
      * @throws \RuntimeException when the report cannot be generated.
      */
-    public function approve(LegalSearchOnlineRequest $request, User $approver, ?string $note = null): bool
+    public function approve(LegalSearchOnlineRequest $request, User $approver, ?string $note = null, bool $sign = false): bool
     {
         $report = $this->buildReport($request);
 
@@ -239,13 +359,20 @@ class LegalSearchApprovalService
             );
         }
 
+        // Signing is opt-in: the approver presses "Sign" in the approve dialog
+        // and clears their Digital Signature Control verification method.
+        // Without it the report goes out with a blank signature line.
+        $signaturePath = $sign ? (string) ($this->signatureFor($approver)['path'] ?? '') : '';
+
         $request->forceFill([
-            'status'        => LegalSearchOnlineRequest::STATUS_APPROVED,
-            'reviewed_by'   => $approver->id,
-            'reviewer_name' => $approver->name ?: $approver->username,
-            'reviewer_rank' => $approver->rank,
-            'reviewed_at'   => now(),
-            'review_note'   => $note ?: null,
+            'status'                  => LegalSearchOnlineRequest::STATUS_APPROVED,
+            'reviewed_by'             => $approver->id,
+            'reviewer_name'           => $approver->name ?: $approver->username,
+            'reviewer_rank'           => $approver->rank,
+            'reviewer_signature_path' => $signaturePath ?: null,
+            'signed_at'               => $signaturePath !== '' ? now() : null,
+            'reviewed_at'             => now(),
+            'review_note'             => $note ?: null,
         ])->save();
 
         try {

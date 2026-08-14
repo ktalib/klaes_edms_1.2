@@ -3,7 +3,7 @@
 namespace App\Mail;
 
 use App\Models\LegalSearchOnlineRequest;
-use Barryvdh\DomPDF\Facade\Pdf;
+use App\Services\LegalSearchApprovalService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Attachment;
@@ -47,16 +47,13 @@ class LegalSearchRequestApproved extends Mailable
      */
     public function attachments(): array
     {
-        $pdf = Pdf::loadView('online_legal_search.print.report_pdf', [
-            'report'  => $this->report,
-            'searchRequest' => $this->searchRequest,
-        ])->setPaper('a4', 'landscape');
-
-        $slug = preg_replace('/[^A-Za-z0-9]+/', '-', (string) ($this->searchRequest->file_number ?: 'report'));
-        $slug = trim((string) $slug, '-') ?: 'report';
+        // Rendered through the service so the attachment and the approver's
+        // preview are produced by exactly the same code path.
+        $service = app(LegalSearchApprovalService::class);
+        $pdf     = $service->renderPdf($this->searchRequest, $this->report);
 
         return [
-            Attachment::fromData(fn () => $pdf->output(), 'Legal-Search-Report-' . $slug . '.pdf')
+            Attachment::fromData(fn () => $pdf->output(), $service->pdfFileName($this->searchRequest))
                 ->withMime('application/pdf'),
         ];
     }
