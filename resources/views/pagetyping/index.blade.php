@@ -41,7 +41,7 @@
                       title="Move a file's documents to another registry"
                       onclick="EdmsRegistryTransfer.open(null, null, () => window.location.reload())">
                 <i data-lucide="folder-symlink" class="h-4 w-4"></i>
-                Move Registry
+                Move to NR
               </button>
             </div>
         
@@ -4067,7 +4067,7 @@
                   <button class="btn btn-action btn-sm move-registry-button"
                           title="Move this file's documents to another registry">
                     <i data-lucide="folder-symlink" class="h-4 w-4 mr-1.5"></i>
-                    Move Registry
+                    Move to NR
                   </button>
                   <button class="btn btn-back btn-sm back-button">
                     <i data-lucide="arrow-left" class="h-4 w-4 mr-1.5"></i>

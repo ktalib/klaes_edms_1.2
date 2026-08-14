@@ -104,7 +104,7 @@
 
       <button id="payBtn" class="pay-btn">Pay &#8358;{{ number_format($amount / 100) }} with Paystack</button>
       <div id="payError" class="pay-error"></div>
-      <p class="pay-note">You will be charged once. Your request is then reviewed by the Director / Deputy Director, and the approved report is emailed to you as a PDF.</p>
+      <p class="pay-note">You will be charged once. Your request is then reviewed by the Director / Deputy Director Deeds, and the approved report is emailed to you as a PDF.</p>
     </div>
   </div>
 

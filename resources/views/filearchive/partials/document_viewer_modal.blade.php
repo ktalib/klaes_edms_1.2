@@ -45,7 +45,7 @@
                             <div class="w-px h-5 bg-gray-300 mx-1"></div>
                             <button class="btn btn-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1" id="viewer-move-registry" title="Move this file's documents to another registry">
                                 <i data-lucide="folder-symlink" class="h-4 w-4"></i>
-                                <span class="hidden sm:inline">Move Registry</span>
+                                <span class="hidden sm:inline">Move to NR</span>
                             </button>
                             <button class="btn btn-sm bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1" id="edit-filetype-toggle" title="Edit page classification (file type)">
                                 <i data-lucide="tag" class="h-4 w-4"></i>

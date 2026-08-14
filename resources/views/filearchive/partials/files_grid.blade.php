@@ -339,7 +339,7 @@
                                     title="Move {{ e($file->file_number) }} to another registry"
                                     onclick="event.stopPropagation(); EdmsRegistryTransfer.open({{ (int) $file->id }}, @js($file->file_number), () => window.location.reload());">
                                 <i data-lucide="folder-symlink" class="h-3 w-3 mr-1"></i>
-                                Registry
+                                Move to NR
                             </button>
                         </div>
 

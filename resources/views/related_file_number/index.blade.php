@@ -20,18 +20,18 @@
         </div>
 
         <!-- Filters + table card -->
-        <div class="bg-white rounded-3xl shadow-xl p-6 space-y-6">
+        <div class="bg-white rounded-3xl shadow-lg border border-slate-200 p-6 space-y-6">
             <!-- Filters -->
             <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div class="md:col-span-3">
-                    <label class="block text-xs font-medium text-slate-600 mb-1">Search</label>
+                    <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Search</label>
                     <input id="rfn-search" type="text"
-                        class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
+                        class="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm text-slate-700 focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
                         placeholder="related_fileno, file_number, title, party, comment" />
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-slate-600 mb-1">Transaction Type</label>
-                    <select id="rfn-comment-type" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-300">
+                    <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Transaction Type</label>
+                    <select id="rfn-comment-type" class="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm text-slate-700 focus:ring-2 focus:ring-orange-300">
                         <option value="">All</option>
                         <option value="kangis">KANGIS Recertification</option>
                         <option value="mlpp">Land &amp; Physical Planning Recertification</option>
@@ -45,8 +45,8 @@
 
             <!-- Table -->
             <div class="overflow-x-auto border border-slate-200 rounded-2xl">
-                <table class="w-full text-sm" id="rfn-table">
-                    <thead class="bg-slate-50 text-slate-700 text-xs uppercase tracking-wide">
+                <table class="w-full min-w-[1380px] text-sm" id="rfn-table">
+                    <thead class="bg-slate-50/80 text-slate-600 text-[11px] font-semibold uppercase tracking-wide">
                         <tr>
                             <th class="px-3 py-2 text-left">S/N</th>
                             <th class="px-3 py-2 text-left">Prop ID</th>
@@ -60,7 +60,7 @@
                             <th class="px-3 py-2 text-left">Comment</th>
                         </tr>
                     </thead>
-                    <tbody id="rfn-tbody" class="divide-y divide-slate-100"></tbody>
+                    <tbody id="rfn-tbody" class="divide-y divide-slate-100 text-[13px] text-slate-700"></tbody>
                 </table>
             </div>
 
@@ -102,6 +102,25 @@
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
+    const textOrDash = (val, dash = '\u2014') => {
+        const text = String(val ?? '').replace(/\s+/g, ' ').trim();
+        return text ? text : dash;
+    };
+
+    const titleCase = (val, dash = '\u2014') => {
+        const base = textOrDash(val, '');
+        if (!base) return dash;
+        return base
+            .toLowerCase()
+            .replace(/\b([a-z])/g, (m) => m.toUpperCase());
+    };
+
+    const upperCase = (val, dash = '\u2014') => {
+        const base = textOrDash(val, '');
+        if (!base) return dash;
+        return base.toUpperCase();
+    };
+
     const commentClass = (c) => {
         if (!c) return '';
         if (c.startsWith('KANGIS')) return 'text-orange-700 font-medium';
@@ -110,12 +129,13 @@
     };
 
     const fileNumberCell = (val) => {
-        const v = e(val || '-');
+        const normalized = upperCase(val);
+        const v = e(normalized);
         // Visually mark KANGIS-style related file numbers in orange
-        if (val && /^(KNML|MLKN|KNGP|KN\s)/i.test(val)) {
-            return `<span class="px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-200 text-xs font-semibold">${v}</span>`;
+        if (normalized !== '\u2014' && /^(KNML|MLKN|KNGP|KN\s)/i.test(normalized)) {
+            return `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 border border-orange-200 text-[11px] font-semibold whitespace-nowrap">${v}</span>`;
         }
-        return v;
+        return `<span class="font-semibold tracking-wide text-slate-700 whitespace-nowrap">${v}</span>`;
     };
 
     const typeBadge = (t) => {
@@ -133,30 +153,32 @@
 
     const render = (rows, meta) => {
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="10" class="px-3 py-8 text-center text-slate-400">No results.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" class="px-3 py-10 text-center text-slate-400">No results.</td></tr>';
             return;
         }
         const startSn = ((meta.page || 1) - 1) * (meta.per_page || 1);
         tbody.innerHTML = rows.map((r, idx) => `
-            <tr class="hover:bg-orange-50/40">
-                <td class="px-3 py-2 text-xs text-slate-400 align-top">${startSn + idx + 1}</td>
-                <td class="px-3 py-2 align-top text-slate-500 font-mono text-xs">${e(r.prop_id || '-')}</td>
-                <td class="px-3 py-2 align-top whitespace-nowrap">${fileNumberCell(r.related_fileno)}</td>
-                <td class="px-3 py-2 align-top text-slate-700">${e(r.related_file_title || r.file_title || r.party_2 || '-')}</td>
-                <td class="px-3 py-2 align-top text-slate-700 whitespace-nowrap">${e(r.file_number || '-')}</td>
-                <td class="px-3 py-2 align-top text-slate-700">${e(r.file_title || r.party_2 || '-')}</td>
-                <td class="px-3 py-2 align-top whitespace-nowrap">${typeBadge(r.transaction_type)}</td>
-                <td class="px-3 py-2 align-top text-slate-500 max-w-xs truncate" title="${e(r.location || '')}">${e(r.location || '-')}</td>
-                <td class="px-3 py-2 align-top whitespace-nowrap">
-                    <span class="text-[0.65rem] uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">${e(r.source_table || '-')}</span>
+            <tr class="align-top odd:bg-white even:bg-slate-50/40 hover:bg-orange-50/30 transition-colors">
+                <td class="px-3 py-3 text-xs font-semibold text-slate-400">${startSn + idx + 1}</td>
+                <td class="px-3 py-3 whitespace-nowrap">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 font-mono text-[11px] font-semibold text-slate-600">${e(textOrDash(r.prop_id))}</span>
                 </td>
-                <td class="px-3 py-2 align-top ${commentClass(r.comment)}">${e(r.comment || '-')}</td>
+                <td class="px-3 py-2 align-top whitespace-nowrap">${fileNumberCell(r.related_fileno)}</td>
+                <td class="px-3 py-3 text-slate-700 leading-snug">${e(titleCase(r.related_file_title || r.file_title || r.party_2))}</td>
+                <td class="px-3 py-3 whitespace-nowrap">${fileNumberCell(r.file_number)}</td>
+                <td class="px-3 py-3 text-slate-700 leading-snug">${e(titleCase(r.file_title || r.party_2))}</td>
+                <td class="px-3 py-2 align-top whitespace-nowrap">${typeBadge(r.transaction_type)}</td>
+                <td class="px-3 py-3 text-slate-600 max-w-xs truncate" title="${e(textOrDash(r.location, ''))}">${e(titleCase(r.location))}</td>
+                <td class="px-3 py-3 whitespace-nowrap">
+                    <span class="text-[0.65rem] uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">${e(textOrDash(r.source_table).replace(/_/g, ' '))}</span>
+                </td>
+                <td class="px-3 py-3 ${commentClass(r.comment)}">${e(textOrDash(r.comment))}</td>
             </tr>
         `).join('');
     };
 
     const load = async () => {
-        tbody.innerHTML = '<tr><td colspan="10" class="px-3 py-8 text-center text-slate-400">Loading…</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="px-3 py-10 text-center text-slate-400">Loading…</td></tr>';
         const url = new URL(endpoint, window.location.origin);
         url.searchParams.set('page', page);
         url.searchParams.set('per_page', perSel.value);
@@ -176,7 +198,7 @@
             prevBtn.disabled = (meta.page || 1) <= 1;
             nextBtn.disabled = (meta.page || 1) >= lastPage;
         } catch (err) {
-            tbody.innerHTML = '<tr><td colspan="10" class="px-3 py-8 text-center text-red-500">Failed to load results.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" class="px-3 py-10 text-center text-red-500">Failed to load results.</td></tr>';
         }
     };
 
