@@ -1133,6 +1133,13 @@
                                 <span class="per-file-step-file font-mono text-[11px] font-bold text-slate-700 truncate max-w-[200px]"></span>
                                 <span class="per-file-step-untick hidden px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 text-slate-600 uppercase tracking-wide"
                                       title="This file is unticked in the table, so these values will not be saved">Not in batch</span>
+                                <button type="button" id="applicant-card-apply-all"
+                                        data-card-fields="layout_plan_no"
+                                        class="px-2.5 py-1.5 text-[11px] font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition inline-flex items-center gap-1.5"
+                                        title="Copy this card's per-file values onto every file in the batch">
+                                    <i data-lucide="copy" class="h-3.5 w-3.5"></i>
+                                    Apply to all
+                                </button>
                                 <div class="flex items-center gap-1 rounded-lg border border-blue-200 bg-white p-0.5">
                                     <button type="button" class="per-file-step-prev p-1.5 rounded-md text-blue-700 hover:bg-blue-50 disabled:opacity-30 disabled:cursor-not-allowed transition" title="Previous file">
                                         <i data-lucide="chevron-left" class="h-4 w-4"></i>
@@ -1327,6 +1334,13 @@
                                 <span class="per-file-step-file font-mono text-[11px] font-bold text-slate-700 truncate max-w-[200px]"></span>
                                 <span class="per-file-step-untick hidden px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 text-slate-600 uppercase tracking-wide"
                                       title="This file is unticked in the table, so these values will not be saved">Not in batch</span>
+                                <button type="button" id="grant-card-apply-all"
+                                        data-card-fields="cofo_year,selected_year,term,development_value,development_period,ground_rent,development_charge,survey_fees,preparation_fees,preparation_fees_words"
+                                        class="px-2.5 py-1.5 text-[11px] font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition inline-flex items-center gap-1.5"
+                                        title="Copy every value on this card onto every file in the batch">
+                                    <i data-lucide="copy" class="h-3.5 w-3.5"></i>
+                                    Apply to all
+                                </button>
                                 <div class="flex items-center gap-1 rounded-lg border border-blue-200 bg-white p-0.5">
                                     <button type="button" class="per-file-step-prev p-1.5 rounded-md text-blue-700 hover:bg-blue-50 disabled:opacity-30 disabled:cursor-not-allowed transition" title="Previous file">
                                         <i data-lucide="chevron-left" class="h-4 w-4"></i>
@@ -2256,11 +2270,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Whether the stepped cards (Grant Conditions, Applicant & Property, Page
     // Number details) capture one set of values per file rather than one for the
-    // batch. On capture that is the regular kind only — a subdivision's children
-    // share one grant. On an edit it is both kinds: every child is already a saved
-    // record with its own values, and holding them behind a single shared card
-    // would write one child's figures onto all of them.
-    function perFileOn() { return isRegular() || !!BATCH_EDIT; }
+    // batch. This is now on for both kinds while batch mode is on, so subdivision
+    // capture can key per-file values from the same 1-of-N controls.
+    function perFileOn() { return !!toggle.checked; }
 
     // Fields the table now owns are hidden AND disabled — disabled inputs are not
     // submitted, which also stands down their `required` so the browser cannot
@@ -2442,9 +2454,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (regular) b.classList.add('hidden');
         });
 
-        // Grant conditions are per file in a regular batch and shared in a
-        // subdivision, so the stepper appears with the kind — except on an edit,
-        // where every child has its own saved set whichever kind it is.
+        // Per-file steppers run for both kinds of batch.
         var stepped = on && perFileOn();
         Array.prototype.forEach.call(stepNavs, function (nav) {
             nav.classList.toggle('hidden', !stepped);
@@ -3172,8 +3182,10 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         // Nothing to copy onto with fewer than two files in the batch.
-        var pageApply = document.getElementById('page-card-apply-all');
-        if (pageApply) pageApply.disabled = total < 2;
+        ['applicant-card-apply-all', 'grant-card-apply-all', 'page-card-apply-all'].forEach(function (id) {
+            var btn = document.getElementById(id);
+            if (btn) btn.disabled = total < 2;
+        });
 
         writeMirrors();
     }
@@ -3309,42 +3321,44 @@ document.addEventListener('DOMContentLoaded', function () {
         el.addEventListener('click', function () { gotoGrant(grantIndex + 1); });
     });
 
-    // Apply-to-all for one stepped card: the file on screen is copied onto every
-    // other file in the batch, for that card's fields only. Deliberately the whole
-    // card and not just the page numbers — a card that steps as a unit has to copy
-    // as one, or the survey report travels and the page it is on does not.
-    //
-    // Distinct from the table's Apply-to-all, which copies one ROW onto the others.
-    // This one copies the stepper's current position, and it overwrites: it is
-    // pressed precisely because the other files should read the same.
-    var pageApplyAll = document.getElementById('page-card-apply-all');
-    if (pageApplyAll) pageApplyAll.addEventListener('click', function () {
-        var fields = (pageApplyAll.dataset.cardFields || '').split(',')
-            .map(function (f) { return f.trim(); })
-            .filter(function (f) { return PER_FILE_FIELDS.indexOf(f) !== -1; });
-        if (!fields.length) return;
+    // Apply-to-all for a stepped card: the file on screen is copied onto every
+    // other file in the batch, for that card's fields only.
+    function bindCardApplyAll(buttonId, cardLabel) {
+        var btn = document.getElementById(buttonId);
+        if (!btn) return;
 
-        commitGrant();
-        var source = grantStore[grantIndex];
-        if (!source || grantStore.length < 2) return;
+        btn.addEventListener('click', function () {
+            var fields = (btn.dataset.cardFields || '').split(',')
+                .map(function (f) { return f.trim(); })
+                .filter(function (f) { return PER_FILE_FIELDS.indexOf(f) !== -1; });
+            if (!fields.length) return;
 
-        if (!confirm('Copy the Page Number details on screen onto all '
-                + grantStore.length + ' files in this batch? Whatever those files '
-                + 'currently hold in these fields is replaced.')) {
-            return;
-        }
+            commitGrant();
+            var source = grantStore[grantIndex];
+            if (!source || grantStore.length < 2) return;
 
-        grantStore.forEach(function (g, i) {
-            if (i === grantIndex || !g) return;
-            fields.forEach(function (f) { g[f] = source[f]; });
+            if (!confirm('Copy ' + cardLabel + ' on screen onto all '
+                    + grantStore.length + ' files in this batch? Whatever those files '
+                    + 'currently hold in these fields is replaced.')) {
+                return;
+            }
+
+            grantStore.forEach(function (g, i) {
+                if (i === grantIndex || !g) return;
+                fields.forEach(function (f) { g[f] = source[f]; });
+            });
+
+            renderGrantStep();
+            setStatus(cardLabel + ' copied onto ' + (grantStore.length - 1) + ' other file(s).', 'warn');
+            // Real work, and a lot of it at once — drafted rather than left waiting on
+            // the next keystroke. No-op while a saved batch is being edited.
+            scheduleSave();
         });
+    }
 
-        renderGrantStep();
-        setStatus('Page Number details copied onto ' + (grantStore.length - 1) + ' other file(s).', 'warn');
-        // Real work, and a lot of it at once — drafted rather than left waiting on
-        // the next keystroke. No-op while a saved batch is being edited.
-        scheduleSave();
-    });
+    bindCardApplyAll('applicant-card-apply-all', 'Applicant & Property');
+    bindCardApplyAll('grant-card-apply-all', 'Grant Conditions');
+    bindCardApplyAll('page-card-apply-all', 'Page Number details');
 
     /* ═══════════════════════════════════════════════════════════════════
        Recommendation Type from the picked files — regular batch only

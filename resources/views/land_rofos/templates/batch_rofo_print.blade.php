@@ -32,9 +32,10 @@
         /* Same security paper as the single RofO print — see the note there. Kept
            identical on purpose: a batch is the same letter, many times. */
         .page-container { --security-bg-opacity: 1; }
-        /* The security paper — see the note in rofo_print.blade.php. Add
-           `display:none` here to take it off again. */
+        /* The security paper — see the note in rofo_print.blade.php. OFF here too:
+           drop the `display:none` to put it back. */
         .security-bg {
+            display: none;
             position: absolute; top:0; left:0; width:100%; height:100%;
             opacity: var(--security-bg-opacity); pointer-events: none;
             background-image: url("{{ asset('assets/letterhead/rofo-security-paper.jpg') }}");

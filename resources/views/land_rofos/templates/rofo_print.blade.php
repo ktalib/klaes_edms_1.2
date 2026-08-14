@@ -48,12 +48,13 @@
             --security-bg-opacity: 1;
         }
 
-        /* The security paper the letter prints on — ON: the artwork prints under the
-           letter rather than relying on pre-printed security stock. To turn it back
-           off, add `display: none` as the first declaration below.
+        /* The security paper the letter prints on — OFF: the letter prints onto
+           pre-printed security stock, so the artwork is not laid down again. To turn
+           it back on, drop the `display: none` below.
            --security-bg-opacity above is the other dial: 1 is the artwork as supplied,
            lower fades it back if it reads too heavy on the real printer. */
         .security-bg {
+            display: none;
             position: absolute;
             top: 0;
             left: 0;
