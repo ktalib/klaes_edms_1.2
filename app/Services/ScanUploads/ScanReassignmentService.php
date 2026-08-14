@@ -6,6 +6,7 @@ use App\Models\FileIndexing;
 use App\Models\PageTyping;
 use App\Models\ScanReassignmentLog;
 use App\Models\Scanning;
+use App\Services\Edms\EdmsDocumentPathResolver;
 use Illuminate\Contracts\Filesystem\FileNotFoundException;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Auth;
@@ -26,10 +27,12 @@ class ScanReassignmentService
     private const SCAN_UPLOAD_ROOT = 'EDMS/SCAN_UPLOAD';
 
     private $filesystem;
+    private $paths;
 
-    public function __construct(Filesystem $filesystem)
+    public function __construct(Filesystem $filesystem, EdmsDocumentPathResolver $paths)
     {
         $this->filesystem = $filesystem;
+        $this->paths = $paths;
     }
 
     /**
@@ -37,16 +40,7 @@ class ScanReassignmentService
      */
     private function getRegistryMap(): array
     {
-        return [
-            'Lands Registry' => 'Lands_Registry',
-            'Cadastral Registry' => 'Cadastral_Registry',
-            'DCIV Registry' => 'DCIV_Registry',
-            'Secret Registry' => 'Secret_Registry',
-            'KANGIS Registry' => 'KANGIS_Registry',
-            'SLTR Registry' => 'SLTR_Registry',
-            'ST Registry' => 'ST_Registry',
-            'Deeds Registry' => 'Deeds_Registry',
-        ];
+        return $this->paths->registryMap();
     }
 
     /**
@@ -158,17 +152,23 @@ class ScanReassignmentService
             );
         }
 
-        // Check for PageTyping constraints: if any page typing exists, block reassignment
-        if ($scan->pagetypings()->exists()) {
-            throw new \InvalidArgumentException(
-                "Cannot reassign scan — page typing is in progress. Delete page typing records first."
-            );
-        }
+        // Page typing no longer blocks a re-link — the typed rows are carried across
+        // to the new indexing record (see relocatePageTypings below). It only blocks
+        // when the destination has no indexing record to carry them to.
+        $pageTypings = $scan->pagetypings()->get();
 
-        return DB::connection('sqlsrv')->transaction(function () use ($scan, $targetFileNumber, $reason, $originalFileNumber) {
+        return DB::connection('sqlsrv')->transaction(function () use ($scan, $targetFileNumber, $reason, $originalFileNumber, $pageTypings) {
             // Resolve target destination (pass source registry for blind_scan subfolder)
             $sourceRegistry = $scan->registry;
             $targetInfo = $this->resolveTargetPath($targetFileNumber, $sourceRegistry);
+
+            if ($pageTypings->isNotEmpty() && empty($targetInfo['file_indexing_id'])) {
+                throw new \InvalidArgumentException(
+                    "Cannot reassign to '{$targetFileNumber}' — it has no indexing record, so the "
+                    . $pageTypings->count() . " typed page(s) on this scan cannot be re-linked. "
+                    . "Index '{$targetFileNumber}' first, or delete the page typing records."
+                );
+            }
 
             // Get current file info
             $currentPath = file_storage_path('app/public/' . $scan->document_path);
@@ -206,15 +206,24 @@ class ScanReassignmentService
             $oldDocumentPath = $scan->document_path;
             $oldRegistry = $scan->registry;
 
-            // Update scanning record
-            if ($targetInfo['file_indexing_id']) {
-                $scan->file_indexing_id = $targetInfo['file_indexing_id'];
-            }
+            // Update scanning record.
+            // When the destination has no indexing record the FK is cleared rather than
+            // left pointing at the old file — a stale FK plus a moved file is a silent
+            // link/path divergence.
+            $scan->file_indexing_id = $targetInfo['file_indexing_id'] ?: null;
             $scan->document_path = $newDocumentPath;
             if ($targetInfo['registry']) {
                 $scan->registry = $targetInfo['registry'];
             }
             $scan->save();
+
+            // Carry any typed pages across to the new indexing record
+            $pageTypingsMoved = $this->relocatePageTypings(
+                $pageTypings,
+                $targetInfo,
+                $targetFileNumber,
+                $scan->paper_size
+            );
 
             // Refresh definition/definition_code if applicable
             if ($targetInfo['file_indexing_id']) {
@@ -251,9 +260,77 @@ class ScanReassignmentService
                     'registry' => $targetInfo['registry'],
                     'destination_type' => $targetInfo['type'],
                 ],
+                'pagetypings_moved' => $pageTypingsMoved,
                 'scan' => $scan->fresh(['fileIndexing', 'uploader']),
             ];
         });
+    }
+
+    /**
+     * Re-link typed pages to the new indexing record and relocate their derived
+     * PAGETYPING / ARCHIVE_Doc_WARE copies under the new file number.
+     *
+     * @param  \Illuminate\Support\Collection  $pageTypings
+     * @return int  number of pagetyping rows carried across
+     */
+    private function relocatePageTypings($pageTypings, array $targetInfo, string $targetFileNumber, $paperSize): int
+    {
+        if ($pageTypings->isEmpty() || empty($targetInfo['file_indexing_id'])) {
+            return 0;
+        }
+
+        $registry = $targetInfo['registry'];
+        $moved = 0;
+
+        foreach ($pageTypings as $pageTyping) {
+            $oldPath = $pageTyping->file_path;
+            $newPath = null;
+
+            if ($oldPath) {
+                $fileName = basename(str_replace('\\', '/', $oldPath));
+                $newPath = $this->paths->pageTypingPath($registry, $targetFileNumber, $paperSize, $fileName);
+
+                // Move the typed copy, and mirror it into the Doc-WARE archive
+                $resolvedOld = $this->paths->resolveRelative($oldPath) ?: $this->paths->normalize($oldPath);
+                if ($resolvedOld && $this->paths->copyWithin($resolvedOld, $newPath)) {
+                    $this->paths->copyWithin(
+                        $newPath,
+                        $this->paths->archivePath($registry, $targetFileNumber, $paperSize, $fileName)
+                    );
+
+                    $oldAbsolute = $this->paths->absolute($resolvedOld);
+                    if ($resolvedOld !== $newPath && $this->filesystem->exists($oldAbsolute)) {
+                        $this->filesystem->delete($oldAbsolute);
+                        $this->cleanupIfEmpty(dirname($oldAbsolute));
+                    }
+                } else {
+                    // Nothing on disk to relocate — keep the row pointing at the new
+                    // canonical location anyway so the resolver can heal it later.
+                    Log::warning('Page typing copy not found on disk during reassignment', [
+                        'pagetyping_id' => $pageTyping->id,
+                        'file_path' => $oldPath,
+                    ]);
+                }
+            }
+
+            $pageTyping->file_indexing_id = $targetInfo['file_indexing_id'];
+            if ($newPath) {
+                $pageTyping->file_path = $newPath;
+            }
+            if ($registry) {
+                $pageTyping->registry = $registry;
+            }
+            $pageTyping->save();
+            $moved++;
+        }
+
+        Log::info('Page typings re-linked during scan reassignment', [
+            'count' => $moved,
+            'to_file_number' => $targetFileNumber,
+            'to_file_indexing_id' => $targetInfo['file_indexing_id'],
+        ]);
+
+        return $moved;
     }
 
     /**
@@ -309,22 +386,7 @@ class ScanReassignmentService
      */
     private function resolveRegistryName($registry): string
     {
-        if (empty($registry)) {
-            return 'Lands Registry';
-        }
-
-        // If it's a numeric ID, look up the display name
-        if (is_numeric($registry)) {
-            $registryRecord = DB::connection('sqlsrv')
-                ->table('registries')
-                ->where('id', $registry)
-                ->value('name');
-
-            return $registryRecord ?? 'Lands Registry';
-        }
-
-        // Already a display name
-        return (string) $registry;
+        return $this->paths->registryName($registry);
     }
 
     /**

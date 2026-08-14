@@ -14,6 +14,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PropertyRecordController;
 use App\Http\Controllers\ScanningController;
 use App\Http\Controllers\FilearchiveController;
+use App\Http\Controllers\EdmsRegistryTransferController;
 use App\Http\Controllers\FileTrackerController;
 use App\Http\Controllers\SltroverviewController;
 use App\Http\Controllers\SltrApplicationController;
@@ -256,6 +257,15 @@ Route::middleware(['auth'])->group(function () {
 
         // AJAX routes
         Route::get('/list/scanned-files', [ScanningController::class, 'getScannedFiles'])->name('scanning.list');
+    });
+
+    // Move a file's documents between registries — shared by the Page Typing
+    // workspace and the File Archive (Doc-WARE) grid.
+    Route::prefix('edms/registry-transfer')->group(function () {
+        Route::get('/search', [EdmsRegistryTransferController::class, 'search'])->name('edms.registry-transfer.search');
+        Route::get('/options', [EdmsRegistryTransferController::class, 'options'])->name('edms.registry-transfer.options');
+        Route::post('/preview', [EdmsRegistryTransferController::class, 'preview'])->name('edms.registry-transfer.preview');
+        Route::post('/move', [EdmsRegistryTransferController::class, 'move'])->name('edms.registry-transfer.move');
     });
 
     Route::prefix('filearchive')->group(function () {

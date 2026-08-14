@@ -47,6 +47,8 @@
 
             <!-- Document Viewer Dialog -->
             @include('filearchive.partials.document_viewer_modal')
+
+            @include('components.edms.registry-transfer-modal')
         </div>
         <!-- Footer -->
         @include('admin.footer')

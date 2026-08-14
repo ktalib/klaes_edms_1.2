@@ -11,6 +11,8 @@ class ScanReassignmentManager {
         this.scanData = [];
         this.targetFileNumber = '';
         this.destinationInfo = null;
+        this.targetInvalid = false;
+        this.siblingDocuments = null;
         this.selectedRegistry = null;
         this.sourceRegistry = null;
         this.checkTimeout = null;
@@ -56,6 +58,13 @@ class ScanReassignmentManager {
         // Change file button
         document.querySelector('#reassign-change-file-btn')?.addEventListener('click', () => {
             this.openGlobalFileSelector();
+        });
+
+        // Whole-file vs selection-only
+        document.querySelector('#reassign-move-all')?.addEventListener('change', () => {
+            this.renderSelectedDocuments();
+            // The page-typing warning counts what actually moves, so re-check it
+            if (this.targetFileNumber) this.checkPageTypingConstraints();
         });
 
         // Close on backdrop click
@@ -104,6 +113,8 @@ class ScanReassignmentManager {
             openButton?.classList.add('hidden');
         }
 
+        this.updateConfirmState();
+
         // Trigger validation
         this.checkTargetFileNumber();
     }
@@ -134,16 +145,89 @@ class ScanReassignmentManager {
         this.resetForm();
         this.renderSelectedDocuments();
         this.showModal();
+
+        // Pull in the rest of the file so the dialog can say what "move all" covers
+        this.loadSiblingDocuments();
     }
 
     /**
      * Render list of selected documents
      */
+    /**
+     * Whether the whole source file moves, or only the picked documents.
+     */
+    isMoveAll() {
+        return document.querySelector('#reassign-move-all')?.checked !== false;
+    }
+
+    /**
+     * Fetch every document that shares the source file, so the dialog can list
+     * exactly what will move rather than only what was clicked.
+     */
+    async loadSiblingDocuments() {
+        this.siblingDocuments = null;
+
+        try {
+            const response = await fetch('/scan-uploads/reassign/siblings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                },
+                body: JSON.stringify({ scan_ids: this.selectedScanIds }),
+            });
+
+            const json = await response.json();
+            if (!json.success) return;
+
+            this.siblingDocuments = json.data;
+            this.renderSelectedDocuments();
+        } catch (err) {
+            // Non-fatal: fall back to listing just the selection
+            console.warn('Could not load the rest of the file:', err);
+        }
+    }
+
     renderSelectedDocuments() {
         const container = document.querySelector('#reassign-selected-docs');
         if (!container) return;
 
         container.innerHTML = '';
+
+        const moveAll = this.isMoveAll();
+        const siblings = this.siblingDocuments;
+
+        // Prefer the server's list — it is the set that will actually move
+        if (siblings && Array.isArray(siblings.documents)) {
+            const docs = moveAll
+                ? siblings.documents
+                : siblings.documents.filter(d => d.is_selected);
+
+            this.renderScopeSummary(docs.length, siblings);
+
+            docs.forEach((doc) => {
+                const item = document.createElement('div');
+                item.className = 'flex items-start gap-2 p-2 bg-white rounded border text-sm '
+                    + (doc.is_selected ? 'border-blue-300' : 'border-gray-300');
+                item.innerHTML = `
+                    <i data-lucide="file" class="h-4 w-4 text-gray-500 flex-shrink-0 mt-0.5"></i>
+                    <div class="flex-1 min-w-0">
+                        <p class="font-medium text-gray-900 truncate">${this.escapeHtml(doc.file_name || ('Document #' + doc.id))}</p>
+                        <p class="text-xs text-gray-600">Current: ${this.escapeHtml(doc.file_number || '(Not indexed)')}</p>
+                    </div>
+                    ${doc.is_selected
+                        ? '<span class="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 whitespace-nowrap">selected</span>'
+                        : ''}
+                `;
+                container.appendChild(item);
+            });
+
+            if (window.lucide) window.lucide.createIcons();
+            return;
+        }
+
+        // Fallback: the sibling lookup has not returned yet
+        this.renderScopeSummary(this.selectedScanIds.length, null);
 
         this.selectedScanIds.forEach((scanId, index) => {
             // First try to get data from scanData array
@@ -183,6 +267,31 @@ class ScanReassignmentManager {
     }
 
     /**
+     * Header count + the "move all" hint, kept honest about what will move.
+     */
+    renderScopeSummary(count, siblings) {
+        const countEl = document.querySelector('#reassign-scope-count');
+        if (countEl) {
+            countEl.textContent = `${count} document(s) will move`;
+        }
+
+        const hint = document.querySelector('#reassign-move-all-hint');
+        if (!hint) return;
+
+        if (!siblings) {
+            hint.textContent = 'All scans and typed pages under the current file number travel together.';
+            return;
+        }
+
+        const fileNumber = (siblings.file_numbers && siblings.file_numbers[0]) || 'this file';
+        const extra = siblings.total_in_file - siblings.selected_count;
+
+        hint.textContent = extra > 0
+            ? `${siblings.total_in_file} document(s) under ${fileNumber}, including ${extra} not selected. Untick to move only the ${siblings.selected_count} selected.`
+            : `${siblings.total_in_file} document(s) under ${fileNumber} — the selection already covers the whole file.`;
+    }
+
+    /**
      * Validate target file number via AJAX
      */
     async checkTargetFileNumber() {
@@ -214,16 +323,22 @@ class ScanReassignmentManager {
                 error.textContent = json.message || 'Invalid file number.';
                 preview?.classList.add('hidden');
                 this.destinationInfo = null;
+                this.targetInvalid = true;
+                this.updateConfirmState();
                 return;
             }
 
             this.destinationInfo = json.data;
+            this.targetInvalid = false;
             this.renderDestinationPreview();
             this.checkPageTypingConstraints();
+            this.updateConfirmState();
         } catch (err) {
             error?.classList.remove('hidden');
             error.textContent = 'Error validating file number: ' + err.message;
             this.destinationInfo = null;
+            this.targetInvalid = true;
+            this.updateConfirmState();
         }
     }
 
@@ -278,6 +393,7 @@ class ScanReassignmentManager {
                 },
                 body: JSON.stringify({
                     scan_ids: this.selectedScanIds,
+                    move_all_in_file: this.isMoveAll(),
                 }),
             });
 
@@ -288,13 +404,37 @@ class ScanReassignmentManager {
 
             const json = await response.json();
 
+            const ack = document.querySelector('#reassign-constraint-ack');
+            const message = document.querySelector('#reassign-constraint-message');
+
             if (json.data?.has_page_typing) {
+                // Page typing is a warning, not a blocker — the typed pages are
+                // carried across to the destination's indexing record. Require an
+                // explicit acknowledgement before enabling Confirm.
+                const count = json.data.page_typing_count || 0;
+                const indexed = !!this.destinationInfo?.file_indexing_id;
+
+                if (message) {
+                    message.textContent = indexed
+                        ? `${count} typed page(s) exist on the selected document(s). They will be re-linked to the new indexing record and their files moved with them.`
+                        : `${count} typed page(s) exist on the selected document(s). The target file number has no indexing record, so the reassignment will be rejected. Index the target file first, or remove the page typing.`;
+                }
+
                 constraintWarning.classList.remove('hidden');
-                confirmBtn.disabled = true;
+
+                if (ack) {
+                    ack.checked = false;
+                    ack.onchange = () => this.updateConfirmState();
+                }
             } else {
                 constraintWarning.classList.add('hidden');
-                confirmBtn.disabled = false;
+                if (ack) {
+                    ack.checked = false;
+                    ack.onchange = null;
+                }
             }
+
+            this.updateConfirmState();
         } catch (err) {
             // Silently ignore constraint check failures
             console.warn('Could not check page typing constraints:', err);
@@ -331,6 +471,7 @@ class ScanReassignmentManager {
                     scan_ids: this.selectedScanIds,
                     target_file_number: this.targetFileNumber,
                     reason: reason,
+                    move_all_in_file: this.isMoveAll(),
                 }),
             });
 
@@ -338,7 +479,7 @@ class ScanReassignmentManager {
             loadingOverlay?.classList.add('hidden');
 
             if (!json.success) {
-                confirmBtn.disabled = false;
+                this.updateConfirmState();
                 error?.classList.remove('hidden');
                 let errorMsg = json.message || 'Reassignment failed.';
                 // Append details from individual failed scans if available
@@ -375,7 +516,7 @@ class ScanReassignmentManager {
             }
         } catch (err) {
             loadingOverlay?.classList.add('hidden');
-            confirmBtn.disabled = false;
+            this.updateConfirmState();
             error?.classList.remove('hidden');
             error.textContent = 'Error during reassignment: ' + err.message;
         }
@@ -401,6 +542,34 @@ class ScanReassignmentManager {
             this.scanData = [];
             this.selectedScanIds = [];
         }
+    }
+
+    /**
+     * Single owner of the Confirm button's enabled state.
+     *
+     * Two things gate it: a target file number must have been picked, and — when
+     * the selected scans are already page typed — the operator must acknowledge
+     * that the typed pages will be re-linked.
+     */
+    updateConfirmState() {
+        const confirmBtn = document.querySelector('#reassign-confirm-btn');
+        if (!confirmBtn) return;
+
+        const ack = document.querySelector('#reassign-constraint-ack');
+        const warningVisible = !document
+            .querySelector('#reassign-constraint-warning')
+            ?.classList.contains('hidden');
+
+        const hasFile = !!this.targetFileNumber && !this.targetInvalid;
+        const acknowledged = !warningVisible || !ack || ack.checked;
+
+        confirmBtn.disabled = !(hasFile && acknowledged);
+
+        confirmBtn.title = !this.targetFileNumber
+            ? 'Select a target file number first'
+            : (this.targetInvalid
+                ? 'That file number could not be validated'
+                : (!acknowledged ? 'Acknowledge the page typing notice first' : ''));
     }
 
     /**
@@ -441,14 +610,19 @@ class ScanReassignmentManager {
         document.querySelector('#reassign-error')?.classList.add('hidden');
         document.querySelector('#reassign-constraint-warning')?.classList.add('hidden');
         
-        // Reset buttons
-        const confirmBtn = document.querySelector('#reassign-confirm-btn');
-        if (confirmBtn) {
-            confirmBtn.disabled = false;
-        }
-        
         this.targetFileNumber = '';
         this.destinationInfo = null;
+        this.targetInvalid = false;
+        this.siblingDocuments = null;
+
+        // Whole-file move is the default every time the dialog opens
+        const moveAll = document.querySelector('#reassign-move-all');
+        if (moveAll) {
+            moveAll.checked = true;
+        }
+
+        // Nothing can be confirmed until a target file number is chosen
+        this.updateConfirmState();
         // DO NOT clear this.scanData here - it persists for the reassignment flow
         // Only clear scanData when modal fully closes, not during UI reset
     }

@@ -20,6 +20,7 @@ class TitleStatusService
 
     private const TYPE_SLUG = [
         TitleStatusApplication::TYPE_WITHDRAWAL   => 'withdrawn',
+        TitleStatusApplication::TYPE_WITHDRAWAL_ALLOCATION => 'withdrawn',
         TitleStatusApplication::TYPE_CANCELLATION => 'cancelled',
         TitleStatusApplication::TYPE_REVOKE        => 'revoked',
         TitleStatusApplication::TYPE_LITIGATION    => 'litigation',
@@ -44,6 +45,7 @@ class TitleStatusService
 
     private const TYPE_VERB = [
         TitleStatusApplication::TYPE_WITHDRAWAL   => 'Withdrawal',
+        TitleStatusApplication::TYPE_WITHDRAWAL_ALLOCATION => 'Withdrawal',
         TitleStatusApplication::TYPE_CANCELLATION => 'Cancellation',
         TitleStatusApplication::TYPE_REVOKE        => 'Revocation',
         TitleStatusApplication::TYPE_LITIGATION    => 'Litigation',

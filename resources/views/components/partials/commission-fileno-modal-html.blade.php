@@ -852,6 +852,44 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="col-span-2 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <div class="flex items-center justify-between gap-2 mb-2">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <i data-lucide="map-pin" class="w-4 h-4 text-blue-600"></i>
+                                <span class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Property Location Map</span>
+                                <span id="generatorMapCoordSource" class="text-[11px] text-gray-400 truncate"></span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button type="button" @click="pinCurrentLocationOnMap()"
+                                        class="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors">
+                                    Pin on Map
+                                </button>
+                                <button type="button" @click="clearMapPin()"
+                                        class="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors">
+                                    Clear Pin
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="generatorMapWrapper" class="hidden rounded-md overflow-hidden border border-gray-200 shadow-sm">
+                            <div id="generatorMapCanvas" style="height: 320px; width: 100%;"></div>
+                            <div class="text-xs text-gray-600 px-3 py-2 bg-gray-50 flex flex-wrap gap-x-6 gap-y-1">
+                                <span>Latitude: <strong id="generatorLatDisplay">-</strong></span>
+                                <span>Longitude: <strong id="generatorLngDisplay">-</strong></span>
+                            </div>
+                        </div>
+
+                        <div id="generatorMapEmpty"
+                             class="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 bg-gray-50 text-gray-400"
+                             style="height: 220px;">
+                            <i data-lucide="map" class="h-7 w-7"></i>
+                            <p class="text-xs">No map pin yet. Click <strong>Pin on Map</strong> to geocode or set manually.</p>
+                        </div>
+
+                        <input type="hidden" name="latitude" id="generator_latitude" :value="batchMode ? (locationEntries[currentEntryIndex]?.latitude || '') : latitude">
+                        <input type="hidden" name="longitude" id="generator_longitude" :value="batchMode ? (locationEntries[currentEntryIndex]?.longitude || '') : longitude">
+                    </div>
                 </div><!-- end location+commissioning grid -->
 
                 <!-- Form Actions -->

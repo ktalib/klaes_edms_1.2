@@ -21,6 +21,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 
@@ -697,7 +698,12 @@ class PhsAdminController extends Controller
         try {
             Mail::to($onboardingRequest->contact_email)
                 ->send(new PhsSlaRequestLink($onboardingRequest->fresh()));
-            return back()->with('success', 'SLA download & upload link resent to organization.');
+            Log::info('PHS: SLA link resent', [
+                'request_id' => $onboardingRequest->id,
+                'to'         => $onboardingRequest->contact_email,
+                'by'         => auth()->id(),
+            ]);
+            return back()->with('success', 'SLA download & upload link resent to ' . $onboardingRequest->contact_email . '.');
         } catch (\Throwable $e) {
             report($e);
             return back()->with('error', 'Failed to resend SLA link: ' . $e->getMessage());
@@ -715,7 +721,12 @@ class PhsAdminController extends Controller
         try {
             Mail::to($onboardingRequest->contact_email)
                 ->send(new PhsPaymentLinkSent($onboardingRequest->fresh()));
-            return back()->with('success', 'Payment & onboarding link resent to organization.');
+            Log::info('PHS: onboarding/payment link resent', [
+                'request_id' => $onboardingRequest->id,
+                'to'         => $onboardingRequest->contact_email,
+                'by'         => auth()->id(),
+            ]);
+            return back()->with('success', 'Payment & onboarding link resent to ' . $onboardingRequest->contact_email . '.');
         } catch (\Throwable $e) {
             report($e);
             return back()->with('error', 'Failed to resend onboarding link: ' . $e->getMessage());

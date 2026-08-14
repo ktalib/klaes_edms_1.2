@@ -13,7 +13,13 @@ class TitleStatusApplication extends Model
     public const STATUS_APPROVED = 'approved';
     public const STATUS_REJECTED = 'rejected';
 
+    /**
+     * Withdrawal comes in two flavours, by what is being withdrawn:
+     *   APPLICATION — the applicant withdraws their own pending application.
+     *   ALLOCATION  — the Ministry withdraws an allocation already made.
+     */
     public const TYPE_WITHDRAWAL   = 'Withdrawal (Application)';
+    public const TYPE_WITHDRAWAL_ALLOCATION = 'Withdrawal (Allocation)';
     public const TYPE_CANCELLATION = 'Cancellation (RofO)';
     public const TYPE_REVOKE       = 'Revoke (CofO)';
     public const TYPE_LITIGATION   = 'Litigation';
@@ -93,6 +99,7 @@ class TitleStatusApplication extends Model
     /** Per-type options for the Initiated By dropdown. Single-option types lock the value. */
     public const INITIATED_BY_BY_TYPE = [
         self::TYPE_WITHDRAWAL   => ['Applicant'],
+        self::TYPE_WITHDRAWAL_ALLOCATION => ['Ministry', 'Allottee'],
         self::TYPE_CANCELLATION => ['Ministry', 'Allottee'],
         self::TYPE_REVOKE       => ['Ministry', 'Allottee'],
         self::TYPE_LITIGATION   => ['Court Order'],

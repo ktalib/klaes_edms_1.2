@@ -59,6 +59,16 @@ class FilearchiveController extends Controller
                 file_number {$direction}";
     }
 
+    /**
+     * @var \App\Services\Edms\EdmsDocumentPathResolver
+     */
+    protected $paths;
+
+    public function __construct(\App\Services\Edms\EdmsDocumentPathResolver $paths)
+    {
+        $this->paths = $paths;
+    }
+
     private function getModuleTheme(string $module): ?array
     {
         $normalized = strtolower(trim($module));
@@ -671,50 +681,24 @@ class FilearchiveController extends Controller
             }
         }
 
-        $pathPrefixes = [
-            'storage/app/public/',
-            'app/public/',
-            'public/',
-            'storage/'
-        ];
-
         $imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff', 'tif'];
 
-        $resolveMedia = function (?string $rawPath) use ($pathPrefixes, $imageExtensions) {
+        $paths = $this->paths;
+
+        $resolveMedia = function (?string $rawPath, array $context = []) use ($imageExtensions, $paths) {
             if (!$rawPath) {
                 return null;
             }
 
-            $rawPath = str_replace('\\', '/', $rawPath);
-            $trimmedRawPath = ltrim($rawPath, '/');
+            $trimmedRawPath = ltrim(str_replace('\\', '/', $rawPath), '/');
 
-            $normalizedPath = $trimmedRawPath;
-            foreach ($pathPrefixes as $prefix) {
-                if (stripos($normalizedPath, $prefix) === 0) {
-                    $normalizedPath = substr($normalizedPath, strlen($prefix));
-                    break;
-                }
-            }
-            $normalizedPath = ltrim($normalizedPath, '/');
+            // Walk every known EDMS layout (SCAN_UPLOAD -> PAGETYPING -> ARCHIVE_Doc_WARE
+            // -> BLIND_SCAN -> legacy) so a stale stored path still renders.
+            $normalizedPath = $paths->resolveRelative($rawPath, $context) ?: $paths->normalize($rawPath);
 
-            $extension = null;
-            if ($normalizedPath) {
-                $extension = strtolower(pathinfo($normalizedPath, PATHINFO_EXTENSION));
-            } elseif ($trimmedRawPath) {
-                $extension = strtolower(pathinfo($trimmedRawPath, PATHINFO_EXTENSION));
-            }
+            $extension = strtolower(pathinfo($normalizedPath ?: $trimmedRawPath, PATHINFO_EXTENSION)) ?: null;
 
-            $viewerUrl = null;
-            if ($normalizedPath && Storage::disk('public')->exists($normalizedPath)) {
-                $viewerUrl = Storage::disk('public')->url($normalizedPath);
-            }
-
-            if (!$viewerUrl) {
-                $publicFile = public_path($trimmedRawPath);
-                if ($trimmedRawPath && file_exists($publicFile)) {
-                    $viewerUrl = asset($trimmedRawPath);
-                }
-            }
+            $viewerUrl = $paths->resolveUrl($rawPath, $context);
 
             if (!$viewerUrl) {
                 return null;
@@ -738,16 +722,24 @@ class FilearchiveController extends Controller
             ];
         };
 
-        $pages = $file->pagetypings->map(function ($pageTyping) use ($resolveMedia, $imageExtensions) {
+        $pages = $file->pagetypings->map(function ($pageTyping) use ($resolveMedia, $imageExtensions, $file, $paths) {
+            $scanning = $pageTyping->scanning;
+            $mediaContext = $scanning
+                ? $paths->contextFromScanning($scanning, $file)
+                : [
+                    'file_number' => $file->file_number,
+                    'registry' => $pageTyping->registry ?? $file->registry,
+                ];
+
             $mediaSources = [
-                ['path' => optional($pageTyping->scanning)->document_path, 'source' => 'scanning'],
+                ['path' => optional($scanning)->document_path, 'source' => 'scanning'],
                 ['path' => $pageTyping->file_path, 'source' => 'pagetypings']
             ];
 
             $media = null;
             $mediaSource = null;
             foreach ($mediaSources as $candidate) {
-                $media = $resolveMedia($candidate['path'] ?? null);
+                $media = $resolveMedia($candidate['path'] ?? null, $mediaContext);
                 if ($media) {
                     $mediaSource = $candidate['source'];
                     break;

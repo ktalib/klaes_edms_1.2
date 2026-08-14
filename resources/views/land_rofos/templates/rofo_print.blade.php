@@ -48,14 +48,12 @@
             --security-bg-opacity: 1;
         }
 
-        /* The security paper the letter prints on — currently OFF: the letters go on
-           pre-printed security stock, so printing the artwork under them as well would
-           only muddy the text. Delete the `display: none` below to bring it back.
+        /* The security paper the letter prints on — ON: the artwork prints under the
+           letter rather than relying on pre-printed security stock. To turn it back
+           off, add `display: none` as the first declaration below.
            --security-bg-opacity above is the other dial: 1 is the artwork as supplied,
-           lower fades it back if it reads too heavy on the real printer. The rest of
-           the rule is left intact so turning it back on is a one-line change. */
+           lower fades it back if it reads too heavy on the real printer. */
         .security-bg {
-            display: none;
             position: absolute;
             top: 0;
             left: 0;
@@ -91,7 +89,33 @@
             border-image-slice: 160;
             border-image-repeat: round;
             border-image-width: 24px;
-            margin: 1mm 3mm 60mm 3mm;
+
+            /* Top margin fixed, bottom margin auto: every letter starts 14mm down
+               the sheet and whatever room it does not use collects underneath,
+               in the gap above the barcode.
+
+               The top is deliberately NOT auto. An auto top margin only gets what
+               is left over, and these letters run close to page height — the
+               conditions list, the payment block and the signature line are all
+               fixed — so on a full one it resolved to nearly 0 and the frame rode
+               up to the edge of the paper. 8mm is a margin, not a leftover: it
+               holds whether the address box is two lines or five. It was tried at
+               14mm first and that read as a band of white above the frame — the
+               security paper's own printed border is only a few mm in, so the eye
+               measures this gap against that edge, not against the page.
+
+               flex-grow is 0 so the box stays content-sized rather than stretching
+               to fill the page, which is what leaves the slack free to fall to the
+               bottom margin. The footer band below reserves 22mm — the barcode is
+               printed on the security paper about 14mm off the foot — and does not
+               shrink, so a long letter cannot push down into it.
+
+               min-height only catches a freak-short letter, so the frame does not
+               shrink into a squat box floating mid-page. */
+            box-sizing: border-box;
+            flex: 0 0 auto;
+            min-height: 181mm;
+            margin: 8mm 3mm auto 3mm;
         }
 
         @media print {
@@ -262,9 +286,16 @@
             align-items: center;
         }
 
-        /* FOOTER - exactly as your original */
+        /* FOOTER — the visible barcode and serial are printed ON the security paper,
+           about 14mm off the foot of the sheet; the .barcode-group below is the live
+           one and is kept at opacity 0.0001. So this band is not content, it is the
+           clearance the frame above must not intrude into. 22mm covers the printed
+           barcode with a little air; it was 55mm, which reserved far more room than
+           the artwork actually uses. flex-shrink is off so the clearance holds even
+           when the letter above runs long. */
         .footer-barcode-area {
-            height: 55mm;
+            height: 22mm;
+            flex-shrink: 0;
             padding: 0 22mm 4mm 22mm;
             display: flex;
             justify-content: space-between;

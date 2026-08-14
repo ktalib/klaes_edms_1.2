@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\FileIndexing;
 use App\Models\PageTyping;
 use App\Models\Scanning;
+use App\Services\Edms\EdmsDocumentPathResolver;
 use App\Services\ScanUploads\BlindScanIngestionService;
 use App\Services\ScanUploads\ScanReassignmentService;
 use Illuminate\Http\Request;
@@ -20,13 +21,16 @@ class ScanUploadsController extends Controller
 {
     private $blindScanIngestionService;
     private $scanReassignmentService;
+    private $paths;
 
     public function __construct(
         BlindScanIngestionService $blindScanIngestionService,
-        ScanReassignmentService $scanReassignmentService
+        ScanReassignmentService $scanReassignmentService,
+        EdmsDocumentPathResolver $paths
     ) {
         $this->blindScanIngestionService = $blindScanIngestionService;
         $this->scanReassignmentService = $scanReassignmentService;
+        $this->paths = $paths;
     }
 
     /**
@@ -376,9 +380,15 @@ class ScanUploadsController extends Controller
         try {
             $file = $request->file('file');
             $fileIndexing = $scan->fileIndexing;
+            // Keep the canonical layout {registry}/{file_number}/{PAPER} — writing to a
+            // shorter path here is what stranded edited pages in a separate tree.
             $directory = $fileIndexing
-                ? 'EDMS/SCAN_UPLOAD/' . $fileIndexing->file_number
-                : 'EDMS/SCAN_UPLOAD/UNASSIGNED';
+                ? $this->paths->scanUploadFolder(
+                    $scan->registry ?? $fileIndexing->registry,
+                    $fileIndexing->file_number,
+                    $scan->paper_size
+                )
+                : EdmsDocumentPathResolver::SCAN_UPLOAD_ROOT . '/UNASSIGNED';
 
             $extension = strtolower($file->getClientOriginalExtension() ?: 'jpg');
             $fileNum = ($fileIndexing ? $fileIndexing->file_number : 'scan');
@@ -531,7 +541,11 @@ class ScanUploadsController extends Controller
             // Attempt to clean up empty directories
             if ($fileNumber) {
                 try {
-                    $directory = file_storage_path('app/public/EDMS/SCAN_UPLOAD/' . $fileNumber);
+                    $directory = $this->paths->absolute($this->paths->scanUploadFolder(
+                        $scan->registry ?? $scan->fileIndexing->registry ?? null,
+                        $fileNumber,
+                        $scan->paper_size
+                    ));
                     if (is_dir($directory) && count(scandir($directory)) <= 2) {
                         rmdir($directory);
                     }
@@ -790,7 +804,12 @@ class ScanUploadsController extends Controller
         }
         
         $fileNumber = ($fileIndexing ? $fileIndexing->file_number : 'N/A');
-        $publicPath = $scan->document_path ? asset('storage/' . ltrim($scan->document_path, '/')) : null;
+
+        // Resolve through every known EDMS layout so a stale document_path still renders
+        $publicPath = $this->paths->resolveUrl(
+            $scan->document_path,
+            $this->paths->contextFromScanning($scan, $fileIndexing)
+        );
 
         // Build uploadedBy display name with multiple fallbacks
         $uploadedByName = $this->resolveUploaderName($uploader, $scan->uploaded_by, $scan->id);
@@ -1142,10 +1161,42 @@ class ScanUploadsController extends Controller
     }
 
     /**
-     * Check page-typing constraints for a set of scans.
+     * Every scan belonging to the same source file(s) as the given scans.
+     *
+     * A misfiled document is almost always misfiled as a whole file, not a single
+     * page, so the reassign dialog moves the entire file by default and uses this
+     * to say up front how many documents that is.
+     *
+     * @param  array<int>  $scanIds
+     * @return \Illuminate\Support\Collection<Scanning>
+     */
+    private function siblingScansFor(array $scanIds)
+    {
+        $fileIndexingIds = Scanning::on('sqlsrv')
+            ->whereIn('id', $scanIds)
+            ->pluck('file_indexing_id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($fileIndexingIds->isEmpty()) {
+            // Unindexed scans have no siblings to gather — they stand alone.
+            return Scanning::on('sqlsrv')->whereIn('id', $scanIds)->get();
+        }
+
+        return Scanning::on('sqlsrv')
+            ->with('fileIndexing')
+            ->whereIn('file_indexing_id', $fileIndexingIds)
+            ->orderBy('display_order')
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * List every document that would move with the current selection.
      * Expects: { scan_ids: [int] }
      */
-    public function reassignCheckConstraints(Request $request)
+    public function reassignSiblings(Request $request)
     {
         $validated = $request->validate([
             'scan_ids' => 'required|array|min:1',
@@ -1153,14 +1204,68 @@ class ScanUploadsController extends Controller
         ]);
 
         try {
-            $scanIds = $validated['scan_ids'];
-
-            $hasPageTyping = PageTyping::whereIn('scanning_id', $scanIds)->exists();
+            $scans = $this->siblingScansFor($validated['scan_ids']);
+            $selected = array_map('intval', $validated['scan_ids']);
 
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'has_page_typing' => (bool) $hasPageTyping,
+                    'total_in_file' => $scans->count(),
+                    'selected_count' => count($selected),
+                    'file_numbers' => $scans->pluck('fileIndexing.file_number')->filter()->unique()->values(),
+                    'documents' => $scans->map(function ($scan) use ($selected) {
+                        return [
+                            'id' => $scan->id,
+                            'file_name' => $scan->original_filename,
+                            'file_number' => $scan->fileIndexing->file_number ?? null,
+                            'paper_size' => $scan->paper_size,
+                            'is_selected' => in_array((int) $scan->id, $selected, true),
+                        ];
+                    })->values(),
+                ],
+            ]);
+        } catch (Throwable $ex) {
+            Log::error('reassignSiblings failed', [
+                'error' => $ex->getMessage(),
+                'scan_ids' => $request->input('scan_ids'),
+            ]);
+
+            return response()->json(['success' => false, 'message' => 'Could not load the file\'s documents'], 500);
+        }
+    }
+
+    /**
+     * Check page-typing constraints for a set of scans.
+     * Expects: { scan_ids: [int], move_all_in_file?: bool }
+     */
+    public function reassignCheckConstraints(Request $request)
+    {
+        $validated = $request->validate([
+            'scan_ids' => 'required|array|min:1',
+            'scan_ids.*' => 'required|integer',
+            'move_all_in_file' => 'nullable|boolean',
+        ]);
+
+        try {
+            $scanIds = $validated['scan_ids'];
+
+            // Count typing across everything that will actually move, not just
+            // what was clicked, or the warning under-reports the whole-file move.
+            if ($request->boolean('move_all_in_file')) {
+                $scanIds = $this->siblingScansFor($scanIds)->pluck('id')->all();
+            }
+
+            // Page typing is a warning, not a blocker: the typed rows are carried
+            // across to the destination's indexing record during the reassignment.
+            $pageTypingCount = PageTyping::whereIn('scanning_id', $scanIds)->count();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'has_page_typing' => $pageTypingCount > 0,
+                    'page_typing_count' => $pageTypingCount,
+                    'scan_count' => count($scanIds),
+                    'blocks_reassignment' => false,
                 ],
             ]);
         } catch (Throwable $ex) {
@@ -1179,11 +1284,21 @@ class ScanUploadsController extends Controller
             'scan_ids.*' => 'required|integer|exists:sqlsrv.scannings,id',
             'target_file_number' => 'required|string|max:255',
             'reason' => 'nullable|string|max:500',
+            'move_all_in_file' => 'nullable|boolean',
         ]);
 
         try {
+            $scanIds = $validated['scan_ids'];
+
+            // Default behaviour: a misfiled file moves whole. Expanding here rather
+            // than in the browser means the set is resolved at the moment of the
+            // move — a page added since the dialog opened still travels with it.
+            if ($request->boolean('move_all_in_file')) {
+                $scanIds = $this->siblingScansFor($scanIds)->pluck('id')->all();
+            }
+
             $results = $this->scanReassignmentService->reassignBatch(
-                $validated['scan_ids'],
+                $scanIds,
                 $validated['target_file_number'],
                 $validated['reason'] ?? null
             );
@@ -1203,7 +1318,12 @@ class ScanUploadsController extends Controller
                 ], 400);
             }
 
+            $pageTypingsMoved = collect($results['success'])->sum('pagetypings_moved');
+
             $message = "{$movedCount} document(s) reassigned to {$validated['target_file_number']}.";
+            if ($pageTypingsMoved > 0) {
+                $message .= " {$pageTypingsMoved} typed page(s) re-linked.";
+            }
             if ($failedCount > 0) {
                 $message .= " ({$failedCount} failed)";
             }
@@ -1220,6 +1340,7 @@ class ScanUploadsController extends Controller
                 'data' => [
                     'moved_count' => $movedCount,
                     'failed_count' => $failedCount,
+                    'pagetypings_moved' => $pageTypingsMoved,
                     'destination_type' => $results['success'][0]['to']['destination_type'] ?? null,
                     'documents' => $documents,
                     'failed_scans' => $results['failed'],

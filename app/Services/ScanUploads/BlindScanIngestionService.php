@@ -100,7 +100,7 @@ class BlindScanIngestionService
 
         $registrySubFolder = $registryMap[$normalizedRegistryName] ?? 'Lands_Registry';
 
-        $discovered = $this->collectFiles($blindFolder, $blindRelative, $fileNumber)->keyBy('relative_path');
+        $discovered = $this->collectFiles($blindFolder, $blindRelative, $fileNumber, $registrySubFolder)->keyBy('relative_path');
         if ($discovered->isEmpty()) {
             return ['file_number' => $fileNumber, 'files' => []];
         }
@@ -166,8 +166,17 @@ class BlindScanIngestionService
         return file_storage_path('app/public/' . self::SCAN_UPLOAD_ROOT . '/' . str_replace('/', DIRECTORY_SEPARATOR, $fileNumber));
     }
 
-    private function collectFiles(string $folder, string $blindRelative, string $fileNumber): Collection
+    /**
+     * @param  string|null  $registrySubFolder  Registry folder the files will land in.
+     *                                          Required for target_storage_path to match
+     *                                          where transfer() actually writes them.
+     */
+    private function collectFiles(string $folder, string $blindRelative, string $fileNumber, ?string $registrySubFolder = null): Collection
     {
+        $targetBase = self::SCAN_UPLOAD_ROOT . '/'
+            . ($registrySubFolder ? $registrySubFolder . '/' : '')
+            . $fileNumber;
+
         $files = collect();
 
         $iterator = $this->filesystem->allFiles($folder);
@@ -189,7 +198,7 @@ class BlindScanIngestionService
                 'target_relative_path' => $targetRelativePath,
                 'original_path' => $file->getPathname(),
                 'blind_storage_path' => self::BLIND_SCAN_ROOT . '/' . $blindRelative . '/' . $relativePath,
-                'target_storage_path' => self::SCAN_UPLOAD_ROOT . '/' . $fileNumber . '/' . $targetRelativePath,
+                'target_storage_path' => $targetBase . '/' . $targetRelativePath,
             ]);
         }
 

@@ -85,8 +85,8 @@
 
   <div class="pay-wrap">
     <div class="pay-head">
-      <h1>Unlock Full Legal Search Result</h1>
-      <p>Secure payment required to access the complete report. No account needed.</p>
+      <h1>Submit Your Legal Search Request</h1>
+      <p>Secure payment submits your request for approval. No account needed.</p>
     </div>
     <div class="pay-body">
       <div class="pay-row"><span class="lbl">File Number</span><span class="val">{{ $fileNumber }}</span></div>
@@ -100,11 +100,11 @@
       <input id="payEmailConfirm" type="email" inputmode="email" autocomplete="email" placeholder="Re-enter your email" onpaste="return false;" ondrop="return false;"
              style="width:100%;box-sizing:border-box;padding:11px 12px;font-size:14px;border:1px solid #d1d5db;border-radius:10px;color:#1f2937;" />
 
-      <p class="pay-note" style="margin-top:6px;text-align:left;">We email your receipt to this address and use it for your payment reference.</p>
+      <p class="pay-note" style="margin-top:6px;text-align:left;"><strong>Your report will be emailed to this address</strong> once approved, so please check it carefully. We also send your receipt here.</p>
 
       <button id="payBtn" class="pay-btn">Pay &#8358;{{ number_format($amount / 100) }} with Paystack</button>
       <div id="payError" class="pay-error"></div>
-      <p class="pay-note">You will be charged once. After payment is verified, the full report opens automatically.</p>
+      <p class="pay-note">You will be charged once. Your request is then reviewed by the Director / Deputy Director, and the approved report is emailed to you as a PDF.</p>
     </div>
   </div>
 
@@ -124,8 +124,9 @@
 
       function showError(msg) { errBox.textContent = msg; errBox.style.display = 'block'; btn.disabled = false; btn.textContent = PAY_LABEL; }
 
-      // Send the verified buyer to the gated report, unlocked by the payment reference.
-      function openReport(reference) {
+      // Send the verified buyer to their request-status page. The report itself
+      // is emailed once a Director / Deputy Director approves the request.
+      function openStatus(reference) {
         const qs = new URLSearchParams();
         Object.entries(searchParams || {}).forEach(([k, v]) => { if (v) qs.append(k, v); });
         qs.set('query', fileNumber);
@@ -163,7 +164,7 @@
             })
             .then(r => r.json().then(j => ({ ok: r.ok, j })))
             .then(({ ok, j }) => {
-              if (ok && j.success) { openReport(j.reference || response.reference); }
+              if (ok && j.success) { openStatus(j.reference || response.reference); }
               else { showError((j && j.message) || 'Payment verification failed. Please contact support if you were charged.'); }
             })
             .catch(() => showError('A network error occurred while verifying your payment.'));
@@ -176,130 +177,60 @@
   </script>
 
 @else
-  {{-- Report mode --}}
+  {{-- Status mode: the report is delivered by email after approval, never rendered here. --}}
+  @php
+    $statusKey = $searchRequest->status ?? 'pending';
+    $badge = [
+      'pending'  => ['#fef3c7', '#92400e', 'Awaiting Approval'],
+      'approved' => ['#dcfce7', '#166534', 'Approved'],
+      'rejected' => ['#fee2e2', '#991b1b', 'Not Approved'],
+    ][$statusKey] ?? ['#e2e8f0', '#334155', ucfirst($statusKey)];
+  @endphp
+
   <div class="action-bar no-print">
     <a href="{{ route('ols.landing') }}" class="btn-light">&larr; New Search</a>
     <span style="color:#e2e8f0;font-size:12px;">Ref: {{ $payment->tracking_id ?? $payment->reference }}</span>
-    <button onclick="window.print()" class="btn-primary">&#128424; Print / Save PDF</button>
   </div>
 
-  @if(!$report)
-    <div class="pay-wrap"><div class="pay-body"><p style="text-align:center;color:#b91c1c;font-weight:600;">The report for file <strong>{{ $fileNumber }}</strong> could not be generated. Please return to search and try again.</p></div></div>
-  @else
-    <div class="page">
-      <img class="bg-watermark" src="{{ asset('assets/logo/ministry2.jpeg') }}" alt="" aria-hidden="true" onerror="this.style.display='none'">
-      <div class="watermark wm-top" aria-hidden="true">Online Legal Search <br> &nbsp;&bull;&nbsp; Not For Sale</div>
-
-      <div class="main-content">
-        <header>
-          <div class="header-top">
-            <div class="logo-box"><img src="{{ asset('assets/logo/ministry1.jpg') }}" alt="Logo" onerror="this.style.visibility='hidden'"></div>
-            <div class="title-block">
-              <h1>KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING</h1>
-              <h2>LEGAL SEARCH REPORT</h2>
-              <h3>Online Pay-per Search</h3>
-            </div>
-            <div class="logo-box"><img src="{{ asset('assets/logo/ministry2.jpeg') }}" alt="Logo" onerror="this.style.visibility='hidden'"></div>
-          </div>
-          <div class="date-line">{{ $report['date_line'] ?? 'Date: ' . now()->format('F j, Y') }}</div>
-        </header>
-
-        <div class="section-label">Property Details</div>
-        <table class="prop-details">
-          <tr>
-            <td class="bold-lbl-left">File Number:</td><td><strong>{{ $report['file_number'] ?: '-' }}</strong></td>
-            <td class="bold-lbl-right">District/LGA:</td><td><strong>{{ $report['district_lga'] ?: '-' }}</strong></td>
-          </tr>
-          <tr>
-            <td class="bold-lbl-left">File Title:</td><td><strong>{{ $report['file_title'] ?: '-' }}</strong></td>
-            <td class="bold-lbl-right">Plot No:</td><td><strong>{{ $report['plot_no'] ?: '-' }}</strong></td>
-          </tr>
-          <tr>
-            <td class="bold-lbl-left">Land Use:</td><td><strong>{{ $report['land_use'] ?: '-' }}</strong></td>
-            <td class="bold-lbl-right">Size:</td><td><strong>{{ $report['size'] ?: '-' }}</strong></td>
-          </tr>
-          <tr>
-            <td class="bold-lbl-left">Plot Description:</td><td><strong>{{ $report['plot_description'] ?: '-' }}</strong></td>
-            <td class="bold-lbl-right">TP No:</td><td><strong>{{ $report['tpno'] ?: '-' }}</strong></td>
-          </tr>
-        </table>
-
-        @php
-            $uniqueFileNumbers = collect($report['rows'] ?? [])
-                ->pluck('file_no')
-                ->filter(fn($fn) => $fn && $fn !== '-')
-                ->unique();
-            $showFileNo = $uniqueFileNumbers->count() > 1;
-        @endphp
-
-        <div class="section-label">File History</div>
-        <table class="transaction-table">
-          <thead>
-            <tr class="header-row">
-              <th style="width:3%">S/N</th>
-              @if($showFileNo)
-                <th style="width:9%">File No</th>
-              @endif
-              <th class="instrument-cell" style="width:{{ $showFileNo ? '18%' : '27%' }}">Instrument/Transaction Type</th>
-              <th style="width:13%">Party 1</th>
-              <th style="width:13%">Party 2</th>
-              <th style="width:10%">Party 3</th>
-              <th style="width:10%">Reg. Time/Date</th>
-              <th style="width:9%">Particulars</th>
-              <th style="width:5%">Caveat</th>
-              <th style="width:10%">Comments</th>
-            </tr>
-          </thead>
-          <tbody>
-            @forelse($report['rows'] ?? [] as $row)
-              <tr>
-                <td>{{ $row['sn'] ?? $loop->iteration }}</td>
-                @if($showFileNo)
-                  <td>{{ $row['file_no'] ?? '-' }}</td>
-                @endif
-                <td class="instrument-cell">{{ $row['instrument_type'] ?? '-' }}</td>
-                <td>{{ $row['grantor'] ?? '-' }}</td>
-                <td>{{ $row['grantee'] ?? '-' }}</td>
-                <td>{{ $row['party_3'] ?? '-' }}</td>
-                <td>
-                  @if(!empty($row['reg_time']))<strong>{{ $row['reg_time'] }}</strong><br />@else-<br />@endif
-                  {{ $row['reg_date'] ?? '-' }}
-                </td>
-                <td>{{ $row['reg_no'] ?? '0/0/0' }}</td>
-                <td>{{ $row['caveat'] ?? '-' }}</td>
-                <td>{{ $row['comments'] ?? '-' }}</td>
-              </tr>
-            @empty
-              <tr><td colspan="{{ $showFileNo ? 10 : 9 }}" style="text-align:center;padding:14px;">No transactions on record for this file.</td></tr>
-            @endforelse
-          </tbody>
-        </table>
-        <div class="table-end-notice">*** END OF TRANSACTION HISTORY ***</div>
-      </div>
-
-      <div class="footer-wrapper">
-        <div class="remarks-container">
-          <div class="remarks-label">Remarks</div>
-          <div class="remarks-content">
-            <span class="remarks-text">
-              {{ $report['caveat_note'] ?: ($report['is_caveated'] ?? false ? 'A caveat exists on this title. Please consult the Ministry before proceeding.' : 'Based on our available records, the title is free from encumbrances.') }}
-            </span>
-          </div>
-        </div>
-
-        <p class="disclaimer-nb" style="text-align:left;">
-          N.B: This search report is deduced based on the available records from the file and does not represent any document in possession of any body.
-          @if(!empty($report['remarks'])) {{ $report['remarks'] }} @endif
-        </p>
-
-        <div class="footer-bottom">
-          <div class="footer-logo-left"><img src="{{ asset('storage/upload/logo/logo.png') }}" alt="KLAES" onerror="this.style.display='none'"></div>
-          <div class="gen-text">Generated online for {{ $payment->email }} ({{ $payment->tracking_id ?? $payment->reference }}) at {{ now()->format('g:i A & d/m/Y') }}</div>
-          <div class="footer-logo-right"><img src="{{ asset('assets/logo/las.jpg') }}" alt="LAS" onerror="this.style.display='none'"></div>
-        </div>
-      </div>
+  <div class="pay-wrap">
+    <div class="pay-head">
+      <h1>Request {{ $searchRequest->request_no }}</h1>
+      <p>Your payment was received and your Legal Search request has been submitted.</p>
     </div>
-  @endif
+    <div class="pay-body">
+      <div class="pay-row">
+        <span class="lbl">Status</span>
+        <span class="val" style="background:{{ $badge[0] }};color:{{ $badge[1] }};padding:4px 10px;border-radius:999px;font-size:12px;">{{ $badge[2] }}</span>
+      </div>
+      <div class="pay-row"><span class="lbl">Request No.</span><span class="val">{{ $searchRequest->request_no }}</span></div>
+      <div class="pay-row"><span class="lbl">File Number</span><span class="val">{{ $fileNumber }}</span></div>
+      <div class="pay-row"><span class="lbl">Payment Ref</span><span class="val">{{ $payment->tracking_id ?? $payment->reference }}</span></div>
+      <div class="pay-row"><span class="lbl">Report goes to</span><span class="val">{{ $payment->email }}</span></div>
+      <div class="pay-row"><span class="lbl">Submitted</span><span class="val">{{ optional($searchRequest->submitted_at)->format('d M Y, g:i A') }}</span></div>
+
+      @if($statusKey === 'approved')
+        <div style="margin-top:18px;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;padding:14px;border-radius:10px;font-size:13px;">
+          <strong>Approved{{ $searchRequest->reviewer_name ? ' by ' . $searchRequest->reviewer_name : '' }}.</strong>
+          Your Legal Search report has been emailed to <strong>{{ $payment->email }}</strong> as a PDF attachment.
+          If it has not arrived, please check your spam folder before contacting the Ministry.
+        </div>
+      @elseif($statusKey === 'rejected')
+        <div style="margin-top:18px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:14px;border-radius:10px;font-size:13px;">
+          <strong>This request was not approved.</strong>
+          @if($searchRequest->rejection_reason)<br>Reason: {{ $searchRequest->rejection_reason }}@endif
+          <br>Please contact the Ministry quoting request number {{ $searchRequest->request_no }}.
+        </div>
+      @else
+        <div style="margin-top:18px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:14px;border-radius:10px;font-size:13px;">
+          <strong>Your request is with the Director / Deputy Director for approval.</strong>
+          Once approved, the full Legal Search report is emailed to <strong>{{ $payment->email }}</strong> as a PDF attachment.
+          You do not need to keep this page open.
+        </div>
+      @endif
+
+      <p class="pay-note">Keep request number <strong>{{ $searchRequest->request_no }}</strong> for any correspondence about this search.</p>
+    </div>
+  </div>
 @endif
 
 </body>

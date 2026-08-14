@@ -19,9 +19,25 @@
     </div>
 
     <div class="px-6 py-5 space-y-5">
-      <!-- Selected Documents List -->
+      <!-- What will move -->
       <div>
-        <label class="block text-sm font-semibold text-gray-900 mb-3">Selected Documents</label>
+        <div class="flex items-center justify-between gap-3 mb-3">
+          <label class="block text-sm font-semibold text-gray-900">Documents to Move</label>
+          <span id="reassign-scope-count" class="text-xs font-medium text-gray-500"></span>
+        </div>
+
+        {{-- A misfiled document is nearly always a misfiled file, so the whole
+             file moves by default. Untick to move only what was selected. --}}
+        <label class="flex items-start gap-2 p-3 mb-2 bg-blue-50 border border-blue-200 rounded-lg cursor-pointer">
+          <input type="checkbox" id="reassign-move-all" class="checkbox checkbox-sm mt-0.5" checked>
+          <span class="text-sm text-blue-900">
+            <span class="font-semibold">Move every document in this file</span>
+            <span class="block text-xs text-blue-700 mt-0.5" id="reassign-move-all-hint">
+              All scans and typed pages under the current file number travel together.
+            </span>
+          </span>
+        </label>
+
         <div id="reassign-selected-docs" class="space-y-2 max-h-48 overflow-y-auto p-3 bg-gray-50 rounded-lg border border-gray-200">
           <!-- Populated dynamically -->
         </div>
@@ -35,11 +51,31 @@
         </label>
         <p class="text-xs text-gray-600 mb-3">
           <i data-lucide="info" class="h-3.5 w-3.5 inline mr-1"></i>
-          Click the button below to open the file selector
+          Pick the file to move these pages to — nothing can be confirmed until you do
         </p>
 
-        <!-- Registry Filter (Optional) -->
-         <div class="mb-3">
+        <!-- Selected File Display -->
+        <div id="reassign-selected-file-display" class="p-3 mb-3 bg-blue-50 border border-blue-200 rounded-lg hidden">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-xs font-semibold text-blue-900 uppercase tracking-wide">Selected File</p>
+              <p class="text-sm font-mono font-bold text-blue-900 mt-1" id="reassign-selected-file-number">-</p>
+            </div>
+            <button type="button" class="btn btn-outline btn-sm text-blue-600" id="reassign-change-file-btn">
+              <i data-lucide="edit-2" class="h-3.5 w-3.5"></i>
+              Change
+            </button>
+          </div>
+        </div>
+
+        <!-- Open File Selector Button -->
+        <button type="button" class="btn btn-primary w-full gap-2" id="reassign-open-file-selector-btn">
+          <i data-lucide="search" class="h-4 w-4"></i>
+          Search File Number
+        </button>
+
+        <!-- Registry Filter (Optional) — narrows the search above -->
+        <div class="mt-3">
           <label for="reassign-registry-select" class="block text-xs font-medium text-gray-700 mb-2">
             Filter by Registry (Optional)
           </label>
@@ -54,26 +90,7 @@
             <option value="ST Registry">ST Registry</option>
           </select>
           <p class="text-xs text-gray-500 mt-1">Pre-filtered to match your current file's registry by default</p>
-        </div>  
-        <!-- Selected File Display -->
-        <div id="reassign-selected-file-display" class="p-3 mb-3 bg-blue-50 border border-blue-200 rounded-lg hidden">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-xs font-semibold text-blue-900 uppercase tracking-wide">Selected File</p>
-              <p class="text-sm font-mono font-bold text-blue-900 mt-1" id="reassign-selected-file-number">-</p>
-            </div>
-            <button type="button" class="btn btn-outline btn-sm text-blue-600" id="reassign-change-file-btn">
-              <i data-lucide="edit-2" class="h-3.5 w-3.5"></i>
-              Change
-            </button>
-          </div>
         </div>
-        
-        <!-- Open File Selector Button -->
-        <button type="button" class="btn btn-primary w-full gap-2" id="reassign-open-file-selector-btn">
-          <i data-lucide="search" class="h-4 w-4"></i>
-          Search File Number
-        </button>
       </div>
 
       <!-- Destination Preview -->
@@ -115,16 +132,20 @@
         <!-- Populated dynamically -->
       </div>
 
-      <!-- Constraint Warning: PageTyping -->
+      <!-- Constraint Warning: PageTyping (warning, not a blocker) -->
       <div id="reassign-constraint-warning" class="hidden p-4 bg-orange-50 border border-orange-200 rounded-lg">
         <div class="flex gap-3">
           <i data-lucide="alert-triangle" class="h-5 w-5 text-orange-600 flex-shrink-0 mt-0.5"></i>
           <div class="text-sm text-orange-800">
-            <p class="font-semibold">Cannot reassign</p>
-            <p class="text-xs mt-1">
-              Page typing is in progress for one or more selected documents. 
-              <a href="#" class="underline hover:no-underline">Remove page typing first</a>
+            <p class="font-semibold">This document is already page typed</p>
+            <p class="text-xs mt-1" id="reassign-constraint-message">
+              Page typing exists for one or more selected documents. The typed pages will be
+              re-linked to the new indexing record and their files moved with them.
             </p>
+            <label class="flex items-start gap-2 mt-3 text-xs font-medium cursor-pointer">
+              <input type="checkbox" id="reassign-constraint-ack" class="checkbox checkbox-xs mt-0.5">
+              <span>I understand the typed pages will be re-linked to the new file number.</span>
+            </label>
           </div>
         </div>
       </div>
@@ -144,7 +165,9 @@
 
     <div class="p-6 border-t border-gray-200 flex items-center gap-3 justify-end">
       <button type="button" class="btn btn-outline" data-reassign-cancel>Cancel</button>
-      <button type="button" class="btn btn-primary" data-reassign-confirm id="reassign-confirm-btn">
+      {{-- Stays disabled until a target file number has been picked --}}
+      <button type="button" class="btn btn-primary" data-reassign-confirm id="reassign-confirm-btn"
+              disabled title="Select a target file number first">
         <i data-lucide="check" class="h-4 w-4"></i>
         Confirm Reassignment
       </button>

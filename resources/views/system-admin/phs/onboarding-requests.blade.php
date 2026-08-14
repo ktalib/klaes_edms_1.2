@@ -89,6 +89,12 @@
         </div>
     @endif
 
+    @if (session('error'))
+        <div class="mb-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
+            {{ session('error') }}
+        </div>
+    @endif
+
     @if ($requests->isEmpty())
         <div class="text-center py-12">
             <p class="text-gray-600">No onboarding requests found.</p>
@@ -278,7 +284,7 @@
                                                 <button type="button"
                                                     class="approve-btn w-full flex items-center gap-2 text-left px-4 py-2 text-sm text-indigo-700 hover:bg-gray-50"
                                                     data-title="Resend SLA Link?"
-                                                    data-msg="Resend the SLA download &amp; upload link to {{ $req->organization_name }}?"
+                                                    data-msg="Resend the SLA download &amp; upload link for {{ $req->organization_name }} (request #{{ $req->id }}) to: {{ $req->contact_email }}"
                                                     data-confirm="Yes, resend">
                                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-indigo-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
                                                     Resend SLA Link
@@ -293,7 +299,7 @@
                                                 <button type="button"
                                                     class="approve-btn w-full flex items-center gap-2 text-left px-4 py-2 text-sm text-indigo-700 hover:bg-gray-50"
                                                     data-title="Resend Onboarding Link?"
-                                                    data-msg="Resend the payment &amp; onboarding link to {{ $req->organization_name }}?"
+                                                    data-msg="Resend the payment &amp; onboarding link for {{ $req->organization_name }} (request #{{ $req->id }}) to: {{ $req->contact_email }}"
                                                     data-confirm="Yes, resend">
                                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-indigo-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
                                                     Resend Onboarding Link
@@ -301,28 +307,6 @@
                                             </form>
                                         @endif
                                     </div>
-                                    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-                                    <script>
-                                        document.addEventListener('DOMContentLoaded', function () {
-                                            document.querySelectorAll('.approve-btn').forEach(function (btn) {
-                                                btn.addEventListener('click', function () {
-                                                    Swal.fire({
-                                                        title: btn.getAttribute('data-title') || 'Confirm?',
-                                                        text: btn.getAttribute('data-msg') || 'Proceed with this action?',
-                                                        icon: 'question',
-                                                        showCancelButton: true,
-                                                        confirmButtonText: btn.getAttribute('data-confirm') || 'Yes',
-                                                        cancelButtonText: 'No'
-                                                    }).then(function (result) {
-                                                        if (result.isConfirmed) {
-                                                            var form = btn.closest('form');
-                                                            if (form) form.submit();
-                                                        }
-                                                    });
-                                                });
-                                            });
-                                        });
-                                    </script>
                                 </details>
                             </td>
                         </tr>
@@ -333,3 +317,33 @@
     @endif
 </div>
 @endsection
+
+@push('scripts')
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('.approve-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var form = btn.closest('form');
+                if (!form) {
+                    console.error('[phs] confirm button is not inside a form', btn);
+                    return;
+                }
+                Swal.fire({
+                    title: btn.getAttribute('data-title') || 'Confirm?',
+                    text: btn.getAttribute('data-msg') || 'Proceed with this action?',
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: btn.getAttribute('data-confirm') || 'Yes',
+                    cancelButtonText: 'No'
+                }).then(function (result) {
+                    if (result.isConfirmed) {
+                        btn.disabled = true;
+                        form.submit();
+                    }
+                });
+            });
+        });
+    });
+</script>
+@endpush

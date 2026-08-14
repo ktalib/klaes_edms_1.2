@@ -95,15 +95,25 @@ class BlindScanning extends Model
      */
     public function getFullPathAttribute()
     {
-        return storage_path('app/public/' . $this->document_path);
+        return file_storage_path('app/public/' . $this->document_path);
     }
 
     /**
-     * Get the file URL
+     * Get the file URL.
+     *
+     * Resolved through the EDMS layouts: once a blind scan is ingested the file
+     * moves into SCAN_UPLOAD, so the stored BLIND_SCAN path can be stale.
      */
     public function getFileUrlAttribute()
     {
-        return asset('storage/' . $this->document_path);
+        $resolver = app(\App\Services\Edms\EdmsDocumentPathResolver::class);
+
+        return $resolver->resolveUrl($this->document_path, [
+            'file_number' => $this->file_number ?? null,
+            'registry' => $this->registry ?? null,
+            'paper_size' => $this->paper_size ?? null,
+            'file_name' => $this->original_filename ?? null,
+        ]) ?? asset('storage/' . ltrim((string) $this->document_path, '/'));
     }
 
     /**

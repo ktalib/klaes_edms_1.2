@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Models\LegalSearchOnlinePayment;
 use App\Models\LegalSearchOnlineFeedback;
+use App\Models\LegalSearchOnlineRequest;
+use App\Services\LegalSearchApprovalService;
 
 class LegalSearchOnlineAdminController extends Controller
 {
@@ -99,5 +101,156 @@ class LegalSearchOnlineAdminController extends Controller
         ]));
 
         return response()->json(['success' => true, 'message' => 'Feedback updated.']);
+    }
+
+    // ── Search Request Approval (Director / Deputy Director) ─────────
+
+    /**
+     * Approval queue for public Online Legal Search requests.
+     *
+     * Visible to any signed-in staff member so the queue can be monitored, but
+     * only Directors / Deputy Directors (and super admins) may act on it.
+     */
+    public function requestsIndex(Request $request, LegalSearchApprovalService $approvalService)
+    {
+        $PageTitle = 'Online Legal Search — Search Requests';
+
+        $status = $request->query('status', 'pending');
+        if (!in_array($status, ['pending', 'approved', 'rejected', 'all'], true)) {
+            $status = 'pending';
+        }
+
+        $query = LegalSearchOnlineRequest::with('reviewer')->orderByDesc('created_at');
+
+        if ($status !== 'all') {
+            $query->where('status', $status);
+        }
+
+        if ($search = trim((string) $request->query('q', ''))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('request_no', 'like', '%' . $search . '%')
+                    ->orWhere('file_number', 'like', '%' . $search . '%')
+                    ->orWhere('requester_email', 'like', '%' . $search . '%')
+                    ->orWhere('tracking_id', 'like', '%' . $search . '%');
+            });
+        }
+
+        $requests = $query->paginate(30)->withQueryString();
+
+        $counts = [
+            'pending'  => LegalSearchOnlineRequest::where('status', 'pending')->count(),
+            'approved' => LegalSearchOnlineRequest::where('status', 'approved')->count(),
+            'rejected' => LegalSearchOnlineRequest::where('status', 'rejected')->count(),
+        ];
+
+        return view('legal_search_online.requests', [
+            'PageTitle'  => $PageTitle,
+            'requests'   => $requests,
+            'counts'     => $counts,
+            'status'     => $status,
+            'q'          => $request->query('q', ''),
+            'highlight'  => (int) $request->query('highlight', 0),
+            'canApprove' => $approvalService->isApprover(auth()->user()),
+        ]);
+    }
+
+    /**
+     * Preview the report a request would release, so an approver can read it
+     * before signing off. Reuses the on-screen Legal Search print template.
+     */
+    public function requestPreview(int $id, LegalSearchApprovalService $approvalService)
+    {
+        abort_unless($approvalService->isApprover(auth()->user()), 403, 'Only a Director or Deputy Director may review Online Legal Search requests.');
+
+        $searchRequest = LegalSearchOnlineRequest::findOrFail($id);
+        $report = $approvalService->buildReport($searchRequest);
+
+        return view('legal_search_online.request_preview', [
+            'searchRequest' => $searchRequest,
+            'report'        => $report,
+        ]);
+    }
+
+    /**
+     * Approve a request: generates the report and emails it to the requester.
+     */
+    public function requestApprove(Request $request, int $id, LegalSearchApprovalService $approvalService)
+    {
+        $user = auth()->user();
+        abort_unless($approvalService->isApprover($user), 403, 'Only a Director or Deputy Director may approve Online Legal Search requests.');
+
+        $validated = $request->validate([
+            'review_note' => 'nullable|string|max:1000',
+        ]);
+
+        $searchRequest = LegalSearchOnlineRequest::findOrFail($id);
+
+        if (!$searchRequest->isPending()) {
+            return back()->with('error', 'Request ' . $searchRequest->request_no . ' has already been ' . $searchRequest->status . '.');
+        }
+
+        try {
+            $emailed = $approvalService->approve($searchRequest, $user, $validated['review_note'] ?? null);
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with(
+            $emailed ? 'success' : 'error',
+            $emailed
+                ? 'Request ' . $searchRequest->request_no . ' approved. The report was emailed to ' . $searchRequest->requester_email . '.'
+                : 'Request ' . $searchRequest->request_no . ' was approved, but the email to ' . $searchRequest->requester_email . ' failed to send. Use "Resend report" to try again.'
+        );
+    }
+
+    /**
+     * Decline a request and tell the requester why.
+     */
+    public function requestReject(Request $request, int $id, LegalSearchApprovalService $approvalService)
+    {
+        $user = auth()->user();
+        abort_unless($approvalService->isApprover($user), 403, 'Only a Director or Deputy Director may decline Online Legal Search requests.');
+
+        $validated = $request->validate([
+            'rejection_reason' => 'required|string|max:1000',
+        ]);
+
+        $searchRequest = LegalSearchOnlineRequest::findOrFail($id);
+
+        if (!$searchRequest->isPending()) {
+            return back()->with('error', 'Request ' . $searchRequest->request_no . ' has already been ' . $searchRequest->status . '.');
+        }
+
+        $approvalService->reject($searchRequest, $user, $validated['rejection_reason']);
+
+        return back()->with('success', 'Request ' . $searchRequest->request_no . ' declined. The requester has been notified.');
+    }
+
+    /**
+     * Re-send the report for a request that was approved but whose email failed
+     * (or that the requester never received).
+     */
+    public function requestResend(int $id, LegalSearchApprovalService $approvalService)
+    {
+        abort_unless($approvalService->isApprover(auth()->user()), 403);
+
+        $searchRequest = LegalSearchOnlineRequest::findOrFail($id);
+
+        if (!$searchRequest->isApproved()) {
+            return back()->with('error', 'Only an approved request can have its report re-sent.');
+        }
+
+        try {
+            $sent = $approvalService->resend($searchRequest);
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with(
+            $sent ? 'success' : 'error',
+            $sent
+                ? 'Report re-sent to ' . $searchRequest->requester_email . '.'
+                : 'The report could not be emailed to ' . $searchRequest->requester_email . '. See the recorded error on the request.'
+        );
     }
 }

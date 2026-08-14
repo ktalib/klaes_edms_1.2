@@ -739,11 +739,9 @@ class LandRofoController extends Controller
             }
         }
 
-        // A re-issuance is by definition a further print of an already-issued
-        // letter, so it is exempt from the two-print cap (same as a CTC).
-        if (!$isCTC && !$supersedeView && $recommendation->rofo_print_count >= 2) {
-            abort(403, 'Maximum ROFO print limit reached.');
-        }
+        // The two-print cap that used to 403 here has been removed on request:
+        // rofo_print_count is still incremented and still drives the Printed tab
+        // and the print history, but it no longer blocks a print.
 
         // One template for both: it reads ?supersede=1 itself to switch modes.
         return view(
@@ -993,13 +991,10 @@ class LandRofoController extends Controller
         // sits outside the two-print allowance and does not consume it.
         $isReissuance = $status === 'Re-issuance';
 
-        // Only enforce limits for non-CTC prints
-        if (!$isCTC && !$isReissuance && $recommendation->rofo_print_count >= 2) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Maximum ROFO print limit reached.'
-            ], 403);
-        }
+        // The two-print cap was removed here as well, to match print(): logging a
+        // third print must not fail after the letter has already been rendered.
+        // $isCTC / $isReissuance still matter below — they decide whether the print
+        // counts against rofo_print_count, which the Printed tab reads.
 
         DB::beginTransaction();
         try {

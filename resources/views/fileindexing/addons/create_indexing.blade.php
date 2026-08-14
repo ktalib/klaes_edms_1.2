@@ -127,6 +127,7 @@
                                         ];
                                         $titleOptions = [
                                             'Withdrawal (Application)'                            => ['Withdrawal (Application)', 'undo-2'],
+                                            'Withdrawal (Allocation)'                             => ['Withdrawal (Allocation)', 'undo-2'],
                                             'Cancellation'                                 => ['Cancellation', 'x-circle'],
                                             'Revoke'                                       => ['Revocation', 'ban'],
                                             'Litigation'                                          => ['Litigation', 'gavel'],
@@ -193,14 +194,11 @@
                                                         class="ts-title-type-cb peer sr-only">
                                                     <span class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-600 transition hover:border-emerald-300 hover:bg-emerald-50/40 peer-checked:border-emerald-500 peer-checked:bg-emerald-50 peer-checked:text-emerald-700 peer-checked:font-medium peer-focus:ring-2 peer-focus:ring-emerald-200">
                                                         <i data-lucide="{{ $tsMeta[1] }}" class="h-4 w-4 flex-shrink-0"></i>
-                                                        <span class="leading-tight"@if($tsValue === 'Extension') id="ts-extension-label"@endif>{{ $tsMeta[0] }}</span>
+                                                        <span class="leading-tight">{{ $tsMeta[0] }}</span>
                                                     </span>
                                                 </label>
                                             @endforeach
                                         </div>
-                                        {{-- Holds the chosen extension kind (Plot Extension / File Extension),
-                                             selected via popup when the "Extension" option is ticked. --}}
-                                        <input type="hidden" id="ts-extension-kind" value="">
                                     </div>
                                     <p class="text-[11px] text-gray-400 mt-1.5">Select one or more title statuses.</p>
                                 </div>
@@ -1221,6 +1219,7 @@
             const TS_INITIATED_BY_BY_TYPE = @json(\App\Models\TitleStatusApplication::INITIATED_BY_BY_TYPE);
             const TS_TYPE_VERB = {
                 'Withdrawal (Application)':                            'Withdrawal',
+                'Withdrawal (Allocation)':                            'Withdrawal',
                 'Cancellation (RofO)':                                'Cancellation',
                 'Revoke (CofO)':                                      'Revocation',
                 'Litigation':                                         'Litigation',
@@ -1244,8 +1243,6 @@
             const seePicker    = document.getElementById('ts-see-picker');
             const reasonEl     = document.getElementById('ts-reason');
             const remarkEl     = document.getElementById('ts-remark');
-            const extKindEl    = document.getElementById('ts-extension-kind');
-            const extLabelEl   = document.getElementById('ts-extension-label');
             const regrantKindEl  = document.getElementById('ts-regrant-kind');
             const regrantLabelEl = document.getElementById('ts-regrant-label');
             const closedKindEl   = document.getElementById('ts-closed-kind');
@@ -1259,13 +1256,6 @@
 
             if (!typeGroup) return;
 
-            // Extension sub-kind (Plot Extension / File Extension), chosen via popup.
-            const EXTENSION_KINDS = ['Plot Extension', 'File Extension'];
-            const getExtensionKind = () => (extKindEl?.value || '').trim();
-            const setExtensionKind = (kind) => {
-                if (extKindEl) extKindEl.value = kind || '';
-                if (extLabelEl) extLabelEl.textContent = kind ? kind : 'Extension';
-            };
             // Re-grant direction (Re-granted From / Re-granted To), chosen via popup.
             //   From — this file is the NEW file; Initial FileNo is the OLD number it came from.
             //   To   — this file is the OLD file; the picked number is the NEW one replacing it.
@@ -1298,10 +1288,9 @@
                 if (resettleLabelEl) resettleLabelEl.textContent = kind ? kind : 'Resettlement';
             };
 
-            // Resolve the effective title type: a ticked "Extension" / "Re-grant" / "Closed" /
+            // Resolve the effective title type: a ticked "Re-grant" / "Closed" /
             // "Resettlement" reports the chosen sub-kind.
             const resolveType = (t) => {
-                if (t === 'Extension')    return getExtensionKind() || t;
                 if (t === 'Re-grant')     return getRegrantKind()   || t;
                 if (t === 'Closed')       return getClosedKind()    || t;
                 if (t === 'Resettlement') return getResettleKind()  || t;
@@ -1382,9 +1371,7 @@
                         ? `This File has been Closed and Continued in ${seeFileno}`
                         : 'This File has been Closed';
                 }
-                const verb   = (type === 'Extension')
-                    ? (getExtensionKind() || 'Extension')
-                    : (TS_TYPE_VERB[type] || type);
+                const verb   = TS_TYPE_VERB[type] || type;
                 const reason = (reasonEl?.value || '').trim() || '[Reason]';
                 const initiator = initiatedByFor(type);
                 return `${verb}${fileRef} was initiated by ${initiator} on ${dt} due to ${reason}`;
@@ -1416,7 +1403,6 @@
                 if (!isRegrant && getRegrantKind()) setRegrantKind('');
                 if (!isClosed && getClosedKind()) setClosedKind('');
                 if (!isResettle && getResettleKind()) setResettleKind('');
-                if (!actionable.includes('Extension') && getExtensionKind()) setExtensionKind('');
 
                 // Label the counterpart picker for whichever direction was chosen. The trailing
                 // sentence is the same everywhere: the officer picks, they do not type.
@@ -1475,44 +1461,6 @@
             // any other option clears "Normal". Dummy File, Temporary and the actionable title
             // statuses are all freely multi-selectable. Delegated on document since the
             // checkboxes span two separate cards.
-            // Prompt the user to choose the extension kind (Plot / File) when "Extension"
-            // is ticked. Cancelling un-ticks the option. Returns nothing; updates hidden field.
-            function promptExtensionKind(cb) {
-                const finish = () => { toggleStatusFields(); refreshRemark(); };
-
-                if (typeof Swal === 'undefined') {
-                    // Minimal fallback without SweetAlert.
-                    const useFile = window.confirm('Extension type:\n\nOK = Plot Extension\nCancel = File Extension');
-                    setExtensionKind(useFile ? 'Plot Extension' : 'File Extension');
-                    finish();
-                    return;
-                }
-
-                Swal.fire({
-                    title: 'Extension Type',
-                    text: 'Select the type of extension',
-                    icon: 'question',
-                    showDenyButton: true,
-                    showCancelButton: true,
-                    confirmButtonText: 'Plot Extension',
-                    denyButtonText: 'File Extension',
-                    cancelButtonText: 'Cancel',
-                    confirmButtonColor: '#059669',
-                    denyButtonColor: '#4f46e5',
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        setExtensionKind('Plot Extension');
-                    } else if (result.isDenied) {
-                        setExtensionKind('File Extension');
-                    } else {
-                        // Cancelled → revert the selection.
-                        cb.checked = false;
-                        setExtensionKind('');
-                    }
-                    finish();
-                });
-            }
-
             // Is a status that names a counterpart file currently selected?
             const seeApplies = () => getActionableTypes().some(t => RELATED_SOURCED_TYPES.includes(t));
 
@@ -1705,15 +1653,6 @@
                     if (normal) normal.checked = false;
                 }
 
-                // "Extension" ticked → ask Plot vs File; unticked → reset the chosen kind.
-                if (cb.value === 'Extension') {
-                    if (cb.checked) {
-                        promptExtensionKind(cb);
-                        return; // popup callback runs toggleStatusFields()/refreshRemark()
-                    }
-                    setExtensionKind('');
-                }
-
                 // "Re-grant" picked → ask From vs To; it is a radio, so it can only be
                 // cleared by another option winning the group (handled in toggleStatusFields).
                 if (cb.value === 'Re-grant' && cb.checked) {
@@ -1762,7 +1701,6 @@
             // stale status isn't submitted with the hidden fields.
             window.tsClearSelections = function () {
                 typeCbs().forEach(cb => { cb.checked = false; });
-                setExtensionKind('');
                 setRegrantKind('');
                 setClosedKind('');
                 setResettleKind('');
@@ -1805,8 +1743,8 @@
                     return reuseCustom ? customRemark : buildRemarkFor(type);
                 });
 
-                // Report the chosen sub-kinds — Plot/File Extension, and Re-granted From/To —
-                // in place of the generic "Extension"/"Re-grant" so they persist distinctly.
+                // Report the chosen sub-kinds — Re-granted From/To, Closed To / Continued From,
+                // Resettled From/To — in place of the generic label so they persist distinctly.
                 const reportedTypes = types.map(resolveType);
 
                 // One request carrying every selected type so the backend records all of them

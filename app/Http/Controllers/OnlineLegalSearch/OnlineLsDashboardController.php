@@ -4,18 +4,24 @@ namespace App\Http\Controllers\OnlineLegalSearch;
 
 use App\Http\Controllers\Controller;
 use App\Models\LegalSearchOnlinePayment;
+use App\Models\LegalSearchOnlineRequest;
+use App\Services\LegalSearchApprovalService;
 use App\Services\LegalSearchService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class OnlineLsDashboardController extends Controller
 {
     protected LegalSearchService $searchService;
 
-    public function __construct(LegalSearchService $searchService)
+    protected LegalSearchApprovalService $approvalService;
+
+    public function __construct(LegalSearchService $searchService, LegalSearchApprovalService $approvalService)
     {
-        $this->searchService = $searchService;
+        $this->searchService   = $searchService;
+        $this->approvalService = $approvalService;
     }
 
     /**
@@ -223,12 +229,13 @@ class OnlineLsDashboardController extends Controller
     }
 
     /**
-     * Public full result. No login required.
+     * Public result page. No login required.
      *
-     * Access to the report is gated by a verified Paystack payment for the file
-     * number. After paying, the front-end returns here with the payment
-     * `reference`; if a matching paid record exists the full report is shown,
-     * otherwise the Paystack checkout (payment mode) is rendered.
+     * The report is never rendered here any more. A verified payment opens a
+     * *request* that a Director / Deputy Director must approve; this page shows
+     * the requester where that request stands, and the approved report is
+     * emailed to them as a PDF. Until payment clears, the Paystack checkout is
+     * rendered as before.
      */
     public function result(Request $request)
     {
@@ -239,7 +246,7 @@ class OnlineLsDashboardController extends Controller
             return redirect()->route('ols.landing');
         }
 
-        // A report is unlocked only by presenting the reference of a paid
+        // A request is only traceable by presenting the reference of a paid
         // transaction for this exact file number.
         $payment = null;
         if ($reference !== '') {
@@ -261,22 +268,29 @@ class OnlineLsDashboardController extends Controller
             ]);
         }
 
-        // Report mode: build the full report using the canonical print engine.
-        $built = $this->searchService->buildPrintReport(['file_number' => $fileNumber]);
-        $report = $built['payload']['data'] ?? null;
+        // Status mode: show where the approval request stands. The request is
+        // normally created during payment verification; open it here too so a
+        // payment that cleared before this page loaded is never left dangling.
+        $searchRequest = LegalSearchOnlineRequest::where('payment_id', $payment->id)->first();
+
+        if (!$searchRequest) {
+            $searchRequest = $this->approvalService->openRequest($payment, ['ip' => $request->ip()]);
+        }
 
         return view('online_legal_search.result', [
-            'mode'       => 'report',
-            'payment'    => $payment,
-            'fileNumber' => $fileNumber,
-            'report'     => $report,
+            'mode'          => 'status',
+            'payment'       => $payment,
+            'searchRequest' => $searchRequest,
+            'fileNumber'    => $fileNumber,
+            'report'        => null,
         ]);
     }
 
     /**
      * Verify a Paystack payment reference and record the guest transaction.
      * On success a human-friendly tracking id (USER-0001) is assigned so the
-     * transaction can be traced back-office without an account.
+     * transaction can be traced back-office without an account, and an approval
+     * request (LSR-0001) is opened for the Director / Deputy Director.
      */
     public function verifyPayment(Request $request)
     {
@@ -289,10 +303,18 @@ class OnlineLsDashboardController extends Controller
         $email      = $request->input('email', '');
         $fileNumber = $request->input('file_number', '');
 
-        // Idempotent check
+        // Idempotent check — re-verifying a paid reference returns the request
+        // that was already opened for it rather than opening a second one.
         $existing = LegalSearchOnlinePayment::where('reference', $reference)->first();
         if ($existing && $existing->isPaid()) {
-            return response()->json(['success' => true, 'already_paid' => true, 'reference' => $reference]);
+            $searchRequest = $this->openApprovalRequest($existing, $request);
+
+            return response()->json([
+                'success'      => true,
+                'already_paid' => true,
+                'reference'    => $reference,
+                'request_no'   => $searchRequest?->request_no,
+            ]);
         }
 
         // Verify with Paystack
@@ -333,6 +355,36 @@ class OnlineLsDashboardController extends Controller
             $payment->save();
         }
 
-        return response()->json(['success' => true, 'reference' => $reference, 'tracking_id' => $payment->tracking_id]);
+        // Open the approval request and alert the Director / Deputy Director.
+        // The report is released to the requester by email only once approved.
+        $searchRequest = $this->openApprovalRequest($payment, $request);
+
+        return response()->json([
+            'success'     => true,
+            'reference'   => $reference,
+            'tracking_id' => $payment->tracking_id,
+            'request_no'  => $searchRequest?->request_no,
+        ]);
+    }
+
+    /**
+     * Open the Director approval request for a paid transaction.
+     *
+     * Never lets a notification or mail failure fail the payment response — the
+     * money is already taken, so the request row matters more than the alert.
+     */
+    protected function openApprovalRequest(LegalSearchOnlinePayment $payment, Request $request): ?LegalSearchOnlineRequest
+    {
+        try {
+            return $this->approvalService->openRequest($payment, ['ip' => $request->ip()]);
+        } catch (\Throwable $e) {
+            Log::error('OnlineLsDashboardController: failed to open approval request', [
+                'payment_id' => $payment->id,
+                'reference'  => $payment->reference,
+                'error'      => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 }

@@ -403,19 +403,19 @@
    .hover\:bg-gray-50 on the row and the tint survives hovering.
    ────────────────────────────────────────────────────────────────────────── */
 .gender-row-male      { background-color: #dbeafe; }
-.gender-row-female    { background-color: #fbcfe8; }
-.gender-row-corporate { background-color: #e9d5ff; }
-.gender-row-joint     { background-color: #ccfbf1; }
+.gender-row-female    { background-color: #fce7f3; }
+.gender-row-corporate { background-color: #fef3c7; }
+.gender-row-joint     { background-color: #dcfce7; }
 
 tr.gender-row-male:hover      { background-color: #bfdbfe; }
-tr.gender-row-female:hover    { background-color: #f9a8d4; }
-tr.gender-row-corporate:hover { background-color: #d8b4fe; }
-tr.gender-row-joint:hover     { background-color: #99f6e4; }
+tr.gender-row-female:hover    { background-color: #fbcfe8; }
+tr.gender-row-corporate:hover { background-color: #fde68a; }
+tr.gender-row-joint:hover     { background-color: #bbf7d0; }
 
 tr.gender-row-male      > td:first-child { box-shadow: inset 4px 0 0 0 #1d4ed8; }
-tr.gender-row-female    > td:first-child { box-shadow: inset 4px 0 0 0 #be185d; }
-tr.gender-row-corporate > td:first-child { box-shadow: inset 4px 0 0 0 #7e22ce; }
-tr.gender-row-joint     > td:first-child { box-shadow: inset 4px 0 0 0 #0f766e; }
+tr.gender-row-female    > td:first-child { box-shadow: inset 4px 0 0 0 #db2777; }
+tr.gender-row-corporate > td:first-child { box-shadow: inset 4px 0 0 0 #b45309; }
+tr.gender-row-joint     > td:first-child { box-shadow: inset 4px 0 0 0 #15803d; }
 
 /* Same two-part treatment at legend size, so the key reads as the row does. */
 .gender-swatch {
@@ -427,7 +427,7 @@ tr.gender-row-joint     > td:first-child { box-shadow: inset 4px 0 0 0 #0f766e; 
 }
 
 .gender-swatch-male      { background-color: #dbeafe; box-shadow: inset 4px 0 0 0 #1d4ed8; }
-.gender-swatch-female    { background-color: #fbcfe8; box-shadow: inset 4px 0 0 0 #be185d; }
-.gender-swatch-corporate { background-color: #e9d5ff; box-shadow: inset 4px 0 0 0 #7e22ce; }
-.gender-swatch-joint     { background-color: #ccfbf1; box-shadow: inset 4px 0 0 0 #0f766e; }
+.gender-swatch-female    { background-color: #fce7f3; box-shadow: inset 4px 0 0 0 #db2777; }
+.gender-swatch-corporate { background-color: #fef3c7; box-shadow: inset 4px 0 0 0 #b45309; }
+.gender-swatch-joint     { background-color: #dcfce7; box-shadow: inset 4px 0 0 0 #15803d; }
 .gender-swatch-none      { background-color: #ffffff; box-shadow: inset 0 0 0 1px #cbd5e1; }

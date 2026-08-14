@@ -63,6 +63,50 @@
     background-color: var(--muted);
   }
 
+  /* Workspace header actions.
+     btn-action carries the file-level operation, btn-back is the way out —
+     distinct enough to tell apart at a glance without competing with the
+     primary "Process Page" action further down the form. */
+  .btn-action,
+  .btn-back {
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  /* These two sit in a header row, so they get a little more room than the
+     compact btn-sm used for pagination arrows elsewhere. */
+  .btn-action.btn-sm,
+  .btn-back.btn-sm {
+    padding: 0.4375rem 0.875rem;
+    font-size: 0.8125rem;
+  }
+
+  .btn-action {
+    background-color: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #bfdbfe;
+    box-shadow: 0 1px 2px rgba(29, 78, 216, 0.08);
+  }
+
+  .btn-action:hover {
+    background-color: #dbeafe;
+    border-color: #93c5fd;
+    color: #1e40af;
+  }
+
+  .btn-back {
+    background-color: white;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  }
+
+  .btn-back:hover {
+    background-color: #f8fafc;
+    border-color: #cbd5e1;
+    color: #1e293b;
+  }
+
   .btn-sm {
     padding: 0.25rem 0.5rem;
     font-size: 0.75rem;

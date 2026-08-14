@@ -4,6 +4,31 @@
     // Reached from the Legal Search module (?url=ls) every token is a legal search,
     // so the reason is fixed rather than chosen.
     $lockPaymentReason = request('url') === 'ls';
+
+    $formatTitle = static function ($value, string $fallback = '—'): string {
+        $text = trim((string) ($value ?? ''));
+        if ($text === '') {
+            return $fallback;
+        }
+
+        return \Illuminate\Support\Str::of($text)
+            ->squish()
+            ->lower()
+            ->title()
+            ->value();
+    };
+
+    $formatUpper = static function ($value, string $fallback = '—'): string {
+        $text = trim((string) ($value ?? ''));
+        if ($text === '') {
+            return $fallback;
+        }
+
+        return \Illuminate\Support\Str::of($text)
+            ->squish()
+            ->upper()
+            ->value();
+    };
 @endphp
 
 @section('page-title')
@@ -86,7 +111,7 @@
                         <h3 class="font-bold text-slate-800">Generated Tokens</h3>
                     </div>
                     <div class="overflow-x-auto">
-                        <table class="w-full text-left border-collapse">
+                        <table class="w-full min-w-[1460px] text-left border-collapse">
                             <thead>
                                 <tr class="bg-slate-50/50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-widest">
                                     <th class="px-6 py-4">S/N</th>
@@ -103,53 +128,63 @@
                                     <th class="px-6 py-4 text-right">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-slate-100 text-sm text-slate-600">
+                            <tbody class="divide-y divide-slate-100 text-[13px] text-slate-600">
                                 @forelse($tokens as $token)
-                                    <tr class="hover:bg-slate-50/50 transition-colors">
+                                    @php
+                                        $applicantName = $formatTitle($token->applicant_name, 'No applicant name');
+                                        $propertyLocation = $formatTitle($token->property_location, 'No location provided');
+                                        $clientName = $formatTitle($token->client_name);
+                                        $clientAddress = $formatTitle($token->client_address);
+                                        $receiptNumber = $formatUpper($token->receipt_number);
+                                        $creatorName = $formatTitle(optional($token->creator)->name, 'System');
+                                    @endphp
+                                    <tr class="align-top hover:bg-slate-50/60 even:bg-slate-50/30 transition-colors">
                                         <td class="px-6 py-4 text-xs font-bold text-slate-400">
                                             {{ ($tokens->currentPage() - 1) * $tokens->perPage() + $loop->iteration }}
                                         </td>
-                                        <td class="px-6 py-4">
+                                        <td class="px-6 py-4 whitespace-nowrap">
                                             <div class="flex items-center gap-2 cursor-pointer group" onclick="toggleToken(this, '{{ $token->token }}')">
                                                 <span class="token-display font-mono font-bold text-indigo-600/40 tracking-widest">************</span>
                                                 <i data-lucide="eye" class="h-3 w-3 text-slate-300 group-hover:text-indigo-400 transition-colors"></i>
                                             </div>
                                         </td>
-                                        <td class="px-6 py-4">
-                                            <span class="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 border border-blue-100">
-                                                {{ $token->file_number }}
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <span class="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-extrabold text-blue-700 border border-blue-100 tracking-wide uppercase">
+                                                {{ $formatUpper($token->file_number) }}
                                             </span>
                                         </td>
-                                        <td class="px-6 py-4">
-                                            <div class="font-medium text-slate-900">{{ $token->applicant_name }}</div>
-                                            <div class="text-[11px] text-slate-400 truncate max-w-[200px]" title="{{ $token->property_location }}">
-                                                {{ $token->property_location ?: 'No location provided' }}
+                                        <td class="px-6 py-4 min-w-[220px]">
+                                            <div class="font-semibold text-slate-900 leading-snug">{{ $applicantName }}</div>
+                                            <div class="text-[11px] text-slate-500 mt-1 max-w-[260px] truncate" title="{{ $propertyLocation }}">
+                                                {{ $propertyLocation }}
                                             </div>
                                         </td>
-                                        <td class="px-6 py-4">
-                                            <span class="text-sm font-medium text-slate-900">{{ $token->client_name ?: '—' }}</span>
+                                        <td class="px-6 py-4 min-w-[180px]">
+                                            <span class="text-sm font-semibold text-slate-900 leading-snug">{{ $clientName }}</span>
                                         </td>
-                                        <td class="px-6 py-4">
-                                            <span class="text-sm text-slate-600">{{ $token->client_address ?: '—' }}</span>
+                                        <td class="px-6 py-4 min-w-[240px]">
+                                            <span class="text-sm text-slate-700 leading-snug">{{ $clientAddress }}</span>
                                         </td>
-                                        <td class="px-6 py-4">
+                                        <td class="px-6 py-4 min-w-[210px]">
                                             @if($token->payment_reason)
-                                                <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-100 text-[10px] font-bold text-indigo-600">{{ $token->payment_reason }}</span>
-                                                @if($token->general_body)
-                                                    <span class="ml-1 inline-flex items-center px-2 py-0.5 rounded-md bg-amber-50 border border-amber-100 text-[10px] font-bold text-amber-600">{{ $token->general_body }}</span>
-                                                @endif
+                                                <div class="flex flex-wrap items-center gap-1.5">
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-100 text-[10px] font-bold text-indigo-700">{{ $formatTitle($token->payment_reason) }}</span>
+                                                    @if($token->general_body)
+                                                        <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-50 border border-amber-100 text-[10px] font-bold text-amber-700">{{ $formatUpper($token->general_body) }}</span>
+                                                    @endif
+                                                </div>
                                             @else
                                                 <span class="text-[11px] text-slate-300">—</span>
                                             @endif
                                         </td>
-                                        <td class="px-6 py-4">
-                                            <div class="text-xs font-bold text-slate-700">{{ $token->receipt_number }}</div>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <div class="text-xs font-extrabold text-slate-700 tracking-wide">{{ $receiptNumber }}</div>
                                         </td>
                                         <td class="px-6 py-4 text-center">
                                             <span class="inline-flex items-center gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1 text-xs font-bold border border-slate-200 text-slate-700"
                                                   title="{{ $token->usage_count }} search(es) run on this token">
                                                 <i data-lucide="repeat" class="h-3 w-3"></i>
-                                                {{ $token->usage_count }}
+                                                {{ $token->usage_count }}x
                                             </span>
                                         </td>
                                         <td class="px-6 py-4 text-center">
@@ -177,7 +212,7 @@
                                         <td class="px-6 py-4 text-center">
                                             <div class="text-xs text-slate-600 font-medium">{{ $token->created_at->format('d M, Y') }}</div>
                                             <div class="text-[10px] text-slate-400">{{ $token->created_at->format('h:i A') }}</div>
-                                            <div class="mt-1 text-[9px] font-bold text-indigo-400 uppercase tracking-tighter">By: {{ $token->creator->name ?? 'System' }}</div>
+                                            <div class="mt-1 text-[9px] font-bold text-indigo-500 uppercase tracking-tighter">By: {{ $creatorName }}</div>
                                         </td>
                                         <td class="px-6 py-4 text-right">
                                             <button type="button"

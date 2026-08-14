@@ -43,6 +43,49 @@
     </script>
 
     <style>
+        /* --- Form field legibility -------------------------------------------------
+           Tell the browser which scheme the page is actually painting in. Without this
+           a browser running under a dark OS theme paints its own form-control and
+           autofill colours (white text) over our light-themed white fields, leaving
+           the user typing invisible text. */
+        html { color-scheme: light; }
+        html.dark { color-scheme: dark; }
+
+        /* Never let an input inherit body text colour. If a utility class is missing
+           (or the Tailwind CDN fails to load) the field still has readable contrast. */
+        input, select, textarea, option {
+            color: #111827;
+            background-color: #ffffff;
+        }
+        .dark input, .dark select, .dark textarea, .dark option {
+            color: #f3f4f6;
+            background-color: #374151;
+        }
+        input[type="checkbox"], input[type="radio"] { background-color: initial; }
+
+        /* Chrome/Safari autofill paints its own text colour, which ignores `color`.
+           -webkit-text-fill-color is the only way to override it; the inset shadow
+           replaces the autofill background. */
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover,
+        input:-webkit-autofill:focus,
+        input:-webkit-autofill:active {
+            -webkit-text-fill-color: #111827;
+            caret-color: #111827;
+            -webkit-box-shadow: 0 0 0 1000px #ffffff inset;
+            box-shadow: 0 0 0 1000px #ffffff inset;
+            transition: background-color 9999s ease-in-out 0s;
+        }
+        .dark input:-webkit-autofill,
+        .dark input:-webkit-autofill:hover,
+        .dark input:-webkit-autofill:focus,
+        .dark input:-webkit-autofill:active {
+            -webkit-text-fill-color: #f3f4f6;
+            caret-color: #f3f4f6;
+            -webkit-box-shadow: 0 0 0 1000px #374151 inset;
+            box-shadow: 0 0 0 1000px #374151 inset;
+        }
+
         :root {
             --phs-border: #e5e7eb;
             --phs-timeline-dot: #3b82f6;

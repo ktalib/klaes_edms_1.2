@@ -158,6 +158,16 @@
                     @if($districtName)
                         <span class="badge badge-secondary text-xs">{{ $districtName }}</span>
                     @endif
+
+                    {{-- Keep this in step with files_grid.blade.php: this partial is what
+                         re-renders after a search or filter, so the action must exist in both. --}}
+                    <button type="button"
+                            class="badge text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 ml-auto"
+                            title="Move {{ e($file->file_number) }} to another registry"
+                            onclick="event.stopPropagation(); EdmsRegistryTransfer.open({{ (int) $file->id }}, @js($file->file_number), () => window.location.reload());">
+                        <i data-lucide="folder-symlink" class="h-3 w-3 mr-1"></i>
+                        Registry
+                    </button>
                 </div>
             </div>
         @endforeach

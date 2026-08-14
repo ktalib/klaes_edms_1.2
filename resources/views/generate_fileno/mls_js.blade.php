@@ -2216,6 +2216,15 @@
 
         const formData = new FormData(document.getElementById('generateForm'));
 
+        if (alpineData) {
+            const currentCoords = alpineData.getCurrentEntryCoordinates
+                ? alpineData.getCurrentEntryCoordinates()
+                : { latitude: alpineData.latitude, longitude: alpineData.longitude };
+
+            formData.set('latitude', currentCoords.latitude ?? '');
+            formData.set('longitude', currentCoords.longitude ?? '');
+        }
+
         // The Direct Allocation / Conversion radios are bound to appTypeRadio (a
         // separate, purely visual property) so picking "Conversion" doesn't knock
         // the form out of Change of Purpose mode — see updateApplicationType().
@@ -3050,6 +3059,8 @@
                          alpineData.locationEntries[i].tpNo = currentEntry.tpNo;
                          alpineData.locationEntries[i].location = currentEntry.location;
                          alpineData.locationEntries[i].lga = currentEntry.lga;
+                         alpineData.locationEntries[i].latitude = currentEntry.latitude;
+                         alpineData.locationEntries[i].longitude = currentEntry.longitude;
                      }
                 }
             }
@@ -4333,6 +4344,16 @@
     });
 
     // Alpine.js component for file number generator
+    const GENERATOR_MAP_KANO_CENTER = { lat: 12.0022, lng: 8.5920 };
+
+    function normalizeGeneratorCoord(value) {
+        const numeric = parseFloat(value);
+        if (!isFinite(numeric)) {
+            return null;
+        }
+        return Math.round(numeric * 1e7) / 1e7;
+    }
+
     function fileNumberGenerator() {
         console.log('fileNumberGenerator() function is being defined/called');
         return {
@@ -4393,6 +4414,12 @@
             lga: '',
             district: '',
             districtIsOther: false,
+            latitude: '',
+            longitude: '',
+            mapCoordSource: '',
+            _locationMap: null,
+            _locationMarker: null,
+            _locationGeocoder: null,
             preview: '-',
             // New fields for reset logic
             phone_no: '',
@@ -4531,6 +4558,7 @@
                     });
 
                     this.updatePreview();
+                    this.$nextTick(() => this.refreshLocationMapState());
 
                 } catch (e) {
                     console.error('Error in Alpine init():', e);
@@ -4669,6 +4697,215 @@
                 this.buildLocation();
             },
 
+            getCurrentEntryCoordinates() {
+                if (!this.batchMode || !this.locationEntries[this.currentEntryIndex]) {
+                    return {
+                        latitude: normalizeGeneratorCoord(this.latitude),
+                        longitude: normalizeGeneratorCoord(this.longitude)
+                    };
+                }
+
+                const entry = this.locationEntries[this.currentEntryIndex];
+                return {
+                    latitude: normalizeGeneratorCoord(entry.latitude),
+                    longitude: normalizeGeneratorCoord(entry.longitude)
+                };
+            },
+
+            setCurrentEntryCoordinates(lat, lng) {
+                const normLat = normalizeGeneratorCoord(lat);
+                const normLng = normalizeGeneratorCoord(lng);
+
+                this.latitude = normLat ?? '';
+                this.longitude = normLng ?? '';
+
+                if (this.batchMode && this.locationEntries[this.currentEntryIndex]) {
+                    this.locationEntries[this.currentEntryIndex].latitude = normLat ?? '';
+                    this.locationEntries[this.currentEntryIndex].longitude = normLng ?? '';
+
+                    if (this.applyLocationToAll) {
+                        for (let i = 0; i < this.batchQuantity; i++) {
+                            if (!this.locationEntries[i]) continue;
+                            this.locationEntries[i].latitude = normLat ?? '';
+                            this.locationEntries[i].longitude = normLng ?? '';
+                        }
+                    }
+                }
+            },
+
+            setMapCoordSource(text) {
+                this.mapCoordSource = text || '';
+                const sourceEl = document.getElementById('generatorMapCoordSource');
+                if (sourceEl) {
+                    sourceEl.textContent = this.mapCoordSource ? `(${this.mapCoordSource})` : '';
+                }
+            },
+
+            updateMapCoordinateDisplays(lat, lng) {
+                const latEl = document.getElementById('generatorLatDisplay');
+                const lngEl = document.getElementById('generatorLngDisplay');
+                if (latEl) latEl.textContent = lat ?? '-';
+                if (lngEl) lngEl.textContent = lng ?? '-';
+            },
+
+            ensureLocationMap(lat, lng, zoom = 17, recenter = true) {
+                if (typeof google === 'undefined' || !google.maps) {
+                    return false;
+                }
+
+                const mapCanvas = document.getElementById('generatorMapCanvas');
+                if (!mapCanvas) {
+                    return false;
+                }
+
+                const center = {
+                    lat: normalizeGeneratorCoord(lat) ?? GENERATOR_MAP_KANO_CENTER.lat,
+                    lng: normalizeGeneratorCoord(lng) ?? GENERATOR_MAP_KANO_CENTER.lng,
+                };
+
+                if (!this._locationMap) {
+                    this._locationMap = new google.maps.Map(mapCanvas, {
+                        center,
+                        zoom,
+                        mapTypeId: 'satellite',
+                        streetViewControl: true,
+                        fullscreenControl: true
+                    });
+
+                    this._locationMap.addListener('click', (e) => {
+                        this.setMapPin(e.latLng.lat(), e.latLng.lng(), false, 'Adjusted manually');
+                    });
+                } else if (recenter) {
+                    this._locationMap.panTo(center);
+                }
+
+                google.maps.event.trigger(this._locationMap, 'resize');
+                this._locationMap.setCenter(center);
+
+                return true;
+            },
+
+            setMapPin(lat, lng, recenter = true, sourceLabel = 'Pinned on map') {
+                const normLat = normalizeGeneratorCoord(lat);
+                const normLng = normalizeGeneratorCoord(lng);
+                if (normLat === null || normLng === null) {
+                    return;
+                }
+
+                if (!this.ensureLocationMap(normLat, normLng, 17, recenter)) {
+                    return;
+                }
+
+                const markerPosition = { lat: normLat, lng: normLng };
+
+                if (!this._locationMarker) {
+                    this._locationMarker = new google.maps.Marker({
+                        position: markerPosition,
+                        map: this._locationMap,
+                        draggable: true,
+                        title: 'Drag to adjust exact plot position'
+                    });
+
+                    this._locationMarker.addListener('dragend', (e) => {
+                        this.setMapPin(e.latLng.lat(), e.latLng.lng(), false, 'Adjusted manually');
+                    });
+                } else {
+                    this._locationMarker.setPosition(markerPosition);
+                }
+
+                this.setCurrentEntryCoordinates(normLat, normLng);
+                this.updateMapCoordinateDisplays(normLat, normLng);
+                this.setMapCoordSource(sourceLabel);
+
+                const mapWrapper = document.getElementById('generatorMapWrapper');
+                const mapEmpty = document.getElementById('generatorMapEmpty');
+                if (mapWrapper) mapWrapper.classList.remove('hidden');
+                if (mapEmpty) mapEmpty.classList.add('hidden');
+            },
+
+            clearMapPin() {
+                this.setCurrentEntryCoordinates('', '');
+                this.updateMapCoordinateDisplays('-', '-');
+                this.setMapCoordSource('');
+
+                if (this._locationMarker) {
+                    this._locationMarker.setMap(null);
+                    this._locationMarker = null;
+                }
+
+                const mapWrapper = document.getElementById('generatorMapWrapper');
+                const mapEmpty = document.getElementById('generatorMapEmpty');
+                if (mapWrapper) mapWrapper.classList.add('hidden');
+                if (mapEmpty) mapEmpty.classList.remove('hidden');
+            },
+
+            refreshLocationMapState() {
+                const coords = this.getCurrentEntryCoordinates();
+                if (coords.latitude !== null && coords.longitude !== null) {
+                    this.setMapPin(coords.latitude, coords.longitude, true, this.mapCoordSource || 'Stored coordinates');
+                } else {
+                    this.clearMapPin();
+                }
+            },
+
+            pinCurrentLocationOnMap() {
+                const currentLocation = (this.location || '').toString().trim();
+                const currentDistrict = (this.district || '').toString().trim();
+                const currentLga = (this.lga || '').toString().trim();
+
+                const query = [currentLocation, currentDistrict, currentLga, 'Kano', 'Nigeria']
+                    .filter(Boolean)
+                    .join(', ');
+
+                if (typeof google === 'undefined' || !google.maps) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Map not ready',
+                        text: 'Map library is still loading. Please try again in a moment.',
+                        confirmButtonColor: '#2563eb'
+                    });
+                    return;
+                }
+
+                if (!query) {
+                    this.ensureLocationMap(GENERATOR_MAP_KANO_CENTER.lat, GENERATOR_MAP_KANO_CENTER.lng, 13, true);
+                    const mapWrapper = document.getElementById('generatorMapWrapper');
+                    const mapEmpty = document.getElementById('generatorMapEmpty');
+                    if (mapWrapper) mapWrapper.classList.remove('hidden');
+                    if (mapEmpty) mapEmpty.classList.add('hidden');
+                    this.setMapCoordSource('Click map to set pin');
+                    return;
+                }
+
+                if (!this._locationGeocoder) {
+                    this._locationGeocoder = new google.maps.Geocoder();
+                }
+
+                this._locationGeocoder.geocode({ address: query }, (results, status) => {
+                    if (status === 'OK' && results && results[0] && results[0].geometry && results[0].geometry.location) {
+                        const loc = results[0].geometry.location;
+                        this.setMapPin(loc.lat(), loc.lng(), true, 'Geocoded from location');
+                        return;
+                    }
+
+                    this.ensureLocationMap(GENERATOR_MAP_KANO_CENTER.lat, GENERATOR_MAP_KANO_CENTER.lng, 13, true);
+                    const mapWrapper = document.getElementById('generatorMapWrapper');
+                    const mapEmpty = document.getElementById('generatorMapEmpty');
+                    if (mapWrapper) mapWrapper.classList.remove('hidden');
+                    if (mapEmpty) mapEmpty.classList.add('hidden');
+                    this.setMapCoordSource('Geocode failed - click map to set pin');
+                });
+            },
+
+            applyBackfilledCoordinates(lat, lng, sourceLabel = 'Backfilled from existing file') {
+                const normLat = normalizeGeneratorCoord(lat);
+                const normLng = normalizeGeneratorCoord(lng);
+                if (normLat === null || normLng === null) {
+                    return;
+                }
+                this.setMapPin(normLat, normLng, true, sourceLabel);
+            },
+
             loadDistrictField(districtVal) {
                 const sel = document.getElementById('generator_district');
                 if (!sel) return;
@@ -4753,8 +4990,11 @@
                 this.lga = entry.lga || '';
                 const lgaSel = document.getElementById('generator_lga');
                 if (lgaSel) lgaSel.value = entry.lga || '';
+                this.latitude = entry.latitude || '';
+                this.longitude = entry.longitude || '';
                 // Rebuild auto location
                 this.buildLocation();
+                this.refreshLocationMapState();
             },
 
             // Push the current Alpine district/lga values into the native <select>
@@ -5298,6 +5538,9 @@
                         if (m.location) self.location = (m.location || '').toString().toUpperCase();
                         if (m.lga) self.lga = m.lga;
                         if (m.district) self.district = m.district;
+                        if (m.latitude && m.longitude) {
+                            self.applyBackfilledCoordinates(m.latitude, m.longitude, 'Backfilled from linked file');
+                        }
                         if (m.location || m.lga || m.district) {
                             self.$nextTick(() => self.syncLocationSelects());
                         }
@@ -5577,6 +5820,8 @@
                                                 location: self.location,
                                                 lga: self.lga,
                                                 district: self.district,
+                                                latitude: '',
+                                                longitude: '',
                                                 tracking_id: null
                                             });
                                         }
@@ -5813,6 +6058,8 @@
                                                 location: self.location,
                                                 lga: self.lga,
                                                 district: self.district,
+                                                latitude: '',
+                                                longitude: '',
                                                 tracking_id: null
                                             });
                                         }
@@ -6203,6 +6450,8 @@
                         location: '',
                         lga: '',
                         district: '',
+                        latitude: '',
+                        longitude: '',
                         tracking_id: null,
                         file_name: this.fileName || '',
                         phone_no: this.phone_no || '',
@@ -6221,7 +6470,7 @@
                     if (field === 'phone_no') this.phone_no = value;
                     if (field === 'address') this.address = value;
 
-                    if (this.applyLocationToAll && ['plotNo', 'tpNo', 'location', 'lga', 'district'].includes(field)) {
+                    if (this.applyLocationToAll && ['plotNo', 'tpNo', 'location', 'lga', 'district', 'latitude', 'longitude'].includes(field)) {
                         for (let i = 0; i < this.batchQuantity; i++) {
                             if (this.locationEntries[i]) {
                                 this.locationEntries[i][field] = value;
@@ -6259,6 +6508,8 @@
                             location: '',
                             lga: '',
                             district: '',
+                            latitude: '',
+                            longitude: '',
                             tracking_id: null,
                             file_name: this.fileName || '',
                             phone_no: this.phone_no || '',
@@ -6309,6 +6560,8 @@
                             location: '',
                             lga: '',
                             district: '',
+                            latitude: '',
+                            longitude: '',
                             tracking_id: null,
                             file_name: this.fileName || '',
                             phone_no: this.phone_no || '',
@@ -6439,7 +6692,9 @@
                     tpNo: currentEntry.tpNo || '',
                     district: currentEntry.district || '',
                     lga: currentEntry.lga || '',
-                    location: builtLocation
+                    location: builtLocation,
+                    latitude: currentEntry.latitude || '',
+                    longitude: currentEntry.longitude || ''
                 };
 
                 // Apply to all entries in the batch
@@ -6460,6 +6715,9 @@
                 this.district = locationData.district;
                 this.lga = locationData.lga;
                 this.location = builtLocation;
+                this.latitude = locationData.latitude;
+                this.longitude = locationData.longitude;
+                this.refreshLocationMapState();
 
                 // Show success notification
                 Swal.fire({
@@ -6774,6 +7032,9 @@
                     if (match.district) alpineData.district = match.district;
                     if ((match.lga || match.district) && typeof alpineData.syncLocationSelects === 'function') {
                         alpineData.syncLocationSelects();
+                    }
+                    if (match.latitude && match.longitude && typeof alpineData.applyBackfilledCoordinates === 'function') {
+                        alpineData.applyBackfilledCoordinates(match.latitude, match.longitude, 'Backfilled from selected file');
                     }
                     if (match.plot_no) alpineData.plotNo = match.plot_no;
                     // The inherited plot must carry the extension marker (see

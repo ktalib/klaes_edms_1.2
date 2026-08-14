@@ -150,6 +150,7 @@ Route::middleware(['auth'])->group(function () {
         // Reassignment endpoints (added first to avoid {scan} wildcard capture)
         Route::post('/reassign/check', [ScanUploadsController::class, 'reassignCheck'])->name('reassign.check');
         Route::post('/reassign/check-constraints', [ScanUploadsController::class, 'reassignCheckConstraints'])->name('reassign.check-constraints');
+        Route::post('/reassign/siblings', [ScanUploadsController::class, 'reassignSiblings'])->name('reassign.siblings');
         Route::get('/scan-file-info', [ScanUploadsController::class, 'getScanFileInfo'])->name('scan-file-info');
         Route::post('/reassign', [ScanUploadsController::class, 'reassign'])->name('reassign');
 
@@ -1108,6 +1109,13 @@ Route::middleware(['auth'])->group(function () {
     // Online Legal Search Admin & Feedback
     Route::prefix('legal-search/online/admin')->name('legal-search-online.admin.')->group(function () {
         Route::get('/', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'admin'])->name('index');
+        // Director / Deputy Director approval queue for public search requests.
+        Route::get('/requests', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestsIndex'])->name('requests');
+        Route::get('/requests/{id}/preview', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestPreview'])->name('requests.preview');
+        Route::post('/requests/{id}/approve', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestApprove'])->name('requests.approve');
+        Route::post('/requests/{id}/reject', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestReject'])->name('requests.reject');
+        Route::post('/requests/{id}/resend', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestResend'])->name('requests.resend');
+
         Route::get('/feedback', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'feedbackIndex'])->name('feedback');
         Route::post('/feedback', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'feedbackStore'])->name('feedback.store');
         Route::put('/feedback/{id}', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'feedbackUpdate'])->name('feedback.update');

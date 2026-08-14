@@ -43,6 +43,10 @@
                                 <i data-lucide="rotate-cw" class="h-4 w-4"></i>
                             </button>
                             <div class="w-px h-5 bg-gray-300 mx-1"></div>
+                            <button class="btn btn-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1" id="viewer-move-registry" title="Move this file's documents to another registry">
+                                <i data-lucide="folder-symlink" class="h-4 w-4"></i>
+                                <span class="hidden sm:inline">Move Registry</span>
+                            </button>
                             <button class="btn btn-sm bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1" id="edit-filetype-toggle" title="Edit page classification (file type)">
                                 <i data-lucide="tag" class="h-4 w-4"></i>
                                 <span class="hidden sm:inline">Edit Type</span>
@@ -263,6 +267,32 @@ function clearDocumentViewerData() {
 }
 
 window.clearDocumentViewerData = clearDocumentViewerData;
+
+/**
+ * Move the file currently open in the viewer to another registry.
+ *
+ * The registry is part of every document's folder path, so a move relocates the
+ * pages being viewed — the viewer is closed and the page reloaded afterwards
+ * rather than left showing URLs that no longer resolve.
+ */
+document.addEventListener('DOMContentLoaded', function () {
+    const moveBtn = document.getElementById('viewer-move-registry');
+    if (!moveBtn) return;
+
+    moveBtn.addEventListener('click', function () {
+        if (!currentFileMeta || !currentFileMeta.id) {
+            if (window.Swal) {
+                Swal.fire({ icon: 'warning', title: 'No file open', text: 'Open a file in the viewer first.', timer: 2500 });
+            }
+            return;
+        }
+
+        EdmsRegistryTransfer.open(currentFileMeta.id, currentFileMeta.file_number, function () {
+            document.getElementById('close-viewer')?.click();
+            window.location.reload();
+        });
+    });
+});
 
 function loadDocumentPages(fileMeta, pages) {
     currentFileMeta = fileMeta || null;

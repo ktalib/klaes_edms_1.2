@@ -63,6 +63,8 @@
     window.modalUnallocatedEntriesData = @json($modalUnallocatedEntries);
 </script>
 
+@include('partials.maps_scripts')
+
 {{-- Include the modal HTML from the original file (lines 285-950) --}}
 @include('components.partials.commission-fileno-modal-html', [
     'lgas' => $modalLgas,

@@ -19,21 +19,30 @@
           
           <div class="container mx-auto py-6 space-y-6">
             <!-- Page Header -->
-            <div class="flex flex-col space-y-2">
-              <h1 class="text-2xl font-bold tracking-tight">
-                @if($showPageTypeMore)
-                  PageType More
-                @else
-                  Page Typing
-                @endif
-              </h1>
-              <p class="text-muted-foreground">
-                @if($showPageTypeMore)
-                  Advanced page type classification and document processing
-                @else
-                  Categorize and digitize file content
-                @endif
-              </p>
+            <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+              <div class="flex flex-col space-y-2">
+                <h1 class="text-2xl font-bold tracking-tight">
+                  @if($showPageTypeMore)
+                    PageType More
+                  @else
+                    Page Typing
+                  @endif
+                </h1>
+                <p class="text-muted-foreground">
+                  @if($showPageTypeMore)
+                    Advanced page type classification and document processing
+                  @else
+                    Categorize and digitize file content
+                  @endif
+                </p>
+              </div>
+              {{-- Standalone entry point: pick any file, move it between registries --}}
+              <button type="button" class="btn btn-action btn-sm gap-2"
+                      title="Move a file's documents to another registry"
+                      onclick="EdmsRegistryTransfer.open(null, null, () => window.location.reload())">
+                <i data-lucide="folder-symlink" class="h-4 w-4"></i>
+                Move Registry
+              </button>
             </div>
         
             @if(!$showPageTypeMore)
@@ -469,6 +478,8 @@
         <!-- Footer -->
         @include('admin.footer')
     </div>
+
+    @include('components.edms.registry-transfer-modal')
 
     <!-- Page Typing Dashboard JavaScript -->
     <script>
@@ -1765,7 +1776,7 @@
           // Generate thumbnails for file browser
           setTimeout(() => {
             file.scannings.forEach((scanning, index) => {
-              const url = getDocumentUrl(scanning.document_path);
+              const url = getDocumentUrl(scanning);
               const img = isImageFile(scanning.original_filename);
               const pdf = isPDFFile(scanning.original_filename);
               const canvasId = `file-browser-thumb-${index}`;
@@ -1903,28 +1914,26 @@
           return isPdf;
         }
 
-        function getDocumentUrl(documentPath) {
-          if (!documentPath) return null;
-          // Use the correct Laravel storage path
-          const clean = documentPath.replace(/^\/+/, '').replace(/\\/g, '/');
-          const url = `${STORAGE_BASE_URL}/${clean}`;
-          console.log('Generated document URL:', url, 'from path:', documentPath);
+        /**
+         * Resolve a document URL.
+         *
+         * Accepts either a scanning object or a raw path. When given an object,
+         * the server-resolved `file_url` wins: the backend walks every EDMS layout
+         * (SCAN_UPLOAD -> PAGETYPING -> ARCHIVE_Doc_WARE -> BLIND_SCAN) so a stale
+         * document_path still points at a file that exists.
+         */
+        function getDocumentUrl(source) {
+          if (!source) return null;
 
-          // Test if the URL is accessible
-          fetch(url, { method: 'HEAD' })
-            .then(response => {
-              console.log('File accessibility check:', {
-                url: url,
-                status: response.status,
-                contentType: response.headers.get('content-type'),
-                contentLength: response.headers.get('content-length')
-              });
-            })
-            .catch(error => {
-              console.error('File not accessible:', url, error);
-            });
+          if (typeof source === 'object') {
+            if (source.file_url) return source.file_url;
+            source = source.document_path;
+          }
 
-          return url;
+          if (!source) return null;
+
+          const clean = String(source).replace(/^\/+/, '').replace(/\\/g, '/');
+          return `${STORAGE_BASE_URL}/${clean}`;
         }
 
         function renderPDFPagePreview(pageIndex, containerEl) {
@@ -2069,7 +2078,7 @@
             return;
           }
 
-          const url = getDocumentUrl(scanning.document_path);
+          const url = getDocumentUrl(scanning);
           const isImg = isImageFile(scanning.original_filename);
           const isPdf = isPDFFile(scanning.original_filename);
 
@@ -2745,7 +2754,9 @@
           state.selectedFileData.scannings[pageIndex] = {
             ...scanning,
             document_path: newPath,
-            original_filename: newFilename
+            original_filename: newFilename,
+            // Take the server's resolved URL; never keep the stale one
+            file_url: doc.file_url || doc.url || null
           };
 
           console.log('Replacement uploaded – updated scanning state:', {
@@ -3129,7 +3140,7 @@
             const img = item.querySelector('img');
             if (img && scanning) {
               const currentUrl = img.getAttribute('src');
-              const newUrl = getDocumentUrl(scanning.document_path);
+              const newUrl = getDocumentUrl(scanning);
               if (currentUrl && newUrl && currentUrl !== newUrl) {
                 console.log(`Updating image path for page ${index + 1}`);
                 img.src = newUrl;
@@ -3237,11 +3248,6 @@
                 quickBrowserOrder: [],
                 quickBrowserOrderLocked: false,
                 isExistingFile: {{ isset($selectedFileIndexing) && $selectedFileIndexing->pagetypings->count() > 0 ? 'true' : 'false' }},
-                batchMode: false,
-                batchTypedPages: {},
-                batchSubmitReady: false,
-                batchProgress: 0,
-                batchProcessing: false,
                 processedPages: {},
                 folderOrderSaving: false,
                 bookletMode: false,
@@ -3886,7 +3892,7 @@
             }
 
             console.log('No existing thumbnails found, splitting PDF...');
-            const pdfUrl = getDocumentUrl(pdfScanning.document_path);
+            const pdfUrl = getDocumentUrl(pdfScanning);
             console.log('Attempting to load PDF from URL:', pdfUrl);
             console.log('Original document path:', pdfScanning.document_path);
 
@@ -4051,22 +4057,20 @@
                   </h2>
                   <p class="text-sm text-muted-foreground">
                     ${state.typingState.showFolderView && state.typingState.selectedPageInFolder === null
-                      ? state.typingState.batchMode
-                        ? "Select pages to type in batch mode"
-                        : "Select a page to type or categorize"
+                      ? "Select a page to type or categorize"
                       : state.typingState.selectedPageInFolder !== null
                         ? `Categorizing Page ${state.typingState.selectedPageInFolder + 1}`
                         : `Typing Page ${state.typingState.currentPage} of ${file.total_pages}`}
                   </p>
                 </div>
                 <div class="flex items-center gap-2">
-                  ${state.typingState.showFolderView && state.typingState.selectedPageInFolder === null
-                    ? `<button class="btn ${state.typingState.batchMode ? 'btn-primary' : 'btn-outline'} btn-sm toggle-batch-mode">
-                        <i data-lucide="check-square" class="h-4 w-4 mr-1"></i>
-                        ${state.typingState.batchMode ? 'Exit Batch Mode' : 'Batch Mode'}
-                      </button>`
-                    : ''}
-                  <button class="btn btn-outline btn-sm back-button">
+                  <button class="btn btn-action btn-sm move-registry-button"
+                          title="Move this file's documents to another registry">
+                    <i data-lucide="folder-symlink" class="h-4 w-4 mr-1.5"></i>
+                    Move Registry
+                  </button>
+                  <button class="btn btn-back btn-sm back-button">
+                    <i data-lucide="arrow-left" class="h-4 w-4 mr-1.5"></i>
                     ${state.typingState.selectedPageInFolder !== null ? 'Back to Folder' : (state.pageTypeMoreMode ? 'Back to PageType More' : 'Back to Dashboard')}
                   </button>
                 </div>
@@ -4179,7 +4183,7 @@
                               const isCurrentPage = index === state.typingState.selectedPageInFolder;
                               const isSelected = state.typingState.selectedPages.has(index);
                               const isProcessed = state.typingState.processedPages[index];
-                              const url = getDocumentUrl(scanning.document_path);
+                              const url = getDocumentUrl(scanning);
                               const img = isImageFile(scanning.original_filename);
                               const pdf = isPDFFile(scanning.original_filename);
                               const canvasId = 'file-browser-thumb-' + index;
@@ -4415,7 +4419,7 @@
               // Folder view - Show original files without splitting
               const pagesHtml = file.scannings.map((scanning, index) => {
                 const isProcessed = state.typingState.processedPages[index];
-                const url = getDocumentUrl(scanning.document_path);
+                const url = getDocumentUrl(scanning);
                 const img = isImageFile(scanning.original_filename);
                 const pdf = isPDFFile(scanning.original_filename);
                 const canvasId = `pdf-thumb-${index}`;
@@ -4494,7 +4498,7 @@
 
           // Generate thumbnails for folder view (PDF and images)
           file.scannings.forEach((scanning, index) => {
-            const url = getDocumentUrl(scanning.document_path);
+            const url = getDocumentUrl(scanning);
             const img = isImageFile(scanning.original_filename);
             const pdf = isPDFFile(scanning.original_filename);
             const canvasId = `pdf-thumb-${index}`;
@@ -4634,6 +4638,21 @@
 
         // Add event listeners for typing interface
         function addTypingEventListeners(file) {
+          // Move this file's documents to another registry. The typed copies and
+          // the Doc-WARE archive copies move with the scans, so reload the file
+          // afterwards to pick up the new paths.
+          document.querySelector('.move-registry-button')?.addEventListener('click', () => {
+            const fileIndexingId = file.id || state.selectedFile;
+            if (!fileIndexingId) {
+              Swal.fire({ icon: 'warning', title: 'No file selected', timer: 2000 });
+              return;
+            }
+
+            EdmsRegistryTransfer.open(fileIndexingId, file.file_number, () => {
+              startPageTyping(fileIndexingId);
+            });
+          });
+
           // Back button
           document.querySelector('.back-button')?.addEventListener('click', () => {
             if (state.typingState.selectedPageInFolder !== null) {
@@ -4762,7 +4781,7 @@
               const img = item.querySelector('img');
               if (img && scanning) {
                 const currentUrl = img.getAttribute('src');
-                const newUrl = getDocumentUrl(scanning.document_path);
+                const newUrl = getDocumentUrl(scanning);
                 if (currentUrl !== newUrl) {
                   console.log(`Updating image path for page ${index + 1}`);
                   img.src = newUrl;
@@ -5834,10 +5853,14 @@
                   if (scanningToUpdate) {
                     console.log(`Syncing document_path for scanning ${scanningToUpdate.id}:`, result.scanning.document_path);
                     scanningToUpdate.document_path = result.scanning.document_path;
+                    scanningToUpdate.file_url = result.scanning.file_url || null;
                     // Force update the global file object as well
                     if (state.selectedFile && state.selectedFile.scannings) {
                       const globalScanning = state.selectedFile.scannings.find(s => s.id === result.scanning.id);
-                      if (globalScanning) globalScanning.document_path = result.scanning.document_path;
+                      if (globalScanning) {
+                        globalScanning.document_path = result.scanning.document_path;
+                        globalScanning.file_url = result.scanning.file_url || null;
+                      }
                     }
                   }
                 }

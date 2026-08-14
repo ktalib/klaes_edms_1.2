@@ -75,6 +75,8 @@ class FileIndexingService
             'tp_no' => $data['tp_no'] ?? null,
             'location' => $data['location'] ?? null,
             'lga' => $data['lga'] ?? null,
+            'latitude' => $data['latitude'] ?? null,
+            'longitude' => $data['longitude'] ?? null,
             'created_by' => $data['created_by'] ?? 'System',
             'current_holder' => $data['current_holder'] ?? ($data['file_title'] ?? null),
             'original_holder' => $data['original_holder'] ?? ($data['file_title'] ?? null),

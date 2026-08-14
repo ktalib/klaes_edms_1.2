@@ -10,7 +10,11 @@ class UserNotificationService
     public function create(int $userId, string $type, string $title, string $body, array $data = [], array $overrides = []): Notification
     {
         $attributes = [
-            'parent_id' => function_exists('parentId') ? parentId() : null,
+            // parentId() dereferences Auth::user() unconditionally, so it warns
+            // and yields null when called from a guest context (e.g. the public
+            // Online Legal Search portal notifying staff). Skip it when nobody
+            // is signed in — the resulting value is null either way.
+            'parent_id' => (function_exists('parentId') && \Auth::check()) ? parentId() : null,
             'user_id' => $userId,
             'type' => $type,
             'title' => $title,

@@ -15,9 +15,20 @@ use App\Models\Scanning;
 use App\Models\PageTyping;
 use App\Models\PageTypingToolLog;
 use App\Models\Thumbnail;
+use App\Services\Edms\EdmsDocumentPathResolver;
 
 class PageTypingController extends Controller
 {
+    /**
+     * @var EdmsDocumentPathResolver
+     */
+    protected $paths;
+
+    public function __construct(EdmsDocumentPathResolver $paths)
+    {
+        $this->paths = $paths;
+    }
+
     /**
      * Display the page typing dashboard or typing interface
      */
@@ -879,7 +890,8 @@ class PageTypingController extends Controller
                 ));
             }
 
-            // Handle file movement to standardized locations
+            // Replicate the scan into the standardized PAGETYPING / ARCHIVE locations.
+            // COPY only: the SCAN_UPLOAD original stays put and remains authoritative.
             try {
                 $scanning = Scanning::on('sqlsrv')->find($validated['scanning_id']);
                 $fileIndexing = FileIndexing::on('sqlsrv')->find($validated['file_indexing_id']);
@@ -890,8 +902,7 @@ class PageTypingController extends Controller
 
                     // Normalize Registry
                     $targetRegistry = !empty($validated['registry']) ? $validated['registry'] : ($scanning->registry ?? $fileIndexing->registry ?? 'Lands Registry');
-                    $targetRegistryName = $this->normalizeRegistry($targetRegistry);
-                    $registrySlug = $this->getRegistrySlug($targetRegistryName);
+                    $targetRegistryName = $this->paths->registryName($targetRegistry);
 
                     // Get file extension and standardized filename
                     $fileExtension = pathinfo($scanning->original_filename, PATHINFO_EXTENSION);
@@ -906,45 +917,24 @@ class PageTypingController extends Controller
                     }
                     $fileName = $safeDefinitionCode . '.' . strtolower($fileExtension);
 
-                    // 1. Resolve source path (using fallback logic)
-                    $resolvedSourceRelative = $this->resolveExistingFilePath($targetRegistry, $fileNumber, $paperSize, $fileName);
-
-                    // If not found by standardized name, try the path stored in scanning record itself
-                    if (!$resolvedSourceRelative && $scanning->document_path) {
-                        $resolvedSourceRelative = $scanning->document_path;
-                    }
+                    // 1. Resolve the source, falling back across every known EDMS layout
+                    $resolvedSourceRelative = $this->paths->resolveRelative($scanning->document_path, [
+                        'file_number' => $fileNumber,
+                        'registry' => $targetRegistry,
+                        'paper_size' => $paperSize,
+                        'file_name' => $fileName,
+                    ]);
 
                     if ($resolvedSourceRelative) {
-                        $sourceFullPath = file_storage_path('app/public/' . ltrim($resolvedSourceRelative, '/'));
-
                         // 2. Define standardized target paths
-                        $pagetypingPath = $this->getStandardizedTargetPath($targetRegistry, $fileNumber, $paperSize, $fileName);
-                        $archivePath = "EDMS/ARCHIVE_Doc_WARE/{$registrySlug}/{$fileNumber}/{$paperSize}/{$fileName}";
+                        $pagetypingPath = $this->paths->pageTypingPath($targetRegistry, $fileNumber, $paperSize, $fileName);
+                        $archivePath = $this->paths->archivePath($targetRegistry, $fileNumber, $paperSize, $fileName);
 
-                        $pagetypingFullPath = file_storage_path('app/public/' . $pagetypingPath);
-                        $archiveFullPath = file_storage_path('app/public/' . $archivePath);
-
-                        // Ensure directories exist
-                        Storage::disk('public')->makeDirectory(dirname($pagetypingPath));
-                        Storage::disk('public')->makeDirectory(dirname($archivePath));
-
-                        // 3. Move/Copy files
-                        if (file_exists($sourceFullPath)) {
-                            // Copy to Archive if not already there
-                            if (!file_exists($archiveFullPath)) {
-                                copy($sourceFullPath, $archiveFullPath);
-                            }
-
-                            // Move to PageTyping if it's not already there
-                            if ($sourceFullPath !== $pagetypingFullPath) {
-                                if (!rename($sourceFullPath, $pagetypingFullPath)) {
-                                    // Fallback to copy/unlink if rename fails
-                                    if (copy($sourceFullPath, $pagetypingFullPath)) {
-                                        unlink($sourceFullPath);
-                                    }
-                                }
-                            }
-                        }
+                        // 3. Copy (never move) into PAGETYPING and the Doc-WARE archive.
+                        //    The SCAN_UPLOAD original is left untouched so nothing that
+                        //    already references it can break.
+                        $this->paths->copyWithin($resolvedSourceRelative, $pagetypingPath);
+                        $this->paths->copyWithin($resolvedSourceRelative, $archivePath);
 
                         // 4. Synchronization and record updates
                         if (!empty($validated['registry']) && $validated['registry'] !== $fileIndexing->registry) {
@@ -956,17 +946,15 @@ class PageTypingController extends Controller
                             'registry' => $targetRegistryName
                         ]);
 
+                        // NOTE: document_path deliberately not touched — it must keep
+                        // pointing at the SCAN_UPLOAD original. The typed copy lives on
+                        // pagetypings.file_path.
                         $scanning->update([
-                            'document_path' => $pagetypingPath,
                             'definition' => $dataToSave['definition'] ?? 0,
                             'definition_code' => $dataToSave['definition_code'] ?? null,
                             'display_order' => $dataToSave['display_order'] ?? ($scanning->display_order ?? 0),
-                            'original_filename' => $fileName,
                             'status' => 'completed'
                         ]);
-
-                        // Clean up source directory if it was a temporary or legacy one
-                        $this->cleanupSourceDirectory(dirname($sourceFullPath));
                     }
                 }
             } catch (Exception $fileException) {
@@ -985,7 +973,10 @@ class PageTypingController extends Controller
                     'id' => $scanning->id,
                     'document_path' => $scanning->document_path,
                     'status' => $scanning->status,
-                    'file_url' => Storage::disk('public')->url($scanning->document_path)
+                    'file_url' => $this->paths->resolveUrl(
+                        $scanning->document_path,
+                        $this->paths->contextFromScanning($scanning, $fileIndexing ?? null)
+                    )
                 ]
             ]);
 
@@ -1056,15 +1047,28 @@ class PageTypingController extends Controller
             DB::connection('sqlsrv')->beginTransaction();
 
             try {
+                // Collect the derived copies before the typing rows go away
+                $derivedPaths = PageTyping::on('sqlsrv')
+                    ->where('scanning_id', $scanning->id)
+                    ->pluck('file_path')
+                    ->filter()
+                    ->all();
+
                 // Delete associated page typing records
                 PageTyping::on('sqlsrv')
                     ->where('scanning_id', $scanning->id)
                     ->delete();
 
-                // Remove the physical file
+                // Remove the physical original plus every derived (PAGETYPING) copy
                 $documentPath = $scanning->document_path;
                 if ($documentPath && $disk->exists($documentPath)) {
                     $disk->delete($documentPath);
+                }
+
+                foreach ($derivedPaths as $derivedPath) {
+                    if ($derivedPath !== $documentPath && $disk->exists($derivedPath)) {
+                        $disk->delete($derivedPath);
+                    }
                 }
 
                 // Delete the scanning record
@@ -1169,7 +1173,12 @@ class PageTypingController extends Controller
                 $extension = 'pdf';
             }
 
-            $directory = 'EDMS/SCAN_UPLOAD/' . $fileIndexing->file_number;
+            // Keep the canonical SCAN_UPLOAD layout: {registry}/{file_number}/{PAPER}
+            $directory = $this->paths->scanUploadFolder(
+                $scanning->registry ?? $fileIndexing->registry,
+                $fileIndexing->file_number,
+                $scanning->paper_size
+            );
             $timestamp = now()->format('Ymd_His');
             $filename = $fileIndexing->file_number . '_' . $scanning->id . '_' . $timestamp . '.' . $extension;
 
@@ -1390,8 +1399,15 @@ class PageTypingController extends Controller
                 }
                     $fileName = $fileIndexing->file_number . '_' . $scanning->id . '.' . strtolower($fileExtension);
 
-                $resolvedPath = $this->resolveExistingFilePath($fileIndexing->registry, $fileIndexing->file_number, $paperSize, $fileName);
+                $resolverContext = [
+                    'file_number' => $fileIndexing->file_number,
+                    'registry' => $scanning->registry ?? $fileIndexing->registry,
+                    'paper_size' => $paperSize,
+                    'file_name' => $fileName,
+                ];
+                $resolvedPath = $this->paths->resolveRelative($scanning->document_path, $resolverContext);
                 $documentPath = $resolvedPath ?: $scanning->document_path;
+                $documentUrl = $resolvedPath ? Storage::disk('public')->url($resolvedPath) : null;
 
                 // For now, treat each scanning as one page
                 // This can be enhanced later for PDF page splitting
@@ -1402,6 +1418,7 @@ class PageTypingController extends Controller
                 return [
                     'id' => $scanning->id,
                     'document_path' => $documentPath,
+                    'file_url' => $documentUrl,
                     'original_filename' => $scanning->original_filename,
                     'document_type' => $scanning->document_type,
                     'paper_size' => $scanning->paper_size,
@@ -1838,27 +1855,6 @@ class PageTypingController extends Controller
     }
 
     /**
-     * Clean up source directory if it's empty
-     */
-    private function cleanupSourceDirectory($directory)
-    {
-        try {
-            if (is_dir($directory)) {
-                $files = scandir($directory);
-                // '.' and '..' are always present
-                if (count($files) <= 2) {
-                    rmdir($directory);
-                    Log::info('Empty source directory cleaned up', ['directory' => $directory]);
-                }
-            }
-        } catch (Exception $e) {
-            Log::warning('Failed to clean up source directory', [
-                'directory' => $directory,
-                'error' => $e->getMessage()
-            ]);
-        }
-    }
-    /**
      * Remove the specified page typing
      */
     public function destroy($id)
@@ -2276,91 +2272,4 @@ class PageTypingController extends Controller
         }
     }
 
-    /**
-     * Normalize registry name from ID or raw string.
-     */
-    private function normalizeRegistry($registry)
-    {
-        if (empty($registry)) {
-            return 'Lands Registry'; // Default fallback
-        }
-
-        // Map numeric IDs to Lands Registry as per system convention (1=Commercial, 2=Residential, 3=Agricultural)
-        if (in_array($registry, ['1', '2', '3'])) {
-            return 'Lands Registry';
-        }
-
-        // Return as is if already a known name, otherwise cleanup
-        return $registry;
-    }
-
-    /**
-     * Get slugified registry name for folder structure.
-     */
-    private function getRegistrySlug($registry)
-    {
-        $normalized = $this->normalizeRegistry($registry);
-
-        $map = [
-            'Lands Registry' => 'Lands_Registry',
-            'Cadastral Registry' => 'Cadastral_Registry',
-            'DCIV Registry' => 'DCIV_Registry',
-            'Secret Registry' => 'Secret_Registry',
-            'KANGIS Registry' => 'KANGIS_Registry',
-            'SLTR Registry' => 'SLTR_Registry',
-            'ST Registry' => 'ST_Registry',
-            'Deeds Registry' => 'Deeds_Registry',
-        ];
-
-        if (isset($map[$normalized])) {
-            return $map[$normalized];
-        }
-
-        return preg_replace('/[^A-Za-z0-9_\-]/', '_', $normalized);
-    }
-
-    /**
-     * Resolve the actual existing path of a file with fallback logic.
-     * SCAN_UPLOAD -> PAGETYPING
-     */
-    private function resolveExistingFilePath($registry, $fileNumber, $paperSize, $fileName)
-    {
-        $registrySlug = $this->getRegistrySlug($registry);
-        $paperSize = !empty($paperSize) ? strtoupper($paperSize) : 'A4';
-
-        // 1. Try Scan Upload Path
-        $scanUploadPath = "EDMS/SCAN_UPLOAD/{$registrySlug}/{$fileNumber}/{$paperSize}/{$fileName}";
-        if (Storage::disk('public')->exists($scanUploadPath)) {
-            return $scanUploadPath;
-        }
-
-        // 2. Try Page Typing Path
-        $pageTypingPath = "EDMS/PAGETYPING/{$registrySlug}/{$fileNumber}/{$paperSize}/{$fileName}";
-        if (Storage::disk('public')->exists($pageTypingPath)) {
-            return $pageTypingPath;
-        }
-
-        // 3. Try Legacy Logic (without paper size)
-        $legacyScanPath = "EDMS/SCAN_UPLOAD/{$registrySlug}/{$fileNumber}/{$fileName}";
-        if (Storage::disk('public')->exists($legacyScanPath)) {
-            return $legacyScanPath;
-        }
-
-        $legacyPagePath = "EDMS/PAGETYPING/{$registrySlug}/{$fileNumber}/{$fileName}";
-        if (Storage::disk('public')->exists($legacyPagePath)) {
-            return $legacyPagePath;
-        }
-
-        return null;
-    }
-
-    /**
-     * Get the standardized target path for page typing.
-     */
-    private function getStandardizedTargetPath($registry, $fileNumber, $paperSize, $fileName)
-    {
-        $registrySlug = $this->getRegistrySlug($registry);
-        $paperSize = !empty($paperSize) ? strtoupper($paperSize) : 'A4';
-        return "EDMS/PAGETYPING/{$registrySlug}/{$fileNumber}/{$paperSize}/{$fileName}";
-    }
 }
