@@ -1,0 +1,165 @@
+<?php
+
+namespace App\Services\Laas;
+
+use App\Models\Laas\LaasApplication;
+use App\Models\Laas\LaasApplicationEvent;
+use App\Models\Laas\LaasStageNotification;
+use App\Services\BetaSmsService;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+
+/**
+ * Everything the applicant is told, and everything the office is told.
+ *
+ * The timeline entry and the SMS are written in ONE call so the two can never
+ * drift: a message the gateway refused still appears on the applicant's status
+ * page, carrying its failure state, rather than silently vanishing.
+ *
+ * A note on wording. BetaSMS answers 1713 when its content filter refuses a
+ * message and gives no hint which word tripped it — "notice" is refused
+ * outright while the same sentence without that one word is accepted (see the
+ * status-code table in App\Services\BetaSmsService). None of the templates
+ * below contain it; keep it out of any you add.
+ */
+class LaasNotificationService
+{
+    public function __construct(private BetaSmsService $sms)
+    {
+    }
+
+    /**
+     * The applicant-facing text for a stage, or null when the stage is an
+     * internal step the applicant should not be texted about.
+     */
+    public function messageFor(string $stage, LaasApplication $application): ?string
+    {
+        $ref    = $application->reference_no;
+        $fileNo = $application->file_number;
+
+        switch ($stage) {
+            case LaasApplication::STAGE_SUBMITTED:
+                return "KLAES LAAS: your land allocation application {$ref} has been received "
+                     . 'and processing has started. You will be updated at each stage.';
+
+            case LaasApplication::STAGE_DIRECTOR_APPROVED:
+                return "KLAES LAAS: your application {$ref} has been approved by the Director. "
+                     . 'Your file number will be assigned shortly.';
+
+            case LaasApplication::STAGE_FILENO_ASSIGNED:
+                return "KLAES LAAS: your application {$ref} has been assigned File Number "
+                     . "{$fileNo}. Please quote this number in all correspondence.";
+
+            case LaasApplication::STAGE_LAND12_COMPLETED:
+                return "KLAES LAAS: the survey report for File Number {$fileNo} ({$ref}) has been "
+                     . 'completed by Cadastral. Your recommendation is being prepared.';
+
+            case LaasApplication::STAGE_RECOMMENDATION_APPROVED:
+                return "KLAES LAAS: the recommendation for File Number {$fileNo} ({$ref}) has been "
+                     . 'approved. Your Right of Occupancy is being prepared.';
+
+            case LaasApplication::STAGE_ROFO_SIGNED:
+                return "KLAES LAAS: your Right of Occupancy for File Number {$fileNo} ({$ref}) has "
+                     . 'been signed by the Director of Lands and is ready for collection.';
+
+            case LaasApplication::STAGE_REJECTED:
+                $reason = trim((string) $application->rejection_reason);
+
+                return "KLAES LAAS: your application {$ref} was not approved."
+                     . ($reason !== '' ? " Reason: {$reason}." : '')
+                     . ' Please contact the Lands office for guidance.';
+        }
+
+        // land12_raised, at_cadastral, recommendation_pending, rofo_generated:
+        // real progress, shown on the timeline, but not worth a text each.
+        return null;
+    }
+
+    /**
+     * Record a stage on the applicant's timeline and text them if the stage
+     * warrants it.
+     *
+     * @param  array{title?:string,body?:string,sms?:string|false,actor_type?:string,actor_id?:int|null,actor_name?:string|null,visible?:bool}  $meta
+     */
+    public function record(LaasApplication $application, string $stage, array $meta = []): LaasApplicationEvent
+    {
+        $title = $meta['title'] ?? LaasApplication::label($stage);
+        $body  = $meta['body']  ?? null;
+
+        // sms => false suppresses the text for this one call (bulk backfills,
+        // corrections); omitted means "use the template for this stage".
+        $smsBody = array_key_exists('sms', $meta)
+            ? ($meta['sms'] === false ? null : (string) $meta['sms'])
+            : $this->messageFor($stage, $application);
+
+        $event = new LaasApplicationEvent([
+            'laas_application_id'  => $application->id,
+            'stage'                => $stage,
+            'title'                => $title,
+            'body'                 => $body,
+            'actor_type'           => $meta['actor_type'] ?? 'system',
+            'actor_id'             => $meta['actor_id']   ?? Auth::id(),
+            'actor_name'           => $meta['actor_name'] ?? (Auth::user()->name ?? null),
+            'visible_to_applicant' => $meta['visible']    ?? true,
+        ]);
+
+        if ($smsBody !== null && $smsBody !== '') {
+            $phone = trim((string) $application->applicant_phone);
+
+            if ($phone === '') {
+                $event->sms_status = LaasApplicationEvent::SMS_SKIPPED;
+                $event->sms_body   = $smsBody;
+            } else {
+                $ok = $this->sendQuietly($phone, $smsBody, $application, $stage);
+
+                $event->sms_to     = $phone;
+                $event->sms_body   = $smsBody;
+                $event->sms_status = $ok ? LaasApplicationEvent::SMS_SENT : LaasApplicationEvent::SMS_FAILED;
+                $event->sms_sent_at = $ok ? now() : null;
+            }
+        }
+
+        $event->save();
+
+        return $event;
+    }
+
+    /**
+     * Raise an internal desk alert for a staff unit — spec step (h).
+     */
+    public function alertDepartment(
+        LaasApplication $application,
+        string $department,
+        string $stage,
+        string $title,
+        ?string $message = null
+    ): LaasStageNotification {
+        return LaasStageNotification::create([
+            'laas_application_id' => $application->id,
+            'department'          => $department,
+            'stage'               => $stage,
+            'title'               => $title,
+            'message'             => $message,
+        ]);
+    }
+
+    /**
+     * The gateway must never be able to break the workflow. A failed or
+     * throwing send is logged and reported as a failed event; the stage change
+     * that triggered it still stands.
+     */
+    private function sendQuietly(string $phone, string $message, LaasApplication $application, string $stage): bool
+    {
+        try {
+            return $this->sms->send($phone, $message);
+        } catch (\Throwable $e) {
+            Log::error('LAAS: SMS send threw', [
+                'reference_no' => $application->reference_no,
+                'stage'        => $stage,
+                'error'        => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+    }
+}

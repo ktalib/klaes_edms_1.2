@@ -62,6 +62,34 @@ class SurveyReportController extends Controller
 
         $requestRecord = SurveyReportRequest::create($data);
 
+        // LAAS Portal (spec e/f): if this Land 12 is for a file that came from
+        // the public portal, move that application on and show it to the
+        // applicant. No-ops silently — and never throws — for every other file.
+        if (!empty($data['file_number'])) {
+            $laas = app(\App\Services\Laas\LaasWorkflowService::class);
+
+            $laas->advanceByFileNumber(
+                $data['file_number'],
+                \App\Models\Laas\LaasApplication::STAGE_LAND12_RAISED,
+                [
+                    'title'   => 'Survey request raised',
+                    'body'    => 'A request for survey report (Land 12) has been raised on your file.',
+                    'columns' => ['survey_report_request_id' => $requestRecord->id],
+                ]
+            );
+
+            if ($data['status'] === 'Sent to Cadastral') {
+                $laas->advanceByFileNumber(
+                    $data['file_number'],
+                    \App\Models\Laas\LaasApplication::STAGE_AT_CADASTRAL,
+                    [
+                        'title' => 'With Cadastral',
+                        'body'  => 'Your survey request has been sent to the Cadastral department.',
+                    ]
+                );
+            }
+        }
+
         $this->forgetSignatureVerification('lands');
         $this->forgetSignatureVerification('cadastral');
 
@@ -113,6 +141,20 @@ class SurveyReportController extends Controller
 
         unset($data['id'], $data['serial_no'], $data['created_at']);
         $requestRecord->update($data);
+
+        // LAAS Portal (spec g): Cadastral has returned the completed survey
+        // report. This also opens the recommendation stage and puts the alert on
+        // the Land Office desk (spec h) — see LaasWorkflowService.
+        if (($data['status'] ?? null) === 'Completed' && !empty($requestRecord->file_number)) {
+            app(\App\Services\Laas\LaasWorkflowService::class)->advanceByFileNumber(
+                $requestRecord->file_number,
+                \App\Models\Laas\LaasApplication::STAGE_LAND12_COMPLETED,
+                [
+                    'title' => 'Survey report completed',
+                    'body'  => 'Cadastral has completed the survey report on your file and returned it to the Land Office.',
+                ]
+            );
+        }
 
         $this->forgetSignatureVerification('lands');
         $this->forgetSignatureVerification('cadastral');

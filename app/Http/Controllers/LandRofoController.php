@@ -692,6 +692,21 @@ class LandRofoController extends Controller
         // on batch approval so both produce identically-shaped records.
         app(\App\Services\LandRofoGenerator::class)->generate($recommendation, $validated);
 
+        // LAAS Portal (spec j): shown on the applicant's timeline, but not
+        // texted — the message they are waiting for is the signed RofO, which
+        // follows from logPrint() below.
+        if (!empty($recommendation->file_number)) {
+            app(\App\Services\Laas\LaasWorkflowService::class)->advanceByFileNumber(
+                $recommendation->file_number,
+                \App\Models\Laas\LaasApplication::STAGE_ROFO_GENERATED,
+                [
+                    'title'   => 'RofO generated',
+                    'body'    => 'Your Right of Occupancy has been generated and is awaiting signature.',
+                    'columns' => ['rofo_id' => $recommendation->id],
+                ]
+            );
+        }
+
         return response()->json(['success' => true]);
     }
 
@@ -1012,6 +1027,22 @@ class LandRofoController extends Controller
             }
 
             DB::commit();
+
+            // LAAS Portal (spec k): the applicant is told their RofO is signed
+            // and ready to collect. There is no separate "Director signed" action
+            // in the system — issuing the printed letter IS the signing step, so
+            // a counted Original print is what stands for it. A CTC or a
+            // re-issuance reprints an already-issued letter and must not fire it.
+            if (!$isCTC && !$isReissuance && !empty($recommendation->file_number)) {
+                app(\App\Services\Laas\LaasWorkflowService::class)->advanceByFileNumber(
+                    $recommendation->file_number,
+                    \App\Models\Laas\LaasApplication::STAGE_ROFO_SIGNED,
+                    [
+                        'title' => 'RofO signed',
+                        'body'  => 'Your Right of Occupancy has been signed by the Director of Lands and is ready for collection.',
+                    ]
+                );
+            }
 
             return response()->json(['success' => true]);
         } catch (\Exception $e) {

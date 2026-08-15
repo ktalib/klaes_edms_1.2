@@ -2173,6 +2173,20 @@ class LandRecommendationController extends Controller
 
         $generated = $this->generateRofosForBatchMembers([$recommendation->id]);
 
+        // LAAS Portal (spec i): tell the applicant their recommendation is
+        // approved. Silent no-op for files that did not come from the portal.
+        if (!empty($recommendation->file_number)) {
+            app(\App\Services\Laas\LaasWorkflowService::class)->advanceByFileNumber(
+                $recommendation->file_number,
+                \App\Models\Laas\LaasApplication::STAGE_RECOMMENDATION_APPROVED,
+                [
+                    'title'   => 'Recommendation approved',
+                    'body'    => 'The recommendation on your file has been approved.',
+                    'columns' => ['land_recommendation_id' => $recommendation->id],
+                ]
+            );
+        }
+
         return response()->json(['success' => true, 'rofos_generated' => $generated]);
     }
 

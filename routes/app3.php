@@ -986,6 +986,20 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/log-print/{id}', [App\Http\Controllers\ValuationCompensationController::class, 'logPrint'])->name('log-print')->where('id', '[0-9]+');
     });
 
+    // LAAS Portal — staff console (Director review + MLP file-number desk).
+    // The applicant-facing portal itself is in routes/laas.php, outside admin auth.
+    Route::prefix('laas-admin')->name('laas-admin.')
+        ->controller(\App\Http\Controllers\Laas\LaasAdminController::class)
+        ->group(function () {
+            Route::get('/', 'index')->name('index');
+            Route::get('/alerts', 'alerts')->name('alerts');
+            Route::post('/alerts/{id}/read', 'markAlertRead')->name('alerts.read')->where('id', '[0-9]+');
+            Route::get('/{id}', 'show')->name('show')->where('id', '[0-9]+');
+            Route::post('/{id}/approve', 'approve')->name('approve')->where('id', '[0-9]+');
+            Route::post('/{id}/reject', 'reject')->name('reject')->where('id', '[0-9]+');
+            Route::post('/{id}/assign-file-number', 'assignFileNumber')->name('assign-file-number')->where('id', '[0-9]+');
+        });
+
     // Lands 12 - Request for Survey Report
     Route::prefix('survey-report')->name('survey-report.')->group(function () {
         Route::get('/', [SurveyReportController::class, 'index'])->name('index');

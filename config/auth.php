@@ -52,6 +52,13 @@ return [
             'driver' => 'session',
             'provider' => 'online_ls_users',
         ],
+
+        // LAAS Portal (Land Allocation Application System) — authenticates
+        // LaasApplicant, the public applicant, separate from staff.
+        'laas' => [
+            'driver' => 'session',
+            'provider' => 'laas_applicants',
+        ],
     ],
 
     /*
@@ -85,6 +92,11 @@ return [
         'online_ls_users' => [
             'driver' => 'eloquent',
             'model' => App\Models\OnlineLegalSearch\OnlineLsUser::class,
+        ],
+
+        'laas_applicants' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\Laas\LaasApplicant::class,
         ],
 
         // 'users' => [
