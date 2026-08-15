@@ -27,6 +27,8 @@ class BetaSmsService
      */
     public function send(string $phone, string $message): bool
     {
+        $this->lastCode = null;
+
         $username = config('services.betasms.username');
         $password = config('services.betasms.password');
         $sender   = config('services.betasms.sender', 'KLASE');
@@ -69,6 +71,8 @@ class BetaSmsService
             return false;
         }
 
+        $this->lastCode = trim(explode('|', trim((string) $response))[0]) ?: null;
+
         $ok = $this->isSuccess($response);
 
         Log::log($ok ? 'info' : 'warning', 'BetaSmsService: send result', [
@@ -109,10 +113,32 @@ class BetaSmsService
         '1701' => 'accepted for delivery',
         '1702' => 'invalid username or password',
         '1703' => 'invalid mobile number',
-        '1704' => 'invalid sender ID',
-        '1706' => 'invalid or empty message',
+        // The vendor's page (betasms.com/bulk-sms-api-nigeria) documents 1704
+        // and 1706 differently from what probing suggested. Both readings are
+        // kept because the vendor is authoritative on intent while the probed
+        // behaviour is what we actually observed — if you hit one of these,
+        // check the account balance FIRST, it is the cheaper explanation.
+        '1704' => 'insufficient credit (vendor) / invalid sender ID (observed)',
+        '1705' => 'invalid URL or recipient list too long',
+        '1706' => 'gateway internal error (vendor) / invalid or empty message (observed)',
+        '1025' => 'insufficient credit',
         '1713' => 'message content refused by the gateway filter',
     ];
+
+    /** Raw status code from the most recent send, for callers that must react to it. */
+    private ?string $lastCode = null;
+
+    public const CODE_CONTENT_REFUSED = '1713';
+
+    /**
+     * Status code returned by the last send() on this instance, or null if no
+     * request was made (bad config, unusable number). Resolve the service from
+     * the container per-call if you intend to read this.
+     */
+    public function lastStatusCode(): ?string
+    {
+        return $this->lastCode;
+    }
 
     private function isSuccess(string $response): bool
     {

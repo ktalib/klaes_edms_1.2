@@ -46,11 +46,11 @@
 @elseif(!empty($compact))
     <div>
         <div class="mb-1.5 flex items-center justify-between text-xs">
-            <span class="font-medium text-slate-700 dark:text-gray-300">{{ LaasApplication::label($application->stage) }}</span>
-            <span class="text-slate-500 dark:text-gray-400">{{ $percent }}%</span>
+            <span class="font-medium text-[var(--ink)] dark:text-[var(--ink-soft)]">{{ LaasApplication::label($application->stage) }}</span>
+            <span class="text-[var(--ink-soft)] dark:text-[var(--ink-soft)]">{{ $percent }}%</span>
         </div>
-        <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-gray-700">
-            <div class="h-full rounded-full bg-[#1a6b3c] transition-all" style="width: {{ $percent }}%"></div>
+        <div class="h-2 w-full overflow-hidden rounded-full bg-[var(--border)] dark:bg-[var(--brand-tint)]">
+            <div class="h-full rounded-full bg-[var(--brand)] transition-all" style="width: {{ $percent }}%"></div>
         </div>
     </div>
 @else
@@ -66,25 +66,25 @@
                 <!-- Rail -->
                 <div class="flex flex-col items-center">
                     <div class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border-2 transition
-                        @if($isDone) border-[#1a6b3c] bg-[#1a6b3c] text-white
-                        @elseif($isCurrent) border-[#f0a500] bg-[#f0a500] text-white
-                        @else border-slate-300 bg-white text-slate-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-500 @endif">
+                        @if($isDone) border-[var(--brand)] bg-[var(--brand)] text-[var(--on-brand)]
+                        @elseif($isCurrent) border-[var(--gold)] bg-[var(--gold)] text-[var(--on-gold)]
+                        @else border-[var(--border)] bg-[var(--surface-card)] text-[var(--ink-faint)] dark:border-[var(--border)] dark:bg-[var(--surface-card)] dark:text-[var(--ink-faint)] @endif">
                         <i data-lucide="{{ $isDone ? 'check' : ($icons[$step] ?? 'circle') }}" class="h-4 w-4"></i>
                     </div>
                     @unless($isLast)
-                        <div class="w-0.5 flex-1 {{ $isDone ? 'bg-[#1a6b3c]' : 'bg-slate-200 dark:bg-gray-700' }}"></div>
+                        <div class="w-0.5 flex-1 {{ $isDone ? 'bg-[var(--brand)]' : 'bg-[var(--border)] dark:bg-[var(--brand-tint)]' }}"></div>
                     @endunless
                 </div>
 
                 <!-- Label -->
                 <div class="{{ $isLast ? 'pb-0' : 'pb-6' }} pt-1">
                     <p class="text-sm font-semibold
-                        @if($isCurrent) text-[#b37a00] dark:text-amber-400
-                        @elseif($isDone) text-slate-900 dark:text-white
-                        @else text-slate-400 dark:text-gray-500 @endif">
+                        @if($isCurrent) text-[var(--warn-ink)]
+                        @elseif($isDone) text-[var(--ink)] dark:text-[var(--ink)]
+                        @else text-[var(--ink-faint)] dark:text-[var(--ink-faint)] @endif">
                         {{ LaasApplication::label($step) }}
                         @if($isCurrent)
-                            <span class="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">Current</span>
+                            <span class="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900 dark:bg-amber-900/50 dark:text-amber-200">Current</span>
                         @endif
                     </p>
                 </div>

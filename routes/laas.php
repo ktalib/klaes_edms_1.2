@@ -5,6 +5,7 @@ use App\Http\Controllers\Laas\LaasApplicationController;
 use App\Http\Controllers\Laas\LaasAuthController;
 use App\Http\Controllers\Laas\LaasDashboardController;
 use App\Http\Controllers\Laas\LaasLandingController;
+use App\Http\Controllers\Laas\LaasProfileController;
 
 /*
 |--------------------------------------------------------------------------
@@ -34,6 +35,20 @@ Route::prefix('laas')->name('laas.')->group(function () {
 
         Route::get('dashboard', [LaasDashboardController::class, 'index'])->name('dashboard');
         Route::get('notifications', [LaasDashboardController::class, 'notifications'])->name('notifications');
+
+        // Account settings. The phone number is the SMS delivery address for the
+        // whole workflow, so changing it is a two-step, code-confirmed flow —
+        // see LaasProfileController.
+        Route::prefix('profile')->name('profile.')
+            ->controller(LaasProfileController::class)
+            ->group(function () {
+                Route::get('/', 'show')->name('show');
+                Route::put('details', 'updateDetails')->name('details');
+                Route::post('phone', 'requestPhoneChange')->name('phone.request');
+                Route::post('phone/confirm', 'confirmPhoneChange')->name('phone.confirm');
+                Route::post('phone/cancel', 'cancelPhoneChange')->name('phone.cancel');
+                Route::put('password', 'updatePassword')->name('password');
+            });
 
         // Application form (spec a) and submission (spec b).
         Route::get('apply', [LaasApplicationController::class, 'form'])->name('apply.form');

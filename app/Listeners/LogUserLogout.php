@@ -3,6 +3,7 @@
 namespace App\Listeners;
 
 use Illuminate\Auth\Events\Logout;
+use App\Models\User;
 use App\Models\UserActivityLog;
 use App\Services\ActivityLogService;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -28,6 +29,13 @@ class LogUserLogout
      */
     public function handle(Logout $event)
     {
+        // Staff sign-outs only — see the matching guard in LogUserLogin. This one
+        // matters more: it UPDATEs user_activity_logs by user_id, so a portal
+        // applicant signing out would mark the staff user of the same id offline.
+        if (!$event->user instanceof User) {
+            return;
+        }
+
         try {
             $user = $event->user;
             $userId = null;

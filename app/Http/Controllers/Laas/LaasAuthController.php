@@ -123,27 +123,12 @@ class LaasAuthController extends Controller
     }
 
     /**
-     * Store phone numbers in the 0XXXXXXXXXX form. BetaSmsService normalises
-     * again to 234… at send time, so either form would deliver — but storing
-     * one form consistently is what makes the uniqueness check above mean
-     * anything.
+     * Storage form for phone numbers — see LaasApplicant::normalizePhone().
+     * A thin pass-through so sign-in, registration and the profile screen can
+     * never drift apart on what counts as the same number.
      */
     private function normalizePhone(string $phone): ?string
     {
-        $digits = preg_replace('/\D+/', '', $phone) ?? '';
-
-        if (str_starts_with($digits, '234') && strlen($digits) === 13) {
-            return '0' . substr($digits, 3);
-        }
-
-        if (str_starts_with($digits, '0') && strlen($digits) === 11) {
-            return $digits;
-        }
-
-        if (strlen($digits) === 10) {
-            return '0' . $digits;
-        }
-
-        return null;
+        return LaasApplicant::normalizePhone($phone);
     }
 }

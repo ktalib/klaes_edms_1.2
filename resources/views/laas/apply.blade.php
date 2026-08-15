@@ -6,20 +6,20 @@
 @php
     $v = fn ($field, $fallback = '') => old($field, $draft->{$field} ?? $fallback);
 
-    $input = 'mt-2 block w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-slate-900 placeholder-slate-400 focus:border-green-600 focus:outline-none focus:ring-2 focus:ring-green-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-500 dark:focus:ring-green-800';
-    $label = 'block text-sm font-medium text-slate-700 dark:text-gray-300';
+    $input = 'laas-input mt-2';
+    $label = 'block text-sm font-medium text-[var(--ink)] dark:text-[var(--ink-soft)]';
 @endphp
 
 <div class="mx-auto max-w-3xl">
 
     <div class="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-            <h1 class="text-2xl font-bold text-slate-900 dark:text-white">Land allocation application</h1>
-            <p class="mt-1 text-sm text-slate-600 dark:text-gray-400">
+            <h1 class="text-2xl font-bold text-[var(--ink)] dark:text-[var(--ink)]">Land allocation application</h1>
+            <p class="mt-1 text-sm text-[var(--ink-soft)] dark:text-[var(--ink-soft)]">
                 Fill every required field, then submit. Your answers are saved as you type.
             </p>
         </div>
-        <p id="laas-autosave" class="hidden items-center gap-1.5 text-xs text-slate-500 dark:text-gray-400">
+        <p id="laas-autosave" class="hidden items-center gap-1.5 text-xs text-[var(--ink-soft)] dark:text-[var(--ink-soft)]">
             <i data-lucide="cloud-check" class="h-3.5 w-3.5"></i><span></span>
         </p>
     </div>
@@ -39,8 +39,8 @@
         @csrf
 
         <!-- Applicant -->
-        <section class="rounded-2xl border border-slate-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
-            <h2 class="mb-5 flex items-center gap-2 text-sm font-extrabold uppercase tracking-widest text-[#1a6b3c] dark:text-green-400">
+        <section class="rounded-2xl border border-[var(--border)] bg-[var(--surface-card)] p-6 dark:border-[var(--border)] dark:bg-[var(--surface-card)]">
+            <h2 class="mb-5 flex items-center gap-2 text-sm font-extrabold uppercase tracking-widest text-[var(--brand)] dark:text-[var(--brand)]">
                 <i data-lucide="user" class="h-4 w-4"></i> Applicant details
             </h2>
 
@@ -66,7 +66,7 @@
                         <label for="applicant_phone" class="{{ $label }}">Phone number <span class="text-red-500">*</span></label>
                         <input id="applicant_phone" type="tel" name="applicant_phone" required
                                value="{{ $v('applicant_phone', $applicant->phone) }}" class="{{ $input }}">
-                        <p class="mt-1 text-xs text-slate-500 dark:text-gray-400">Updates on this application go to this number.</p>
+                        <p class="mt-1 text-xs text-[var(--ink-soft)] dark:text-[var(--ink-soft)]">Updates on this application go to this number.</p>
                     </div>
                     <div>
                         <label for="applicant_email" class="{{ $label }}">Email address</label>
@@ -90,8 +90,8 @@
         </section>
 
         <!-- Land -->
-        <section class="rounded-2xl border border-slate-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-800">
-            <h2 class="mb-5 flex items-center gap-2 text-sm font-extrabold uppercase tracking-widest text-[#1a6b3c] dark:text-green-400">
+        <section class="rounded-2xl border border-[var(--border)] bg-[var(--surface-card)] p-6 dark:border-[var(--border)] dark:bg-[var(--surface-card)]">
+            <h2 class="mb-5 flex items-center gap-2 text-sm font-extrabold uppercase tracking-widest text-[var(--brand)] dark:text-[var(--brand)]">
                 <i data-lucide="map-pin" class="h-4 w-4"></i> Land applied for
             </h2>
 
@@ -167,11 +167,11 @@
             </div>
         </section>
 
-        <div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
-            <p class="text-xs text-slate-500 dark:text-gray-400">
+        <div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-card)] p-5 dark:border-[var(--border)] dark:bg-[var(--surface-card)]">
+            <p class="text-xs text-[var(--ink-soft)] dark:text-[var(--ink-soft)]">
                 Supporting documents can be uploaded on the next screen, once your application has a reference.
             </p>
-            <button type="submit" class="laas-btn inline-flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-semibold text-white transition">
+            <button type="submit" class="laas-btn inline-flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-semibold transition">
                 <i data-lucide="send" class="h-4 w-4"></i> Submit application
             </button>
         </div>

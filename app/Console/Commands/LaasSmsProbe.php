@@ -1,0 +1,127 @@
+<?php
+
+namespace App\Console\Commands;
+
+use App\Services\BetaSmsService;
+use Illuminate\Console\Command;
+
+/**
+ * Find out which message wordings BetaSMS will actually accept.
+ *
+ * The gateway answers 1713 when its content filter refuses a message and names
+ * no offending word. The vendor's API page documents neither the code nor any
+ * transactional/OTP route parameter, so the only way to learn the rules is to
+ * probe — which is how the existing status-code table in BetaSmsService was
+ * established in the first place.
+ *
+ * This sends REAL messages and spends REAL credit, so it asks first, sends one
+ * variant at a time with a pause between, and stops early on any failure that
+ * is not a content refusal (a bad number or an empty account will not become
+ * truer on the fourth attempt).
+ */
+class LaasSmsProbe extends Command
+{
+    protected $signature = 'laas:sms-probe
+                            {phone : Number to send the probes to, e.g. 08031234567}
+                            {--only= : Run a single variant by name}
+                            {--list : Show the variants without sending anything}
+                            {--delay=6 : Seconds to wait between sends}';
+
+    protected $description = 'Probe which SMS wordings the BetaSMS content filter accepts (sends real messages)';
+
+    /**
+     * Ordered plainest-last. Each isolates one suspected trigger so a pass/fail
+     * pair actually tells you something: `otp_classic` differs from `no_code_word`
+     * only in the word "code", and so on.
+     */
+    private function variants(string $code): array
+    {
+        $mins = 10;
+
+        return [
+            'plain_digits'   => "KLAES LAAS confirmation: {$code}",
+            'no_code_word'   => "KLAES LAAS: {$code} is your confirmation number for the phone change on your land application account. It is valid for {$mins} minutes.",
+            'otp_classic'    => "KLAES LAAS: your phone change code is {$code}. It expires in {$mins} minutes. If you did not request this, ignore this message.",
+            'word_code'      => "KLAES LAAS: your code is {$code}.",
+            'word_otp'       => "KLAES LAAS: your OTP is {$code}.",
+            'word_verify'    => "KLAES LAAS: verify your number with {$code}.",
+            'word_notice'    => "KLAES LAAS: this is a notice that your number is changing.",
+            'no_digits'      => "KLAES LAAS: your phone change request has been received.",
+        ];
+    }
+
+    public function handle(BetaSmsService $sms): int
+    {
+        $code     = (string) random_int(100000, 999999);
+        $variants = $this->variants($code);
+
+        if ($only = $this->option('only')) {
+            if (!isset($variants[$only])) {
+                $this->error("Unknown variant '{$only}'. Known: " . implode(', ', array_keys($variants)));
+
+                return self::FAILURE;
+            }
+            $variants = [$only => $variants[$only]];
+        }
+
+        if ($this->option('list')) {
+            foreach ($variants as $name => $message) {
+                $this->line("<info>{$name}</info>");
+                $this->line("  {$message}");
+            }
+
+            return self::SUCCESS;
+        }
+
+        $phone = (string) $this->argument('phone');
+        $count = count($variants);
+
+        $this->warn("This sends {$count} REAL SMS to {$phone} and spends real credit.");
+
+        if (!$this->confirm('Continue?', false)) {
+            $this->info('Nothing sent.');
+
+            return self::SUCCESS;
+        }
+
+        $delay   = max(0, (int) $this->option('delay'));
+        $results = [];
+        $i       = 0;
+
+        foreach ($variants as $name => $message) {
+            $i++;
+
+            if ($i > 1 && $delay > 0) {
+                sleep($delay);
+            }
+
+            $ok     = $sms->send($phone, $message);
+            $status = $sms->lastStatusCode() ?? 'no response';
+
+            $results[] = [$name, $ok ? 'ACCEPTED' : 'refused', $status, mb_strimwidth($message, 0, 58, '…')];
+            $this->line(sprintf('  %-14s %-9s %s', $name, $ok ? 'ACCEPTED' : 'refused', $status));
+
+            // Anything other than a content refusal means the account or the
+            // number is the problem; more wording will not fix it.
+            if (!$ok && $status !== BetaSmsService::CODE_CONTENT_REFUSED) {
+                $this->newLine();
+                $this->error("Stopped: status {$status} is not a content refusal. Check the account balance, sender ID, and the number.");
+                break;
+            }
+        }
+
+        $this->newLine();
+        $this->table(['variant', 'result', 'status', 'message'], $results);
+
+        $accepted = array_values(array_filter($results, fn ($r) => $r[1] === 'ACCEPTED'));
+
+        if ($accepted) {
+            $this->info('Accepted wordings: ' . implode(', ', array_column($accepted, 0)));
+            $this->line('Use the shortest accepted variant as the primary template in LaasProfileController::sendCode().');
+        } else {
+            $this->warn('Nothing was accepted. The filter is refusing this sender or account outright rather than specific words — take it up with BetaSMS.');
+        }
+
+        return self::SUCCESS;
+    }
+}

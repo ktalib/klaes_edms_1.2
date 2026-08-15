@@ -3,6 +3,7 @@
 namespace App\Listeners;
 
 use Illuminate\Auth\Events\Login;
+use App\Models\User;
 use App\Services\ActivityLogService;
 use Illuminate\Support\Facades\Log;
 
@@ -26,6 +27,15 @@ class LogUserLogin
      */
     public function handle(Login $event)
     {
+        // Staff sign-ins only. The portal guards (phs, online_ls, laas) fire this
+        // same event, and their users are not App\Models\User — user_activity_logs
+        // has a foreign key to users.id, so logging a portal account here either
+        // violates that key or, worse, attributes the activity to whichever STAFF
+        // user happens to hold the same id.
+        if (!$event->user instanceof User) {
+            return;
+        }
+
         try {
             $result = ActivityLogService::recordLogin($event->user);
 
