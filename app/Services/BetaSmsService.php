@@ -125,8 +125,12 @@ class BetaSmsService
         '1713' => 'message content refused by the gateway filter',
     ];
 
-    /** Raw status code from the most recent send, for callers that must react to it. */
-    private ?string $lastCode = null;
+    /**
+     * Raw status code from the most recent send, for callers that must react to
+     * it. Protected rather than private so a test double can override send()
+     * and still drive the sendFirstAccepted() walk, which branches on this.
+     */
+    protected ?string $lastCode = null;
 
     public const CODE_CONTENT_REFUSED = '1713';
 
@@ -138,6 +142,46 @@ class BetaSmsService
     public function lastStatusCode(): ?string
     {
         return $this->lastCode;
+    }
+
+    /**
+     * Send the first wording the gateway will accept, and report which one won.
+     *
+     * BetaSMS refuses messages on content (1713) without naming the offending
+     * word, and the vendor documents neither the code nor any transactional
+     * route to bypass it. Observed on this account: "your application ... has
+     * been received and processing has started" is accepted, while the same
+     * sentence shape carrying "approved by the Director" or "assigned File
+     * Number ... quote this number" is refused. So callers that must get
+     * through supply a rich wording followed by a plainer one.
+     *
+     * A 1713 means the gateway delivered NOTHING, so falling through cannot
+     * double-send. Any other failure stops the walk — a bad number or an empty
+     * account will not be fixed by rephrasing, and retrying would only burn
+     * credit and time.
+     *
+     * @param  array<int,string>  $messages  Best wording first.
+     * @return string|null  The message that was accepted, or null if none was.
+     */
+    public function sendFirstAccepted(string $phone, array $messages): ?string
+    {
+        foreach (array_values(array_filter($messages)) as $i => $message) {
+            if ($this->send($phone, $message)) {
+                return $message;
+            }
+
+            if ($this->lastCode !== self::CODE_CONTENT_REFUSED) {
+                return null;
+            }
+
+            Log::warning('BetaSmsService: wording refused by the content filter, trying the next one', [
+                'phone'     => $this->normalizePhone($phone),
+                'variant'   => $i,
+                'remaining' => count($messages) - $i - 1,
+            ]);
+        }
+
+        return null;
     }
 
     private function isSuccess(string $response): bool

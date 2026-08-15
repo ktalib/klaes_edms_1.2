@@ -47,6 +47,16 @@ class LaasSmsProbe extends Command
             'word_verify'    => "KLAES LAAS: verify your number with {$code}.",
             'word_notice'    => "KLAES LAAS: this is a notice that your number is changing.",
             'no_digits'      => "KLAES LAAS: your phone change request has been received.",
+
+            // The live workflow wordings. Observed on this account: `wf_submitted`
+            // was accepted while `wf_approved` and `wf_fileno` were both refused
+            // 1713 — the suspects are "approved", "assigned" and "quote", the
+            // vocabulary of loan and prize spam. These four isolate them.
+            'wf_submitted'   => "KLAES LAAS: your land allocation application LAAS-2026-000001 has been received and processing has started. You will be updated at each stage.",
+            'wf_approved'    => "KLAES LAAS: your application LAAS-2026-000001 has been approved by the Director. Your file number will be assigned shortly.",
+            'wf_fileno'      => "KLAES LAAS: your application LAAS-2026-000001 has been assigned File Number AG-2026-6. Please quote this number in all correspondence.",
+            'wf_fallback'    => "KLAES LAAS: there is an update on your application LAAS-2026-000001. Please sign in to the portal to see it.",
+            'wf_fileno_alt'  => "KLAES LAAS: AG-2026-6 is the file number for your application LAAS-2026-000001.",
         ];
     }
 

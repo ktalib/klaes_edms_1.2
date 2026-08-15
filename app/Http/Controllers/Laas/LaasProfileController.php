@@ -299,35 +299,20 @@ class LaasProfileController extends Controller
             "KLAES LAAS confirmation: {$code}",
         ];
 
-        foreach ($templates as $i => $message) {
-            try {
-                if ($this->sms->send($phone, $message)) {
-                    return true;
-                }
-            } catch (\Throwable $e) {
-                Log::error('LAAS: phone-change code send threw', [
-                    'applicant_id' => $applicant->id,
-                    'template'     => $i,
-                    'error'        => $e->getMessage(),
-                ]);
-
-                return false;
-            }
-
-            $this->lastSmsCode = $this->sms->lastStatusCode();
-
-            // Only a content refusal is worth rephrasing for.
-            if ($this->lastSmsCode !== BetaSmsService::CODE_CONTENT_REFUSED) {
-                return false;
-            }
-
-            Log::warning('LAAS: phone-change wording refused by the SMS filter, trying a plainer one', [
+        try {
+            $delivered = $this->sms->sendFirstAccepted($phone, $templates);
+        } catch (\Throwable $e) {
+            Log::error('LAAS: phone-change code send threw', [
                 'applicant_id' => $applicant->id,
-                'template'     => $i,
+                'error'        => $e->getMessage(),
             ]);
+
+            return false;
         }
 
-        return false;
+        $this->lastSmsCode = $this->sms->lastStatusCode();
+
+        return $delivered !== null;
     }
 
     /** Say what actually went wrong, rather than blaming the applicant's number. */

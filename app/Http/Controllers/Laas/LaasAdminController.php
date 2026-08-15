@@ -110,7 +110,7 @@ class LaasAdminController extends Controller
             ],
         ]);
 
-        return back()->with('status', "Application {$application->reference_no} approved. The applicant has been notified.");
+        return back()->with('status', "Application {$application->reference_no} approved." . $this->notifiedNote());
     }
 
     public function reject(Request $request, int $id)
@@ -131,13 +131,21 @@ class LaasAdminController extends Controller
         $application->rejection_reason = $data['rejection_reason'];
         $application->save();
 
-        $this->notifications->record($application, LaasApplication::STAGE_REJECTED, [
+        // Recorded directly rather than through the workflow service, because
+        // `rejected` is off the main line and advance() is forward-only — so the
+        // delivery result comes from this event, not from lastNotificationDelivered().
+        $event = $this->notifications->record($application, LaasApplication::STAGE_REJECTED, [
             'title'      => 'Application not approved',
             'body'       => $data['rejection_reason'],
             'actor_type' => 'staff',
         ]);
 
-        return back()->with('status', "Application {$application->reference_no} marked as not approved. The applicant has been notified.");
+        $note = $event->sms_status === \App\Models\Laas\LaasApplicationEvent::SMS_SENT
+            ? ' The applicant has been notified by SMS.'
+            : ' NOTE: the SMS could not be delivered — the applicant will still see this'
+              . ' when they sign in to the portal. Consider telephoning them.';
+
+        return back()->with('status', "Application {$application->reference_no} marked as not approved." . $note);
     }
 
     /**
@@ -231,7 +239,26 @@ class LaasAdminController extends Controller
             ],
         ]);
 
-        return back()->with('status', "File number {$allocation['file_number']} assigned. The applicant has been notified.");
+        return back()->with('status', "File number {$allocation['file_number']} assigned." . $this->notifiedNote());
+    }
+
+    /**
+     * Whether the applicant was actually reached, in plain words.
+     *
+     * The SMS gateway refuses messages on content and can simply not deliver,
+     * so "approved" and "the applicant knows" are two different facts. Saying
+     * they were notified when the text failed sends the office away believing a
+     * job is finished that is not — the update is still on the applicant's
+     * portal timeline either way, which is what the fallback wording says.
+     */
+    private function notifiedNote(): string
+    {
+        if ($this->workflow->lastNotificationDelivered()) {
+            return ' The applicant has been notified by SMS.';
+        }
+
+        return ' NOTE: the SMS could not be delivered — the applicant will still see this'
+             . ' when they sign in to the portal. Consider telephoning them.';
     }
 
     /** Spec (h): the Land Office / OSS Unit desk inbox. */

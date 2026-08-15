@@ -3,6 +3,7 @@
 namespace App\Services\Laas;
 
 use App\Models\Laas\LaasApplication;
+use App\Models\Laas\LaasApplicationEvent;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -28,6 +29,27 @@ class LaasWorkflowService
 {
     /** Desk that must act once Cadastral returns a completed Land 12. */
     public const DEPT_LAND_OFFICE = 'LANDS';
+
+    /**
+     * The event written by the most recent advance() on this instance.
+     *
+     * Lets a caller report what actually reached the applicant — the SMS
+     * gateway refuses messages on content, so "approved" and "the applicant has
+     * been notified" are two different facts and the screen must not conflate
+     * them.
+     */
+    private ?LaasApplicationEvent $lastEvent = null;
+
+    public function lastEvent(): ?LaasApplicationEvent
+    {
+        return $this->lastEvent;
+    }
+
+    /** True when the last advance() actually got a text delivered. */
+    public function lastNotificationDelivered(): bool
+    {
+        return $this->lastEvent?->sms_status === LaasApplicationEvent::SMS_SENT;
+    }
 
     public function __construct(private LaasNotificationService $notifications)
     {
@@ -86,7 +108,7 @@ class LaasWorkflowService
 
             $application->save();
 
-            $this->notifications->record($application, $stage, $meta);
+            $this->lastEvent = $this->notifications->record($application, $stage, $meta);
 
             // Spec (h): a completed Land 12 is what puts the recommendation on
             // the Land Office's desk. It follows from (g) with no separate

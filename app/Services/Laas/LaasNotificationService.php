@@ -76,6 +76,43 @@ class LaasNotificationService
     }
 
     /**
+     * A plainer wording for the same stage, used when the gateway refuses the
+     * first one on content (1713).
+     *
+     * Observed on this account: "your application ... has been received and
+     * processing has started" gets through, while "has been approved by the
+     * Director" and "has been assigned File Number ... quote this number" are
+     * both refused. The likely triggers are the words a loan or prize scam
+     * would use — "approved", "assigned", "quote" — so these fall back to the
+     * barest statement of fact, keeping the one detail worth having (the file
+     * number) and pointing at the portal for the rest.
+     *
+     * Verify with: php artisan laas:sms-probe <number>
+     */
+    public function fallbackMessageFor(string $stage, LaasApplication $application): ?string
+    {
+        $ref    = $application->reference_no;
+        $fileNo = $application->file_number;
+
+        switch ($stage) {
+            case LaasApplication::STAGE_FILENO_ASSIGNED:
+                // Worth delivering on its own — this is the number they will be
+                // asked for at every counter from here on.
+                return "KLAES LAAS: {$fileNo} is the file number for your application {$ref}.";
+
+            case LaasApplication::STAGE_SUBMITTED:
+            case LaasApplication::STAGE_DIRECTOR_APPROVED:
+            case LaasApplication::STAGE_LAND12_COMPLETED:
+            case LaasApplication::STAGE_RECOMMENDATION_APPROVED:
+            case LaasApplication::STAGE_ROFO_SIGNED:
+            case LaasApplication::STAGE_REJECTED:
+                return "KLAES LAAS: there is an update on your application {$ref}. Please sign in to the portal to see it.";
+        }
+
+        return null;
+    }
+
+    /**
      * Record a stage on the applicant's timeline and text them if the stage
      * warrants it.
      *
@@ -110,12 +147,22 @@ class LaasNotificationService
                 $event->sms_status = LaasApplicationEvent::SMS_SKIPPED;
                 $event->sms_body   = $smsBody;
             } else {
-                $ok = $this->sendQuietly($phone, $smsBody, $application, $stage);
+                // A caller-supplied wording stands alone; the stage templates get
+                // their plainer twin appended, for the gateway's content filter.
+                $candidates = [$smsBody];
 
-                $event->sms_to     = $phone;
-                $event->sms_body   = $smsBody;
-                $event->sms_status = $ok ? LaasApplicationEvent::SMS_SENT : LaasApplicationEvent::SMS_FAILED;
-                $event->sms_sent_at = $ok ? now() : null;
+                if (!array_key_exists('sms', $meta)) {
+                    $candidates[] = $this->fallbackMessageFor($stage, $application);
+                }
+
+                $delivered = $this->sendQuietly($phone, $candidates, $application, $stage);
+
+                $event->sms_to      = $phone;
+                // Record what actually went out, not what we first tried — the
+                // timeline is the applicant's evidence of what they were told.
+                $event->sms_body    = $delivered ?? $smsBody;
+                $event->sms_status  = $delivered ? LaasApplicationEvent::SMS_SENT : LaasApplicationEvent::SMS_FAILED;
+                $event->sms_sent_at = $delivered ? now() : null;
             }
         }
 
@@ -147,11 +194,14 @@ class LaasNotificationService
      * The gateway must never be able to break the workflow. A failed or
      * throwing send is logged and reported as a failed event; the stage change
      * that triggered it still stands.
+     *
+     * @param  array<int,string|null>  $candidates  Best wording first.
+     * @return string|null  The wording that was delivered, or null.
      */
-    private function sendQuietly(string $phone, string $message, LaasApplication $application, string $stage): bool
+    private function sendQuietly(string $phone, array $candidates, LaasApplication $application, string $stage): ?string
     {
         try {
-            return $this->sms->send($phone, $message);
+            return $this->sms->sendFirstAccepted($phone, $candidates);
         } catch (\Throwable $e) {
             Log::error('LAAS: SMS send threw', [
                 'reference_no' => $application->reference_no,
@@ -159,7 +209,7 @@ class LaasNotificationService
                 'error'        => $e->getMessage(),
             ]);
 
-            return false;
+            return null;
         }
     }
 }
