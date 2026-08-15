@@ -71,11 +71,12 @@ class BetaSmsService
 
         $ok = $this->isSuccess($response);
 
-        Log::info('BetaSmsService: send result', [
+        Log::log($ok ? 'info' : 'warning', 'BetaSmsService: send result', [
             'phone'     => $mobile,
             'sender'    => $sender,
             'http_code' => $httpCode,
             'response'  => trim((string) $response),
+            'reason'    => $this->statusText((string) $response),
             'success'   => $ok,
             'pages'     => (int) ceil(mb_strlen($message) / 160),
         ]);
@@ -84,11 +85,35 @@ class BetaSmsService
     }
 
     /**
-     * BetaSMS answers with a numeric status code, optionally followed by
-     * pipe-separated detail ("1701|2348012345678|1"). 1701 is the only
-     * accepted-for-delivery code; everything else (1702 bad URL, 1703 bad
-     * credentials, 1707/1025 no credit, …) is a failure worth logging.
+     * Status codes, established by probing the live endpoint with deliberately
+     * bad inputs (the vendor's sample script documents none of them):
+     *
+     *   1701  accepted for delivery
+     *   1702  invalid username or password
+     *   1703  invalid mobile number
+     *   1704  invalid sender ID
+     *   1706  invalid / empty message
+     *   1713  message content refused by the gateway's filter
+     *
+     * 1713 is content-based, not account-based, and gives no hint which word
+     * tripped it: "notice" is refused outright, while the same sentence with
+     * that one word removed is accepted. Neither statutory notice text contains
+     * it, but keep it in mind before editing the wording in SpaNotice.
+     *
+     * 1701 means the gateway QUEUED the message — not that the handset got it.
+     * Delivery can still fail afterwards for account reasons the API does not
+     * report here (unapproved sender ID, exhausted credit, DND-blocked number);
+     * there is no balance or delivery-report endpoint on this API to check.
      */
+    private const STATUS_TEXT = [
+        '1701' => 'accepted for delivery',
+        '1702' => 'invalid username or password',
+        '1703' => 'invalid mobile number',
+        '1704' => 'invalid sender ID',
+        '1706' => 'invalid or empty message',
+        '1713' => 'message content refused by the gateway filter',
+    ];
+
     private function isSuccess(string $response): bool
     {
         $body = trim($response);
@@ -100,6 +125,14 @@ class BetaSmsService
         $code = trim(explode('|', $body)[0]);
 
         return $code === '1701' || strcasecmp($body, 'OK') === 0;
+    }
+
+    /** Human-readable reason for a response code, for the log. */
+    private function statusText(string $response): string
+    {
+        $code = trim(explode('|', trim($response))[0]);
+
+        return self::STATUS_TEXT[$code] ?? 'unrecognised gateway response';
     }
 
     /**

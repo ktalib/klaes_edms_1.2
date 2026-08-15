@@ -351,15 +351,46 @@ class SpecialAssignmentController extends Controller
             // Every application that has a field-inspection appears here; the row shows
             // whether a first-serve notice has already been issued for it.
             if ($type === 'first') {
-                $query = SpaApplication::whereIn('id', SpaFieldData::pluck('spa_application_id'))
-                                       ->orderByDesc('created_at');
-                $total = $query->count();
-                $data  = $query->skip($request->input('start', 0))
-                               ->take($request->input('length', 10))
-                               ->get()
-                               ->map(function ($a, $i) use ($request) {
+                // Every land record added to SPAS is a field record (it can only be
+                // created from the field), so the list is no longer restricted to
+                // applications carrying a spa_field_data row: the inspection section
+                // of "Add Land Record" is optional, and that restriction silently
+                // hid notices that had already been issued and sent.
+                $rows = SpaApplication::orderByDesc('created_at')->get()
+                    ->map(fn ($a) => (object) [
+                        'id'          => $a->id,
+                        'file_number' => $a->file_number,
+                        'owner_name'  => $a->owner_name,
+                        'phone'       => $a->phone,
+                        'created_at'  => $a->created_at,
+                    ]);
+
+                // storeNotice accepts any file number, indexed or not, so a notice can
+                // exist with no SPAS application behind it. Those rows have no
+                // application to hang off, so carry them into the list directly —
+                // otherwise issuing such a notice appears to succeed and then vanishes.
+                $knownFiles = $rows->pluck('file_number')->filter()->all();
+                $orphans = SpaNotice::where('notice_type', 'first')
+                    ->when($knownFiles, fn ($q) => $q->whereNotIn('file_number', $knownFiles))
+                    ->orderByDesc('created_at')
+                    ->get()
+                    ->unique('file_number')
+                    ->map(fn ($n) => (object) [
+                        'id'          => null,
+                        'file_number' => $n->file_number,
+                        'owner_name'  => $n->recipient_name,
+                        'phone'       => $n->phone,
+                        'created_at'  => $n->created_at,
+                    ]);
+
+                $all   = $rows->concat($orphans)->sortByDesc('created_at')->values();
+                $total = $all->count();
+                $data  = $all->slice((int) $request->input('start', 0))
+                             ->take((int) $request->input('length', 10))
+                             ->values()
+                             ->map(function ($a, $i) use ($request) {
                                    $notice = SpaNotice::where('notice_type', 'first')
-                                       ->where(fn($q) => $q->where('spa_application_id', $a->id)
+                                       ->where(fn($q) => $q->when($a->id, fn($qq) => $qq->where('spa_application_id', $a->id))
                                                            ->orWhere('file_number', $a->file_number))
                                        ->orderByDesc('created_at')->first();
 
