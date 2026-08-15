@@ -27,6 +27,7 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\BackfillPropIdMaster::class,
         CleanupExpiredDigitalAccess::class,
         \App\Console\Commands\SpaTriggerSecondService::class,
+        \App\Console\Commands\SpaSmsDoctor::class,
         \App\Console\Commands\PhsLowBalanceReminders::class,
     ];
 

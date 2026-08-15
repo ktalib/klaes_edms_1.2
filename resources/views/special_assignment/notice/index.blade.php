@@ -201,6 +201,27 @@ $(document).ready(function () {
     const firstTable  = $('#first-serve-table').DataTable({ processing:true, serverSide:true, ajax:{ url: window.location.href, data: d=>({...d, ajax:1, type:'first'}) }, columns: firstCols });
     const secondTable = $('#second-serve-table').DataTable({ processing:true, serverSide:true, ajax:{ url: window.location.href, data: d=>({...d, ajax:1, type:'second'}) }, columns: secondCols });
 
+    // Report an SMS outcome to the browser console AND on screen. The gateway
+    // failure reason is the only thing that distinguishes "no credentials on
+    // this server" from "number rejected" from "host unreachable", and none of
+    // that is visible to whoever is standing at the production machine.
+    function reportSmsOutcome(data, what) {
+        if (data.sms_sent) {
+            console.info(`[SPAS SMS] ${what}: sent`, { code: data.sms_code || '1701' });
+            return `${what} & SMS sent.`;
+        }
+
+        const reason = data.sms_reason || 'no reason reported by the server';
+        const code   = data.sms_code ? ` (gateway code ${data.sms_code})` : '';
+        console.error(`[SPAS SMS] ${what}: NOT sent — ${reason}${code}`, {
+            gateway_code : data.sms_code || null,
+            reason       : reason,
+            notice_id    : data.id || null,
+            full_response: data,
+        });
+        return `${what}. SMS not sent — ${reason}${code}`;
+    }
+
     // ── Trigger 2nd serve ───────────────────────────────────────────────────
     $('#first-serve-table, #second-serve-table').on('click', '.btn-trigger-second', async function() {
         const id  = $(this).data('id');
@@ -209,8 +230,13 @@ $(document).ready(function () {
         if (!ok.isConfirmed) return;
         const res  = await fetch(`${SECOND_BASE}/${id}/second`, { method:'POST', headers:{'X-CSRF-TOKEN':CSRF,'Content-Type':'application/json'}, body:JSON.stringify({}) });
         const data = await res.json();
-        Swal.fire({ icon: data.success?'success':'error', title: data.success?'Done':'Error', text: data.message, timer:2500, showConfirmButton:false });
-        if (data.success) { firstTable.ajax.reload(); secondTable.ajax.reload(); }
+        if (data.success) {
+            const text = reportSmsOutcome(data, 'Second serve issued');
+            Swal.fire({ icon: data.sms_sent ? 'success' : 'warning', title:'Done', text });
+            firstTable.ajax.reload(); secondTable.ajax.reload();
+        } else {
+            Swal.fire({ icon:'error', title:'Error', text: data.message });
+        }
     });
 
     // ── Modal ───────────────────────────────────────────────────────────────
@@ -305,8 +331,11 @@ $(document).ready(function () {
                 fileHint.textContent = 'Indexed files auto-fill the recipient; otherwise enter it manually.';
                 fileHint.className = 'text-[11px] text-gray-400 mt-1';
                 firstTable.ajax.reload();
-                const msg = data.sms_sent ? 'Notice issued & SMS sent.' : 'Notice issued. SMS could not be sent.';
-                Swal.fire({ icon: data.sms_sent ? 'success' : 'warning', title: 'Done', text: msg, timer:3000, showConfirmButton:false });
+                const msg = reportSmsOutcome(data, 'Notice issued');
+                // No auto-dismiss on failure: the reason is the whole point.
+                Swal.fire(data.sms_sent
+                    ? { icon:'success', title:'Done', text: msg, timer:3000, showConfirmButton:false }
+                    : { icon:'warning',  title:'Done', text: msg });
             } else {
                 // Surface Laravel validation messages (422) or a generic failure
                 const errMsg = data.message

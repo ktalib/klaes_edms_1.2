@@ -703,7 +703,18 @@ class SpecialAssignmentController extends Controller
 
         $landUseTypes = DB::connection('sqlsrv')->table('klas.dbo.land_uses')->orderBy('landuse')->pluck('landuse');
 
-        return view('special_assignment.mobile', compact('mapPoints', 'landUseTypes'));
+        // Same two lists the desktop Field Data page builds, so both Add Land
+        // Record forms offer identical choices (see fieldData()).
+        $customaryLandUses = $landUseTypes
+            ->filter(fn ($u) => in_array(strtoupper(trim($u)), ['RESIDENTIAL', 'COMMERCIAL', 'AGRICULTURAL'], true))
+            ->values();
+
+        $lgaOptions = DB::connection('sqlsrv')->table('lgas')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->pluck('name');
+
+        return view('special_assignment.mobile', compact('mapPoints', 'landUseTypes', 'customaryLandUses', 'lgaOptions'));
     }
 
     public function report(Request $request)
@@ -1022,11 +1033,18 @@ class SpecialAssignmentController extends Controller
             'created_by'         => auth()->user()->name ?? auth()->id(),
         ]);
 
-        $smsSent = $this->sendNoticeSms($request->phone, $request->recipient_name, 'first', $request->file_number);
+        $sms = $this->sendNoticeSms($request->phone, $request->recipient_name, 'first', $request->file_number);
 
-        $notice->update(['sms_sent' => $smsSent, 'sms_sent_at' => $smsSent ? now() : null]);
+        $notice->update(['sms_sent' => $sms['sent'], 'sms_sent_at' => $sms['sent'] ? now() : null]);
 
-        return response()->json(['success' => true, 'id' => $notice->id, 'sms_sent' => $smsSent, 'message' => 'First serve notice issued.']);
+        return response()->json([
+            'success'    => true,
+            'id'         => $notice->id,
+            'sms_sent'   => $sms['sent'],
+            'sms_code'   => $sms['code'],
+            'sms_reason' => $sms['reason'],
+            'message'    => 'First serve notice issued.',
+        ]);
     }
 
     public function triggerSecondNotice(Request $request, int $id)
@@ -1056,10 +1074,17 @@ class SpecialAssignmentController extends Controller
             'created_by'         => auth()->user()->name ?? auth()->id(),
         ]);
 
-        $smsSent = $this->sendNoticeSms($first->phone, $first->recipient_name, 'second', $first->file_number);
-        $second->update(['sms_sent' => $smsSent, 'sms_sent_at' => $smsSent ? now() : null]);
+        $sms = $this->sendNoticeSms($first->phone, $first->recipient_name, 'second', $first->file_number);
+        $second->update(['sms_sent' => $sms['sent'], 'sms_sent_at' => $sms['sent'] ? now() : null]);
 
-        return response()->json(['success' => true, 'id' => $second->id, 'sms_sent' => $smsSent, 'message' => 'Second serve notice issued.']);
+        return response()->json([
+            'success'    => true,
+            'id'         => $second->id,
+            'sms_sent'   => $sms['sent'],
+            'sms_code'   => $sms['code'],
+            'sms_reason' => $sms['reason'],
+            'message'    => 'Second serve notice issued.',
+        ]);
     }
 
     public function storeDepartmentReferral(Request $request)
@@ -1450,10 +1475,37 @@ class SpecialAssignmentController extends Controller
      * and lives on SpaNotice so this and the scheduled second-serve command
      * always send the same text.
      */
-    private function sendNoticeSms(string $phone, string $name, string $type, ?string $fileNo): bool
+    /**
+     * @return array{sent:bool, code:?string, reason:?string} The result plus why
+     *         it failed, so the caller can say what happened instead of "SMS
+     *         could not be sent" — which is unactionable on a production box
+     *         where the log is not to hand.
+     */
+    private function sendNoticeSms(string $phone, string $name, string $type, ?string $fileNo): array
     {
+        // Resolve per call: lastStatusCode()/lastFailureReason() describe the most
+        // recent send on that instance, so a shared singleton would report stale state.
+        $sms = new BetaSmsService();
+
         try {
-            return app(BetaSmsService::class)->send($phone, SpaNotice::smsBody($type));
+            $sent = $sms->send($phone, SpaNotice::smsBody($type));
+
+            if (!$sent) {
+                Log::warning('SPAS: notice SMS not sent', [
+                    'phone'     => $phone,
+                    'file_no'   => $fileNo,
+                    'recipient' => $name,
+                    'type'      => $type,
+                    'code'      => $sms->lastStatusCode(),
+                    'reason'    => $sms->lastFailureReason(),
+                ]);
+            }
+
+            return [
+                'sent'   => $sent,
+                'code'   => $sms->lastStatusCode(),
+                'reason' => $sent ? null : ($sms->lastFailureReason() ?? 'unknown gateway failure'),
+            ];
         } catch (\Throwable $e) {
             Log::warning('SPAS: SMS send failed', [
                 'phone'     => $phone,
@@ -1462,7 +1514,8 @@ class SpecialAssignmentController extends Controller
                 'type'      => $type,
                 'error'     => $e->getMessage(),
             ]);
-            return false;
+
+            return ['sent' => false, 'code' => null, 'reason' => 'exception: '.$e->getMessage()];
         }
     }
 }

@@ -3537,7 +3537,17 @@ document.addEventListener('DOMContentLoaded', function () {
                     return;
                 }
 
+                // Before the rows, not after: renderChildren rebuilds the per-file
+                // grant store and takes the card as it stands as the template for
+                // every file without values of its own.
+                var inherited = applyMotherRecommendation(data.mother_recommendation);
+
                 renderChildren(data.children);
+
+                if (inherited) {
+                    setStatus('Grant conditions inherited from the mother file ' + inherited
+                        + '. Step through the files to adjust any of them before saving.', 'warn');
+                }
             })
             .catch(function () {
                 if (ticket !== childLoadSeq) return;
@@ -3545,6 +3555,56 @@ document.addEventListener('DOMContentLoaded', function () {
                 setStatus('Network error while loading children.', 'error');
                 updateCount();
             });
+    }
+
+    /* ── Inheritance from the mother file ────────────────────────────────────
+       A subdivision is one grant split into plots, so its children start from the
+       mother's recommendation rather than from blank — the same way a Sectional
+       Titling unit starts from its primary application.
+
+       The per-file half (term, rents, fees, page details) rides in on each child's
+       `grant` and is seeded by renderChildren. This is the batch-wide half: fields
+       captured once for the whole batch. Only blanks are filled, so anything the
+       officer has already keyed stands, and every value stays editable after.
+
+       Returns the mother's file number when something was actually inherited. */
+    function applyMotherRecommendation(mother) {
+        if (!mother || isRegular()) return '';
+
+        // Deliberately short. `state` is already defaulted on the form and
+        // `street_name` describes one plot rather than the grant, so neither is
+        // the mother's to hand down.
+        var BATCH_WIDE = ['recommendation', 'premium', 'premium_words'];
+
+        BATCH_WIDE.forEach(function (name) {
+            var value = mother[name];
+            if (value === undefined || value === null || String(value) === '') return;
+
+            var el = recForm.querySelector('[name="' + name + '"]');
+            if (!el || el.disabled || String(el.value).trim() !== '') return;
+
+            el.value = value;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+
+        // Director / Licensed surveyor is a radio pair, so it is set by value
+        // rather than written to — and only when neither side is already picked.
+        var method = String(mother.rofo_survey_method || '');
+        if (method) {
+            var radios = recForm.querySelectorAll('[name="rofo_survey_method"]');
+            var alreadyPicked = Array.prototype.some.call(radios, function (r) { return r.checked; });
+            if (radios.length && !alreadyPicked) {
+                Array.prototype.forEach.call(radios, function (r) {
+                    if (r.value !== method) return;
+                    r.checked = true;
+                    r.dispatchEvent(new Event('change', { bubbles: true }));
+                });
+            }
+        }
+
+        // The per-file conditions land on the rows whether or not any batch-wide
+        // field was blank, so the message is owed either way.
+        return mother.file_number || '';
     }
 
     // The children as the registry has them right now, without touching the table.

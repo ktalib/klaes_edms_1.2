@@ -27,19 +27,22 @@ class BetaSmsService
      */
     public function send(string $phone, string $message): bool
     {
-        $this->lastCode = null;
+        $this->lastCode   = null;
+        $this->lastReason = null;
 
         $username = config('services.betasms.username');
         $password = config('services.betasms.password');
         $sender   = config('services.betasms.sender', 'KLASE');
 
         if (!$username || !$password) {
+            $this->lastReason = 'BETASMS_USERNAME / BETASMS_PASSWORD are not set in this environment';
             Log::warning('BetaSmsService: username or password not configured.');
             return false;
         }
 
         $mobile = $this->normalizePhone($phone);
         if (!$mobile) {
+            $this->lastReason = 'the phone number "'.$phone.'" is not a usable Nigerian mobile number';
             Log::warning('BetaSmsService: invalid phone number', ['phone' => $phone]);
             return false;
         }
@@ -67,6 +70,9 @@ class BetaSmsService
         curl_close($ch);
 
         if ($curlError || $response === false) {
+            // The usual production cause: outbound HTTP to login.betasms.com is
+            // blocked by the server's firewall, which never happens on a dev box.
+            $this->lastReason = 'could not reach login.betasms.com'.($curlError ? ' ('.$curlError.')' : '');
             Log::error('BetaSmsService: request failed', ['phone' => $mobile, 'error' => $curlError]);
             return false;
         }
@@ -74,6 +80,7 @@ class BetaSmsService
         $this->lastCode = trim(explode('|', trim((string) $response))[0]) ?: null;
 
         $ok = $this->isSuccess($response);
+        $this->lastReason = $ok ? null : $this->statusText((string) $response);
 
         Log::log($ok ? 'info' : 'warning', 'BetaSmsService: send result', [
             'phone'     => $mobile,
@@ -132,7 +139,21 @@ class BetaSmsService
      */
     protected ?string $lastCode = null;
 
+    /**
+     * Why the most recent send() failed, in plain language. Set for the failures
+     * that never reach the gateway too (missing config, unusable number, host
+     * unreachable) — those have no status code, and they are exactly the ones
+     * that differ between a dev box and production.
+     */
+    protected ?string $lastReason = null;
+
     public const CODE_CONTENT_REFUSED = '1713';
+
+    /** Plain-language reason the last send() failed, or null if it succeeded. */
+    public function lastFailureReason(): ?string
+    {
+        return $this->lastReason;
+    }
 
     /**
      * Status code returned by the last send() on this instance, or null if no

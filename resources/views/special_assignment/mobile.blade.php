@@ -11,6 +11,10 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
     <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+    {{-- google.maps geocoder shim (Leaflet + Nominatim under the hood). Leaflet
+         is already loaded above, so skip its copy — a second one detaches
+         Leaflet.draw from the first. --}}
+    @include('partials.maps_scripts', ['skipLeaflet' => true])
     <style>
         :root {
             --bg:           #0b0e14;
@@ -397,7 +401,10 @@
             <input type="hidden" name="tracking_id"      id="h-tracking_id">
             <input type="hidden" name="is_indexed"       id="h-is_indexed" value="0">
             <input type="hidden" name="location"         id="h-location">
+            {{-- Statutory path only — disabled for customary, where the #m-lga /
+                 #m-district selects carry these same names. --}}
             <input type="hidden" name="lga"              id="h-lga">
+            <input type="hidden" name="district"         id="h-district">
             <input type="hidden" name="land_title_type"  id="m-land-title-type" value="statutory">
 
             <div class="field">
@@ -435,9 +442,40 @@
                 <span id="m-location-text"></span>
             </div>
 
+            {{-- Customary Title only: no indexed file to inherit an address from,
+                 so LGA + District are picked here and drive the map pin. Mirrors
+                 the desktop Add Land Record card. --}}
+            <div id="m-customary-geo" style="display:none;">
+                <div class="field">
+                    <label>LGA <span class="req">*</span></label>
+                    <select name="lga" id="m-lga" class="inp" disabled>
+                        <option value="">Select LGA…</option>
+                        @foreach($lgaOptions as $lga)
+                            <option value="{{ $lga }}">{{ $lga }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="field">
+                    <label>District</label>
+                    {{-- Fetched on demand: 1,818 districts is far too many to inline --}}
+                    <select name="district" id="m-district" class="inp" disabled>
+                        <option value="">Loading districts…</option>
+                    </select>
+                </div>
+            </div>
+
+            {{-- Auto-filled from the file for a statutory title; picked from a
+                 dropdown for a customary one. Only the active control is enabled,
+                 so only one posts land_use_type. --}}
             <div class="field">
-                <label>Applied Land Use</label>
+                <label>General Landuse (Observed around) - Special</label>
                 <input type="text" name="land_use_type" id="m-land-use" class="inp inp-ro" readonly placeholder="Auto-filled">
+                <select name="land_use_type" id="m-land-use-select" class="inp" style="display:none;" disabled>
+                    <option value="">Select…</option>
+                    @foreach($customaryLandUses as $lut)
+                        <option value="{{ $lut }}">{{ $lut }}</option>
+                    @endforeach
+                </select>
             </div>
 
             <div class="field">
@@ -658,6 +696,44 @@ function createFieldPinMap({ mapId, coordsDisplayId, coordsHiddenId, geometryId 
         document.getElementById(geometryId).value      = '';
     }
 
+    // Drop the pin from a written address. `location` may be one string or an
+    // ordered list, most specific first (district + LGA, then LGA) — the
+    // geocoder rarely resolves a Kano street address, so without the broader
+    // fallback the pin simply never appears. `opts.force` re-pins over an
+    // existing coordinate, for when the surveyor changes the address itself.
+    function geocode(location, opts = {}) {
+        const hidden = document.getElementById(coordsHiddenId);
+        if (opts.force && hidden) hidden.value = '';
+
+        const candidates = (Array.isArray(location) ? location : [location])
+            .map(v => (v == null ? '' : String(v)).trim())
+            .filter(v => v && v !== '—')
+            .filter((v, i, arr) => arr.indexOf(v) === i);
+
+        if (!candidates.length) return;
+        if (hidden && hidden.value.trim()) return;   // never overwrite a pin already set
+        if (typeof google === 'undefined' || !google.maps) return;
+
+        const geocoder = new google.maps.Geocoder();
+        (function tryNext(i) {
+            if (i >= candidates.length) return;
+            const raw     = candidates[i];
+            const address = /kano/i.test(raw) ? raw + ', Nigeria' : raw + ', Kano, Nigeria';
+            geocoder.geocode({ address, region: 'NG' }, (results, status) => {
+                if (hidden && hidden.value.trim()) return;   // pinned by hand meanwhile
+                if (status === 'OK' && results[0]) {
+                    const pos = results[0].geometry.location;
+                    init();
+                    setCoords(pos.lat(), pos.lng());
+                    toast(i === 0 ? 'Pin placed from the address — drag to adjust.'
+                                  : 'Exact address not found; pin placed on the area — drag to correct.', 'info');
+                } else {
+                    tryNext(i + 1);
+                }
+            });
+        })(0);
+    }
+
     function init() {
         if (map) { map.invalidateSize(); return; }
         map = L.map(mapId, { zoomControl: false }).setView([12.0, 8.52], 11);
@@ -682,7 +758,7 @@ function createFieldPinMap({ mapId, coordsDisplayId, coordsHiddenId, geometryId 
         map.on(L.Draw.Event.DELETED, syncGeometryField);
     }
 
-    return { init, reset, setCoords };
+    return { init, reset, setCoords, geocode };
 }
 
 const inspectMiniMapCtrl = createFieldPinMap({ mapId: 'mini-map',     coordsDisplayId: 'm-coords-display',     coordsHiddenId: 'm-coords-hidden',     geometryId: 'm-geometry' });
@@ -1065,6 +1141,7 @@ document.addEventListener('click', e => {
                     document.getElementById('h-is_indexed').value       = '1';
                     document.getElementById('h-location').value         = d.location || '';
                     document.getElementById('h-lga').value              = d.lga || '';
+                    document.getElementById('h-district').value         = d.district || '';
                     document.getElementById('m-owner').value            = (d.file_title || d.owner_name || '').trim();
                     document.getElementById('m-phone').value            = d.phone || '';
                     document.getElementById('m-land-use').value         = d.land_use_type || '';
@@ -1072,6 +1149,13 @@ document.addEventListener('click', e => {
                     const badge = document.getElementById('m-location-badge');
                     if (loc) { document.getElementById('m-location-text').textContent = loc; badge.style.display = 'flex'; }
                     else badge.style.display = 'none';
+                    // Auto-pin the inspection map from the file's address, broadening
+                    // to district/LGA when the street address can't be resolved.
+                    addMiniMapCtrl.geocode([
+                        loc,
+                        [d.district, d.lga].filter(Boolean).join(', '),
+                        d.lga || '',
+                    ]);
                     msg.className = 'lookup-msg ok'; msg.textContent = '✓ File found — details pre-filled.';
                 } else {
                     document.getElementById('h-file_number').value = fileNo;
@@ -1123,6 +1207,53 @@ document.addEventListener('click', e => {
     });
 })();
 
+// ── Customary address picker (LGA + District) ─────────────────────────────────
+// Districts are fetched once, on the first switch to Customary, rather than
+// rendered inline: there are 1,818 of them, which is a lot of DOM to ship to a
+// phone on a field connection.
+let mobileDistrictsPromise = null;
+function loadMobileDistricts() {
+    if (mobileDistrictsPromise) return mobileDistrictsPromise;
+    const sel = document.getElementById('m-district');
+    mobileDistrictsPromise = fetch('{{ route("api.reference.districts") }}', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(r => r.json())
+        .then(d => {
+            const list = (d && d.data) || [];
+            sel.innerHTML = '<option value="">Select District…</option>'
+                + list.map(x => `<option value="${x.name}">${x.name}</option>`).join('');
+        })
+        .catch(() => {
+            sel.innerHTML = '<option value="">Districts unavailable — pin on the map</option>';
+            mobileDistrictsPromise = null; // allow a retry on the next switch
+        });
+    return mobileDistrictsPromise;
+}
+
+// LGA / District drive both the stored location and the map pin.
+function applyMobileCustomaryLocation() {
+    const lga      = document.getElementById('m-lga').value.trim();
+    const district = document.getElementById('m-district').value.trim();
+    const loc      = [district, lga].filter(Boolean).join(', ');
+
+    document.getElementById('h-location').value = loc;
+    const badge = document.getElementById('m-location-badge');
+    if (loc) {
+        document.getElementById('m-location-text').textContent = loc + ', Kano';
+        badge.style.display = '';
+    } else {
+        badge.style.display = 'none';
+    }
+
+    if (!lga && !district) return;
+    // force: the address just changed, so any earlier pin is stale.
+    addMiniMapCtrl.geocode([loc, lga].filter(Boolean), { force: true });
+}
+
+['m-lga', 'm-district'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', applyMobileCustomaryLocation);
+});
+
 // ── Land Title Type toggle (Statutory / Customary) ─────────────────────────────
 // Statutory: file number is picked from an existing indexed file (default).
 // Customary: no existing file — a temporary "SPAS-YYYY-####" number is
@@ -1138,12 +1269,36 @@ function setMobileLandTitleType(type) {
     document.getElementById('h-tracking_id').value      = '';
     document.getElementById('h-location').value         = '';
     document.getElementById('h-lga').value               = '';
+    document.getElementById('h-district').value          = '';
     document.getElementById('m-land-use').value          = '';
     document.getElementById('m-location-badge').style.display = 'none';
     msg.style.display = 'none';
     dropdown.style.display = 'none';
     fileInput.value  = '';
     ownerInput.value = '';
+
+    // Only the active control carries each name (land_use_type / lga / district);
+    // its counterpart is disabled so the form never posts two values.
+    const customary  = type === 'customary';
+    const luInput    = document.getElementById('m-land-use');
+    const luSelect   = document.getElementById('m-land-use-select');
+    const lgaSelect  = document.getElementById('m-lga');
+    const distSelect = document.getElementById('m-district');
+
+    luSelect.value = '';
+    luInput.style.display  = customary ? 'none' : '';
+    luInput.disabled       = customary;
+    luSelect.style.display = customary ? '' : 'none';
+    luSelect.disabled      = !customary;
+
+    lgaSelect.value  = '';
+    distSelect.value = '';
+    lgaSelect.disabled  = !customary;
+    distSelect.disabled = !customary;
+    document.getElementById('h-lga').disabled      = customary;
+    document.getElementById('h-district').disabled = customary;
+    document.getElementById('m-customary-geo').style.display = customary ? '' : 'none';
+    if (customary) loadMobileDistricts();
 
     if (type === 'customary') {
         fileInput.disabled = true;
@@ -1343,11 +1498,23 @@ function initForms() {
             toast(isCustomary ? 'Temporary file number still generating — try again.' : 'Select a file number first.', 'error');
             return;
         }
+        if (isCustomary && !document.getElementById('m-lga').value.trim()) {
+            toast('Select the LGA — a customary title has no file to take its location from.', 'error');
+            return;
+        }
         const btn = document.getElementById('btn-save-record');
+        const originalBtnHtml = btn.innerHTML;
         btn.disabled = true; btn.innerHTML = '<i data-lucide="loader" style="width:15px;animation:spin 1s linear infinite;"></i> Saving…'; lucide.createIcons();
         try {
-            const res  = await fetch(URLS.storeRec, { method:'POST', headers:{'X-CSRF-TOKEN':CSRF}, body: new FormData(this) });
+            const res  = await fetch(URLS.storeRec, { method:'POST', headers:{'X-CSRF-TOKEN':CSRF,'Accept':'application/json'}, body: new FormData(this) });
             const data = await res.json();
+            if (res.status === 422) {
+                // Show the actual field error rather than a bare "Save failed"
+                const first = Object.values(data.errors || {})[0];
+                toast((first && first[0]) || data.message || 'Please check the form.', 'error');
+                btn.disabled = false; btn.innerHTML = originalBtnHtml; lucide.createIcons();
+                return;
+            }
             if (data.success) {
                 closeSheet('sheet-add-record');
                 toast('Record saved.', 'success');

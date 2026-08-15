@@ -58,6 +58,26 @@
     margin-bottom: 10px;
   }
 
+  /* File No. on the acknowledgement sheets. Page 1 carries it as the File Ref.
+     No.; these two pages travel separately once the sheet is signed and handed
+     over, so each has to say which application it belongs to on its own. */
+  .ack-page .ack-file-no {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 13.5px;
+    font-weight: bold;
+    text-transform: uppercase;
+    border-bottom: 1px solid #000;
+    padding-bottom: 4px;
+    margin-bottom: 12px;
+  }
+
+  .ack-page .ack-file-no .ack-file-no-label {
+    font-weight: normal;
+    text-transform: none;
+  }
+
   .ack-page .header {
     position: relative;
     text-align: center;
@@ -259,6 +279,13 @@
   </header>
 
   <div class="ack-copy-tag">{{ $ackCopyLabel }}</div>
+
+  @if(trim((string) $ackFileNumber) !== '')
+  <div class="ack-file-no">
+    <span class="ack-file-no-label">File No.:</span>
+    <span>{{ $ackFileNumber }}</span>
+  </div>
+  @endif
 
   <!-- Paragraphs -->
   <section class="content-body">

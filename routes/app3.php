@@ -1097,6 +1097,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('land-recommendations/batch/{batchId}/print', [\App\Http\Controllers\LandRecommendationController::class, 'printBatch'])->name('land-recommendations.batch-print');
     // Every child of a batch, for the Batches tab — unpaginated on purpose.
     Route::get('land-recommendations/batch/{batchId}/children', [\App\Http\Controllers\LandRecommendationController::class, 'batchChildren'])->name('land-recommendations.batch-children');
+    // Read-only register of everything captured in one batch.
+    Route::get('land-recommendations/batch/{batchId}/records', [\App\Http\Controllers\LandRecommendationController::class, 'batchRecords'])->name('land-recommendations.batch-records');
     // A saved batch re-opened in the capture form, and the save that comes back.
     // Above the resource route, or /batch/{id}/edit reads as a record id.
     Route::get('land-recommendations/batch/{batchId}/edit', [\App\Http\Controllers\LandRecommendationController::class, 'editBatch'])->name('land-recommendations.batch-edit');

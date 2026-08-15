@@ -16,7 +16,9 @@
                 </div>
                 <div class="flex items-center gap-3 w-full md:w-auto">
                     <form action="{{ route('land-recommendations.index') }}" method="GET" class="flex items-center gap-3 flex-1 md:w-auto">
-                        <input type="hidden" name="type" value="{{ !empty($isOssView) ? 'OSS' : 'ROFO' }}">
+                        {{-- The page you are on, not the list you are looking at: on the
+                             OSS tab of the Land page these two differ. --}}
+                        <input type="hidden" name="type" value="{{ $pageType ?? (!empty($isOssView) ? 'OSS' : 'ROFO') }}">
                         <input type="hidden" name="tab" value="{{ $tab ?? 'not_printed' }}">
                         
                         {{-- The per-user filter is gone: the register is shown whole, so
@@ -46,6 +48,9 @@
             </div>
 
             <!-- Statistics Cards -->
+            {{-- The cards count the list under them. On the OSS tab that is the OSS
+                 register, while the tab badges keep counting the Land one. --}}
+            @php $cardStats = $cardStats ?? $stats; @endphp
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
                 <!-- Total Records -->
                 <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
@@ -58,7 +63,7 @@
                         </div>
                         <div>
                             <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Records</p>
-                            <h3 class="text-2xl font-black text-slate-800 tracking-tight">{{ number_format($stats['total']) }}</h3>
+                            <h3 class="text-2xl font-black text-slate-800 tracking-tight">{{ number_format($cardStats['total']) }}</h3>
                         </div>
                     </div>
                     <div class="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -78,7 +83,7 @@
                         </div>
                         <div>
                             <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pending Approval</p>
-                            <h3 class="text-2xl font-black text-slate-800 tracking-tight">{{ number_format($stats['pending']) }}</h3>
+                            <h3 class="text-2xl font-black text-slate-800 tracking-tight">{{ number_format($cardStats['pending']) }}</h3>
                         </div>
                     </div>
                     <div class="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -98,26 +103,31 @@
                         </div>
                         <div>
                             <p class="text-[10px] font-black text-blue-100 uppercase tracking-widest">Approved Applications</p>
-                            <h3 class="text-2xl font-black tracking-tight text-white">{{ number_format($stats['approved']) }}</h3>
+                            <h3 class="text-2xl font-black tracking-tight text-white">{{ number_format($cardStats['approved']) }}</h3>
                         </div>
                     </div>
                     <div class="mt-4 pt-4 border-t border-white/10 flex items-center justify-between text-[10px] font-bold text-blue-100 uppercase tracking-widest">
                         <span>Total Rent Value</span>
-                        <span class="px-2 py-0.5 bg-white/20 text-white rounded-lg border border-white/20">₦{{ number_format($stats['total_ground_rent']) }}</span>
+                        <span class="px-2 py-0.5 bg-white/20 text-white rounded-lg border border-white/20">₦{{ number_format($cardStats['total_ground_rent']) }}</span>
                     </div>
                 </div>
             </div>
 
             {{-- Printed / Not-Printed tabs --}}
-            @php $tab = $tab ?? 'not_printed'; @endphp
+            @php
+                $tab = $tab ?? 'not_printed';
+                // Links stay on the page you are on. $isOssView says what is being
+                // listed, which on the OSS tab is not the same thing.
+                $pageType = $pageType ?? (!empty($isOssView) ? 'OSS' : 'ROFO');
+            @endphp
             <div class="flex items-center gap-2 mb-4 bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm w-full sm:w-max">
-                <a href="{{ route('land-recommendations.index', array_filter(['type' => !empty($isOssView) ? 'OSS' : 'ROFO', 'tab' => 'not_printed', 'search' => request('search')])) }}"
+                <a href="{{ route('land-recommendations.index', array_filter(['type' => $pageType, 'tab' => 'not_printed', 'search' => request('search')])) }}"
                    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'not_printed' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100' }}">
                     <i data-lucide="file-clock" class="h-4 w-4"></i>
                     Not Printed
                     <span class="px-2 py-0.5 rounded-full text-[10px] font-black {{ $tab === 'not_printed' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500' }}">{{ number_format($stats['not_printed']) }}</span>
                 </a>
-                <a href="{{ route('land-recommendations.index', array_filter(['type' => !empty($isOssView) ? 'OSS' : 'ROFO', 'tab' => 'printed', 'search' => request('search')])) }}"
+                <a href="{{ route('land-recommendations.index', array_filter(['type' => $pageType, 'tab' => 'printed', 'search' => request('search')])) }}"
                    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'printed' ? 'bg-green-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100' }}">
                     <i data-lucide="printer-check" class="h-4 w-4"></i>
                     Printed
@@ -129,11 +139,23 @@
                      that happen to be on the page. On the Batches tab one row is one
                      whole batch and expanding it loads every child. --}}
                 @if(($stats['batches'] ?? 0) > 0)
-                <a href="{{ route('land-recommendations.index', array_filter(['type' => !empty($isOssView) ? 'OSS' : 'ROFO', 'tab' => 'batches', 'search' => request('search')])) }}"
+                <a href="{{ route('land-recommendations.index', array_filter(['type' => $pageType, 'tab' => 'batches', 'search' => request('search')])) }}"
                    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'batches' ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100' }}">
                     <i data-lucide="layers" class="h-4 w-4"></i>
                     Batches
                     <span class="px-2 py-0.5 rounded-full text-[10px] font-black {{ $tab === 'batches' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500' }}">{{ number_format($stats['batches']) }}</span>
+                </a>
+                @endif
+                {{-- OSS recommendations, on the Land page. They are still a page of
+                     their own (the menu links to ?type=OSS); this is the same list
+                     reached without leaving the register. The OSS register is not
+                     split by print state, so this tab is the whole of it. --}}
+                @if($pageType !== 'OSS' && ($stats['oss'] ?? 0) > 0)
+                <a href="{{ route('land-recommendations.index', array_filter(['type' => $pageType, 'tab' => 'oss', 'search' => request('search')])) }}"
+                   class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'oss' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100' }}">
+                    <i data-lucide="store" class="h-4 w-4"></i>
+                    OSS
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black {{ $tab === 'oss' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500' }}">{{ number_format($stats['oss']) }}</span>
                 </a>
                 @endif
             </div>
@@ -215,6 +237,13 @@
                                          back in. Editing one child at a time is still there on
                                          the main list; this is for a correction that runs
                                          across the batch. --}}
+                                    {{-- Everything captured against every child, side by side and
+                                         read-only. The expander below answers which files are in
+                                         the batch; this answers what is on them. --}}
+                                    <a href="{{ route('land-recommendations.batch-records', $b->rofo_batch_id) }}"
+                                        class="inline-flex items-center gap-1.5 px-3 py-1.5 mr-1.5 bg-white border border-slate-300 text-slate-700 text-[11px] font-bold rounded-lg hover:bg-slate-50 transition">
+                                        <i data-lucide="table-2" class="h-3.5 w-3.5"></i> View records
+                                    </a>
                                     <a href="{{ route('land-recommendations.batch-edit', $b->rofo_batch_id) }}"
                                         class="inline-flex items-center gap-1.5 px-3 py-1.5 mr-1.5 bg-white border border-slate-300 text-slate-700 text-[11px] font-bold rounded-lg hover:bg-slate-50 transition">
                                         <i data-lucide="pencil" class="h-3.5 w-3.5"></i> Edit batch
@@ -256,8 +285,8 @@
                 <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-wrap gap-3">
                     <h3 class="font-bold text-slate-800 uppercase tracking-wider text-xs flex items-center gap-2">
                         <i data-lucide="list" class="h-4 w-4 text-blue-600"></i>
-                        Application Records
-                        <span class="text-slate-400 normal-case tracking-normal font-medium">· {{ $tab === 'printed' ? 'Printed' : 'Not Printed' }}</span>
+                        {{ $tab === 'oss' ? 'OSS Records' : 'Application Records' }}
+                        <span class="text-slate-400 normal-case tracking-normal font-medium">· {{ $tab === 'oss' ? 'Land One Stop Shop' : ($tab === 'printed' ? 'Printed' : 'Not Printed') }}</span>
                     </h3>
                     @if(empty($isOssView))
                     <div id="batch-toolbar" class="hidden items-center gap-3">

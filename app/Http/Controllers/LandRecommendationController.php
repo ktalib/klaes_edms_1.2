@@ -43,6 +43,23 @@ class LandRecommendationController extends Controller
             return redirect()->route('home');
         }
 
+        // ── Tabs ────────────────────────────────────────────────────────────
+        // OSS is a tab on the Land Recommendation page as well as a page of its
+        // own (the menu still links straight to ?type=OSS). On the tab the list,
+        // the row actions and the export are all the OSS ones — only the tab strip
+        // and the header counters stay with the page you are on, which is why
+        // $pageType is tracked separately from $isOssView below.
+        $tab = $request->query('tab', 'not_printed');
+        $allowedTabs = $viewType === 'OSS'
+            ? ['printed', 'not_printed', 'batches']
+            : ['printed', 'not_printed', 'batches', 'oss'];
+        if (!in_array($tab, $allowedTabs, true)) {
+            $tab = 'not_printed';
+        }
+
+        $pageType = $viewType;
+        $ossTab   = $tab === 'oss';
+
         $ossHasIsDeleted = false;
         try {
             $ossHasIsDeleted = Schema::connection('sqlsrv')->hasColumn('oss_applications', 'is_deleted');
@@ -69,7 +86,9 @@ class LandRecommendationController extends Controller
         // landUse/purpose back the "Landuse/Purpose Clause" column when the row itself
         // only stored the ids (see LandRecommendation::getLandusePurposeAttribute).
         $query = LandRecommendation::with(['creator', 'landUse', 'purpose.landUse']);
-        $isOssView = $viewType === 'OSS';
+        // The OSS tab lists OSS records, so everything below that reads "is this
+        // the OSS list" is true there too. The page identity is $pageType.
+        $isOssView = $viewType === 'OSS' || $ossTab;
 
         if ($isOssView) {
             $ossAddressSubSql = "(
@@ -141,6 +160,34 @@ class LandRecommendationController extends Controller
         // The last two are what index.blade.php passes to SmartPrintManager.open();
         // matching only the first hid 105 already-printed OSS records (and 13 main-
         // view ones) behind a permanently empty "Printed" tab.
+        // Built per scope rather than once: the header counters on the Land page
+        // must keep counting Land prints even while the OSS tab is the one on
+        // screen, and the two scopes log under different document types.
+        $printedExistsFor = function (bool $oss) {
+            $printedDocTypes = $oss
+                ? ['Land Recommendation', 'OSS Recommendation For Grant']
+                : ['Land Recommendation', 'Recommendation For Grant'];
+
+            $securityCodeDocTypes = $oss
+                ? ['OSS Recomm']
+                : ['Lands ROFO', 'Land Conversion'];
+
+            return function ($q) use ($printedDocTypes, $securityCodeDocTypes) {
+                $unionQuery = DB::connection('sqlsrv')->table('print_logs')
+                    ->selectRaw('reference_number as fn')
+                    ->whereIn('document_type', $printedDocTypes)
+                    ->unionAll(
+                        DB::connection('sqlsrv')->table('security_codes')
+                            ->selectRaw('file_number as fn')
+                            ->whereIn('document_type', $securityCodeDocTypes)
+                    );
+
+                $q->select(DB::raw('1'))
+                  ->fromSub($unionQuery, 'printed_records')
+                  ->whereRaw('UPPER(LTRIM(RTRIM(printed_records.fn))) = UPPER(LTRIM(RTRIM(land_recommendations.file_number)))');
+            };
+        };
+
         $printedDocTypes = $isOssView
             ? ['Land Recommendation', 'OSS Recommendation For Grant']
             : ['Land Recommendation', 'Recommendation For Grant'];
@@ -149,25 +196,15 @@ class LandRecommendationController extends Controller
             ? ['OSS Recomm']
             : ['Lands ROFO', 'Land Conversion'];
 
-        $printedExists = function ($q) use ($printedDocTypes, $securityCodeDocTypes) {
-            $unionQuery = DB::connection('sqlsrv')->table('print_logs')
-                ->selectRaw('reference_number as fn')
-                ->whereIn('document_type', $printedDocTypes)
-                ->unionAll(
-                    DB::connection('sqlsrv')->table('security_codes')
-                        ->selectRaw('file_number as fn')
-                        ->whereIn('document_type', $securityCodeDocTypes)
-                );
+        $printedExists = $printedExistsFor($isOssView);
 
-            $q->select(DB::raw('1'))
-              ->fromSub($unionQuery, 'printed_records')
-              ->whereRaw('UPPER(LTRIM(RTRIM(printed_records.fn))) = UPPER(LTRIM(RTRIM(land_recommendations.file_number)))');
-        };
-
-        $tab = $request->query('tab', 'not_printed');
-        if (!in_array($tab, ['printed', 'not_printed', 'batches'], true)) {
-            $tab = 'not_printed';
-        }
+        // Counters: the cards describe the list under them, the tab badges describe
+        // the page's own tabs. On the OSS tab those are two different scopes.
+        $stats = $this->indexStats($request, $pageType === 'OSS', $applyOssChangeOfNameOriginFilter, $printedExistsFor($pageType === 'OSS'));
+        $stats['oss'] = $this->ossRecommendationCount($applyOssChangeOfNameOriginFilter);
+        $cardStats = $ossTab
+            ? $this->indexStats($request, true, $applyOssChangeOfNameOriginFilter, $printedExistsFor(true))
+            : $stats;
 
         // The Batches tab pages over batches, not over recommendations. On the main
         // list a 100-child batch is one collapsed row whose children are spread
@@ -226,8 +263,11 @@ class LandRecommendationController extends Controller
                 'batches'         => $batches,
                 'batchCreators'   => $batchCreators,
                 'PageTitle'       => $PageTitle,
-                'stats'           => $this->indexStats($request, $isOssView, $applyOssChangeOfNameOriginFilter, $printedExists),
+                'stats'           => $stats,
+                'cardStats'       => $cardStats,
                 'isOssView'       => $isOssView,
+                'pageType'        => $pageType,
+                'ossTab'          => $ossTab,
                 'tab'             => $tab,
                 'printDates'      => [],
                 'recSerials'      => [],
@@ -246,9 +286,11 @@ class LandRecommendationController extends Controller
             $query->whereNull('land_recommendations.rofo_batch_id');
         }
 
+        // The OSS tab is the OSS register whole — it is not split by print state,
+        // so neither half of the filter applies to it.
         if ($tab === 'printed') {
             $query->whereExists($printedExists);
-        } else { // not_printed
+        } elseif (!$ossTab) { // not_printed
             $query->whereNotExists($printedExists);
         }
 
@@ -288,8 +330,6 @@ class LandRecommendationController extends Controller
                 'pending_ids'  => $rows->where('status', LandRecommendation::STATUS_PENDING)->pluck('id')->values()->all(),
                 'all_approved' => $rows->every(fn ($r) => $r->status === LandRecommendation::STATUS_APPROVED),
             ]);
-
-        $stats = $this->indexStats($request, $isOssView, $applyOssChangeOfNameOriginFilter, $printedExists);
 
         // Batch-load the most recent print date per file number (from print_logs)
         // so the table can show a "Print Date" column without an N+1 per row.
@@ -339,7 +379,19 @@ class LandRecommendationController extends Controller
             }
         }
 
-        return view('land_recommendations.index', compact('recommendations', 'PageTitle', 'stats', 'isOssView', 'tab', 'printDates', 'recSerials', 'batchSizes', 'batchActions'));
+        return view('land_recommendations.index', compact('recommendations', 'PageTitle', 'stats', 'cardStats', 'isOssView', 'pageType', 'ossTab', 'tab', 'printDates', 'recSerials', 'batchSizes', 'batchActions'));
+    }
+
+    /**
+     * How many OSS recommendations exist, for the OSS tab's badge on the Land page.
+     * Scoped exactly like the OSS list itself, so the badge and the tab agree.
+     */
+    private function ossRecommendationCount(callable $applyOssFilter): int
+    {
+        $query = LandRecommendation::query()->whereRaw("UPPER(ISNULL(type, '')) = ?", ['OSS']);
+        $applyOssFilter($query);
+
+        return (int) $query->count();
     }
 
     /**
@@ -424,6 +476,48 @@ class LandRecommendationController extends Controller
                 'print_url'      => route('land-recommendations.print', $c->id),
             ])->values(),
         ]);
+    }
+
+    /**
+     * The whole batch as a read-only register page.
+     *
+     * The Batches tab's inline expander answers "which files are in here"; this
+     * answers "what was actually captured against each of them" — every column the
+     * letter prints from, side by side, without opening each child's edit form and
+     * without any control that can change a record. Deliberately unpaginated for
+     * the same reason batchChildren() is: a batch is shown whole.
+     */
+    public function batchRecords(Request $request, string $batchId)
+    {
+        $records = LandRecommendation::with(['creator', 'landUse', 'purpose.landUse'])
+            ->where('rofo_batch_id', $batchId)
+            ->orderBy('batch_seq')
+            ->orderBy('id')
+            ->get();
+
+        if ($records->isEmpty()) {
+            abort(404, 'No batch found under ' . $batchId . '.');
+        }
+
+        $first  = $records->first();
+        $mother = trim((string) ($first->batch_mother_file_no ?: $first->old_file_number));
+
+        $summary = [
+            'batch_id'         => $batchId,
+            'mother_file_no'   => $mother,
+            'application_type' => (string) ($first->application_type ?? ''),
+            'total'            => $records->count(),
+            'approved'         => $records->where('status', LandRecommendation::STATUS_APPROVED)->count(),
+            'generated'        => $records->where('rofo_status', LandRecommendation::ROFO_GENERATED)->count(),
+            'created_at'       => $records->min('created_at'),
+            'created_by'       => $first->creator->name ?? 'System',
+            // A batch of OSS records goes back to the OSS tab, not the Land list.
+            'is_oss'           => strtoupper((string) ($first->type ?? '')) === 'OSS',
+        ];
+
+        $PageTitle = 'Batch Records — ' . ($mother !== '' ? $mother : $batchId);
+
+        return view('land_recommendations.batch_records', compact('records', 'summary', 'PageTitle'));
     }
 
     /**
@@ -1006,12 +1100,71 @@ class LandRecommendationController extends Controller
 
         $payload = $this->hydrateBatchRows($childFileNumbers, $legacyByChild, true, $excludeBatchId);
 
+        // ── The mother file's own recommendation ────────────────────────────
+        // A subdivision is one grant split into plots, so the children are the
+        // mother's conditions applied to smaller parcels — the same relationship a
+        // Sectional Titling unit has with its primary application, and inherited
+        // the same way. Every child that has no recommendation of its own comes
+        // back carrying the mother's grant conditions as its starting values; a
+        // child that already has one keeps what was captured against it.
+        $motherRec = $this->motherRecommendation($variants);
+        if ($motherRec) {
+            $grant = [];
+            foreach (self::PER_CHILD_GRANT_FIELDS as $field) {
+                $grant[$field] = (string) ($motherRec->{$field} ?? '');
+            }
+
+            $payload = $payload->map(function (array $row) use ($grant, $motherRec) {
+                if (!empty($row['has_existing_record'])) {
+                    return $row;
+                }
+
+                $row['grant']       = $grant;
+                $row['inherited']   = true;
+                // The registry is still the better source for these where it has
+                // them; the mother only fills what the child's own file does not.
+                $row['land_use_id'] = $row['land_use_id'] ?: $motherRec->land_use_id;
+                $row['purpose_id']  = $row['purpose_id'] ?: $motherRec->purpose_id;
+
+                return $row;
+            });
+        }
+
         return response()->json([
             'success'  => true,
             'mother'   => $mother,
             'children' => $payload,
             'count'    => $payload->count(),
+            // The batch-wide half of the inheritance: fields the form captures once
+            // for the whole batch rather than per child.
+            'mother_recommendation' => $motherRec ? [
+                'file_number'        => (string) $motherRec->file_number,
+                'recommendation'     => (string) ($motherRec->recommendation ?? ''),
+                'premium'            => (string) ($motherRec->premium ?? ''),
+                'premium_words'      => (string) ($motherRec->premium_words ?? ''),
+                // Stored as the two YES/NO columns store() derives it into, so it
+                // has to be read back out into the radio the form actually has.
+                'rofo_survey_method' => strtoupper((string) ($motherRec->rofo_director_survey ?? '')) === 'YES'
+                    ? 'DIRECTOR'
+                    : (strtoupper((string) ($motherRec->rofo_licensed_surveyor ?? '')) === 'YES' ? 'LICENSED' : ''),
+            ] : null,
         ]);
+    }
+
+    /**
+     * The recommendation captured against the mother file, under any of the
+     * spellings its file number is stored in. The most recent one wins: a file
+     * re-recommended after a correction should hand its children the correction.
+     */
+    private function motherRecommendation(array $variants): ?LandRecommendation
+    {
+        if (!$variants) {
+            return null;
+        }
+
+        return LandRecommendation::whereIn('file_number', $variants)
+            ->orderByDesc('id')
+            ->first();
     }
 
     /**
@@ -1169,6 +1322,11 @@ class LandRecommendationController extends Controller
                     // was picked deliberately — but the picker says so, because an
                     // empty row is otherwise indistinguishable from a load that failed.
                     'is_unknown'     => $mls === null && $index === null && $legacy === null && $rec === null,
+                    // Whether the file carries a recommendation at all, as opposed
+                    // to whether that counts as a clash here. The mother's grant
+                    // conditions are only inherited onto children that have none of
+                    // their own, so the two questions cannot share one flag.
+                    'has_existing_record' => $rec !== null,
                     'has_recommendation' => $rec !== null && !$ownBatch,
                     // Shown on the row so the reason it is excluded is visible.
                     'existing_status' => $rec
