@@ -1186,11 +1186,61 @@
 
             if (eligibleForBalance) {
                 container.html(getBalanceBillForm());
+                // Fields render blank at 0.00, so recalculate immediately —
+                // otherwise the total keeps whatever markup getBalanceBillForm() shipped.
+                calculateBalanceTotal();
+                backfillRecordedBillBalance();
                 return;
             }
 
             // For non-eligible applications, show empty state
             container.html(getEmptyState('balance', 'Bill balance is only available for PuA and SuA applications.'));
+        }
+
+        /**
+         * Pull the Bill Balance already recorded for this unit (File Indexing
+         * capture, or the Deeds Bill Balance certificate) so staff do not
+         * re-key it. ST unit numbers are not present in those stores, so the
+         * server falls back to the parent scheme's land file number.
+         *
+         * Purely a read — it never creates a billing row.
+         */
+        function backfillRecordedBillBalance() {
+            if (!currentApplication || !currentApplication.fileId) {
+                return;
+            }
+
+            var $note = $('#balance-source-note');
+            $note.text('Checking for a recorded bill balance…');
+
+            fetch(`${window.location.origin}/programmes/bills/st-balance-source/${currentApplication.fileId}`)
+                .then(response => response.json())
+                .then(payload => {
+                    var d = payload && payload.data;
+
+                    if (!payload.success || !d || !d.found) {
+                        $note.text('No bill balance on record for this file — enter it manually.');
+                        return;
+                    }
+
+                    // Do not clobber a figure the user has already typed.
+                    var current = readBalanceMoney('#balance-bill-balance');
+                    if (current === 0) {
+                        $('#balance-bill-balance').val(parseFloat(d.amount || 0).toFixed(2));
+                        calculateBalanceTotal();
+                    }
+
+                    $('#balance-source-billing-id').val(d.billing_id || '');
+
+                    var via = d.matched_on === 'parent'
+                        ? ` via parent file ${d.file_number}`
+                        : ` on ${d.file_number}`;
+                    $note.text(`Backfilled from ${d.source_label}${via}.`);
+                })
+                .catch(error => {
+                    console.error('Bill balance backfill failed:', error);
+                    $note.text('Could not check for a recorded bill balance.');
+                });
         }
 
         function createBillCard(data) {
@@ -1686,8 +1736,10 @@
                                                                             </div>
                                                                             <div class="space-y-2">
                                                                                 <label for="balance-bill-balance" class="text-xs font-medium">Bill Balance (₦)</label>
-                                                                                <input id="balance-bill-balance" name="bill_balance" type="text" value="0.00" 
+                                                                                <input id="balance-bill-balance" name="bill_balance" type="text" value="0.00"
                                                                                     class="w-full p-2 border border-gray-300 rounded-md text-sm">
+                                                                                <input id="balance-source-billing-id" type="hidden" value="">
+                                                                                <p id="balance-source-note" class="text-xs text-gray-400"></p>
                                                                             </div>
                                                                             <div class="space-y-2">
                                                                                 <label for="balance-recertification-fee" class="text-xs font-medium">Recertification Fee (₦)</label>
@@ -1714,7 +1766,7 @@
                                                                         <div class="flex justify-between items-center">
                                                                             <div>
                                                                                 <p class="text-xs text-gray-600">Total Amount:</p>
-                                                                                <p class="text-lg font-bold" id="balance-calculated-total">₦85,525.00</p>
+                                                                                <p class="text-lg font-bold" id="balance-calculated-total">₦0.00</p>
                                                                             </div>
                                                                             <div class="flex gap-2">
                                                                                 <button type="button" id="calculate-balance-total-btn" class="px-3 py-1 text-xs bg-gray-600 text-white rounded-md hover:bg-gray-700">
@@ -2200,11 +2252,23 @@
             calculateBalanceTotal();
         });
 
+        /**
+         * Read a balance field as a number.
+         *
+         * bill-form-populator.js writes these back with toLocaleString(), so a
+         * saved bill reloads as "1,234.50" — and parseFloat("1,234.50") is 1234.
+         * Strip the grouping separators and currency mark before parsing.
+         */
+        function readBalanceMoney(selector) {
+            var raw = ($(selector).val() || '').toString().replace(/[₦,\s]/g, '');
+            return parseFloat(raw) || 0;
+        }
+
         function calculateBalanceTotal() {
-            var assignmentFee = parseFloat($('#balance-assignment-fee').val()) || 0;
-            var billBalance = parseFloat($('#balance-bill-balance').val()) || 0;
-            var recertificationFee = parseFloat($('#balance-recertification-fee').val()) || 0;
-            var devCharges = parseFloat($('#balance-dev-charges').val()) || 0;
+            var assignmentFee = readBalanceMoney('#balance-assignment-fee');
+            var billBalance = readBalanceMoney('#balance-bill-balance');
+            var recertificationFee = readBalanceMoney('#balance-recertification-fee');
+            var devCharges = readBalanceMoney('#balance-dev-charges');
 
             var totalAmount = assignmentFee + billBalance + recertificationFee + devCharges;
 
@@ -2213,10 +2277,10 @@
 
         // Generate balance bill with saving functionality
         $(document).on('click', '#save-balance-bill-btn', function () {
-            var assignmentFee = parseFloat($('#balance-assignment-fee').val()) || 0;
-            var billBalance = parseFloat($('#balance-bill-balance').val()) || 0;
-            var recertificationFee = parseFloat($('#balance-recertification-fee').val()) || 0;
-            var devCharges = parseFloat($('#balance-dev-charges').val()) || 0;
+            var assignmentFee = readBalanceMoney('#balance-assignment-fee');
+            var billBalance = readBalanceMoney('#balance-bill-balance');
+            var recertificationFee = readBalanceMoney('#balance-recertification-fee');
+            var devCharges = readBalanceMoney('#balance-dev-charges');
             var totalAmount = assignmentFee + billBalance + recertificationFee + devCharges;
             var billDate = $('#balance-bill-date').val() || new Date().toISOString().slice(0, 10);
 
@@ -2240,42 +2304,78 @@
                 }
             });
 
-            // Save balance bill data to localStorage
+            // Persist to final_bills — this is the table bill-form-populator.js reads back
+            // via /sub-final-bill/show/{id}, so the form can repopulate on the next visit.
             var billData = {
-                application_id: currentApplication.fileId,
+                sub_application_id: currentApplication.fileId,
                 assignment_fee: assignmentFee,
                 bill_balance: billBalance,
                 recertification_fee: recertificationFee,
                 dev_charges: devCharges,
-                total_amount: totalAmount,
                 bill_date: billDate,
-                bill_reference: $('#balance-bill-ref-id').val(),
-                generated_date: new Date().toISOString().slice(0, 10),
-                file_no: currentApplication.fileno,
-                owner_name: currentApplication.owner
+                bill_status: 'generated',
+                _token: $('meta[name="csrf-token"]').attr('content')
             };
 
-            // Store in localStorage for persistence
-            generatedBills.balance = billData;
-            localStorage.setItem('balance_bill_' + currentApplication.fileId, JSON.stringify(billData));
+            fetch(`${window.location.origin}/sub-final-bill/save`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+                },
+                body: JSON.stringify(billData)
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Keep the local copy for the preview tab
+                        generatedBills.balance = $.extend({}, billData, {
+                            application_id: currentApplication.fileId,
+                            total_amount: totalAmount,
+                            bill_reference: $('#balance-bill-ref-id').val(),
+                            generated_date: new Date().toISOString().slice(0, 10),
+                            file_no: currentApplication.fileno,
+                            owner_name: currentApplication.owner
+                        });
+                        localStorage.setItem('balance_bill_' + currentApplication.fileId, JSON.stringify(generatedBills.balance));
 
-            // Simulate generation delay
-            setTimeout(() => {
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Balance Bill Generated & Saved!',
-                    text: `Balance bill generated successfully! Total Amount: ₦${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
-                    confirmButtonColor: '#10b981'
+                        // Reflect the saved state the same way the populator would
+                        if (typeof window.populateAllForms === 'function') {
+                            window.populateAllForms();
+                        }
+
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Balance Bill Generated & Saved!',
+                            text: `Balance bill saved successfully! Total Amount: ₦${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+                            confirmButtonColor: '#10b981'
+                        });
+                    } else {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Error Saving Bill',
+                            text: data.message || 'Could not save the balance bill.',
+                            confirmButtonColor: '#ef4444'
+                        });
+                    }
+                })
+                .catch(error => {
+                    console.error('Error saving balance bill:', error);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error Saving Bill',
+                        text: 'Could not reach the server. The bill was not saved.',
+                        confirmButtonColor: '#ef4444'
+                    });
                 });
-            }, 2000);
         });
 
         // Preview balance bill with SweetAlert
         $(document).on('click', '#preview-balance-bill-btn', function () {
-            var assignmentFee = parseFloat($('#balance-assignment-fee').val()) || 0;
-            var billBalance = parseFloat($('#balance-bill-balance').val()) || 0;
-            var recertificationFee = parseFloat($('#balance-recertification-fee').val()) || 0;
-            var devCharges = parseFloat($('#balance-dev-charges').val()) || 0;
+            var assignmentFee = readBalanceMoney('#balance-assignment-fee');
+            var billBalance = readBalanceMoney('#balance-bill-balance');
+            var recertificationFee = readBalanceMoney('#balance-recertification-fee');
+            var devCharges = readBalanceMoney('#balance-dev-charges');
             var totalAmount = assignmentFee + billBalance + recertificationFee + devCharges;
             var billDate = $('#balance-bill-date').val() || new Date().toISOString().slice(0, 10);
 

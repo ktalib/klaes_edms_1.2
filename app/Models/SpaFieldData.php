@@ -13,6 +13,10 @@ class SpaFieldData extends Model
         'spa_application_id', 'file_number', 'surveyor_id',
         'inspection_date', 'coordinates', 'parcel_geometry', 'findings', 'photos',
         'status', 'created_by',
+        // Offline sync (database/sql/2026_08_15_spas_offline_sync_schema.sql):
+        // client_uuid makes a push idempotent on retry; spa_application_client_uuid
+        // links an inspection to a parent that has no server id yet.
+        'client_uuid', 'spa_application_client_uuid',
     ];
 
     protected $casts = [
@@ -20,6 +24,11 @@ class SpaFieldData extends Model
         'parcel_geometry' => 'array',
         'photos'          => 'array',
         'inspection_date' => 'date',
+        // The sqlsrv driver hands these back as strings ("10"), which then
+        // serialise into the sync API as strings and break a strict id
+        // comparison on the device. Cast so the JSON contract is stable.
+        'spa_application_id' => 'integer',
+        'surveyor_id'        => 'integer',
     ];
 
     public function application()

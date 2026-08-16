@@ -291,10 +291,20 @@ class TitleStatusService
      *
      * @param string $typeValue Value for title_status_type. flagAndDecommission() passes the
      *        slug ('regranted'); the Re-grant commissioning path passes the label ('Re-grant').
-     * @param bool $decommission Also set is_decommissioned on tables that have the column.
+     * @param bool $decommission Also set the decommission attributes on tables that have them.
+     *        A false decommissioning (the file is only FLAGGED, not decommissioned) passes
+     *        false and writes the title-status columns alone — so nothing downstream can
+     *        mistake a title-status flag for a real decommissioning.
+     * @param string|null $reason Stored as decommissioning_reason when $decommission is true;
+     *        falls back to the remark.
      */
-    public function applyFlags(string $fileNo, string $typeValue, string $remark, bool $decommission = false): void
-    {
+    public function applyFlags(
+        string $fileNo,
+        string $typeValue,
+        string $remark,
+        bool $decommission = false,
+        ?string $reason = null
+    ): void {
         if (trim($fileNo) === '') {
             return;
         }
@@ -312,8 +322,29 @@ class TitleStatusService
 
                 $updates = ['title_status' => 1, 'title_status_type' => $typeValue, 'title_status_remark' => $remark];
 
-                if ($decommission && DB::connection('sqlsrv')->getSchemaBuilder()->hasColumn($table, 'is_decommissioned')) {
-                    $updates['is_decommissioned'] = 1;
+                if ($decommission) {
+                    $schema = DB::connection('sqlsrv')->getSchemaBuilder();
+                    $user   = Auth::user();
+                    $now    = now();
+
+                    // Same attribute set PlotWorkflowService writes, so a file decommissioned
+                    // by a Title Status update is tracked identically to one decommissioned by
+                    // a merger or subdivision. Each column is written only where it exists.
+                    $attributes = [
+                        'is_decommissioned'      => 1,
+                        'decommissioned_at'      => $now,
+                        'decommissioning_date'   => $now,
+                        'decommissioned_by'      => $user
+                            ? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? $user->name ?? ''))
+                            : 'System',
+                        'decommissioning_reason' => $reason ?: "Title Status: {$typeValue} — {$remark}",
+                    ];
+
+                    foreach ($attributes as $column => $value) {
+                        if ($schema->hasColumn($table, $column)) {
+                            $updates[$column] = $value;
+                        }
+                    }
                 }
 
                 DB::connection('sqlsrv')->table($table)->where($fileCol, $fileNo)->update($updates);

@@ -8726,9 +8726,20 @@ class LegalSearchService
 
             $nextFiles = [];
             if ($direction === 'forward') {
-                $successors = $conn->table('decommissioned_files')
-                    ->whereRaw('UPPER(LTRIM(RTRIM(file_no))) = ?', [$current['file']])
-                    ->pluck('successor_file_no');
+                $successorQuery = $conn->table('decommissioned_files')
+                    ->whereRaw('UPPER(LTRIM(RTRIM(file_no))) = ?', [$current['file']]);
+
+                // Real decommissions only — matching every other reader here. An ST
+                // handover (false_decommissioning = 2) carries a successor_file_no
+                // pointing at its Sectional Titling primary, but the land file was
+                // never retired, so it must not be walked as a lifecycle successor.
+                if (Schema::connection($conn->getName())->hasColumn('decommissioned_files', 'false_decommissioning')) {
+                    $successorQuery->where(function ($q) {
+                        $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                    });
+                }
+
+                $successors = $successorQuery->pluck('successor_file_no');
                 foreach ($successors as $succCsv) {
                     foreach (array_map('trim', explode(',', (string) $succCsv)) as $s) {
                         $s = strtoupper($s);

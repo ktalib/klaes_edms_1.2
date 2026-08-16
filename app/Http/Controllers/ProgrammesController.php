@@ -2907,6 +2907,37 @@ class ProgrammesController extends Controller
     }
 
     /**
+     * Backfill source for the ST Bill Balance form.
+     *
+     * Returns the Bill Balance already recorded against this unit's file
+     * (or, failing that, its parent scheme's file) so the Bills screen can
+     * prefill instead of asking staff to re-key it.
+     *
+     * Read-only: resolving never touches the billing table.
+     */
+    public function stBalanceSource($subApplicationId, \App\Services\StBillBalanceResolver $resolver)
+    {
+        try {
+            $result = $resolver->forSubApplication((int) $subApplicationId);
+
+            return response()->json([
+                'success' => true,
+                'data'    => $result,
+            ]);
+        } catch (\Throwable $e) {
+            \Log::warning('stBalanceSource failed', [
+                'sub_application_id' => $subApplicationId,
+                'error'              => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Could not resolve an existing bill balance.',
+            ], 500);
+        }
+    }
+
+    /**
      * Get bill balance reference ID for unit applications
      */
     public function getBillBalanceReference($fileNo)

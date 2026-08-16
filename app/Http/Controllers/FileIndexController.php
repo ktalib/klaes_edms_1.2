@@ -2713,6 +2713,12 @@ class FileIndexController extends Controller
                 'file_indexings.related_fileno',
                 'file_indexings.corresponding_fileno',
                 'file_indexings.temp_file_no',
+                // Decommissioned files are no longer deleted from file_indexings, so they
+                // stay in this list and the status column badges them instead of showing a
+                // green "Indexed". See buildIndexedStatusBadge() in indexed-data-table.
+                'file_indexings.is_decommissioned',
+                'file_indexings.decommissioning_reason',
+                'file_indexings.successor_file_no',
                 'creators.first_name as creator_first_name',
                 'creators.last_name as creator_last_name',
             ]);
@@ -2802,6 +2808,9 @@ class FileIndexController extends Controller
 
                 return [
                     'id' => $row->id,
+                    'is_decommissioned' => (int) ($row->is_decommissioned ?? 0),
+                    'decommissioning_reason' => $row->decommissioning_reason ?? null,
+                    'successor_file_no' => $row->successor_file_no ?? null,
                     'tracking_id' => $row->tracking_id,
                     'shelf_location' => $shelfLocation,
                     'general_registry' => $row->general_registry,

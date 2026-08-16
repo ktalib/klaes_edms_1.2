@@ -412,6 +412,53 @@ Route::middleware('auth:sanctum')->prefix('activity-logs')->controller(\App\Http
     Route::post('/settings', 'settings')->name('api.activity-logs.settings.update');
 });
 
+/*
+|--------------------------------------------------------------------------
+| SPAS Mobile (offline-first Capacitor app)
+|--------------------------------------------------------------------------
+|
+| Token-authenticated API for the SPAS Android app. The existing
+| /special-assignment/mobile Blade page keeps its session-based AJAX endpoints
+| unchanged — these are additive and share the same write path through
+| App\Services\SpaMobileService.
+|
+| Phase 0 of docs/plans/SPAS_MOBILE_OFFLINE_CAPACITOR_SYNC_PLAN.md.
+|
+*/
+Route::prefix('spas')->name('api.spas.')->group(function () {
+
+    // Public — the only unauthenticated endpoint.
+    Route::post('/auth/login', [\App\Http\Controllers\Api\Spas\SpasAuthController::class, 'login'])->name('auth.login');
+
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::post('/auth/logout', [\App\Http\Controllers\Api\Spas\SpasAuthController::class, 'logout'])->name('auth.logout');
+
+        // Delta pull — `since` is an ISO timestamp cursor held on the device.
+        Route::controller(\App\Http\Controllers\Api\Spas\SpasSyncController::class)->group(function () {
+            Route::get('/records',     'records')->name('records.pull');
+            Route::get('/field-data',  'fieldData')->name('field-data.pull');
+
+            // Push — both idempotent on client_uuid, so a retried request after
+            // a dropped connection returns the existing row instead of a duplicate.
+            Route::post('/records',    'storeRecord')->name('records.push');
+            Route::post('/field-data', 'storeFieldData')->name('field-data.push');
+            Route::post('/photos',     'storePhotos')->name('photos.push');
+
+            // Stitches inspections to parents that synced after them.
+            Route::post('/link-orphans', 'linkOrphans')->name('link-orphans');
+        });
+
+        // Reference data cached on device.
+        Route::prefix('lookup')->name('lookup.')->controller(\App\Http\Controllers\Api\Spas\SpasLookupController::class)->group(function () {
+            Route::get('/file-index',            'fileIndex')->name('file-index');
+            Route::get('/land-uses',             'landUses')->name('land-uses');
+            Route::get('/lgas',                  'lgas')->name('lgas');
+            Route::get('/districts',             'districts')->name('districts');
+            Route::get('/next-customary-fileno', 'nextCustomaryFileNumber')->name('next-customary-fileno');
+        });
+    });
+});
+
 // Activity Log Real-time AJAX Routes
 Route::middleware('auth:sanctum')->prefix('activity')->controller(\App\Http\Controllers\ActivityLogDashboardController::class)->group(function () {
     // Real-time statistics

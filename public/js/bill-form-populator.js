@@ -98,6 +98,16 @@ $(document).ready(function () {
                         $('#balance-bill-date').val(data.bill.bill_date || '');
                     }
 
+                    // The fields were just repopulated, so the displayed total is
+                    // still whatever was on screen before — recalculate it.
+                    if (typeof calculateBalanceTotal === 'function') {
+                        calculateBalanceTotal();
+                    }
+
+                    // These values came from the saved bill, so the backfill
+                    // provenance note underneath is stale — replace it.
+                    $('#balance-source-note').text('Loaded from the saved bill for this file.');
+
                     // Grey out fields if bill is already saved
                     var totalAmount = parseFloat(data.bill.total_amount || 0);
                     if (totalAmount > 0) {

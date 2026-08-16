@@ -55,6 +55,22 @@
   }
 
   function buildIndexedStatusBadge(row) {
+    // A decommissioned file is no longer deleted from file_indexings — it stays listed
+    // and must read as decommissioned, never as a healthy green "Indexed". The reason
+    // and successor ride along in the tooltip so staff can see what replaced it.
+    if (Number(row.is_decommissioned) === 1) {
+      const reason = row.decommissioning_reason || 'Decommissioned';
+      const successor = row.successor_file_no
+        ? ` — replaced by ${row.successor_file_no}`
+        : '';
+      return `
+        <span class="badge badge-red" title="${escapeHtml(reason + successor)}">
+          <i data-lucide="archive" class="h-3 w-3 mr-1 inline"></i>
+          Decommissioned
+        </span>
+      `;
+    }
+
     const statusText = row.status || row.source || 'Indexed';
     return `
       <span class="badge badge-green">

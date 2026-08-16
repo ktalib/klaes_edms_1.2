@@ -1,0 +1,159 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\BillBalance;
+use App\Models\FileIndexingBill;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Resolves an already-recorded Bill Balance for a Sectional Titling unit
+ * (PuA / SuA) so the Bills screen can backfill it instead of re-keying.
+ *
+ * ST unit numbers (ST-MIXED-2025-1-022) never appear in any balance store —
+ * those are keyed by land file number (CON-COM-2004-45). So we try the unit's
+ * own fileno first, then fall back to its parent scheme's fileno via
+ * subapplications.main_application_id -> mother_applications.fileno.
+ *
+ * The `billing` table is the lookup hub: ref_id = file number, source = bill
+ * type. It does NOT hold the amount — every indexing-bill-balance row is
+ * zero-filled — so the figure is read from the child row that billing points
+ * at (file_indexing_bills.amount, or the Deeds metadata via summaryForFile).
+ *
+ * READ-ONLY BY DESIGN. This never writes to billing, so backfilling can not
+ * create a duplicate billing row.
+ */
+class StBillBalanceResolver
+{
+    public const SOURCE_INDEXING = 'indexing-bill-balance';
+    public const SOURCE_DEEDS    = 'DEEDS_BILL_BALANCE';
+
+    /**
+     * @return array{
+     *   found: bool, amount: float|null, source: string|null,
+     *   file_number: string|null, matched_on: string|null,
+     *   billing_id: int|null, detail: array
+     * }
+     */
+    public function forSubApplication(int $subApplicationId): array
+    {
+        $sub = DB::connection('sqlsrv')->table('subapplications')
+            ->select('id', 'fileno', 'main_application_id', 'unit_type', 'is_sua_unit')
+            ->where('id', $subApplicationId)
+            ->first();
+
+        if (!$sub) {
+            return $this->miss();
+        }
+
+        // Candidates in priority order: the unit's own file, then its parent scheme's.
+        $candidates = [];
+        if (!empty($sub->fileno)) {
+            $candidates[] = ['file_number' => trim($sub->fileno), 'matched_on' => 'unit'];
+        }
+
+        if (!empty($sub->main_application_id)) {
+            $parentFileNo = DB::connection('sqlsrv')->table('mother_applications')
+                ->where('id', $sub->main_application_id)
+                ->value('fileno');
+
+            if (!empty($parentFileNo)) {
+                $candidates[] = ['file_number' => trim($parentFileNo), 'matched_on' => 'parent'];
+            }
+        }
+
+        foreach ($candidates as $candidate) {
+            $hit = $this->forFileNumber($candidate['file_number']);
+
+            if ($hit['found']) {
+                $hit['matched_on'] = $candidate['matched_on'];
+                return $hit;
+            }
+        }
+
+        return $this->miss();
+    }
+
+    /**
+     * Look a single file number up across both balance stores, indexing first
+     * (2,204 rows vs 203 — it is the fuller set).
+     */
+    public function forFileNumber(?string $fileNumber): array
+    {
+        $fileNumber = trim((string) $fileNumber);
+
+        if ($fileNumber === '') {
+            return $this->miss();
+        }
+
+        // 1) File Indexing capture — amount lives in file_indexing_bills.
+        $indexed = FileIndexingBill::amountsForFile($fileNumber);
+
+        if ($indexed['bill_balance'] !== null) {
+            return [
+                'found'       => true,
+                'amount'      => (float) $indexed['bill_balance'],
+                'source'      => self::SOURCE_INDEXING,
+                'source_label' => 'File Indexing',
+                'file_number' => $fileNumber,
+                'matched_on'  => null,
+                'billing_id'  => $this->billingIdFor($fileNumber, self::SOURCE_INDEXING),
+                'detail'      => [
+                    'grant_rent' => $indexed['grant_rent'],
+                ],
+            ];
+        }
+
+        // 2) Deeds Bill Balance certificate — use the computed balance still due.
+        $deeds = BillBalance::summaryForFile($fileNumber);
+
+        if ($deeds !== null) {
+            return [
+                'found'        => true,
+                'amount'       => (float) ($deeds['balance_due'] ?? 0),
+                'source'       => self::SOURCE_DEEDS,
+                'source_label' => 'Deeds Bill Balance',
+                'file_number'  => $fileNumber,
+                'matched_on'   => null,
+                'billing_id'   => $this->billingIdFor($fileNumber, self::SOURCE_DEEDS),
+                'detail'       => [
+                    'reference'        => $deeds['reference'] ?? null,
+                    'total_amount'     => $deeds['total_amount'] ?? null,
+                    'amount_deposited' => $deeds['amount_deposited'] ?? null,
+                    'payment_status'   => $deeds['payment_status'] ?? null,
+                ],
+            ];
+        }
+
+        return $this->miss();
+    }
+
+    /**
+     * The billing row this balance hangs off — carried through purely so the
+     * UI can show the linkage and the save path can update rather than insert.
+     */
+    private function billingIdFor(string $fileNumber, string $source): ?int
+    {
+        $id = DB::connection('sqlsrv')->table('billing')
+            ->whereRaw('UPPER(LTRIM(RTRIM(ref_id))) = ?', [strtoupper($fileNumber)])
+            ->where('source', $source)
+            ->orderByDesc('ID')
+            ->value('ID');
+
+        return $id !== null ? (int) $id : null;
+    }
+
+    private function miss(): array
+    {
+        return [
+            'found'        => false,
+            'amount'       => null,
+            'source'       => null,
+            'source_label' => null,
+            'file_number'  => null,
+            'matched_on'   => null,
+            'billing_id'   => null,
+            'detail'       => [],
+        ];
+    }
+}

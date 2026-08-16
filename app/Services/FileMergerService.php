@@ -28,6 +28,37 @@ class FileMergerService
     private string $conn = 'sqlsrv';
 
     /**
+     * Restrict a decommissioned_files query to REAL decommissions.
+     *
+     * decommissioned_files holds three kinds of row, distinguished by
+     * false_decommissioning:
+     *
+     *   0 / NULL  a real decommissioning — the file was superseded by a merger,
+     *             subdivision, change of purpose, etc. This is lineage.
+     *   1         a Title Status FLAG raised from File Indexing. The file is NOT
+     *             decommissioned and has no successor; it is still live and in use.
+     *   2         an ST handover: the file lives on under its Sectional Titling
+     *             primary. It carries a successor_file_no, but the ST primary is
+     *             not a parcel update and the land file was never retired.
+     *
+     * Without this filter every reader here treated all three as lineage, so a
+     * title-status flag became a "decommissioned parent" complete with a bogus
+     * decommissioning date, and an ST primary would chain its land file into a
+     * merger group. Every other consumer (LegalSearchService, FileLocationResolver,
+     * FileDecommissioningController) already applies exactly this predicate.
+     */
+    private function onlyRealDecommissions($query)
+    {
+        if (!Schema::connection($this->conn)->hasColumn('decommissioned_files', 'false_decommissioning')) {
+            return $query;
+        }
+
+        return $query->where(function ($q) {
+            $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+        });
+    }
+
+    /**
      * Discover the full group that $fileNumber belongs to, (re)materialise it into
      * file_merger, and stamp file_tracker.merger_id. Returns the MergerID, or null when the
      * file is not part of any parcel-update group.
@@ -244,12 +275,14 @@ class FileMergerService
         }
 
         if (Schema::connection($this->conn)->hasTable('decommissioned_files')) {
-            $dec = DB::connection($this->conn)->table('decommissioned_files')
-                ->where(function ($q) use ($cur) {
-                    $q->whereRaw('UPPER(LTRIM(RTRIM(file_no))) = ?', [$cur])
-                      ->orWhereRaw('UPPER(LTRIM(RTRIM(mls_file_no))) = ?', [$cur])
-                      ->orWhereRaw('UPPER(LTRIM(RTRIM(kangis_file_no))) = ?', [$cur]);
-                })
+            $dec = $this->onlyRealDecommissions(
+                DB::connection($this->conn)->table('decommissioned_files')
+                    ->where(function ($q) use ($cur) {
+                        $q->whereRaw('UPPER(LTRIM(RTRIM(file_no))) = ?', [$cur])
+                          ->orWhereRaw('UPPER(LTRIM(RTRIM(mls_file_no))) = ?', [$cur])
+                          ->orWhereRaw('UPPER(LTRIM(RTRIM(kangis_file_no))) = ?', [$cur]);
+                    })
+            )
                 ->orderByDesc('decommissioning_date')
                 ->first();
             if ($dec) {
@@ -431,13 +464,14 @@ class FileMergerService
             $members[$cur] = $members[$cur] ?? $current;
 
             // (a) $current as a decommissioned parent -> its successor child.
-            $asParent = DB::connection($this->conn)->table('decommissioned_files')
-                ->where(function ($q) use ($cur) {
-                    $q->whereRaw('UPPER(LTRIM(RTRIM(file_no))) = ?', [$cur])
-                      ->orWhereRaw('UPPER(LTRIM(RTRIM(mls_file_no))) = ?', [$cur])
-                      ->orWhereRaw('UPPER(LTRIM(RTRIM(kangis_file_no))) = ?', [$cur]);
-                })
-                ->get();
+            $asParent = $this->onlyRealDecommissions(
+                DB::connection($this->conn)->table('decommissioned_files')
+                    ->where(function ($q) use ($cur) {
+                        $q->whereRaw('UPPER(LTRIM(RTRIM(file_no))) = ?', [$cur])
+                          ->orWhereRaw('UPPER(LTRIM(RTRIM(mls_file_no))) = ?', [$cur])
+                          ->orWhereRaw('UPPER(LTRIM(RTRIM(kangis_file_no))) = ?', [$cur]);
+                    })
+            )->get();
             foreach ($asParent as $row) {
                 $members[$cur] = $members[$cur] ?? trim((string) ($row->file_no ?? $current));
                 if ($hasSuccessor) {
@@ -450,9 +484,10 @@ class FileMergerService
 
             // (b) $current as a successor child -> the parents it superseded.
             if ($hasSuccessor) {
-                $asChild = DB::connection($this->conn)->table('decommissioned_files')
-                    ->whereRaw('UPPER(LTRIM(RTRIM(successor_file_no))) = ?', [$cur])
-                    ->get(['file_no']);
+                $asChild = $this->onlyRealDecommissions(
+                    DB::connection($this->conn)->table('decommissioned_files')
+                        ->whereRaw('UPPER(LTRIM(RTRIM(successor_file_no))) = ?', [$cur])
+                )->get(['file_no']);
                 foreach ($asChild as $row) {
                     $parent = $this->clean((string) ($row->file_no ?? ''));
                     if ($parent !== '') {
@@ -572,12 +607,14 @@ class FileMergerService
             $file = $this->clean($original);
             $cur = $this->norm($file);
 
-            $dec = DB::connection($this->conn)->table('decommissioned_files')
-                ->where(function ($q) use ($cur) {
-                    $q->whereRaw('UPPER(LTRIM(RTRIM(file_no))) = ?', [$cur])
-                      ->orWhereRaw('UPPER(LTRIM(RTRIM(mls_file_no))) = ?', [$cur])
-                      ->orWhereRaw('UPPER(LTRIM(RTRIM(kangis_file_no))) = ?', [$cur]);
-                })
+            $dec = $this->onlyRealDecommissions(
+                DB::connection($this->conn)->table('decommissioned_files')
+                    ->where(function ($q) use ($cur) {
+                        $q->whereRaw('UPPER(LTRIM(RTRIM(file_no))) = ?', [$cur])
+                          ->orWhereRaw('UPPER(LTRIM(RTRIM(mls_file_no))) = ?', [$cur])
+                          ->orWhereRaw('UPPER(LTRIM(RTRIM(kangis_file_no))) = ?', [$cur]);
+                    })
+            )
                 ->orderByDesc('decommissioning_date')
                 ->first();
 

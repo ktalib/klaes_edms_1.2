@@ -10,6 +10,7 @@ use App\Models\SpaDepartmentReferral;
 use App\Models\SpaMemo;
 use App\Models\SpaCertificate;
 use App\Services\BetaSmsService;
+use App\Services\SpaMobileService;
 use App\Services\UserNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -814,60 +815,31 @@ class SpecialAssignmentController extends Controller
         return response()->json(['file_number' => SpaApplication::generateCustomaryFileNumber()]);
     }
 
-    public function storeLandRecord(Request $request)
+    public function storeLandRecord(Request $request, SpaMobileService $spa)
     {
-        $request->validate([
-            'land_title_type' => 'required|in:statutory,customary',
-            'file_number'     => 'required_if:land_title_type,statutory|string|max:255',
-            'owner_name'      => 'required|string|max:255',
-            'phone'           => 'nullable|string|max:20',
-            'proposed_use'    => 'required|string|max:255',
-            'existing_use'    => 'required|string|max:255',
-            // A customary title has no indexed file to inherit an address from,
-            // so the LGA is picked by hand and is the minimum needed to place it.
-            'lga'             => 'required_if:land_title_type,customary|nullable|string|max:255',
-            'district'        => 'nullable|string|max:255',
-            'photos.*'        => 'nullable|image|max:5120',
-        ], [
-            'lga.required_if' => 'Please select the LGA for this customary title.',
-        ]);
+        // Rules live in SpaMobileService so the desktop form, the mobile form
+        // and the offline app cannot drift apart again — a rule added here
+        // alone once broke every customary save from mobile with a silent 422.
+        $request->validate($spa->landRecordRules(), $spa->landRecordMessages());
 
-        $isCustomary = $request->land_title_type === 'customary';
+        // One SPAS application per file number. Enforced in the database by
+        // UQ_spa_applications_file_number; checked here first so a duplicate
+        // reads as a form error instead of a raw unique-constraint 500.
+        $duplicate = $spa->duplicateFileNumberError($request->land_title_type, $request->file_number);
 
-        // Customary titles have no existing indexed file to pick — the temporary
-        // file number is generated server-side (not trusted from the client) to
-        // keep the sequence authoritative and collision-free.
-        $fileNumber = $isCustomary
-            ? SpaApplication::generateCustomaryFileNumber()
-            : $request->file_number;
-
-        $photos = [];
-        if ($request->hasFile('photos')) {
-            foreach ($request->file('photos') as $photo) {
-                $photos[] = $photo->store('spa/land-records', 'public');
-            }
+        if ($duplicate) {
+            return response()->json(['success' => false, 'message' => $duplicate], 422);
         }
 
-        $app = SpaApplication::create([
-            'file_number'     => $fileNumber,
-            'tracking_id'     => $isCustomary ? null : $request->tracking_id,
-            'file_indexing_id'=> $isCustomary ? null : ($request->file_indexing_id ?: null),
-            'is_indexed'      => $isCustomary ? false : (bool) $request->is_indexed,
-            'land_title_type' => $request->land_title_type,
-            'owner_name'      => $request->owner_name,
-            'phone'           => $request->phone,
-            'location'        => $request->location,
-            'district'        => $request->district,
-            'lga'             => $request->lga,
-            'land_use_type'   => $request->land_use_type,
-            'proposed_use'    => $request->proposed_use,
-            'existing_use'    => $request->existing_use,
-            'photos'          => $photos ?: null,
-            'status'          => 'open',
-            'created_by'      => auth()->user()->name ?? auth()->id(),
-        ]);
+        $photos = $spa->storePhotos($request->file('photos'), 'spa/land-records');
 
-        return response()->json(['success' => true, 'id' => $app->id, 'file_number' => $fileNumber, 'message' => 'Land record saved.']);
+        $app = $spa->createLandRecord(
+            $request->all(),
+            $photos,
+            auth()->user()->name ?? auth()->id()
+        );
+
+        return response()->json(['success' => true, 'id' => $app->id, 'file_number' => $app->file_number, 'message' => 'Land record saved.']);
     }
 
     public function updateLandRecord(Request $request, int $id)
@@ -899,74 +871,37 @@ class SpecialAssignmentController extends Controller
         return response()->json(['success' => true, 'message' => 'Record deleted.']);
     }
 
-    public function storeFieldData(Request $request)
+    public function storeFieldData(Request $request, SpaMobileService $spa)
     {
-        $request->validate([
-            'spa_application_id' => 'required|exists:sqlsrv.spa_applications,id',
-            'inspection_date'    => 'required|date',
-            'findings'           => 'required|string',
-        ]);
+        // requireServerParent: the web forms always have a saved parent record.
+        // Only the offline app may push an inspection that links by client_uuid.
+        $request->validate($spa->fieldDataRules(requireServerParent: true));
 
-        // Reject duplicate file numbers
-        if ($request->file_number) {
-            $duplicate = SpaFieldData::where('file_number', $request->file_number)->exists();
-            if ($duplicate) {
-                return response()->json([
-                    'success' => false,
-                    'message' => "A field inspection record already exists for file number {$request->file_number}.",
-                ], 422);
-            }
+        $duplicate = $spa->duplicateInspectionError($request->file_number);
+
+        if ($duplicate) {
+            return response()->json(['success' => false, 'message' => $duplicate], 422);
         }
 
-        // Coordinates normally arrive as JSON ({"lat":..,"lng":..}) from the map picker,
-        // but fall back to parsing a raw "lat, lng" string — and reject outright rather
-        // than silently saving the inspection with no pin — if neither can be understood.
-        $coordinates = null;
-        if ($request->filled('coordinates')) {
-            $decoded = json_decode($request->coordinates, true);
-            if (is_array($decoded) && isset($decoded['lat'], $decoded['lng']) && is_numeric($decoded['lat']) && is_numeric($decoded['lng'])) {
-                $coordinates = ['lat' => (float) $decoded['lat'], 'lng' => (float) $decoded['lng']];
-            } else {
-                preg_match_all('/-?\d+(?:\.\d+)?/', $request->coordinates, $matches);
-                if (count($matches[0]) >= 2) {
-                    $coordinates = ['lat' => (float) $matches[0][0], 'lng' => (float) $matches[0][1]];
-                }
-            }
-            if (!$coordinates) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Coordinates could not be understood — please re-pick the pin location on the map.',
-                ], 422);
-            }
+        // Rejects an unparseable pin rather than silently saving the inspection
+        // without one; throws ValidationException, which renders as a 422.
+        try {
+            $coordinates = $spa->normalizeCoordinates($request->input('coordinates'));
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->validator->errors()->first('coordinates'),
+            ], 422);
         }
 
-        $photos = [];
-        if ($request->hasFile('photos')) {
-            foreach ($request->file('photos') as $file) {
-                $path = $file->store('spa/field-data', 'public');
-                $photos[] = $path;
-            }
-        }
+        $photos = $spa->storePhotos($request->file('photos'), 'spa/field-data');
 
-        $parcelGeometry = $request->parcel_geometry ? json_decode($request->parcel_geometry, true) : null;
-
-        $data = SpaFieldData::create([
-            'spa_application_id' => $request->spa_application_id,
-            'file_number'        => $request->file_number,
-            'surveyor_id'        => auth()->id(),
-            'inspection_date'    => $request->inspection_date,
-            'coordinates'        => $coordinates,
-            'parcel_geometry'    => $parcelGeometry,
-            'findings'           => $request->findings,
-            'photos'             => $photos ?: null,
-            'status'             => 'active',
-            'created_by'         => auth()->user()->name ?? auth()->id(),
-        ]);
-
-        // Advance application status
-        SpaApplication::where('id', $request->spa_application_id)
-            ->where('status', 'open')
-            ->update(['status' => 'in_progress']);
+        $data = $spa->createFieldData(
+            $request->all(),
+            $photos,
+            auth()->id(),
+            auth()->user()->name ?? auth()->id()
+        );
 
         // Build map point for live map update
         $app      = SpaApplication::find($request->spa_application_id);

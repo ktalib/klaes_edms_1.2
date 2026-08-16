@@ -357,18 +357,38 @@ class BillBalanceController extends Controller
         $receipt = $data['bill_balance_reciept'] ?? $data['reference'];
         $refId = $billBalance->file_number ?? $data['file_number'] ?? $data['reference'];
 
+        // Resolve THIS record's own billing row, deterministically.
+        //
+        // The lookup must never stray outside source = DEEDS_BILL_BALANCE: an
+        // earlier version matched on ref_id/receipt alone, which let a Deeds
+        // save adopt and overwrite a File Indexing billing row for the same
+        // file number (billing #4694 was hijacked that way) and let two Deeds
+        // records collapse onto one row. Keying on source + source_id gives
+        // each record exactly one row — updated on re-save, never duplicated.
         $existing = null;
         if ($billBalance->billing_id) {
             $existing = $connection->table('billing')->where(self::BILLING_PRIMARY_KEY, $billBalance->billing_id)->first();
         }
 
-        if (!$existing) {
+        if (!$existing && $billBalance->id) {
             $existing = $connection->table('billing')
+                ->where('source', self::BILLING_SOURCE)
+                ->where('source_id', $billBalance->id)
+                ->orderByDesc(self::BILLING_PRIMARY_KEY)
+                ->first();
+        }
+
+        if (!$existing) {
+            // Legacy rows written before source_id was populated: adopt one only
+            // if it is already a Deeds row and unclaimed by another record.
+            $existing = $connection->table('billing')
+                ->where('source', self::BILLING_SOURCE)
+                ->whereNull('source_id')
                 ->where(function ($query) use ($refId, $receipt) {
                     $query->where('ref_id', $refId)
                         ->orWhere('bill_balance_reciept', $receipt);
                 })
-                ->orderByDesc('id')
+                ->orderByDesc(self::BILLING_PRIMARY_KEY)
                 ->first();
         }
 

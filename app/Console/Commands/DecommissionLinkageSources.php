@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Services\PlotWorkflowService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Retires source ("mother") files that a Backfill Manual Process Linkage recorded but
@@ -55,15 +56,36 @@ class DecommissionLinkageSources extends Command
 
         $pending = [];
         foreach ($sources as $fileNo => $meta) {
-            $alreadyArchived = $conn->table('decommissioned_files')->where('mls_file_no', $fileNo)->exists();
-            $stillActive = $conn->table('fileNumber')
-                    ->where(function ($q) use ($fileNo) {
-                        $q->where('mlsfNo', $fileNo)->orWhere('kangisFileNo', $fileNo);
-                    })->exists()
-                || $conn->table('file_indexings')
-                    ->where(function ($q) use ($fileNo) {
-                        $q->where('file_number', $fileNo)->orWhere('kangis_file_no', $fileNo);
-                    })->exists();
+            // Real decommissions only. A title-status flag (false_decommissioning = 1) or an
+            // ST handover (2) never decommissioned this file, and must not make the command
+            // skip a genuine decommissioning it still needs to perform.
+            $alreadyArchived = $conn->table('decommissioned_files')
+                ->where('mls_file_no', $fileNo)
+                ->where(function ($q) {
+                    $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                })
+                ->exists();
+
+            // Decommissioning no longer deletes rows, so "has a row" no longer means "active".
+            // A file is still active only while its rows are unflagged.
+            $activeIn = function (string $table, callable $match) use ($conn) {
+                $query = $conn->table($table)->where($match);
+
+                if (Schema::connection('sqlsrv')->hasColumn($table, 'is_decommissioned')) {
+                    $query->where(function ($q) {
+                        $q->where('is_decommissioned', 0)->orWhereNull('is_decommissioned');
+                    });
+                }
+
+                return $query->exists();
+            };
+
+            $stillActive = $activeIn('fileNumber', function ($q) use ($fileNo) {
+                    $q->where('mlsfNo', $fileNo)->orWhere('kangisFileNo', $fileNo);
+                })
+                || $activeIn('file_indexings', function ($q) use ($fileNo) {
+                    $q->where('file_number', $fileNo)->orWhere('kangis_file_no', $fileNo);
+                });
 
             if ($alreadyArchived || !$stillActive) {
                 $this->line(sprintf('  <fg=gray>skip</> %-22s %s', $fileNo,

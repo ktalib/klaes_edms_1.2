@@ -1,11 +1,12 @@
 # SPAS Mobile — Offline-First (Capacitor + SQLite) Sync Plan
 
-> **Status:** planning only — no phase has started. Verified 2026-08-15: no
-> `capacitor`/`sqlite` in `package.json`, no `/api/spas/*` routes, no
-> `SpaMobileService`, no `client_uuid` column on either table. `updated_at`
-> **is** present on both tables, so the `since` cursor design in §5 works.
+> **Status: Phase 0 complete (2026-08-16).** `SpaMobileService` exists and both
+> Blade forms now write through it; the 13 `/api/spas/*` routes are registered;
+> the DDL is applied and verified **11/11 on dev and production**. Phases 1–2
+> (Capacitor shell + local SQLite) are delegated to the build machine — see
+> `AGENT_BRIEF.md` in the SPAS APK folder. Phases 3–6 not started.
 >
-> **Last revised 2026-08-15** to match form changes shipped that week — see §13.
+> **Last revised 2026-08-16** — see §13 and §15.
 
 ## 1. Goal
 
@@ -274,9 +275,9 @@ change first.
 
 | Phase | Scope | Key deliverables |
 |---|---|---|
-| 0 | **API foundation** | Extract shared logic into `SpaMobileService` — **now the highest-value step regardless of whether the offline work proceeds**, since the duplicated form has already caused a production 422 (§2.1); add `routes/api.php` `/api/spas/*` endpoints (auth, delta pull, create, photo upload, lga/district lookups); add `client_uuid` columns + migration |
-| 1 | **Capacitor shell** | `npm init @capacitor/app`; wrap current mobile UI as the Capacitor `www/` build; install `@capacitor/geolocation`, `@capacitor/filesystem`, `@capacitor/preferences`, `@capacitor/network`, `@capacitor-community/sqlite`; get an installable Android debug build running against the existing live-DB endpoints (no offline yet) |
-| 2 | **Local schema & data layer** | Create local SQLite schema (§4.2); build a small `db.js` data-access module; seed `land_use_cache`/`lga_cache`/`district_cache`/`file_index_cache` on login |
+| 0 | **API foundation** — ✅ **DONE 2026-08-16** (§15) | `SpaMobileService` extracted, both Blade forms rewired onto it; 13 `/api/spas/*` routes; `client_uuid` DDL applied on dev |
+| 1 | **Capacitor shell** — *delegated to the build machine* | `npm init @capacitor/app`; wrap current mobile UI as the Capacitor `www/` build; install `@capacitor/geolocation`, `@capacitor/filesystem`, `@capacitor/preferences`, `@capacitor/network`, `@capacitor-community/sqlite`; get an installable Android debug build running against the existing live-DB endpoints (no offline yet) |
+| 2 | **Local schema & data layer** — *delegated to the build machine* | Create local SQLite schema (§4.2); build a small `db.js` data-access module; seed `land_use_cache`/`lga_cache`/`district_cache`/`file_index_cache` on login |
 | 3 | **Offline-first CRUD** | Rewire `mobile.blade.php`'s fetch calls to read/write SQLite first and enqueue `sync_outbox` entries; port the server validation rules client-side (§6.1.6); add pending/synced badges to record & inspection cards |
 | 4 | **Sync engine** | Implement push/pull per §6, wired to `Network` plugin events + manual "Sync Now" + app-resume trigger |
 | 5 | **Auth & security** | Sanctum token login/logout, secure token storage, offline-session behavior per §7 |
@@ -392,5 +393,143 @@ by field against §2.4 and the mobile form. Everything is accounted for except:
 4. **No unique index on `spa_applications.file_number`** — likewise for records.
 5. **`created_at`/`updated_at` are `DATETIME2(0)`** — whole seconds; the `since`
    cursor must use `>=` plus client-side dedupe (§5).
+
+### 14.4 Remediation — status
+
+DDL: [database/sql/2026_08_15_spas_offline_sync_schema.sql](../../database/sql/2026_08_15_spas_offline_sync_schema.sql)
+— **applied to dev 2026-08-15 and to PRODUCTION 2026-08-16. Both verified
+11/11 PASS.** All six steps landed on production, both `file_number` unique
+indexes included.
+
+Verification: [database/sql/verify_spas_offline_sync_schema.sql](../../database/sql/verify_spas_offline_sync_schema.sql)
+— read-only, 11 checks, prints PASS/FAIL per item with the consequence of each
+failure. Run it on every environment after applying the DDL.
+
+> **Production held zero duplicate `file_number` rows** in either table
+> (verified 2026-08-16, the script's offender query returned empty). The
+> one-application-per-file and one-inspection-per-file rules had therefore
+> never been violated in live data, even though nothing enforced them until
+> `UQ_spa_applications_file_number` / `UQ_spa_field_data_file_number` existed.
+> This was the open risk in the paragraph below, and it is now closed — the
+> indexes were created against clean data on both environments.
+
+> **The original VERIFY block could not detect the most likely failure.**
+> It expected `new_unique_indexes = 3` and listed three index names, omitting
+> `UQ_spa_applications_file_number` from STEP 6 — the one step that aborts on
+> pre-existing duplicate `file_number` rows. A production run where STEP 6 failed
+> would still have reported a clean pass. Corrected 2026-08-16 to check all four,
+> and the standalone verifier names the missing index rather than returning a
+> count to be interpreted.
+
+Applied as a direct script rather than `artisan migrate`, for the reason in §4.1
+— finding 1 *is* the proof that the ledger can report work the database never
+received. There is no PHP migration and therefore no ledger row to write.
+
+| Finding | Status | Notes |
+|---|---|---|
+| 1 — `spa_notices.spa_application_id` NOT NULL | **Applied (dev)** | Live bug fixed: a `spa_application_id = NULL` insert now succeeds (verified, rolled back) |
+| 2 — `spa_field_data.spa_application_id` NOT NULL | **Applied (dev)** | Resolved the §6.1-preferred way: FK relaxed + `spa_application_client_uuid` added, so the outbox drains as a flat FIFO |
+| 3 — no unique index on `spa_field_data.file_number` | **Applied (dev)** | Filtered unique index; precondition verified zero duplicates |
+| 4 — no unique index on `spa_applications.file_number` | **Applied (dev)** | One-application-per-file-number confirmed as the rule (2026-08-15). `storeLandRecord()` now rejects the duplicate with a 422 first; the index is the concurrency backstop |
+| 5 — `DATETIME2(0)` cursor granularity | **No DDL** | A rule for the Phase 0 API code (§5), not a schema change |
+
+Post-apply verification on dev: `nullable_columns = 2`, `new_columns = 3`,
+`new_unique_indexes = 3` — all as the script's VERIFY block expects.
+
+Also added by the same script: `client_uuid` on both tables with filtered
+UNIQUE indexes (§4.1). Both models' `$fillable` already list the new columns, so
+they are writable the moment the script runs.
+
+**Finding 4 — the rule is one application per file number.** Confirmed
+2026-08-15. Nothing enforced this before: not the schema, and not
+`storeLandRecord()`, which had no duplicate check. Both halves now exist — the
+controller returns a 422 naming the existing record's date, and
+`UQ_spa_applications_file_number` catches anything that gets past it
+(concurrent inserts, writes outside the controller). Verified on dev: a
+duplicate insert is rejected by the index, a distinct file number still inserts.
+
+**Before running on production:** execute STEP 0 there first — **both** queries.
+Duplicate `file_number` rows abort their respective unique-index step (5 and 6),
+and production holds different data from the development database where the
+precondition was verified. If production *does* hold duplicate
+`spa_applications.file_number` rows, that is itself a finding: it means the rule
+has been violated in live data and needs resolving before the index can exist.
+
+---
+
+## 15. Phase 0 — as built (2026-08-16)
+
+### 15.1 What shipped
+
+| File | Role |
+|---|---|
+| [app/Services/SpaMobileService.php](../../app/Services/SpaMobileService.php) | Single write path — validation rules, duplicate guards, coordinate normalisation, record/inspection creation |
+| [app/Http/Controllers/Api/Spas/SpasAuthController.php](../../app/Http/Controllers/Api/Spas/SpasAuthController.php) | Sanctum login/logout, `spas-mobile` token ability |
+| [app/Http/Controllers/Api/Spas/SpasSyncController.php](../../app/Http/Controllers/Api/Spas/SpasSyncController.php) | Delta pull, idempotent push, photo upload, orphan linking |
+| [app/Http/Controllers/Api/Spas/SpasLookupController.php](../../app/Http/Controllers/Api/Spas/SpasLookupController.php) | Bounded file index + land uses / LGAs / districts |
+| [routes/api.php](../../routes/api.php) | 13 routes under `/api/spas` |
+
+`storeLandRecord()` and `storeFieldData()` in `SpecialAssignmentController` were
+rewired onto the service. **The desktop and mobile Blade forms are unchanged and
+their behaviour is byte-for-byte identical** — verified by driving the
+controller with both forms' payloads (statutory save, duplicate → 422, customary
+without LGA → 422, customary with LGA, inspection + `mapPoint` + contravention
+flag, duplicate inspection → 422, unparseable coordinates → 422), all inside a
+rolled-back transaction.
+
+The duplicated form is now duplicated *markup* only. The rules behind it are one
+object, so the §2.1 failure mode — a rule added server-side that one form cannot
+satisfy — can no longer happen silently.
+
+### 15.2 The endpoints
+
+```
+POST /api/spas/auth/login                  public; {identifier,password,device_name} -> Bearer token
+POST /api/spas/auth/logout                 revokes the current token
+
+GET  /api/spas/records?since=<iso>         delta pull, 200/page, has_more flag
+GET  /api/spas/field-data?since=<iso>      delta pull, 200/page, has_more flag
+POST /api/spas/records                     create; requires client_uuid; idempotent
+POST /api/spas/field-data                  create; requires client_uuid; idempotent
+POST /api/spas/photos                      {entity_type, client_uuid, photos[]}
+POST /api/spas/link-orphans                stitch inspections to late-arriving parents
+
+GET  /api/spas/lookup/file-index           bounded: ?lga= ?district= ?file_numbers[] ?q= ?limit=
+GET  /api/spas/lookup/land-uses            full + a `customary` subset (Industrial excluded)
+GET  /api/spas/lookup/lgas                 45 rows
+GET  /api/spas/lookup/districts            1,818 rows
+GET  /api/spas/lookup/next-customary-fileno
+```
+
+### 15.3 Contract details the client must honour
+
+1. **`client_uuid` is required on every push** and is what makes a retry safe. A
+   push whose response was lost returns `200 {duplicate:true}` with the existing
+   row, not a second record.
+2. **409 ≠ 422.** `409` with a `conflict` key is a real conflict (another device
+   or an office user already took that file number) — route it to a Conflicts
+   list. Retrying will never succeed. `422` is a validation failure.
+3. **A customary file number returned by the server replaces the local one.**
+   The sequence is server-authoritative; a number the device invented offline is
+   a placeholder and must be overwritten from the push response.
+4. **`POST /photos` returning 404** means the parent has not synced yet. Keep the
+   upload in the outbox and retry — do not discard the photos.
+5. **The `since` cursor comes from `server_time` in the response**, never from
+   the device clock, and the filter is `>=` (§5). Dedupe locally by
+   `id`/`client_uuid`.
+6. **`has_more: true` means pull again immediately** rather than waiting for the
+   next sync tick.
+7. `spa_application_id` is cast to `integer` on the model — the sqlsrv driver
+   otherwise returns it as a string and breaks strict id comparison on device.
+
+### 15.4 Still outstanding
+
+- ~~Production DDL~~ — **done and verified 11/11 on 2026-08-16** (§14.4).
+  Nothing schema-side is outstanding on either environment.
+- `surveyor_id` / `created_by` are taken from the **token**, not the push
+  payload. The §14.2 open question is therefore settled: the server derives
+  them, and a device cannot claim to be another surveyor.
+- No automated test suite — Phase 0 was verified by the transactional scripts
+  described above, not by committed tests. Worth adding before Phase 4.
 
 ---

@@ -799,6 +799,9 @@ Route::post('/programmes/payments/save-betterment-bill-receipt', [App\Http\Contr
 Route::get('/programmes/payments/bill-balance-reference/{fileNo}', [App\Http\Controllers\ProgrammesController::class, 'getBillBalanceReference'])->name('programmes.payments.bill-balance-reference');
 Route::post('/programmes/payments/save-bill-balance-receipt', [App\Http\Controllers\ProgrammesController::class, 'saveBillBalanceReceipt'])->name('programmes.payments.save-bill-balance-receipt');
 
+// Backfill an already-recorded bill balance into the ST Bills form (PuA/SuA)
+Route::get('/programmes/bills/st-balance-source/{subApplicationId}', [App\Http\Controllers\ProgrammesController::class, 'stBalanceSource'])->name('programmes.bills.st-balance-source');
+
 Route::get('/programmes/memo/{id}', 'App\Http\Controllers\ProgrammeController@viewMemo')->name('programmes.view_memo_detail');
 //landing page
 Route::get('/landing', [LandingController::class, 'index'])->name('landing.index');

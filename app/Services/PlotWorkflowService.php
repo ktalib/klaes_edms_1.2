@@ -13,7 +13,19 @@ use Illuminate\Support\Facades\Schema;
 class PlotWorkflowService
 {
     /**
-     * Decommission a set of files and move them to archives.
+     * Decommission a set of files: archive them, then FLAG the live rows in place.
+     *
+     * Nothing is deleted. Until 2026-08-15 this method hard-deleted the file's rows from
+     * fileNumber, file_indexings, customers_staging, entities_staging and kangis_grouping,
+     * leaving decommissioned_files + deprecated_records as the only surviving copy. Screens
+     * "knew" a file was decommissioned only because its row had vanished, which meant the
+     * indexing detail, the customer/entity parties and the grouping provenance were lost for
+     * good and the state could never be undone or audited.
+     *
+     * Now every row survives carrying is_decommissioned + decommissioned_at /
+     * decommissioned_by / decommissioning_reason / successor_file_no, so a decommissioned
+     * file stays visible and badged rather than disappearing. decommissioned_files is still
+     * written and remains the registry; deprecated_records is still written too.
      *
      * @param string|null $successorFileNo the file number that replaces the decommissioned file(s)
      *                                      (the merged/subdivided/separated/extended result), stored
@@ -24,6 +36,7 @@ class PlotWorkflowService
         $summary = [
             'archived' => [],
             'deleted' => 0,
+            'flagged' => 0,
             'errors' => []
         ];
 
@@ -115,24 +128,38 @@ class PlotWorkflowService
                     ]);
                 }
 
-                // 3. Hard Delete from active tables. Mirror the lookup above so a KANGIS-only file
-                //    is removed by its KANGIS number too — otherwise the archive row is written but
-                //    the live fileNumber/file_indexings row survives and keeps surfacing in search.
-                DB::connection('sqlsrv')->table('fileNumber')
-                    ->where(function ($q) use ($fileNo) {
-                        $q->where('mlsfNo', $fileNo)->orWhere('kangisFileNo', $fileNo);
-                    })->delete();
-                DB::connection('sqlsrv')->table('file_indexings')
-                    ->where(function ($q) use ($fileNo) {
-                        $q->where('file_number', $fileNo)->orWhere('kangis_file_no', $fileNo);
-                    })->delete();
-                DB::connection('sqlsrv')->table('entities_staging')->where('file_number', $fileNo)->delete();
-                DB::connection('sqlsrv')->table('customers_staging')->where('file_number', $fileNo)->delete();
+                // 3. Flag the live rows. NOTHING IS DELETED — a decommissioned file keeps its
+                //    indexing detail, its customer/entity parties and its grouping placeholder,
+                //    and carries the decommission attributes so every screen can badge it
+                //    without joining back to decommissioned_files.
+                //
+                //    Mirror the lookup above so a KANGIS-only file is flagged by its KANGIS
+                //    number too — otherwise the archive row is written but the live row stays
+                //    unflagged and keeps surfacing as an active file.
+                $flagged = 0;
 
-                // Also clean up grouping placeholders to prevent "Tracking ID already in use" errors later
-                DB::connection('sqlsrv')->table('kangis_grouping')
-                    ->where('kangis_fileno_placeholder', $fileNo)
-                    ->delete();
+                $flagged += $this->flagDecommissioned('fileNumber', function ($q) use ($fileNo) {
+                    $q->where('mlsfNo', $fileNo)->orWhere('kangisFileNo', $fileNo);
+                }, $reason, $commissionedBy, $successorFileNo);
+
+                $flagged += $this->flagDecommissioned('file_indexings', function ($q) use ($fileNo) {
+                    $q->where('file_number', $fileNo)->orWhere('kangis_file_no', $fileNo);
+                }, $reason, $commissionedBy, $successorFileNo);
+
+                $flagged += $this->flagDecommissioned('entities_staging', function ($q) use ($fileNo) {
+                    $q->where('file_number', $fileNo);
+                }, $reason, $commissionedBy, $successorFileNo);
+
+                $flagged += $this->flagDecommissioned('customers_staging', function ($q) use ($fileNo) {
+                    $q->where('file_number', $fileNo);
+                }, $reason, $commissionedBy, $successorFileNo);
+
+                // Grouping placeholders are flagged, never removed: deleting any row from a
+                // grouping table during decommissioning is forbidden, because the grouping
+                // record is the file's provenance and outlives the file's active life.
+                $flagged += $this->flagDecommissioned('kangis_grouping', function ($q) use ($fileNo) {
+                    $q->where('kangis_fileno_placeholder', $fileNo);
+                }, $reason, $commissionedBy, $successorFileNo);
 
                 // NOTE: We deliberately DO NOT delete the file's rows from the Legal Search staging
                 // tables (file_history_staging, CofO_staging, pra, deed_registrations). Legal Search
@@ -141,9 +168,15 @@ class PlotWorkflowService
                 // directly is handled at query time in LegalSearchService (see getDecommissionedFileNumbers).
 
                 $summary['archived'][] = $fileNo;
+                $summary['flagged'] += $flagged;
+                // Kept for callers that still read 'deleted'; nothing is deleted any more, so it
+                // now counts files decommissioned rather than rows removed.
                 $summary['deleted']++;
 
-                $this->logPlotsWorkflow('info', "File decommissioned and archived: $fileNo", ['reason' => $reason]);
+                $this->logPlotsWorkflow('info', "File decommissioned and flagged: $fileNo", [
+                    'reason'    => $reason,
+                    'rows_flagged' => $flagged,
+                ]);
             } catch (\Exception $e) {
                 $this->logPlotsWorkflow('error', "Failed to decommission file: $fileNo", ['error' => $e->getMessage()]);
                 $summary['errors'][] = "Error decommissioning $fileNo: " . $e->getMessage();
@@ -171,6 +204,74 @@ class PlotWorkflowService
         }
 
         return $summary;
+    }
+
+    /**
+     * Stamp the decommission attributes on whichever live rows $match selects.
+     *
+     * Replaces the hard DELETE this service used to run. Each column is written only
+     * when the table actually has it, so the service works before and after the
+     * 2026_08_15_100000 migration and tolerates tables patched by hand.
+     *
+     * fileNumber is the one table with pre-existing decommission columns under older
+     * names (is_decommissioned / decommissioning_date / decommissioning_reason). Its
+     * decommissioning_date is kept in step with decommissioned_at so the File
+     * Decommissioning screen, which still reads the old column, keeps working.
+     *
+     * Already-flagged rows are refreshed rather than skipped: a file decommissioned
+     * twice (subdivided, then its fragments merged) should show the latest reason
+     * and successor, and decommissioned_files retains the full history either way.
+     *
+     * @param  callable $match  receives the query builder to apply the row filter
+     * @return int              rows flagged
+     */
+    private function flagDecommissioned(
+        string $table,
+        callable $match,
+        string $reason,
+        string $decommissionedBy,
+        ?string $successorFileNo
+    ): int {
+        try {
+            $schema = Schema::connection('sqlsrv');
+
+            if (!$schema->hasTable($table) || !$schema->hasColumn($table, 'is_decommissioned')) {
+                return 0;
+            }
+
+            $now = now();
+
+            $payload = ['is_decommissioned' => 1];
+
+            $optional = [
+                'decommissioned_at'      => $now,
+                'decommissioned_by'      => $decommissionedBy,
+                'decommissioning_reason' => $reason,
+                'successor_file_no'      => $successorFileNo,
+                // fileNumber's original column name for the same fact.
+                'decommissioning_date'   => $now,
+                'updated_at'             => $now,
+            ];
+
+            foreach ($optional as $column => $value) {
+                if ($schema->hasColumn($table, $column)) {
+                    $payload[$column] = $value;
+                }
+            }
+
+            $query = DB::connection('sqlsrv')->table($table);
+            $query->where($match);
+
+            return $query->update($payload);
+        } catch (\Exception $e) {
+            // A flag that fails must not abort the decommission — decommissioned_files
+            // has already recorded it, and this row can be repaired by re-running.
+            $this->logPlotsWorkflow('warning', "Could not flag decommissioned rows in $table", [
+                'error' => $e->getMessage(),
+            ]);
+
+            return 0;
+        }
     }
 
     /**

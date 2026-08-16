@@ -15,6 +15,9 @@ class SpaApplication extends Model
         'owner_name', 'phone', 'location', 'district', 'lga',
         'land_use_type', 'existing_use', 'proposed_use',
         'scenario', 'status', 'created_by', 'photos',
+        // Offline sync (database/sql/2026_08_15_spas_offline_sync_schema.sql):
+        // device-generated id that makes a create idempotent on retry.
+        'client_uuid',
     ];
 
     protected $casts = [
