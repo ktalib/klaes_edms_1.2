@@ -185,6 +185,132 @@ class SpasSyncController extends Controller
     }
 
     /**
+     * Edit a land record that has already synced.
+     *
+     * Keyed by client_uuid, not server id, because the device knows its own
+     * uuid without having to have recorded the server's id.
+     *
+     * CONCURRENCY (plan §6.3). An office user can edit a synced record from the
+     * desktop UI while a surveyor holds a pending edit to the same row. Send
+     * `base_updated_at` — the `updated_at` the device last saw — and a server
+     * row that has moved on since is reported as a conflict rather than being
+     * silently overwritten. Omit it for last-write-wins.
+     */
+    public function updateRecord(Request $request, string $clientUuid, SpaMobileService $spa): JsonResponse
+    {
+        $request->validate($spa->landRecordUpdateRules() + [
+            'base_updated_at' => 'nullable|date',
+        ]);
+
+        $app = SpaApplication::where('client_uuid', $clientUuid)->first();
+
+        if (! $app) {
+            // Not synced yet — the create is still sitting in the outbox ahead
+            // of this edit. The device should retry after the create drains.
+            return response()->json([
+                'success' => false,
+                'message' => 'No synced record found for that client_uuid — push the create first.',
+            ], 404);
+        }
+
+        // A replayed push whose response was lost. Answer 200, not 409: the
+        // work is already done, and raising a conflict here would put a
+        // meaningless prompt in front of the surveyor.
+        if ($spa->isNoOpUpdate($app, $request->all())) {
+            return response()->json([
+                'success'   => true,
+                'duplicate' => true,
+                'id'        => $app->id,
+                'message'   => 'Already up to date.',
+            ]);
+        }
+
+        if ($conflict = $this->staleWrite($request, $app)) {
+            return $conflict;
+        }
+
+        $app = $spa->applyLandRecordUpdate($app, $request->all());
+
+        return response()->json([
+            'success'     => true,
+            'id'          => $app->id,
+            'client_uuid' => $app->client_uuid,
+            'updated_at'  => optional($app->updated_at)->toIso8601String(),
+            'message'     => 'Land record updated.',
+        ]);
+    }
+
+    /**
+     * Edit an inspection that has already synced. Same contract as updateRecord.
+     */
+    public function updateFieldData(Request $request, string $clientUuid, SpaMobileService $spa): JsonResponse
+    {
+        $request->validate([
+            'inspection_date' => 'required|date',
+            'findings'        => 'required|string',
+            'base_updated_at' => 'nullable|date',
+        ]);
+
+        $record = SpaFieldData::where('client_uuid', $clientUuid)->first();
+
+        if (! $record) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No synced inspection found for that client_uuid — push the create first.',
+            ], 404);
+        }
+
+        if ($conflict = $this->staleWrite($request, $record)) {
+            return $conflict;
+        }
+
+        $record->update([
+            'inspection_date' => $request->inspection_date,
+            'findings'        => $request->findings,
+            'coordinates'     => $spa->normalizeCoordinates($request->input('coordinates')),
+            'parcel_geometry' => $request->filled('parcel_geometry')
+                ? json_decode($request->input('parcel_geometry'), true)
+                : $record->parcel_geometry,
+        ]);
+
+        return response()->json([
+            'success'     => true,
+            'id'          => $record->id,
+            'client_uuid' => $record->client_uuid,
+            'updated_at'  => optional($record->fresh()->updated_at)->toIso8601String(),
+            'message'     => 'Inspection updated.',
+        ]);
+    }
+
+    /**
+     * 409 when the server row has changed since the device last saw it.
+     *
+     * Compared at whole-second granularity because these columns are
+     * DATETIME2(0) — the same precision limit that forces the `>=` pull cursor.
+     */
+    private function staleWrite(Request $request, $row): ?JsonResponse
+    {
+        if (! $request->filled('base_updated_at') || ! $row->updated_at) {
+            return null;
+        }
+
+        $base = \Carbon\Carbon::parse($request->input('base_updated_at'))->startOfSecond();
+
+        if ($row->updated_at->startOfSecond()->lessThanOrEqualTo($base)) {
+            return null;
+        }
+
+        return response()->json([
+            'success'  => false,
+            'conflict' => 'stale_write',
+            'message'  => 'This record was changed in the office after your device last synced. Review before overwriting.',
+            // Sent back so the app can show both versions rather than guessing.
+            'server_updated_at' => $row->updated_at->toIso8601String(),
+            'server_row'        => $row->toArray(),
+        ], 409);
+    }
+
+    /**
      * Attach photos to an already-pushed row.
      *
      * Text syncs first and photos follow, because a record that reaches the

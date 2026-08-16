@@ -121,6 +121,110 @@ class SpasWebFormTest extends TestCase
     }
 
     // -----------------------------------------------------------------------
+    // Field Data page — "awaiting location"
+    // -----------------------------------------------------------------------
+
+    public function test_the_field_data_page_renders(): void
+    {
+        // Compiles the Blade for real, so a template error in the
+        // awaiting-location block fails here rather than in the office.
+        $this->actingAsStaff();
+
+        $this->get(route('special-assignment.field-data'))
+            ->assertOk()
+            ->assertSee('inspection point(s) plotted', false);
+    }
+
+    /**
+     * Q5 says a record may sync with no pin. The map filters on
+     * whereNotNull('coordinates'), so without this panel those records are
+     * absent from the office view entirely — invisible rather than pending.
+     */
+    public function test_an_inspection_with_no_pin_is_listed_as_awaiting_location(): void
+    {
+        $this->actingAsStaff();
+        $fileNumber = 'ZZ-NOPIN-'.Str::random(8);
+
+        $created = $this->postJson(route('special-assignment.land-records.store'), [
+            'land_title_type' => 'statutory',
+            'file_number'     => $fileNumber,
+            'owner_name'      => 'ZZ TEST Unplaced Owner',
+            'proposed_use'    => 'RESIDENTIAL',
+            'existing_use'    => 'RESIDENTIAL',
+        ])->assertOk();
+
+        // No coordinates at all — the offline-with-no-GPS case.
+        $this->postJson(route('special-assignment.field-data.store'), [
+            'spa_application_id' => $created->json('id'),
+            'file_number'        => $fileNumber,
+            'inspection_date'    => now()->toDateString(),
+            'findings'           => 'ZZ TEST findings, no GPS fix available.',
+        ])->assertOk();
+
+        $this->get(route('special-assignment.field-data'))
+            ->assertOk()
+            ->assertSee('awaiting location')
+            ->assertSee($fileNumber);
+    }
+
+    // -----------------------------------------------------------------------
+    // Edit Land Record (office)
+    // -----------------------------------------------------------------------
+
+    public function test_the_office_can_edit_a_record_and_move_its_status(): void
+    {
+        // Unlike the API, the web path may set `status` — approving a record is
+        // office workflow. This is the one behavioural difference between the
+        // two callers of the shared update rules.
+        $this->actingAsStaff();
+
+        $created = $this->postJson(route('special-assignment.land-records.store'), [
+            'land_title_type' => 'statutory',
+            'file_number'     => 'ZZ-WEB-EDIT-'.Str::random(8),
+            'owner_name'      => 'ZZ TEST Before Edit',
+            'proposed_use'    => 'RESIDENTIAL',
+            'existing_use'    => 'COMMERCIAL',
+        ])->assertOk();
+
+        $this->postJson(route('special-assignment.land-records.update', $created->json('id')), [
+            'owner_name'    => 'ZZ TEST After Edit',
+            'phone'         => '08011112222',
+            'location'      => 'Updated Street',
+            'land_use_type' => 'COMMERCIAL',
+            'proposed_use'  => 'COMMERCIAL',
+            'existing_use'  => 'COMMERCIAL',
+            'status'        => 'approved',
+        ])->assertOk()->assertJson(['success' => true]);
+
+        $row = SpaApplication::find($created->json('id'));
+
+        $this->assertSame('ZZ TEST After Edit', $row->owner_name);
+        $this->assertSame('08011112222', $row->phone);
+        $this->assertSame('Updated Street', $row->location);
+        $this->assertSame('approved', $row->status);
+    }
+
+    public function test_the_web_edit_requires_a_valid_status(): void
+    {
+        $this->actingAsStaff();
+
+        $created = $this->postJson(route('special-assignment.land-records.store'), [
+            'land_title_type' => 'statutory',
+            'file_number'     => 'ZZ-WEB-BADSTATUS-'.Str::random(8),
+            'owner_name'      => 'ZZ TEST Owner',
+            'proposed_use'    => 'RESIDENTIAL',
+            'existing_use'    => 'RESIDENTIAL',
+        ])->assertOk();
+
+        $this->postJson(route('special-assignment.land-records.update', $created->json('id')), [
+            'owner_name'   => 'ZZ TEST Owner',
+            'proposed_use' => 'RESIDENTIAL',
+            'existing_use' => 'RESIDENTIAL',
+            'status'       => 'not-a-real-status',
+        ])->assertStatus(422)->assertJsonValidationErrors(['status']);
+    }
+
+    // -----------------------------------------------------------------------
     // Log Field Inspection
     // -----------------------------------------------------------------------
 

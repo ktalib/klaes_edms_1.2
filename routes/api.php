@@ -444,6 +444,13 @@ Route::prefix('spas')->name('api.spas.')->group(function () {
             Route::post('/field-data', 'storeFieldData')->name('field-data.push');
             Route::post('/photos',     'storePhotos')->name('photos.push');
 
+            // Edits, keyed by the device's own client_uuid. Send
+            // `base_updated_at` for optimistic concurrency (§6.3) — a row the
+            // office changed in the meantime returns 409 instead of being
+            // silently overwritten.
+            Route::put('/records/{clientUuid}',    'updateRecord')->name('records.update');
+            Route::put('/field-data/{clientUuid}', 'updateFieldData')->name('field-data.update');
+
             // Stitches inspections to parents that synced after them.
             Route::post('/link-orphans', 'linkOrphans')->name('link-orphans');
         });

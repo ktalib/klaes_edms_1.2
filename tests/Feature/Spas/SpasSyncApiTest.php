@@ -267,6 +267,217 @@ class SpasSyncApiTest extends TestCase
     }
 
     // -----------------------------------------------------------------------
+    // Update — offline edits pushed back
+    // -----------------------------------------------------------------------
+
+    private function pushRecord(array $overrides = []): array
+    {
+        $payload = $this->recordPayload($overrides);
+        $this->postJson('/api/spas/records', $payload)->assertStatus(201);
+
+        return $payload;
+    }
+
+    public function test_a_synced_record_can_be_edited(): void
+    {
+        $this->actingAsSurveyor();
+        $payload = $this->pushRecord();
+
+        $this->putJson('/api/spas/records/'.$payload['client_uuid'], [
+            'owner_name'   => 'ZZ TEST Corrected Owner',
+            'proposed_use' => 'RESIDENTIAL',
+            'existing_use' => 'RESIDENTIAL',
+            'phone'        => '08099999999',
+        ])->assertOk()->assertJson(['success' => true]);
+
+        $row = SpaApplication::where('client_uuid', $payload['client_uuid'])->firstOrFail();
+
+        $this->assertSame('ZZ TEST Corrected Owner', $row->owner_name);
+        $this->assertSame('08099999999', $row->phone);
+    }
+
+    public function test_editing_an_unsynced_record_returns_404_so_the_edit_stays_queued(): void
+    {
+        // The create is still ahead of this edit in the outbox.
+        $this->actingAsSurveyor();
+
+        $this->putJson('/api/spas/records/'.Str::uuid(), [
+            'owner_name'   => 'ZZ TEST Nobody',
+            'proposed_use' => 'RESIDENTIAL',
+            'existing_use' => 'RESIDENTIAL',
+        ])->assertStatus(404);
+    }
+
+    public function test_an_edit_cannot_change_the_file_number_or_title_type(): void
+    {
+        // Identity is fixed at creation — one application per file number is a
+        // unique index, so an edit that moved it would be a different record.
+        $this->actingAsSurveyor();
+        $payload = $this->pushRecord();
+
+        $before = SpaApplication::where('client_uuid', $payload['client_uuid'])->firstOrFail();
+
+        $this->putJson('/api/spas/records/'.$payload['client_uuid'], [
+            'owner_name'      => 'ZZ TEST Owner',
+            'proposed_use'    => 'RESIDENTIAL',
+            'existing_use'    => 'RESIDENTIAL',
+            'file_number'     => 'ZZ-HIJACKED-'.Str::random(6),
+            'land_title_type' => 'statutory',
+        ])->assertOk();
+
+        $after = SpaApplication::where('client_uuid', $payload['client_uuid'])->firstOrFail();
+
+        $this->assertSame($before->file_number, $after->file_number);
+        $this->assertSame($before->land_title_type, $after->land_title_type);
+    }
+
+    public function test_a_field_device_cannot_change_a_records_status(): void
+    {
+        // Approving a record is office workflow, not something a handset does.
+        $this->actingAsSurveyor();
+        $payload = $this->pushRecord();
+
+        $this->putJson('/api/spas/records/'.$payload['client_uuid'], [
+            'owner_name'   => 'ZZ TEST Owner',
+            'proposed_use' => 'RESIDENTIAL',
+            'existing_use' => 'RESIDENTIAL',
+            'status'       => 'approved',
+        ])->assertOk();
+
+        $this->assertSame(
+            'open',
+            SpaApplication::where('client_uuid', $payload['client_uuid'])->value('status')
+        );
+    }
+
+    /**
+     * The retry case: a push that succeeded but whose response was lost. It must
+     * NOT read as a conflict, or the surveyor gets a meaningless prompt about an
+     * edit they themselves made.
+     */
+    public function test_replaying_an_identical_edit_is_a_no_op_not_a_conflict(): void
+    {
+        $this->actingAsSurveyor();
+        $payload = $this->pushRecord();
+
+        $edit = [
+            'owner_name'      => 'ZZ TEST Edited Once',
+            'proposed_use'    => 'RESIDENTIAL',
+            'existing_use'    => 'RESIDENTIAL',
+            'base_updated_at' => SpaApplication::where('client_uuid', $payload['client_uuid'])
+                ->firstOrFail()->updated_at->toIso8601String(),
+        ];
+
+        $this->putJson('/api/spas/records/'.$payload['client_uuid'], $edit)->assertOk();
+
+        // Same payload, same stale cursor — the device replaying its own write.
+        $this->putJson('/api/spas/records/'.$payload['client_uuid'], $edit)
+            ->assertOk()
+            ->assertJson(['success' => true, 'duplicate' => true]);
+    }
+
+    /**
+     * Plan §6.3: an office edit to a synced record must not be silently
+     * overwritten by a device holding a stale copy.
+     */
+    public function test_an_edit_against_a_stale_base_is_a_conflict(): void
+    {
+        $this->actingAsSurveyor();
+        $payload = $this->pushRecord();
+
+        $row = SpaApplication::where('client_uuid', $payload['client_uuid'])->firstOrFail();
+        $staleCursor = $row->updated_at->copy()->subMinutes(5)->toIso8601String();
+
+        // Someone in the office edits it after the device last synced.
+        $row->update(['owner_name' => 'ZZ TEST Office Edit']);
+
+        $this->putJson('/api/spas/records/'.$payload['client_uuid'], [
+            'owner_name'      => 'ZZ TEST Device Edit',
+            'proposed_use'    => 'RESIDENTIAL',
+            'existing_use'    => 'RESIDENTIAL',
+            'base_updated_at' => $staleCursor,
+        ])
+            ->assertStatus(409)
+            ->assertJson(['conflict' => 'stale_write'])
+            ->assertJsonStructure(['server_updated_at', 'server_row']);
+
+        // The office edit survived.
+        $this->assertSame(
+            'ZZ TEST Office Edit',
+            SpaApplication::where('client_uuid', $payload['client_uuid'])->value('owner_name')
+        );
+    }
+
+    public function test_omitting_the_base_cursor_is_last_write_wins(): void
+    {
+        $this->actingAsSurveyor();
+        $payload = $this->pushRecord();
+
+        SpaApplication::where('client_uuid', $payload['client_uuid'])
+            ->update(['owner_name' => 'ZZ TEST Office Edit']);
+
+        $this->putJson('/api/spas/records/'.$payload['client_uuid'], [
+            'owner_name'   => 'ZZ TEST Device Wins',
+            'proposed_use' => 'RESIDENTIAL',
+            'existing_use' => 'RESIDENTIAL',
+        ])->assertOk();
+
+        $this->assertSame(
+            'ZZ TEST Device Wins',
+            SpaApplication::where('client_uuid', $payload['client_uuid'])->value('owner_name')
+        );
+    }
+
+    public function test_an_inspection_can_be_edited(): void
+    {
+        $this->actingAsSurveyor();
+        $clientUuid = (string) Str::uuid();
+
+        $this->postJson('/api/spas/field-data', [
+            'client_uuid'     => $clientUuid,
+            'file_number'     => 'ZZ-TEST-EDIT-'.Str::random(8),
+            'inspection_date' => now()->toDateString(),
+            'findings'        => 'ZZ TEST original findings.',
+        ])->assertStatus(201);
+
+        $this->putJson('/api/spas/field-data/'.$clientUuid, [
+            'inspection_date' => now()->toDateString(),
+            'findings'        => 'ZZ TEST revised findings after a second visit.',
+            'coordinates'     => '{"lat":11.9964,"lng":8.5919}',
+        ])->assertOk()->assertJson(['success' => true]);
+
+        $row = SpaFieldData::where('client_uuid', $clientUuid)->firstOrFail();
+
+        $this->assertStringContainsString('revised findings', $row->findings);
+        $this->assertSame(['lat' => 11.9964, 'lng' => 8.5919], $row->coordinates);
+    }
+
+    /**
+     * JSON has a single number type, so a whole-number coordinate comes back as
+     * an int, not a float — `12.0` stores and re-reads as `12`. Harmless for
+     * arithmetic and unreachable in practice (a plot is never on a whole
+     * degree), but asserted so the client knows not to expect a strict float.
+     */
+    public function test_whole_number_coordinates_round_trip_as_ints(): void
+    {
+        $this->actingAsSurveyor();
+        $clientUuid = (string) Str::uuid();
+
+        $this->postJson('/api/spas/field-data', [
+            'client_uuid'     => $clientUuid,
+            'file_number'     => 'ZZ-TEST-WHOLE-'.Str::random(8),
+            'inspection_date' => now()->toDateString(),
+            'findings'        => 'ZZ TEST findings.',
+            'coordinates'     => '{"lat":12.0,"lng":8.0}',
+        ])->assertStatus(201);
+
+        $coords = SpaFieldData::where('client_uuid', $clientUuid)->firstOrFail()->coordinates;
+
+        $this->assertEquals(['lat' => 12, 'lng' => 8], $coords);
+        $this->assertEqualsWithDelta(12.0, $coords['lat'], 0.0001);
+    }
+
+    // -----------------------------------------------------------------------
     // Photos
     // -----------------------------------------------------------------------
 

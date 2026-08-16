@@ -340,7 +340,31 @@ class SpecialAssignmentController extends Controller
                 ];
             });
 
-        return view('special_assignment.field_data.index', compact('PageTitle', 'PageDescription', 'mapPoints', 'landUseTypes', 'customaryLandUses', 'lgaOptions'));
+        // Inspections that reached the office with no pin.
+        //
+        // The map above filters on whereNotNull('coordinates'), so without this
+        // these records are simply absent from it — invisible rather than
+        // pending. A surveyor is allowed to save without a pin (offline,
+        // sometimes there is no GPS fix and the alternative is losing the record
+        // entirely), which makes surfacing them here the other half of that
+        // decision. See plan §11.1, Q5.
+        $awaitingLocation = SpaFieldData::with('application')
+            ->where(function ($q) {
+                $q->whereNull('coordinates')->orWhere('coordinates', '');
+            })
+            ->orderByDesc('created_at')
+            ->take(200)
+            ->get()
+            ->map(fn ($f) => [
+                'id'          => $f->id,
+                'file_number' => $f->file_number ?? '—',
+                'owner'       => optional($f->application)->owner_name ?? '—',
+                'location'    => optional($f->application)->location ?? '—',
+                'lga'         => optional($f->application)->lga ?? '—',
+                'date'        => $f->inspection_date?->format('d/m/Y') ?? '—',
+            ]);
+
+        return view('special_assignment.field_data.index', compact('PageTitle', 'PageDescription', 'mapPoints', 'awaitingLocation', 'landUseTypes', 'customaryLandUses', 'lgaOptions'));
     }
 
     public function notice(Request $request)
@@ -842,25 +866,18 @@ class SpecialAssignmentController extends Controller
         return response()->json(['success' => true, 'id' => $app->id, 'file_number' => $app->file_number, 'message' => 'Land record saved.']);
     }
 
-    public function updateLandRecord(Request $request, int $id)
+    public function updateLandRecord(Request $request, int $id, SpaMobileService $spa)
     {
         $app = SpaApplication::findOrFail($id);
-        $request->validate([
-            'owner_name'   => 'required|string|max:255',
-            'phone'        => 'nullable|string|max:20',
-            'proposed_use' => 'required|string|max:255',
-            'existing_use' => 'required|string|max:255',
-            'status'       => 'required|in:open,in_progress,approved,certificate_issued,closed',
-        ]);
-        $app->update([
-            'owner_name'   => $request->owner_name,
-            'phone'        => $request->phone,
-            'location'     => $request->location,
-            'land_use_type'=> $request->land_use_type,
-            'proposed_use' => $request->proposed_use,
-            'existing_use' => $request->existing_use,
-            'status'       => $request->status,
-        ]);
+
+        // Rules live in the service alongside the create rules, so an edit
+        // cannot drift away from what the forms and the offline app enforce.
+        // withStatus: only the office may move a record through its workflow —
+        // the API omits it, so a field device cannot approve its own record.
+        $request->validate($spa->landRecordUpdateRules(withStatus: true));
+
+        $spa->applyLandRecordUpdate($app, $request->all(), withStatus: true);
+
         return response()->json(['success' => true, 'message' => 'Record updated.']);
     }
 

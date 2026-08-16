@@ -129,6 +129,66 @@ class StBillBalanceResolver
     }
 
     /**
+     * Canonical ST -> Deeds Bill Balance fee mapping.
+     *
+     *   Deeds field (billing column)   <-  ST Initial Bill column
+     *   Registration Fees (Site_Plan_Fee)  <-  ST Application Fee
+     *   Survey Fees       (survey_fee)     <-  ST Site Plan Fee
+     *   Preparation Fees  (Processing_Fee) <-  ST Processing Fee
+     *
+     * The names cross over — ST's *site plan* fee becomes the Deeds *survey*
+     * fee, and ST's *application* fee becomes the Deeds *registration* fee —
+     * so keep this table as the single source of truth for the mapping.
+     *
+     * Development Charges (Land_Use_Charge) comes from final_bills.dev_charges
+     * instead, because ST records it on the balance bill, not the initial bill.
+     */
+    public const ST_FEE_MAP = [
+        'Site_Plan_Fee'  => 'application_fee',
+        'survey_fee'     => 'site_plan_fee',
+        'Processing_Fee' => 'processing_fee',
+    ];
+
+    /**
+     * Identify an ST file and map its recorded fees onto the Deeds Bill
+     * Balance "Fees & Charges" fields.
+     *
+     * ST file numbers live on subapplications (ST-MIXED-2025-1-017); the Deeds
+     * form otherwise deals in land files, so this is what tells the two apart.
+     *
+     * @return array{is_st: bool, unit_type: string|null, fileno: string|null,
+     *               sub_application_id: int|null, fees: array, has_fees: bool}
+     */
+    public function stFeeProfile(?string $fileNumber): array
+    {
+        $fileNumber = trim((string) $fileNumber);
+
+        if ($fileNumber === '') {
+            return $this->notSt();
+        }
+
+        // Some filenos carry stray whitespace/newlines, so compare trimmed.
+        $sub = DB::connection('sqlsrv')->table('subapplications')
+            ->select('id', 'fileno', 'unit_type', 'is_sua_unit', 'application_fee', 'processing_fee', 'site_plan_fee')
+            ->whereRaw('UPPER(LTRIM(RTRIM(REPLACE(REPLACE(fileno, CHAR(13), %s), CHAR(10), %s)))) = ?', [])
+            ->first();
+
+        return $this->notSt();
+    }
+
+    private function notSt(): array
+    {
+        return [
+            'is_st'              => false,
+            'unit_type'          => null,
+            'fileno'             => null,
+            'sub_application_id' => null,
+            'fees'               => [],
+            'has_fees'           => false,
+        ];
+    }
+
+    /**
      * The billing row this balance hangs off — carried through purely so the
      * UI can show the linkage and the save path can update rather than insert.
      */

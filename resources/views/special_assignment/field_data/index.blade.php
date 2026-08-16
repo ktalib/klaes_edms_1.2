@@ -84,6 +84,41 @@
                             <div class="text-xs text-gray-400">
                                 <span id="map-point-count">{{ count($mapPoints) }}</span> inspection point(s) plotted
                             </div>
+
+                            {{--
+                                Records captured without a pin. A surveyor may save
+                                offline with no GPS fix — losing the record entirely
+                                would be worse — so these arrive unplaced and would
+                                otherwise be missing from the map with nothing to say
+                                so. Listed here so the office can place them.
+                            --}}
+                            @if(count($awaitingLocation ?? []) > 0)
+                                <hr class="border-gray-100">
+
+                                <div>
+                                    <button type="button"
+                                            class="w-full flex items-center justify-between text-xs font-semibold text-amber-700 hover:text-amber-800"
+                                            onclick="document.getElementById('awaiting-location-list').classList.toggle('hidden')">
+                                        <span class="flex items-center gap-1.5">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                                            </svg>
+                                            {{ count($awaitingLocation) }} awaiting location
+                                        </span>
+                                        <span class="text-gray-400">show</span>
+                                    </button>
+
+                                    <div id="awaiting-location-list" class="hidden mt-2 max-h-48 overflow-y-auto space-y-1">
+                                        @foreach($awaitingLocation as $row)
+                                            <div class="text-xs bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
+                                                <div class="font-semibold text-gray-700">{{ $row['file_number'] }}</div>
+                                                <div class="text-gray-500 truncate">{{ $row['owner'] }} &middot; {{ $row['lga'] }}</div>
+                                                <div class="text-gray-400">{{ $row['date'] }}</div>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            @endif
                         </div>
                     </div>
                 </div>

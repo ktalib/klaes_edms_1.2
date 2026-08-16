@@ -176,6 +176,95 @@ class SpaMobileService
         ]);
     }
 
+    /**
+     * Validation rules for editing an existing land record.
+     *
+     * Separate from landRecordRules() because an edit cannot change what the
+     * record *is*: `land_title_type` and `file_number` are fixed at creation
+     * (the file number is the identity, and one application per file number is
+     * enforced by a unique index), so neither is accepted here.
+     *
+     * `status` is office workflow — approving a record or marking a certificate
+     * issued is not something a field device may do — so it is only allowed
+     * when $withStatus is set, which is the web path.
+     */
+    public function landRecordUpdateRules(bool $withStatus = false): array
+    {
+        $rules = [
+            'owner_name'    => 'required|string|max:255',
+            'phone'         => 'nullable|string|max:20',
+            'location'      => 'nullable|string|max:255',
+            'district'      => 'nullable|string|max:255',
+            'lga'           => 'nullable|string|max:255',
+            'land_use_type' => 'nullable|string|max:255',
+            'proposed_use'  => 'required|string|max:255',
+            'existing_use'  => 'required|string|max:255',
+        ];
+
+        if ($withStatus) {
+            $rules['status'] = 'required|in:open,in_progress,approved,certificate_issued,closed';
+        }
+
+        return $rules;
+    }
+
+    /**
+     * Apply an edit to a land record.
+     *
+     * Only keys actually present in $data are written, so a partial payload
+     * from the offline app cannot blank out fields it never displayed.
+     */
+    public function applyLandRecordUpdate(SpaApplication $app, array $data, bool $withStatus = false): SpaApplication
+    {
+        $fields = ['owner_name', 'phone', 'location', 'district', 'lga', 'land_use_type', 'proposed_use', 'existing_use'];
+
+        if ($withStatus) {
+            $fields[] = 'status';
+        }
+
+        $changes = [];
+
+        foreach ($fields as $field) {
+            if (array_key_exists($field, $data)) {
+                $changes[$field] = $data[$field];
+            }
+        }
+
+        $app->update($changes);
+
+        return $app->refresh();
+    }
+
+    /**
+     * True when applying this payload would change nothing.
+     *
+     * This is what makes an update push safely retryable without a revision
+     * column. A push that succeeded server-side but whose response was lost
+     * gets replayed by the device; without this check the optimistic-concurrency
+     * guard would see its own write as someone else's edit and raise a spurious
+     * conflict at the surveyor.
+     */
+    public function isNoOpUpdate(SpaApplication $app, array $data, bool $withStatus = false): bool
+    {
+        $fields = ['owner_name', 'phone', 'location', 'district', 'lga', 'land_use_type', 'proposed_use', 'existing_use'];
+
+        if ($withStatus) {
+            $fields[] = 'status';
+        }
+
+        foreach ($fields as $field) {
+            if (! array_key_exists($field, $data)) {
+                continue;
+            }
+
+            if ((string) $data[$field] !== (string) $app->{$field}) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     // -----------------------------------------------------------------------
     // Field data
     // -----------------------------------------------------------------------

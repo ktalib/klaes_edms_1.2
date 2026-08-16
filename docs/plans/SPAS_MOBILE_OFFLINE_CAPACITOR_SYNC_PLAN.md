@@ -1,10 +1,15 @@
 # SPAS Mobile — Offline-First (Capacitor + SQLite) Sync Plan
 
-> **Status: Phase 0 complete (2026-08-16).** `SpaMobileService` exists and both
-> Blade forms now write through it; the 13 `/api/spas/*` routes are registered;
-> the DDL is applied and verified **11/11 on dev and production**. Phases 1–2
-> (Capacitor shell + local SQLite) are delegated to the build machine — see
-> `AGENT_BRIEF.md` in the SPAS APK folder. Phases 3–6 not started.
+> **Status: backend complete (2026-08-16).** `SpaMobileService` owns the shared
+> write path and both Blade forms go through it; **15 `/api/spas/*` routes**
+> (auth, delta pull, idempotent create, edit with optimistic concurrency, photo
+> upload, orphan linking, lookups); DDL applied and verified **11/11 on dev and
+> production**; **110 tests passing**.
+>
+> **Nothing on the backend blocks the app work.** The client contract is
+> `API_CONTRACT.md` in the SPAS APK folder. Phases 1–2 (Capacitor shell + local
+> SQLite) sit with the build machine — see `AGENT_BRIEF.md` and
+> `FIX_BRIEF_02.md` there. Phases 3–6 are client-side.
 >
 > **Last revised 2026-08-16** — see §13 and §15.
 
@@ -376,10 +381,32 @@ Two things this surfaced, neither yet actioned:
 - **`Kunchi` appears in `file_indexings` (16 files) but is not in the `lgas`
   table.** Either the reference table is missing a row or those files are
   mis-filed — needs confirming before any backfill runs.
-- A backfill command to normalise `file_indexings.lga` in place (the
-  `DepartmentNormalizer` precedent) is **not** written. Alias resolution at query
-  time makes it non-urgent, and a write across 133k rows deserves its own
-  reviewed run.
+- A backfill command **is** written —
+  [app/Console/Commands/NormalizeFileIndexingLga.php](../../app/Console/Commands/NormalizeFileIndexingLga.php),
+  `php artisan lga:normalize` — but has **only ever been dry-run**. It is an
+  optional data-quality clean-up, not a dependency: alias resolution at query
+  time already fixes SPAS.
+
+  Dry run against live data (2026-08-16):
+
+  | | Rows |
+  |---|---|
+  | Already canonical | 122,995 |
+  | Would change (42 spellings) | 4,682 |
+  | Unresolved (112 values) | 943 |
+
+  Unlike the other backfills in `app/Console/Commands`, which fill *empty*
+  columns, this one **overwrites values that are already there** on a table read
+  by legal search, file tracking and reporting. So: dry-run is the default,
+  writing needs `--apply`, the whole run is one transaction, and every change is
+  journalled to `storage/app/lga-normalize-*.json` with the affected row ids.
+  The journal is what makes it reversible — updating by value is not
+  self-inverting, since once `NASSARAWA` rows read `Nasarawa` they are
+  indistinguishable from rows that always did. `--revert=<journal>` restores.
+
+  The 943 unresolved rows are left alone by design and need human decisions:
+  `KANO CITY` (379), `WAJE` (282), `KANO STATE` (49), other states' LGAs, ward
+  names, and junk.
 
 ---
 
@@ -579,6 +606,8 @@ GET  /api/spas/records?since=<iso>         delta pull, 200/page, has_more flag
 GET  /api/spas/field-data?since=<iso>      delta pull, 200/page, has_more flag
 POST /api/spas/records                     create; requires client_uuid; idempotent
 POST /api/spas/field-data                  create; requires client_uuid; idempotent
+PUT  /api/spas/records/{client_uuid}       edit; optional base_updated_at -> 409 on stale write
+PUT  /api/spas/field-data/{client_uuid}    edit; same contract
 POST /api/spas/photos                      {entity_type, client_uuid, photos[]}
 POST /api/spas/link-orphans                stitch inspections to late-arriving parents
 
@@ -609,6 +638,21 @@ GET  /api/spas/lookup/next-customary-fileno
    next sync tick.
 7. `spa_application_id` is cast to `integer` on the model — the sqlsrv driver
    otherwise returns it as a string and breaks strict id comparison on device.
+8. **Edits use `PUT /{client_uuid}` and should send `base_updated_at`** — the
+   `updated_at` the device last saw. A row the office changed since returns
+   `409 {conflict: 'stale_write'}` with `server_row` attached, so the app can
+   show both versions instead of silently overwriting the office (§6.3). Omit
+   the field for last-write-wins.
+9. **A replayed identical edit answers `200 {duplicate:true}`, not 409.** The
+   server compares the payload field-by-field first, so a push that succeeded
+   but whose response was lost does not raise a phantom conflict at the
+   surveyor. This is what makes updates retryable without a revision column.
+10. **`file_number`, `land_title_type` and `status` cannot be changed by the
+    app.** The first two are the record's identity; `status` is office workflow,
+    so a handset cannot approve its own record. The web path may set `status`
+    — the single behavioural difference between the two callers.
+11. Coordinates round-trip through JSON, which has one number type: a whole
+    degree (`12.0`) comes back as `12`. Parse as float on the device.
 
 ### 15.4 Still outstanding
 
@@ -617,14 +661,15 @@ GET  /api/spas/lookup/next-customary-fileno
 
 ### 15.5 Test suite (2026-08-16)
 
-`php artisan test --filter="SpaMobileServiceTest|SpasSyncApiTest|SpasWebFormTest"`
-— **49 passing.**
+`php artisan test --filter="SpaMobileServiceTest|SpasSyncApiTest|SpasWebFormTest|LgaNormalizerTest"`
+— **110 passing.**
 
 | File | Tests | Covers |
 |---|---|---|
 | [tests/Unit/Services/SpaMobileServiceTest.php](../../tests/Unit/Services/SpaMobileServiceTest.php) | 18 | The shared rule set and coordinate normalisation. No database. |
-| [tests/Feature/Spas/SpasSyncApiTest.php](../../tests/Feature/Spas/SpasSyncApiTest.php) | 24 | `/api/spas/*` — auth, idempotent push, flat-FIFO orphan linking, 409-vs-422, photo upload, `since` cursor, bounded lookups |
-| [tests/Feature/Spas/SpasWebFormTest.php](../../tests/Feature/Spas/SpasWebFormTest.php) | 7 | The Blade form endpoints, including the `mapPoint` payload the mobile map consumes |
+| [tests/Feature/Spas/SpasSyncApiTest.php](../../tests/Feature/Spas/SpasSyncApiTest.php) | 33 | `/api/spas/*` — auth, idempotent push, edits with optimistic concurrency, flat-FIFO orphan linking, 409-vs-422, photo upload, `since` cursor, bounded lookups |
+| [tests/Feature/Spas/SpasWebFormTest.php](../../tests/Feature/Spas/SpasWebFormTest.php) | 11 | The Blade form endpoints, the office edit path, the `mapPoint` payload, and the awaiting-location panel rendering |
+| [tests/Unit/Support/LgaNormalizerTest.php](../../tests/Unit/Support/LgaNormalizerTest.php) | 48 | LGA alias resolution — both that known variants resolve and that ambiguous ones stay unresolved |
 
 **Isolation: `DatabaseTransactions` with `$connectionsToTransact = ['sqlsrv']`,
 never `RefreshDatabase`.** These tables live on the shared development database
