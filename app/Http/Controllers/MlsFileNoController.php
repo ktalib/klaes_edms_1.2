@@ -1647,6 +1647,9 @@ class MlsFileNoController extends Controller
                 'commission_time' => 'nullable|string',
                 'customer_type' => 'required|string|in:Individual,Corporate,Multiple,Government',
                 'gender' => 'required|string|in:Male,Female,Corporate,Joint',
+                // Applicant's passport photograph. Filed into the new file number's EDMS
+                // scan folder after commit — see storeCommissioningPassport().
+                'passport' => 'nullable|image|mimes:jpeg,jpg,png|max:2048',
                 'existing_file_no' => 'nullable|string|max:50',
                 'existing_file_no_manual' => 'nullable|string|max:50',
                 'purpose_id' => 'nullable|integer',
@@ -3380,6 +3383,7 @@ class MlsFileNoController extends Controller
                 DB::connection('sqlsrv')->commit();
 
                 $edmsFolder = $this->ensureEdmsScanFolder($fullFileNumber);
+                $passportUpload = $this->storeCommissioningPassport($request, $fullFileNumber, $edmsFolder);
 
                 Log::info('MLS File Number Generated', [
                     'file_number' => $fullFileNumber,
@@ -3404,6 +3408,8 @@ class MlsFileNoController extends Controller
                     'notice' => $skipNotice,
                     // Where scans for this file go — shown on the commissioning summary.
                     'edms_folder' => $edmsFolder,
+                    // Passport photograph outcome (path + scan row), for the same card.
+                    'passport_upload' => $passportUpload,
                     // Which tables the commissioning wrote to, for the same card.
                     'storage_summary' => $this->buildStorageSummary($fullFileNumber),
                     'data' => [
@@ -5175,6 +5181,122 @@ class MlsFileNoController extends Controller
     {
         return app(\App\Services\EdmsScanUploadFolderService::class)
             ->ensure($fileNumber, 'Lands Registry', ['source' => 'mls_commissioning']);
+    }
+
+    /**
+     * File the applicant's passport photograph against the newly commissioned file.
+     *
+     * Two things happen, and both are needed for the photograph to be visible to the
+     * rest of EDMS:
+     *   1. the image is written into the file's own scan folder
+     *      (EDMS/SCAN_UPLOAD/Lands_Registry/{FILE NUMBER}), the same folder the
+     *      scanning module uploads into — so it sits with the file's documents rather
+     *      than in a passport-only tree of its own;
+     *   2. a `scannings` row is created for it. Scan Uploads lists file_indexings that
+     *      HAVE scannings, and Page Typing lists files with scannings but no typings —
+     *      without the row the image is on disk but the file number never appears in
+     *      either module.
+     *
+     * Best-effort: the commissioning is already committed by the time this runs, so a
+     * storage or DB failure is logged and reported, never allowed to fail the request.
+     *
+     * @param  array{created:bool, existed:bool, path:?string, registry:?string, reason:string}  $edmsFolder
+     * @return array{stored:bool, path:?string, scanning_id:?int, reason:string}|null  null when no file was sent
+     */
+    private function storeCommissioningPassport(Request $request, string $fileNumber, array $edmsFolder): ?array
+    {
+        if (!$request->hasFile('passport')) {
+            return null;
+        }
+
+        try {
+            $file = $request->file('passport');
+
+            // ensureEdmsScanFolder() has already resolved the registry slug and scrubbed
+            // the file number; only recompute if creating the folder failed outright, so
+            // the image can still land in the right place.
+            $directory = $edmsFolder['path'] ?? null;
+            if (!$directory) {
+                $folders = app(\App\Services\EdmsScanUploadFolderService::class);
+                $directory = \App\Services\EdmsScanUploadFolderService::BASE_PATH
+                    . '/' . $folders->registrySlug('Lands Registry')
+                    . '/' . $folders->folderName($fileNumber);
+            }
+
+            $extension = strtolower($file->getClientOriginalExtension() ?: 'jpg');
+            $filename = 'passport_' . now()->format('Ymd_His') . '_' . Str::random(6) . '.' . $extension;
+            $storedPath = $file->storeAs($directory, $filename, 'public');
+
+            if (!$storedPath) {
+                throw new \RuntimeException('Storage returned no path for the passport image.');
+            }
+
+            $indexing = \App\Models\FileIndexing::on('sqlsrv')
+                ->where('file_number', $fileNumber)
+                ->first();
+
+            if (!$indexing) {
+                // Temporary files are deliberately not indexed (see the auto-index block in
+                // generateMlsFileNumber), so there is no row to hang the scan off. The image
+                // is still filed on disk.
+                Log::info('Passport stored without a scan row - file has no file_indexings record', [
+                    'file_number' => $fileNumber,
+                    'path'        => $storedPath,
+                ]);
+
+                return ['stored' => true, 'path' => $storedPath, 'scanning_id' => null, 'reason' => 'no_indexing_record'];
+            }
+
+            // Definition/display order continue the file's existing document sequence; on a
+            // fresh commissioning this is simply the first document.
+            $displayOrder = (int) \App\Models\Scanning::on('sqlsrv')
+                ->where('file_indexing_id', $indexing->id)
+                ->count();
+            $definition = $displayOrder + 1;
+
+            $scanning = \App\Models\Scanning::on('sqlsrv')->create([
+                'file_indexing_id'  => $indexing->id,
+                'document_path'     => $storedPath,
+                'uploaded_by'       => Auth::id(),
+                'status'            => 'pending',
+                'definition'        => $definition,
+                // scannings.definition_code is nvarchar(50); a long file number would
+                // otherwise blow the column and lose the whole scan row.
+                'definition_code'   => mb_substr($definition . '-' . $fileNumber, 0, 50),
+                'original_filename' => $file->getClientOriginalName() ?: $filename,
+                'paper_size'        => 'A4',
+                'document_type'     => 'Passport Photograph',
+                'notes'             => 'Applicant passport captured at file commissioning.',
+                'display_order'     => $displayOrder,
+                'file_size'         => $file->getSize(),
+                'registry'          => 'Lands Registry',
+                'is_pdf_converted'  => false,
+            ]);
+
+            try {
+                $indexing->update(['is_updated' => 1]);
+            } catch (\Throwable $e) {
+                Log::warning('Could not flag file_indexings.is_updated after passport upload', [
+                    'file_number' => $fileNumber,
+                    'error'       => $e->getMessage(),
+                ]);
+            }
+
+            Log::info('Commissioning passport filed into EDMS', [
+                'file_number' => $fileNumber,
+                'path'        => $storedPath,
+                'scanning_id' => $scanning->id,
+            ]);
+
+            return ['stored' => true, 'path' => $storedPath, 'scanning_id' => $scanning->id, 'reason' => 'stored'];
+        } catch (\Throwable $e) {
+            Log::warning('Could not file commissioning passport', [
+                'file_number' => $fileNumber,
+                'error'       => $e->getMessage(),
+            ]);
+
+            return ['stored' => false, 'path' => null, 'scanning_id' => null, 'reason' => 'error'];
+        }
     }
 
     /**

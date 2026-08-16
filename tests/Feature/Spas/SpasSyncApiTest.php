@@ -311,6 +311,48 @@ class SpasSyncApiTest extends TestCase
         ])->assertStatus(422);
     }
 
+    /**
+     * The offline app sends every field it knows about, including nulls.
+     *
+     * A customary record has no file number — the server generates one — so the
+     * payload carries `file_number: null`. That used to fail the `string` rule
+     * with "The file number must be a string", and offline that is
+     * unrecoverable: the push 422s on every retry and the surveyor's record
+     * never reaches the office. Observed on a real device 2026-08-16.
+     */
+    public function test_a_customary_push_with_an_explicit_null_file_number_is_accepted(): void
+    {
+        $this->actingAsSurveyor();
+
+        $response = $this->postJson('/api/spas/records', [
+            'client_uuid'     => (string) Str::uuid(),
+            'land_title_type' => 'customary',
+            'file_number'     => null,
+            'owner_name'      => 'ZZ TEST Customary Null Fileno',
+            'lga'             => 'Nasarawa',
+            'proposed_use'    => 'RESIDENTIAL',
+            'existing_use'    => 'RESIDENTIAL',
+        ])->assertStatus(201);
+
+        // The server owns the sequence, so it must hand back a real number.
+        $this->assertMatchesRegularExpression('/^SPAS-\d{4}-\d+$/', $response->json('file_number'));
+    }
+
+    public function test_a_statutory_push_with_a_null_file_number_is_still_refused(): void
+    {
+        // Making the rule nullable must not weaken the statutory requirement.
+        $this->actingAsSurveyor();
+
+        $this->postJson('/api/spas/records', [
+            'client_uuid'     => (string) Str::uuid(),
+            'land_title_type' => 'statutory',
+            'file_number'     => null,
+            'owner_name'      => 'ZZ TEST No Fileno',
+            'proposed_use'    => 'RESIDENTIAL',
+            'existing_use'    => 'RESIDENTIAL',
+        ])->assertStatus(422)->assertJsonValidationErrors(['file_number']);
+    }
+
     // -----------------------------------------------------------------------
     // Update — offline edits pushed back
     // -----------------------------------------------------------------------

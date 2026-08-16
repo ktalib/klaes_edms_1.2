@@ -1436,6 +1436,11 @@
             component.fileName = '';
             component.landUse = '';
             component.fileOption = '';
+            if (typeof component.clearPassport === 'function') {
+                component.clearPassport();
+            } else {
+                component.passport = '';
+            }
             // Without this the top FILE TYPE select keeps displaying the previous choice
             // while fileOption reads '' — the label and the submitted value then disagree.
             component.fileTypeWorkflow = '';
@@ -2205,6 +2210,29 @@
             }
         }
 
+        // Passport is required for non-Government / non-Corporate single-file submissions.
+        // It is an image now, so presence is read off the file input rather than a typed value.
+        {
+            const customerTypeValue = (alpineData && alpineData.customerType
+                ? alpineData.customerType
+                : (document.getElementById('customerType')?.value || '')).toString().trim();
+            const requiresPassport = customerTypeValue !== 'Government' && customerTypeValue !== 'Corporate';
+            const passportInput = document.getElementById('generatePassport');
+            const hasPassport = !!(passportInput && passportInput.files && passportInput.files.length > 0);
+
+            if (requiresPassport && !hasPassport) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Passport Required',
+                    text: 'Please upload the applicant\'s passport photograph before generating the file number.',
+                    confirmButtonColor: '#f59e0b'
+                }).then(() => {
+                    if (passportInput) passportInput.focus();
+                });
+                return;
+            }
+        }
+
         const submitBtn = event.submitter || event.target.querySelector('button[type="submit"]');
         const originalText = submitBtn ? submitBtn.innerHTML : '';
 
@@ -2586,6 +2614,15 @@
                                             <div class="mt-1 w-1 h-1 rounded-full bg-${summaryColor}-400"></div>
                                             <span>${data.edms_folder.existed ? 'Scan folder already present' : 'EDMS scan folder created'}:
                                                 <b class="font-black text-${summaryColor}-900 break-all">${data.edms_folder.path}</b></span>
+                                        </li>` : ''}
+                                        {{-- Passport photograph filed into that folder and registered as a
+                                             scan document, so the file shows up in Scan Upload / Page Typing. --}}
+                                        ${data.passport_upload ? `
+                                        <li class="flex items-start gap-2.5">
+                                            <div class="mt-1 w-1 h-1 rounded-full bg-${summaryColor}-400"></div>
+                                            <span>${data.passport_upload.stored
+                                                ? `Passport photograph filed${data.passport_upload.scanning_id ? ' and listed under Scan Upload / Page Typing' : ''}: <b class="font-black text-${summaryColor}-900 break-all">${data.passport_upload.path}</b>`
+                                                : 'Passport photograph could not be saved — please upload it from Scan Upload.'}</span>
                                         </li>` : ''}
                                     </ul>
                                 </div>
@@ -4382,6 +4419,51 @@
             prefix: '',
             customerType: '',
             gender: '',
+            // Passport is an image upload filed into the new file number's EDMS folder.
+            // `passport` holds only the chosen file's name — the image itself stays on the
+            // native file input so FormData posts it as-is; `passportPreview` is the object
+            // URL behind the thumbnail.
+            passport: '',
+            passportPreview: '',
+            handlePassportChange(event) {
+                const input = event.target;
+                const file = input.files && input.files[0];
+
+                if (!file) {
+                    this.clearPassport();
+                    return;
+                }
+
+                if (!/^image\/(jpeg|jpg|png)$/i.test(file.type)) {
+                    Swal.fire({ icon: 'warning', title: 'Unsupported File', text: 'Passport must be a JPG or PNG image.', confirmButtonColor: '#f59e0b' });
+                    this.clearPassport();
+                    return;
+                }
+
+                // Matches the server rule (max:2048), so an oversized image is refused here
+                // instead of coming back as a 422 after the operator filled the whole form.
+                if (file.size > 2 * 1024 * 1024) {
+                    Swal.fire({ icon: 'warning', title: 'File Too Large', text: 'Passport image must be 2MB or smaller.', confirmButtonColor: '#f59e0b' });
+                    this.clearPassport();
+                    return;
+                }
+
+                if (this.passportPreview) {
+                    URL.revokeObjectURL(this.passportPreview);
+                }
+
+                this.passport = file.name;
+                this.passportPreview = URL.createObjectURL(file);
+            },
+            clearPassport() {
+                if (this.passportPreview) {
+                    URL.revokeObjectURL(this.passportPreview);
+                }
+                this.passport = '';
+                this.passportPreview = '';
+                const input = document.getElementById('generatePassport');
+                if (input) input.value = '';
+            },
             // Default to normal file
             fileOption: 'normal',
             // Backs the top "FILE TYPE" select. Kept separate from fileOption because that
@@ -6226,6 +6308,7 @@
                     this.tpNo = '';
                     this.location = '';
                     this.lga = '';
+                    this.clearPassport();
                     this.phone_no = '';
                     this.address = '';
                     this.rep_phone_no = '';

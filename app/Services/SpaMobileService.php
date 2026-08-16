@@ -46,7 +46,13 @@ class SpaMobileService
     {
         $rules = [
             'land_title_type' => 'required|in:statutory,customary',
-            'file_number'     => 'required_if:land_title_type,statutory|string|max:255',
+            // `nullable` matters for the offline app. A customary record has no
+            // file number — the server generates one — and a client that sends
+            // `file_number: null` explicitly used to fail `string` with "The
+            // file number must be a string". Offline that is unrecoverable: the
+            // push 422s forever and the surveyor's record never lands.
+            // `required_if` is an implicit rule and still fires for statutory.
+            'file_number'     => 'nullable|required_if:land_title_type,statutory|string|max:255',
             'owner_name'      => 'required|string|max:255',
             'phone'           => 'nullable|string|max:20',
             'proposed_use'    => 'required|string|max:255',
