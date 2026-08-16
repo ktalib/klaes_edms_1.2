@@ -651,7 +651,13 @@
                     </div>
                 </div>`;
 
-            const homeRow = () => (isCommissionedFile ? '' : archiveHomeRowHtml);
+            // A file indexed since FileRangeTrackingService shipped already carries a
+            // REAL opening row (_range_home), placed by its registry range — it may say
+            // "In Pool Office" where this hard-coded row can only say "In Archive".
+            // Set from the merged history below; drawing both gives two home lines.
+            let hasRangeHomeRow = false;
+
+            const homeRow = () => ((isCommissionedFile || hasRangeHomeRow) ? '' : archiveHomeRowHtml);
 
             try {
                 const res  = await fetch(`${TRACK_URL}/${encodeURIComponent(fileNumber)}`, { headers: { 'Accept': 'application/json' } });
@@ -669,6 +675,7 @@
                     const currentLogs = Array.isArray(json.data.movement_history) ? json.data.movement_history : [];
                     const priorLogs   = Array.isArray(json.data.prior_movements) ? json.data.prior_movements : [];
                     const allLogs     = [...priorLogs, ...currentLogs].sort(compareMovementEntries);
+                    hasRangeHomeRow   = allLogs.some(e => e && e._range_home);
                     if (!allLogs.length) {
                         container.innerHTML = `${homeRow()}<div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-500">No movement history available for this file.</div>`;
                     } else {

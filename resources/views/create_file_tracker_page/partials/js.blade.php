@@ -6380,8 +6380,14 @@
             // file_request_type = SYSTEM is the marker: only FileRangeTrackingService
             // writes it (operators pick MANUAL / SUBMITTED), so it identifies a tracker
             // whose opening row already IS the home row.
+            //
+            // Once the file is requested again the SYSTEM tracker closes and the new
+            // MANUAL/SUBMITTED one carries that opening row in prior_movements, so the
+            // _range_home marker must be looked for in BOTH lists — otherwise the
+            // re-tracked card gets the hard-coded row back, contradicting the real one.
             const isSystemTracker = (tracker.fileRequestType || '').toUpperCase() === 'SYSTEM'
-                || (tracker.logEntries || []).some(e => e.isRangeHome);
+                || (tracker.logEntries || []).some(e => e.isRangeHome)
+                || (tracker.priorLogEntries || []).some(e => e.isRangeHome);
             const homeLocationRow = (isKangisView || tracker.isCommissioned || isSystemTracker) ? '' : `
                         <tr class="bg-indigo-50/40">
                             <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-gray-700">
@@ -8435,7 +8441,11 @@
                                         // Likewise a SYSTEM tracker: its stored opening row IS
                                         // the home row, and it knows whether the file is in the
                                         // Archive or the Pool Office (see the on-screen table).
-                                        if ((tracker.fileRequestType || '').toUpperCase() === 'SYSTEM') {
+                                        // After a re-track that row arrives in priorLogEntries on
+                                        // a MANUAL/SUBMITTED tracker, so test the marker too.
+                                        if ((tracker.fileRequestType || '').toUpperCase() === 'SYSTEM'
+                                            || (tracker.logEntries || []).some(e => e.isRangeHome)
+                                            || (tracker.priorLogEntries || []).some(e => e.isRangeHome)) {
                                             return '';
                                         }
                                         // Default "home location" row — the file's permanent
