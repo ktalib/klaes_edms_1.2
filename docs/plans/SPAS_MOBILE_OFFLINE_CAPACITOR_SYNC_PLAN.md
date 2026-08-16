@@ -285,13 +285,101 @@ change first.
 
 ---
 
-## 11. Open questions (need a product decision before Phase 2)
+## 11. Open questions — **answered 2026-08-16**
 
-1. Should `file_index_cache` be scoped by LGA/district per surveyor, or organically grown from lookups only? (affects payload size and Phase 2 pull design)
-2. Is per-surveyor **record ownership/assignment** needed (today all SPAS mobile users see the same full list — confirm this stays true offline too)?
-3. Target platforms: Android only for v1, or Android + iOS from the start? (affects Capacitor plugin choices/signing setup)
-4. Acceptable staleness window for the Field Map tab when offline — hide it entirely, or show last-cached pins without tiles?
-5. For a **customary** title captured offline, is GPS-on-site the only acceptable way to set coordinates (§9), or should the app accept a record with LGA/District but no pin and let the office place it later? Affects whether `coordinates` can stay null through a sync.
+| # | Question | Decision |
+|---|---|---|
+| 1 | `file_index_cache` scoping | **Hybrid: pre-seed by LGA/district, *and* grow organically on every lookup.** Amended from "scope by LGA" after sizing it against live data — see §11.2. |
+| 2 | Per-surveyor record ownership | **No — full list as today.** Every SPAS mobile user continues to see every record, offline included. |
+| 3 | Target platforms | Android v1 (implied by the build work; iOS not started). |
+| 4 | Field Map staleness when offline | Not yet decided — client-side, revisit in Phase 3. |
+| 5 | Customary record with no coordinates | **Allowed to sync.** `coordinates` may stay null through a push; the office can place the pin later. |
+
+### 11.1 What each decision commits us to
+
+**Q1 — hybrid scoping.** `GET /api/spas/lookup/file-index` already accepts
+`?lga=`, `?district=`, `?file_numbers[]` and `?q=`, so the server supports both
+halves today. What is missing is *where the surveyor's area comes from*: there
+is no assignment column on `users`. Until one exists, the app passes the
+LGA/district explicitly (picked by the surveyor on first login, held in
+`@capacitor/preferences`). A `users.assigned_lga` / `assigned_district` column
+would let the server derive it from the token — worth doing, but it is a schema
+change plus UI, so it is deliberately **not** assumed here.
+
+The organic half is a **client** obligation: every file the surveyor looks up or
+opens must be written into `file_index_cache` permanently. The endpoint already
+returns the full cacheable row, so this needs no server work.
+
+**Q2 — no ownership filter.** This is the *simplifying* answer: no pull query
+needs a `surveyor_id` predicate, and `/api/spas/records` can stay exactly as
+built. It also means Q1's scoping is a **cache-size optimisation only, never a
+security boundary** — a device holds a subset of the file index for bandwidth
+reasons, but any surveyor may still create a record against any file. Do not let
+the two get conflated into an access-control assumption later.
+
+**Q5 — coordinates may be null.** Already true server-side: `coordinates` is
+nullable and §6.1 validation never required it. What this settles is the *client*
+rule — the offline form must **not** block a save for a missing pin. It should
+warn (the surveyor is standing on the plot; GPS is one tap) but allow the record
+into the outbox. Records arriving with no pin need to be findable in the office,
+so the desktop Field Map should surface "records awaiting a location" rather than
+silently omitting them from the map — **not yet built**, and the one piece of
+follow-up work this answer creates.
+
+### 11.2 Why Q1 was amended — the numbers
+
+Measured against the live database 2026-08-16, before deciding:
+
+| | Files |
+|---|---|
+| `file_indexings` in SPAS scope | 133,255 |
+| LGA matches a dropdown value (case-insensitive) | 123,211 (96%) |
+| LGA is a spelling variant that does **not** match | 5,409 |
+| No LGA at all | 4,696 |
+| Largest single LGA (Kumbotso) | 23,331 (~4 MB) |
+| Whole table, all 10 cached columns | ~23 MB |
+
+**Storage was never the constraint — the blind spot was.** `file_indexings.lga`
+is free text: 196 distinct values against 45 canonical rows. A strict
+`where('lga', ?)` filter meant a surveyor scoped to Nasarawa silently missed the
+3,388 files recorded as `NASSARAWA`. Offline that is the worst possible failure
+— the file simply is not there, with nothing to explain why.
+
+Roughly 10,100 files (7.6%) were unreachable that way. Organic growth is what
+makes the residue non-fatal: a file missed by the pre-seed is cached the first
+time anyone opens it, so the second visit to that plot works offline.
+
+**Alias resolution ([app/Support/LgaNormalizer.php](../../app/Support/LgaNormalizer.php))**
+closes most of the gap without a data migration. `variantsFor()` widens the
+cache query from `= ?` to `IN (...)`. Measured recovery:
+
+| LGA | exact | with variants | recovered |
+|---|---|---|---|
+| Nasarawa | 12,528 | 15,917 | **+3,389** (+27%) |
+| Kano Municipal | 6,522 | 7,130 | +608 |
+| Dawakin Kudu | 5,890 | 6,049 | +159 |
+| Ungogo | 7,179 | 7,292 | +113 |
+| Dambatta | 227 | 294 | +67 |
+| …15 LGAs total | | | **+4,458** |
+
+The normaliser is deliberately conservative and returns `null` rather than
+guessing, because the same column also holds **other states' LGAs** (Hadejia,
+Dutse, Ringim, Gumel — Jigawa; "Egbado South" — Ogun), **ward names that are not
+LGAs** (Waje, Sharada, Naibawa, Giginyu, Yakasai), and junk (`29-12-1984`,
+`Select LGA`, `DA`). `"Kano City"` is left unresolved on purpose — it is the old
+walled city spanning Dala, Gwale and Kano Municipal, and one row even reads
+`KANO CITY DALA`. Filing a record under the wrong LGA is worse than leaving it
+unresolved for a human.
+
+Two things this surfaced, neither yet actioned:
+
+- **`Kunchi` appears in `file_indexings` (16 files) but is not in the `lgas`
+  table.** Either the reference table is missing a row or those files are
+  mis-filed — needs confirming before any backfill runs.
+- A backfill command to normalise `file_indexings.lga` in place (the
+  `DepartmentNormalizer` precedent) is **not** written. Alias resolution at query
+  time makes it non-urgent, and a write across 133k rows deserves its own
+  reviewed run.
 
 ---
 
@@ -526,10 +614,44 @@ GET  /api/spas/lookup/next-customary-fileno
 
 - ~~Production DDL~~ — **done and verified 11/11 on 2026-08-16** (§14.4).
   Nothing schema-side is outstanding on either environment.
+
+### 15.5 Test suite (2026-08-16)
+
+`php artisan test --filter="SpaMobileServiceTest|SpasSyncApiTest|SpasWebFormTest"`
+— **49 passing.**
+
+| File | Tests | Covers |
+|---|---|---|
+| [tests/Unit/Services/SpaMobileServiceTest.php](../../tests/Unit/Services/SpaMobileServiceTest.php) | 18 | The shared rule set and coordinate normalisation. No database. |
+| [tests/Feature/Spas/SpasSyncApiTest.php](../../tests/Feature/Spas/SpasSyncApiTest.php) | 24 | `/api/spas/*` — auth, idempotent push, flat-FIFO orphan linking, 409-vs-422, photo upload, `since` cursor, bounded lookups |
+| [tests/Feature/Spas/SpasWebFormTest.php](../../tests/Feature/Spas/SpasWebFormTest.php) | 7 | The Blade form endpoints, including the `mapPoint` payload the mobile map consumes |
+
+**Isolation: `DatabaseTransactions` with `$connectionsToTransact = ['sqlsrv']`,
+never `RefreshDatabase`.** These tables live on the shared development database
+alongside real data the team uses through the UI — migrating or truncating it
+would destroy their work. Verified after a full run: row counts unchanged and
+zero `ZZ TEST%` rows left behind.
+
+**The suite was mutation-checked**, not just observed passing. Removing the
+`lga` `required_if` rule — the precise change that caused the August 2026
+production 422 — fails three tests across all three layers (unit, API, web
+form). A rule silently disappearing from the shared service can no longer reach
+production quietly.
+
+Two things these tests deliberately do **not** cover, so the gap is a decision
+rather than an oversight:
+
+- **`tests/Integration/` is not in `phpunit.xml`'s testsuites** (only `Unit` and
+  `Feature` are), so the three files there never run. Left alone — at least one
+  of them deletes from a live table outside a transaction, so wiring it up
+  without review would be actively unsafe on the shared database.
+- A real Sanctum login round-trip. `Sanctum::actingAs()` covers the guard; the
+  password path would need a user created with a known password, and the `users`
+  table is shared. The failure cases (bad credentials, missing fields) are
+  covered.
 - `surveyor_id` / `created_by` are taken from the **token**, not the push
   payload. The §14.2 open question is therefore settled: the server derives
   them, and a device cannot claim to be another surveyor.
-- No automated test suite — Phase 0 was verified by the transactional scripts
-  described above, not by committed tests. Worth adding before Phase 4.
+- ~~No automated test suite~~ — **49 tests committed 2026-08-16** (§15.5).
 
 ---

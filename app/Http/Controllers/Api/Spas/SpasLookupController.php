@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Spas;
 
 use App\Http\Controllers\Controller;
+use App\Support\LgaNormalizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -57,8 +58,13 @@ class SpasLookupController extends Controller
                 'fi.phone', 'fi.current_holder', 'fn.FileName as file_title'
             );
 
+        // Match the LGA's misspellings too, not just the canonical spelling.
+        // `file_indexings.lga` is free text (196 distinct values against 45
+        // canonical), so an exact filter on "Nasarawa" silently missed the
+        // 3,388 files recorded as "NASSARAWA" — invisible offline, with no
+        // error to explain the gap. See LgaNormalizer.
         if ($request->filled('lga')) {
-            $query->where('fi.lga', $request->lga);
+            $query->whereIn('fi.lga', LgaNormalizer::variantsFor($request->input('lga')));
         }
 
         if ($request->filled('district')) {
