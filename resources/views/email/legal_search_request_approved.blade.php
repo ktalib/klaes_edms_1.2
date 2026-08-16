@@ -32,8 +32,20 @@
     </table>
 
     <div class="info-box">
-        <strong>📎 Attached:</strong> your <strong>Legal Search Report</strong> (PDF). Please keep it for your records — it is issued to
-        {{ $searchRequest->requester_email }} and quotes request number {{ $searchRequest->request_no }}.
+        <strong>📎 Attached:</strong>
+        <ul style="margin:8px 0 0; padding-left: 18px;">
+            <li>Your <strong>Legal Search Report</strong> (PDF) — issued to {{ $searchRequest->requester_email }}, quoting request number {{ $searchRequest->request_no }}.</li>
+            @if($searchRequest->payment)
+                <li>Your <strong>Payment Invoice</strong> ({{ $invoiceNumber }}) for the search fee.</li>
+            @endif
+        </ul>
+        Please keep both for your records.
+    </div>
+
+    <div class="warning-box" style="background:#fffbeb;border:1px solid #fcd34d;padding:14px;border-radius:6px;margin:18px 0;">
+        <strong>⏳ Validity:</strong> this search report is <strong>valid for 30 days from the date of issue</strong>
+        ({{ optional($searchRequest->reviewed_at)->format('F j, Y') }}@if($searchRequest->reviewed_at) — expires {{ $searchRequest->reviewed_at->copy()->addDays(30)->format('F j, Y') }}@endif).
+        After that a fresh search is required, as the records may have changed.
     </div>
 
     <p style="font-size: 13px; color: #64748b;">

@@ -89,6 +89,7 @@ Route::prefix('phs')->name('phs.')->group(function () {
             Route::put('members/{id}', [PhsOrganizationController::class, 'updateMember'])->name('members.update');
             Route::delete('members/{id}', [PhsOrganizationController::class, 'destroyMember'])->name('members.destroy');
             Route::get('activity', [PhsOrganizationController::class, 'activity'])->name('activity');
+            Route::get('email-history', [PhsOrganizationController::class, 'emailHistory'])->name('emailHistory');
             Route::post('branding', [PhsOrganizationController::class, 'updateBranding'])->name('branding');
             Route::get('invoice/download', [PhsOnboardingController::class, 'downloadOrgInvoice'])->name('invoice.download');
         });

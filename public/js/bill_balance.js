@@ -206,6 +206,9 @@ document.addEventListener('DOMContentLoaded', () => {
               // Fetch residence address from file_indexings table
               fetchResidenceAddress(data.fileNumber);
 
+              // Flag Sectional Titling files and map across their recorded fees
+              applyStFileProfile(data.fileNumber);
+
               // Auto-calculate expiry date based on land use
               calculateExpiryDate();
             }
@@ -215,6 +218,66 @@ document.addEventListener('DOMContentLoaded', () => {
         console.warn('GlobalFileNoModal not available');
       }
     });
+  }
+
+  /**
+   * Sectional Titling files carry their own fees on the ST Initial Bill, so
+   * badge the file and carry those figures across instead of re-costing here.
+   *
+   * The names cross over — see StBillBalanceResolver::ST_FEE_MAP, which is the
+   * source of truth; the server does the mapping and returns Deeds field names.
+   */
+  function applyStFileProfile(fileNumber) {
+    const badge = document.getElementById('st-file-badge');
+    const badgeText = document.getElementById('st-file-badge-text');
+
+    const hideBadge = () => {
+      if (badge) {
+        badge.classList.add('hidden');
+        badge.classList.remove('inline-flex');
+      }
+    };
+
+    hideBadge();
+    if (!fileNumber) return;
+
+    fetch(`/bill-balance/st-fees?file_number=${encodeURIComponent(fileNumber)}`)
+      .then(response => response.json())
+      .then(payload => {
+        const d = payload && payload.data;
+        if (!payload.success || !d || !d.is_st) return;
+
+        // --- badge ---
+        if (badge) {
+          badge.classList.remove('hidden');
+          badge.classList.add('inline-flex');
+        }
+        if (badgeText) {
+          badgeText.textContent = d.unit_type ? `ST File · ${d.unit_type}` : 'ST File';
+        }
+
+        // --- reference: adopt the ST bill's id so both modules share one ---
+        if (d.bill_reference && !d.bill_reference_taken && referenceInput) {
+          referenceInput.value = d.bill_reference;
+          setReferenceDisplay(d.bill_reference);
+        } else if (d.bill_reference_taken) {
+          console.warn(`ST reference ${d.bill_reference} is already used by another bill balance; keeping the generated DBBL reference.`);
+        }
+
+        // --- fees ---
+        Object.keys(d.fees || {}).forEach((deedsField) => {
+          const input = document.querySelector(`[name="${deedsField}"]`);
+          if (!input) return;
+
+          input.value = Number(d.fees[deedsField]).toFixed(2);
+          input.classList.add('auto-filled');
+          input.style.backgroundColor = '#eef2ff'; // indigo-50, marks an ST-sourced figure
+          input.style.color = '#4338ca';
+        });
+
+        calculateTotal();
+      })
+      .catch(error => console.error('ST fee lookup failed:', error));
   }
 
   // Function to fetch residence address and auto-populate fields

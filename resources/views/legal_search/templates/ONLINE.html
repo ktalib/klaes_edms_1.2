@@ -277,6 +277,14 @@
       margin-bottom: 4px;
     }
 
+    .validity-nb {
+      font-size: 10.5px;
+      font-weight: bold;
+      text-align: center;
+      margin: 6px 0 2px 0;
+      color: #b45309;
+    }
+
     .disclaimer-nb {
       font-size: 9.5px;
       font-style: italic;
@@ -652,6 +660,10 @@
         </div>
       </div>
 
+      <!-- Validity notice: the expiry date is filled in by JS from the report
+           date, falling back to today when the template is opened standalone. -->
+      <p class="validity-nb">Valid for 30 days from date of issue &mdash; expires <span id="report-expires-on">&mdash;</span>.</p>
+
       <p class="disclaimer-nb">
         N.B: This search report is deduced based on the available records from the file and does not represent any
         document in possession of any body.<span id="report-timestamp"
@@ -744,6 +756,22 @@
       setColumnVisible('file-no-col', _distinctFileNos.size > 1);
     }
 
+    // Report validity: 30 days from the date of issue. Derived from the report's
+    // own date line so a reprint shows the original expiry, not today's + 30.
+    function setExpiryFrom(dateLine) {
+      const el = document.getElementById('report-expires-on');
+      if (!el) return;
+
+      const raw = String(dateLine || '').replace(/^Date:\s*/i, '').trim();
+      const issued = raw ? new Date(raw) : new Date();
+      const base = isNaN(issued.getTime()) ? new Date() : issued;
+
+      const expires = new Date(base.getTime());
+      expires.setDate(expires.getDate() + 30);
+
+      el.textContent = expires.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    }
+
     let __pprDataReady = false, __pprWmReady = false, __pprPrinted = false;
     const __pprShouldPrint = new URLSearchParams(window.location.search).has('status');
 
@@ -825,6 +853,9 @@
     (function () {
       // Default initial render using local JSON dataset
       renderTransactions(transactionsData);
+
+      // Show an expiry immediately; refreshed once the real report date arrives.
+      setExpiryFrom(null);
 
       const params = new URLSearchParams(window.location.search);
       const fileNo = params.get('file_number') || '';
@@ -924,6 +955,8 @@
             tsEl.textContent = ' This is a single-use paid search report for File No: ' + fileNoStr + ', generated as at ' + dateStr + '.';
             tsEl.style.display = 'inline';
           }
+
+          setExpiryFrom(d.date_line);
 
           // Caveat note
           const caveatEl = document.getElementById('report-caveat-note');

@@ -333,6 +333,40 @@ class LegalSearchApprovalService
     }
 
     /**
+     * Invoice number for a request, e.g. ONLS-INV-20260814-0004. Mirrors the
+     * PHS Portal's PHSP-INV-… scheme so both portals number alike.
+     */
+    public function invoiceNumber(LegalSearchOnlineRequest $request): string
+    {
+        $date = optional($request->submitted_at ?: $request->created_at)->format('Ymd') ?: now()->format('Ymd');
+
+        return 'ONLS-INV-' . $date . '-' . str_pad((string) $request->id, 4, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Render the payment invoice that accompanies an approved report.
+     */
+    public function renderInvoicePdf(LegalSearchOnlineRequest $request): \Barryvdh\DomPDF\PDF
+    {
+        $invoiceNumber = $this->invoiceNumber($request);
+        $payment       = $request->payment;
+
+        return \Barryvdh\DomPDF\Facade\Pdf::loadView('online_legal_search.print.invoice', [
+            'searchRequest'  => $request,
+            'payment'        => $payment,
+            'invoice_number' => $invoiceNumber,
+            'invoice_date'   => $payment->paid_at ?? $request->submitted_at ?? now(),
+            // Scannable back to the payment, as the PHS invoice does.
+            'qr_content'     => $payment->reference ?? $invoiceNumber,
+        ]);
+    }
+
+    public function invoiceFileName(LegalSearchOnlineRequest $request): string
+    {
+        return $this->invoiceNumber($request) . '.pdf';
+    }
+
+    /**
      * File name used for the attachment and the preview tab.
      */
     public function pdfFileName(LegalSearchOnlineRequest $request): string

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Phs;
 
 use App\Http\Controllers\Controller;
+use App\Models\Phs\PhsEmailHistory;
 use App\Models\Phs\PhsMember;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -200,6 +201,13 @@ class PhsOrganizationController extends Controller
     public function activity()
     {
         $institution = Auth::guard('phs')->user()->institution;
+        $memberEmails = $institution->members()->pluck('email')->filter()->values()->all();
+        $recipientPool = collect(array_merge([$institution->email], $memberEmails))
+            ->filter()
+            ->map(fn ($email) => strtolower((string) $email))
+            ->unique()
+            ->values()
+            ->all();
 
         $searches = $institution->searchLogs()->with('member')->orderByDesc('id')->limit(50)->get()
             ->map(fn($r) => [
@@ -219,9 +227,57 @@ class PhsOrganizationController extends Controller
                 'at' => optional($r->created_at)->toDateTimeString(),
             ]);
 
-        $merged = $searches->concat($txns)->sortByDesc('at')->values();
+        $emails = PhsEmailHistory::query()
+            ->where('phs_institution_id', $institution->id)
+            ->orWhereIn('recipient_email', $recipientPool)
+            ->orderByDesc('id')
+            ->limit(50)
+            ->get()
+            ->map(fn ($r) => [
+                'type' => 'email',
+                'description' => 'Email: ' . ($r->subject ?: 'Notification sent to organization'),
+                'member' => 'KLAES System',
+                'reference' => $r->message_id,
+                'at' => optional($r->sent_at ?? $r->created_at)->toDateTimeString(),
+            ]);
+
+        $merged = $searches->concat($txns)->concat($emails)->sortByDesc('at')->values();
 
         return response()->json(['success' => true, 'data' => $merged]);
+    }
+
+    public function emailHistory()
+    {
+        $institution = Auth::guard('phs')->user()->institution;
+        $memberEmails = $institution->members()->pluck('email')->filter()->values()->all();
+        $recipientPool = collect(array_merge([$institution->email], $memberEmails))
+            ->filter()
+            ->map(fn ($email) => strtolower((string) $email))
+            ->unique()
+            ->values()
+            ->all();
+
+        $rows = PhsEmailHistory::query()
+            ->where('phs_institution_id', $institution->id)
+            ->orWhereIn('recipient_email', $recipientPool)
+            ->orderByDesc('id')
+            ->limit(200)
+            ->get()
+            ->map(fn ($row) => [
+                'id' => $row->id,
+                'recipient_email' => $row->recipient_email,
+                'subject' => $row->subject,
+                'body_text' => $row->body_text,
+                'body_html' => $row->body_html,
+                'mailable' => $row->mailable,
+                'message_id' => $row->message_id,
+                'sent_at' => optional($row->sent_at ?? $row->created_at)->toDateTimeString(),
+            ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => $rows,
+        ]);
     }
 
     public function updateBranding(Request $request)

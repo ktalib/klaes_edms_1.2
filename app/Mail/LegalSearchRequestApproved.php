@@ -10,6 +10,7 @@ use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Delivers the approved Legal Search report to the requester as a PDF.
@@ -38,7 +39,10 @@ class LegalSearchRequestApproved extends Mailable
     {
         return new Content(
             view: 'email.legal_search_request_approved',
-            with: ['searchRequest' => $this->searchRequest],
+            with: [
+                'searchRequest' => $this->searchRequest,
+                'invoiceNumber' => app(LegalSearchApprovalService::class)->invoiceNumber($this->searchRequest),
+            ],
         );
     }
 
@@ -52,9 +56,30 @@ class LegalSearchRequestApproved extends Mailable
         $service = app(LegalSearchApprovalService::class);
         $pdf     = $service->renderPdf($this->searchRequest, $this->report);
 
-        return [
+        $attachments = [
             Attachment::fromData(fn () => $pdf->output(), $service->pdfFileName($this->searchRequest))
                 ->withMime('application/pdf'),
         ];
+
+        // The payment invoice rides along with the report. A request with no
+        // payment row (staff-created, or a test) simply has no invoice, and an
+        // invoice failure must never cost the requester their report.
+        if ($this->searchRequest->payment) {
+            try {
+                $invoice = $service->renderInvoicePdf($this->searchRequest);
+
+                $attachments[] = Attachment::fromData(
+                    fn () => $invoice->output(),
+                    $service->invoiceFileName($this->searchRequest)
+                )->withMime('application/pdf');
+            } catch (\Throwable $e) {
+                Log::warning('LegalSearchRequestApproved: invoice could not be attached', [
+                    'request_id' => $this->searchRequest->id,
+                    'error'      => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $attachments;
     }
 }

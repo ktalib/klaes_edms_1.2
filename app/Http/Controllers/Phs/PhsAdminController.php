@@ -12,6 +12,7 @@ use App\Mail\PhsSlaRequestLink;
 use App\Mail\PhsTopupConfirmed;
 use Illuminate\Support\Str;
 use App\Models\Phs\PhsFeedback;
+use App\Models\Phs\PhsEmailHistory;
 use App\Models\Phs\PhsInstitution;
 use App\Models\Phs\PhsOnboardingRequest;
 use App\Models\Phs\PhsSearchLog;
@@ -55,9 +56,22 @@ class PhsAdminController extends Controller
         $institution = PhsInstitution::with('members')->findOrFail($id);
         $transactions = $institution->transactions()->orderByDesc('id')->limit(100)->get();
         $searchLogs = $institution->searchLogs()->with('member')->orderByDesc('id')->limit(100)->get();
+        $memberEmails = $institution->members->pluck('email')->filter()->values()->all();
+        $recipientPool = collect(array_merge([$institution->email], $memberEmails))
+            ->filter()
+            ->map(fn ($email) => strtolower((string) $email))
+            ->unique()
+            ->values()
+            ->all();
+        $emailHistory = PhsEmailHistory::query()
+            ->where('phs_institution_id', $institution->id)
+            ->orWhereIn('recipient_email', $recipientPool)
+            ->orderByDesc('id')
+            ->limit(100)
+            ->get();
         $PageTitle = 'PHS Organization — ' . $institution->name;
 
-        return view('system-admin.phs.institution-show', compact('PageTitle', 'institution', 'transactions', 'searchLogs'));
+        return view('system-admin.phs.institution-show', compact('PageTitle', 'institution', 'transactions', 'searchLogs', 'emailHistory'));
     }
 
     public function allocateTokens(Request $request, $id)

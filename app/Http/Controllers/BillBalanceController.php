@@ -472,6 +472,40 @@ class BillBalanceController extends Controller
     }
 
     /**
+     * Identify an ST file and return its fees mapped onto this form's
+     * Fees & Charges fields, so a Sectional Titling file does not have to be
+     * re-costed by hand. Read-only.
+     */
+    public function stFees(Request $request, \App\Services\StBillBalanceResolver $resolver)
+    {
+        $fileNumber = trim((string) $request->get('file_number', ''));
+
+        if ($fileNumber === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'File number is required',
+            ], 422);
+        }
+
+        try {
+            return response()->json([
+                'success' => true,
+                'data'    => $resolver->stFeeProfile($fileNumber),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('stFees lookup failed', [
+                'file_number' => $fileNumber,
+                'error'       => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Could not check the ST fee record.',
+            ], 500);
+        }
+    }
+
+    /**
      * Get residence address for a file number from file_indexings table
      */
     public function getResidenceAddress(Request $request)

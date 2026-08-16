@@ -65,6 +65,12 @@ class Kernel extends HttpKernel
         'signed' => \Illuminate\Routing\Middleware\ValidateSignature::class,
         'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
+        // Sanctum ships these but does not register them. Without the aliases a
+        // token's abilities are decorative: `createToken($name, ['spas-mobile'])`
+        // records the ability and nothing ever checks it, so a token minted for
+        // one client works against every other client's endpoints.
+        'abilities' => \Laravel\Sanctum\Http\Middleware\CheckAbilities::class,
+        'ability' => \Laravel\Sanctum\Http\Middleware\CheckForAnyAbility::class,
         'XSS' => \App\Http\Middleware\XSS::class,
         'track.activity' => \App\Http\Middleware\TrackActivityLog::class,
         'phs.admin' => \App\Http\Middleware\EnsurePhsSuperAdmin::class,

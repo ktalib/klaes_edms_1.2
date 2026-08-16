@@ -44,6 +44,11 @@ class PhsInstitution extends Model
         return $this->hasMany(PhsSearchLog::class, 'phs_institution_id');
     }
 
+    public function emailHistories()
+    {
+        return $this->hasMany(PhsEmailHistory::class, 'phs_institution_id');
+    }
+
     public function isActive(): bool
     {
         return $this->status === 'active';

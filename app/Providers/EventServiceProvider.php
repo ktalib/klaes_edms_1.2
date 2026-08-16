@@ -8,7 +8,9 @@ use Illuminate\Auth\Events\Logout;
 use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
 use App\Listeners\LogUserLogin;
 use App\Listeners\LogUserLogout;
+use App\Listeners\LogPhsOrganizationEmail;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
+use Illuminate\Mail\Events\MessageSent;
 use Illuminate\Support\Facades\Event;
 
 class EventServiceProvider extends ServiceProvider
@@ -27,6 +29,9 @@ class EventServiceProvider extends ServiceProvider
         ],
         Logout::class => [
             LogUserLogout::class,
+        ],
+        MessageSent::class => [
+            LogPhsOrganizationEmail::class,
         ],
     ];
 

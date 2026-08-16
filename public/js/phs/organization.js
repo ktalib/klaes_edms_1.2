@@ -3,6 +3,7 @@
   const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
   const org = cfg.institution || {};
   let members = Array.isArray(cfg.members) ? cfg.members : [];
+  let emailRows = [];
   let logoFile = null;
   let bannerFile = null;
 
@@ -168,6 +169,77 @@
     }
   }
 
+  function showEmailCopy(row) {
+    const fallbackText = row.body_text ? `<pre style="white-space:pre-wrap;max-height:55vh;overflow:auto;text-align:left;background:#f8fafc;padding:12px;border-radius:8px;border:1px solid #e2e8f0;">${esc(row.body_text)}</pre>` : '<p style="text-align:left;color:#64748b;">No message body available.</p>';
+    const htmlCopy = row.body_html
+      ? `<div style="max-height:55vh;overflow:auto;text-align:left;border:1px solid #e2e8f0;border-radius:8px;padding:12px;background:#fff;">${row.body_html}</div>`
+      : fallbackText;
+
+    if (window.Swal) {
+      window.Swal.fire({
+        title: esc(row.subject || 'Email copy'),
+        html: `<div style="font-size:13px;color:#475569;text-align:left;margin-bottom:10px;">To: ${esc(row.recipient_email || '—')}<br>Sent: ${esc(row.sent_at || '—')}</div>${htmlCopy}`,
+        width: '900px',
+        confirmButtonColor: '#2563eb',
+      });
+      return;
+    }
+
+    window.alert(`${row.subject || 'Email copy'}\nTo: ${row.recipient_email || '—'}\nSent: ${row.sent_at || '—'}\n\n${row.body_text || 'No message body available.'}`);
+  }
+
+  function renderEmailHistory(rows) {
+    const tbody = $('email-history-body');
+    if (!tbody) return;
+    emailRows = Array.isArray(rows) ? rows : [];
+
+    if (!emailRows.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-sm text-gray-400">No email history yet.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = emailRows.map((row, index) => `
+      <tr class="dark:hover:bg-gray-700/30 transition-colors">
+        <td class="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">${esc(row.sent_at || '—')}</td>
+        <td class="py-3 px-4 text-sm text-gray-700 dark:text-gray-300">${esc(row.recipient_email || '—')}</td>
+        <td class="py-3 px-4 text-sm font-medium text-gray-900 dark:text-gray-100">${esc(row.subject || 'No subject')}</td>
+        <td class="py-3 px-4 text-xs text-gray-500 dark:text-gray-400 font-mono">${esc(row.mailable || '—')}</td>
+        <td class="py-3 px-4 text-right">
+          <button class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" data-email-copy="${index}">
+            <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
+            View Copy
+          </button>
+        </td>
+      </tr>
+    `).join('');
+
+    document.querySelectorAll('[data-email-copy]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const index = Number(button.dataset.emailCopy);
+        if (Number.isNaN(index) || !emailRows[index]) return;
+        showEmailCopy(emailRows[index]);
+      });
+    });
+
+    window.lucide?.createIcons();
+  }
+
+  async function loadEmailHistory(force = false) {
+    const tbody = $('email-history-body');
+    if (!tbody || !cfg.routes.emailHistory) return;
+    if (!force && tbody.dataset.loaded === '1') return;
+
+    tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-sm text-gray-400">Loading email history...</td></tr>';
+    try {
+      const response = await fetch(cfg.routes.emailHistory, { headers: { Accept: 'application/json' } });
+      const data = await response.json();
+      tbody.dataset.loaded = '1';
+      renderEmailHistory(data.data || []);
+    } catch (error) {
+      tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-sm text-red-500">Unable to load email history.</td></tr>';
+    }
+  }
+
   function loadBrandingValues() {
     $('org-name').value = org.name || '';
     if ($('org-username')) $('org-username').value = org.username || '';
@@ -241,10 +313,11 @@
         document.querySelectorAll('[data-tab]').forEach((btn) => btn.classList.add('text-gray-500'));
         tab.classList.add('tab-active');
         tab.classList.remove('text-gray-500');
-        ['users', 'roles', 'activity', 'branding', 'subscription'].forEach((name) => $(name + '-tab').classList.add('hidden'));
+        ['users', 'roles', 'activity', 'emails', 'branding', 'subscription'].forEach((name) => $(name + '-tab').classList.add('hidden'));
         $(tab.dataset.tab + '-tab').classList.remove('hidden');
         setSidebarActive(tab.dataset.tab);
         if (tab.dataset.tab === 'activity') loadActivityLog();
+        if (tab.dataset.tab === 'emails') loadEmailHistory();
       });
     });
 
@@ -509,6 +582,7 @@
     setupMisc();
     loadWalletLedger();
     $('refresh-ledger')?.addEventListener('click', loadWalletLedger);
+    $('refresh-email-history')?.addEventListener('click', () => loadEmailHistory(true));
     window.lucide?.createIcons();
   });
 })();

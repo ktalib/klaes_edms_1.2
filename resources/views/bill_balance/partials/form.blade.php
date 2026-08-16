@@ -76,7 +76,14 @@
       </div>
       <div class="space-y-4">
         <div>
-          <label class="form-label">File Number</label>
+          <div class="flex items-center gap-2">
+            <label class="form-label">File Number</label>
+            {{-- Shown by bill_balance.js when the selected file is a Sectional Titling unit --}}
+            <span id="st-file-badge" class="hidden items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-indigo-100 text-indigo-700 border border-indigo-300">
+              <i data-lucide="layers" class="w-3 h-3"></i>
+              <span id="st-file-badge-text">ST File</span>
+            </span>
+          </div>
           <div class="flex gap-2">
             <div class="relative flex-1">
               <input type="text" name="file_number" id="file_number" class="form-input pl-10" value="{{ old('file_number', $billBalance->file_number) }}" readonly placeholder="Select file number...">

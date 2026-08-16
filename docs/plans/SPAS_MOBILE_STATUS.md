@@ -16,16 +16,23 @@ Two workstreams, two machines:
 | Phase | Scope | State | Owner |
 |---|---|---|---|
 | 0 | API foundation | ✅ **Done** | backend |
-| 1 | Capacitor shell | 🟡 **Builds, not verified on device** | app |
-| 2 | Local SQLite layer | 🟡 **Written, never executed** | app |
-| 3 | Offline-first CRUD | ⬜ Not started | app |
-| 4 | Sync engine | ⬜ Not started | app |
-| 5 | Auth & security | 🟡 Server done, client not started | both |
+| 1 | Capacitor shell | ✅ **Done** — APK installed and ran on a device | app |
+| 2 | Local SQLite layer | ✅ **Written**, awaiting device run | app |
+| 3 | Offline-first CRUD | ✅ **Written**, awaiting device run | app |
+| 4 | Sync engine | ✅ **Written**, awaiting device run | app |
+| 5 | Auth & security | ✅ **Done** — one decision open (§7.2) | both |
 | 6 | QA & rollout | ⬜ Not started | both |
 
-**Roughly:** the backend is finished. The app is about 20% in — a shell that
-compiles and a schema that has never run. Phases 3 and 4 are the bulk of the
-remaining work and they are all client-side.
+**Test suite: 120 passing.**
+
+**Roughly:** backend finished, app written end-to-end. Everything now hinges on
+one thing — **none of Phases 2–4 has run on a handset yet.** Until the
+aeroplane-mode round trip in `FIX_BRIEF_03.md` §4 passes, treat them as unproven.
+
+> **The WebView-vs-local-build question is settled.** The `server.url` shell
+> installed and worked online, then showed `ERR_INTERNET_DISCONNECTED` with no
+> signal — which is the problem this project exists to solve. The app is now a
+> real local build; `server.url` has been removed.
 
 ---
 
@@ -121,16 +128,90 @@ anything if it is the latter. This is the single biggest open question left.
 
 ---
 
-## 7. Phase 5 — Auth & security 🟡
+## 7. Phase 5 — Auth & security ✅ (one decision outstanding)
 
 | Item | State |
 |---|---|
-| Sanctum token login/logout, `spas-mobile` ability | ✅ server |
-| Token storage on device | ⬜ `@capacitor/preferences` at minimum |
-| **Secure at-rest storage** | ⬜ every handset holds every land record incl. owner names + phones — a lost phone is the whole dataset |
-| Stay usable offline; no forced re-auth without network | ⬜ |
-| 401 handling → re-login **without discarding unsynced local data** | ⬜ |
-| Documented remote revoke path | ⬜ tokens are per-device, so revoking one handset is a single row delete |
+| Sanctum token login/logout, `spas-mobile` ability | ✅ |
+| **Ability actually enforced** (`ability:spas-mobile` on the route group) | ✅ **was decorative — see below** |
+| Login rate limited to 5/min | ✅ |
+| Token storage on device (`@capacitor/preferences`) | ✅ |
+| Usable offline; no forced re-auth without network | ✅ |
+| 401 → re-login **without discarding unsynced local data** | ✅ |
+| Revocation tooling (`php artisan spas:devices`) | ✅ |
+| Real login round-trip tested (not just `actingAs`) | ✅ 7 tests |
+| **Encrypted at-rest storage** (SQLCipher, Keystore-backed) | ✅ **decided and implemented — §7.2** |
+| App lock (gate on launch/resume) | ⬜ before wider rollout |
+
+### 7.1 The ability was doing nothing
+
+`createToken($name, ['spas-mobile'])` records an ability, but **Sanctum never
+checks it unless the `ability` middleware is applied — and Sanctum does not
+register the alias.** It was absent from `app/Http/Kernel.php`, so the group was
+guarded by `auth:sanctum` alone.
+
+Effect: any valid token in the system opened every endpoint. A React Native app
+token (`mobile-api`) would have worked against `/api/spas/*`, and a surveyor's
+device token against the React Native API. Now aliased and applied, with a test
+asserting a `mobile-api` token gets a 403.
+
+**Tokens do not expire** (`config/sanctum.php` `expiration => null`) and that is
+deliberate: a surveyor may be offline for days, and a token expiring mid-survey
+would lock them out of an app holding unsynced work. The trade is that
+**revocation is the only control**, hence `spas:devices`.
+
+```
+php artisan spas:devices                      # list SPAS device tokens
+php artisan spas:devices --ability=any        # every token in the system
+php artisan spas:devices --stale=90           # unused for 90 days
+php artisan spas:devices --revoke=<id>        # cut off a lost handset
+php artisan spas:devices --revoke-user=<who>  # all of one user's devices
+```
+
+Revoking is safe: the surveyor signs in again and **unsynced local work is not
+discarded**, by either logout or a 401.
+
+> **7 stale tokens exist** — `postman`, `api-test`, `postman-test-device` and
+> similar, all `mobile-api`, all from Nov 2025, **all `last_used = never`**.
+> They are dev artifacts. Nothing depends on them and I have **not** revoked
+> them; `php artisan spas:devices --ability=any --revoke-stale=90` clears them
+> when you want.
+
+### 7.2 Encryption at rest — decided 2026-08-16
+
+Every handset holds **every** land record, including owner names and phone
+numbers (Q2: no per-surveyor filtering), so a lost phone would otherwise be the
+whole dataset.
+
+**Decision: encrypt the database with SQLCipher, key held in the Android
+Keystore. No user PIN in the key path.**
+
+`@capacitor-community/sqlite` already bundles **SQLCipher 4.10.0** and stores its
+passphrase in `EncryptedSharedPreferences` behind a `MasterKey` (AES256_GCM) —
+hardware-backed and non-extractable. So there is no new dependency and, more
+importantly, **no human keyholder**. `db.js` generates a 256-bit passphrase once
+per install, hands it to the plugin, and keeps no copy.
+
+Deriving the key from a user PIN was rejected: a forgotten PIN would destroy
+unsynced field work — a day of survey with no other copy. The Keystore holds a
+key better than a person can.
+
+**Encryption does not cover the most likely threat.** A phone found unlocked
+with the app installed decrypts automatically. That case needs the OS lock
+screen plus an app lock — a **gate**, kept strictly decoupled from the
+encryption key, so forgetting it costs a re-login and never data. That lock is
+the remaining item before wider rollout.
+
+Also set: `android:allowBackup="false"`. A Keystore key does not survive
+backup/restore, so a restored app would meet a database it cannot open and look
+corrupted. The server is the system of record; backup buys nothing.
+
+> **Separately, a real bug this uncovered.** The merged manifest of the previous
+> build had **no location permissions at all** — `@capacitor/geolocation` ships
+> an empty manifest and declares none itself. The GPS button would have failed
+> on every device. `ACCESS_COARSE_LOCATION` / `ACCESS_FINE_LOCATION` are now
+> declared, and `captureGps()` requests them at runtime. Offline, GPS is the
+> only way to place a plot, so this would have broken the core capture path.
 
 ---
 
@@ -144,18 +225,26 @@ anything if it is the latter. This is the single biggest open question left.
 
 ---
 
-## 9. Open decisions — need your call
+## 9. Open decisions
+
+**Settled 2026-08-16**
+
+| Question | Answer |
+|---|---|
+| Server host | `http://app.klaes.ng` — confirmed working from a handset |
+| WebView shell or local build? | **Local build.** The shell died offline, which is the whole problem |
+| Field Map when offline | Cached points listed with coordinates; no tiles, no tap-to-pin. GPS is the capture method (plan §9) |
+
+**Still open**
 
 | # | Question | Blocks |
 |---|---|---|
-| 1 | **Q3: iOS as well as Android?** | signing setup, plugin choices |
-| 2 | **Q4: Field Map when offline** — hide the tab, or show cached pins with no tiles? | Phase 3 map work |
-| 3 | **Server host for `server.url`** | Phase 1 production shell. `.env` only has `127.0.0.1:8000`, useless from a phone |
-| 4 | **Does the app stay a WebView shell, or become a real local build?** | all of Phase 3 |
-| 5 | **`Kunchi`** — 16 files reference it, but it is not in the `lgas` table. Missing reference row, or mis-filed files? | `lga:normalize` |
-| 6 | **Run `lga:normalize --apply`?** Would change 4,682 rows, 943 left unresolved | optional clean-up only |
-| 7 | **Deletions don't sync.** A record deleted in the office never disappears from a device | accept, or build it |
-| 8 | **API throttle 60/min** — raise it for `/api/spas/*`, or have the client back off? | Phase 4 |
+| 1 | **Is `/api/spas/*` deployed to `app.klaes.ng`?** Committed ≠ deployed | **everything** — the app cannot log in without it |
+| 2 | **iOS as well as Android?** | signing setup, plugin choices |
+| 3 | **`Kunchi`** — 16 files reference it but it is not in the `lgas` table. Missing reference row, or mis-filed files? | `lga:normalize` |
+| 4 | **Run `lga:normalize --apply`?** Would change 4,682 rows, 943 unresolved | optional clean-up only |
+| 5 | **Deletions don't sync.** A record deleted in the office never disappears from a device | accept, or build it |
+| 6 | **API throttle 60/min** — raise it for `/api/spas/*`, or have the client back off? | first big outbox drain |
 
 ---
 
@@ -194,14 +283,33 @@ moved between machines.
 ## 12. Critical path
 
 ```
-1. Rebuild the APK with the JS fix        (app, DC-02)
-2. Verify on a real device — buttons,
-   Initialize DB, smoke test, Close DB    (app)   <- Phases 1 + 2 close here
-3. Decide: WebView shell or local build?  (you)   <- gates everything below
-4. Port the UI into the app               (app)   <- Phase 3, the big one
-5. Build the sync engine                  (app)   <- Phase 4
-6. Token storage + offline session        (app)   <- Phase 5
-7. Airplane-mode round trip, pilot        (both)  <- Phase 6
+1. Confirm /api/spas/* is deployed to app.klaes.ng   (you)  <- gates everything
+2. Build the APK from the new www/                   (app, DC-02)
+3. Aeroplane-mode round trip per FIX_BRIEF_03 §4     (app)  <- proves Phases 2-4
+4. Photo capture + edit UI                           (app)  <- remaining features
+5. Secure token storage                              (app)  <- Phase 5
+6. Pilot on surveyor devices                         (both) <- Phase 6
 ```
 
-Step 2 is the immediate one. Step 3 is the decision that shapes the rest.
+Step 1 is the immediate blocker: the app talks only to `/api/spas/*`, and if
+that is not live on `app.klaes.ng` nothing past the login screen works. Check it
+by opening `http://app.klaes.ng/api/spas/lookup/lgas` in any browser — a
+`401 Unauthenticated` means the route exists and is guarded, which is what you
+want. A `404` or an HTML error page means it has not been deployed.
+
+## 13. What was written for the app (2026-08-16)
+
+All in `C:\wamp64\spas_apk\www\`, verified to parse as ES modules, with a
+consistent import graph and every DOM selector resolving against `index.html`.
+**None of it has run on a device.**
+
+| File | Role |
+|---|---|
+| `index.html` | Login, 3 tabs, 2 bottom sheets |
+| `styles.css` | Dark field UI |
+| `db.js` | SQLite schema, 8 tables |
+| `store.js` | Every local read/write; the UI never touches the network |
+| `api.js` | The only network module |
+| `validate.js` | Client mirror of the server rules — refuses bad rows at capture time rather than queuing them to fail forever |
+| `sync.js` | Outbox drain, delta pull, reconnect/resume triggers |
+| `app.js` | UI wiring, bootstrap, on-screen error reporting |

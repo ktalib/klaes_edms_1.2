@@ -83,6 +83,51 @@ class SpasSyncApiTest extends TestCase
             ->assertJsonValidationErrors(['identifier', 'password']);
     }
 
+    /**
+     * The token ability must actually be enforced.
+     *
+     * Sanctum records abilities on a token but checks nothing unless the
+     * `ability` middleware is applied — the alias is not registered by default.
+     * Without this, a token minted for the React Native app ('mobile-api')
+     * would open every SPAS endpoint, and a surveyor's device token would open
+     * the React Native app's.
+     */
+    public function test_a_token_without_the_spas_ability_is_refused(): void
+    {
+        Sanctum::actingAs($this->surveyor(), ['mobile-api']);
+
+        $this->getJson('/api/spas/records')->assertForbidden();
+        $this->getJson('/api/spas/lookup/lgas')->assertForbidden();
+        $this->postJson('/api/spas/records', $this->recordPayload())->assertForbidden();
+    }
+
+    public function test_a_wildcard_token_still_works(): void
+    {
+        // '*' is Sanctum's "all abilities" and must keep working, or an admin
+        // token issued elsewhere would be locked out of its own API.
+        Sanctum::actingAs($this->surveyor(), ['*']);
+
+        $this->getJson('/api/spas/lookup/lgas')->assertOk();
+    }
+
+    /**
+     * Login is the one route reachable without a token, so the API-wide 60/min
+     * is a comfortable password-guessing budget. It is throttled to 5/min.
+     */
+    public function test_login_is_rate_limited(): void
+    {
+        $attempt = fn () => $this->postJson('/api/spas/auth/login', [
+            'identifier' => 'ZZ-does-not-exist',
+            'password'   => 'wrong',
+        ]);
+
+        for ($i = 0; $i < 5; $i++) {
+            $attempt()->assertStatus(401);
+        }
+
+        $attempt()->assertStatus(429);
+    }
+
     // -----------------------------------------------------------------------
     // Push — records
     // -----------------------------------------------------------------------

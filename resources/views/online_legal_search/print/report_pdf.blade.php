@@ -140,6 +140,10 @@
 
     $signDate = optional($searchRequest->reviewed_at)->format('d/m/Y') ?: now()->format('d/m/Y');
 
+    // Issued on approval; a preview of a not-yet-approved request dates from today.
+    $issuedAt  = $searchRequest->reviewed_at ?: now();
+    $expiresOn = $issuedAt->copy()->addDays(30)->format('F j, Y');
+
     // Supplied by LegalSearchApprovalService::renderPdf(); absent when the view
     // is rendered directly, in which case the signature line stays blank.
     $signature = $signature ?? null;
@@ -205,6 +209,7 @@
         .sig .sig-img img { height: 26px; max-width: 120px; vertical-align: bottom; }
 
         .disclaimer { font-size: 9px; font-style: italic; font-weight: bold; text-align: center; margin: 4px 0 2px; color: #333; }
+        .validity { font-size: 10px; font-weight: bold; text-align: center; margin: 6px 0 0; color: #b45309; }
         .foot { width: 100%; border-collapse: collapse; border-top: 1px solid #000; padding-top: 4px; margin-top: 4px; }
         .foot td { vertical-align: middle; padding-top: 4px; }
         .foot img { height: 24px; }
@@ -374,6 +379,8 @@
             </td>
         </tr>
     </table>
+
+    <p class="validity">Valid for 30 days from date of issue — expires {{ $expiresOn }}.</p>
 
     <p class="disclaimer">
         N.B: This search report is deduced based on the available records from the file and does not represent any

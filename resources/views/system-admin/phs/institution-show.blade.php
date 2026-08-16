@@ -4,9 +4,11 @@
 
 @section('content')
 @php
+    $transactionRows = collect($transactions);
     $isActive = $institution->status === 'active';
-    $pendingInvoices = $transactions->where('status', 'pending')->count();
-    $completedPurchases = $transactions->where('type', 'purchase')->where('status', 'completed')->count();
+    $pendingInvoices = $transactionRows->where('status', 'pending')->count();
+    $completedPurchases = $transactionRows->where('type', 'purchase')->where('status', 'completed')->count();
+    $emailCount = $emailHistory->count();
 @endphp
 
 <div class="flex-1 overflow-auto bg-slate-50 flex flex-col min-h-full">
@@ -179,9 +181,123 @@
                         </table>
                     </div>
                 </div>
+
+                <div class="rounded-lg border border-slate-200 bg-white shadow-sm">
+                    <div class="flex items-center gap-3 border-b border-slate-200 px-5 py-4">
+                        <div class="grid h-9 w-9 place-items-center rounded-md bg-indigo-50 text-indigo-700"><i data-lucide="mail" class="h-4 w-4"></i></div>
+                        <div><h3 class="font-extrabold text-slate-900">Email history</h3><p class="text-xs text-slate-500">{{ number_format($emailCount) }} email copy(ies) recorded for this organization</p></div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full text-left text-sm">
+                            <thead class="bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
+                                <tr><th class="px-5 py-3">Date</th><th class="px-5 py-3">Recipient</th><th class="px-5 py-3">Subject</th><th class="px-5 py-3">Template</th><th class="px-5 py-3 text-right">Action</th></tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                @forelse($emailHistory as $mail)
+                                    <tr class="hover:bg-slate-50/80">
+                                        <td class="px-5 py-3 text-slate-500">{{ optional($mail->sent_at ?? $mail->created_at)->format('d M Y H:i') }}</td>
+                                        <td class="px-5 py-3 text-slate-700">{{ $mail->recipient_email }}</td>
+                                        <td class="px-5 py-3 font-bold text-slate-900">{{ $mail->subject ?: 'No subject' }}</td>
+                                        <td class="px-5 py-3 text-xs text-slate-500">{{ \Illuminate\Support\Str::afterLast((string) $mail->mailable, '\\') ?: '—' }}</td>
+                                        <td class="px-5 py-3 text-right">
+                                            <button
+                                                type="button"
+                                                class="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                                                data-email-view
+                                                data-email-subject="{{ e($mail->subject ?: 'Email copy') }}"
+                                                data-email-recipient="{{ e($mail->recipient_email) }}"
+                                                data-email-sent="{{ e(optional($mail->sent_at ?? $mail->created_at)->format('d M Y H:i')) }}"
+                                                data-email-html='@json($mail->body_html)'
+                                                data-email-text='@json($mail->body_text)'
+                                            >
+                                                <i data-lucide="file-text" class="h-3.5 w-3.5"></i>
+                                                View copy
+                                            </button>
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr><td colspan="5" class="px-5 py-10 text-center text-slate-400"><i data-lucide="mail" class="mx-auto mb-2 h-7 w-7 opacity-40"></i>No email history yet.</td></tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </section>
         </div>
     </div>
+
+    <div id="email-copy-modal" class="fixed inset-0 z-[100] hidden items-center justify-center bg-black/40 p-4">
+        <div class="w-full max-w-4xl rounded-lg bg-white shadow-2xl">
+            <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                <h4 id="email-copy-title" class="font-extrabold text-slate-900">Email copy</h4>
+                <button type="button" id="email-copy-close" class="rounded-md border border-slate-200 px-2 py-1 text-xs font-bold text-slate-600 hover:bg-slate-50">Close</button>
+            </div>
+            <div class="px-5 py-3 text-xs text-slate-500">
+                <div><span class="font-bold text-slate-700">To:</span> <span id="email-copy-recipient">—</span></div>
+                <div class="mt-1"><span class="font-bold text-slate-700">Sent:</span> <span id="email-copy-sent">—</span></div>
+            </div>
+            <div id="email-copy-body" class="max-h-[65vh] overflow-auto border-t border-slate-200 px-5 py-4 text-sm text-slate-700"></div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const modal = document.getElementById('email-copy-modal');
+            const closeBtn = document.getElementById('email-copy-close');
+            const titleEl = document.getElementById('email-copy-title');
+            const recipientEl = document.getElementById('email-copy-recipient');
+            const sentEl = document.getElementById('email-copy-sent');
+            const bodyEl = document.getElementById('email-copy-body');
+
+            function closeModal() {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+                bodyEl.innerHTML = '';
+            }
+
+            closeBtn.addEventListener('click', closeModal);
+            modal.addEventListener('click', function (event) {
+                if (event.target === modal) closeModal();
+            });
+
+            document.querySelectorAll('[data-email-view]').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    const subject = button.getAttribute('data-email-subject') || 'Email copy';
+                    const recipient = button.getAttribute('data-email-recipient') || '—';
+                    const sent = button.getAttribute('data-email-sent') || '—';
+                    let htmlBody = '';
+                    let textBody = '';
+
+                    try {
+                        htmlBody = JSON.parse(button.getAttribute('data-email-html') || '""') || '';
+                    } catch (e) {
+                        htmlBody = '';
+                    }
+                    try {
+                        textBody = JSON.parse(button.getAttribute('data-email-text') || '""') || '';
+                    } catch (e) {
+                        textBody = '';
+                    }
+
+                    titleEl.textContent = subject;
+                    recipientEl.textContent = recipient;
+                    sentEl.textContent = sent;
+
+                    if (htmlBody) {
+                        bodyEl.innerHTML = '<div class="rounded-md border border-slate-200 bg-white p-3">' + htmlBody + '</div>';
+                    } else if (textBody) {
+                        bodyEl.innerHTML = '<pre class="whitespace-pre-wrap rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700"></pre>';
+                        bodyEl.querySelector('pre').textContent = textBody;
+                    } else {
+                        bodyEl.innerHTML = '<p class="text-slate-500">No message body available.</p>';
+                    }
+
+                    modal.classList.remove('hidden');
+                    modal.classList.add('flex');
+                });
+            });
+        });
+    </script>
 
     @include('admin.footer')
 </div>

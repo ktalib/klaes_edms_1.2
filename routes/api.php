@@ -428,9 +428,19 @@ Route::middleware('auth:sanctum')->prefix('activity-logs')->controller(\App\Http
 Route::prefix('spas')->name('api.spas.')->group(function () {
 
     // Public — the only unauthenticated endpoint.
-    Route::post('/auth/login', [\App\Http\Controllers\Api\Spas\SpasAuthController::class, 'login'])->name('auth.login');
+    //
+    // Throttled harder than the rest of the API: this is the one route an
+    // attacker can hit without a token, and the default 60/min is a comfortable
+    // password-guessing budget. 5 attempts per minute per IP.
+    Route::post('/auth/login', [\App\Http\Controllers\Api\Spas\SpasAuthController::class, 'login'])
+        ->middleware('throttle:5,1')
+        ->name('auth.login');
 
-    Route::middleware('auth:sanctum')->group(function () {
+    // `ability:spas-mobile` is what makes the token ability mean something. A
+    // token minted for the React Native app carries 'mobile-api' and is refused
+    // here; a SPAS device token is refused over there. Without it, any valid
+    // token in the system would open every endpoint.
+    Route::middleware(['auth:sanctum', 'ability:spas-mobile'])->group(function () {
         Route::post('/auth/logout', [\App\Http\Controllers\Api\Spas\SpasAuthController::class, 'logout'])->name('auth.logout');
 
         // Delta pull — `since` is an ISO timestamp cursor held on the device.

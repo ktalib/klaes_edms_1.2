@@ -220,6 +220,10 @@
           <i data-lucide="activity" class="w-4 h-4"></i>
           Activity Log
         </button>
+        <button type="button" data-sidebar-tab="emails" class="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100">
+          <i data-lucide="mail" class="w-4 h-4"></i>
+          Email History
+        </button>
         <button type="button" data-sidebar-tab="branding" class="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100">
           <i data-lucide="palette" class="w-4 h-4"></i>
           Branding
@@ -369,6 +373,12 @@
             </button>
             <button
               class="py-3 sm:py-4 text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors whitespace-nowrap flex items-center gap-1 sm:gap-2"
+              data-tab="emails"
+            >
+              <i data-lucide="mail" class="w-3 h-3 sm:w-4 sm:h-4"></i> Email History
+            </button>
+            <button
+              class="py-3 sm:py-4 text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors whitespace-nowrap flex items-center gap-1 sm:gap-2"
               data-tab="branding"
             >
               <i data-lucide="palette" class="w-3 h-3 sm:w-4 sm:h-4"></i> Branding
@@ -471,6 +481,31 @@
         <div id="activity-tab" class="p-4 sm:p-6 hidden">
           <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-4 sm:mb-6">Recent Activity</h2>
           <div id="activity-log-container" class="space-y-3 sm:space-y-4"></div>
+        </div>
+
+        <div id="emails-tab" class="p-4 sm:p-6 hidden">
+          <div class="flex items-center justify-between mb-4 sm:mb-6">
+            <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100">Email History</h2>
+            <button id="refresh-email-history" class="inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
+              <i data-lucide="refresh-cw" class="w-4 h-4"></i> Refresh
+            </button>
+          </div>
+          <div class="overflow-x-auto rounded-2xl border border-gray-100 dark:border-gray-700">
+            <table class="w-full min-w-[760px]">
+              <thead class="bg-gray-50 dark:bg-gray-700/50">
+                <tr>
+                  <th class="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
+                  <th class="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Recipient</th>
+                  <th class="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Subject</th>
+                  <th class="text-left py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Template</th>
+                  <th class="text-right py-3 px-4 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="email-history-body" class="divide-y divide-gray-100 dark:divide-gray-700">
+                <tr><td colspan="5" class="py-8 text-center text-sm text-gray-400">No email history yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <!-- Branding Tab -->
@@ -935,6 +970,7 @@
         membersBase: "{{ url('/phs/organization/members') }}",
         branding: "{{ route('phs.org.branding') }}",
         activity: "{{ route('phs.org.activity') }}",
+        emailHistory: "{{ route('phs.org.emailHistory') }}",
         payOnline: "{{ route('phs.tokens.payOnline') }}",
         topup: "{{ route('phs.tokens.topup') }}",
         topupPaystackInitiate: "{{ route('phs.tokens.topup.paystack.initiate') }}",

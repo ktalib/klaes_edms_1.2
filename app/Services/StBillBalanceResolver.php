@@ -167,24 +167,114 @@ class StBillBalanceResolver
             return $this->notSt();
         }
 
-        // Some filenos carry stray whitespace/newlines, so compare trimmed.
+        // Some filenos carry stray newlines (e.g. "ST-COM-2025-8-001\n"),
+        // so strip CR/LF as well as surrounding spaces before comparing.
+        $normalised = "LTRIM(RTRIM(REPLACE(REPLACE(fileno, CHAR(13), ''), CHAR(10), '')))";
+
         $sub = DB::connection('sqlsrv')->table('subapplications')
             ->select('id', 'fileno', 'unit_type', 'is_sua_unit', 'application_fee', 'processing_fee', 'site_plan_fee')
-            ->whereRaw('UPPER(LTRIM(RTRIM(REPLACE(REPLACE(fileno, CHAR(13), %s), CHAR(10), %s)))) = ?', [])
+            ->whereRaw("UPPER($normalised) = ?", [strtoupper($fileNumber)])
+            ->orderByDesc('id')
             ->first();
 
-        return $this->notSt();
+        if (!$sub) {
+            return $this->notSt();
+        }
+
+        // ST Development Charges live on the balance bill, not the initial bill.
+        $balanceBill = DB::connection('sqlsrv')->table('final_bills')
+            ->where('sub_application_id', $sub->id)
+            ->orderByDesc('id')
+            ->first();
+
+        $devCharges = $balanceBill->dev_charges ?? null;
+
+        $fees = [];
+        foreach (self::ST_FEE_MAP as $deedsColumn => $stColumn) {
+            $value = $this->toAmount($sub->{$stColumn} ?? null);
+            if ($value !== null) {
+                $fees[$deedsColumn] = $value;
+            }
+        }
+
+        $dev = $this->toAmount($devCharges);
+        if ($dev !== null) {
+            $fees['Land_Use_Charge'] = $dev;
+        }
+
+        $isSua = ((int) ($sub->is_sua_unit ?? 0) === 1)
+            || strtoupper((string) ($sub->unit_type ?? '')) === 'SUA';
+
+        $billReference = $this->stBillReference($balanceBill);
+
+        return [
+            'is_st'              => true,
+            'unit_type'          => $isSua ? 'SuA' : 'PuA',
+            'fileno'             => trim((string) $sub->fileno),
+            'sub_application_id' => (int) $sub->id,
+            'fees'               => $fees,
+            'has_fees'           => !empty($fees),
+            'bill_reference'     => $billReference,
+            // reference is UNIQUE on deeds_bill_balances_metadata, so tell the
+            // form when the ST id is already spoken for rather than letting the
+            // insert blow up on a constraint violation.
+            'bill_reference_taken' => $billReference !== null && $this->referenceExists($billReference),
+        ];
+    }
+
+    /**
+     * Rebuild the ST bill's reference id from its stored balance bill.
+     *
+     * Must stay byte-identical to stBillReference() in programmes/bills.blade.php
+     * — that is what makes the two modules share one reference.
+     */
+    private function stBillReference(?object $balanceBill): ?string
+    {
+        if (!$balanceBill || empty($balanceBill->bill_date)) {
+            return null;
+        }
+
+        try {
+            $date = \Illuminate\Support\Carbon::parse($balanceBill->bill_date)->format('Ymd');
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        return 'ST-BILL-' . $balanceBill->sub_application_id . '-' . $date;
+    }
+
+    private function referenceExists(string $reference): bool
+    {
+        return DB::connection('sqlsrv')->table('deeds_bill_balances_metadata')
+            ->where('reference', $reference)
+            ->exists();
+    }
+
+    /**
+     * The ST fee columns are nvarchar, so guard against blanks and stray text.
+     */
+    private function toAmount($value): ?float
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $clean = trim(str_replace([',', '₦'], '', (string) $value));
+
+        return is_numeric($clean) ? (float) $clean : null;
     }
 
     private function notSt(): array
     {
         return [
-            'is_st'              => false,
-            'unit_type'          => null,
-            'fileno'             => null,
-            'sub_application_id' => null,
-            'fees'               => [],
-            'has_fees'           => false,
+            'is_st'                => false,
+            'unit_type'            => null,
+            'fileno'               => null,
+            'sub_application_id'   => null,
+            'fees'                 => [],
+            'has_fees'             => false,
+            'bill_reference'       => null,
+            'bill_reference_taken' => false,
         ];
     }
 

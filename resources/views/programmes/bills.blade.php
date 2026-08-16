@@ -1706,7 +1706,7 @@
                                                                         <div class="space-y-2">
                                                                             <label for="balance-bill-ref-id" class="text-xs font-medium text-green-600">Bill Reference ID</label>
                                                                             <input id="balance-bill-ref-id" name="bill_ref_id" type="text" 
-                                                                                value="ST-BILL-${currentApplication.fileId}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 9000) + 1000}"
+                                                                                value="${stBillReference(currentApplication.fileId, new Date().toISOString().slice(0, 10))}"
                                                                                 class="w-full p-2 border border-gray-300 rounded-md text-sm bg-gray-100" readonly>
                                                                         </div>
                                                                         <br>
@@ -2250,6 +2250,27 @@
         // Real-time calculation for balance bill
         $(document).on('input', '#balance-assignment-fee, #balance-bill-balance, #balance-recertification-fee, #balance-dev-charges', function () {
             calculateBalanceTotal();
+        });
+
+        /**
+         * The ST bill's reference id.
+         *
+         * Deliberately derived only from the unit id and the bill date, with no
+         * random component: the Deeds Bill Balance form recomputes this exact
+         * string from final_bills so the two modules agree on one reference.
+         * (It used to end in Math.random(), which produced a different id on
+         * every render of the same bill and could never be matched.)
+         */
+        function stBillReference(fileId, isoDate) {
+            var compact = (isoDate || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
+            return `ST-BILL-${fileId}-${compact}`;
+        }
+
+        // Keep the reference in step with the bill date it encodes.
+        $(document).on('change', '#balance-bill-date', function () {
+            if (currentApplication && currentApplication.fileId) {
+                $('#balance-bill-ref-id').val(stBillReference(currentApplication.fileId, $(this).val()));
+            }
         });
 
         /**
