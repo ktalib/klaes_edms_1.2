@@ -2896,6 +2896,7 @@ class FileIndexController extends Controller
                 'file_indexings.location',
                 'file_indexings.district',
                 'file_indexings.registry',
+                'file_indexings.edms_file_type',
                 'file_indexings.lga',
                 'file_indexings.land_use_type',
                 'file_indexings.sys_batch_no',
@@ -2997,6 +2998,10 @@ class FileIndexController extends Controller
                     'fileNumber' => $row->file_number,
                     'name' => $row->file_title,
                     'registry' => $registry,
+                    // The EDMS master folder the file is already filed under, so the
+                    // Scan Upload picker can preselect it and a second batch of scans
+                    // lands beside the first instead of starting a new folder.
+                    'edmsFileType' => \App\Services\Edms\EdmsFileType::normalize($row->edms_file_type ?? null),
                     'registry_batch_no' => $registryBatch,
                     'batch_no' => $sysBatchNo,
                     'sys_batch_no' => $sysBatchNo,

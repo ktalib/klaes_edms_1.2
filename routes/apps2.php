@@ -14,6 +14,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PropertyRecordController;
 use App\Http\Controllers\ScanningController;
 use App\Http\Controllers\FilearchiveController;
+use App\Http\Controllers\EdmsFileTypeTransferController;
 use App\Http\Controllers\EdmsRegistryTransferController;
 use App\Http\Controllers\FileTrackerController;
 use App\Http\Controllers\SltroverviewController;
@@ -266,6 +267,17 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/options', [EdmsRegistryTransferController::class, 'options'])->name('edms.registry-transfer.options');
         Route::post('/preview', [EdmsRegistryTransferController::class, 'preview'])->name('edms.registry-transfer.preview');
         Route::post('/move', [EdmsRegistryTransferController::class, 'move'])->name('edms.registry-transfer.move');
+    });
+
+    // File a document set into one of the EDMS master folders (Regular, Merger,
+    // Subdivision, Extension, Temporary File, Change of Purpose) — shared by Scan
+    // Upload, the Page Typing workspace and the File Archive (Doc-WARE) grid.
+    Route::prefix('edms/file-type')->group(function () {
+        Route::get('/search', [EdmsFileTypeTransferController::class, 'search'])->name('edms.file-type.search');
+        Route::get('/options', [EdmsFileTypeTransferController::class, 'options'])->name('edms.file-type.options');
+        Route::get('/cover', [EdmsFileTypeTransferController::class, 'cover'])->name('edms.file-type.cover');
+        Route::post('/preview', [EdmsFileTypeTransferController::class, 'preview'])->name('edms.file-type.preview');
+        Route::post('/move', [EdmsFileTypeTransferController::class, 'move'])->name('edms.file-type.move');
     });
 
     Route::prefix('filearchive')->group(function () {

@@ -37,6 +37,15 @@
               <h1 class="text-3xl font-bold tracking-tight text-gray-900">Document Upload</h1>
               <p class="text-gray-600 mt-1">Manage scanned documents and organize files</p>
             </div>
+            {{-- The backlog path: documents already uploaded (but not yet page
+                 typed) still sit naked under their registry. This files them into
+                 a master folder, cover shown, without re-uploading anything. --}}
+            <button type="button" class="btn btn-outline btn-sm gap-2 ml-auto"
+                    title="File an already-uploaded document set into a master folder"
+                    onclick="EdmsFileType.open(null, null, () => window.location.reload())">
+              <i data-lucide="folder-tree" class="h-4 w-4"></i>
+              Master Folder
+            </button>
           </div>
         </div>
 
@@ -483,6 +492,49 @@
                 <p class="text-xs text-gray-500 mt-1">Select the registry to proceed.</p>
               </div>
 
+              {{-- The EDMS master folder these scans go into. The registry folder
+                   holds one folder per file type, and the file number folder sits
+                   inside it, so this decides the upload path:
+                     EDMS/SCAN_UPLOAD/{Registry}/{File Type}/{FILE NUMBER}/
+                   Optional: leave it blank and the file stays directly under the
+                   registry, exactly as before, until someone classifies it. --}}
+              <div id="file-type-selection-container">
+                <label for="scan-upload-file-type" class="block text-sm font-semibold text-gray-700 mb-2">File Type</label>
+                <select id="scan-upload-file-type" class="input w-full text-sm">
+                  <option value="">Not specified — keep under the registry</option>
+                  <option value="regular">Regular</option>
+                  <optgroup label="Merger">
+                    <option value="merger_children">Merger — Children</option>
+                    <option value="merger_new">Merger — New File</option>
+                  </optgroup>
+                  <optgroup label="Subdivision">
+                    <option value="subdivision_mother">Subdivision — Mother</option>
+                    <option value="subdivision_children">Subdivision — Children</option>
+                  </optgroup>
+                  <optgroup label="Extension">
+                    <option value="extension_old">Extension — Old</option>
+                    <option value="extension_new">Extension — New</option>
+                  </optgroup>
+                  <option value="temporary">Temporary File</option>
+                  <optgroup label="Change of Purpose">
+                    <option value="change_of_purpose_old">Change of Purpose — Old</option>
+                    <option value="change_of_purpose_new">Change of Purpose — New</option>
+                  </optgroup>
+                </select>
+                <p class="text-xs text-gray-500 mt-1">
+                  The instruction is usually written on the file's cover.
+                  <button type="button" id="scan-upload-preview-cover"
+                          class="text-blue-600 hover:text-blue-800 font-semibold underline decoration-dotted disabled:text-gray-400 disabled:no-underline"
+                          disabled>
+                    Preview the cover
+                  </button>
+                </p>
+                <div id="scan-upload-cover-preview"
+                     class="hidden mt-2 rounded-lg border border-gray-200 bg-gray-50 p-2">
+                  <div id="scan-upload-cover-body" class="flex items-center justify-center min-h-[180px]"></div>
+                </div>
+              </div>
+
               <div class="border border-gray-200 rounded-lg p-4 bg-blue-50/50 mb-4">
                 <label for="global-selected-fileno-select" class="block text-sm font-semibold text-blue-900 mb-2">Search via smart file number Selector</label>
                 <select id="global-selected-fileno-select" class="input w-full text-sm bg-blue-50 border-blue-200 text-blue-900 font-mono font-bold" disabled>
@@ -615,6 +667,7 @@
 
         @include('scan_uploads.partials.blind_scan_modal')
         @include('scan_uploads.partials.reassign_modal')
+        @include('components.edms.file-type-transfer-modal')
 
         <!-- Upload Progress Modal -->
         <div id="upload-progress-modal" class="dialog-backdrop hidden" aria-hidden="true">

@@ -7,6 +7,7 @@ use App\Models\PageTyping;
 use App\Models\ScanReassignmentLog;
 use App\Models\Scanning;
 use App\Services\Edms\EdmsDocumentPathResolver;
+use App\Services\Edms\EdmsFileType;
 use Illuminate\Contracts\Filesystem\FileNotFoundException;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Auth;
@@ -69,11 +70,13 @@ class ScanReassignmentService
 
         if ($fileIndexing) {
             $registryName = $this->resolveRegistryName($fileIndexing->registry);
-            $registryMap = $this->getRegistryMap();
-            $registryFolder = $registryMap[$registryName] ?? 'Lands_Registry';
 
-            $absolutePath = file_storage_path('app/public/' . self::SCAN_UPLOAD_ROOT . '/' . $registryFolder . '/' . $targetFileNumber);
-            $relativeBase = self::SCAN_UPLOAD_ROOT . '/' . $registryFolder . '/' . $targetFileNumber;
+            // A reassigned scan joins the TARGET file, so it belongs in the target's
+            // EDMS master folder — not the one the scan came from.
+            $fileType = $fileIndexing->edms_file_type;
+
+            $relativeBase = $this->paths->scanUploadFolder($registryName, $targetFileNumber, null, $fileType);
+            $absolutePath = $this->paths->absolute($relativeBase);
             $folderExists = $this->filesystem->isDirectory($absolutePath);
             $scanCount = Scanning::on('sqlsrv')
                 ->where('file_indexing_id', $fileIndexing->id)
@@ -85,6 +88,7 @@ class ScanReassignmentService
                 'relative_path' => $relativeBase,
                 'file_indexing_id' => $fileIndexing->id,
                 'registry' => $registryName,
+                'file_type' => $fileType,
                 'folder_exists' => $folderExists,
                 'existing_scan_count' => $scanCount,
             ];
@@ -215,6 +219,10 @@ class ScanReassignmentService
             if ($targetInfo['registry']) {
                 $scan->registry = $targetInfo['registry'];
             }
+            // The scan now lives under the target file's master folder, so its own
+            // copy of the type has to say so — resolveTargetPath already built
+            // $newDocumentPath from it.
+            $scan->edms_file_type = EdmsFileType::normalize($targetInfo['file_type'] ?? null);
             $scan->save();
 
             // Carry any typed pages across to the new indexing record
@@ -280,6 +288,7 @@ class ScanReassignmentService
         }
 
         $registry = $targetInfo['registry'];
+        $fileType = $targetInfo['file_type'] ?? null;
         $moved = 0;
 
         foreach ($pageTypings as $pageTyping) {
@@ -288,14 +297,14 @@ class ScanReassignmentService
 
             if ($oldPath) {
                 $fileName = basename(str_replace('\\', '/', $oldPath));
-                $newPath = $this->paths->pageTypingPath($registry, $targetFileNumber, $paperSize, $fileName);
+                $newPath = $this->paths->pageTypingPath($registry, $targetFileNumber, $paperSize, $fileName, $fileType);
 
                 // Move the typed copy, and mirror it into the Doc-WARE archive
                 $resolvedOld = $this->paths->resolveRelative($oldPath) ?: $this->paths->normalize($oldPath);
                 if ($resolvedOld && $this->paths->copyWithin($resolvedOld, $newPath)) {
                     $this->paths->copyWithin(
                         $newPath,
-                        $this->paths->archivePath($registry, $targetFileNumber, $paperSize, $fileName)
+                        $this->paths->archivePath($registry, $targetFileNumber, $paperSize, $fileName, $fileType)
                     );
 
                     $oldAbsolute = $this->paths->absolute($resolvedOld);
@@ -320,6 +329,7 @@ class ScanReassignmentService
             if ($registry) {
                 $pageTyping->registry = $registry;
             }
+            $pageTyping->edms_file_type = EdmsFileType::normalize($fileType);
             $pageTyping->save();
             $moved++;
         }

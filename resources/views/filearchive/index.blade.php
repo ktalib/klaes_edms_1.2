@@ -49,6 +49,7 @@
             @include('filearchive.partials.document_viewer_modal')
 
             @include('components.edms.registry-transfer-modal')
+            @include('components.edms.file-type-transfer-modal')
         </div>
         <!-- Footer -->
         @include('admin.footer')

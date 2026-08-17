@@ -47,6 +47,10 @@
                                 <i data-lucide="folder-symlink" class="h-4 w-4"></i>
                                 <span class="hidden sm:inline">Move to NR</span>
                             </button>
+                            <button class="btn btn-sm bg-violet-600 hover:bg-violet-700 text-white flex items-center gap-1" id="viewer-file-type" title="File this file into a master folder (Regular, Subdivision, Merger, ...)">
+                                <i data-lucide="folder-tree" class="h-4 w-4"></i>
+                                <span class="hidden sm:inline">Master Folder</span>
+                            </button>
                             <button class="btn btn-sm bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1" id="edit-filetype-toggle" title="Edit page classification (file type)">
                                 <i data-lucide="tag" class="h-4 w-4"></i>
                                 <span class="hidden sm:inline">Edit Type</span>
@@ -269,29 +273,36 @@ function clearDocumentViewerData() {
 window.clearDocumentViewerData = clearDocumentViewerData;
 
 /**
- * Move the file currently open in the viewer to another registry.
+ * Move the file currently open in the viewer — to another registry, or into one
+ * of the EDMS master folders.
  *
- * The registry is part of every document's folder path, so a move relocates the
- * pages being viewed — the viewer is closed and the page reloaded afterwards
- * rather than left showing URLs that no longer resolve.
+ * Both the registry and the master folder are part of every document's folder
+ * path, so either move relocates the pages being viewed: the viewer is closed
+ * and the page reloaded afterwards rather than left showing URLs that no longer
+ * resolve.
  */
 document.addEventListener('DOMContentLoaded', function () {
-    const moveBtn = document.getElementById('viewer-move-registry');
-    if (!moveBtn) return;
-
-    moveBtn.addEventListener('click', function () {
-        if (!currentFileMeta || !currentFileMeta.id) {
-            if (window.Swal) {
-                Swal.fire({ icon: 'warning', title: 'No file open', text: 'Open a file in the viewer first.', timer: 2500 });
+    const reopen = function (dialog) {
+        return function () {
+            if (!currentFileMeta || !currentFileMeta.id) {
+                if (window.Swal) {
+                    Swal.fire({ icon: 'warning', title: 'No file open', text: 'Open a file in the viewer first.', timer: 2500 });
+                }
+                return;
             }
-            return;
-        }
 
-        EdmsRegistryTransfer.open(currentFileMeta.id, currentFileMeta.file_number, function () {
-            document.getElementById('close-viewer')?.click();
-            window.location.reload();
-        });
-    });
+            dialog.open(currentFileMeta.id, currentFileMeta.file_number, function () {
+                document.getElementById('close-viewer')?.click();
+                window.location.reload();
+            });
+        };
+    };
+
+    document.getElementById('viewer-move-registry')
+        ?.addEventListener('click', reopen(window.EdmsRegistryTransfer));
+
+    document.getElementById('viewer-file-type')
+        ?.addEventListener('click', reopen(window.EdmsFileType));
 });
 
 function loadDocumentPages(fileMeta, pages) {

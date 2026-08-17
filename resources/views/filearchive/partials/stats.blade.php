@@ -45,9 +45,9 @@
 </div>
 
 {{-- Move a file's documents (scans, typed pages and Doc-WARE archive copies)
-     to another registry. Opens with no file preselected — the operator searches
-     for one inside the dialog. --}}
-<div class="grid grid-cols-1 mb-6">
+     to another registry, or into one of the EDMS master folders. Both open with
+     no file preselected — the operator searches for one inside the dialog. --}}
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
     <button type="button"
             class="card bg-indigo-50 border-indigo-200 text-left w-full hover:bg-indigo-100 hover:border-indigo-300 transition-colors cursor-pointer"
             onclick="EdmsRegistryTransfer.open(null, null, () => window.location.reload())">
@@ -63,6 +63,28 @@
                 </p>
             </div>
             <div class="flex items-center gap-1 text-indigo-700 text-sm font-semibold whitespace-nowrap">
+                Open
+                <i data-lucide="chevron-right" class="h-4 w-4"></i>
+            </div>
+        </div>
+    </button>
+
+    <button type="button"
+            class="card bg-violet-50 border-violet-200 text-left w-full hover:bg-violet-100 hover:border-violet-300 transition-colors cursor-pointer"
+            onclick="EdmsFileType.open(null, null, () => window.location.reload())">
+        <div class="p-4 flex items-center gap-4">
+            <div class="p-3 bg-violet-100 rounded-lg flex-shrink-0">
+                <i data-lucide="folder-tree" class="h-6 w-6 text-violet-600"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+                <h3 class="text-sm font-semibold text-violet-900">File into a Master Folder</h3>
+                <p class="text-xs text-violet-600 mt-1">
+                    Files an archived document set into Regular, Merger, Subdivision, Extension,
+                    Temporary File or Change of Purpose — with its cover shown so you can read
+                    the instruction on it.
+                </p>
+            </div>
+            <div class="flex items-center gap-1 text-violet-700 text-sm font-semibold whitespace-nowrap">
                 Open
                 <i data-lucide="chevron-right" class="h-4 w-4"></i>
             </div>

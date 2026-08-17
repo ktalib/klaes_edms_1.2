@@ -36,13 +36,22 @@
                   @endif
                 </p>
               </div>
-              {{-- Standalone entry point: pick any file, move it between registries --}}
-              <button type="button" class="btn btn-action btn-sm gap-2"
-                      title="Move a file's documents to another registry"
-                      onclick="EdmsRegistryTransfer.open(null, null, () => window.location.reload())">
-                <i data-lucide="folder-symlink" class="h-4 w-4"></i>
-                Move to NR
-              </button>
+              {{-- Standalone entry points: pick any file, move it between registries
+                   or file it into one of the EDMS master folders --}}
+              <div class="flex items-center gap-2">
+                <button type="button" class="btn btn-action btn-sm gap-2"
+                        title="Move a file's documents to another registry"
+                        onclick="EdmsRegistryTransfer.open(null, null, () => window.location.reload())">
+                  <i data-lucide="folder-symlink" class="h-4 w-4"></i>
+                  Move to NR
+                </button>
+                <button type="button" class="btn btn-action btn-sm gap-2"
+                        title="File a document set into a master folder (Regular, Subdivision, Merger, ...)"
+                        onclick="EdmsFileType.open(null, null, () => window.location.reload())">
+                  <i data-lucide="folder-tree" class="h-4 w-4"></i>
+                  Master Folder
+                </button>
+              </div>
             </div>
         
             @if(!$showPageTypeMore)
@@ -480,6 +489,7 @@
     </div>
 
     @include('components.edms.registry-transfer-modal')
+    @include('components.edms.file-type-transfer-modal')
 
     <!-- Page Typing Dashboard JavaScript -->
     <script>
@@ -4069,6 +4079,11 @@
                     <i data-lucide="folder-symlink" class="h-4 w-4 mr-1.5"></i>
                     Move to NR
                   </button>
+                  <button class="btn btn-action btn-sm file-type-button"
+                          title="File this file into a master folder (Regular, Subdivision, Merger, ...)">
+                    <i data-lucide="folder-tree" class="h-4 w-4 mr-1.5"></i>
+                    Master Folder
+                  </button>
                   <button class="btn btn-back btn-sm back-button">
                     <i data-lucide="arrow-left" class="h-4 w-4 mr-1.5"></i>
                     ${state.typingState.selectedPageInFolder !== null ? 'Back to Folder' : (state.pageTypeMoreMode ? 'Back to PageType More' : 'Back to Dashboard')}
@@ -4641,17 +4656,24 @@
           // Move this file's documents to another registry. The typed copies and
           // the Doc-WARE archive copies move with the scans, so reload the file
           // afterwards to pick up the new paths.
-          document.querySelector('.move-registry-button')?.addEventListener('click', () => {
+          const openRelocationDialog = (dialog) => {
             const fileIndexingId = file.id || state.selectedFile;
             if (!fileIndexingId) {
               Swal.fire({ icon: 'warning', title: 'No file selected', timer: 2000 });
               return;
             }
 
-            EdmsRegistryTransfer.open(fileIndexingId, file.file_number, () => {
+            dialog.open(fileIndexingId, file.file_number, () => {
               startPageTyping(fileIndexingId);
             });
-          });
+          };
+
+          document.querySelector('.move-registry-button')
+            ?.addEventListener('click', () => openRelocationDialog(window.EdmsRegistryTransfer));
+
+          // Same move, the other folder segment: file it into its master folder.
+          document.querySelector('.file-type-button')
+            ?.addEventListener('click', () => openRelocationDialog(window.EdmsFileType));
 
           // Back button
           document.querySelector('.back-button')?.addEventListener('click', () => {

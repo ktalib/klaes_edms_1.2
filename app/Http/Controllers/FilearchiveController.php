@@ -729,6 +729,9 @@ class FilearchiveController extends Controller
                 : [
                     'file_number' => $file->file_number,
                     'registry' => $pageTyping->registry ?? $file->registry,
+                    // The master folder is a path segment too, so the resolver needs
+                    // it to find a typed page that has been filed away.
+                    'file_type' => $pageTyping->edms_file_type ?? $file->edms_file_type,
                 ];
 
             $mediaSources = [

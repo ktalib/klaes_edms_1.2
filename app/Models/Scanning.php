@@ -28,6 +28,7 @@ class Scanning extends Model
         'is_pdf_converted',
         'parent_scan_id',
         'registry',
+        'edms_file_type',
     ];
 
     protected $casts = [

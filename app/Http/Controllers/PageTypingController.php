@@ -16,6 +16,7 @@ use App\Models\PageTyping;
 use App\Models\PageTypingToolLog;
 use App\Models\Thumbnail;
 use App\Services\Edms\EdmsDocumentPathResolver;
+use App\Services\Edms\EdmsFileType;
 
 class PageTypingController extends Controller
 {
@@ -904,6 +905,12 @@ class PageTypingController extends Controller
                     $targetRegistry = !empty($validated['registry']) ? $validated['registry'] : ($scanning->registry ?? $fileIndexing->registry ?? 'Lands Registry');
                     $targetRegistryName = $this->paths->registryName($targetRegistry);
 
+                    // The EDMS master folder the typed copy and its archive copy go
+                    // into. The scan's own value wins: it names the folder the
+                    // original is actually sitting in, which is what the copies must
+                    // mirror.
+                    $fileType = $scanning->edms_file_type ?? $fileIndexing->edms_file_type;
+
                     // Get file extension and standardized filename
                     $fileExtension = pathinfo($scanning->original_filename, PATHINFO_EXTENSION);
                     if (empty($fileExtension)) {
@@ -923,12 +930,13 @@ class PageTypingController extends Controller
                         'registry' => $targetRegistry,
                         'paper_size' => $paperSize,
                         'file_name' => $fileName,
+                        'file_type' => $fileType,
                     ]);
 
                     if ($resolvedSourceRelative) {
                         // 2. Define standardized target paths
-                        $pagetypingPath = $this->paths->pageTypingPath($targetRegistry, $fileNumber, $paperSize, $fileName);
-                        $archivePath = $this->paths->archivePath($targetRegistry, $fileNumber, $paperSize, $fileName);
+                        $pagetypingPath = $this->paths->pageTypingPath($targetRegistry, $fileNumber, $paperSize, $fileName, $fileType);
+                        $archivePath = $this->paths->archivePath($targetRegistry, $fileNumber, $paperSize, $fileName, $fileType);
 
                         // 3. Copy (never move) into PAGETYPING and the Doc-WARE archive.
                         //    The SCAN_UPLOAD original is left untouched so nothing that
@@ -943,7 +951,8 @@ class PageTypingController extends Controller
 
                         $pageTyping->update([
                             'file_path' => $pagetypingPath,
-                            'registry' => $targetRegistryName
+                            'registry' => $targetRegistryName,
+                            'edms_file_type' => EdmsFileType::normalize($fileType),
                         ]);
 
                         // NOTE: document_path deliberately not touched — it must keep
@@ -1173,11 +1182,12 @@ class PageTypingController extends Controller
                 $extension = 'pdf';
             }
 
-            // Keep the canonical SCAN_UPLOAD layout: {registry}/{file_number}/{PAPER}
+            // Keep the canonical SCAN_UPLOAD layout: {registry}/{type?}/{file_number}/{PAPER}
             $directory = $this->paths->scanUploadFolder(
                 $scanning->registry ?? $fileIndexing->registry,
                 $fileIndexing->file_number,
-                $scanning->paper_size
+                $scanning->paper_size,
+                $scanning->edms_file_type ?? $fileIndexing->edms_file_type
             );
             $timestamp = now()->format('Ymd_His');
             $filename = $fileIndexing->file_number . '_' . $scanning->id . '_' . $timestamp . '.' . $extension;
@@ -1404,6 +1414,9 @@ class PageTypingController extends Controller
                     'registry' => $scanning->registry ?? $fileIndexing->registry,
                     'paper_size' => $paperSize,
                     'file_name' => $fileName,
+                    // The master folder is a path segment too — without it a file
+                    // that has been filed away resolves to nothing.
+                    'file_type' => $scanning->edms_file_type ?? $fileIndexing->edms_file_type,
                 ];
                 $resolvedPath = $this->paths->resolveRelative($scanning->document_path, $resolverContext);
                 $documentPath = $resolvedPath ?: $scanning->document_path;

@@ -90,7 +90,14 @@ class EdmsRegistryTransferController extends Controller
             });
         }
 
-        $files = $query->orderBy('file_number')->limit($limit)->get();
+        // File numbers first — see EdmsFileTypeTransferController::search(). Plain
+        // orderBy('file_number') sorts NULL and '' ahead of everything on SQL Server.
+        $files = $query
+            ->orderByRaw("CASE WHEN file_number IS NULL OR LTRIM(RTRIM(file_number)) = '' THEN 1 ELSE 0 END ASC")
+            ->orderBy('file_number')
+            ->orderBy('file_title')
+            ->limit($limit)
+            ->get();
 
         return response()->json([
             'success' => true,

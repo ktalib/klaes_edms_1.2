@@ -6,6 +6,7 @@ use App\Models\FileIndexing;
 use App\Models\PageTyping;
 use App\Models\Scanning;
 use App\Services\Edms\EdmsDocumentPathResolver;
+use App\Services\Edms\EdmsFileType;
 use App\Services\ScanUploads\BlindScanIngestionService;
 use App\Services\ScanUploads\ScanReassignmentService;
 use Illuminate\Http\Request;
@@ -99,6 +100,7 @@ class ScanUploadsController extends Controller
             'file_number' => 'required|string|max:255',
             'file_indexing_id' => 'nullable|integer|exists:sqlsrv.file_indexings,id',
             'registry' => 'required|string|in:Lands Registry,Cadastral Registry,DCIV Registry,Secret Registry,KANGIS Registry,SLTR Registry,ST Registry,Deeds Registry',
+            'edms_file_type' => 'nullable|string|' . EdmsFileType::validationRule(),
             'files' => 'nullable|array',
             'files.*.relative_path' => 'required_with:files|string|max:1024',
         ]);
@@ -117,12 +119,23 @@ class ScanUploadsController extends Controller
             }
 
             $selectedFiles = (isset($validated['files']) && $validated['files'] !== null) ? $validated['files'] : [];
+
+            // Same rule as a direct upload: the operator's pick wins, otherwise the
+            // file keeps whatever master folder it is already classified under.
+            $fileType = EdmsFileType::normalize($validated['edms_file_type'] ?? null)
+                ?? EdmsFileType::normalize($fileIndexing->edms_file_type);
+
             $transferred = $this->blindScanIngestionService->transfer(
                 $validated['file_number'],
                 $selectedFiles,
                 $fileIndexing->id,
-                $validated['registry'] ?? null
+                $validated['registry'] ?? null,
+                $fileType
             );
+
+            if ($fileType !== null && EdmsFileType::normalize($fileIndexing->edms_file_type) !== $fileType) {
+                $fileIndexing->update(['edms_file_type' => $fileType]);
+            }
 
             $documents = collect($transferred['files'] ?? [])
                 ->map(fn(Scanning $scan) => $this->formatDocumentPayload($scan))
@@ -243,6 +256,10 @@ class ScanUploadsController extends Controller
             'is_pdf_converted' => 'sometimes|boolean',
             'original_filename' => 'nullable|string|max:255',
             'registry' => 'required|string|in:Lands Registry,Cadastral Registry,DCIV Registry,Secret Registry,KANGIS Registry,SLTR Registry,ST Registry,Deeds Registry',
+            // The EDMS master folder this file belongs in. Optional: a file whose
+            // cover carries no instruction stays unclassified and keeps the legacy
+            // layout directly under its registry.
+            'edms_file_type' => 'nullable|string|' . EdmsFileType::validationRule(),
         ]);
 
         if ($validator->fails()) {
@@ -278,21 +295,21 @@ class ScanUploadsController extends Controller
             $definition = $displayOrder + 1;
             $definitionCode = $definition . '-' . $fileIndexing->file_number;
 
-            // Generate storage directory and filename
-            // Map Registry to Folder Name
-            $registryMap = [
-                'Lands Registry' => 'Lands_Registry',
-                'Cadastral Registry' => 'Cadastral_Registry',
-                'DCIV Registry' => 'DCIV_Registry',
-                'Secret Registry' => 'Secret_Registry',
-                'KANGIS Registry' => 'KANGIS_Registry',
-                'SLTR Registry' => 'SLTR_Registry',
-                'ST Registry' => 'ST_Registry',
-                'Deeds Registry' => 'Deeds_Registry',
-            ];
-            $registryFolder = (isset($registryMap[$payload['registry']]) && $registryMap[$payload['registry']] !== null) ? $registryMap[$payload['registry']] : 'Lands_Registry'; // Default fallback
+            // The EDMS master folder. What the operator picked wins; otherwise the
+            // file keeps whatever it was already classified as, so a second upload
+            // onto an existing file lands in the same folder as the first.
+            $fileType = EdmsFileType::normalize($payload['edms_file_type'] ?? null)
+                ?? EdmsFileType::normalize($fileIndexing->edms_file_type);
 
-            $directory = 'EDMS/SCAN_UPLOAD/' . $registryFolder . '/' . $fileIndexing->file_number;
+            // Generate storage directory and filename. registrySlug() is the same
+            // map every reader uses, so this cannot drift from where the scans are
+            // looked for.
+            $directory = $this->paths->scanUploadFolder(
+                $payload['registry'],
+                $fileIndexing->file_number,
+                null,
+                $fileType
+            );
             $filename = $this->generateFilename($fileIndexing, $extension, $definitionCode);
 
             // Store file using Laravel's Storage facade
@@ -323,13 +340,21 @@ class ScanUploadsController extends Controller
                 'display_order' => $displayOrder,
                 'file_size' => $fileSize,
                 'registry' => $payload['registry'],
+                'edms_file_type' => $fileType,
                 'is_pdf_converted' => (isset($payload['is_pdf_converted']) && $payload['is_pdf_converted'] !== null) ? $payload['is_pdf_converted'] : false,
                 'parent_scan_id' => (isset($payload['parent_scan_id']) && $payload['parent_scan_id'] !== null) ? $payload['parent_scan_id'] : null,
             ]);
 
-            // Mark file_indexing as updated
+            // Mark file_indexing as updated, and record the master folder the
+            // documents just went into so every later reader resolves the same path.
             try {
-                $fileIndexing->update(['is_updated' => 1]);
+                $attributes = ['is_updated' => 1];
+
+                if ($fileType !== null && EdmsFileType::normalize($fileIndexing->edms_file_type) !== $fileType) {
+                    $attributes['edms_file_type'] = $fileType;
+                }
+
+                $fileIndexing->update($attributes);
             } catch (Throwable $e) {
                 Log::warning('Could not update file_indexing.is_updated', [
                     'error' => $e->getMessage(),
@@ -380,13 +405,15 @@ class ScanUploadsController extends Controller
         try {
             $file = $request->file('file');
             $fileIndexing = $scan->fileIndexing;
-            // Keep the canonical layout {registry}/{file_number}/{PAPER} — writing to a
-            // shorter path here is what stranded edited pages in a separate tree.
+            // Keep the canonical layout {registry}/{type?}/{file_number}/{PAPER} —
+            // writing to a shorter path here is what stranded edited pages in a
+            // separate tree.
             $directory = $fileIndexing
                 ? $this->paths->scanUploadFolder(
                     $scan->registry ?? $fileIndexing->registry,
                     $fileIndexing->file_number,
-                    $scan->paper_size
+                    $scan->paper_size,
+                    $scan->edms_file_type ?? $fileIndexing->edms_file_type
                 )
                 : EdmsDocumentPathResolver::SCAN_UPLOAD_ROOT . '/UNASSIGNED';
 
@@ -544,7 +571,8 @@ class ScanUploadsController extends Controller
                     $directory = $this->paths->absolute($this->paths->scanUploadFolder(
                         $scan->registry ?? $scan->fileIndexing->registry ?? null,
                         $fileNumber,
-                        $scan->paper_size
+                        $scan->paper_size,
+                        $scan->edms_file_type ?? $scan->fileIndexing->edms_file_type ?? null
                     ));
                     if (is_dir($directory) && count(scandir($directory)) <= 2) {
                         rmdir($directory);

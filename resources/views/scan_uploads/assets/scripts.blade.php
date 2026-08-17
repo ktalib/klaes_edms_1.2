@@ -307,6 +307,10 @@
             cancelFileSelectBtn: document.getElementById('cancel-file-select-btn'),
             confirmFileSelectBtn: document.getElementById('confirm-file-select-btn'),
             blindScanRegistry: document.getElementById('blind-scan-registry'),
+            scanUploadFileType: document.getElementById('scan-upload-file-type'),
+            previewCoverBtn: document.getElementById('scan-upload-preview-cover'),
+            coverPreview: document.getElementById('scan-upload-cover-preview'),
+            coverPreviewBody: document.getElementById('scan-upload-cover-body'),
             uploadMethodRadios: document.querySelectorAll('input[name="upload-method"]'),
             globalSelectedFileNoSelect: document.getElementById('global-selected-fileno-select'),
 
@@ -1063,6 +1067,9 @@
                 file_number: state.selectedFileNumberForUpload,
                 file_indexing_id: Number(state.selectedIndexedFile) || null,
                 registry: blindScanElements.registry?.value,
+                // Same master folder a direct upload would use; omitted when blank
+                // so the file keeps whatever it is already classified as.
+                edms_file_type: elements.scanUploadFileType?.value || null,
                 files: stagedDocs.map(doc => ({
                     relative_path: doc.relativePath
                 }))
@@ -2041,6 +2048,14 @@
         formData.append('display_order', computedDisplayOrder);
         formData.append('registry', registryValue);
 
+        // The EDMS master folder these scans go into. Blank is a valid answer —
+        // the file then stays directly under its registry until someone classifies
+        // it — so the field is only sent when the operator actually picked one.
+        const fileTypeValue = elements.scanUploadFileType?.value || '';
+        if (fileTypeValue) {
+            formData.append('edms_file_type', fileTypeValue);
+        }
+
         if (doc.notes) {
             formData.append('notes', doc.notes);
         }
@@ -2479,6 +2494,14 @@
     function clearIndexedFileSelection() {
         state.selectedIndexedFile = null;
         state.selectedFileNumberForUpload = null;
+
+        if (elements.scanUploadFileType) {
+            elements.scanUploadFileType.value = '';
+        }
+        if (elements.previewCoverBtn) {
+            elements.previewCoverBtn.disabled = true;
+        }
+        hideCoverPreview();
 
         const selectedBadge = document.getElementById('selected-file-badge');
         if (selectedBadge) {
@@ -5802,6 +5825,92 @@
 
         syncConfirmButtonState();
         updateSelectedUploadMethodLabel();
+        syncFileTypeControls();
+    }
+
+    /**
+     * Keep the File Type controls in step with the selected file.
+     *
+     * A file that has already been classified reappears with its own master
+     * folder preselected, so a second batch of scans lands beside the first
+     * instead of quietly starting a new folder. The cover button only lights up
+     * for a real indexing id — the global picker uses "GLOBAL_<number>" ids that
+     * the cover endpoint cannot look up.
+     */
+    function syncFileTypeControls() {
+        const select = elements.scanUploadFileType;
+        const button = elements.previewCoverBtn;
+        const selectedFile = findIndexedFileById(state.selectedIndexedFile);
+
+        hideCoverPreview();
+
+        if (select) {
+            const existing = selectedFile?.edmsFileType || selectedFile?.edms_file_type || '';
+            select.value = existing;
+        }
+
+        if (button) {
+            button.disabled = !numericIndexingId();
+        }
+    }
+
+    /** The selected file's real file_indexings id, or null for a synthetic one. */
+    function numericIndexingId() {
+        const id = Number(state.selectedIndexedFile);
+
+        return Number.isInteger(id) && id > 0 ? id : null;
+    }
+
+    function hideCoverPreview() {
+        elements.coverPreview?.classList.add('hidden');
+        if (elements.coverPreviewBody) {
+            elements.coverPreviewBody.innerHTML = '';
+        }
+    }
+
+    /**
+     * Show the file's first scanned page.
+     *
+     * The instruction that decides the file type ("subdivision — mother",
+     * "extension") is written on the cover, so the operator reads it here rather
+     * than guessing. Only useful for a file that already has scans on the server;
+     * for a brand-new batch the staged thumbnails below are the cover.
+     */
+    async function toggleCoverPreview() {
+        const box = elements.coverPreview;
+        const body = elements.coverPreviewBody;
+        const id = numericIndexingId();
+
+        if (!box || !body || !id) return;
+
+        if (!box.classList.contains('hidden')) {
+            hideCoverPreview();
+            return;
+        }
+
+        box.classList.remove('hidden');
+        body.innerHTML = '<p class="text-sm text-gray-500">Loading cover…</p>';
+
+        try {
+            const response = await fetch(`/edms/file-type/cover?file_indexing_id=${encodeURIComponent(id)}`, {
+                headers: { 'Accept': 'application/json' }
+            });
+            const payload = await response.json();
+            const data = payload.data || {};
+
+            if (!data.url) {
+                body.innerHTML = `<p class="text-sm text-gray-500 text-center px-4">${escapeHtml(data.message || 'No cover available.')}</p>`;
+                return;
+            }
+
+            body.innerHTML = data.is_pdf
+                ? `<embed src="${escapeHtml(data.url)}#page=1&view=FitH" type="application/pdf" class="w-full h-[320px]">`
+                : `<a href="${escapeHtml(data.url)}" target="_blank" rel="noopener">
+                     <img src="${escapeHtml(data.url)}" alt="Cover page" class="max-h-[320px] object-contain">
+                   </a>`;
+        } catch (error) {
+            body.innerHTML = `<p class="text-sm text-red-600 text-center px-4">Could not load the cover: ${escapeHtml(error.message)}</p>`;
+        }
     }
 
     function selectIndexedFile() {
@@ -6101,6 +6210,9 @@
             updateUI();
         });
         elements.confirmFileSelectBtn.addEventListener('click', selectIndexedFile);
+
+        // Cover preview: the instruction that decides the file type is on the cover.
+        elements.previewCoverBtn?.addEventListener('click', toggleCoverPreview);
 
         if (elements.uploadMethodRadios && elements.uploadMethodRadios.length) {
             elements.uploadMethodRadios.forEach(radio => {

@@ -12,10 +12,17 @@ use Illuminate\Support\Facades\Storage;
  * (possibly stale) document path into something that actually exists on disk.
  *
  * Storage layout:
- *   EDMS/SCAN_UPLOAD/{registry_slug}/{file_number}/{PAPER}/{file}   <- authoritative original
- *   EDMS/PAGETYPING/{registry_slug}/{file_number}/{PAPER}/{file}    <- derived copy (page typing)
- *   EDMS/ARCHIVE_Doc_WARE/{registry_slug}/{file_number}/{PAPER}/{file} <- derived copy (archive)
+ *   EDMS/SCAN_UPLOAD/{registry_slug}/{type?}/{file_number}/{PAPER}/{file}   <- authoritative original
+ *   EDMS/PAGETYPING/{registry_slug}/{type?}/{file_number}/{PAPER}/{file}    <- derived copy (page typing)
+ *   EDMS/ARCHIVE_Doc_WARE/{registry_slug}/{type?}/{file_number}/{PAPER}/{file} <- derived copy (archive)
  *   EDMS/BLIND_SCAN/{Registry_Name}_Raw/{file_number}/{PAPER}/{file}   <- pre-ingestion
+ *
+ * `{type?}` is the EDMS file-type master folder (Regular, Subdivision/Mother,
+ * Merger/Children …) — see EdmsFileType. It is OPTIONAL: a file nobody has
+ * classified sits directly under its registry exactly as it always did, and
+ * candidates() offers both layouts so every path stored before the master
+ * folders existed still resolves. BLIND_SCAN is deliberately untyped: the type
+ * is read off the file's cover during ingestion, so it is not known yet.
  *
  * Page typing COPIES into PAGETYPING/ARCHIVE; it must never move the original
  * out of SCAN_UPLOAD. `scannings.document_path` always names the SCAN_UPLOAD
@@ -151,28 +158,52 @@ class EdmsDocumentPathResolver
         return !empty($paperSize) ? strtoupper((string) $paperSize) : 'A4';
     }
 
-    public function scanUploadPath($registry, string $fileNumber, $paperSize, string $fileName): string
+    /**
+     * The `{registry_slug}/{type?}` prefix shared by the three managed trees.
+     *
+     * An unclassified file contributes no segment at all, which is what keeps the
+     * legacy layout (file-number folders directly under the registry) intact.
+     */
+    public function registryTypePrefix($registry, $fileType = null): string
     {
-        return self::SCAN_UPLOAD_ROOT . '/' . $this->registrySlug($registry) . '/' . $fileNumber
-            . '/' . $this->paperSize($paperSize) . '/' . $fileName;
+        $prefix = $this->registrySlug($registry);
+        $folder = EdmsFileType::folder($fileType);
+
+        return $folder === null ? $prefix : $prefix . '/' . $folder;
     }
 
-    public function scanUploadFolder($registry, string $fileNumber, $paperSize = null): string
+    /**
+     * The master file-type folder for a registry, e.g.
+     * "EDMS/SCAN_UPLOAD/Lands_Registry/Subdivision/Mother".
+     *
+     * Returns the bare registry folder for an unclassified type.
+     */
+    public function fileTypeFolder(string $tree, $registry, $fileType = null): string
     {
-        $path = self::SCAN_UPLOAD_ROOT . '/' . $this->registrySlug($registry) . '/' . $fileNumber;
+        return rtrim($tree, '/') . '/' . $this->registryTypePrefix($registry, $fileType);
+    }
+
+    public function scanUploadPath($registry, string $fileNumber, $paperSize, string $fileName, $fileType = null): string
+    {
+        return $this->scanUploadFolder($registry, $fileNumber, $paperSize, $fileType) . '/' . $fileName;
+    }
+
+    public function scanUploadFolder($registry, string $fileNumber, $paperSize = null, $fileType = null): string
+    {
+        $path = self::SCAN_UPLOAD_ROOT . '/' . $this->registryTypePrefix($registry, $fileType) . '/' . $fileNumber;
 
         return $paperSize ? $path . '/' . $this->paperSize($paperSize) : $path;
     }
 
-    public function pageTypingPath($registry, string $fileNumber, $paperSize, string $fileName): string
+    public function pageTypingPath($registry, string $fileNumber, $paperSize, string $fileName, $fileType = null): string
     {
-        return self::PAGETYPING_ROOT . '/' . $this->registrySlug($registry) . '/' . $fileNumber
+        return self::PAGETYPING_ROOT . '/' . $this->registryTypePrefix($registry, $fileType) . '/' . $fileNumber
             . '/' . $this->paperSize($paperSize) . '/' . $fileName;
     }
 
-    public function archivePath($registry, string $fileNumber, $paperSize, string $fileName): string
+    public function archivePath($registry, string $fileNumber, $paperSize, string $fileName, $fileType = null): string
     {
-        return self::ARCHIVE_ROOT . '/' . $this->registrySlug($registry) . '/' . $fileNumber
+        return self::ARCHIVE_ROOT . '/' . $this->registryTypePrefix($registry, $fileType) . '/' . $fileNumber
             . '/' . $this->paperSize($paperSize) . '/' . $fileName;
     }
 
@@ -229,7 +260,7 @@ class EdmsDocumentPathResolver
     /**
      * Build the ordered list of candidate locations for a document.
      *
-     * @param  array  $context  ['registry' =>, 'file_number' =>, 'paper_size' =>, 'file_name' =>]
+     * @param  array  $context  ['registry' =>, 'file_number' =>, 'paper_size' =>, 'file_name' =>, 'file_type' =>]
      * @return string[]
      */
     public function candidates(?string $storedPath, array $context = []): array
@@ -244,6 +275,7 @@ class EdmsDocumentPathResolver
         $fileNumber = $context['file_number'] ?? null;
         $registry = $context['registry'] ?? null;
         $paperSize = $context['paper_size'] ?? null;
+        $fileType = EdmsFileType::normalize($context['file_type'] ?? null);
 
         // Filename: prefer an explicit one, otherwise reuse the stored path's basename.
         $fileName = $context['file_name'] ?? ($normalized ? basename($normalized) : null);
@@ -251,9 +283,17 @@ class EdmsDocumentPathResolver
         if ($fileNumber && $fileName) {
             $fileNumber = (string) $fileNumber;
 
-            $candidates[] = $this->scanUploadPath($registry, $fileNumber, $paperSize, $fileName);
-            $candidates[] = $this->pageTypingPath($registry, $fileNumber, $paperSize, $fileName);
-            $candidates[] = $this->archivePath($registry, $fileNumber, $paperSize, $fileName);
+            // Typed layout first when the file has been classified — that is where
+            // it lives now; the untyped forms below still cover everything stored
+            // before the master folders existed, and a file whose type was set
+            // without its documents having been moved yet.
+            $layouts = $fileType === null ? [null] : [$fileType, null];
+
+            foreach ($layouts as $layout) {
+                $candidates[] = $this->scanUploadPath($registry, $fileNumber, $paperSize, $fileName, $layout);
+                $candidates[] = $this->pageTypingPath($registry, $fileNumber, $paperSize, $fileName, $layout);
+                $candidates[] = $this->archivePath($registry, $fileNumber, $paperSize, $fileName, $layout);
+            }
 
             // Legacy archive layout written by PageTypingQCController (no slug, no paper size).
             $candidates[] = self::ARCHIVE_ROOT . '/' . $fileNumber . '/' . $fileName;
@@ -261,9 +301,11 @@ class EdmsDocumentPathResolver
             $candidates[] = $this->blindScanPath($registry, $fileNumber, $paperSize, $fileName);
 
             // Legacy layouts without the paper-size segment.
-            $slug = $this->registrySlug($registry);
-            $candidates[] = self::SCAN_UPLOAD_ROOT . '/' . $slug . '/' . $fileNumber . '/' . $fileName;
-            $candidates[] = self::PAGETYPING_ROOT . '/' . $slug . '/' . $fileNumber . '/' . $fileName;
+            foreach ($layouts as $layout) {
+                $prefix = $this->registryTypePrefix($registry, $layout);
+                $candidates[] = self::SCAN_UPLOAD_ROOT . '/' . $prefix . '/' . $fileNumber . '/' . $fileName;
+                $candidates[] = self::PAGETYPING_ROOT . '/' . $prefix . '/' . $fileNumber . '/' . $fileName;
+            }
 
             // Legacy layouts without the registry segment.
             $candidates[] = self::SCAN_UPLOAD_ROOT . '/' . $fileNumber . '/' . $this->paperSize($paperSize) . '/' . $fileName;
@@ -309,7 +351,7 @@ class EdmsDocumentPathResolver
     /**
      * Build the resolver context from a Scanning-like record.
      *
-     * @param  object|null  $scanning  Expects ->paper_size, ->registry, ->original_filename and ->fileIndexing
+     * @param  object|null  $scanning  Expects ->paper_size, ->registry, ->edms_file_type, ->original_filename and ->fileIndexing
      */
     public function contextFromScanning($scanning, $fileIndexing = null): array
     {
@@ -324,6 +366,9 @@ class EdmsDocumentPathResolver
             'registry' => $scanning->registry ?? ($fileIndexing->registry ?? null),
             'paper_size' => $scanning->paper_size ?? null,
             'file_name' => $scanning->original_filename ?? null,
+            // The scan's own type wins: during a type transfer the indexing record
+            // is updated last, and a scan that has not moved yet must still resolve.
+            'file_type' => $scanning->edms_file_type ?? ($fileIndexing->edms_file_type ?? null),
         ];
     }
 

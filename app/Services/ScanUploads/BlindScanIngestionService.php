@@ -4,6 +4,7 @@ namespace App\Services\ScanUploads;
 
 use App\Models\BlindScanning;
 use App\Models\Scanning;
+use App\Services\Edms\EdmsFileType;
 use Illuminate\Contracts\Filesystem\FileNotFoundException;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
@@ -74,9 +75,11 @@ class BlindScanIngestionService
      * @param  string  $rawFileNumber
      * @param  array<int,array<string,mixed>>  $requestedFiles
      * @param  int|null  $fileIndexingId
+     * @param  string|null  $fileType  EDMS master folder key; null keeps the files
+     *                                 directly under the registry, as before
      * @return array
      */
-    public function transfer(string $rawFileNumber, array $requestedFiles, ?int $fileIndexingId = null, ?string $registry = null): array
+    public function transfer(string $rawFileNumber, array $requestedFiles, ?int $fileIndexingId = null, ?string $registry = null, ?string $fileType = null): array
     {
         $fileNumber = $this->normalizeFileNumber($rawFileNumber);
         [$blindFolder, $blindRelative] = $this->resolveBlindFolder($fileNumber);
@@ -100,6 +103,14 @@ class BlindScanIngestionService
 
         $registrySubFolder = $registryMap[$normalizedRegistryName] ?? 'Lands_Registry';
 
+        // The EDMS master folder sits between the registry and the file number, so
+        // ingested files land in the same folder a direct upload would have used.
+        $fileType = EdmsFileType::normalize($fileType);
+        $typeFolder = EdmsFileType::folder($fileType);
+        if ($typeFolder !== null) {
+            $registrySubFolder .= '/' . $typeFolder;
+        }
+
         $discovered = $this->collectFiles($blindFolder, $blindRelative, $fileNumber, $registrySubFolder)->keyBy('relative_path');
         if ($discovered->isEmpty()) {
             return ['file_number' => $fileNumber, 'files' => []];
@@ -117,7 +128,7 @@ class BlindScanIngestionService
         $scanUploadDirectory = file_storage_path('app/public/' . self::SCAN_UPLOAD_ROOT . '/' . $registrySubFolder . '/' . $fileNumber);
         $this->filesystem->ensureDirectoryExists($scanUploadDirectory, 0775, true);
 
-        $movedFiles = DB::connection('sqlsrv')->transaction(function () use ($targetFiles, $blindFolder, $scanUploadDirectory, $fileIndexingId, $fileNumber, $blindRelative, $registry) {
+        $movedFiles = DB::connection('sqlsrv')->transaction(function () use ($targetFiles, $blindFolder, $scanUploadDirectory, $fileIndexingId, $fileNumber, $blindRelative, $registry, $fileType) {
             $createdScans = [];
             $displayOrder = 0;
 
@@ -130,7 +141,7 @@ class BlindScanIngestionService
                     throw new FileNotFoundException("Unable to move {$manifest['relative_path']} to scan uploads.");
                 }
 
-                $scan = $this->createScanningRecord($fileIndexingId, $manifest, $destination, $displayOrder++, $registry);
+                $scan = $this->createScanningRecord($fileIndexingId, $manifest, $destination, $displayOrder++, $registry, $fileType);
                 $createdScans[] = $scan->fresh(['fileIndexing', 'uploader']);
                 $this->markBlindScanRecord($manifest, $fileNumber, $blindRelative, $fileIndexingId, $scan->id);
                 $this->logMove($fileNumber, $manifest, $scan->id, $destination);
@@ -388,7 +399,7 @@ class BlindScanIngestionService
         };
     }
 
-    private function createScanningRecord(?int $fileIndexingId, array $manifest, string $destination, ?int $displayOrder = null, ?string $registry = null)
+    private function createScanningRecord(?int $fileIndexingId, array $manifest, string $destination, ?int $displayOrder = null, ?string $registry = null, ?string $fileType = null)
     {
         return Scanning::on('sqlsrv')->create([
             'file_indexing_id' => $fileIndexingId,
@@ -403,6 +414,7 @@ class BlindScanIngestionService
             'file_size' => $manifest['size'],
             'is_pdf_converted' => false,
             'registry' => $registry,
+            'edms_file_type' => $fileType,
             'parent_scan_id' => null,
         ]);
     }

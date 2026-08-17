@@ -43,6 +43,7 @@ class PageTyping extends Model
         'bcfc_sequence',
         'bcfc_id',
         'registry',
+        'edms_file_type',
     ];
 
     protected $casts = [
