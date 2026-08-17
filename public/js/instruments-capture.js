@@ -7201,7 +7201,7 @@ document.addEventListener('DOMContentLoaded', function () {
      * @param {{ propId: ?(string|number) }} opts
      * @returns {Promise<'merger'|'proceed'>}
      */
-    /**
+    /**  
      * "End at OP Capture" from the OP Saved! dialog: the OP row is already persisted,
      * so this is a completed transaction that simply stops short of commissioning —
      * not a cancellation. Everything the commission hand-off would have consumed is

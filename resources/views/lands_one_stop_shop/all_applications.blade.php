@@ -73,13 +73,13 @@
         border-bottom: 1px solid rgb(241 245 249);
     }
     /* Allow location to wrap */
-    #lss-applications-table tbody td:nth-child(10) {
+    #lss-applications-table tbody td.lss-location-cell {
         white-space: normal;
         min-width: 150px;
         max-width: 240px;
     }
     /* Allow applicant address to wrap */
-    #lss-applications-table tbody td:nth-child(11) {
+    #lss-applications-table tbody td.lss-address-cell {
         white-space: normal;
         min-width: 140px;
         max-width: 220px;
@@ -304,11 +304,15 @@
                         <thead>
                             <tr class="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-50/80">
                                 <th class="px-4 py-3 text-left" style="min-width:50px">S/N</th>
+                                @unless($isNoChangeOfName)
                                 <th class="px-4 py-3 text-left" style="min-width:80px">OP Serial No</th>
+                                @endunless
                                 <th class="px-4 py-3 text-left" style="min-width:100px">File No</th>
+                                @unless($isNoChangeOfName)
                                 <th class="px-4 py-3 text-left" style="min-width:140px">Original Holder</th>
+                                @endunless
                                 <th class="px-4 py-3 text-center" style="min-width:50px">Photo</th>
-                                <th class="px-4 py-3 text-left" style="min-width:150px">Applicant Name</th>
+                                <th class="px-4 py-3 text-left" style="min-width:150px">{{ $isNoChangeOfName ? 'Holder' : 'Applicant Name' }}</th>
                                 <th class="px-4 py-3 text-left" style="min-width:110px">Application Type</th>
                                 <th class="px-4 py-3 text-left" style="min-width:65px">Plot No</th>
                                 <th class="px-4 py-3 text-left" style="min-width:65px">Plan No</th>
@@ -325,6 +329,7 @@
                             @forelse($records as $record)
                                 <tr data-record='@json($record)'>
                                     <td class="px-4 py-2.5 text-xs text-slate-400 font-mono">{{ $loop->iteration }}</td>
+                                    @unless($isNoChangeOfName)
                                     <td class="px-4 py-2.5 text-slate-600 text-xs font-mono">
                                         @php
                                             $opSerial = $record->op_serial_number ?? $record->ic_op_serial_number ?? $record->pra_op_serial_number ?? null;
@@ -335,7 +340,9 @@
                                             —
                                         @endif
                                     </td>
+                                    @endunless
                                     <td class="px-4 py-2.5 font-mono text-xs font-semibold text-blue-600">{{ $record->file_no ?? $record->temp_fileno ?? '—' }}</td>
+                                    @unless($isNoChangeOfName)
                                     @php
                                         // ic_original_holder (source_capture.party_1_name) is always the OP
                                         // issuer "Kano State Government" and must NOT be shown here. Prefer
@@ -346,6 +353,7 @@
                                             : ($record->ic_original_holder ?: '—');
                                     @endphp
                                     <td class="px-4 py-2.5 text-red-600 text-xs font-semibold">{{ $displayOriginalHolder }}</td>
+                                    @endunless
                                     <td class="px-4 py-2.5 text-center">
                                         @if($record->passport_photo_url)
                                             <img src="{{ $record->passport_photo_url }}" alt="Photo"
@@ -368,8 +376,8 @@
                                     </td>
                                     <td class="px-4 py-2.5 text-slate-700 text-xs">{{ $record->plot_no ?: ($record->ic_plot_number ?: ($record->pra_plot_no ?: ($record->fi_plot_no ?: ($record->fn_plot_no ?: '—')))) }}</td>
                                     <td class="px-4 py-2.5 text-slate-700 text-xs">{{ $record->plan_no ?: ($record->ic_plan_no ?: ($record->pra_plan_no ?: ($record->fi_plan_no ?: ($record->fn_plan_no ?: '—')))) }}</td>
-                                    <td class="px-4 py-2.5 text-slate-600 text-xs leading-snug">{{ $record->location ?: ($record->ic_location ?: ($record->pra_location ?: ($record->fi_location ?: ($record->fn_location ?: '—')))) }}</td>
-                                    <td class="px-4 py-2.5 text-slate-600 text-xs leading-snug">{{ $record->address ?: ($record->residential_address ?: ($record->correspondence_address ?: '—')) }}</td>
+                                    <td class="lss-location-cell px-4 py-2.5 text-slate-600 text-xs leading-snug">{{ $record->location ?: ($record->ic_location ?: ($record->pra_location ?: ($record->fi_location ?: ($record->fn_location ?: '—')))) }}</td>
+                                    <td class="lss-address-cell px-4 py-2.5 text-slate-600 text-xs leading-snug">{{ $record->address ?: ($record->residential_address ?: ($record->correspondence_address ?: '—')) }}</td>
                                     <td class="px-4 py-2.5 text-slate-600 text-xs">{{ $record->phone ?? '—' }}</td>
                                     <td class="px-4 py-2.5 font-mono text-xs text-slate-600" data-order="{{ $record->created_at ? \Carbon\Carbon::parse($record->created_at)->format('Y-m-d') : '' }}">
                                         {{ $record->created_at ? \Carbon\Carbon::parse($record->created_at)->format('M d, Y') : '—' }}
@@ -461,7 +469,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="16" class="px-4 py-10 text-center text-slate-400 italic">No applications found. Click "New Application" to create one.</td>
+                                    <td colspan="{{ $isNoChangeOfName ? 14 : 16 }}" class="px-4 py-10 text-center text-slate-400 italic">No applications found. Click "New Application" to create one.</td>
                                 </tr>
                             @endforelse
                         </tbody>

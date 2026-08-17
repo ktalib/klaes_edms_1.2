@@ -927,7 +927,10 @@
                                                 <div class="flex items-center h-[42px]">
                                                      <select id="customerType" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                                                          :class="{ '': fileOption === 'sit' }"
-                                                         name="customer_type" x-model="customerType" :disabled="fileOption === 'sit'" required>
+                                                         name="customer_type" x-model="customerType" :disabled="fileOption === 'sit'" required
+                                                         {{-- Passport belongs to Individual files only; drop any image already
+                                                              picked when the type changes, so a hidden field can't post one. --}}
+                                                         @change="if (customerType !== 'Individual') clearPassport()">
                                                         <option value="">Select Customer Type</option>
                                                         <option value="Individual">Individual</option>
                                                         <option value="Corporate">Corporate</option>
@@ -972,29 +975,31 @@
                                                        placeholder="Enter Address">
                                             </div>
 
-                                            <!-- Passport photograph. The picker sits in the cell beside Address so
-                                                 the preview below it can be shown large enough to actually check the
-                                                 photo before commissioning. Single mode only, and not required for
-                                                 Government/Corporate. The image is filed into the new file number's
-                                                 EDMS scan folder and registered as a scan document — see
-                                                 storeCommissioningPassport(). -->
-                                            <div x-show="!batchMode" x-transition>
+                                            <!-- Passport photograph. Individual customers only — a Corporate,
+                                                 Multiple or Government file has no single applicant to photograph,
+                                                 so the field is hidden and never validated for those. The picker
+                                                 sits in the cell beside Address so the preview below it can be
+                                                 shown large enough to actually check the photo before
+                                                 commissioning. Single mode only. The image is filed into the new
+                                                 file number's EDMS scan folder and registered as a scan document —
+                                                 see storeCommissioningPassport(). -->
+                                            <div x-show="!batchMode && customerType === 'Individual'" x-transition>
                                                 <label for="generatePassport" class="block text-xs font-medium text-gray-600 mb-1">
                                                     Upload Passport
-                                                    <span x-show="!['Government', 'Corporate'].includes(customerType)" class="text-red-500">*</span>
+                                                    <span class="text-red-500">*</span>
                                                 </label>
                                                 <input type="file" id="generatePassport" name="passport"
                                                        accept="image/jpeg,image/jpg,image/png"
                                                        @change="handlePassportChange($event)"
                                                        class="w-full text-xs text-gray-600 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-gray-300 rounded-md p-1.5 h-[42px] focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                       :required="!batchMode && !['Government', 'Corporate'].includes(customerType) && !passport">
+                                                       :required="!batchMode && customerType === 'Individual' && !passport">
                                             </div>
 
                                             <!-- Preview, full width under the picker. -->
-                                            <div x-show="!batchMode" x-transition class="col-span-2">
+                                            <div x-show="!batchMode && customerType === 'Individual'" x-transition class="col-span-2">
                                                 <label class="block text-xs font-medium text-gray-600 mb-1">
                                                     Passport
-                                                    <span x-show="!['Government', 'Corporate'].includes(customerType)" class="text-red-500">*</span>
+                                                    <span class="text-red-500">*</span>
                                                 </label>
                                                 <div class="flex items-center gap-3 p-2 border border-gray-200 rounded-md bg-gray-50/60">
                                                     <div class="w-24 h-28 flex-shrink-0 rounded-md border border-dashed border-gray-300 bg-white overflow-hidden flex items-center justify-center">

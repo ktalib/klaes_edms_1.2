@@ -2133,6 +2133,15 @@ class MlsFileNoController extends Controller
 
                     DB::connection('sqlsrv')->commit();
 
+                    // Change-of-Purpose returns before the common single-file tail below,
+                    // so file and attach its passport here as part of the same single mode.
+                    $edmsFolder = $this->ensureEdmsScanFolder($fullFileNumber);
+                    $passportUpload = $this->storeCommissioningPassport($request, $fullFileNumber, $edmsFolder);
+                    if (!empty($passportUpload['stored']) && !empty($passportUpload['path'])) {
+                        app(MlsCommissioningOssApplicationService::class)
+                            ->attachPassport($fullFileNumber, $passportUpload['path']);
+                    }
+
                     return response()->json([
                         'success' => true,
                         'message' => 'Change of Purpose generated successfully.',
@@ -2140,6 +2149,8 @@ class MlsFileNoController extends Controller
                             'archived' => [$originalFileNo],
                         ],
                         'oss_application' => $copOssApplicationMirror,
+                        'edms_folder' => $edmsFolder,
+                        'passport_upload' => $passportUpload,
                         'storage_summary' => $this->buildStorageSummary($fullFileNumber),
                         'data' => [
                             // 'file_number' is the key the success modal and other callers
@@ -3396,6 +3407,10 @@ class MlsFileNoController extends Controller
 
                 $edmsFolder = $this->ensureEdmsScanFolder($fullFileNumber);
                 $passportUpload = $this->storeCommissioningPassport($request, $fullFileNumber, $edmsFolder);
+                if (!empty($passportUpload['stored']) && !empty($passportUpload['path'])) {
+                    app(MlsCommissioningOssApplicationService::class)
+                        ->attachPassport($fullFileNumber, $passportUpload['path']);
+                }
 
                 Log::info('MLS File Number Generated', [
                     'file_number' => $fullFileNumber,

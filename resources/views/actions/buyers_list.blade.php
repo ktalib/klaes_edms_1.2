@@ -152,5 +152,6 @@
             loadBuyersList();
         }
     });
+    
 </script>
 @endsection

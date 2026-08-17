@@ -108,6 +108,7 @@ class MlsCommissioningOssApplicationService
             'district' => $this->nullable($row['district'] ?? null),
             'lga' => $this->nullable($row['lga'] ?? null),
             'land_use' => $this->nullable($row['land_use'] ?? null),
+            'passport_photo' => $this->findPassportPath($fileNumber),
             'status' => 'approved',
             'remarks' => 'Auto-created from MLPP File Number Generator commissioning.',
             'system_source' => self::SYSTEM_SOURCE,
@@ -121,6 +122,46 @@ class MlsCommissioningOssApplicationService
         return array_filter($payload, static function ($value, $column) use ($columns) {
             return isset($columns[strtolower((string) $column)]);
         }, ARRAY_FILTER_USE_BOTH);
+    }
+
+    /**
+     * Attach the passport saved after the main commissioning transaction commits.
+     * Change-of-name applications are intentionally outside this mirror.
+     */
+    public function attachPassport(string $fileNumber, ?string $path): bool
+    {
+        $fileNumber = trim($fileNumber);
+        $path = $this->nullable($path);
+        if ($fileNumber === '' || $path === null || !isset($this->ossColumns()['passport_photo'])) {
+            return false;
+        }
+
+        $query = DB::connection('sqlsrv')->table('oss_applications')
+            ->where('file_no', $fileNumber)
+            ->where(function ($q) {
+                $q->whereNull('system_source')->orWhere('system_source', '<>', self::CHANGE_OF_NAME_SOURCE);
+            });
+
+        if (isset($this->ossColumns()['is_deleted'])) {
+            $query->where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            });
+        }
+
+        $existing = $query->orderByDesc('id')->first();
+        if (!$existing || trim((string) ($existing->passport_photo ?? '')) === $path) {
+            return (bool) $existing;
+        }
+
+        $changes = ['passport_photo' => $path];
+        if (isset($this->ossColumns()['updated_at'])) {
+            $changes['updated_at'] = now();
+        }
+
+        DB::connection('sqlsrv')->table('oss_applications')->where('id', $existing->id)->update($changes);
+        $this->audit('UPDATED', (int) $existing->id, (array) $existing, $changes, $fileNumber);
+
+        return true;
     }
 
     public function resolveApplicationType($landUse, string $fileNumber = ''): string
@@ -159,6 +200,38 @@ class MlsCommissioningOssApplicationService
     {
         $value = trim((string) $value);
         return $value === '' ? null : $value;
+    }
+
+    /** Recover a passport already filed by MLS commissioning for backfills/re-runs. */
+    private function findPassportPath(string $fileNumber): ?string
+    {
+        if (!isset($this->ossColumns()['passport_photo'])
+            || !Schema::connection('sqlsrv')->hasTable('file_indexings')
+            || !Schema::connection('sqlsrv')->hasTable('scannings')) {
+            return null;
+        }
+
+        try {
+            $path = DB::connection('sqlsrv')->table('scannings as s')
+                ->join('file_indexings as fi', 'fi.id', '=', 's.file_indexing_id')
+                ->where('fi.file_number', $fileNumber)
+                ->where(function ($q) {
+                    $q->where('s.document_type', 'Passport Photograph')
+                        ->orWhere('s.original_filename', 'LIKE', 'passport_%')
+                        ->orWhere('s.document_path', 'LIKE', '%/passport_%');
+                })
+                ->orderByDesc('s.id')
+                ->value('s.document_path');
+
+            return $this->nullable($path);
+        } catch (\Throwable $e) {
+            Log::warning('Could not resolve MLS commissioning passport for OSS mirror', [
+                'file_number' => $fileNumber,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     private function isActive(object $row): bool

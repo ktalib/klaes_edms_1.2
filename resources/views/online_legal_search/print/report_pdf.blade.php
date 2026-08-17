@@ -217,6 +217,21 @@
         .foot img.brand { height: auto; width: 92px; }
         .foot .mid { text-align: center; font-size: 9px; color: #333; }
         .foot .r { text-align: right; }
+
+        /* ── Page 2: Disclaimer and Terms of Use ── */
+        .disclaimer-page { page-break-before: always; }
+        .dp-head { text-align: center; border-bottom: 2px solid #166534; padding-bottom: 4px; margin-bottom: 6px; }
+        .dp-head h1 { font-size: 13px; margin: 0; letter-spacing: .5px; }
+        .dp-sub { font-size: 9px; color: #4b5563; margin: 2px 0 0; }
+        .dp-notice { font-size: 9px; font-weight: bold; color: #7f1d1d; letter-spacing: .5px; margin: 3px 0 0; }
+        .dp-cols { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        .dp-col { width: 50%; vertical-align: top; padding: 0 12px; font-size: 7.1px; line-height: 1.32; text-align: justify; }
+        .dp-col h2 { font-size: 7.8px; color: #166534; text-transform: uppercase; letter-spacing: .3px;
+                     margin: 6px 0 2px; border-bottom: 0.5px solid #d1d5db; padding-bottom: 1px; }
+        .dp-col p { margin: 0 0 3px; }
+        .dp-red { color: #7f1d1d; font-weight: bold; }
+        .dp-contact { background: #f9fafb; border: 0.5px solid #e5e7eb; padding: 4px 6px; }
+        .dp-tagline { text-align: center; color: #166534; font-style: italic; }
     </style>
 </head>
 <body>
@@ -401,6 +416,9 @@
         <td class="r" style="width:80px;">@if($logoLas)<img src="{{ $logoLas }}" alt="">@endif</td>
     </tr>
 </table>
+
+{{-- Page 2: Disclaimer and Terms of Use, included on every issued report. --}}
+@include('online_legal_search.print.disclaimer_page')
 
 </body>
 </html>

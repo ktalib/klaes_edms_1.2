@@ -2210,14 +2210,20 @@
             }
         }
 
-        // Passport is required for non-Government / non-Corporate single-file submissions.
-        // It is an image now, so presence is read off the file input rather than a typed value.
+        // Passport applies to Individual single-file submissions only — Corporate,
+        // Multiple and Government files have no single applicant to photograph, so the
+        // field is hidden and unvalidated for them. It is an image now, so presence is
+        // read off the file input rather than a typed value.
         {
             const customerTypeValue = (alpineData && alpineData.customerType
                 ? alpineData.customerType
                 : (document.getElementById('customerType')?.value || '')).toString().trim();
-            const requiresPassport = customerTypeValue !== 'Government' && customerTypeValue !== 'Corporate';
             const passportInput = document.getElementById('generatePassport');
+            // This script is shared with commissioning cards that carry no passport field
+            // at all (the OSS FC / FEFR change-of-ownership cards reuse the global
+            // commission-fileno modal). Those must not be blocked by a control they
+            // never render, so the requirement hangs off the field being present.
+            const requiresPassport = !!passportInput && customerTypeValue === 'Individual';
             const hasPassport = !!(passportInput && passportInput.files && passportInput.files.length > 0);
 
             if (requiresPassport && !hasPassport) {
@@ -2243,6 +2249,20 @@
         showGlobalLoading('Generating file number...');
 
         const formData = new FormData(document.getElementById('generateForm'));
+
+        // Passport is an Individual-only field. The customer type can also be set
+        // without the select firing its change handler (SIT forces Government,
+        // inheritance sets it), so drop the image here too rather than trusting the
+        // hidden field to be empty — otherwise a photo picked before switching type
+        // still gets filed.
+        {
+            const customerTypeValue = (alpineData && alpineData.customerType
+                ? alpineData.customerType
+                : (document.getElementById('customerType')?.value || '')).toString().trim();
+            if (customerTypeValue !== 'Individual') {
+                formData.delete('passport');
+            }
+        }
 
         if (alpineData) {
             const currentCoords = alpineData.getCurrentEntryCoordinates

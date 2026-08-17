@@ -177,7 +177,8 @@ class ApplicationController extends Controller
         }
 
         // fileNumber: 3 columns in one lateral join
-        $fnApply = "OUTER APPLY (
+        $hasFnTop = !$isNoChangeOfNamePage;
+        $fnApply = $hasFnTop ? "OUTER APPLY (
             SELECT TOP 1
                 NULLIF(LTRIM(RTRIM(fn.[location])), '') as fn_location,
                 NULLIF(LTRIM(RTRIM(fn.[plot_no])), '') as fn_plot_no,
@@ -185,7 +186,21 @@ class ApplicationController extends Controller
             FROM fileNumber fn
             WHERE fn.mlsfNo = oa.file_no
             ORDER BY fn.id DESC
-        ) as fn_top";
+        ) as fn_top" : '';
+
+        // MLS commissioning mirrors already carry holder, plot, plan, location and
+        // passport directly on oss_applications. Running three TOP-1 OUTER APPLY
+        // lookups for every one of the 5,000+ no-change rows made SQL Server repeat
+        // expensive fallback work during both the page query and paginator COUNT.
+        // The two hidden OP columns are the only consumers of PRA data on this page,
+        // so skip all registry fallbacks here; legacy rows still retain their direct
+        // OSS/instrument_capture values.
+        if ($isNoChangeOfNamePage) {
+            $praApply = '';
+            $fiApply = '';
+            $hasPraTop = false;
+            $hasFiTop = false;
+        }
 
         $fromClause = "oss_applications as oa {$praApply} {$fiApply} {$fnApply}";
 
@@ -211,9 +226,9 @@ class ApplicationController extends Controller
                 DB::raw($hasFiTop && $fiLocationCol ? "fi_top.fi_location" : "NULL as fi_location"),
                 DB::raw($hasFiTop && $fiPlotCol ? "fi_top.fi_plot_no" : "NULL as fi_plot_no"),
                 DB::raw($hasFiTop && $fiPlanCol ? "fi_top.fi_plan_no" : "NULL as fi_plan_no"),
-                DB::raw("fn_top.fn_location"),
-                DB::raw("fn_top.fn_plot_no"),
-                DB::raw("fn_top.fn_plan_no"),
+                DB::raw($hasFnTop ? "fn_top.fn_location" : "NULL as fn_location"),
+                DB::raw($hasFnTop ? "fn_top.fn_plot_no" : "NULL as fn_plot_no"),
+                DB::raw($hasFnTop ? "fn_top.fn_plan_no" : "NULL as fn_plan_no"),
             ])
             ->when($search, function ($q) use ($search) {
                 $q->where(function ($sub) use ($search) {
