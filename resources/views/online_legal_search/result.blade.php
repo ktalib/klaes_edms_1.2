@@ -92,6 +92,16 @@
       <div class="pay-row"><span class="lbl">File Number</span><span class="val">{{ $fileNumber }}</span></div>
       <div class="pay-row"><span class="lbl">Total</span><span class="val pay-total">&#8358;{{ number_format($amount / 100) }}</span></div>
 
+      <label for="paySearchPurpose" style="display:block;margin-top:16px;margin-bottom:6px;font-size:13px;font-weight:600;color:#374151;">Purpose of search <span style="color:#dc2626;">*</span></label>
+      <select id="paySearchPurpose" required
+              style="width:100%;box-sizing:border-box;padding:11px 12px;font-size:14px;border:1px solid #d1d5db;border-radius:10px;color:#1f2937;background:#fff;">
+        <option value="">— Select a purpose —</option>
+        @foreach($purposes as $purpose)
+          <option value="{{ $purpose->id }}">{{ $purpose->name }}</option>
+        @endforeach
+      </select>
+      <p class="pay-note" style="margin-top:6px;text-align:left;">A search can only be carried out for one of the listed purposes.</p>
+
       <label for="payEmail" style="display:block;margin-top:16px;margin-bottom:6px;font-size:13px;font-weight:600;color:#374151;">Email address</label>
       <input id="payEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com"
              style="width:100%;box-sizing:border-box;padding:11px 12px;font-size:14px;border:1px solid #d1d5db;border-radius:10px;color:#1f2937;" />
@@ -114,6 +124,7 @@
       const btn = document.getElementById('payBtn');
       const emailInput = document.getElementById('payEmail');
       const emailConfirmInput = document.getElementById('payEmailConfirm');
+      const purposeInput = document.getElementById('paySearchPurpose');
       const errBox = document.getElementById('payError');
       const VERIFY_URL = @json(route('ols.payment.verify'));
       const RESULT_URL = @json(route('ols.result'));
@@ -135,6 +146,14 @@
       }
 
       btn.addEventListener('click', function () {
+        // A search cannot proceed without one of the defined purposes.
+        const purposeId = (purposeInput.value || '').trim();
+        if (!purposeId) {
+          showError('Please select the purpose of your search to continue.');
+          purposeInput.focus();
+          return;
+        }
+
         const email = (emailInput.value || '').trim();
         const emailConfirm = (emailConfirmInput.value || '').trim();
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -154,13 +173,18 @@
           email: email,
           amount: {{ (int) $amount }},
           currency: 'NGN',
-          metadata: { custom_fields: [{ display_name: 'File Number', variable_name: 'file_number', value: fileNumber }] },
+          metadata: {
+            custom_fields: [
+              { display_name: 'File Number', variable_name: 'file_number', value: fileNumber },
+              { display_name: 'Purpose of Search', variable_name: 'purpose', value: purposeInput.options[purposeInput.selectedIndex].text },
+            ],
+          },
           callback: function (response) {
             btn.textContent = 'Verifying payment…';
             fetch(VERIFY_URL, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json' },
-              body: JSON.stringify({ reference: response.reference, email: email, file_number: fileNumber, search_params: searchParams }),
+              body: JSON.stringify({ reference: response.reference, email: email, file_number: fileNumber, search_params: searchParams, purpose_id: purposeId }),
             })
             .then(r => r.json().then(j => ({ ok: r.ok, j })))
             .then(({ ok, j }) => {
@@ -204,6 +228,7 @@
       </div>
       <div class="pay-row"><span class="lbl">Request No.</span><span class="val">{{ $searchRequest->request_no }}</span></div>
       <div class="pay-row"><span class="lbl">File Number</span><span class="val">{{ $fileNumber }}</span></div>
+      <div class="pay-row"><span class="lbl">Purpose</span><span class="val">{{ $searchRequest->purpose ?: '—' }}</span></div>
       <div class="pay-row"><span class="lbl">Payment Ref</span><span class="val">{{ $payment->tracking_id ?? $payment->reference }}</span></div>
       <div class="pay-row"><span class="lbl">Report goes to</span><span class="val">{{ $payment->email }}</span></div>
       <div class="pay-row"><span class="lbl">Submitted</span><span class="val">{{ optional($searchRequest->submitted_at)->format('d M Y, g:i A') }}</span></div>

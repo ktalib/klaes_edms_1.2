@@ -5,6 +5,7 @@ namespace App\Http\Controllers\OnlineLegalSearch;
 use App\Http\Controllers\Controller;
 use App\Models\LegalSearchOnlinePayment;
 use App\Models\LegalSearchOnlineRequest;
+use App\Models\OnlineLsSearchPurpose;
 use App\Services\LegalSearchApprovalService;
 use App\Services\LegalSearchService;
 use Illuminate\Http\Request;
@@ -257,13 +258,16 @@ class OnlineLsDashboardController extends Controller
         }
 
         if (!$payment) {
-            // Payment mode: show the Paystack checkout for this search.
+            // Payment mode: show the Paystack checkout for this search. The
+            // purpose list is a closed lookup — a search cannot proceed without
+            // one of these.
             return view('online_legal_search.result', [
                 'mode'              => 'payment',
                 'fileNumber'        => $fileNumber,
                 'searchParams'      => $request->only(['query', 'guarantorName', 'guaranteeName', 'lga', 'district', 'location', 'plotNumber', 'planNumber', 'size', 'caveat']),
                 'amount'            => self::PAYMENT_AMOUNT_KOBO,
                 'paystackPublicKey' => config('services.paystack.public'),
+                'purposes'          => OnlineLsSearchPurpose::options(),
                 'report'            => null,
             ]);
         }
@@ -295,19 +299,32 @@ class OnlineLsDashboardController extends Controller
     public function verifyPayment(Request $request)
     {
         $request->validate([
-            'reference' => 'required|string|max:100',
-            'email'     => 'nullable|email|max:255',
+            'reference'  => 'required|string|max:100',
+            'email'      => 'nullable|email|max:255',
+            'purpose_id' => 'required|integer',
         ]);
 
         $reference  = trim($request->input('reference'));
         $email      = $request->input('email', '');
         $fileNumber = $request->input('file_number', '');
 
+        // A search may only proceed for one of the defined purposes. The select
+        // constrains the browser; this re-checks the submitted id against the
+        // active lookup so a hand-crafted request cannot bypass it.
+        $purpose = OnlineLsSearchPurpose::active()->find($request->input('purpose_id'));
+
+        if (!$purpose) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Please choose a valid purpose of search from the list. The search cannot proceed without one.',
+            ], 422);
+        }
+
         // Idempotent check — re-verifying a paid reference returns the request
         // that was already opened for it rather than opening a second one.
         $existing = LegalSearchOnlinePayment::where('reference', $reference)->first();
         if ($existing && $existing->isPaid()) {
-            $searchRequest = $this->openApprovalRequest($existing, $request);
+            $searchRequest = $this->openApprovalRequest($existing, $request, $purpose);
 
             return response()->json([
                 'success'      => true,
@@ -357,7 +374,7 @@ class OnlineLsDashboardController extends Controller
 
         // Open the approval request and alert the Director / Deputy Director.
         // The report is released to the requester by email only once approved.
-        $searchRequest = $this->openApprovalRequest($payment, $request);
+        $searchRequest = $this->openApprovalRequest($payment, $request, $purpose);
 
         return response()->json([
             'success'     => true,
@@ -373,10 +390,18 @@ class OnlineLsDashboardController extends Controller
      * Never lets a notification or mail failure fail the payment response — the
      * money is already taken, so the request row matters more than the alert.
      */
-    protected function openApprovalRequest(LegalSearchOnlinePayment $payment, Request $request): ?LegalSearchOnlineRequest
-    {
+    protected function openApprovalRequest(
+        LegalSearchOnlinePayment $payment,
+        Request $request,
+        ?OnlineLsSearchPurpose $purpose = null
+    ): ?LegalSearchOnlineRequest {
         try {
-            return $this->approvalService->openRequest($payment, ['ip' => $request->ip()]);
+            return $this->approvalService->openRequest($payment, [
+                'ip'         => $request->ip(),
+                'purpose_id' => $purpose?->id,
+                // Snapshot the name so a later rename does not rewrite history.
+                'purpose'    => $purpose?->name,
+            ]);
         } catch (\Throwable $e) {
             Log::error('OnlineLsDashboardController: failed to open approval request', [
                 'payment_id' => $payment->id,

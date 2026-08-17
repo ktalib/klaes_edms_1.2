@@ -31,6 +31,8 @@ class LegalSearchOnlineRequest extends Model
         'requester_phone',
         'file_number',
         'search_params',
+        'purpose_id',
+        'purpose',
         'ip_address',
         'status',
         'submitted_at',
@@ -57,6 +59,11 @@ class LegalSearchOnlineRequest extends Model
     public function payment(): BelongsTo
     {
         return $this->belongsTo(LegalSearchOnlinePayment::class, 'payment_id');
+    }
+
+    public function searchPurpose(): BelongsTo
+    {
+        return $this->belongsTo(OnlineLsSearchPurpose::class, 'purpose_id');
     }
 
     public function reviewer(): BelongsTo

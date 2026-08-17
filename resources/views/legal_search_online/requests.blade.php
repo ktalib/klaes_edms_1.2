@@ -125,6 +125,7 @@
                         <tr class="text-left text-xs font-bold uppercase tracking-wide text-slate-500">
                             <th class="px-4 py-3">Request</th>
                             <th class="px-4 py-3">File Number</th>
+                            <th class="px-4 py-3">Purpose</th>
                             <th class="px-4 py-3">Requester</th>
                             <th class="px-4 py-3">Payment Ref</th>
                             <th class="px-4 py-3">Submitted</th>
@@ -137,6 +138,7 @@
                             <tr id="req-{{ $req->id }}" class="{{ $highlight === $req->id ? 'bg-amber-50' : '' }}">
                                 <td class="px-4 py-3 font-bold text-slate-900">{{ $req->request_no }}</td>
                                 <td class="px-4 py-3 font-semibold text-slate-700">{{ $req->file_number ?: '—' }}</td>
+                                <td class="px-4 py-3 text-slate-600">{{ $req->purpose ?: '—' }}</td>
                                 <td class="px-4 py-3 text-slate-600">{{ $req->requester_email }}</td>
                                 <td class="px-4 py-3 text-slate-500">{{ $req->tracking_id ?: $req->reference }}</td>
                                 <td class="px-4 py-3 text-slate-500">{{ optional($req->submitted_at)->format('d M Y, g:i A') ?: '—' }}</td>
@@ -184,7 +186,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td colspan="7" class="px-4 py-10 text-center text-slate-500">No requests in this view.</td></tr>
+                            <tr><td colspan="8" class="px-4 py-10 text-center text-slate-500">No requests in this view.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

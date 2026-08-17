@@ -123,6 +123,8 @@ class LegalSearchApprovalService
             'requester_phone' => $context['phone'] ?? null,
             'file_number'     => $payment->file_number,
             'search_params'   => $payment->search_params,
+            'purpose_id'      => $context['purpose_id'] ?? null,
+            'purpose'         => $context['purpose'] ?? null,
             'ip_address'      => $context['ip'] ?? null,
             'status'          => LegalSearchOnlineRequest::STATUS_PENDING,
             'submitted_at'    => now(),

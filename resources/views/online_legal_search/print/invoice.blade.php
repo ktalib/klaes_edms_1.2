@@ -149,6 +149,7 @@
                     <strong>Online Legal Search</strong><br>
                     <span style="color:#6b7280">
                         Search report for File No: {{ $searchRequest->file_number ?: '—' }}
+                        @if($searchRequest->purpose)<br>Purpose: {{ $searchRequest->purpose }}@endif
                     </span>
                 </td>
                 <td class="r">1</td>

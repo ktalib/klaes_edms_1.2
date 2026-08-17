@@ -16,6 +16,10 @@
             <td><strong>{{ $searchRequest->file_number ?: '—' }}</strong></td>
         </tr>
         <tr>
+            <td>Purpose of Search:</td>
+            <td><strong>{{ $searchRequest->purpose ?: '—' }}</strong></td>
+        </tr>
+        <tr>
             <td>Payment Reference:</td>
             <td>{{ $searchRequest->tracking_id ?: $searchRequest->reference }}</td>
         </tr>

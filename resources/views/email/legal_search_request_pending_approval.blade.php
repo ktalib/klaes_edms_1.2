@@ -18,6 +18,10 @@
             <td><strong>{{ $searchRequest->file_number ?: '—' }}</strong></td>
         </tr>
         <tr>
+            <td>Purpose of Search:</td>
+            <td><strong>{{ $searchRequest->purpose ?: '—' }}</strong></td>
+        </tr>
+        <tr>
             <td>Requester:</td>
             <td>{{ $searchRequest->requester_email }}</td>
         </tr>

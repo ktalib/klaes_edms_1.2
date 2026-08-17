@@ -287,6 +287,20 @@ class ApplicationController extends Controller
             ->pluck('cnt', 'application_type')
             ->toArray();
 
+        // Total is counted independently so an older/unrecognised land-use type is
+        // still represented on the Total Records card even if it has no category card.
+        $cardTotalQuery = LandsOneStopShopApplication::query();
+        if ($isNoChangeOfNamePage) {
+            $cardTotalQuery->where(function ($sub) {
+                $sub->whereNull('system_source')
+                    ->orWhere('system_source', '!=', 'OSSOPCHANGEOFNAME');
+            });
+        }
+        $cardTotalQuery->where(function ($q) {
+            $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+        });
+        $cardTotal = $cardTotalQuery->count();
+
         // ── Daily record count (created today) ──
         $dailyQuery = LandsOneStopShopApplication::query()
             ->whereDate('created_at', now()->toDateString());
@@ -317,6 +331,7 @@ class ApplicationController extends Controller
             'typeOptions' => LandsOneStopShopApplication::typeOptions(),
             'statusOptions' => LandsOneStopShopApplication::statusOptions(),
             'cardCounts' => $cardCounts,
+            'cardTotal' => $cardTotal,
             'dailyCount' => $dailyCount,
             'isChangeOfNamePage' => $isChangeOfNamePage,
             'isNoChangeOfNamePage' => $isNoChangeOfNamePage,

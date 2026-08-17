@@ -165,6 +165,12 @@ class IndexingStorageSummaryService
         );
         $this->push(
             $onward,
+            'oss_applications',
+            $this->countOssNoChangeApplications($numbers),
+            'OSS application (No Change of Ownership)'
+        );
+        $this->push(
+            $onward,
             'dciv_file_no',
             $this->countIn('dciv_file_no', ['full_file_number'], $numbers),
             'DCIV commissioning register'
@@ -528,6 +534,28 @@ class IndexingStorageSummaryService
         if ($this->hasColumn($table, 'is_deleted')) {
             $query->where(function ($q) {
                 $q->where('is_deleted', 0)->orWhereNull('is_deleted');
+            });
+        }
+
+        return $query->count();
+    }
+
+    /** Count only the OSS side that the no-change page displays. */
+    private function countOssNoChangeApplications(array $numbers): int
+    {
+        if (empty($numbers) || !$this->hasTable('oss_applications') || !$this->hasColumn('oss_applications', 'file_no')) {
+            return 0;
+        }
+
+        $query = DB::connection('sqlsrv')->table('oss_applications')->whereIn('file_no', $numbers);
+        if ($this->hasColumn('oss_applications', 'system_source')) {
+            $query->where(function ($q) {
+                $q->whereNull('system_source')->orWhere('system_source', '<>', 'OSSOPCHANGEOFNAME');
+            });
+        }
+        if ($this->hasColumn('oss_applications', 'is_deleted')) {
+            $query->where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
             });
         }
 

@@ -22,6 +22,7 @@ use App\Models\PlotExtensionApplication;
 use App\Services\ParcelUpdateNotificationService;
 use App\Services\PlotWorkflowService;
 use App\Services\PropertyIdAllocationService;
+use App\Services\MlsCommissioningOssApplicationService;
 
 class MlsFileNoController extends Controller
 {
@@ -1897,6 +1898,13 @@ class MlsFileNoController extends Controller
                         ]);
                     }
 
+                    $copMlsRow = \App\Models\MlsFileNo::where('full_file_number', $fullFileNumber)
+                        ->orderByDesc('id')
+                        ->first();
+                    $copOssApplicationMirror = $copMlsRow
+                        ? app(MlsCommissioningOssApplicationService::class)->sync($copMlsRow)
+                        : null;
+
                     // 5. Resolve or Allocate Property ID across staging tables to ensure historical linkage
                     $propId = null;
                     try {
@@ -2131,6 +2139,8 @@ class MlsFileNoController extends Controller
                         'decommission_summary' => [
                             'archived' => [$originalFileNo],
                         ],
+                        'oss_application' => $copOssApplicationMirror,
+                        'storage_summary' => $this->buildStorageSummary($fullFileNumber),
                         'data' => [
                             // 'file_number' is the key the success modal and other callers
                             // read (see MlsFileNoController's generic response below);
@@ -2399,6 +2409,8 @@ class MlsFileNoController extends Controller
                     'sit_reason' => $fileOption === 'sit' ? ($validated['sit_reason'] ?? null) : null,
                     'old_fileno' => $fileOption === 'reissuance' ? ($validated['old_fileno'] ?? null) : null,
                 ]);
+
+                $ossApplicationMirror = app(MlsCommissioningOssApplicationService::class)->sync($mlsRecord);
 
                 if ($fileOption !== 'temporary') {
                     // Also create record in fileNumber table for compatibility
@@ -3412,6 +3424,7 @@ class MlsFileNoController extends Controller
                     'passport_upload' => $passportUpload,
                     // Which tables the commissioning wrote to, for the same card.
                     'storage_summary' => $this->buildStorageSummary($fullFileNumber),
+                    'oss_application' => $ossApplicationMirror,
                     'data' => [
                         'file_number' => $fullFileNumber,
                         'file_name' => $validated['file_name'] ?? ($mlsRecord->file_name ?? null),
@@ -4281,6 +4294,13 @@ class MlsFileNoController extends Controller
                     DB::connection('sqlsrv')->table('file_indexings')->insert($chunk);
                 }
 
+                $ossApplicationActions = [];
+                $ossApplicationSyncer = app(MlsCommissioningOssApplicationService::class);
+                foreach ($mlsData as $mlsRow) {
+                    $result = $ossApplicationSyncer->sync($mlsRow);
+                    $ossApplicationActions[$result['action']] = ($ossApplicationActions[$result['action']] ?? 0) + 1;
+                }
+
                 // Open tracking for every file in the batch at the destination picked
                 // on the Batch Generation Summary — same two lines as a single
                 // commissioning (File Commissioning, then the onward movement).
@@ -4797,6 +4817,7 @@ class MlsFileNoController extends Controller
                     'notice' => $skipNotice,
                     // One scan folder per file in the batch, rolled up for the summary.
                     'edms_folder' => $edmsFolderSummary,
+                    'oss_application_summary' => $ossApplicationActions,
                     'data' => [
                         'batch_size' => $batchQuantity,
                         'land_use' => $landUse,

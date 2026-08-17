@@ -3279,6 +3279,15 @@
                                     </div>
 
                                     <ul class="text-xs text-${summaryColor}-800 space-y-2 px-1 font-medium">
+                                        ${data.oss_application_summary &&
+                                          ((data.oss_application_summary.created || 0) +
+                                           (data.oss_application_summary.updated || 0) +
+                                           (data.oss_application_summary.unchanged || 0)) > 0 ? `
+                                            <li class="flex items-start gap-2.5">
+                                                <div class="mt-1 w-1 h-1 rounded-full bg-${summaryColor}-400"></div>
+                                                <span><b>${(data.oss_application_summary.created || 0) + (data.oss_application_summary.updated || 0) + (data.oss_application_summary.unchanged || 0)}</b> application record(s) are now available under <b>No Change of Ownership</b>.</span>
+                                            </li>
+                                        ` : ''}
                                         ${applicationType === 'subdivision' ? `
                                             <li class="flex items-start gap-2.5">
                                                 <div class="mt-1 w-1 h-1 rounded-full bg-${summaryColor}-400"></div>
