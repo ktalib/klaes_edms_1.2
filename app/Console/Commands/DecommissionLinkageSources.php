@@ -56,13 +56,13 @@ class DecommissionLinkageSources extends Command
 
         $pending = [];
         foreach ($sources as $fileNo => $meta) {
-            // Real decommissions only. A title-status flag (false_decommissioning = 1) or an
-            // ST handover (2) never decommissioned this file, and must not make the command
-            // skip a genuine decommissioning it still needs to perform.
+            // Real decommissions only. A title-status flag (false_decommissioning = 1) never
+            // decommissioned this file, so it must not make the command skip a genuine
+            // decommissioning it still needs to perform. An ST handover (2) counts as done.
             $alreadyArchived = $conn->table('decommissioned_files')
                 ->where('mls_file_no', $fileNo)
                 ->where(function ($q) {
-                    $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                    $q->where('false_decommissioning', '<>', \App\Support\DecommissionScope::FALSE_DECOMMISSIONING)->orWhereNull('false_decommissioning');
                 })
                 ->exists();
 

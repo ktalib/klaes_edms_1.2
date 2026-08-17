@@ -1000,7 +1000,7 @@ class LegalSearchService
                     });
                 if ($schema->hasColumn('decommissioned_files', 'false_decommissioning')) {
                     $dq->where(function ($q) {
-                        $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                        $q->where('false_decommissioning', '<>', \App\Support\DecommissionScope::FALSE_DECOMMISSIONING)->orWhereNull('false_decommissioning');
                     });
                 }
                 $decRow = $dq->orderByDesc('id')->first();
@@ -1293,7 +1293,7 @@ class LegalSearchService
                     ->where('decommissioning_reason', 'like', 'Manual Linkage:%');
                 if (Schema::connection($conn->getName())->hasColumn('decommissioned_files', 'false_decommissioning')) {
                     $mlQuery->where(function ($q) {
-                        $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                        $q->where('false_decommissioning', '<>', \App\Support\DecommissionScope::FALSE_DECOMMISSIONING)->orWhereNull('false_decommissioning');
                     });
                 }
                 foreach ($mlQuery->pluck('file_no') as $mlFileNo) {
@@ -1824,7 +1824,7 @@ class LegalSearchService
                 ->where('successor_file_no', 'like', '%' . $fileNo . '%');
             if ($schema->hasColumn('decommissioned_files', 'false_decommissioning')) {
                 $candidatesQuery->where(function ($q) {
-                    $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                    $q->where('false_decommissioning', '<>', \App\Support\DecommissionScope::FALSE_DECOMMISSIONING)->orWhereNull('false_decommissioning');
                 });
             }
             $candidates = $candidatesQuery->get(['id', 'file_no', 'file_name', 'decommissioning_date', 'decommissioning_reason', 'successor_file_no']);
@@ -4419,7 +4419,7 @@ class LegalSearchService
             // treat every row as a real decommission.
             if ($schema->hasColumn('decommissioned_files', 'false_decommissioning')) {
                 $query->where(function ($q) {
-                    $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                    $q->where('false_decommissioning', '<>', \App\Support\DecommissionScope::FALSE_DECOMMISSIONING)->orWhereNull('false_decommissioning');
                 });
             }
 
@@ -8729,13 +8729,14 @@ class LegalSearchService
                 $successorQuery = $conn->table('decommissioned_files')
                     ->whereRaw('UPPER(LTRIM(RTRIM(file_no))) = ?', [$current['file']]);
 
-                // Real decommissions only — matching every other reader here. An ST
-                // handover (false_decommissioning = 2) carries a successor_file_no
-                // pointing at its Sectional Titling primary, but the land file was
-                // never retired, so it must not be walked as a lifecycle successor.
+                // Real decommissions only — matching every other reader here. Excludes
+                // false_decommissioning = 1 (a Title Status flag: the file was never
+                // decommissioned and has no successor). An ST handover (2) IS a real
+                // decommissioning and its successor_file_no — the Sectional Titling
+                // primary that took the land file over — is walked like any other.
                 if (Schema::connection($conn->getName())->hasColumn('decommissioned_files', 'false_decommissioning')) {
                     $successorQuery->where(function ($q) {
-                        $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                        $q->where('false_decommissioning', '<>', \App\Support\DecommissionScope::FALSE_DECOMMISSIONING)->orWhereNull('false_decommissioning');
                     });
                 }
 

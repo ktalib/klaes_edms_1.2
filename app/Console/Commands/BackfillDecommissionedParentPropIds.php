@@ -55,7 +55,7 @@ class BackfillDecommissionedParentPropIds extends Command
 
         $mothers = $conn->table('decommissioned_files')
             ->where(function ($q) {
-                $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                $q->where('false_decommissioning', '<>', \App\Support\DecommissionScope::FALSE_DECOMMISSIONING)->orWhereNull('false_decommissioning');
             })
             ->whereNotNull('successor_file_no')
             ->where('successor_file_no', '<>', '')

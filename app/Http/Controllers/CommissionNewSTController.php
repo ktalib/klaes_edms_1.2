@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
@@ -1357,10 +1358,14 @@ class CommissionNewSTController extends Controller
      * Log the file an ST primary was raised on as decommissioned by that primary —
      * the CON mother on a conversion, the linked file on a direct allocation.
      *
-     * The land file keeps all its other records (file_indexings, fileNumber,
-     * mls_file_no) — this row only marks that Sectional Titling has taken it over.
-     * false_decommissioning = 2 is the ST marker: the file is not gone, it lives on
-     * under its ST primary.
+     * The mother IS decommissioned: Sectional Titling has taken it over, and the ST
+     * primary is recorded as its successor. false_decommissioning = 2 marks the row as
+     * an ST handover specifically, but it counts as a real decommissioning everywhere
+     * (see App\Support\DecommissionScope) — only value 1, a title-status flag, does not.
+     *
+     * Nothing is deleted. The land file keeps its file_indexings / fileNumber /
+     * mls_file_no rows, flagged in place like any other decommissioning, so its history
+     * stays intact and readable under the ST primary.
      */
     private function recordMotherDecommissioning(
         string $motherFileNo,
@@ -1416,6 +1421,39 @@ class CommissionNewSTController extends Controller
                 'created_at'             => $commissionedAt,
                 'updated_at'             => $commissionedAt,
             ]);
+
+            // Flag the mother's live rows so the tables agree with the archive: the file
+            // reads as decommissioned wherever it is listed, pointing at the ST primary
+            // that took it over. Rows are only flagged, never removed.
+            $reason = ($isConversion ? 'ST Conversion' : 'ST Direct Allocation') . " → {$stFileNo}";
+
+            $targets = [
+                'fileNumber'     => fn ($q) => $q->where('mlsfNo', $motherFileNo)->orWhere('kangisFileNo', $motherFileNo),
+                'file_indexings' => fn ($q) => $q->where('file_number', $motherFileNo)->orWhere('kangis_file_no', $motherFileNo),
+            ];
+
+            foreach ($targets as $table => $match) {
+                if (!Schema::connection('sqlsrv')->hasColumn($table, 'is_decommissioned')) {
+                    continue;
+                }
+
+                $payload = ['is_decommissioned' => 1];
+
+                foreach ([
+                    'decommissioned_at'      => $commissionedAt,
+                    'decommissioning_date'   => $commissionedAt,
+                    'decommissioned_by'      => $creatorName,
+                    'decommissioning_reason' => $reason,
+                    'successor_file_no'      => $stFileNo,
+                    'updated_at'             => $commissionedAt,
+                ] as $column => $value) {
+                    if (Schema::connection('sqlsrv')->hasColumn($table, $column)) {
+                        $payload[$column] = $value;
+                    }
+                }
+
+                $connection->table($table)->where($match)->update($payload);
+            }
         } catch (\Exception $e) {
             // The file number is already issued; a missing log entry must not undo it.
             Log::warning('Failed to record ST mother file decommissioning', [

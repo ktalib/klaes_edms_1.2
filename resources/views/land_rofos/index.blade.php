@@ -184,6 +184,19 @@
                     <span class="px-2 py-0.5 rounded-full text-[10px] font-black {{ $tab === 'batches' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500' }}">{{ number_format($rofoBatchCount) }}</span>
                 </a>
                 @endif
+                {{-- Re-issued RofOs. A re-issuance keeps the file number of the letter
+                     it replaces, so the tabs above cannot separate it from the first
+                     issue — only the Source badge on the row says which it is. Not
+                     split by print state: it lists them whether or not they have been
+                     run off, and they stay on Printed / Not Printed too. --}}
+                @if(($stats['reissuance'] ?? 0) > 0)
+                <a href="{{ route('land-rofos.index', $tabBaseParams + ['tab' => 'reissuance']) }}"
+                   class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'reissuance' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100' }}">
+                    <i data-lucide="refresh-cw" class="h-4 w-4"></i>
+                    Re-issuance
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black {{ $tab === 'reissuance' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500' }}">{{ number_format($stats['reissuance']) }}</span>
+                </a>
+                @endif
             </div>
 
             @if($tab === 'batches')
@@ -292,8 +305,8 @@
                 <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between">
                     <h3 class="font-bold text-slate-800 uppercase tracking-wider text-xs flex items-center gap-2">
                         <i data-lucide="shield" class="h-4 w-4 text-blue-600"></i>
-                        RoFO Management Records
-                        <span class="text-slate-400 normal-case tracking-normal font-medium">· {{ $tab === 'printed' ? 'Printed' : 'Not Printed' }}</span>
+                        {{ $tab === 'reissuance' ? 'Re-issued RofOs' : 'RoFO Management Records' }}
+                        <span class="text-slate-400 normal-case tracking-normal font-medium">· {{ $tab === 'reissuance' ? 'Re-issuance' : ($tab === 'printed' ? 'Printed' : 'Not Printed') }}</span>
                     </h3>
                 </div>
                 <div class="overflow-x-auto">
@@ -384,7 +397,12 @@
                                 <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">₦{{ number_format($rec->development_value, 2) }}</td>
                                 <td class="px-4 py-2 text-slate-600 text-right whitespace-nowrap">{{ is_numeric($rec->development_charge) ? '₦'.number_format($rec->development_charge, 2) : ($rec->development_charge ?: '₦0.00') }}</td>
                                 <td class="px-4 py-2 text-center whitespace-nowrap">
-                                    @if($tab === 'printed')
+                                    {{-- On the Printed tab every row is printed by definition. The
+                                         Re-issuance tab is not split by print state, so there the
+                                         per-row print date decides — $printDates is built from
+                                         printedPredicateSql() over the ids on the page, not from
+                                         the tab, so it is accurate on any tab. --}}
+                                    @if($tab === 'printed' || ($tab === 'reissuance' && isset($printDates[$rec->id])))
                                         <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-800">
                                             <i data-lucide="printer-check" class="h-3 w-3"></i> PRINTED
                                         </span>
@@ -516,6 +534,8 @@
                                         <p class="text-slate-500 font-medium">
                                             @if($tab === 'printed')
                                                 No {{ $ossViewOnly ? 'OSS ' : '' }}RofOs have been printed yet.
+                                            @elseif($tab === 'reissuance')
+                                                No {{ $ossViewOnly ? 'OSS ' : '' }}RofOs have been re-issued yet.
                                             @else
                                                 No {{ $ossViewOnly ? 'OSS ' : '' }}RofOs awaiting print.
                                             @endif

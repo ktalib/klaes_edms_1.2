@@ -3,16 +3,23 @@
      All selectors are scoped under .ack-page so they do not collide with print_layout's styles. --}}
 <style>
   .ack-page {
+    /* Column flexbox purely so the footer logo can be pushed to the bottom with
+       margin-top:auto instead of being absolutely positioned. Absolute placement
+       took the logo out of flow, so on any copy whose content ran long it printed
+       on top of the witness Date line. */
+    display: flex;
+    flex-direction: column;
     page-break-before: always;
     /* each copy must stay on one sheet — a split leaves the signatures and the
        footer logo stranded on a spill page */
     page-break-inside: avoid;
     break-inside: avoid;
     position: relative;
-    /* Kept just inside the A4 printable height (29.7cm less print_layout's
-       1.4/1.5cm @page margins) so the bottom-right footer logo is never sliced
-       across the page break. */
-    min-height: 24.8cm;
+    /* No min-height. It used to be 24.8cm to bottom-anchor the absolutely
+       positioned logo, but the sheet's own content already fills a page on the
+       OSS layout (whose card adds padding of its own), so forcing the box taller
+       than what remains pushed the footer onto a second, otherwise blank page.
+       Content height plus margin-top:auto on the footer covers both cases. */
     font-family: Arial, Helvetica, sans-serif;
     color: #000;
   }
@@ -61,10 +68,16 @@
   /* File No. on the acknowledgement sheets. Page 1 carries it as the File Ref.
      No.; these two pages travel separately once the sheet is signed and handed
      over, so each has to say which application it belongs to on its own. */
+  /* inline-flex, not flex: as a block-level flexbox the rule ran the full width
+     of the sheet, so a short file number sat under a line stretching to the
+     right margin. Shrink-wrapping keeps the underline to the text. */
   .ack-page .ack-file-no {
-    display: flex;
+    display: inline-flex;
+    /* .ack-page is a flex column, which would blockify this back to full width */
+    align-self: flex-start;
     align-items: baseline;
     gap: 6px;
+    min-width: 5.5cm;
     font-size: 13.5px;
     font-weight: bold;
     text-transform: uppercase;
@@ -151,9 +164,13 @@
     print-color-adjust: exact;
   }
 
+  /* The vertical rhythm below is deliberately tight. The sheet's content ran a
+     few centimetres past the printable page, which pushed the footer logo onto a
+     second, otherwise blank sheet; these margins were trimmed to pull the whole
+     copy — logo included — back onto one page. Loosen them and it spills again. */
   .ack-page .contact-section {
-    margin-top: 14px;
-    margin-bottom: 16px;
+    margin-top: 10px;
+    margin-bottom: 12px;
     font-size: 14px;
     line-height: 1.3;
   }
@@ -171,12 +188,12 @@
   .ack-page .acknowledgment-title {
     font-size: 15px;
     font-weight: 500;
-    margin-top: 16px;
-    margin-bottom: 20px;
+    margin-top: 12px;
+    margin-bottom: 14px;
   }
 
   .ack-page .form-group {
-    margin-bottom: 34px;
+    margin-bottom: 24px;
     display: flex;
     align-items: flex-end;
     font-size: 14.5px;
@@ -204,13 +221,13 @@
   }
 
   .ack-page .multiline-spacer {
-    margin-top: 26px;
+    margin-top: 18px;
   }
 
   .ack-page .form-row {
     display: flex;
     gap: 40px;
-    margin-bottom: 34px;
+    margin-bottom: 24px;
   }
 
   .ack-page .form-row .form-group {
@@ -219,21 +236,24 @@
   }
 
   .ack-page .signature-block {
-    margin-top: 40px;
+    margin-top: 24px;
   }
 
   .ack-page .signature-block-title {
     font-weight: bold;
     font-size: 14.5px;
-    margin-bottom: 28px;
+    margin-bottom: 20px;
     padding-bottom: 6px;
     border-bottom: 1px solid #000;
   }
 
+  /* In flow at the end of the sheet: margin-top:auto drops it to the bottom when
+     the content is short, and it is simply pushed down when the content is long,
+     so it can never land on top of the witness signature block. */
   .ack-page .footer {
-    position: absolute;
-    bottom: 4px;
-    right: 0;
+    margin-top: auto;
+    align-self: flex-end;
+    padding-top: 10px;
     line-height: 0;   /* no descender gap under the logo, which clipped it */
   }
 

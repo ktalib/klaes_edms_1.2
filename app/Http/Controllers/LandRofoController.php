@@ -110,14 +110,25 @@ class LandRofoController extends Controller
         // to both the main view and the OSS-only view (each scoped to its own record
         // set, see counts below).
         $tab = $request->query('tab', 'not_printed');
-        if (!in_array($tab, ['printed', 'not_printed', 'batches'], true)) {
+        if (!in_array($tab, ['printed', 'not_printed', 'batches', 'reissuance'], true)) {
             $tab = 'not_printed';
         }
         // The Batches tab pages over batches rather than over RofOs. On the main
         // list a batch is one collapsed row and its children are spread across the
         // pages behind it, so expanding it only ever reveals the handful that share
         // the current page — which reads as the batch being that small.
-        if ($tab !== 'batches') {
+        if ($tab === 'reissuance') {
+            // A re-issued RofO keeps the file number of the letter it replaces, so
+            // in the main list it is indistinguishable from a first issue apart from
+            // the Source badge. This tab is the only place they can be seen as a set.
+            //
+            // Deliberately not split by print state and not stripped of batched
+            // rows: it is a short, self-selecting list, and a re-issuance is listed
+            // here whether or not it has been run off yet. It still appears under
+            // Printed / Not Printed as well — it is a letter that has to be printed
+            // like any other, and dropping it from those would hide outstanding work.
+            $query->where('is_reissuance', 1);
+        } elseif ($tab !== 'batches') {
             if ($tab === 'printed') {
                 $query->whereRaw($this->printedPredicateSql());
             } else { // not_printed
@@ -258,6 +269,9 @@ class LandRofoController extends Controller
 
         $printedCount    = $tabScope()->whereRaw($this->printedPredicateSql())->count();
         $notPrintedCount = $tabScope()->whereRaw('NOT ' . $this->printedPredicateSql())->count();
+        // Off $rofoScopeQuery rather than $tabScope(): the Re-issuance tab keeps
+        // batched rows, so excluding them here would under-report its badge.
+        $reissuanceCount = (clone $rofoScopeQuery)->where('is_reissuance', 1)->count();
 
         // Count OSS Applications from the authoritative source (oss_applications) so
         // the stat matches the Change of Name page instead of counting type='OSS' rows
@@ -280,6 +294,7 @@ class LandRofoController extends Controller
             'generated'         => (int) ($statsRow->generated          ?? 0),
             'printed'           => (int) $printedCount,
             'not_printed'       => (int) $notPrintedCount,
+            'reissuance'        => (int) $reissuanceCount,
             'total_land'        => (int) ($statsRow->total_land         ?? 0),
             'total_dev_charge'  => (float) ($statsRow->total_dev_charge ?? 0),
             'oss_total'         => $ossTotal,

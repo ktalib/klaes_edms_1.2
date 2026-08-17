@@ -32,7 +32,7 @@ class FileDecommissioningController extends Controller
         $decommissionedFromArchive = \Illuminate\Support\Facades\DB::connection('sqlsrv')
             ->table('decommissioned_files')
             ->where(function ($q) {
-                $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                $q->where('false_decommissioning', '<>', \App\Support\DecommissionScope::FALSE_DECOMMISSIONING)->orWhereNull('false_decommissioning');
             })
             ->count();
 
@@ -59,7 +59,7 @@ class FileDecommissioningController extends Controller
 
         $fromArchive = $conn->table('decommissioned_files')
             ->where(function ($q) {
-                $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                $q->where('false_decommissioning', '<>', \App\Support\DecommissionScope::FALSE_DECOMMISSIONING)->orWhereNull('false_decommissioning');
             });
 
         $totalDecommissionedFiles = (clone $fromFileNumber)->count() + (clone $fromArchive)->count();
@@ -187,7 +187,7 @@ class FileDecommissioningController extends Controller
             // those are surfaced in a separate table.
             $archiveQuery = $conn->table('decommissioned_files')
                 ->where(function ($q) {
-                    $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                    $q->where('false_decommissioning', '<>', \App\Support\DecommissionScope::FALSE_DECOMMISSIONING)->orWhereNull('false_decommissioning');
                 })
                 ->select([
                     'id',
@@ -588,7 +588,7 @@ class FileDecommissioningController extends Controller
                 // Same false_decommissioning filter the archive side uses: only suppress
                 // against archive rows that actually surface on this screen.
                 ->where(function ($w) {
-                    $w->where('df.false_decommissioning', 0)->orWhereNull('df.false_decommissioning');
+                    $w->where('df.false_decommissioning', '<>', \App\Support\DecommissionScope::FALSE_DECOMMISSIONING)->orWhereNull('df.false_decommissioning');
                 })
                 // NULL/'' never matches (NULL = NULL is unknown in SQL), so a file number the
                 // fileNumber row doesn't carry can't accidentally pair up with a blank archive one.
@@ -993,7 +993,7 @@ class FileDecommissioningController extends Controller
 
             $decommissionedFromArchive = $conn->table('decommissioned_files')
                 ->where(function ($q) {
-                    $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                    $q->where('false_decommissioning', '<>', \App\Support\DecommissionScope::FALSE_DECOMMISSIONING)->orWhereNull('false_decommissioning');
                 })
                 ->count();
 
@@ -1015,7 +1015,7 @@ class FileDecommissioningController extends Controller
 
             $recentFromArchive = $conn->table('decommissioned_files')
                 ->where(function ($q) {
-                    $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                    $q->where('false_decommissioning', '<>', \App\Support\DecommissionScope::FALSE_DECOMMISSIONING)->orWhereNull('false_decommissioning');
                 })
                 ->where('decommissioning_date', '>=', now()->subDays(30))
                 ->count();

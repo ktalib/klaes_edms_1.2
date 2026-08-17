@@ -24,8 +24,11 @@ class ToTStagingController extends Controller
             'COMMISSION',
             'AUTHORITY'
         ];
+        // Word boundaries, not substrings: 'STATE' inside 'THE ESTATE OF LATE ALHAJI ...'
+        // is not a government body, and the substring form silently barred every
+        // deceased-holder estate from ever being transferred.
         foreach ($patterns as $pattern) {
-            if (strpos($name, $pattern) !== false) {
+            if (preg_match('/\b' . $pattern . '\b/', $name)) {
                 return true;
             }
         }

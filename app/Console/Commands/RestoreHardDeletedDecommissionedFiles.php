@@ -28,8 +28,10 @@ use Illuminate\Support\Facades\Schema;
  *   - Skips any file that already has a live file_indexings row, so it can never
  *     duplicate a file number (file_indexings.file_number is UNIQUE) or overwrite
  *     data that a user has since re-entered by hand.
- *   - Restores nothing for false_decommissioning <> 0 rows: a title-status flag or
- *     an ST handover never deleted anything, so there is nothing to bring back.
+ *   - Covers every REAL decommissioning, i.e. false_decommissioning <> 1. That
+ *     includes ST handovers (2), which are decommissionings like any other. Only a
+ *     title-status flag (1) is excluded: it never decommissioned or deleted anything,
+ *     so there is nothing to bring back. See App\Support\DecommissionScope.
  *   - Re-runnable: a second pass finds the rows already restored and skips them.
  */
 class RestoreHardDeletedDecommissionedFiles extends Command
@@ -55,10 +57,11 @@ class RestoreHardDeletedDecommissionedFiles extends Command
             return self::FAILURE;
         }
 
-        // Real decommissions only. A false_decommissioning row never deleted anything.
+        // Every real decommissioning: false_decommissioning <> 1. ST handovers (2) are
+        // included; only a title-status flag (1) is skipped, having deleted nothing.
         $archived = $conn->table('decommissioned_files')
             ->where(function ($q) {
-                $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                $q->where('false_decommissioning', '<>', \App\Support\DecommissionScope::FALSE_DECOMMISSIONING)->orWhereNull('false_decommissioning');
             })
             ->when($file !== '', fn ($q) => $q->where('file_no', $file))
             ->orderBy('decommissioning_date')

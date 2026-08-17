@@ -515,7 +515,7 @@ class FileLocationResolver
 
             if (Schema::connection('sqlsrv')->hasColumn('decommissioned_files', 'false_decommissioning')) {
                 $query->where(function ($q) {
-                    $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+                    $q->where('false_decommissioning', '<>', \App\Support\DecommissionScope::FALSE_DECOMMISSIONING)->orWhereNull('false_decommissioning');
                 });
             }
 

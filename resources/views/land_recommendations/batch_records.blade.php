@@ -100,7 +100,7 @@
                                 <th class="px-4 py-4 text-center whitespace-nowrap">PP Pg</th>
                                 <th class="px-4 py-4 text-center whitespace-nowrap">Status</th>
                                 <th class="px-4 py-4 text-center whitespace-nowrap">RofO</th>
-                                <th class="px-4 py-4 text-right sticky right-0 bg-slate-50 border-l border-slate-200 z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap">Open</th>
+                                <th class="px-4 py-4 text-right sticky right-0 bg-slate-50 border-l border-slate-200 z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 text-sm">
@@ -142,7 +142,7 @@
                                 <td class="px-4 py-2 text-right sticky right-0 bg-white border-l border-slate-100 z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap">
                                     <a href="{{ route('land-recommendations.edit', $rec->id) }}"
                                        class="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-blue-700 hover:bg-blue-50 rounded-lg transition">
-                                        <i data-lucide="edit-3" class="h-3.5 w-3.5"></i> Record
+                                        <i data-lucide="edit-3" class="h-3.5 w-3.5"></i> Edit
                                     </a>
                                     @if($rec->status === \App\Models\LandRecommendation::STATUS_APPROVED)
                                     <a href="{{ route('land-recommendations.print', $rec->id) }}" target="_blank"

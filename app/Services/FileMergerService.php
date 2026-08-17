@@ -30,22 +30,16 @@ class FileMergerService
     /**
      * Restrict a decommissioned_files query to REAL decommissions.
      *
-     * decommissioned_files holds three kinds of row, distinguished by
-     * false_decommissioning:
-     *
-     *   0 / NULL  a real decommissioning — the file was superseded by a merger,
-     *             subdivision, change of purpose, etc. This is lineage.
-     *   1         a Title Status FLAG raised from File Indexing. The file is NOT
-     *             decommissioned and has no successor; it is still live and in use.
-     *   2         an ST handover: the file lives on under its Sectional Titling
-     *             primary. It carries a successor_file_no, but the ST primary is
-     *             not a parcel update and the land file was never retired.
+     * See App\Support\DecommissionScope for the authoritative definition. In short:
+     * false_decommissioning = 1 (a Title Status FLAG raised from File Indexing) is the
+     * only value meaning "not really decommissioned". 0/NULL is an ordinary
+     * decommissioning and 2 is an ST handover — the land file WAS decommissioned, taken
+     * over by its Sectional Titling primary, which it names in successor_file_no. So an
+     * ST handover is genuine lineage and belongs in the merger group.
      *
      * Without this filter every reader here treated all three as lineage, so a
      * title-status flag became a "decommissioned parent" complete with a bogus
-     * decommissioning date, and an ST primary would chain its land file into a
-     * merger group. Every other consumer (LegalSearchService, FileLocationResolver,
-     * FileDecommissioningController) already applies exactly this predicate.
+     * decommissioning date drawn from a file that was never decommissioned at all.
      */
     private function onlyRealDecommissions($query)
     {
@@ -54,7 +48,7 @@ class FileMergerService
         }
 
         return $query->where(function ($q) {
-            $q->where('false_decommissioning', 0)->orWhereNull('false_decommissioning');
+            $q->where('false_decommissioning', '<>', \App\Support\DecommissionScope::FALSE_DECOMMISSIONING)->orWhereNull('false_decommissioning');
         });
     }
 

@@ -240,25 +240,73 @@
                                     {{-- Everything captured against every child, side by side and
                                          read-only. The expander below answers which files are in
                                          the batch; this answers what is on them. --}}
-                                    <a href="{{ route('land-recommendations.batch-records', $b->rofo_batch_id) }}"
-                                        class="inline-flex items-center gap-1.5 px-3 py-1.5 mr-1.5 bg-white border border-slate-300 text-slate-700 text-[11px] font-bold rounded-lg hover:bg-slate-50 transition">
-                                        <i data-lucide="table-2" class="h-3.5 w-3.5"></i> View records
-                                    </a>
-                                    <a href="{{ route('land-recommendations.batch-edit', $b->rofo_batch_id) }}"
-                                        class="inline-flex items-center gap-1.5 px-3 py-1.5 mr-1.5 bg-white border border-slate-300 text-slate-700 text-[11px] font-bold rounded-lg hover:bg-slate-50 transition">
-                                        <i data-lucide="pencil" class="h-3.5 w-3.5"></i> Edit batch
-                                    </a>
-                                    @if($pending > 0)
-                                        <button type="button" onclick='approveWholeBatch(@json($b->rofo_batch_id))'
-                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-[11px] font-bold rounded-lg hover:bg-green-700 transition">
-                                            <i data-lucide="check-circle" class="h-3.5 w-3.5"></i> Approve all ({{ $pending }})
+                                    <div x-data="{
+                                        open: false,
+                                        menuStyle: {},
+                                        toggleMenu($event) {
+                                            if (!this.open) {
+                                                const rect = $event.currentTarget.getBoundingClientRect();
+                                                this.menuStyle = {
+                                                    position: 'fixed',
+                                                    top: (rect.bottom + 4) + 'px',
+                                                    left: Math.max(8, rect.right - 224) + 'px',
+                                                    zIndex: 99999
+                                                };
+                                                if (window.innerHeight - rect.bottom < 200) {
+                                                    this.menuStyle.top = 'auto';
+                                                    this.menuStyle.bottom = (window.innerHeight - rect.top + 4) + 'px';
+                                                }
+                                            }
+                                            this.open = !this.open;
+                                        }
+                                    }" class="relative inline-block text-left">
+                                        <button @click="toggleMenu($event)" @click.away="open = false" type="button"
+                                            class="inline-flex items-center p-2 text-slate-500 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition">
+                                            <i data-lucide="more-vertical" class="h-5 w-5"></i>
                                         </button>
-                                    @else
-                                        <a href="{{ route('land-recommendations.batch-print', $b->rofo_batch_id) }}" target="_blank"
-                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-[11px] font-bold rounded-lg hover:bg-violet-700 transition">
-                                            <i data-lucide="printer" class="h-3.5 w-3.5"></i> Print all ({{ $total }})
-                                        </a>
-                                    @endif
+
+                                        <template x-teleport="body">
+                                            <div x-show="open"
+                                                 x-transition:enter="transition ease-out duration-100"
+                                                 x-transition:enter-start="opacity-0 scale-95"
+                                                 x-transition:enter-end="opacity-100 scale-100"
+                                                 x-transition:leave="transition ease-in duration-75"
+                                                 x-transition:leave-start="opacity-100 scale-100"
+                                                 x-transition:leave-end="opacity-0 scale-95"
+                                                 :style="menuStyle"
+                                                 class="w-56 rounded-xl shadow-2xl bg-white ring-1 ring-black ring-opacity-5 overflow-hidden"
+                                                 style="display: none;">
+                                                <div class="py-1 text-left">
+                                                    <a href="{{ route('land-recommendations.batch-records', $b->rofo_batch_id) }}"
+                                                        class="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
+                                                        <i data-lucide="table-2" class="h-4 w-4"></i> View records
+                                                    </a>
+                                                    <a href="{{ route('land-recommendations.batch-edit', $b->rofo_batch_id) }}"
+                                                        class="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
+                                                        <i data-lucide="pencil" class="h-4 w-4"></i> Edit batch
+                                                    </a>
+
+                                                    <div class="border-t border-slate-100 my-1"></div>
+
+                                                    @if($pending > 0)
+                                                        <button type="button" @click="open = false"
+                                                            onclick='approveWholeBatch(@json($b->rofo_batch_id))'
+                                                            class="flex w-full items-center gap-2 px-4 py-2.5 text-sm font-bold text-green-600 hover:bg-green-50 transition">
+                                                            <i data-lucide="check-circle" class="h-4 w-4"></i> Approve all ({{ $pending }})
+                                                        </button>
+                                                        <span class="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-300 cursor-not-allowed italic">
+                                                            <i data-lucide="printer" class="h-4 w-4 text-slate-200"></i> Print all (locked)
+                                                        </span>
+                                                    @else
+                                                        <a href="{{ route('land-recommendations.batch-print', $b->rofo_batch_id) }}" target="_blank"
+                                                            class="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-violet-700 hover:bg-violet-50 transition">
+                                                            <i data-lucide="printer" class="h-4 w-4"></i> Print all ({{ $total }})
+                                                        </a>
+                                                    @endif
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
                                 </td>
                             </tr>
                             {{-- Filled on first expand from the batch-children endpoint. --}}
