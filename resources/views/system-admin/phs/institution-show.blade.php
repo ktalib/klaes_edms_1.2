@@ -15,6 +15,13 @@
     @include('admin.header', ['PageTitle' => $PageTitle, 'PageDescription' => 'Wallet, members, invoices, and recent PHS activity.'])
 
     <div class="flex-1 p-6">
+        @if (session('success'))
+            <div class="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">{{ session('success') }}</div>
+        @endif
+        @if (session('error'))
+            <div class="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">{{ session('error') }}</div>
+        @endif
+
         <div class="mb-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div class="flex items-start gap-4">
@@ -46,13 +53,19 @@
                     </div>
                 </div>
 
-                <form method="POST" action="{{ $isActive ? route('system-admin.phs.institutions.suspend', $institution->id) : route('system-admin.phs.institutions.activate', $institution->id) }}">
-                    @csrf
-                    <button class="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-bold {{ $isActive ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' }}">
-                        <i data-lucide="{{ $isActive ? 'pause-circle' : 'play-circle' }}" class="h-4 w-4"></i>
-                        {{ $isActive ? ' Suspend Organization' : 'Activate Organization' }}
+                <div class="flex flex-wrap items-center gap-3">
+                    <form method="POST" action="{{ $isActive ? route('system-admin.phs.institutions.suspend', $institution->id) : route('system-admin.phs.institutions.activate', $institution->id) }}">
+                        @csrf
+                        <button class="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-bold {{ $isActive ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' }}">
+                            <i data-lucide="{{ $isActive ? 'pause-circle' : 'play-circle' }}" class="h-4 w-4"></i>
+                            {{ $isActive ? ' Suspend Organization' : 'Activate Organization' }}
+                        </button>
+                    </form>
+                    <button type="button" onclick="openPhsDeleteModal()" class="inline-flex items-center gap-2 rounded-md border border-rose-300 bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700">
+                        <i data-lucide="trash-2" class="h-4 w-4"></i>
+                        Master Delete
                     </button>
-                </form>
+                </div>
             </div>
         </div>
 
@@ -224,7 +237,104 @@
                 </div>
             </section>
         </div>
+
+        {{-- Danger zone: master delete --}}
+        <div class="mt-6 rounded-lg border border-rose-200 bg-rose-50/60 p-5 shadow-sm">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div class="flex items-start gap-3">
+                    <div class="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-rose-100 text-rose-700"><i data-lucide="alert-triangle" class="h-5 w-5"></i></div>
+                    <div>
+                        <h3 class="font-extrabold text-rose-900">Danger zone — master delete</h3>
+                        <p class="mt-1 text-sm text-rose-800">
+                            Permanently erases this organization and everything attached to it. This cannot be undone.
+                            Use <span class="font-bold">Suspend</span> instead if you only need to block access.
+                        </p>
+                        <p class="mt-2 text-xs font-bold uppercase tracking-wide text-rose-700">
+                            {{ number_format($purgePreview['members']) }} member(s) ·
+                            {{ number_format($purgePreview['transactions']) }} transaction(s) ·
+                            {{ number_format($purgePreview['search_logs']) }} search log(s) ·
+                            {{ number_format($purgePreview['feedback']) }} feedback ·
+                            {{ number_format($purgePreview['email_histories']) }} email(s) ·
+                            {{ number_format($purgePreview['onboarding_requests']) }} onboarding request(s) ·
+                            {{ number_format($purgePreview['token_balance']) }} unused token(s)
+                        </p>
+                    </div>
+                </div>
+                <button type="button" onclick="openPhsDeleteModal()" class="inline-flex shrink-0 items-center gap-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700">
+                    <i data-lucide="trash-2" class="h-4 w-4"></i>
+                    Delete organization
+                </button>
+            </div>
+        </div>
     </div>
+
+    {{-- Type-to-confirm master delete --}}
+    <div id="phs-delete-modal" class="fixed inset-0 z-[110] hidden items-center justify-center bg-black/50 p-4">
+        <div class="w-full max-w-lg rounded-xl bg-white shadow-2xl">
+            <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+                <h3 class="flex items-center gap-2 text-base font-extrabold text-rose-700">
+                    <i data-lucide="alert-triangle" class="h-5 w-5"></i>
+                    Delete "{{ \Illuminate\Support\Str::title($institution->name) }}"?
+                </h3>
+                <button type="button" onclick="closePhsDeleteModal()" class="rounded-md p-1.5 text-slate-400 hover:bg-slate-100">
+                    <i data-lucide="x" class="h-5 w-5"></i>
+                </button>
+            </div>
+            <form method="POST" action="{{ route('system-admin.phs.institutions.destroy', $institution->id) }}" class="px-6 py-5">
+                @csrf
+                @method('DELETE')
+                <p class="text-sm text-slate-700">This permanently deletes, with no way to restore it:</p>
+                <ul class="mt-3 space-y-1 rounded-md bg-slate-50 p-4 text-sm text-slate-700">
+                    <li>· {{ number_format($purgePreview['members']) }} member account(s) — they lose access immediately</li>
+                    <li>· {{ number_format($purgePreview['transactions']) }} wallet transaction(s), including {{ number_format($purgePreview['token_balance']) }} unused token(s)</li>
+                    <li>· {{ number_format($purgePreview['search_logs']) }} search log(s) and {{ number_format($purgePreview['feedback']) }} feedback item(s)</li>
+                    <li>· {{ number_format($purgePreview['email_histories']) }} stored email cop(ies)</li>
+                    <li>· {{ number_format($purgePreview['onboarding_requests']) }} onboarding request(s) and every uploaded document (CAC, request letter, signed LSA, invoices, payment proofs)</li>
+                </ul>
+                <label class="mt-4 block text-xs font-bold uppercase tracking-wide text-slate-600">
+                    Type <span class="font-mono text-rose-700">{{ $institution->name }}</span> to confirm
+                </label>
+                <input type="text" name="confirm_name" id="phs-delete-confirm" autocomplete="off" required
+                       class="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                       placeholder="{{ $institution->name }}">
+                <p class="mt-2 text-xs text-slate-500">This action is recorded in the audit trail against your account.</p>
+                <div class="mt-6 flex justify-end gap-3 border-t border-slate-100 pt-4">
+                    <button type="button" onclick="closePhsDeleteModal()" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+                    <button type="submit" id="phs-delete-submit" disabled
+                            class="rounded-md bg-rose-600 px-5 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:bg-slate-300">
+                        Permanently delete
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const phsDeleteModal = document.getElementById('phs-delete-modal');
+        const phsDeleteName = @json($institution->name);
+
+        function openPhsDeleteModal() {
+            phsDeleteModal.classList.remove('hidden');
+            phsDeleteModal.classList.add('flex');
+            document.getElementById('phs-delete-confirm').value = '';
+            document.getElementById('phs-delete-submit').disabled = true;
+            document.getElementById('phs-delete-confirm').focus();
+        }
+
+        function closePhsDeleteModal() {
+            phsDeleteModal.classList.add('hidden');
+            phsDeleteModal.classList.remove('flex');
+        }
+
+        document.getElementById('phs-delete-confirm').addEventListener('input', function (e) {
+            document.getElementById('phs-delete-submit').disabled =
+                e.target.value.trim().toLowerCase() !== phsDeleteName.trim().toLowerCase();
+        });
+
+        phsDeleteModal.addEventListener('click', function (e) {
+            if (e.target === phsDeleteModal) closePhsDeleteModal();
+        });
+    </script>
 
     <div id="email-copy-modal" class="fixed inset-0 z-[100] hidden items-center justify-center bg-black/40 p-4">
         <div class="w-full max-w-4xl rounded-lg bg-white shadow-2xl">

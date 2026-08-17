@@ -488,20 +488,28 @@
                                                 <div class="border-t border-slate-100 my-1"></div>
                                                 @endif
 
+                                                {{-- "Enter Security Paper Code" is hidden on the Not Printed tab:
+                                                     nothing has been run off yet there, so there is no paper in
+                                                     hand whose code could be entered. Reset stays wherever a
+                                                     serial already exists — that is a correction, not an entry. --}}
+                                                @php $canEnterSecurityPaper = $tab !== 'not_printed'; @endphp
+
                                                 @if($rec->land_rofo_serial_no)
-                                                <button type="button" disabled class="flex w-full items-center px-4 py-2.5 text-sm text-slate-300 gap-2 font-bold cursor-not-allowed" title="Security paper code already assigned">
-                                                    <i data-lucide="hash" class="h-4 w-4"></i> Enter Security Paper Code
-                                                </button>
+                                                    @if($canEnterSecurityPaper)
+                                                    <button type="button" disabled class="flex w-full items-center px-4 py-2.5 text-sm text-slate-300 gap-2 font-bold cursor-not-allowed" title="Security paper code already assigned">
+                                                        <i data-lucide="hash" class="h-4 w-4"></i> Enter Security Paper Code
+                                                    </button>
+                                                    @endif
                                                 <button type="button" onclick="resetSecurityPaperCode('{{ $rec->id }}', '{{ route('land-rofos.reset-security-paper', $rec->id) }}', @js($rec->file_number), @js($rec->land_rofo_serial_no), '{{ route('land-rofos.assign-security-paper', $rec->id) }}')" class="flex w-full items-center px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition gap-2 font-bold">
                                                     <i data-lucide="rotate-ccw" class="h-4 w-4"></i> Reset Security Paper Code
                                                 </button>
-                                                @else
+                                                <div class="border-t border-slate-100 my-1"></div>
+                                                @elseif($canEnterSecurityPaper)
                                                 <button type="button" onclick="openAssignSecurityPaperModal('{{ $rec->id }}', '{{ $rec->file_number }}', '{{ $rec->land_rofo_serial_no }}', '{{ route('land-rofos.assign-security-paper', $rec->id) }}')" class="flex w-full items-center px-4 py-2.5 text-sm text-emerald-600 hover:bg-emerald-50 transition gap-2 font-bold">
                                                     <i data-lucide="hash" class="h-4 w-4"></i> Enter Security Paper Code
                                                 </button>
-                                                @endif
-
                                                 <div class="border-t border-slate-100 my-1"></div>
+                                                @endif
 
                                                 @if($rec->is_reissuance)
                                                     {{-- Re-issued RofOs print only the watermarked re-issuance

@@ -191,21 +191,16 @@ document.addEventListener('DOMContentLoaded', function () {
                                 if (input) input.dispatchEvent(new Event('change'));
                             });
 
-                            // Auto-detect term based on Land Use name
-                            const termInput     = document.getElementById('term_input');
-                            const baseTermInput = document.getElementById('base_term');
-                            if (termInput && (record.land_use || record.LandUse)) {
-                                const lu = (record.land_use || record.LandUse).toUpperCase().trim();
-                                let base = null;
-                                if (lu.includes('RESIDENTIAL') || lu.includes('AGRICULTURAL') || lu.includes('AGRICULTURE')) {
-                                    base = '99';
-                                } else if (lu.includes('COMMERCIAL') || lu.includes('INDUSTRIAL')) {
-                                    base = '40';
-                                }
+                            // Auto-detect term based on Land Use name. The file number's
+                            // own RES/AG/COM/IND prefix is preferred over the record's
+                            // free-text land_use: the two disagree on a small but real
+                            // share of rows, and the prefix is the authoritative one.
+                            if (document.getElementById('term_input')) {
+                                const fromPrefix  = landUseFromFileNo(fileNoInput ? fileNoInput.value : '');
+                                const landUseName = fromPrefix || record.land_use || record.LandUse || '';
+                                const base = baseTermForLandUse(landUseName);
                                 if (base !== null) {
-                                    if (baseTermInput) baseTermInput.value = base;
-                                    if (window._calcResidualTerm) window._calcResidualTerm();
-                                    else termInput.value = base;
+                                    applyBaseTerm(base, 'Base term ' + base + ' yrs from ' + String(landUseName).toUpperCase().trim() + '.');
                                 }
                             }
 
@@ -426,21 +421,15 @@ document.addEventListener('DOMContentLoaded', function () {
                 landUseText.value = landUseId ? landUseName : '';
             }
 
-            // Auto-detect term
-            const termInput    = document.getElementById('term_input');
-            const baseTermInput = document.getElementById('base_term');
-            if (termInput && landUseName) {
-                const lu = landUseName.toUpperCase().trim();
-                let base = null;
-                if (lu.includes('RESIDENTIAL') || lu.includes('AGRICULTURAL') || lu.includes('AGRICULTURE')) {
-                    base = '99';
-                } else if (lu.includes('COMMERCIAL') || lu.includes('INDUSTRIAL')) {
-                    base = '40';
-                }
+            // Auto-detect term. Choosing a land use by hand is an explicit decision,
+            // so it overrides whatever the file numbers implied.
+            if (document.getElementById('term_input') && landUseName) {
+                // Direct calls, not window._*: those aliases are assigned further
+                // down and are still undefined during this select's load-time
+                // dispatch, whereas the hoisted declarations are already callable.
+                const base = baseTermForLandUse(landUseName);
                 if (base !== null) {
-                    if (baseTermInput) baseTermInput.value = base;
-                    if (window._calcResidualTerm) window._calcResidualTerm();
-                    else termInput.value = base;
+                    applyBaseTerm(base, 'Base term ' + base + ' yrs from ' + landUseName.toUpperCase().trim() + '.');
                 }
             }
 
@@ -521,6 +510,69 @@ document.addEventListener('DOMContentLoaded', function () {
         if (termHint) termHint.textContent = text || '';
     }
 
+    // ── Statutory term by land use ────────────────────────────────────────
+    // Residential / Agricultural -> 99 years, Commercial / Industrial -> 40.
+    // This is the same rule the server applies in RegrantTermService
+    // (TERM_RESIDENTIAL_AGRIC / TERM_COMMERCIAL_INDUST); the two must stay in step.
+    //
+    // These three are function declarations, and they close over no `const` from
+    // this scope on purpose: hoisting makes them callable from anywhere inside this
+    // handler, including the Land Use select's load-time dispatch further up, which
+    // runs before the residual block below has been evaluated. Reading the elements
+    // through getElementById rather than the consts above keeps that call safe.
+    function baseTermForLandUse(name) {
+        var lu = String(name || '').toUpperCase().trim();
+        if (!lu) return null;
+        // A mixed use carries two different terms, so there is nothing to pick —
+        // the server leaves these NULL for the same reason.
+        if (lu.indexOf('/') !== -1 || lu.indexOf(' AND ') !== -1) return null;
+        // Prefix match, like the server's RES%/REA%/AG% and COM%/IND% cases. The
+        // column is full of typos — "RESIDENCIAL", "REAIDENTIAL", "AGARICULTURAL" —
+        // which a whole-word test silently drops back to the 99-year default.
+        if (/^(RES|REA|AG)/.test(lu)) return '99';
+        if (/^(COM|IND)/.test(lu)) return '40';
+        if (lu.indexOf('RESIDENTIAL') !== -1 || lu.indexOf('AGRICULTUR') !== -1) return '99';
+        if (lu.indexOf('COMMERCIAL') !== -1 || lu.indexOf('INDUSTRIAL') !== -1) return '40';
+        return null;
+    }
+
+    // The land-use code baked into an MLS file number (RES/AG/COM/IND), optionally
+    // wrapped by a CON- (conversion) or LKN- (legacy Kano) prefix. The server treats
+    // this prefix as authoritative over the free-text land_use column, which
+    // disagrees with it on ~2.7% of RofO rows and is riddled with typos
+    // ("RESIDENCIAL", "AGARICULTURAL") — see RegrantTermService::termExpression().
+    function landUseFromFileNo(fileNo) {
+        var m = String(fileNo || '').toUpperCase().trim().match(/^(?:CON-|LKN-)?(RES|AG|COM|IND)-/);
+        if (!m) return null;
+        return { RES: 'RESIDENTIAL', AG: 'AGRICULTURAL', COM: 'COMMERCIAL', IND: 'INDUSTRIAL' }[m[1]];
+    }
+
+    // Sets the base term and recalculates the residual off it, appending where the
+    // base came from so the number in the box is never unexplained.
+    function applyBaseTerm(base, sourceNote) {
+        if (base === null || base === undefined) return false;
+        var baseTermEl = document.getElementById('base_term');
+        if (baseTermEl) baseTermEl.value = base;
+
+        // Called before the residual block has initialised (the load-time Land Use
+        // dispatch), there is nothing to recalculate against yet — seed the field
+        // and let that block's own load-time pass finish the job, exactly as the
+        // code this replaced did.
+        if (!window._calcResidualTerm) {
+            var seedEl = document.getElementById('term_input');
+            if (seedEl) seedEl.value = base;
+            return true;
+        }
+
+        window._calcResidualTerm();
+        var hintEl = document.getElementById('term_hint');
+        if (sourceNote && hintEl) hintEl.textContent = (hintEl.textContent + ' ' + sourceNote).trim();
+        return true;
+    }
+    window._applyBaseTerm      = applyBaseTerm;
+    window._baseTermForLandUse = baseTermForLandUse;
+    window._landUseFromFileNo  = landUseFromFileNo;
+
     // Recomputes the residual term from the CoFO year.
     function calcResidualTerm() {
         const termEl     = termInput || document.getElementById('term_input');
@@ -600,6 +652,49 @@ document.addEventListener('DOMContentLoaded', function () {
         };
         fileNoInput.addEventListener('input', updatePrevailingYearFromFileNo);
         fileNoInput.addEventListener('change', updatePrevailingYearFromFileNo);
+    }
+
+    // ── Term from the old file number ─────────────────────────────────────
+    // A derived application type (Plot Subdivision, Merger, Extension, Change of
+    // Purpose, Regrant…) inherits the parent file's grant, so the term it runs off
+    // is the parent's — that is the whole point of the residual. The parent is the
+    // Old File Number, and its land use is read from its RES/AG/COM/IND prefix.
+    //
+    // The two file numbers are cross-checked rather than one silently winning: a
+    // subdivision of RES-1993-7218 whose own number reads COM-… means one of the
+    // two is wrong, and a term of 40 where it should be 99 (or the reverse) is not
+    // something anyone would spot in a printed letter. The old file still governs
+    // — it is the grant being subdivided — but the disagreement is said out loud.
+    const oldFileNoInput = document.getElementById('old_file_number');
+
+    function syncTermFromOldFileNo() {
+        const oldFileNo = oldFileNoInput ? oldFileNoInput.value.trim() : '';
+        if (!oldFileNo) return;
+
+        const oldUse = landUseFromFileNo(oldFileNo);
+        if (!oldUse) {
+            // Legacy KANGIS numbers (MLKN 2958, KNML 1) carry no land-use code, so
+            // there is nothing to read; whatever the Land Use dropdown holds stands.
+            return;
+        }
+
+        const base = baseTermForLandUse(oldUse);
+        if (base === null) return;
+
+        const mainUse = landUseFromFileNo(fileNoInput ? fileNoInput.value.trim() : '');
+        let note = 'Base term ' + base + ' yrs from ' + oldUse + ' (old file ' + oldFileNo + ').';
+        if (mainUse && mainUse !== oldUse) {
+            note += ' NOTE: this file number reads ' + mainUse + ' — the old file governs, check which is right.';
+        }
+
+        applyBaseTerm(base, note);
+    }
+
+    if (oldFileNoInput) {
+        // The picker and the batch mother dropdown both write through a dispatched
+        // change event (see the Old File Number block in form.blade.php), so this
+        // covers every route by which the field gets a value.
+        oldFileNoInput.addEventListener('change', syncTermFromOldFileNo);
     }
 
     // On load, keep a term that was already saved on the record; otherwise derive it.

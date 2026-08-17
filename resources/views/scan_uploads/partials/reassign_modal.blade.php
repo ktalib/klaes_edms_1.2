@@ -26,18 +26,6 @@
           <span id="reassign-scope-count" class="text-xs font-medium text-gray-500"></span>
         </div>
 
-        {{-- A misfiled document is nearly always a misfiled file, so the whole
-             file moves by default. Untick to move only what was selected. --}}
-        <label class="flex items-start gap-2 p-3 mb-2 bg-blue-50 border border-blue-200 rounded-lg cursor-pointer">
-          <input type="checkbox" id="reassign-move-all" class="checkbox checkbox-sm mt-0.5" checked>
-          <span class="text-sm text-blue-900">
-            <span class="font-semibold">Move every document in this file</span>
-            <span class="block text-xs text-blue-700 mt-0.5" id="reassign-move-all-hint">
-              All scans and typed pages under the current file number travel together.
-            </span>
-          </span>
-        </label>
-
         <div id="reassign-selected-docs" class="space-y-2 max-h-48 overflow-y-auto p-3 bg-gray-50 rounded-lg border border-gray-200">
           <!-- Populated dynamically -->
         </div>

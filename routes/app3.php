@@ -611,6 +611,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/institutions/{id}/tokens', [PhsAdminController::class, 'allocateTokens'])->name('institutions.tokens');
         Route::post('/institutions/{id}/suspend', [PhsAdminController::class, 'suspend'])->name('institutions.suspend');
         Route::post('/institutions/{id}/activate', [PhsAdminController::class, 'activate'])->name('institutions.activate');
+        // Master delete — purges the organization and its entire PHS footprint.
+        Route::delete('/institutions/{id}', [PhsAdminController::class, 'destroy'])->name('institutions.destroy');
 
         // Onboarding requests
         Route::prefix('requests')->name('requests.')->group(function () {

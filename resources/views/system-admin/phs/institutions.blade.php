@@ -7,6 +7,13 @@
     @include('admin.header', ['PageTitle' => $PageTitle, 'PageDescription' => 'Manage Organizational PHS accounts and token balances.'])
 
     <div class="flex-1 p-6">
+        @if (session('success'))
+            <div class="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">{{ session('success') }}</div>
+        @endif
+        @if (session('error'))
+            <div class="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">{{ session('error') }}</div>
+        @endif
+
         @php
             $statCards = [
                 ['label' => 'Organizations', 'value' => $stats['institutions'], 'icon' => 'building-2', 'tone' => 'bg-indigo-50 text-indigo-700 ring-indigo-100'],
@@ -112,10 +119,23 @@
                                     @endif
                                 </td>
                                 <td class="px-4 py-4 text-right">
-                                    <a class="inline-flex items-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800" href="{{ route('system-admin.phs.institutions.show', $institution->id) }}">
-                                        Open
-                                        <i data-lucide="arrow-right" class="h-3.5 w-3.5"></i>
-                                    </a>
+                                    <div class="inline-flex items-center gap-2">
+                                        <a class="inline-flex items-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800" href="{{ route('system-admin.phs.institutions.show', $institution->id) }}">
+                                            Open
+                                            <i data-lucide="arrow-right" class="h-3.5 w-3.5"></i>
+                                        </a>
+                                        <button type="button"
+                                                title="Master delete"
+                                                class="inline-flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100"
+                                                data-phs-delete
+                                                data-id="{{ $institution->id }}"
+                                                data-name="{{ e($institution->name) }}"
+                                                data-members="{{ (int) $institution->members_count }}"
+                                                data-tokens="{{ (int) $institution->token_balance }}">
+                                            <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
+                                            Delete
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         @empty
@@ -134,4 +154,83 @@
 
     @include('admin.footer')
 </div>
+
+{{-- Master delete: type-to-confirm --}}
+<div id="phs-delete-modal" class="fixed inset-0 z-[110] hidden items-center justify-center bg-black/50 p-4">
+    <div class="w-full max-w-lg rounded-xl bg-white shadow-2xl">
+        <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+            <h3 class="flex items-center gap-2 text-base font-extrabold text-rose-700">
+                <i data-lucide="alert-triangle" class="h-5 w-5"></i>
+                Master delete organization
+            </h3>
+            <button type="button" onclick="closePhsDeleteModal()" class="rounded-md p-1.5 text-slate-400 hover:bg-slate-100">
+                <i data-lucide="x" class="h-5 w-5"></i>
+            </button>
+        </div>
+        <form id="phs-delete-form" method="POST" action="" class="px-6 py-5">
+            @csrf
+            @method('DELETE')
+            <p class="text-sm text-slate-700">
+                <span id="phs-delete-title" class="font-extrabold text-slate-900"></span> and everything attached to it will be
+                permanently erased — <span id="phs-delete-meta" class="font-bold"></span>, wallet ledger, search logs, feedback,
+                email history, its onboarding request and every uploaded document. This cannot be undone.
+            </p>
+            <p class="mt-3 rounded-md bg-amber-50 px-4 py-3 text-xs font-medium text-amber-800">
+                If you only need to block access, close this and use <span class="font-bold">Suspend</span> on the organization page instead.
+            </p>
+            <label class="mt-4 block text-xs font-bold uppercase tracking-wide text-slate-600">
+                Type <span id="phs-delete-echo" class="font-mono text-rose-700"></span> to confirm
+            </label>
+            <input type="text" name="confirm_name" id="phs-delete-confirm" autocomplete="off" required
+                   class="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500">
+            <p class="mt-2 text-xs text-slate-500">This action is recorded in the audit trail against your account.</p>
+            <div class="mt-6 flex justify-end gap-3 border-t border-slate-100 pt-4">
+                <button type="button" onclick="closePhsDeleteModal()" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+                <button type="submit" id="phs-delete-submit" disabled
+                        class="rounded-md bg-rose-600 px-5 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:bg-slate-300">
+                    Permanently delete
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    const phsDeleteModal = document.getElementById('phs-delete-modal');
+    const phsDeleteForm = document.getElementById('phs-delete-form');
+    const phsDeleteInput = document.getElementById('phs-delete-confirm');
+    const phsDeleteSubmit = document.getElementById('phs-delete-submit');
+    const phsInstitutionsBase = "{{ url('system-admin/phs/institutions') }}";
+    let phsDeleteName = '';
+
+    function closePhsDeleteModal() {
+        phsDeleteModal.classList.add('hidden');
+        phsDeleteModal.classList.remove('flex');
+    }
+
+    document.querySelectorAll('[data-phs-delete]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            phsDeleteName = btn.dataset.name || '';
+            phsDeleteForm.action = phsInstitutionsBase + '/' + btn.dataset.id;
+            document.getElementById('phs-delete-title').textContent = phsDeleteName;
+            document.getElementById('phs-delete-echo').textContent = phsDeleteName;
+            document.getElementById('phs-delete-meta').textContent =
+                btn.dataset.members + ' member account(s) and ' + Number(btn.dataset.tokens).toLocaleString() + ' unused token(s)';
+            phsDeleteInput.value = '';
+            phsDeleteInput.placeholder = phsDeleteName;
+            phsDeleteSubmit.disabled = true;
+            phsDeleteModal.classList.remove('hidden');
+            phsDeleteModal.classList.add('flex');
+            phsDeleteInput.focus();
+        });
+    });
+
+    phsDeleteInput.addEventListener('input', function (e) {
+        phsDeleteSubmit.disabled = e.target.value.trim().toLowerCase() !== phsDeleteName.trim().toLowerCase();
+    });
+
+    phsDeleteModal.addEventListener('click', function (e) {
+        if (e.target === phsDeleteModal) closePhsDeleteModal();
+    });
+</script>
 @endsection

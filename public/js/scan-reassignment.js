@@ -60,13 +60,6 @@ class ScanReassignmentManager {
             this.openGlobalFileSelector();
         });
 
-        // Whole-file vs selection-only
-        document.querySelector('#reassign-move-all')?.addEventListener('change', () => {
-            this.renderSelectedDocuments();
-            // The page-typing warning counts what actually moves, so re-check it
-            if (this.targetFileNumber) this.checkPageTypingConstraints();
-        });
-
         // Close on backdrop click
         this.modal?.addEventListener('click', (e) => {
             if (e.target === this.modal) this.closeModal();
@@ -146,18 +139,15 @@ class ScanReassignmentManager {
         this.renderSelectedDocuments();
         this.showModal();
 
-        // Pull in the rest of the file so the dialog can say what "move all" covers
+        // Load source-file metadata while keeping the move scoped to the selection.
         this.loadSiblingDocuments();
     }
 
     /**
-     * Render list of selected documents
-     */
-    /**
-     * Whether the whole source file moves, or only the picked documents.
+     * Reassignment is always limited to the documents explicitly selected.
      */
     isMoveAll() {
-        return document.querySelector('#reassign-move-all')?.checked !== false;
+        return false;
     }
 
     /**
@@ -267,28 +257,13 @@ class ScanReassignmentManager {
     }
 
     /**
-     * Header count + the "move all" hint, kept honest about what will move.
+     * Update the header count for the selected documents.
      */
-    renderScopeSummary(count, siblings) {
+    renderScopeSummary(count) {
         const countEl = document.querySelector('#reassign-scope-count');
         if (countEl) {
             countEl.textContent = `${count} document(s) will move`;
         }
-
-        const hint = document.querySelector('#reassign-move-all-hint');
-        if (!hint) return;
-
-        if (!siblings) {
-            hint.textContent = 'All scans and typed pages under the current file number travel together.';
-            return;
-        }
-
-        const fileNumber = (siblings.file_numbers && siblings.file_numbers[0]) || 'this file';
-        const extra = siblings.total_in_file - siblings.selected_count;
-
-        hint.textContent = extra > 0
-            ? `${siblings.total_in_file} document(s) under ${fileNumber}, including ${extra} not selected. Untick to move only the ${siblings.selected_count} selected.`
-            : `${siblings.total_in_file} document(s) under ${fileNumber} — the selection already covers the whole file.`;
     }
 
     /**
@@ -614,12 +589,6 @@ class ScanReassignmentManager {
         this.destinationInfo = null;
         this.targetInvalid = false;
         this.siblingDocuments = null;
-
-        // Whole-file move is the default every time the dialog opens
-        const moveAll = document.querySelector('#reassign-move-all');
-        if (moveAll) {
-            moveAll.checked = true;
-        }
 
         // Nothing can be confirmed until a target file number is chosen
         this.updateConfirmState();

@@ -17,7 +17,9 @@ use App\Models\Phs\PhsInstitution;
 use App\Models\Phs\PhsOnboardingRequest;
 use App\Models\Phs\PhsSearchLog;
 use App\Models\Phs\PhsTokenTransaction;
+use App\Services\AuditService;
 use App\Services\LegalSearchService;
+use App\Services\Phs\PhsInstitutionPurgeService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -51,9 +53,11 @@ class PhsAdminController extends Controller
         return view('system-admin.phs.institutions', compact('PageTitle', 'institutions', 'stats'));
     }
 
-    public function show($id)
+    public function show($id, PhsInstitutionPurgeService $purger)
     {
         $institution = PhsInstitution::with('members')->findOrFail($id);
+        // What a master delete would remove — shown in the danger zone.
+        $purgePreview = $purger->preview($institution);
         $transactions = $institution->transactions()->orderByDesc('id')->limit(100)->get();
         $searchLogs = $institution->searchLogs()->with('member')->orderByDesc('id')->limit(100)->get();
         $memberEmails = $institution->members->pluck('email')->filter()->values()->all();
@@ -71,7 +75,7 @@ class PhsAdminController extends Controller
             ->get();
         $PageTitle = 'PHS Organization — ' . $institution->name;
 
-        return view('system-admin.phs.institution-show', compact('PageTitle', 'institution', 'transactions', 'searchLogs', 'emailHistory'));
+        return view('system-admin.phs.institution-show', compact('PageTitle', 'institution', 'transactions', 'searchLogs', 'emailHistory', 'purgePreview'));
     }
 
     public function allocateTokens(Request $request, $id)
@@ -126,6 +130,58 @@ class PhsAdminController extends Controller
         $institution = PhsInstitution::findOrFail($id);
         $institution->update(['status' => 'active']);
         return back()->with('success', 'Organization reactivated.');
+    }
+
+    /**
+     * Master delete — permanently remove an organization and its entire PHS
+     * footprint (members, wallet ledger, searches, feedback, email history,
+     * onboarding request and uploaded files). Guarded by a typed confirmation
+     * of the organization name and recorded in the audit trail.
+     */
+    public function destroy(Request $request, $id, PhsInstitutionPurgeService $purger, AuditService $audit)
+    {
+        $institution = PhsInstitution::findOrFail($id);
+
+        $typed = trim((string) $request->input('confirm_name'));
+        if (mb_strtolower($typed) !== mb_strtolower(trim((string) $institution->name))) {
+            return back()->with('error', 'Deletion cancelled — the organization name you typed did not match.');
+        }
+
+        try {
+            $result = $purger->purge($institution);
+        } catch (\Throwable $e) {
+            Log::error('PHS master delete failed', [
+                'institution_id' => $id,
+                'user_id' => Auth::id(),
+                'error' => $e->getMessage(),
+            ]);
+            return back()->with('error', 'Delete failed: ' . $e->getMessage());
+        }
+
+        try {
+            $audit->logAction(
+                'DELETED',
+                'phs_institution',
+                $id,
+                $result['snapshot'],
+                null,
+                'PHS master delete of organization ' . $institution->name
+            );
+        } catch (\Throwable $e) {
+            // The rows are already gone; never turn a failed audit write into a
+            // 500 on the operator's screen — the failure is logged by the service.
+        }
+
+        $c = $result['counts'];
+        $summary = sprintf(
+            '%d member(s), %d transaction(s), %d search log(s), %d feedback item(s), %d email(s), %d onboarding request(s), %d file(s)',
+            $c['members'], $c['transactions'], $c['search_logs'], $c['feedback'],
+            $c['email_histories'], $c['onboarding_requests'], $c['files'] ?? 0
+        );
+
+        return redirect()
+            ->route('system-admin.phs.index')
+            ->with('success', '"' . $institution->name . '" was permanently deleted — removed ' . $summary . '.');
     }
 
     public function invoices()
