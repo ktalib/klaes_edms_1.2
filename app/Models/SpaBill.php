@@ -12,6 +12,12 @@ class SpaBill extends Model
     protected $fillable = [
         'spa_application_id', 'bill_type', 'description',
         'amount', 'reference_id', 'due_date', 'status', 'created_by',
+        // How the bill came to exist: 'contravention' for one raised
+        // automatically, null for a hand-entered legacy bill. Omitting it here
+        // let mass assignment drop it silently, which broke the
+        // one-bill-per-application guard — the lookup filters on this value, so
+        // a null meant every save raised another bill.
+        'source',
     ];
 
     protected $casts = [

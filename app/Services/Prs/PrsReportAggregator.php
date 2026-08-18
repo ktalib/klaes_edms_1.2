@@ -56,6 +56,13 @@ class PrsReportAggregator
         'deeds'  => ['label' => 'Deeds',  'icon' => 'file-signature'],
         'lands'  => ['label' => 'Lands',  'icon' => 'landmark'],
         'st'     => ['label' => 'Sectional Titling', 'icon' => 'layers'],
+        // KANGIS and SLTR are registries rather than processing departments, but
+        // they earn tabs on the same reasoning ST did: their measure (files
+        // indexed) belongs to neither Lands nor Deeds, and filing them under
+        // either would put an indexing count beside registration counts it must
+        // never be added to.
+        'kangis' => ['label' => 'KANGIS', 'icon' => 'archive'],
+        'sltr'   => ['label' => 'SLTR',   'icon' => 'map-pinned'],
     ];
 
     /** Gender series order, fixed. Not Recorded last so it reads as the remainder. */
@@ -72,6 +79,7 @@ class PrsReportAggregator
         private SearchStats $searches,
         private OssStats $oss,
         private StStats $st,
+        private RegistryIndexingStats $registries,
     ) {
     }
 
@@ -112,6 +120,7 @@ class PrsReportAggregator
             $this->searches->availableYears(),
             $this->oss->availableYears(),
             $this->st->availableYears(),
+            $this->registries->availableYears(),
         ] as $set) {
             foreach ($set as $y => $n) {
                 $tally[$y] = ($tally[$y] ?? 0) + $n;
@@ -184,6 +193,13 @@ class PrsReportAggregator
                 InstrumentTypeNormalizer::ST_TRANSFER,
                 'ST Unit Transfers Registered', 'transfers'),
             $this->stCommissionedSection(),
+            // KANGIS and SLTR, added 2026-08-17. One section each: both registries
+            // index files and neither commissions any, so there is only one measure
+            // to report. See RegistryIndexingStats.
+            $this->indexingSection('kangis_indexed', '23', 'kangis',
+                RegistryIndexingStats::KANGIS, 'KANGIS Files Indexed', 'gender'),
+            $this->indexingSection('sltr_indexed', '24', 'sltr',
+                RegistryIndexingStats::SLTR, 'SLTR Files Indexed', 'lga'),
         ]);
 
         return array_values(array_map([$this, 'withInsights'], $sections));
@@ -224,6 +240,13 @@ class PrsReportAggregator
             ['label' => 'ST registrations', 'value' => $this->st->registered(InstrumentTypeNormalizer::ST_FRAGMENTATION, $year)['total']
                                                        + $this->st->registered(InstrumentTypeNormalizer::ST_TRANSFER, $year)['total'],
              'dept' => 'st', 'note' => 'registered', 'icon' => 'layers-2'],
+            // "indexed", never "commissioned": neither registry issues file
+            // numbers through KLAES yet, and the dashboard's own KANGIS and SLTR
+            // commissioned counts are hardcoded zeros for the same reason.
+            ['label' => 'KANGIS files indexed', 'value' => $this->registries->monthly(RegistryIndexingStats::KANGIS, $year)['total'],
+             'dept' => 'kangis', 'note' => 'indexed', 'icon' => 'archive'],
+            ['label' => 'SLTR files indexed', 'value' => $this->registries->monthly(RegistryIndexingStats::SLTR, $year)['total'],
+             'dept' => 'sltr', 'note' => 'indexed', 'icon' => 'map-pinned'],
         ];
 
         return array_values(array_filter($tiles, fn ($t) => $t['value'] > 0));
@@ -494,6 +517,95 @@ class PrsReportAggregator
             'chart_secondary' => $this->genderPanel($d['gender'], $d['total']),
             'table'      => $this->cutTable($d),
             'table_secondary' => $this->genderTable($d),
+        ];
+    }
+
+    /**
+     * Sections 23 and 24 — files indexed into the KANGIS and SLTR registries.
+     *
+     * `$secondary` picks the panel beside the land-use chart, and differs by
+     * registry on purpose. KANGIS carries gender on 46% of rows, so it charts
+     * gender like every other section. SLTR carries it on 3.3%, so it charts LGA
+     * instead — a gender panel there would be a single grey bar, and systematic
+     * titling is an LGA-by-LGA programme anyway. Both still emit the gender table,
+     * so the coverage gap is stated rather than hidden.
+     *
+     * @param string[] $registries
+     */
+    private function indexingSection(
+        string $key,
+        string $no,
+        string $department,
+        array $registries,
+        string $title,
+        string $secondary
+    ): ?array {
+        $d = $this->registries->monthly($registries, $this->year());
+
+        if ($d['total'] === 0) {
+            return null;
+        }
+
+        $panel = $secondary === 'lga'
+            ? $this->lgaPanel($d)
+            : $this->genderPanel($d['gender'], $d['total']);
+
+        return [
+            'key'        => $key,
+            'no'         => $no,
+            'department' => $department,
+            'title'      => $title,
+            'subtitle'   => 'Files indexed into the registry, January – December ' . $this->year(),
+            'measure'    => 'Files indexed',
+            // Not "Date captured": file_indexings.date_created is NULL on every
+            // row of both registries, so created_at is the only date there is and
+            // the label names what it actually marks.
+            'date_basis' => 'Date indexed',
+            'headline'   => [
+                'value'   => $d['total'],
+                'unit'    => 'files',
+                'caption' => $this->genderCaption($d['coverage'])
+                             . ' · ' . number_format($d['lga_count']) . ' LGAs represented',
+            ],
+            'layout'     => 'monthly',
+            'chart'      => [
+                'type'   => 'stacked-column',
+                'labels' => self::MONTHS,
+                'series' => $this->landUseSeries($d['landuse']),
+            ],
+            'chart_secondary' => $panel,
+            'table'      => $this->cutTable($d),
+            'table_secondary' => $this->genderTable($d),
+        ];
+    }
+
+    /** The LGA panel, for a section whose gender coverage is too thin to chart. */
+    private function lgaPanel(array $d): ?array
+    {
+        $series = $this->namedSeries($d['lga'], 'lga');
+
+        if ($series === []) {
+            return null;
+        }
+
+        // Other LGAs is a remainder, not an LGA, so it takes grey — the same
+        // treatment Uncategorised and Not Recorded get in the other two scopes.
+        foreach ($series as $i => $s) {
+            if ($s['label'] === 'Other LGAs') {
+                $series[$i]['color'] = self::HUE['grey'];
+            }
+        }
+
+        return [
+            'type'    => 'stacked-column',
+            'labels'  => self::MONTHS,
+            'series'  => $series,
+            'title'   => 'Local government area',
+            'caption' => 'Same rows as the chart above, cut by LGA instead of land use. '
+                       . 'The ' . RegistryIndexingStats::LGA_LIMIT . ' busiest of ' . number_format($d['lga_count'])
+                       . ' are charted individually; the rest are grouped as Other LGAs '
+                       . 'rather than dropped. Gender is charted for this registry in the '
+                       . 'table below, where its coverage can be read honestly.',
         ];
     }
 

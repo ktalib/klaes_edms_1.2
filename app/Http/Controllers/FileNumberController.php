@@ -2722,6 +2722,109 @@ class FileNumberController extends Controller
             );
     }
 
+    /** The two Allocation Sources a Confirmation Sheet can be raised under. */
+    private const ALLOCATION_SOURCES = ['State Government', 'Local Government'];
+
+    /**
+     * One of the two sources, or null for anything else — so a hand-edited URL
+     * cannot decide who the sheet is addressed to.
+     */
+    private function normalizeAllocationSource($source): ?string
+    {
+        $source = trim((string) $source);
+
+        foreach (self::ALLOCATION_SOURCES as $known) {
+            if (strcasecmp($source, $known) === 0) {
+                return $known;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * What the print card should show for Allocation Source before it is confirmed.
+     *
+     * Preference order: the answer stored for this sheet, then the file's own
+     * allocation info (a SuA carries it from commissioning), then its LGA — which
+     * is what the sheet has always been addressed to.
+     *
+     * A State Government entity has no "<name> Local Government, Kano State" form
+     * to fall back on, so its posting address is carried too — remembered per sheet
+     * and, failing that, borrowed from the last sheet addressed to the same entity.
+     *
+     * `locked` marks an answer somebody actually gave — on this sheet, or on the
+     * file at commissioning. The print card shows those read-only: the source is
+     * not the printer's to change. A source merely inferred from the file's LGA is
+     * a guess and stays editable.
+     *
+     * @return array{source: string|null, entity: string|null, address: string|null, locked: bool}
+     */
+    private function suggestedAllocationForSheet(object $record, ?object $existingApp): array
+    {
+        $source = $this->normalizeAllocationSource($existingApp->allocation_source ?? null);
+        $entity = trim((string) ($existingApp->allocation_entity ?? '')) ?: null;
+        $address = trim((string) ($existingApp->allocation_address ?? '')) ?: null;
+
+        if ($source !== null) {
+            return [
+                'source' => $source,
+                'entity' => $entity,
+                'address' => $address ?: $this->lastKnownAllocationAddress($entity),
+                'locked' => true,
+            ];
+        }
+
+        if (!empty($record->st_file_no)) {
+            $stFile = DB::connection('sqlsrv')
+                ->table('st_file_numbers')
+                ->where('fileno', trim((string) $record->st_file_no))
+                ->orderByDesc('id')
+                ->first(['allocation_source', 'allocation_entity']);
+
+            $stSource = $this->normalizeAllocationSource($stFile->allocation_source ?? null);
+            if ($stSource !== null) {
+                $stEntity = trim((string) ($stFile->allocation_entity ?? '')) ?: null;
+
+                return [
+                    'source' => $stSource,
+                    'entity' => $stEntity,
+                    'address' => $this->lastKnownAllocationAddress($stEntity),
+                    'locked' => true,
+                ];
+            }
+        }
+
+        $lga = trim((string) ($record->lga_derived ?? $record->lga ?? ''));
+
+        return [
+            'source' => $lga !== '' ? 'Local Government' : null,
+            'entity' => $lga !== '' ? $lga : null,
+            'address' => null,
+            'locked' => false,
+        ];
+    }
+
+    /**
+     * The address last printed for a State Government entity, so the second sheet
+     * addressed to it doesn't have to be typed out again.
+     */
+    private function lastKnownAllocationAddress(?string $entity): ?string
+    {
+        if (!$entity) {
+            return null;
+        }
+
+        $address = DB::connection('sqlsrv')
+            ->table('conversion_applications')
+            ->where('allocation_entity', $entity)
+            ->whereNotNull('allocation_address')
+            ->orderByDesc('id')
+            ->value('allocation_address');
+
+        return trim((string) $address) ?: null;
+    }
+
     /**
      * The Property Acquisition Method saved for a file's LGA Confirmation Sheet.
      * The Print LCS action calls this first: an answered sheet reprints straight
@@ -2734,12 +2837,17 @@ class FileNumberController extends Controller
                 $this->resolveConversionApplicationRecord($id);
 
             if (!$record) {
-                return response()->json(['success' => false, 'method' => null, 'other' => null]);
+                return response()->json([
+                    'success' => false, 'method' => null, 'other' => null,
+                    'allocation_source' => null, 'allocation_entity' => null,
+                    'allocation_address' => null, 'allocation_locked' => false,
+                ]);
             }
 
             $existingApp = $this->conversionApplicationQuery($record, $isPlotExtension)->first();
             // null until the question has been answered once for this sheet.
             $method = $this->normalizeAcquisitionMethod($existingApp->acquisition_method ?? null);
+            $allocation = $this->suggestedAllocationForSheet($record, $existingApp);
 
             return response()->json([
                 'success' => true,
@@ -2747,12 +2855,23 @@ class FileNumberController extends Controller
                 'other'   => $method === 'e'
                     ? (trim((string) ($existingApp->acquisition_other ?? '')) ?: null)
                     : null,
+                // Pre-fills the Allocation Source half of the print card.
+                'allocation_source' => $allocation['source'],
+                'allocation_entity' => $allocation['entity'],
+                'allocation_address' => $allocation['address'],
+                // true when the source was entered at commissioning (or already
+                // issued on this sheet) — the card then shows it read-only.
+                'allocation_locked' => $allocation['locked'],
             ]);
         } catch (\Exception $e) {
             \Log::error('Error reading saved acquisition method: ' . $e->getMessage());
 
             // Never block printing on this — the caller just asks the question.
-            return response()->json(['success' => false, 'method' => null, 'other' => null]);
+            return response()->json([
+                'success' => false, 'method' => null, 'other' => null,
+                'allocation_source' => null, 'allocation_entity' => null,
+                'allocation_address' => null, 'allocation_locked' => false,
+            ]);
         }
     }
 
@@ -2778,6 +2897,14 @@ class FileNumberController extends Controller
                 ? (trim((string) $request->query('other')) ?: null)
                 : null;
 
+            // Capture the Allocation Source confirmed alongside it — it decides who
+            // the sheet is addressed to.
+            $allocationSource = $this->normalizeAllocationSource($request->query('allocation_source'));
+            $allocationEntity = trim((string) $request->query('allocation_entity')) ?: null;
+            // Only a state entity needs one (an LGA is addressed by name), but which
+            // source wins is settled below — keep the request's answer until then.
+            $allocationAddress = trim((string) $request->query('allocation_address')) ?: null;
+
             // Check for existing Serial Number.
             $existingApp = $this->conversionApplicationQuery($record, $isPlotExtension)->first();
 
@@ -2793,17 +2920,50 @@ class FileNumberController extends Controller
                 $specifyOther = $savedOther;
             }
 
+            $savedSource = $this->normalizeAllocationSource($existingApp->allocation_source ?? null);
+            $savedEntity = trim((string) ($existingApp->allocation_entity ?? '')) ?: null;
+            $savedAddress = trim((string) ($existingApp->allocation_address ?? '')) ?: null;
+
+            $fallback = $this->suggestedAllocationForSheet($record, $existingApp);
+
+            if ($fallback['locked']) {
+                // Entered at commissioning (or already issued on this sheet): the
+                // printer confirms it, never rewrites it.
+                $allocationSource = $fallback['source'];
+                $allocationEntity = $fallback['entity'];
+            } elseif ($allocationSource === null) {
+                $allocationSource = $fallback['source'];
+                $allocationEntity = $allocationEntity ?: $fallback['entity'];
+            }
+
+            $allocationAddress = $allocationSource === 'State Government'
+                ? ($allocationAddress ?: $fallback['address'])
+                : null;
+
             if ($existingApp && $existingApp->serial_no) {
                 $serialNo = $existingApp->serial_no;
 
                 // A freshly answered question (or a corrected one) is written back.
+                $changes = [];
+
                 if ($acquisitionMethod !== null
                     && ($acquisitionMethod !== $savedMethod || $specifyOther !== $savedOther)) {
-                    $this->conversionApplicationQuery($record, $isPlotExtension)->update([
-                        'acquisition_method' => $acquisitionMethod,
-                        'acquisition_other'  => $specifyOther,
-                        'updated_at'         => now(),
-                    ]);
+                    $changes['acquisition_method'] = $acquisitionMethod;
+                    $changes['acquisition_other'] = $specifyOther;
+                }
+
+                if ($allocationSource !== null
+                    && ($allocationSource !== $savedSource
+                        || $allocationEntity !== $savedEntity
+                        || $allocationAddress !== $savedAddress)) {
+                    $changes['allocation_source'] = $allocationSource;
+                    $changes['allocation_entity'] = $allocationEntity;
+                    $changes['allocation_address'] = $allocationAddress;
+                }
+
+                if ($changes !== []) {
+                    $changes['updated_at'] = now();
+                    $this->conversionApplicationQuery($record, $isPlotExtension)->update($changes);
                 }
             } else {
                 // Generate new Serial Number
@@ -2822,6 +2982,9 @@ class FileNumberController extends Controller
                         'serial_no' => $serialNo,
                         'acquisition_method' => $acquisitionMethod,
                         'acquisition_other' => $specifyOther,
+                        'allocation_source' => $allocationSource,
+                        'allocation_entity' => $allocationEntity,
+                        'allocation_address' => $allocationAddress,
                         'generated_by' => (Auth::user()->first_name . ' ' . Auth::user()->last_name) ?: Auth::user()->name ?: Auth::user()->email ?: 'System',
                         'created_at' => now(),
                         'updated_at' => now()
@@ -2838,7 +3001,10 @@ class FileNumberController extends Controller
 
             $watermarkText = ($printCount > 1) ? 'CERTIFIED TRUE COPY' : 'ORIGINAL';
 
-            return view('generate_fileno.application_for_conversion', compact('records', 'acquisitionMethod', 'specifyOther', 'watermarkText'));
+            return view('generate_fileno.application_for_conversion', compact(
+                'records', 'acquisitionMethod', 'specifyOther', 'watermarkText',
+                'allocationSource', 'allocationEntity', 'allocationAddress'
+            ));
 
         } catch (\Exception $e) {
             \Log::error('Error generating Conversion Application: ' . $e->getMessage());

@@ -166,6 +166,11 @@
                                             <a href="{{ route('legal-search-online.admin.requests.preview', $req->id) }}" target="_blank"
                                                class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Preview report</a>
 
+                                            @if($req->payment_id)
+                                                <a href="{{ route('legal-search-online.admin.requests.invoice', $req->id) }}" target="_blank"
+                                                   class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Invoice</a>
+                                            @endif
+
                                             @if($req->isPending())
                                                 <button type="button"
                                                         onclick="olsApprove({{ $req->id }}, '{{ $req->request_no }}', @js($req->requester_email))"

@@ -200,6 +200,27 @@ class LegalSearchOnlineAdminController extends Controller
     }
 
     /**
+     * Preview the payment invoice that accompanies an approved report.
+     *
+     * Streams the same document the requester receives as the second email
+     * attachment. Viewing it sends nothing.
+     */
+    public function requestInvoice(int $id, LegalSearchApprovalService $approvalService)
+    {
+        abort_unless($approvalService->isApprover(auth()->user()), 403, 'Only a Director or Deputy Director may review Online Legal Search requests.');
+
+        $searchRequest = LegalSearchOnlineRequest::with('payment')->findOrFail($id);
+
+        // No payment row means no invoice was ever issued for this request.
+        if (!$searchRequest->payment) {
+            abort(404, 'Request ' . $searchRequest->request_no . ' has no payment recorded against it, so there is no invoice to show.');
+        }
+
+        return $approvalService->renderInvoicePdf($searchRequest)
+            ->stream($approvalService->invoiceFileName($searchRequest));
+    }
+
+    /**
      * Approve a request: generates the report and emails it to the requester.
      */
     public function requestApprove(Request $request, int $id, LegalSearchApprovalService $approvalService)

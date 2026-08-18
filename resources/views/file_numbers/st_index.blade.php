@@ -1125,7 +1125,7 @@
 
                         // The CON mother file: a primary carries it in mls_fileno, a unit
                         // (PuA/SuA) inherits its primary's via parent_mls_fileno. Only a
-                        // conversion has one, and only it has an LGA Confirmation Sheet.
+                        // conversion has one, and only it has a Confirmation Sheet.
                         const conversionMotherNo = [mlsFileNo, file.mls_fileno, file.parent_mls_fileno]
                             .map(v => String(v || '').trim())
                             .find(v => /^CON-/i.test(v)) || '';
@@ -1134,7 +1134,7 @@
                         // form default, so they stay unlabelled — see resolveAllocationLabel().
                         const allocationLabel = resolveAllocationLabel(file);
 
-                        // The LGA Confirmation Sheet belongs to a SuA (always) and to a
+                        // The Confirmation Sheet belongs to a SuA (always) and to a
                         // conversion primary; a PuA unit never gets one.
                         const isSua = file.file_no_type === 'SUA';
                         const canPrintLcs = file.file_no_type !== 'PUA'
@@ -1243,12 +1243,12 @@
                                             <button type="button" onclick="generateConversionApplication(${file.id}, '${lcsFileNo}')"
                                                     class="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
                                                 <i data-lucide="refresh-cw" class="h-4 w-4 mr-2 text-indigo-600"></i>
-                                                LGA Confirmation Sheet (LCS)
+                                                Confirmation Sheet (CS)
                                             </button>` : `
                                             <span class="flex w-full items-center px-4 py-2 text-sm text-gray-300 cursor-not-allowed"
-                                                  title="${file.file_no_type === 'PUA' ? 'A PuA unit has no LGA Confirmation Sheet' : 'Only conversion files have an LGA Confirmation Sheet'}">
+                                                  title="${file.file_no_type === 'PUA' ? 'A PuA unit has no Confirmation Sheet' : 'Only conversion files have a Confirmation Sheet'}">
                                                 <i data-lucide="refresh-cw" class="h-4 w-4 mr-2"></i>
-                                                LGA Confirmation Sheet (LCS)
+                                                Confirmation Sheet (CS)
                                             </span>`}
                                             @if(Auth::check() && Auth::user()->assign_role === 'Supper Admin')
                                             <div class="my-1 border-t border-gray-100"></div>

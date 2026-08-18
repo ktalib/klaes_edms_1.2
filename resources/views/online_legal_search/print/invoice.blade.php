@@ -18,7 +18,12 @@
     $ministryLeft  = $logo('assets/logo/ministry2.jpeg') ?: $logo('assets/logo/ministry2.png');
     $ministryRight = $logo('assets/logo/ministry1.jpg');
     $brandLogo     = $logo('assets/logo/online_ls_print.jpeg') ?: $logo('assets/logo/online_ls.jpeg');
-    $klaesLogo     = $logo('storage/upload/logo/logo.png') ?: $logo('assets/logo/las.jpg');
+    // KLAES mark. Prefer a locally deployed copy; otherwise pull it from the app
+    // host, exactly as the PHS invoice does — the file is not present in every
+    // checkout, and DomPDF has isRemoteEnabled turned on.
+    $klaesLogo     = $logo('storage/upload/logo/Klase.png')
+        ?: $logo('storage/upload/logo/logo.png')
+        ?: 'http://app.klaes.ng/storage/upload/logo/Klase.png';
 
     // Paystack amounts are stored in kobo.
     $amount = ((int) ($payment->amount ?? 0)) / 100;

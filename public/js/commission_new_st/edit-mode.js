@@ -134,6 +134,46 @@
         return IS_PRIMARY ? bare : PREFIX + prefixed;
     }
 
+    /**
+     * Allocation Information (SuA only). Answered at commissioning and read-only
+     * on the Standalone Unit Application form, so this edit screen is the one
+     * place it can be corrected after the fact.
+     */
+    function prefillSuaAllocation() {
+        if (PREFIX !== 'sua') return;
+
+        var source = $('sua_allocation_source');
+        if (source) {
+            source.value = record.allocation_source || '';
+            // Populates the entity list for the chosen source.
+            source.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        var entity = $('sua_allocation_entity');
+        if (entity && record.allocation_entity) {
+            entity.disabled = false;
+
+            // A stored name that is not one of the offered entities was typed under
+            // "Other" — restore it that way so the box shows on screen.
+            var known = Array.prototype.some.call(entity.options, function (o) {
+                return o.value === record.allocation_entity;
+            });
+
+            if (known) {
+                entity.value = record.allocation_entity;
+            } else {
+                entity.value = 'Other';
+                setValue('sua_allocation_entity_other', record.allocation_entity);
+            }
+
+            if (typeof window.handleSuaAllocationEntityChange === 'function') {
+                window.handleSuaAllocationEntityChange(entity);
+            }
+        }
+
+        setValue('sua_allocation_ref_no', record.allocation_ref_no);
+    }
+
     function prefillLocation() {
         setValue(locId('propertyHouseNo', 'PropertyHouseNo'), record.property_house_no);
         setValue(locId('propertyPlotNo', 'PropertyPlotNo'), record.property_plot_no);
@@ -407,6 +447,18 @@
             longitude: valueOf(locId('propertyLongitude', 'PropertyLongitude')) || null
         };
 
+        if (PREFIX === 'sua') {
+            // Blank means "left as it was" — an empty string would fail the
+            // allocation_source rule and block a save that never touched it.
+            ['allocation_source', 'allocation_entity', 'allocation_ref_no'].forEach(function (key) {
+                var value = valueOf('sua_' + key);
+                if (key === 'allocation_entity' && value === 'Other') {
+                    value = valueOf('sua_allocation_entity_other').trim();
+                }
+                if (value) payload[key] = value;
+            });
+        }
+
         if (applicantTypeKey === 'corporate') {
             payload.corporate_name = valueOf(PREFIX + '_corporate_name');
             payload.rc_number = valueOf(PREFIX + '_rc_number');
@@ -507,6 +559,7 @@
 
     function init() {
         prefillApplicant();
+        prefillSuaAllocation();
         lockFileNumberControls();
         unlockLocationSection();
         prefillLocation();

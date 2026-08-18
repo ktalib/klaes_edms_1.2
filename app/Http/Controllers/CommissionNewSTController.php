@@ -231,6 +231,10 @@ class CommissionNewSTController extends Controller
                 'surname' => 'nullable|string|max:100',
                 'corporate_name' => 'nullable|string|max:200',
                 'rc_number' => 'nullable|string|max:50',
+                // SuA only — the other tabs never send these.
+                'allocation_source' => 'nullable|string|in:State Government,Local Government',
+                'allocation_entity' => 'nullable|string|max:100',
+                'allocation_ref_no' => 'nullable|string|max:100',
                 'property_house_no' => 'nullable|string|max:100',
                 'property_plot_no' => 'nullable|string|max:100',
                 'property_street_name' => 'nullable|string|max:255',
@@ -268,6 +272,10 @@ class CommissionNewSTController extends Controller
                         'corporate_name'  => $validated['corporate_name'] ?? null,
                         'rc_number'       => $validated['rc_number'] ?? null,
                         'gender'          => $validated['gender'] ?? $existing->gender,
+                        // Absent keys mean a non-SuA tab posted; keep what is stored.
+                        'allocation_source' => $validated['allocation_source'] ?? ($existing->allocation_source ?? null),
+                        'allocation_entity' => $validated['allocation_entity'] ?? ($existing->allocation_entity ?? null),
+                        'allocation_ref_no' => $validated['allocation_ref_no'] ?? ($existing->allocation_ref_no ?? null),
                         'updated_at'      => now(),
                     ]));
 
@@ -1541,6 +1549,12 @@ class CommissionNewSTController extends Controller
             $validated = $request->validate([
                 'land_use' => 'required|string',
                 'application_type' => 'required|string|in:Direct Allocation,Conversion',
+                // Allocation Information is answered here, at commissioning, and
+                // back-filled into the Standalone Unit Application form when this
+                // file number is selected there.
+                'allocation_source' => 'required|string|in:State Government,Local Government',
+                'allocation_entity' => 'required|string|max:100',
+                'allocation_ref_no' => 'nullable|string|max:100',
                 'applicant_type' => 'required|string|in:individual,corporate,multiple',
                 'first_name' => 'nullable|string',
                 'middle_name' => 'nullable|string',
@@ -1594,6 +1608,9 @@ class CommissionNewSTController extends Controller
                     'mls_fileno' => $mlsFileNo,
                     'file_no_type' => $fileNoType,
                     'application_type' => $validated['application_type'],
+                    'allocation_source' => $validated['allocation_source'],
+                    'allocation_entity' => $validated['allocation_entity'],
+                    'allocation_ref_no' => $validated['allocation_ref_no'] ?? null,
                     'land_use' => $validated['land_use'],
                     'land_use_code' => $landUseCode,
                     'year' => $year,

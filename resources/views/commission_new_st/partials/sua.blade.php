@@ -173,6 +173,71 @@
         </div>
     </div>
 
+    {{-- Allocation Information (SuA). Answered here, once, at commissioning:
+         the Standalone Unit Application form shows these read-only and
+         back-fills them when this file number is selected. --}}
+    <div class="bg-white border border-gray-200 rounded-lg p-5 shadow-sm mb-6">
+        <div class="flex items-center mb-4">
+            <div class="bg-indigo-500 p-2 rounded-lg mr-3">
+                <i data-lucide="landmark" class="w-4 h-4 text-white"></i>
+            </div>
+            <div>
+                <h3 class="text-base font-semibold text-gray-900">Allocation Information</h3>
+                <p class="text-xs text-gray-600">Captured once here and carried into the Standalone Unit Application</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label for="sua_allocation_source" class="block text-sm font-medium text-gray-700 mb-2">
+                    Allocation Source <span class="text-red-500">*</span>
+                </label>
+                <select id="sua_allocation_source" name="sua_allocation_source"
+                        class="w-full p-2 border border-gray-300 rounded-md">
+                    <option value="">Select Allocation Source</option>
+                    <option value="State Government">State Government</option>
+                    <option value="Local Government">Local Government (LGA)</option>
+                </select>
+
+                <div class="mt-4">
+                    <label for="sua_allocation_ref_no" class="block text-sm font-medium text-gray-700 mb-2">
+                        Allocation Reference No
+                    </label>
+                    <input type="text" id="sua_allocation_ref_no" name="sua_allocation_ref_no"
+                           class="w-full p-2 border border-gray-300 rounded-md uppercase"
+                           placeholder="enter allocation reference. eg: ALS/2025/001"
+                           oninput="this.value = this.value.toUpperCase();">
+                </div>
+            </div>
+
+            <div>
+                <label for="sua_allocation_entity" class="block text-sm font-medium text-gray-700 mb-2">
+                    Allocation Entity <span class="text-red-500">*</span>
+                </label>
+                <select id="sua_allocation_entity" name="sua_allocation_entity"
+                        class="w-full p-2 border border-gray-300 rounded-md"
+                        onchange="handleSuaAllocationEntityChange(this)" disabled>
+                    <option value="">Select Entity</option>
+                </select>
+
+                {{-- Shown when "Other" is picked: the typed name is what gets stored. --}}
+                <div id="sua_allocation_entity_other_wrap" class="mt-3 hidden">
+                    <label for="sua_allocation_entity_other" class="block text-sm font-medium text-gray-700 mb-2">
+                        Specify Entity <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" id="sua_allocation_entity_other" name="sua_allocation_entity_other"
+                           class="w-full p-2 border border-gray-300 rounded-md"
+                           placeholder="enter the allocating entity">
+                </div>
+            </div>
+        </div>
+
+        <p class="text-xs text-gray-500 mt-2">
+            <i data-lucide="info" class="inline h-3 w-3 mr-1"></i>
+            SuA applications are standalone and do not require a mother application.
+        </p>
+    </div>
+
 </div>
 
 {{-- SuA Applicant Information Component --}}

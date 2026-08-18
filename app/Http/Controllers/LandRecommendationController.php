@@ -201,7 +201,7 @@ class LandRecommendationController extends Controller
         // Counters: the cards describe the list under them, the tab badges describe
         // the page's own tabs. On the OSS tab those are two different scopes.
         $stats = $this->indexStats($request, $pageType === 'OSS', $applyOssChangeOfNameOriginFilter, $printedExistsFor($pageType === 'OSS'));
-        $stats['oss'] = $this->ossRecommendationCount($applyOssChangeOfNameOriginFilter);
+        $stats['oss'] = $this->ossRecommendationCount($applyOssChangeOfNameOriginFilter, $printedExistsFor(true));
         $cardStats = $ossTab
             ? $this->indexStats($request, true, $applyOssChangeOfNameOriginFilter, $printedExistsFor(true))
             : $stats;
@@ -286,11 +286,11 @@ class LandRecommendationController extends Controller
             $query->whereNull('land_recommendations.rofo_batch_id');
         }
 
-        // The OSS tab is the OSS register whole — it is not split by print state,
-        // so neither half of the filter applies to it.
-        if ($tab === 'printed') {
+        // OSS recommendations are printed in OSS itself, so the OSS list only ever
+        // shows printed records — there is no not-printed half of it to show.
+        if ($tab === 'printed' || $ossTab) {
             $query->whereExists($printedExists);
-        } elseif (!$ossTab) { // not_printed
+        } else { // not_printed
             $query->whereNotExists($printedExists);
         }
 
@@ -384,12 +384,14 @@ class LandRecommendationController extends Controller
 
     /**
      * How many OSS recommendations exist, for the OSS tab's badge on the Land page.
-     * Scoped exactly like the OSS list itself, so the badge and the tab agree.
+     * Scoped exactly like the OSS list itself — printed only — so the badge and
+     * the tab agree.
      */
-    private function ossRecommendationCount(callable $applyOssFilter): int
+    private function ossRecommendationCount(callable $applyOssFilter, callable $printedExists): int
     {
         $query = LandRecommendation::query()->whereRaw("UPPER(ISNULL(type, '')) = ?", ['OSS']);
         $applyOssFilter($query);
+        $query->whereExists($printedExists);
 
         return (int) $query->count();
     }

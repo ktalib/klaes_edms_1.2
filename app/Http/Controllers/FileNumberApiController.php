@@ -1142,6 +1142,11 @@ class FileNumberApiController extends Controller
                     // Needed by the Actions menu: an ST conversion prints the
                     // Application for Conversion off its CON mother file number.
                     'st_file_numbers.application_type',
+                    // Allocation Information answered at SuA commissioning; the
+                    // Standalone Unit Application form back-fills from these.
+                    'st_file_numbers.allocation_source',
+                    'st_file_numbers.allocation_entity',
+                    'st_file_numbers.allocation_ref_no',
                     // A unit (PuA/SuA) stores no mls_fileno of its own, so carry the
                     // CON mother down from its primary — that is what the LGA
                     // Confirmation Sheet is printed from.

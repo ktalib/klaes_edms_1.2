@@ -635,6 +635,48 @@
   /**
    * Handle SUA file selection
    */
+  /**
+   * Back-fill Allocation Information from the selected SUA file number.
+   *
+   * Allocation Source / Entity / Reference No are answered once, on the SuA File
+   * Number Commissioning form, and stored on st_file_numbers. Here they are
+   * display-only: the greyed-out controls show the answer and the hidden inputs
+   * carry it into the POST.
+   */
+  function applyAllocationInfoFromFile(fileData) {
+    const source = fileData.allocation_source || '';
+    const entity = fileData.allocation_entity || '';
+    const refNo = fileData.allocation_ref_no || '';
+
+    const sourceHidden = document.getElementById('allocation_source');
+    const entityHidden = document.getElementById('allocation_entity');
+    const refNoInput = document.getElementById('allocationRefNo');
+    const sourceDisplay = document.getElementById('allocation_source_display');
+    const entityDisplay = document.getElementById('allocation_entity_display');
+
+    if (sourceHidden) sourceHidden.value = source;
+    if (entityHidden) entityHidden.value = entity;
+    if (refNoInput) refNoInput.value = refNo;
+
+    if (sourceDisplay) sourceDisplay.value = source;
+
+    if (entityDisplay) {
+      // The entity list depends on the source, so show the stored value itself
+      // rather than rebuilding the dropdown for a control nobody can change.
+      entityDisplay.innerHTML = '<option value="">Select Entity</option>';
+      if (entity) {
+        const option = document.createElement('option');
+        option.value = entity;
+        option.textContent = entity;
+        option.selected = true;
+        entityDisplay.appendChild(option);
+      }
+    }
+
+    const warning = document.getElementById('allocation-missing-warning');
+    if (warning) warning.classList.toggle('hidden', Boolean(source && entity));
+  }
+
   function handleSUAFileSelection(selectElement) {
     const selectedOption = selectElement.selectedOptions[0];
     if (!selectedOption || !selectedOption.value) {
@@ -674,6 +716,9 @@
 
       // Update land use badge and hidden input for SUA
       updateSUALandUse(fileData.land_use);
+
+      // Back-fill Allocation Information answered at commissioning
+      applyAllocationInfoFromFile(fileData);
 
       // Auto-fill applicant information
       autoFillApplicantInfo(fileData);
@@ -1635,45 +1680,67 @@
                           referenced above.</p>
                       </div>
                     @else
-                      <!-- SUA Allocation Information Section -->
+                      <!-- SUA Allocation Information Section.
+                           Read-only here: the answers are given once on the SuA File Number
+                           Commissioning form and back-filled below by handleSUAFileSelection()
+                           when a SUA file number is picked. The disabled controls are display
+                           only - the values actually posted come from the hidden inputs. -->
                       <div class="mb-6">
                         <h2 class="text-lg font-semibold text-gray-800 mb-3">Allocation Information</h2>
                         <div class="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
                           <div class="grid grid-cols-2 gap-4">
                             <!-- Allocation Source -->
                             <div>
-                              <label for="allocation_source" class="block text-sm font-medium text-gray-700">Allocation
-                                Source <span class="text-red-500">*</span></label>
-                              <select id="allocation_source" name="allocation_source"
-                                class="w-full p-2 border border-gray-300 rounded-md" required>
+                              <label for="allocation_source_display" class="block text-sm font-medium text-gray-700">Allocation
+                                Source</label>
+                              <select id="allocation_source_display"
+                                class="w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed"
+                                disabled title="Set on the SuA File Number Commissioning form">
                                 <option value="">Select Allocation Source</option>
                                 <option value="State Government" {{ isset($sua) && $sua->allocation_source === 'State Government' ? 'selected' : '' }}>State Government</option>
                                 <option value="Local Government" {{ isset($sua) && $sua->allocation_source === 'Local Government' ? 'selected' : '' }}>Local Government (LGA)</option>
                               </select>
+                              <input type="hidden" id="allocation_source" name="allocation_source"
+                                value="{{ old('allocation_source', isset($sua) ? $sua->allocation_source : '') }}">
 
                               <div class="mt-4">
                                 <label class="block text-sm font-medium text-gray-700" for="allocationRefNo">Allocation
                                   Reference No</label>
                                 <input type="text" id="allocationRefNo"
-                                  class="w-full p-2 border border-gray-300 rounded-md uppercase" name="allocation_ref_no"
-                                  placeholder="enter allocation reference. eg: ALS/2025/001"
-                                  value="{{ old('allocation_ref_no', isset($sua) ? $sua->allocation_ref_no : '') }}"
-                                  oninput="this.value = this.value.toUpperCase();">
+                                  class="w-full p-2 border border-gray-300 rounded-md uppercase bg-gray-100 text-gray-500 cursor-not-allowed"
+                                  name="allocation_ref_no" readonly
+                                  title="Set on the SuA File Number Commissioning form"
+                                  placeholder="set at commissioning"
+                                  value="{{ old('allocation_ref_no', isset($sua) ? $sua->allocation_ref_no : '') }}">
                               </div>
                             </div>
 
                             <!-- Allocation Entity -->
                             <div>
-                              <label for="allocation_entity" class="block text-sm font-medium text-gray-700">Allocation
-                                Entity <span class="text-red-500">*</span></label>
-                              <select id="allocation_entity" name="allocation_entity"
-                                class="w-full p-2 border border-gray-300 rounded-md" required disabled>
+                              <label for="allocation_entity_display" class="block text-sm font-medium text-gray-700">Allocation
+                                Entity</label>
+                              <select id="allocation_entity_display"
+                                class="w-full p-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed"
+                                disabled title="Set on the SuA File Number Commissioning form">
                                 <option value="">Select Entity</option>
+                                @if(isset($sua) && $sua->allocation_entity)
+                                  <option value="{{ $sua->allocation_entity }}" selected>{{ $sua->allocation_entity }}</option>
+                                @endif
                               </select>
+                              <input type="hidden" id="allocation_entity" name="allocation_entity"
+                                value="{{ old('allocation_entity', isset($sua) ? $sua->allocation_entity : '') }}">
                             </div>
                           </div>
-                          <p class="text-xs text-gray-500 mt-2">SUA applications are standalone and do not require a mother
-                            application.</p>
+                          <div id="allocation-missing-warning"
+                            class="hidden mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                            This SUA file number was commissioned before Allocation Information moved to the
+                            commissioning form, so it has none stored. Set it on the SuA File Number Commissioning
+                            form (View/Edit that record), then reselect the file number here.
+                          </div>
+                          <p class="text-xs text-gray-500 mt-2">
+                            Captured on the SuA File Number Commissioning form and filled in here once a SUA file
+                            number is selected. SUA applications are standalone and do not require a mother application.
+                          </p>
                         </div>
                     @endif
                         
@@ -3321,9 +3388,16 @@
           }
         });
 
+        /**
+         * Allocation Source / Entity are no longer chosen here - they are answered on
+         * the SuA File Number Commissioning form and back-filled by
+         * applyAllocationInfoFromFile(). Kept for the entity list, which is the
+         * reference copy of what that form offers, and as the hook for any caller
+         * that still asks for it.
+         */
         function setupAllocationDropdowns() {
-          const allocationSource = document.getElementById('allocation_source');
-          const allocationEntity = document.getElementById('allocation_entity');
+          const allocationSource = document.getElementById('allocation_source_display');
+          const allocationEntity = document.getElementById('allocation_entity_display');
 
           const entityOptions = {
             'State Government': [

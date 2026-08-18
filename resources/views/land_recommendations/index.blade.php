@@ -373,7 +373,12 @@
                                 <th class="px-6 py-4 whitespace-nowrap">Date Generated</th>
                                 <th class="px-6 py-4 whitespace-nowrap text-blue-600">Application Date</th>
                                 <th class="px-6 py-4 whitespace-nowrap text-green-600">Date Printed</th>
+                                {{-- No Actions column on the OSS tab: OSS recommendations are
+                                     printed in OSS itself, so this list is a read-only register
+                                     of what has already been printed. --}}
+                                @if(empty($ossTab))
                                 <th class="px-6 py-4 text-right sticky right-0 bg-slate-50 border-l border-slate-200 z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap">Actions</th>
+                                @endif
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 text-sm">
@@ -446,6 +451,7 @@
                                 <td class="px-4 py-2 text-xs whitespace-nowrap {{ $printedAt ? 'text-green-700 font-semibold' : 'text-slate-400 italic' }}">
                                     {{ $printedAt ? \Carbon\Carbon::parse($printedAt)->format('Y-m-d h:i A') : 'Not printed' }}
                                 </td>
+                                @if(empty($ossTab))
                                 @if(empty($isOssView))
                                     <td class="px-4 py-2 text-right sticky right-0 bg-white shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] border-l border-slate-100 z-10 whitespace-nowrap">
                                         <div x-data="{ 
@@ -575,10 +581,11 @@
                                         </div>
                                     </td>
                                 @endif
+                                @endif
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="17" class="px-8 py-12 text-center">
+                                <td colspan="{{ empty($isOssView) ? 20 : (empty($ossTab) ? 19 : 18) }}" class="px-8 py-12 text-center">
                                     <div class="flex flex-col items-center">
                                         <div class="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 mb-4">
                                             <i data-lucide="file-text" class="h-6 w-6"></i>

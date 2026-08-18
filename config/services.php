@@ -63,6 +63,13 @@ return [
         'username' => env('BETASMS_USERNAME'),
         'password' => env('BETASMS_PASSWORD'),
         'sender'   => env('BETASMS_SENDER', 'KLASE'),
+        // Set per server when the default plain-HTTP route is blocked outbound.
+        // spa:sms-doctor probes the alternatives and prints what to put here.
+        'endpoint' => env('BETASMS_ENDPOINT', 'http://login.betasms.com/api/'),
+        'proxy'    => env('BETASMS_PROXY'),
+        // Pin login.betasms.com to this IP, for a server whose DNS cannot
+        // resolve it but whose network can still reach it.
+        'ip'       => env('BETASMS_IP'),
     ],
 
     'bulksmsnigeria' => [

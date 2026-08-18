@@ -23,13 +23,24 @@ use Illuminate\Support\Facades\DB;
 class SpasLookupController extends Controller
 {
     /**
-     * Bounded snapshot of indexed files for offline file-number lookup.
+     * Indexed files for offline lookup, in pages.
      *
-     * Deliberately NOT the whole of file_indexings ⋈ fileNumber — that is far
-     * too large to mirror onto a handset. The app seeds this from files the
-     * surveyor actually opens, and may optionally pre-seed a working set by
-     * LGA. Capped hard so a missing filter cannot turn into a multi-megabyte
-     * download over 2G.
+     * TWO MODES, because they have opposite needs.
+     *
+     * SEARCH (`q`, `file_numbers`, or a first page with no cursor) orders by
+     * file_number — what a human expects — and returns a small result.
+     *
+     * MIRROR (`after_id`) walks the whole table so a handset can hold every
+     * file and work anywhere, not just where it happened to have searched
+     * before. It is keyset-paginated on `fi.id`: `WHERE id > ? ORDER BY id`
+     * seeks straight into the clustered index. The obvious alternative, OFFSET,
+     * degrades badly — SQL Server must count and discard every skipped row, so
+     * the last pages of a 133,000-row walk cost far more than the first, and
+     * the download slows to a crawl exactly when it is nearly done.
+     *
+     * The cursor also makes the walk RESUMABLE. A surveyor loses signal
+     * mid-download constantly; keeping `after_id` on the device means the next
+     * attempt continues instead of starting the whole mirror again.
      */
     public function fileIndex(Request $request): JsonResponse
     {
@@ -38,10 +49,15 @@ class SpasLookupController extends Controller
             'district'     => 'nullable|string|max:255',
             'file_numbers' => 'nullable|array|max:500',
             'q'            => 'nullable|string|max:255',
-            'limit'        => 'nullable|integer|min:1|max:1000',
+            'after_id'     => 'nullable|integer|min:0',
+            'limit'        => 'nullable|integer|min:1|max:2000',
         ]);
 
+        // Bigger ceiling than the old 1,000: a full mirror is ~130 round trips
+        // at 1,000 a page, and each one costs a connection setup on a mobile
+        // link. Still capped so one request cannot become a huge download.
         $limit = (int) $request->input('limit', 500);
+        $mirroring = $request->filled('after_id');
 
         $query = DB::connection('sqlsrv')
             ->table('file_indexings as fi')
@@ -55,8 +71,19 @@ class SpasLookupController extends Controller
             ->select(
                 'fi.id as file_indexing_id', 'fi.tracking_id', 'fi.file_number',
                 'fi.land_use_type', 'fi.location', 'fi.district', 'fi.lga',
-                'fi.phone', 'fi.current_holder', 'fn.FileName as file_title'
+                'fi.phone', 'fn.FileName as file_title'
             );
+
+        // `current_holder` is NVARCHAR(MAX) — a LOB read per row. It is also
+        // empty in practice: a sample of 250 files produced a usable name from
+        // it ZERO times, because the column does not hold the JSON shape
+        // ownerFromHolder() expects. Paying a LOB read on all 133,000 rows of a
+        // mirror for a field that is always blank is the wrong trade, so it is
+        // fetched only on the small search path, where the cost is trivial and
+        // any row that does parse still benefits.
+        if (! $mirroring) {
+            $query->addSelect('fi.current_holder');
+        }
 
         // Match the LGA's misspellings too, not just the canonical spelling.
         // `file_indexings.lga` is free text (196 distinct values against 45
@@ -85,17 +112,44 @@ class SpasLookupController extends Controller
             });
         }
 
-        $rows = $query->orderBy('fi.file_number')->limit($limit)->get();
+        if ($mirroring) {
+            $query->where('fi.id', '>', (int) $request->input('after_id'))->orderBy('fi.id');
+        } else {
+            $query->orderBy('fi.file_number');
+        }
+
+        $rows = $query->limit($limit)->get();
+
+        // A short page is the end of the walk. Reporting it explicitly means
+        // the client stops on a definite signal rather than guessing from a
+        // count, which would loop forever if the last page happened to be full.
+        $hasMore = $mirroring && $rows->count() === $limit;
 
         return response()->json([
             'success'     => true,
             'count'       => $rows->count(),
             'truncated'   => $rows->count() >= $limit,
+            'has_more'    => $hasMore,
+            'next_after_id' => $mirroring && $rows->isNotEmpty()
+                ? (int) $rows->last()->file_indexing_id
+                : null,
+            // Counted only on the first page of a mirror, so the app can show
+            // real progress ("12,000 of 133,255") instead of an open-ended
+            // spinner. Repeating the count on all ~130 pages would cost more
+            // than the data itself.
+            'total'       => $mirroring && (int) $request->input('after_id') === 0
+                ? $this->fileIndexTotal($request)
+                : null,
             'server_time' => now()->toIso8601String(),
             'data'        => $rows->map(fn ($r) => [
                 'file_number'      => $r->file_number,
                 'file_title'       => $r->file_title ?? '',
-                'owner_name'       => $this->ownerFromHolder($r->current_holder),
+                // Blank on the mirror path by design (see the select above);
+                // the client falls back to file_title, which is populated for
+                // ~97% of files.
+                'owner_name'       => isset($r->current_holder)
+                    ? $this->ownerFromHolder($r->current_holder)
+                    : '',
                 'land_use_type'    => $r->land_use_type ?? '',
                 'location'         => $r->location ?? '',
                 'district'         => $r->district ?? '',
@@ -168,6 +222,32 @@ class SpasLookupController extends Controller
             'success'     => true,
             'file_number' => \App\Models\SpaApplication::generateCustomaryFileNumber(),
         ]);
+    }
+
+    /**
+     * How many files a full mirror will cover, honouring the same filters.
+     *
+     * No join to fileNumber: the join only decorates rows with a title and
+     * cannot change how many there are, and leaving it out keeps the count fast
+     * enough to run inline on the first page.
+     */
+    private function fileIndexTotal(Request $request): int
+    {
+        $query = DB::connection('sqlsrv')
+            ->table('file_indexings as fi')
+            ->whereNotNull('fi.file_number')
+            ->where('fi.file_number', 'not like', 'DCIV%')
+            ->where('fi.file_number', 'not like', 'DC/%');
+
+        if ($request->filled('lga')) {
+            $query->whereIn('fi.lga', LgaNormalizer::variantsFor($request->input('lga')));
+        }
+
+        if ($request->filled('district')) {
+            $query->where('fi.district', $request->input('district'));
+        }
+
+        return (int) $query->count();
     }
 
     private function ownerFromHolder($holder): string

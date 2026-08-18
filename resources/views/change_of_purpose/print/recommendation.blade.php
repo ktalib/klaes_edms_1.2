@@ -230,7 +230,10 @@
 @endphp
 
 <div class="a4-page">
-    @include('partials.ministry_letterhead', ['lhSpine' => 'Ministry of Land and Physical Planning'])
+    {{-- No CSS letterhead here: this memo goes out on the ministry's
+         pre-printed stationery, which already carries the crest, the headings,
+         the red spine and the rules. The main container keeps its 42mm top /
+         34mm left padding so the typed text still clears them on paper. --}}
 
     <div class="main-container">
         <div class="addressee">The Permanent Secretary</div>

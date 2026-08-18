@@ -354,6 +354,12 @@ async function generateSuaFileNumbers() {
     if (!applicantData) {
         return; // Error already shown in collection function
     }
+
+    // Collect allocation information (Source / Entity / Reference No)
+    const allocationData = collectSuaAllocationData();
+    if (!allocationData) {
+        return; // Error already shown in collection function
+    }
     
     // Show loading state
     const button = document.querySelector('button[onclick="generateSuaFileNumbers()"]');
@@ -383,6 +389,7 @@ async function generateSuaFileNumbers() {
             land_use: landUse.toUpperCase(),
             application_type: applicationType, // REQUIRED: Application Type
             ...applicantData,
+            ...allocationData,
             ...(window.STLocationMaps?.sua ? window.STLocationMaps.sua.getPayload() : {}),
             commissioned_by: document.getElementById('sua_commissioned_by')?.value || '',
             commissioned_date: document.getElementById('sua_commissioned_date')?.value || ''
@@ -787,6 +794,112 @@ function handleSuaApplicationTypeChange(radioElement) {
     console.log('✅ SuA Application Type set to:', radioElement.value);
 }
 
+/* =========================================================================
+ * Allocation Information (SuA commissioning)
+ *
+ * Allocation Source / Entity / Reference No used to be typed on the Standalone
+ * Unit Application form. They are now answered here, once, and back-filled into
+ * that form when the SuA file number is selected. Entity list mirrors
+ * setupAllocationDropdowns() in sectionaltitling/sub_application.blade.php.
+ * ========================================================================= */
+const SUA_ALLOCATION_ENTITIES = {
+    'State Government': ['KSIP', 'HOUSING', 'KUNPDA', 'Other'],
+    'Local Government': [
+        'Ajingi', 'Albasu', 'Bagwai', 'Bebeji', 'Bichi', 'Bunkure', 'Dala', 'Dambatta',
+        'Dawakin Kudu', 'Dawakin Tofa', 'Doguwa', 'Fagge', 'Gabasawa', 'Garko',
+        'Garum Mallam', 'Gaya', 'Gezawa', 'Gwale', 'Gwarzo', 'Kabo', 'Kano Municipal',
+        'Karaye', 'Kibiya', 'Kiru', 'Kumbotso', 'Kunchi', 'Kura', 'Madobi', 'Makoda',
+        'Minjibir', 'Nasarawa', 'Rano', 'Rimin Gado', 'Rogo', 'Shanono', 'Sumaila',
+        'Takai', 'Tarauni', 'Tofa', 'Tsanyawa', 'Tudun Wada', 'Ungogo', 'Warawa', 'Wudil'
+    ]
+};
+
+window.SUA_ALLOCATION_ENTITIES = SUA_ALLOCATION_ENTITIES;
+
+/** Reveal the "Specify Entity" box only while "Other" is the selection. */
+function handleSuaAllocationEntityChange(selectElement) {
+    const wrap = document.getElementById('sua_allocation_entity_other_wrap');
+    if (!wrap) return;
+
+    const isOther = selectElement.value === 'Other';
+    wrap.classList.toggle('hidden', !isOther);
+    if (!isOther) {
+        const input = document.getElementById('sua_allocation_entity_other');
+        if (input) input.value = '';
+    }
+}
+
+function setupSuaAllocationDropdowns() {
+    const source = document.getElementById('sua_allocation_source');
+    const entity = document.getElementById('sua_allocation_entity');
+    if (!source || !entity) return;
+
+    source.addEventListener('change', function () {
+        const options = SUA_ALLOCATION_ENTITIES[this.value];
+        entity.innerHTML = '<option value="">Select Entity</option>';
+        handleSuaAllocationEntityChange(entity);
+
+        if (!options) {
+            entity.disabled = true;
+            return;
+        }
+
+        entity.disabled = false;
+        options.forEach(name => {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = name;
+            entity.appendChild(option);
+        });
+    });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupSuaAllocationDropdowns);
+} else {
+    setupSuaAllocationDropdowns();
+}
+
+/**
+ * Collect + validate the Allocation Information answers.
+ * Returns null (after showing the warning) when a required answer is missing.
+ */
+function collectSuaAllocationData() {
+    const allocationSource = document.getElementById('sua_allocation_source')?.value || '';
+    const selectedEntity = document.getElementById('sua_allocation_entity')?.value || '';
+    const otherEntity = (document.getElementById('sua_allocation_entity_other')?.value || '').trim();
+    const allocationRefNo = document.getElementById('sua_allocation_ref_no')?.value || '';
+
+    if (!allocationSource || !selectedEntity) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Allocation Information Required',
+            text: 'Please select an Allocation Source and Allocation Entity before commissioning.',
+            confirmButtonColor: '#f59e0b'
+        });
+        return null;
+    }
+
+    if (selectedEntity === 'Other' && !otherEntity) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Specify the Entity',
+            text: 'You picked "Other" as the Allocation Entity — type the entity name before commissioning.',
+            confirmButtonColor: '#f59e0b'
+        });
+        return null;
+    }
+
+    // "Other" is a picker convenience; what gets stored is the entity itself.
+    const allocationEntity = selectedEntity === 'Other' ? otherEntity : selectedEntity;
+
+    return {
+        allocation_source: allocationSource,
+        allocation_entity: allocationEntity,
+        allocation_ref_no: allocationRefNo.trim().toUpperCase() || null
+    };
+}
+
 // Make functions globally available  
 window.handleSuaLandUseChange = handleSuaLandUseChange;
 window.handleSuaApplicationTypeChange = handleSuaApplicationTypeChange;
@@ -794,6 +907,8 @@ window.generateSuaFileNumbers = generateSuaFileNumbers;
 window.generateSUAPrimaryFileNo = generateSUAPrimaryFileNo;
 window.generatePuaFileNumber = generatePuaFileNumber;
 window.clearSuaFileNumbers = clearSuaFileNumbers;
+window.setupSuaAllocationDropdowns = setupSuaAllocationDropdowns;
+window.handleSuaAllocationEntityChange = handleSuaAllocationEntityChange;
 
 console.log('🎉 SuA JavaScript module loaded successfully');
 console.log('🔧 Available SuA and PuA functions:', {

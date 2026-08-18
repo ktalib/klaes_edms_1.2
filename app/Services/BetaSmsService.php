@@ -16,7 +16,60 @@ use Illuminate\Support\Facades\Log;
  */
 class BetaSmsService
 {
-    private string $endpoint = 'http://login.betasms.com/api/';
+    /**
+     * The gateway URL, and optionally a proxy to reach it through.
+     *
+     * Both are configurable because the API is plain HTTP on port 80 and some
+     * production hosts block outbound :80 while allowing :443 — the same code
+     * that sends locally then cannot resolve or connect at all. Rather than
+     * hard-code a guess, BETASMS_ENDPOINT lets the working route be set per
+     * server, and BETASMS_PROXY covers boxes that only reach the internet
+     * through a proxy. `spa:sms-doctor` reports which routes work on the
+     * machine it is run on.
+     */
+    private string $endpoint;
+    private ?string $proxy;
+    private ?string $pinnedIp;
+
+    public function __construct()
+    {
+        $this->endpoint = config('services.betasms.endpoint') ?: 'http://login.betasms.com/api/';
+        $this->proxy    = config('services.betasms.proxy') ?: null;
+        $this->pinnedIp = config('services.betasms.ip') ?: null;
+    }
+
+    /**
+     * curl options for whichever route this server is configured to use.
+     *
+     * Kept in one place so send() and the doctor's probes cannot drift: a route
+     * the doctor calls "working" has to be the same one send() then takes.
+     *
+     * Note there is no CURLOPT_FOLLOWLOCATION here, deliberately. The gateway's
+     * https:// URL answers a 301 back to http://, so following redirects would
+     * make an https route look usable on a box where only :443 is open, while
+     * every real send still had to complete over :80.
+     *
+     * @return array<int,mixed>
+     */
+    private function routeOptions(): array
+    {
+        $options = [];
+
+        if ($this->proxy) {
+            $options[CURLOPT_PROXY] = $this->proxy;
+        }
+
+        if ($this->pinnedIp) {
+            $parts = parse_url($this->endpoint);
+            $host  = $parts['host'] ?? 'login.betasms.com';
+            $port  = $parts['port'] ?? (($parts['scheme'] ?? 'http') === 'https' ? 443 : 80);
+            // CURLOPT_RESOLVE rather than putting the IP in the URL: the Host
+            // header stays correct, which the gateway's vhost needs.
+            $options[CURLOPT_RESOLVE] = [$host.':'.$port.':'.$this->pinnedIp];
+        }
+
+        return $options;
+    }
 
     /**
      * Send an SMS to a single Nigerian phone number.
@@ -64,6 +117,8 @@ class BetaSmsService
             CURLOPT_TIMEOUT        => 30,
         ]);
 
+        curl_setopt_array($ch, $this->routeOptions());
+
         $response  = curl_exec($ch);
         $curlError = curl_error($ch);
         $httpCode  = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -72,8 +127,14 @@ class BetaSmsService
         if ($curlError || $response === false) {
             // The usual production cause: outbound HTTP to login.betasms.com is
             // blocked by the server's firewall, which never happens on a dev box.
-            $this->lastReason = 'could not reach login.betasms.com'.($curlError ? ' ('.$curlError.')' : '');
-            Log::error('BetaSmsService: request failed', ['phone' => $mobile, 'error' => $curlError]);
+            $this->lastReason = 'could not reach '.$this->endpoint.($curlError ? ' ('.$curlError.')' : '')
+                .' — run "php artisan spa:sms-doctor" on this server to find a route that works';
+            Log::error('BetaSmsService: request failed', [
+                'phone'    => $mobile,
+                'endpoint' => $this->endpoint,
+                'proxy'    => $this->proxy ? 'set' : 'none',
+                'error'    => $curlError,
+            ]);
             return false;
         }
 

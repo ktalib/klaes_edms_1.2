@@ -1309,6 +1309,79 @@ class SpecialAssignmentController extends Controller
         return response()->json(['success' => true, 'id' => $bill->id, 'reference_id' => $refId, 'message' => "Bill {$refId} saved."]);
     }
 
+    // ─── BILL ITEMS (the contravention tariff) ────────────────────────────────
+
+    /** The tariff, for the Bill Items Setting editor. */
+    public function billItems()
+    {
+        return response()->json([
+            'success' => true,
+            'data'    => \App\Models\SpaBillItem::orderBy('sort_order')->orderBy('name')->get(),
+        ]);
+    }
+
+    /**
+     * Replace the tariff with what the editor submitted.
+     *
+     * Rows the officer removed are DEACTIVATED, never deleted: bills already
+     * raised reference them, and deleting would leave historical lines pointing
+     * at nothing. Deactivated items simply stop being charged.
+     */
+    public function saveBillItems(Request $request)
+    {
+        $request->validate([
+            'items'             => 'required|array',
+            'items.*.name'      => 'required|string|max:150',
+            'items.*.amount'    => 'required|numeric|min:0',
+            'items.*.is_active' => 'required|boolean',
+        ]);
+
+        $actor = auth()->user()->name ?? auth()->id();
+        $keptIds = [];
+
+        DB::connection('sqlsrv')->transaction(function () use ($request, $actor, &$keptIds) {
+            foreach ($request->input('items') as $i => $row) {
+                $values = [
+                    'name'       => trim($row['name']),
+                    'amount'     => $row['amount'],
+                    'is_active'  => (bool) $row['is_active'],
+                    'sort_order' => $row['sort_order'] ?? ($i + 1),
+                    'updated_by' => $actor,
+                ];
+
+                $item = ! empty($row['id'])
+                    ? \App\Models\SpaBillItem::find($row['id'])
+                    : null;
+
+                if ($item) {
+                    $item->update($values);
+                } else {
+                    // updateOrCreate on the name, because the unique index makes
+                    // a re-added item collide with the row that was deactivated
+                    // earlier rather than creating a duplicate.
+                    $item = \App\Models\SpaBillItem::updateOrCreate(
+                        ['name' => $values['name']],
+                        $values + ['created_by' => $actor]
+                    );
+                }
+
+                $keptIds[] = $item->id;
+            }
+
+            \App\Models\SpaBillItem::whereNotIn('id', $keptIds)->update([
+                'is_active'  => 0,
+                'updated_by' => $actor,
+            ]);
+        });
+
+        $total = \App\Models\SpaBillItem::billable()->sum(fn ($i) => (float) $i->amount);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Tariff saved. Each contravention will be billed ₦'.number_format($total, 2).'.',
+        ]);
+    }
+
     public function recordBillPayment(Request $request)
     {
         $request->validate([

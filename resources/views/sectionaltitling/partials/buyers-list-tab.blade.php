@@ -49,7 +49,10 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <div class="text-sm text-amber-800">
-                        <strong>Important:</strong> CSV import will add buyers to the existing list. Your buyer data will be saved immediately after import.
+                        <strong>Important — the file replaces the list:</strong> importing a CSV
+                        <strong>deletes every buyer currently saved on this application</strong> and stores the
+                        rows in the file instead. It does not add to what is already there. Upload the complete
+                        list, not just the new buyers. You will be asked to confirm before anything is deleted.
                     </div>
                 </div>
             </div>
@@ -319,31 +322,36 @@
     }
 
     // CSV Import Handler
+    //
+    // A CSV upload REPLACES the buyer list for the application - it is the officer's
+    // authoritative list for the file, not an addition to what is stored. Merging is
+    // what left COM-1991-46 holding two cohorts of the same 249 buyers under
+    // different section formats ("U1 A/B" vs "U1"), which the server's
+    // name+unit+section duplicate check could never match up.
     function handleCsvImport() {
         const fileInput = document.getElementById('csvFileInput');
         const file = fileInput.files[0];
-        const resultDiv = document.getElementById('csv-result');
         const applicationId = document.getElementById('application_id').value;
-        
+
         if (!file) {
             showCsvResult('error', 'Please select a CSV file');
             return;
         }
-        
+
         // Validate file size (5MB max)
         if (file.size > 5 * 1024 * 1024) {
             showCsvResult('error', 'File size exceeds 5MB limit');
             return;
         }
-        
+
         // Validate file type
         if (!file.name.endsWith('.csv')) {
             showCsvResult('error', 'Please select a valid CSV file');
             return;
         }
-        
+
         showCsvResult('loading', 'Processing CSV file...');
-        
+
         // Parse CSV using PapaParse
         Papa.parse(file, {
             header: true,
@@ -353,14 +361,14 @@
                     showCsvResult('error', 'Error parsing CSV: ' + results.errors[0].message);
                     return;
                 }
-                
+
                 const buyers = results.data;
-                
+
                 if (buyers.length === 0) {
                     showCsvResult('error', 'No valid data found in CSV file');
                     return;
                 }
-                
+
                 // Validate required fields
                 const hasMissingCoreFields = buyers.some(buyer => {
                     const firstName = (buyer.firstName || '').trim();
@@ -379,65 +387,19 @@
                     showCsvResult('error', 'Some rows have missing required fields. Each row needs either First Name + Surname or Buyer Name, plus Unit No and Section Number.');
                     return;
                 }
-                
-                // Prepare data for submission
-                const formData = new FormData();
-                formData.append('application_id', applicationId);
-                formData.append('_token', '{{ csrf_token() }}');
-                formData.append('client_source', 'csv');
-                if (window.__buyerListDiagnostics) {
-                    formData.append('client_trace_id', window.__buyerListDiagnostics.traceId());
-                    window.__buyerListDiagnostics.log('csv_import_started', { rows: buyers.length });
-                }
 
-                buyers.forEach((buyer, index) => {
-                    // Clean unitMeasurement - remove 'sqm' and other non-numeric characters except decimal point
-                    let cleanMeasurement = '';
-                    if (buyer.unitMeasurement) {
-                        cleanMeasurement = buyer.unitMeasurement.toString()
-                            .replace(/sqm/gi, '')  // Remove 'sqm' (case insensitive)
-                            .replace(/[^\d.]/g, '') // Remove all non-numeric except decimal point
-                            .trim();
-                    }
-                    
-                    formData.append(`records[${index}][buyerTitle]`, buyer.buyerTitle || '');
-                    formData.append(`records[${index}][firstName]`, buyer.firstName || '');
-                    formData.append(`records[${index}][middleName]`, buyer.middleName || '');
-                    formData.append(`records[${index}][surname]`, buyer.surname || '');
-                    formData.append(`records[${index}][unit_no]`, buyer.unit_no || '');
-                    formData.append(`records[${index}][sectionNumber]`, buyer.sectionNumber || '');
-                    formData.append(`records[${index}][landUse]`, buyer.landUse || '');
-                    formData.append(`records[${index}][unitMeasurement]`, cleanMeasurement);
-                });
-                
-                // Submit data via AJAX
-                fetch('{{ route("buyer.import.csv") }}', {
-                    method: 'POST',
-                    body: formData,
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        showCsvResult('success', `Successfully imported ${data.count} buyers`);
-                        if (window.__buyerListDiagnostics) {
-                            window.__buyerListDiagnostics.log('csv_import_done', {
-                                inserted: data.inserted, skipped: data.skipped, total: data.count
-                            });
-                        }
-                        // Refresh buyers list
-                        loadBuyersList();
-                        // Clear file input
+                // Nothing is deleted until the officer confirms, and the prompt states
+                // the counts rather than describing the effect in the abstract.
+                confirmCsvReplace(applicationId, buyers.length).then(function (confirmed) {
+                    if (!confirmed) {
+                        // Clear the picker so the same file can be selected again -
+                        // onchange does not refire for an unchanged value.
                         fileInput.value = '';
-                    } else {
-                        showCsvResult('error', data.message || 'Failed to import buyers');
+                        showCsvResult('warning', 'Import cancelled. The saved buyer list was not changed.');
+                        return;
                     }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    showCsvResult('error', 'An error occurred while importing buyers');
+
+                    submitCsvImport(buyers, applicationId, fileInput);
                 });
             },
             error: function(error) {
@@ -445,7 +407,174 @@
             }
         });
     }
-    
+
+    // Ask before replacing, naming how many buyers go and how many arrive.
+    //
+    // Uses SweetAlert where the host page loads it. Two of the pages that include
+    // this partial (actions/recommendation, actions/parts/recomm_css) do not, so
+    // there is a window.confirm fallback - a missing Swal must not leave the
+    // officer with a file picker that silently does nothing.
+    function confirmCsvReplace(applicationId, incomingRows) {
+        showCsvResult('loading', 'Checking the buyers already saved...');
+
+        return fetch(`/buyer/list/${applicationId}`, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(response => response.json())
+            .then(data => (data && typeof data.count === 'number') ? data.count : null)
+            .catch(() => null)
+            .then(function (existingCount) {
+                let losing;
+                if (existingCount === null) {
+                    losing = 'Every buyer currently saved on this application will be <strong>deleted</strong>.';
+                } else if (existingCount > 0) {
+                    losing = `<strong>${existingCount} buyer(s)</strong> currently saved will be <strong>deleted</strong>.`;
+                } else {
+                    losing = 'There are no buyers saved yet, so nothing will be deleted.';
+                }
+
+                if (typeof Swal === 'undefined') {
+                    const plain = [
+                        'This will REPLACE the buyer list for this application.',
+                        '',
+                        losing.replace(/<[^>]+>/g, ''),
+                        `${incomingRows} row(s) from this file will be stored in their place.`,
+                        '',
+                        'Upload the COMPLETE list - rows missing from the file will be lost.',
+                        'This cannot be undone. Continue?'
+                    ].join('\n');
+
+                    return window.confirm(plain);
+                }
+
+                return Swal.fire({
+                    icon: 'warning',
+                    title: 'Replace the buyer list?',
+                    html: `
+                        <div style="text-align:left;font-size:0.95rem;line-height:1.6">
+                            <p style="margin-bottom:0.75rem">
+                                This upload <strong>replaces</strong> the buyer list for this application.
+                                It does not add to it.
+                            </p>
+                            <ul style="margin:0 0 0.75rem 1.1rem;padding:0;list-style:disc">
+                                <li>${losing}</li>
+                                <li><strong>${incomingRows} row(s)</strong> from this file will be stored in their place.</li>
+                            </ul>
+                            <p style="margin:0;padding:0.6rem 0.75rem;background:#FEF3C7;border-left:3px solid #F59E0B;border-radius:0.25rem">
+                                Upload the <strong>complete</strong> list &mdash; any buyer missing from the
+                                file will be lost. This cannot be undone.
+                            </p>
+                        </div>
+                    `,
+                    showCancelButton: true,
+                    focusCancel: true,
+                    reverseButtons: true,
+                    confirmButtonText: 'Yes, replace the list',
+                    cancelButtonText: 'Cancel',
+                    confirmButtonColor: '#DC2626',
+                    cancelButtonColor: '#6B7280',
+                    width: '32rem'
+                }).then(result => result.isConfirmed === true);
+            });
+    }
+
+    function submitCsvImport(buyers, applicationId, fileInput) {
+        showCsvResult('loading', 'Importing buyers...');
+
+        const formData = new FormData();
+        formData.append('application_id', applicationId);
+        formData.append('_token', '{{ csrf_token() }}');
+        formData.append('client_source', 'csv');
+        // Sent only after the officer confirmed. Without it the server keeps the old
+        // add-and-skip-duplicates behaviour, so a stale cached copy of this page can
+        // never delete a buyer list without asking.
+        formData.append('replace_existing', '1');
+        if (window.__buyerListDiagnostics) {
+            formData.append('client_trace_id', window.__buyerListDiagnostics.traceId());
+            window.__buyerListDiagnostics.log('csv_import_started', { rows: buyers.length, mode: 'replace' });
+        }
+
+        buyers.forEach((buyer, index) => {
+            // Clean unitMeasurement - remove 'sqm' and other non-numeric characters except decimal point
+            let cleanMeasurement = '';
+            if (buyer.unitMeasurement) {
+                cleanMeasurement = buyer.unitMeasurement.toString()
+                    .replace(/sqm/gi, '')  // Remove 'sqm' (case insensitive)
+                    .replace(/[^\d.]/g, '') // Remove all non-numeric except decimal point
+                    .trim();
+            }
+
+            formData.append(`records[${index}][buyerTitle]`, buyer.buyerTitle || '');
+            formData.append(`records[${index}][firstName]`, buyer.firstName || '');
+            formData.append(`records[${index}][middleName]`, buyer.middleName || '');
+            formData.append(`records[${index}][surname]`, buyer.surname || '');
+            formData.append(`records[${index}][unit_no]`, buyer.unit_no || '');
+            formData.append(`records[${index}][sectionNumber]`, buyer.sectionNumber || '');
+            formData.append(`records[${index}][landUse]`, buyer.landUse || '');
+            formData.append(`records[${index}][unitMeasurement]`, cleanMeasurement);
+        });
+
+        // Submit data via AJAX
+        fetch('{{ route("buyer.import.csv") }}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json().then(data => ({ status: response.status, data: data })))
+        .then(({ status, data }) => {
+            if (data.success) {
+                // Report the deletion as loudly as the insertion - the officer needs to
+                // see that the previous list is gone, not just that rows arrived.
+                let message = `Imported ${data.inserted} buyer(s).`;
+                if (data.deleted > 0) {
+                    message += ` ${data.deleted} previously saved buyer(s) were deleted and replaced.`;
+                }
+                if (data.skipped > 0) {
+                    message += ` ${data.skipped} repeated row(s) in the file were imported once.`;
+                }
+                message += ` The list now holds ${data.count} buyer(s).`;
+
+                showCsvResult(data.deleted > 0 ? 'warning' : 'success', message);
+
+                if (window.__buyerListDiagnostics) {
+                    window.__buyerListDiagnostics.log('csv_import_done', {
+                        mode: 'replace',
+                        deleted: data.deleted,
+                        inserted: data.inserted,
+                        skipped: data.skipped,
+                        total: data.count
+                    });
+                }
+                // Refresh buyers list
+                loadBuyersList();
+                // Clear file input
+                fileInput.value = '';
+                return;
+            }
+
+            fileInput.value = '';
+
+            // The server refuses to replace buyers that already hold an allocated ST
+            // unit file number, because deleting them orphans the allocation.
+            if (status === 409 && data.blocked_reason === 'st_file_numbers_allocated') {
+                showCsvResult('error', data.message);
+                if (window.__buyerListDiagnostics) {
+                    window.__buyerListDiagnostics.log('csv_import_blocked', { reason: data.blocked_reason });
+                }
+                return;
+            }
+
+            showCsvResult('error', data.message || 'Failed to import buyers');
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            fileInput.value = '';
+            showCsvResult('error', 'An error occurred while importing buyers. The saved list was not changed.');
+        });
+    }
+
     function showCsvResult(type, message) {
         const resultDiv = document.getElementById('csv-result');
         let bgColor, borderColor, textColor, icon;
@@ -455,6 +584,11 @@
             borderColor = 'border-green-200';
             textColor = 'text-green-800';
             icon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />';
+        } else if (type === 'warning') {
+            bgColor = 'bg-amber-50';
+            borderColor = 'border-amber-200';
+            textColor = 'text-amber-800';
+            icon = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.74-3L13.74 4a2 2 0 00-3.48 0L3.33 16a2 2 0 001.74 3z" />';
         } else if (type === 'error') {
             bgColor = 'bg-red-50';
             borderColor = 'border-red-200';

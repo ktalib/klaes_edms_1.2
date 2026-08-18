@@ -489,6 +489,12 @@ Route::middleware(['auth'])->group(function () {
         Route::get ('/report/export-csv',           [\App\Http\Controllers\SpecialAssignmentController::class, 'exportCsv'])->name('report.export-csv');
         Route::post('/bills/store',                 [\App\Http\Controllers\SpecialAssignmentController::class, 'storeBill'])->name('bills.store');
         Route::post('/bills/pay',                   [\App\Http\Controllers\SpecialAssignmentController::class, 'recordBillPayment'])->name('bills.pay');
+
+        // The contravention tariff. Bills themselves are raised automatically
+        // when a record is found in contravention, so there is no longer a
+        // "create bill" route — only the settings behind it.
+        Route::get('/bill-items',       [\App\Http\Controllers\SpecialAssignmentController::class, 'billItems'])->name('bill-items.index');
+        Route::post('/bill-items/save', [\App\Http\Controllers\SpecialAssignmentController::class, 'saveBillItems'])->name('bill-items.save');
     });
 
 });

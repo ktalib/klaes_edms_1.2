@@ -107,6 +107,17 @@ class BuyerListController extends Controller
             // Always extract application_id from the request
             $applicationId = $request->input('application_id');
 
+            // A CSV upload is the authoritative list for the file: the officer's
+            // spreadsheet replaces whatever is stored rather than being merged into
+            // it. Merging is what left COM-1991-46 holding two cohorts of the same
+            // 249 buyers under different section formats ("U1 A/B" vs "U1"), which
+            // the name+unit+section duplicate check could never match up. The manual
+            // form does NOT replace - it keeps the old add-and-skip-duplicates path.
+            $replaceExisting = filter_var(
+                $request->input('replace_existing', false),
+                FILTER_VALIDATE_BOOLEAN
+            );
+
             Log::info('addBuyers received', [
                 'trace_id' => $traceId,
                 'application_id' => $applicationId,
@@ -251,7 +262,69 @@ class BuyerListController extends Controller
 
             $insertedCount = 0;
             $skippedCount = 0;
+            $deletedCount = 0;
             $errors = [];
+
+            // Replace mode clears the application's buyers first. Everything from
+            // here to the commit is one transaction: a half-done replace would leave
+            // the file with fewer buyers than it started with, which is worse than
+            // the duplication it is meant to fix.
+            $usingTransaction = false;
+
+            if ($replaceExisting) {
+                $existingBuyers = DB::connection('sqlsrv')
+                    ->table('buyer_list')
+                    ->where('application_id', $applicationId)
+                    ->pluck('id')
+                    ->all();
+
+                // st_file_numbers.buyer_list_id ties an allocated ST unit file number
+                // to a specific buyer row. Deleting such a row orphans the allocation,
+                // so refuse the whole replace rather than silently breaking it - the
+                // officer needs to know units have already been given file numbers.
+                $allocatedCount = empty($existingBuyers) ? 0 : DB::connection('sqlsrv')
+                    ->table('st_file_numbers')
+                    ->whereIn('buyer_list_id', $existingBuyers)
+                    ->count();
+
+                if ($allocatedCount > 0) {
+                    Log::warning('addBuyers replace blocked: buyers hold ST file numbers', [
+                        'trace_id' => $traceId,
+                        'application_id' => $applicationId,
+                        'existing' => count($existingBuyers),
+                        'allocated' => $allocatedCount,
+                    ]);
+
+                    return response()->json([
+                        'success' => false,
+                        'blocked_reason' => 'st_file_numbers_allocated',
+                        'message' => "Cannot replace the buyer list: $allocatedCount buyer(s) on this application already have an ST unit file number allocated. Replacing them would orphan those file numbers. Remove or correct those buyers individually instead.",
+                    ], 409);
+                }
+
+                DB::connection('sqlsrv')->beginTransaction();
+                $usingTransaction = true;
+
+                if (!empty($existingBuyers)) {
+                    DB::connection('sqlsrv')
+                        ->table('st_unit_measurements')
+                        ->where('application_id', $applicationId)
+                        ->whereIn('buyer_id', $existingBuyers)
+                        ->delete();
+
+                    $deletedCount = DB::connection('sqlsrv')
+                        ->table('buyer_list')
+                        ->where('application_id', $applicationId)
+                        ->delete();
+                }
+
+                Log::info('addBuyers replacing existing buyers', [
+                    'trace_id' => $traceId,
+                    'application_id' => $applicationId,
+                    'deleted' => $deletedCount,
+                    'incoming' => count($records),
+                ]);
+            }
 
             // Process each record
             foreach ($records as $record) {
@@ -348,22 +421,39 @@ class BuyerListController extends Controller
                 $insertedCount++;
             }
 
+            if ($usingTransaction) {
+                DB::connection('sqlsrv')->commit();
+                $usingTransaction = false;
+            }
+
             // Get updated records list for response
             $updatedRecords = $this->getBuyersListData($applicationId);
 
-            $message = "Buyers saved successfully.";
-            if ($insertedCount > 0 && $skippedCount > 0) {
-                $message = "$insertedCount new buyer(s) added, $skippedCount duplicate(s) skipped.";
-            } elseif ($insertedCount > 0) {
-                $message = "$insertedCount new buyer(s) added successfully.";
-            } elseif ($skippedCount > 0) {
-                $message = "All buyers already exist. $skippedCount duplicate(s) skipped.";
+            if ($replaceExisting) {
+                // In replace mode the table was emptied first, so a "duplicate" can
+                // only be a row repeated inside the uploaded file itself. Say that,
+                // rather than implying it clashed with stored data.
+                $message = "$insertedCount buyer(s) imported, replacing $deletedCount previous buyer(s).";
+                if ($skippedCount > 0) {
+                    $message .= " $skippedCount repeated row(s) in the file were imported once.";
+                }
+            } else {
+                $message = "Buyers saved successfully.";
+                if ($insertedCount > 0 && $skippedCount > 0) {
+                    $message = "$insertedCount new buyer(s) added, $skippedCount duplicate(s) skipped.";
+                } elseif ($insertedCount > 0) {
+                    $message = "$insertedCount new buyer(s) added successfully.";
+                } elseif ($skippedCount > 0) {
+                    $message = "All buyers already exist. $skippedCount duplicate(s) skipped.";
+                }
             }
 
             Log::info('addBuyers completed', [
                 'trace_id' => $traceId,
                 'application_id' => $applicationId,
+                'mode' => $replaceExisting ? 'replace' : 'append',
                 'submitted' => count($records),
+                'deleted' => $deletedCount,
                 'inserted' => $insertedCount,
                 'skipped' => $skippedCount,
                 'total_now' => count($updatedRecords),
@@ -374,10 +464,18 @@ class BuyerListController extends Controller
                 'message' => $message,
                 'records' => $updatedRecords,
                 'count' => count($updatedRecords),
+                'replaced' => $replaceExisting,
+                'deleted' => $deletedCount,
                 'inserted' => $insertedCount,
                 'skipped' => $skippedCount
             ]);
         } catch (\Exception $e) {
+            // Never leave the file with the old list deleted and the new one
+            // half-inserted.
+            if (!empty($usingTransaction)) {
+                DB::connection('sqlsrv')->rollBack();
+            }
+
             Log::error('addBuyers failed', [
                 'trace_id' => $traceId,
                 'application_id' => $request->input('application_id'),

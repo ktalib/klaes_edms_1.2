@@ -98,7 +98,9 @@ class SUAController extends Controller
         $rules = [
             'allocation_source' => 'required|string|in:State Government,Local Government',
             'allocation_entity' => 'required|string',
-            'allocation_ref_no' => 'required|string|max:255',
+            // Answered on the SuA File Number Commissioning form and read-only here,
+            // so it cannot be typed in if that form left it blank.
+            'allocation_ref_no' => 'nullable|string|max:255',
             'property_location' => 'required|string|max:1000',
             'land_use' => 'required|string|in:Residential,Commercial,Industrial',
             'unit_type' => 'required|string',
@@ -202,7 +204,7 @@ class SUAController extends Controller
                 'is_sua_unit' => 1,
                 'allocation_source' => $request->allocation_source,
                 'allocation_entity' => $request->allocation_entity,
-                'allocation_ref_no' => strtoupper(trim($request->allocation_ref_no)),
+                'allocation_ref_no' => strtoupper(trim((string) $request->allocation_ref_no)),
                 'property_location' => $request->property_location,
                 'land_use' => $landUse, // Use the processed land use value
                 'unit_type' => 'SUA',
@@ -689,7 +691,7 @@ class SUAController extends Controller
             $updateData = [
                 'allocation_source' => $request->allocation_source,
                 'allocation_entity' => $request->allocation_entity,
-                'allocation_ref_no' => strtoupper(trim($request->allocation_ref_no)),
+                'allocation_ref_no' => strtoupper(trim((string) $request->allocation_ref_no)),
                 'property_location' => $request->property_location,
                 'land_use' => $landUse, // Use the processed land use value
                 'unit_type' => $request->unit_type,

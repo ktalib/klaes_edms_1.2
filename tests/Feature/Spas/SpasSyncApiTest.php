@@ -354,6 +354,68 @@ class SpasSyncApiTest extends TestCase
     }
 
     // -----------------------------------------------------------------------
+    // File index mirror — keyset paging
+    // -----------------------------------------------------------------------
+
+    public function test_the_file_index_pages_with_a_keyset_cursor(): void
+    {
+        $this->actingAsSurveyor();
+
+        $first = $this->getJson('/api/spas/lookup/file-index?after_id=0&limit=5')
+            ->assertOk()
+            ->assertJsonStructure(['data', 'has_more', 'next_after_id', 'total']);
+
+        $this->assertSame(5, $first->json('count'));
+        $this->assertTrue($first->json('has_more'));
+        $this->assertGreaterThan(0, $first->json('next_after_id'));
+
+        // A total is counted only on the first page — every later page would
+        // pay for a 133k-row count it does not need.
+        $this->assertGreaterThan(0, $first->json('total'));
+
+        $second = $this->getJson(
+            '/api/spas/lookup/file-index?after_id='.$first->json('next_after_id').'&limit=5'
+        )->assertOk();
+
+        $this->assertNull($second->json('total'), 'Only the first page should carry a total.');
+
+        // The pages must not overlap, or a mirror would store the same rows
+        // repeatedly and never reach the end.
+        $this->assertEmpty(
+            array_intersect(
+                array_column($first->json('data'), 'file_number'),
+                array_column($second->json('data'), 'file_number')
+            ),
+            'Keyset pages overlapped — the cursor is not advancing correctly.'
+        );
+    }
+
+    public function test_the_mirror_path_omits_the_expensive_holder_column(): void
+    {
+        // current_holder is NVARCHAR(MAX) and yields no name in practice, so a
+        // mirror must not pay a LOB read per row for it. The search path still
+        // may. This asserts the contract the client relies on: owner_name is
+        // blank while mirroring, and file_title carries the name instead.
+        $this->actingAsSurveyor();
+
+        $row = $this->getJson('/api/spas/lookup/file-index?after_id=0&limit=1')
+            ->assertOk()->json('data.0');
+
+        $this->assertSame('', $row['owner_name']);
+        $this->assertArrayHasKey('file_title', $row);
+    }
+
+    public function test_a_search_without_a_cursor_is_not_a_mirror(): void
+    {
+        $this->actingAsSurveyor();
+
+        $response = $this->getJson('/api/spas/lookup/file-index?limit=3')->assertOk();
+
+        $this->assertFalse($response->json('has_more'));
+        $this->assertNull($response->json('next_after_id'));
+    }
+
+    // -----------------------------------------------------------------------
     // Update — offline edits pushed back
     // -----------------------------------------------------------------------
 

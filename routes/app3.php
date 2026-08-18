@@ -1131,6 +1131,7 @@ Route::middleware(['auth'])->group(function () {
         // Director / Deputy Director approval queue for public search requests.
         Route::get('/requests', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestsIndex'])->name('requests');
         Route::get('/requests/{id}/preview', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestPreview'])->name('requests.preview');
+        Route::get('/requests/{id}/invoice', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestInvoice'])->name('requests.invoice');
         Route::get('/requests/my-signature', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestSignature'])->name('requests.signature');
         Route::post('/requests/my-signature/otp', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestSignatureOtp'])->name('requests.signature.otp');
         Route::post('/requests/my-signature/verify', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestSignatureVerify'])->name('requests.signature.verify');

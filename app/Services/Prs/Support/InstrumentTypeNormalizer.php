@@ -8,7 +8,7 @@ namespace App\Services\Prs\Support;
  *
  * The "verify variants" warning in docs/prs-2025/11-implementation-plan.md turned
  * out to be understated — every variant is real and in use. Measured 2026-08-02:
- *
+ * 
  *   pra                    Deed of Surrender and Release 3,300 · Surrender and Release 333 ·
  *                          Deed of Release 311   (three spellings, one PRS section)
  *                          Deed of Assignment 8,638 · Deed of Mortgage 5,817 ·

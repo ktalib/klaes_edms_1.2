@@ -9,11 +9,9 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Sectional Titling, both sides of it. Added 2026-08-05.
- *
+ *   
  * ST produces two different measures, and they must never be added together —
- * the same trap the report already navigates between OP files commissioned (983)
- * and OP instruments registered (8,939):
- *
+ * the same trap the report already navigates between OP files commissioned (983). *
  *   commissioned()  st_file_numbers      — ST file numbers issued. A block is
  *                                          commissioned as one PRIMARY file, then
  *                                          fragmented into PUA and SUA unit files.

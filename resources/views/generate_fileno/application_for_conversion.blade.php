@@ -532,14 +532,57 @@
                 </div>
             </div>
 
-            <!-- 4. Recipient -->
+            <!-- 4. Recipient. The Allocation Source confirmed on the print card
+                 decides who the sheet goes to: a Local Government source addresses
+                 its Chairman, a State Government source the allocating entity. -->
+            @php
+                $sheetSource = $allocationSource ?? null;
+                $sheetEntity = trim((string) ($allocationEntity ?? ''));
+                $sheetLga = trim((string) ($record->lga_derived ?? $record->lga ?? ''));
+                $isStateAllocation = $sheetSource === 'State Government';
+
+                // A state entity and its address make one line: "<Entity>, <plot>,
+                // <district>, <LGA>, Kano" — the entity is the head of the address,
+                // not a separate block.
+                $sheetAddress = '';
+                if ($isStateAllocation) {
+                    $parts = array_values(array_filter(array_map(
+                        'trim',
+                        preg_split('/\r\n|\r|\n|,/', (string) ($allocationAddress ?? ''))
+                    ), fn ($part) => $part !== ''));
+
+                    // Sheets written before the labels were dropped still carry them.
+                    $parts = array_map(
+                        fn ($part) => trim(preg_replace('/^plot\s+|\s+(lga|local government|state)$/i', '', $part)),
+                        $parts
+                    );
+                    $parts = array_values(array_filter($parts, fn ($part) => $part !== ''));
+
+                    if (!$parts || strcasecmp(end($parts), 'Kano') !== 0) {
+                        $parts[] = 'Kano';
+                    }
+
+                    if ($sheetEntity !== '') {
+                        array_unshift($parts, $sheetEntity);
+                    }
+
+                    $sheetAddress = implode(', ', $parts);
+                }
+            @endphp
             <div class="recipient-block">
-                The Chairman,<br>
-                <span class="underline-box"
-                    style="min-width: 280px; border-bottom-width: 2px; text-transform: uppercase;">{{ $record->lga_derived ?? $record->lga ?? '............' }}</span>
-                Local
-                Government,<br>
-                Kano State.
+                @if($isStateAllocation)
+                    {{-- One underlined line: the entity heads its own address. No
+                         salutation — nobody enters one for a state entity. --}}
+                    <span class="underline-box"
+                        style="min-width: 420px; border-bottom-width: 2px;">{{ $sheetAddress ?: '............' }}</span>
+                @else
+                    The Chairman,<br>
+                    <span class="underline-box"
+                        style="min-width: 280px; border-bottom-width: 2px; text-transform: uppercase;">{{ $sheetEntity ?: ($sheetLga ?: '............') }}</span>
+                    Local
+                    Government,<br>
+                    Kano State.
+                @endif
             </div>
 
             <!-- 5. Subject Banner -->
@@ -560,7 +603,7 @@
                 has applied to the Ministry for Statutory Right of Occupancy over Plot No.
                 <span class="data-field" style="min-width: 80px;">{{ $record->plot_no ?? '..............' }}</span>
                 at <span class="data-field"
-                    style="min-width: 250px;">{{ $record->lga_derived ?? $record->lga ?? '................................' }}</span>
+                    style="min-width: 250px;">{{ $sheetLga ?: '................................' }}</span>
                 You are accordingly requested to verify the genuineness of this customary claim and further confirms on how
                 the property was acquired:
                 <ul class="checklist">

@@ -34,6 +34,21 @@ use Illuminate\Validation\ValidationException;
  */
 class SpaMobileService
 {
+    private SpaBillingService $billing;
+
+    /**
+     * Optional on purpose.
+     *
+     * Most of this class is validation rules, and callers — including tests —
+     * construct it bare to read them. Requiring the billing service would make
+     * `new SpaMobileService()` fail for that harmless use, so it defaults
+     * instead of being demanded.
+     */
+    public function __construct(?SpaBillingService $billing = null)
+    {
+        $this->billing = $billing ?? new SpaBillingService();
+    }
+
     /**
      * Validation rules for creating a land record.
      *
@@ -161,7 +176,7 @@ class SpaMobileService
             ? SpaApplication::generateCustomaryFileNumber()
             : ($data['file_number'] ?? null);
 
-        return SpaApplication::create([
+        $app = SpaApplication::create([
             'file_number'      => $fileNumber,
             'tracking_id'      => $isCustomary ? null : ($data['tracking_id'] ?? null),
             'file_indexing_id' => $isCustomary ? null : (($data['file_indexing_id'] ?? null) ?: null),
@@ -180,6 +195,15 @@ class SpaMobileService
             'created_by'       => $createdBy,
             'client_uuid'      => $data['client_uuid'] ?? null,
         ]);
+
+        // A contravention is billable the moment it is recorded. Raising it
+        // here rather than in a controller means it happens for EVERY caller —
+        // the desktop form, the mobile web page and the offline app's sync push
+        // all land on this one method. Never throws: a tariff problem must not
+        // cost a surveyor their field data.
+        $this->billing->billForContravention($app, $createdBy);
+
+        return $app->refresh();
     }
 
     /**
@@ -237,8 +261,15 @@ class SpaMobileService
         }
 
         $app->update($changes);
+        $app->refresh();
 
-        return $app->refresh();
+        // An edit can CREATE a contravention that did not exist before — the
+        // prevailing use is often corrected after the first visit — so the
+        // check runs again here. Idempotent, so an edit that merely fixes a
+        // phone number cannot raise a second bill.
+        $this->billing->billForContravention($app);
+
+        return $app;
     }
 
     /**
