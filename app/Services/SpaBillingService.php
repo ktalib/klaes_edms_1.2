@@ -123,18 +123,10 @@ class SpaBillingService
         }
     }
 
-    /** SPA-BILL-YYYY-### — the same shape hand-entered bills already use. */
+    /** SPAS-BILL-YYYY-### — the same numbering hand-entered bills use. */
     private function nextReference(): string
     {
-        $prefix = 'SPA-BILL-'.now()->year.'-';
-
-        $last = SpaBill::where('reference_id', 'like', $prefix.'%')
-            ->orderByDesc('id')
-            ->value('reference_id');
-
-        $seq = $last ? ((int) substr($last, strlen($prefix))) + 1 : 1;
-
-        return $prefix.str_pad((string) $seq, 3, '0', STR_PAD_LEFT);
+        return SpaBill::nextReference();
     }
 
     /** Human-readable reason, so the bill explains itself without a join. */

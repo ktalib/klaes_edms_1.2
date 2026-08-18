@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\DB;
 
 class SpaCertificate extends Model
 {
+    use \App\Models\Concerns\GeneratesSpaReference;
+
     protected $connection = 'sqlsrv';
     protected $table      = 'spa_certificates';
 
@@ -31,17 +33,19 @@ class SpaCertificate extends Model
         return $this->belongsTo(\App\Models\User::class, 'issued_by');
     }
 
+    /**
+     * SPAS-COP/YYYY/#### — sheets issued before 2026-08-18 carry the older
+     * "SPA-COP" prefix and are counted too. See GeneratesSpaReference.
+     */
     public static function generateCertNumber(): string
     {
         $year = now()->format('Y');
-        $last = DB::connection('sqlsrv')
+
+        $issued = DB::connection('sqlsrv')
             ->table('spa_certificates')
-            ->where('cert_number', 'like', "SPA-COP/{$year}/%")
-            ->orderByDesc('id')
-            ->value('cert_number');
+            ->where('cert_number', 'like', self::spaPrefixPattern("-COP/{$year}/%"))
+            ->pluck('cert_number');
 
-        $seq = $last ? ((int) substr($last, strrpos($last, '/') + 1)) + 1 : 1;
-
-        return "SPA-COP/{$year}/" . str_pad($seq, 4, '0', STR_PAD_LEFT);
+        return "SPAS-COP/{$year}/".str_pad((string) self::nextSpaSequence($issued), 4, '0', STR_PAD_LEFT);
     }
 }

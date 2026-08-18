@@ -115,15 +115,18 @@
                     </select>
                     <p class="text-[11px] text-gray-400 mt-1">The file number assigned after the change of purpose.</p>
                 </div>
+                {{-- The two land uses sit side by side: the change of purpose IS
+                     the move from one to the other, so they read as a pair. --}}
                 <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Issue Date <span class="text-red-500">*</span></label>
-                    <input type="date" name="issue_date" required
-                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">From Use (Approved) <span class="text-red-500">*</span></label>
-                    <input type="text" name="from_use" id="cert-from-use" required
-                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                    <label class="block text-xs font-medium text-gray-600 mb-1">From Land Use (Approved) <span class="text-red-500">*</span></label>
+                    {{-- Backfilled from the selected application, so it is not
+                         typed here. readonly rather than disabled on purpose: a
+                         disabled field is left out of the submission entirely,
+                         and from_use is required — the sheet would fail to issue
+                         with a validation error about a field nobody can edit. --}}
+                    <input type="text" name="from_use" id="cert-from-use" required readonly tabindex="-1"
+                        placeholder="Select an application above"
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none bg-gray-100 text-gray-500 cursor-not-allowed">
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-gray-600 mb-1">To Use (New Purpose) <span class="text-red-500">*</span></label>
@@ -135,7 +138,14 @@
                         @endforeach
                     </select>
                 </div>
-                <div class="sm:col-span-2">
+
+                {{-- Dates together, below the pair they qualify. --}}
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Issue Date <span class="text-red-500">*</span></label>
+                    <input type="date" name="issue_date" required
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
+                </div>
+                <div>
                     <label class="block text-xs font-medium text-gray-600 mb-1">Expiry Date (optional)</label>
                     <input type="date" name="expiry_date"
                         class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">

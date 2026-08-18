@@ -1330,13 +1330,9 @@ class SpecialAssignmentController extends Controller
             'amount'             => 'required|numeric|min:0',
         ]);
 
-        // Auto-generate reference ID: SPA-BILL-YYYY-###
-        $year    = now()->year;
-        $prefix  = 'SPA-BILL-' . $year . '-';
-        $last    = \App\Models\SpaBill::where('reference_id', 'like', $prefix . '%')
-                        ->orderByDesc('id')->value('reference_id');
-        $seq     = $last ? ((int) substr($last, strlen($prefix))) + 1 : 1;
-        $refId   = $prefix . str_pad($seq, 3, '0', STR_PAD_LEFT);
+        // Numbering lives on the model so this and the automatic path
+        // (SpaBillingService) cannot disagree about the next reference.
+        $refId = \App\Models\SpaBill::nextReference();
 
         $bill = \App\Models\SpaBill::create([
             'spa_application_id' => $request->spa_application_id,

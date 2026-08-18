@@ -42,7 +42,7 @@
                         <i data-lucide="printer" class="h-4 w-4"></i> Batch Print RofO
                     </button>
                     <button type="button" onclick="openReissuanceModal()"
-                        class="inline-flex items-center gap-2 px-5 py-2.5 bg-amber-600 text-white font-bold rounded-xl hover:bg-amber-700 transition shadow-lg shadow-amber-200 whitespace-nowrap text-sm">
+                        class="inline-flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition shadow-lg shadow-red-200 whitespace-nowrap text-sm">
                         <i data-lucide="refresh-ccw" class="h-4 w-4"></i> Re-issuance
                     </button>
                     @endif
@@ -191,10 +191,10 @@
                      run off, and they stay on Printed / Not Printed too. --}}
                 @if(($stats['reissuance'] ?? 0) > 0)
                 <a href="{{ route('land-rofos.index', $tabBaseParams + ['tab' => 'reissuance']) }}"
-                   class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'reissuance' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100' }}">
+                   class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition {{ $tab === 'reissuance' ? 'bg-red-600 text-white shadow-sm' : 'text-red-600 hover:bg-red-50' }}">
                     <i data-lucide="refresh-cw" class="h-4 w-4"></i>
                     Re-issuance
-                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black {{ $tab === 'reissuance' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500' }}">{{ number_format($stats['reissuance']) }}</span>
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black {{ $tab === 'reissuance' ? 'bg-white/20 text-white' : 'bg-red-100 text-red-600' }}">{{ number_format($stats['reissuance']) }}</span>
                 </a>
                 @endif
             </div>
