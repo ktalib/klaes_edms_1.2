@@ -57,6 +57,7 @@ function renderBuyersList(records) {
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Buyer Name</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit No</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Section Number</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Block No</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Land Use</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit Measurement (sqm)</th>
                         ${!isViewMode ? '<th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>' : ''}
@@ -73,6 +74,9 @@ function renderBuyersList(records) {
     const sectionNumberRaw = record.section_number || '';
     const sectionNumber = sectionNumberRaw.replace(/'/g, "\\'");
     const sectionNumberDisplay = sectionNumberRaw || 'N/A';
+    const blockNoRaw = record.block_no || '';
+    const blockNo = blockNoRaw.replace(/'/g, "\\'");
+    const blockNoDisplay = blockNoRaw || 'N/A';
         const measurement = record.measurement || 'N/A';
         const cubicMeasurement = record.cubic_easurement || '';
         
@@ -86,11 +90,12 @@ function renderBuyersList(records) {
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${fullNameWithTitle}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${unitNo}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${sectionNumberDisplay}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${blockNoDisplay}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${landUse}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${measurement}</td>
                 ${!isViewMode ? `
                     <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
-                        <button onclick="editBuyer(${record.id}, '${buyerTitle}', '${buyerName}', '${unitNo}', '${sectionNumber}', '${landUse}', '${measurement}', '${cubicMeasurement}')" 
+                        <button onclick="editBuyer(${record.id}, '${buyerTitle}', '${buyerName}', '${unitNo}', '${sectionNumber}', '${landUse}', '${measurement}', '${cubicMeasurement}', '${blockNo}')" 
                                 class="text-blue-600 hover:text-blue-900 mr-3 ${isApproved ? 'opacity-50 cursor-not-allowed' : ''}"
                                 ${isApproved ? 'disabled' : ''}>
                             Edit
@@ -119,7 +124,7 @@ function renderBuyersList(records) {
 }
 
 // Edit buyer function
-function editBuyer(buyerId, buyerTitle, buyerName, unitNo, sectionNumber, landUse, measurement, cubicMeasurement) {
+function editBuyer(buyerId, buyerTitle, buyerName, unitNo, sectionNumber, landUse, measurement, cubicMeasurement, blockNo) {
     const applicationId = document.getElementById('application_id')?.value;
 
     const normalizedBuyerTitle = (buyerTitle || '').trim().toUpperCase();
@@ -247,6 +252,14 @@ function editBuyer(buyerId, buyerTitle, buyerName, unitNo, sectionNumber, landUs
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Block No
+                        </label>
+                        <input type="text" id="edit-block-no" value="${(blockNo && blockNo !== 'N/A') ? blockNo : ''}"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md uppercase"
+                               placeholder="Enter Block No">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
                             Unit Measurement (sqm)
                         </label>
                         <input type="number" step="0.01" id="edit-measurement" value="${cleanMeasurement}" 
@@ -278,6 +291,7 @@ function editBuyer(buyerId, buyerTitle, buyerName, unitNo, sectionNumber, landUs
             const unitNoValue = document.getElementById('edit-unit-no').value.trim().toUpperCase();
             const landUseValue = document.getElementById('edit-land-use').value;
             const sectionNumberValue = document.getElementById('edit-section-number').value.trim().toUpperCase();
+            const blockNoValue = document.getElementById('edit-block-no').value.trim().toUpperCase();
             const measurementValue = document.getElementById('edit-measurement').value;
             const cubicMeasurementValue = document.getElementById('edit-cubic-measurement').value;
 
@@ -296,6 +310,7 @@ function editBuyer(buyerId, buyerTitle, buyerName, unitNo, sectionNumber, landUs
                 buyer_name: fullName,
                 unit_no: unitNoValue,
                 section_number: sectionNumberValue,
+                block_no: blockNoValue,
                 land_use: landUseValue,
                 measurement: measurementValue,
                 cubic_easurement: cubicMeasurementValue
@@ -319,6 +334,7 @@ function editBuyer(buyerId, buyerTitle, buyerName, unitNo, sectionNumber, landUs
             formData.append('buyer_name', result.value.buyer_name);
             formData.append('unit_no', result.value.unit_no);
             formData.append('section_number', result.value.section_number);
+            formData.append('block_no', result.value.block_no || '');
             if (result.value.land_use) {
                 formData.append('land_use', result.value.land_use);
             }

@@ -926,6 +926,9 @@ const executeSearchAjax = (filters, searchData) => {
         const _apiCommissioningDate = data.file_commissioning_date || null;
         const _apiCommissionedNumber = data.file_commissioned_number || null;
         const _apiCommissioningHolder = data.file_commissioning_holder || null;
+        // mls_file_no.source — how the file was commissioned ('Direct Allocation',
+        // 'OP Direct Allocation', …). Feeds the Root of Title annotation.
+        const _apiCommissioningSource = data.file_commissioning_source || null;
         const _apiTempFileNumber = data.file_temp_number || null;
         // "SEARCHED (LINKED)" combined file number — e.g. "CON-AG-2014-35 (MLKN 2455)" —
         // resolved server-side so it matches the printable report / Pay-Per-Search template.
@@ -957,6 +960,7 @@ const executeSearchAjax = (filters, searchData) => {
           if (_apiCommissioningDate) r._file_commissioning_date = _apiCommissioningDate;
           if (_apiCommissionedNumber) r._file_commissioned_number = _apiCommissionedNumber;
           if (_apiCommissioningHolder) r._file_commissioning_holder = _apiCommissioningHolder;
+          if (_apiCommissioningSource) r._file_commissioning_source = _apiCommissioningSource;
           if (_apiFileDistrict) r._file_district = _apiFileDistrict;
           if (_apiFileLga) r._file_lga = _apiFileLga;
           if (_apiFileLandUse) r._file_land_use = _apiFileLandUse;
@@ -1017,6 +1021,7 @@ const executeSearchAjax = (filters, searchData) => {
               _file_commissioning_date: data.file_commissioning_date || null,
               _file_commissioned_number: data.file_commissioned_number || null,
               _file_commissioning_holder: data.file_commissioning_holder || null,
+              _file_commissioning_source: data.file_commissioning_source || null,
               _file_temp_number: data.file_temp_number || null,
               _file_number_display: data.file_number_display || null,
               _file_is_indexed: (data.is_indexed === true),
@@ -2622,6 +2627,7 @@ const executeSearchAjax = (filters, searchData) => {
         const _cd = data.file_commissioning_date || null;
         const _cn = data.file_commissioned_number || null;
         const _ch = data.file_commissioning_holder || null;
+        const _cs = data.file_commissioning_source || null;
         const _fnd = data.file_number_display || null;
         window._lsFileTempNumber = _tf;
         window._lsLineage = data.lineage || null;
@@ -2647,6 +2653,7 @@ const executeSearchAjax = (filters, searchData) => {
           if (_cd) r._file_commissioning_date = _cd;
           if (_cn) r._file_commissioned_number = _cn;
           if (_ch) r._file_commissioning_holder = _ch;
+          if (_cs) r._file_commissioning_source = _cs;
           if (_fnd) r._file_number_display = _fnd;
         });
 
@@ -4984,6 +4991,90 @@ const executeSearchAjax = (filters, searchData) => {
     return result;
   };
 
+  // ---------------------------------------------------------------------------
+  // Root of Title
+  // ---------------------------------------------------------------------------
+  // The foundational grant the applicant's title traces back to. Two roots are
+  // recognised:
+  //   • an Occupancy Permit (OP) on the file          → "Occupancy Permit (OP)"
+  //   • File Commissioning by Direct Allocation       → "Allocation List"
+  // mls_file_no.source (surfaced as _file_commissioning_source) is the authority
+  // for the commissioning route: a bare "Direct Allocation" means the file came
+  // off an Allocation List, while "OP Direct Allocation" / "OP Resettlement" mean
+  // the file was opened on an Occupancy Permit.
+  const ROOT_OF_TITLE_OP = 'Occupancy Permit (OP)';
+  const ROOT_OF_TITLE_ALLOCATION = 'Allocation List';
+
+  const commissioningSourceRoot = (src) => {
+    const t = String(src || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!t) return null;
+    if (t === 'direct allocation' || t === 'allocation list') return ROOT_OF_TITLE_ALLOCATION;
+    if (t.startsWith('op ') || t === 'op' || t.includes('occupancy permit')) return ROOT_OF_TITLE_OP;
+    return null;
+  };
+
+  // Returns { index, label } for the row the Root of Title comment belongs under,
+  // or null when neither root can be established for the searched file.
+  const resolveRootOfTitle = (rows) => {
+    if (!Array.isArray(rows) || !rows.length) return null;
+
+    // The comment describes the APPLICANT's title, so it is anchored to the searched
+    // file's own lifecycle block — an OP sitting on a linked/successor file is that
+    // file's root, not this one's.
+    const commIndex = rows.findIndex((r) => r && r._is_commissioning);
+    const ownFileNo = commIndex !== -1
+      ? extractLifecycleFileNo(rows[commIndex])
+      : normalizeLifecycleFileNo(
+          (userSelectedFileNumber && String(userSelectedFileNumber).trim())
+          || window._currentFileNumber
+          || window.__lsLastSearchedFileNumber
+          || ''
+        );
+    const belongsToOwnFile = (r) => {
+      if (!ownFileNo) return true;
+      const fn = extractLifecycleFileNo(r);
+      if (!fn) return false;
+      // A SYSTEM temp number ("TEMP-91442") is the placeholder an unlinked OP capture
+      // sits on, not a file of its own — such a row only reaches this timeline because
+      // it belongs to the searched file's parcel, so it counts as this file's.
+      if (isSystemTempFileNo(fn)) return true;
+      // A "(T)" temporary number is the same physical file as its permanent twin.
+      const strip = (v) => String(v || '').replace(/\(\s*T\s*\)$/i, '').trim();
+      return fn === ownFileNo || strip(fn) === strip(ownFileNo);
+    };
+
+    // 1. An Occupancy Permit captured on the file roots the title in that OP.
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r || !belongsToOwnFile(r)) continue;
+      if (canonicalWeightingInstrumentType(getMappedValue(r, 'transactionType')) === 'occupancy permit') {
+        return { index: i, label: ROOT_OF_TITLE_OP };
+      }
+    }
+
+    // 2. No OP row captured — fall back to how the file was commissioned.
+    if (commIndex === -1) return null;
+    const label = commissioningSourceRoot(selectedFile && selectedFile._file_commissioning_source);
+    return label ? { index: commIndex, label } : null;
+  };
+
+  const rootOfTitleText = (label) => 'Root of Title: ' + label;
+
+  // The File Information card echoes the same comment directly above the File Number,
+  // so the root is visible without reading down the timeline.
+  const renderRootOfTitleBanner = (label) => {
+    const banner = document.getElementById('ls-root-of-title-banner');
+    if (!banner) return;
+    const text = document.getElementById('ls-root-of-title-banner-text');
+    if (!label) {
+      banner.classList.add('hidden');
+      if (text) text.textContent = '';
+      return;
+    }
+    if (text) text.textContent = rootOfTitleText(label);
+    banner.classList.remove('hidden');
+  };
+
   const renderTimeline = async () => {
     let transactions = window._preferredRelatedTransactions || window._allRelatedTransactions || [];
     const timelineTable = document.getElementById('timeline-table');
@@ -5015,6 +5106,11 @@ const executeSearchAjax = (filters, searchData) => {
     ];
 
     transactions = groupAndSortTimeline(transactions);
+
+    // Root of Title annotation — resolved once against the final, ordered row set so
+    // the comment lands under the row the reader actually sees.
+    const rootOfTitle = resolveRootOfTitle(transactions);
+    renderRootOfTitleBanner(rootOfTitle ? rootOfTitle.label : null);
 
     const timelineTotalCount = document.getElementById('timeline-total-count');
     if (timelineTotalCount) {
@@ -5098,6 +5194,13 @@ const executeSearchAjax = (filters, searchData) => {
       const size = getMappedValue(item, 'size');
       const comments = toProperCase((item.is_caveated == 1 && item.caveated_comment) ? item.caveated_comment : getMappedValue(item, 'comments'));
       const commentsShort = comments && comments.length > 50 ? comments.slice(0, 50) + '…' : (comments || '');
+      // Root of Title rides in this row's Comments cell — it IS a comment on the record,
+      // not a record of its own — sitting under any existing comment on the same row.
+      const isRootOfTitleRow = !!(rootOfTitle && rootOfTitle.index === idx);
+      const rootOfTitleHtml = isRootOfTitleRow
+        ? `<div class="ls-root-of-title">${rootOfTitleText(rootOfTitle.label)}</div>` : '';
+      const commentsTitle = isRootOfTitleRow
+        ? [comments, rootOfTitleText(rootOfTitle.label)].filter(Boolean).join(' — ') : comments;
       const alreadyCaveated = hasCaveatOnRow(item);
 
       const row = document.createElement('tr');
@@ -5138,7 +5241,7 @@ const executeSearchAjax = (filters, searchData) => {
         <td>${regDate}</td>
         <td>${size}</td>
         <td class="${alreadyCaveated ? 'text-red-600 font-medium' : ''}">${item.caveat || '-'}</td>
-        <td title="${comments}" style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default;">${commentsShort}</td>
+        <td title="${commentsTitle}" class="${isRootOfTitleRow ? 'ls-comments-cell-root' : ''}" style="max-width:160px;${isRootOfTitleRow ? '' : 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'}cursor:default;">${commentsShort}${rootOfTitleHtml}</td>
         <td class="text-center relative">
           <div class="timeline-action-dropdown relative inline-block">
             <button class="timeline-action-trigger p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100" title="Actions">

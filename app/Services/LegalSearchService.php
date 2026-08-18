@@ -788,6 +788,7 @@ class LegalSearchService
             'total_count' => count($all),
             'file_commissioning_date' => $commissioningInfo['date'],
             'file_commissioned_number' => $commissioningInfo['number'],
+            'file_commissioning_source' => $commissioningInfo['source'] ?? null,
             'file_commissioning_holder' => $this->resolveCommissioningHolder($conn, $fileNo),
             'lineage' => $this->enrichLineageWithCommissioning(
                 $conn,
@@ -2447,6 +2448,7 @@ class LegalSearchService
             'total_count' => 0,
             'file_commissioning_date' => '-',
             'file_commissioned_number' => null,
+            'file_commissioning_source' => null,
         ];
     }
 
@@ -2475,7 +2477,7 @@ class LegalSearchService
      */
     private function resolveCommissioningInfo(?string $fileNumber, ?string $altFileNo = null): array
     {
-        $default = ['date' => '-', 'number' => null];
+        $default = ['date' => '-', 'number' => null, 'source' => null];
 
         // Match ALL variants of the file number (base, base(T)), not just the two
         // exact strings passed in — a temporary file may be commissioned under its
@@ -2494,7 +2496,7 @@ class LegalSearchService
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
             })
             ->orderByDesc('id')
-            ->first(['full_file_number', 'commissioning_date']);
+            ->first(['full_file_number', 'commissioning_date', 'source']);
 
         // Presence in mls_file_no is THE authoritative signal that a file was
         // commissioned through KLAES. A file absent from mls_file_no was NOT
@@ -2507,10 +2509,15 @@ class LegalSearchService
 
         $number = trim((string) $mlsRecord->full_file_number) ?: null;
 
+        // How the file was commissioned ('Direct Allocation', 'OP Direct Allocation',
+        // 'OP Resettlement', 'Conversion', …). Drives the Root of Title annotation on
+        // the timeline's File Commissioning row.
+        $source = trim((string) ($mlsRecord->source ?? '')) ?: null;
+
         if ($mlsRecord->commissioning_date) {
             $date = rescue(fn () => \Carbon\Carbon::parse($mlsRecord->commissioning_date), null, false);
             if ($date) {
-                return ['date' => $date->format('M j, Y'), 'number' => $number];
+                return ['date' => $date->format('M j, Y'), 'number' => $number, 'source' => $source];
             }
         }
 
@@ -2532,7 +2539,7 @@ class LegalSearchService
             if ($record->commissioning_date) {
                 $date = rescue(fn () => \Carbon\Carbon::parse($record->commissioning_date), null, false);
                 if ($date) {
-                    return ['date' => $date->format('M j, Y'), 'number' => $number];
+                    return ['date' => $date->format('M j, Y'), 'number' => $number, 'source' => $source];
                 }
             }
         }
@@ -2560,11 +2567,11 @@ class LegalSearchService
             $embeddedYear = $this->extractYearFromFileNumber($fileNumber)
                 ?? $this->extractYearFromFileNumber($altFileNo);
             if ($date && $embeddedYear && (int) $date->format('Y') === (int) $embeddedYear) {
-                return ['date' => $date->format('M j, Y'), 'number' => $number];
+                return ['date' => $date->format('M j, Y'), 'number' => $number, 'source' => $source];
             }
         }
 
-        return ['date' => '-', 'number' => $number];
+        return ['date' => '-', 'number' => $number, 'source' => $source];
     }
 
     /**
@@ -6015,6 +6022,14 @@ class LegalSearchService
         }
         unset($rowRef);
 
+        // Root of Title — printed as a comment on the row the applicant's title
+        // traces back to, matching the on-screen timeline.
+        $rows = $this->annotateRootOfTitle(
+            $rows,
+            $commissioningFileNo,
+            $this->resolveCommissioningInfo($fileNumber, $fileNo)['source'] ?? null
+        );
+
         $caveatedRecord = collect($transactions)->first(fn($t) => $t['is_caveated']);
         $caveatId = $caveatedRecord ? ($caveatedRecord['caveat_id'] ?? null) : null;
 
@@ -7726,6 +7741,101 @@ class LegalSearchService
     private function isSystemTempFileNo(?string $fileNo): bool
     {
         return (bool) preg_match('/^TEMP[-_ ]?\d+/i', trim((string) $fileNo));
+    }
+
+    /**
+     * Root of Title — the foundational grant the applicant's title traces back to.
+     * PHP twin of resolveRootOfTitle() in legal_search/js.blade.php; the two must
+     * agree so the printed report and the on-screen timeline never disagree about
+     * where the title came from.
+     *
+     * Two roots are recognised:
+     *   - an Occupancy Permit (OP) on the file            -> "Occupancy Permit (OP)"
+     *   - File Commissioning by Direct Allocation         -> "Allocation List"
+     *
+     * mls_file_no.source is the authority for the commissioning route: a bare
+     * "Direct Allocation" means the file came off an Allocation List, while
+     * "OP Direct Allocation" / "OP Resettlement" mean it was opened on an OP.
+     *
+     * Sets 'root_of_title' on the one row it belongs to; the print templates render
+     * it beneath that row's Comments cell.
+     */
+    private function annotateRootOfTitle(array $rows, ?string $commissioningFileNo, ?string $commissioningSource): array
+    {
+        if (empty($rows)) {
+            return $rows;
+        }
+
+        $ownFileNo = $this->normalizeLifecycleFileNo(
+            preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', (string) $commissioningFileNo)
+        );
+
+        // The comment describes THIS applicant's title, so an OP sitting on a linked or
+        // successor file does not count. A SYSTEM temp number ("TEMP-91442") is the
+        // placeholder an unlinked OP capture sits on rather than a file of its own, so a
+        // row on one only reached this report by belonging to the searched file's parcel.
+        $belongsToOwnFile = function (array $row) use ($ownFileNo): bool {
+            $fn = trim((string) ($row['lifecycle_file_no'] ?? ''));
+            if ($fn === '') {
+                return false;
+            }
+            if ($this->isSystemTempFileNo($fn)) {
+                return true;
+            }
+            if ($ownFileNo === '') {
+                return true;
+            }
+            $strip = fn($v) => trim(preg_replace('/\(\s*T\s*\)$/i', '', (string) $v));
+            return $fn === $ownFileNo || $strip($fn) === $strip($ownFileNo);
+        };
+
+        // 1. An Occupancy Permit captured on the file roots the title in that OP.
+        //    "Transfer of Title (OP)" is deliberately not a match — it moves a title
+        //    that an OP already created.
+        $targetIndex = null;
+        $label = null;
+        foreach ($rows as $i => $row) {
+            $type = strtolower(trim((string) ($row['instrument_type'] ?? '')));
+            if ($type === '' || !str_contains($type, 'occupancy permit')) {
+                continue;
+            }
+            if (!$belongsToOwnFile($row)) {
+                continue;
+            }
+            $targetIndex = $i;
+            $label = 'Occupancy Permit (OP)';
+            break;
+        }
+
+        // 2. No OP row on the file — fall back to how the file was commissioned.
+        if ($targetIndex === null) {
+            $src = strtolower(trim(preg_replace('/\s+/', ' ', (string) $commissioningSource)));
+            if ($src === '') {
+                return $rows;
+            }
+            if ($src === 'direct allocation' || $src === 'allocation list') {
+                $label = 'Allocation List';
+            } elseif ($src === 'op' || str_starts_with($src, 'op ') || str_contains($src, 'occupancy permit')) {
+                $label = 'Occupancy Permit (OP)';
+            } else {
+                return $rows;
+            }
+
+            foreach ($rows as $i => $row) {
+                if (trim((string) ($row['source_table'] ?? '')) === 'File Commissioning') {
+                    $targetIndex = $i;
+                    break;
+                }
+            }
+        }
+
+        if ($targetIndex === null || $label === null) {
+            return $rows;
+        }
+
+        $rows[$targetIndex]['root_of_title'] = $label;
+
+        return $rows;
     }
 
     /**

@@ -642,14 +642,26 @@ class InstrumentRegistrationService
      * @param string $party2Name
      * @return void
      */
-    public function syncPartyNames(string $fileNo, string $instrumentType, string $party2Name): array
+    public function syncPartyNames(?string $fileNo, ?string $instrumentType, ?string $party2Name): array
     {
-        $normalizedType = $this->resolveVaultName($instrumentType);
+        // Nullable on purpose. A capture with no resolved file number or no party 2
+        // name used to hit these non-nullable hints and raise a TypeError - an
+        // \Error, not an \Exception, so it escaped the caller's catch and killed the
+        // whole request. Missing data must simply mean "nothing to propagate".
+        $fileNo = $fileNo !== null ? trim($fileNo) : '';
+        $party2Name = $party2Name !== null ? trim($party2Name) : '';
+
         $result = [
             'synced' => false,
             'old_name' => null,
             'new_name' => $party2Name
         ];
+
+        if ($instrumentType === null || $instrumentType === '') {
+            return $result;
+        }
+
+        $normalizedType = $this->resolveVaultName($instrumentType);
 
         // We only sync for Deeds of Assignment, Deeds of Gift, and Irrevocable Power of Attorney
         if ($normalizedType !== 'Deed of Assignment' && $normalizedType !== 'Power of Attorney') {

@@ -544,6 +544,18 @@
         margin-top: auto;
       }
     }
+
+    /* Root of Title — the foundational grant the applicant's title traces back to,
+       printed as a comment on the instrument / commissioning row it belongs to.
+       Bold + italic in indigo so it reads as a remark, not as record data.
+       Mirrors .ls-root-of-title on the on-screen LS timeline. */
+    .root-of-title {
+      font-weight: 700;
+      font-style: italic;
+      color: #6d28d9;
+      margin-top: 2px;
+      line-height: 1.25;
+    }
   </style>
 </head>
 
@@ -896,7 +908,7 @@
           <td><strong>${row.reg_time}</strong><br>${row.reg_date}</td>
           <td>${row.reg_no}</td>
           <td>${row.caveat}</td>
-          <td>${row.comments}</td>
+          <td>${(row.comments && row.comments !== '-') || !row.root_of_title ? row.comments : ''}${row.root_of_title ? `<div class="root-of-title">Root of Title: ${row.root_of_title}</div>` : ''}</td>
         </tr>`;
         
       tbody.innerHTML = rows.map(rowHtml).join('');

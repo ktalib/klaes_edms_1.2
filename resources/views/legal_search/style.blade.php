@@ -570,6 +570,32 @@
       border-top: 2px solid #16a34a !important;
     }
 
+    /* Root of Title — the foundational grant the applicant's title traces back to.
+       Shown as a comment on the timeline row it belongs to, and echoed above the File
+       Number in the File Information card. Bold + italic in indigo so it reads as a
+       remark rather than as record data. */
+    .ls-root-of-title {
+      font-weight: 700;
+      font-style: italic;
+      color: #6d28d9;
+      font-size: 0.75rem;
+      letter-spacing: 0.01em;
+    }
+    /* The Comments column truncates to one line; the row carrying the Root of Title
+       wraps instead so the remark is never clipped. */
+    #timeline-table td.ls-comments-cell-root {
+      white-space: normal;
+    }
+    #timeline-table td.ls-comments-cell-root .ls-root-of-title {
+      display: block;
+      margin-top: 0.15rem;
+      line-height: 1.25;
+    }
+    #ls-root-of-title-banner {
+      padding-bottom: 0.25rem;
+      border-bottom: 1px dashed #ddd6fe;
+    }
+
     /* Timeline & detail tables – prevent cramped columns */
     #timeline-table-wrapper,
     #property-record-tab table,

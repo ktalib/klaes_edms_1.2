@@ -62,6 +62,7 @@ class BuyerListController extends Controller
                     'bl.buyer_name', 
                     'bl.unit_no', 
                     'bl.section_number',
+                    'bl.block_no',
                     'bl.land_use',
                     'bl.cubic_easurement',
                     'bl.unit_measurement_id', 
@@ -341,6 +342,10 @@ class BuyerListController extends Controller
                 
                 $unitNo = strtoupper(trim($record['unit_no'] ?? ''));
                 $sectionNumber = strtoupper(trim($record['sectionNumber'] ?? ''));
+                // Optional. An older CSV has no blockNo column at all, and the
+                // buyer_list.block_no column is nullable, so a blank stays NULL
+                // rather than becoming an empty string that sorts oddly.
+                $blockNo = strtoupper(trim($record['blockNo'] ?? ''));
                 $cubicMeasurement = isset($record['cubicMeasurement'])
                     ? trim($record['cubicMeasurement'])
                     : null;
@@ -354,6 +359,9 @@ class BuyerListController extends Controller
                     ->when($sectionNumber !== '', function ($query) use ($sectionNumber) {
                         $query->where('section_number', $sectionNumber);
                     })
+                    ->when($blockNo !== '', function ($query) use ($blockNo) {
+                        $query->where('block_no', $blockNo);
+                    })
                     ->first();
 
                 if ($existing) {
@@ -365,6 +373,7 @@ class BuyerListController extends Controller
                         'buyer_name' => $buyerName,
                         'unit_no' => $unitNo,
                         'section_number' => $sectionNumber,
+                        'block_no' => $blockNo,
                         'existing_buyer_id' => $existing->id ?? null,
                     ]);
 
@@ -379,6 +388,7 @@ class BuyerListController extends Controller
                     'buyer_name' => $buyerName,
                     'unit_no' => $unitNo,
                     'section_number' => $sectionNumber !== '' ? $sectionNumber : null,
+                    'block_no' => $blockNo !== '' ? $blockNo : null,
                     'land_use' => !empty($record['landUse']) ? strtoupper(trim($record['landUse'])) : null,
                     'cubic_easurement' => $cubicMeasurement !== '' ? $cubicMeasurement : null,
                     'created_at' => now(),
@@ -508,6 +518,7 @@ class BuyerListController extends Controller
                 'records.*.surname' => 'required|string',
                 'records.*.unit_no' => 'required|string',
                 'records.*.sectionNumber' => 'required|string',
+                'records.*.blockNo' => 'nullable|string|max:50',
                 'records.*.middleName' => 'nullable|string',
                 'records.*.landUse' => 'nullable|string',
                 'records.*.unitMeasurement' => 'nullable|numeric',
@@ -563,6 +574,7 @@ class BuyerListController extends Controller
                 'buyer_name'     => 'required|string',
                 'unit_no'        => 'required|string',
                 'section_number' => 'nullable|string|max:100',
+                'block_no'       => 'nullable|string|max:50',
                 'measurement'    => 'nullable|numeric',
                 'land_use'       => 'nullable|string',
                 'cubic_easurement' => 'nullable',
@@ -607,6 +619,7 @@ class BuyerListController extends Controller
                     'buyer_name'  => strtoupper(trim($validated['buyer_name'])),
                     'unit_no'     => strtoupper(trim($validated['unit_no'])),
                     'section_number' => !empty($validated['section_number']) ? strtoupper(trim($validated['section_number'])) : null,
+                    'block_no'    => !empty($validated['block_no']) ? strtoupper(trim($validated['block_no'])) : null,
                     'land_use'    => !empty($validated['land_use']) ? strtoupper(trim($validated['land_use'])) : null,
                     'cubic_easurement' => array_key_exists('cubic_easurement', $validated)
                         ? ($validated['cubic_easurement'] !== null && $validated['cubic_easurement'] !== ''
@@ -799,14 +812,15 @@ class BuyerListController extends Controller
             'surname',
             'unit_no',
             'sectionNumber',
+            'blockNo',
             'landUse',
             'unitMeasurement'
         ];
         
         $sampleData = [
-            ['Mr.', 'JOHN', 'A', 'DOE', 'A101', 'SEC-01', 'RESIDENTIAL', '50.00'],
-            ['Mrs.', 'JANE', 'B', 'SMITH', 'A102', 'SEC-02', 'COMMERCIAL', '75.50'],
-            ['Dr.', 'ROBERT', '', 'JOHNSON', 'B201', 'SEC-03', 'INDUSTRIAL', '100.00']
+            ['Mr.', 'JOHN', 'A', 'DOE', 'A101', 'SEC-01', 'BLK-A', 'RESIDENTIAL', '50.00'],
+            ['Mrs.', 'JANE', 'B', 'SMITH', 'A102', 'SEC-02', 'BLK-A', 'COMMERCIAL', '75.50'],
+            ['Dr.', 'ROBERT', '', 'JOHNSON', 'B201', 'SEC-03', '', 'INDUSTRIAL', '100.00']
         ];
         
         $filename = 'buyer_import_template_' . date('Y-m-d') . '.csv';
@@ -853,6 +867,7 @@ class BuyerListController extends Controller
                 'bl.buyer_name', 
                 'bl.unit_no', 
                 'bl.section_number',
+                'bl.block_no',
                 'bl.land_use',
                 'bl.unit_measurement_id', 
                 'sum.measurement',

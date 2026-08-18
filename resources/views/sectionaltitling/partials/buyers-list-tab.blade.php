@@ -220,6 +220,14 @@
                                         {{ $buyersReadOnly ? 'disabled' : '' }}>
                                 </div>
                                 <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Block No</label>
+                                    <input type="text" :name="'records['+index+'][blockNo]'"
+                                        class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm uppercase"
+                                        placeholder="Enter Block No"
+                                        oninput="this.value = this.value.toUpperCase()"
+                                        {{ $buyersReadOnly ? 'disabled' : '' }}>
+                                </div>
+                                <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-2">Unit Measurement (sqm)</label>
                                     <input type="number" step="0.01" :name="'records['+index+'][unitMeasurement]'" 
                                         class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm" 
@@ -510,6 +518,7 @@
             formData.append(`records[${index}][surname]`, buyer.surname || '');
             formData.append(`records[${index}][unit_no]`, buyer.unit_no || '');
             formData.append(`records[${index}][sectionNumber]`, buyer.sectionNumber || '');
+            formData.append(`records[${index}][blockNo]`, buyer.blockNo || buyer.block_no || '');
             formData.append(`records[${index}][landUse]`, buyer.landUse || '');
             formData.append(`records[${index}][unitMeasurement]`, cleanMeasurement);
         });

@@ -294,6 +294,40 @@ class ValuationReportController extends Controller
     }
 
     /**
+     * Master reset of the print count.
+     *
+     * Sets print_count back to zero so the report becomes editable and
+     * printable again. Kept separate from re-evaluation because it does not
+     * touch any value, it only clears the printed state.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  int  $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function resetPrints(Request $request, $id)
+    {
+        $report = ValuationReport::findOrFail($id);
+
+        $previous = (int) $report->print_count;
+        $report->update(['print_count' => 0]);
+
+        PrintLog::create([
+            'reference_number' => $report->file_number,
+            'document_type' => 'Valuation Report',
+            'print_type' => 'Master Reset',
+            'status' => 'Reset',
+            'user_id' => Auth::id()
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Print count reset to zero. The report can now be edited and printed again.',
+            'previous_print_count' => $previous,
+            'print_count' => 0
+        ]);
+    }
+
+    /**
      * Display the specified resource.
      *
      * @param  int  $id

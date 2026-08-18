@@ -447,7 +447,7 @@
                             @foreach($printDimensions as $index => $dimension)
                             <tr>
                                 <td><strong>{{ $index + 1 }}</strong></td>
-                                <td><strong>{{ $dimension->description ?? 'Unit ' . ($index + 1) }}</strong></td>
+                                <td><strong>{{ $dimension->description ?? '' }}</strong></td>
                                 <td><strong>{{ $dimension->section ?? ($application->block_number ?? '0') }}</strong></td>
                                 <td><strong>{{ number_format($dimension->dimension ?? 0, 2) }}</strong></td>
                             </tr>
@@ -559,8 +559,8 @@
                                     'utility_type' => $item->utility_type ?? null,
                                     'dimension' => $item->dimension ?? 0,
                                     'count' => $item->count ?? 1,
-                                    'block' => $item->block ?? '1',
-                                    'section' => $item->section ?? '1',
+                                    'block' => $item->block ?? null,
+                                    'section' => $item->section ?? null,
                                 ];
                             })->filter(function ($utility) {
                                 return !empty($utility->utility_type);
@@ -586,8 +586,8 @@
                                         'utility_type' => $utility->utility_type ?? null,
                                         'dimension' => $utility->dimension ?? 0,
                                         'count' => $utility->count ?? 1,
-                                        'block' => $utility->block ?? '1',
-                                        'section' => $utility->section ?? '1',
+                                        'block' => $utility->block ?? null,
+                                        'section' => $utility->section ?? null,
                                     ];
                                 })->filter(function ($utility) {
                                     return !empty($utility->utility_type);
@@ -602,8 +602,8 @@
                                 <td><strong>{{ $formatUtilityLabel($utility->utility_type) ?: 'Utility ' . ($index + 1) }}</strong></td>
                                 <td><strong>{{ number_format($utility->dimension ?? 0, 1) }}</strong></td>
                                 <td><strong>{{ $utility->count ?? 1 }}</strong></td>
-                                <td><strong>{{ $utility->block ?? '1' }}</strong></td>
-                                <td><strong>{{ $utility->section ?? '1' }}</strong></td>
+                                <td><strong>{{ $utility->block ?? '' }}</strong></td>
+                                <td><strong>{{ $utility->section ?? '' }}</strong></td>
                             </tr>
                             @endforeach
                         @else
@@ -649,8 +649,8 @@
                                     <td><strong x-text="formatUtilityLabel(utility.utility_type) || ('Utility ' + (index + 1))"></strong></td>
                                     <td><strong x-text="parseFloat(utility.dimension || 0).toFixed(1)"></strong></td>
                                     <td><strong x-text="utility.count || 1"></strong></td>
-                                    <td><strong x-text="utility.block || '1'"></strong></td>
-                                    <td><strong x-text="utility.section || '1'"></strong></td>
+                                    <td><strong x-text="utility.block || ''"></strong></td>
+                                    <td><strong x-text="utility.section || ''"></strong></td>
                                 </tr>
                             </template>
                         </template>

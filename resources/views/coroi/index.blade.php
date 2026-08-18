@@ -660,8 +660,16 @@
                                         $isMortgage = isset($data) && isset($data->instrument_type)
                                             && stripos((string) $data->instrument_type, 'MORTGAGE') !== false;
 
+                                        $isDeedOfSurrenderRelease = isset($data) && isset($data->instrument_type)
+                                            && stripos((string) $data->instrument_type, 'SURRENDER') !== false
+                                            && stripos((string) $data->instrument_type, 'RELEASE') !== false;
+
                                         // Mortgages are delivered by party 2 (the mortgagee)
-                                        if ($isDeedOfAssignment) {
+                                        // Surrender & Release is the reverse: party 1 is the bank/mortgagee.
+                                        if ($isDeedOfSurrenderRelease) {
+                                            $deliveryName = $data->party_1_name ?? $data->Applicant_Name ?? 'APPLICANT NAME';
+                                            $deliveryAddress = $data->party_1_address ?? null;
+                                        } elseif ($isDeedOfAssignment) {
                                             $deliveryName = $data->solicitor_name ?? $data->Applicant_Name ?? 'APPLICANT NAME';
                                             $deliveryAddress = $data->solicitor_address ?? $data->party_2_address ?? null;
                                         } elseif ($isMortgage) {

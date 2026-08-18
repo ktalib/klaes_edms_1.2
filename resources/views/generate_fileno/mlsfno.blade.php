@@ -2105,13 +2105,28 @@
                                         Old File Number
                                     </label>
                                 </div>
-                                <input type="text" id="editRelatedFileNo" name="related_fileno"
-                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
-                                       placeholder="Enter related file number">
+                                <div class="flex items-center gap-2">
+                                    {{-- Picked through the global file-number selector so only real,
+                                         resolvable file numbers can be linked here. --}}
+                                    <input type="text" id="editRelatedFileNo" name="related_fileno" readonly
+                                           onclick="openEditRelatedFileModal()"
+                                           class="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-md cursor-pointer uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                           placeholder="Select related file number">
+                                    <button type="button" onclick="openEditRelatedFileModal()"
+                                            class="shrink-0 inline-flex items-center px-3 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700">
+                                        <i data-lucide="search" class="w-4 h-4 mr-1"></i>
+                                        Select
+                                    </button>
+                                    <button type="button" id="editRelatedFileNoClear" onclick="clearEditRelatedFileNo()"
+                                            class="shrink-0 hidden items-center px-2 py-2 text-gray-400 hover:text-red-600" title="Clear">
+                                        <i data-lucide="x" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
                                 <!-- Tells the backend which column the value belongs in -->
                                 <input type="hidden" id="editIsOldFileNoValue" name="is_old_fileno" value="0">
+                                <div id="editRelatedFileTitle" class="mt-1 text-xs font-medium text-blue-700 hidden"></div>
                                 <p id="editRelatedFileNoHint" class="mt-1 text-xs text-gray-500">
-                                    Separate multiple related file numbers with a comma.
+                                    Pick the file this one relates to.
                                 </p>
                             </div>
 

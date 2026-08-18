@@ -965,8 +965,8 @@ Route::get('planning-recommendation/print/{id}', function ($id) {
                 'utility_type' => $label,
                 'dimension' => 0,
                 'count' => 1,
-                'block' => '1',
-                'section' => '1',
+                'block' => null,
+                'section' => null,
             ];
         })->toArray();
     }
@@ -992,8 +992,8 @@ Route::get('planning-recommendation/print/{id}', function ($id) {
                 'utility_type' => $utilityType,
                 'dimension' => $record->dimension ?? $record->size ?? null,
                 'count' => $record->count ?? 1,
-                'block' => $record->block ?? '1',
-                'section' => $record->section ?? '1',
+                'block' => $record->block ?? null,
+                'section' => $record->section ?? null,
             ];
         })->filter()->values()->all();
     }

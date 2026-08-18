@@ -580,8 +580,8 @@
                                 : $dimensionRaw,
                             'dimension_raw' => $dimensionRaw === '' ? null : $dimensionRaw,
                             'count' => $countValue,
-                            'block' => $entry['block'] ?? '1',
-                            'section' => $entry['section'] ?? '1',
+                            'block' => $entry['block'] ?? null,
+                            'section' => $entry['section'] ?? null,
                         ];
                     })
                     ->filter(function ($item) {
@@ -617,8 +617,8 @@
             'dimension' => $dimensionValue,
             'dimension_display' => $dimensionDisplay,
             'count' => $item['count'] ?? 1,
-            'block' => $item['block'] ?? '1',
-            'section' => $item['section'] ?? '1',
+            'block' => $item['block'] ?? null,
+            'section' => $item['section'] ?? null,
         ];
     })->filter()->values()->all();
 
@@ -836,7 +836,7 @@
                             @foreach($displayDimensions as $index => $dimension)
                                 <tr>
                                     <td><strong>{{ $dimension['sn'] ?? ($index + 1) }}</strong></td>
-                                    <td><strong>{{ $dimension['description'] ?? ($dimension['unit_no'] ?? ('Unit ' . ($index + 1))) }}</strong></td>
+                                    <td><strong>{{ $dimension['description'] ?? ($dimension['unit_no'] ?? '') }}</strong></td>
                                     <td><strong>{{ $dimension['section_number'] ?? $dimension['section'] ?? 'N/A' }}</strong></td>
                                     <td><strong>{{ $formatDimensionDisplay($dimension['dimension_display'] ?? null, $dimension['dimension'] ?? null, 2) }}</strong></td>
                                 </tr>
@@ -851,7 +851,7 @@
                             <template x-for="(dimension, index) in dimensions" :key="`${dimension.description || 'unit'}-${dimension.dimension || index}-${index}`">
                                 <tr>
                                     <td><strong x-text="dimension.sn ?? (index + 1)"></strong></td>
-                                    <td><strong x-text="dimension.description || `Unit ${index + 1}`"></strong></td>
+                                    <td><strong x-text="dimension.description || ''"></strong></td>
                                     <td><strong x-text="dimension.section_number || dimension.section || 'N/A'"></strong></td>
                                     <td><strong x-text="formatDimensionValue(dimension.dimension_display, dimension.dimension, 2)"></strong></td>
                                 </tr>
@@ -912,8 +912,8 @@
                                     <td><strong>{{ $formatUtilityLabel($utility['utility_type'] ?? null) ?: 'Utility ' . ($index + 1) }}</strong></td>
                                     <td><strong>{{ $formatDimensionDisplay($utility['dimension_display'] ?? null, $utility['dimension'] ?? null) }}</strong></td>
                                     <td><strong>{{ $utility['count'] ?? 1 }}</strong></td>
-                                    <td><strong>{{ $utility['block'] ?? '1' }}</strong></td>
-                                    <td><strong>{{ $utility['section'] ?? '1' }}</strong></td>
+                                    <td><strong>{{ $utility['block'] ?? '' }}</strong></td>
+                                    <td><strong>{{ $utility['section'] ?? '' }}</strong></td>
                                 </tr>
                             @endforeach
                         @else
@@ -927,8 +927,8 @@
                                     <td><strong x-text="formatUtilityLabel(utility.utility_type) || `Utility ${index + 1}`"></strong></td>
                                     <td><strong x-text="formatDimensionValue(utility.dimension_display, utility.dimension)"></strong></td>
                                     <td><strong x-text="utility.count || 1"></strong></td>
-                                    <td><strong x-text="utility.block || '1'"></strong></td>
-                                    <td><strong x-text="utility.section || '1'"></strong></td>
+                                    <td><strong x-text="utility.block || ''"></strong></td>
+                                    <td><strong x-text="utility.section || ''"></strong></td>
                                 </tr>
                             </template>
                         </template>

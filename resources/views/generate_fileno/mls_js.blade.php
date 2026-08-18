@@ -3509,6 +3509,9 @@
                     relatedInput.value = oldFileNo || parseRelatedFileNo(data.related_fileno);
                     const oldCheckbox = document.getElementById('editIsOldFileNo');
                     if (oldCheckbox) oldCheckbox.checked = oldFileNo !== '';
+                    // No stored title for the linked file — it only appears after a pick.
+                    const relatedTitleEl = document.getElementById('editRelatedFileTitle');
+                    if (relatedTitleEl) relatedTitleEl.textContent = '';
                     onEditIsOldFileNoChange(oldFileNo !== '');
                 }
 
@@ -3561,6 +3564,62 @@
         return val;
     }
 
+    // Show the title/clear affordances only while a file number is actually set.
+    function syncEditRelatedFileNoUi() {
+        const input = document.getElementById('editRelatedFileNo');
+        const clearBtn = document.getElementById('editRelatedFileNoClear');
+        const titleEl = document.getElementById('editRelatedFileTitle');
+        const hasValue = !!(input && input.value.trim());
+
+        if (clearBtn) {
+            clearBtn.classList.toggle('hidden', !hasValue);
+            clearBtn.classList.toggle('inline-flex', hasValue);
+        }
+        if (titleEl) {
+            titleEl.classList.toggle('hidden', !(hasValue && titleEl.textContent.trim()));
+        }
+    }
+
+    // Reuse the global file-number selector (components/global-fileno-modal) so the
+    // Edit modal links a real, resolvable file instead of free text. The global modal
+    // sits at z-index 2000000, above the teleported edit modal.
+    function openEditRelatedFileModal() {
+        if (typeof GlobalFileNoModal === 'undefined' || typeof GlobalFileNoModal.open !== 'function') {
+            Swal.fire('Error', 'File number selector is not available. Please refresh the page.', 'error');
+            return;
+        }
+
+        GlobalFileNoModal.open({
+            callback: function (data) {
+                if (!data || !data.fileNumber) return;
+
+                const input = document.getElementById('editRelatedFileNo');
+                const titleEl = document.getElementById('editRelatedFileTitle');
+                // Legacy KN/KANGIS records store a trailing dash (e.g. "KN 3456-").
+                if (input) {
+                    input.value = (data.fileNumber || '').toString().replace(/[\s-]+$/, '').trim();
+                }
+                if (titleEl) {
+                    titleEl.textContent = (
+                        data.file_name
+                        || data.file_title
+                        || (data.record && (data.record.file_name || data.record.FileName || data.record.file_title))
+                        || ''
+                    ).toString().trim();
+                }
+                syncEditRelatedFileNoUi();
+            }
+        });
+    }
+
+    function clearEditRelatedFileNo() {
+        const input = document.getElementById('editRelatedFileNo');
+        const titleEl = document.getElementById('editRelatedFileTitle');
+        if (input) input.value = '';
+        if (titleEl) titleEl.textContent = '';
+        syncEditRelatedFileNoUi();
+    }
+
     // The Edit modal carries one file-number field. Ticking "Old File Number" relabels
     // it and flips the hidden flag so the backend saves it as the old file number
     // (mls_file_no.old_fileno) instead of a related file number.
@@ -3576,14 +3635,15 @@
             label.innerHTML = '<i data-lucide="link" class="w-4 h-4 inline mr-1"></i>'
                 + (isOld ? 'Old File Number' : 'Related File Number');
         }
-        if (input) {
-            input.placeholder = isOld ? 'Enter old file number' : 'Enter related file number';
-        }
         if (hint) {
             hint.textContent = isOld
                 ? "Saved as this file's previous (old) file number."
-                : 'Separate multiple related file numbers with a comma.';
+                : 'Pick the file this one relates to.';
         }
+        if (input) {
+            input.placeholder = isOld ? 'Select old file number' : 'Select related file number';
+        }
+        syncEditRelatedFileNoUi();
         if (window.lucide && typeof lucide.createIcons === 'function') {
             lucide.createIcons();
         }

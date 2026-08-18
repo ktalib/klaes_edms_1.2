@@ -128,8 +128,8 @@ document.addEventListener('DOMContentLoaded', function () {
         'deed-of-surrender-release': {
             id: 'deed-of-surrender-release',
             name: 'Deed of Surrender and Release',
-            firstParty: 'Surrenderer/Releasor',
-            secondParty: 'Surrenderee/Releasee',
+            firstParty: 'Bank/Mortgagee',
+            secondParty: 'Other Party',
             needsRootReg: true,
             description: 'A legal agreement in which a tenant voluntarily returns possession of property to the landlord, or a document that discharges a party from a previous claim or mortgage on a property.',
             subtypes: ['deed-of-surrender-release', 'power-of-attorney', 'irrevocable-power-of-attorney']
@@ -947,6 +947,13 @@ document.addEventListener('DOMContentLoaded', function () {
         const propIdInput = elements.registrationForm?.querySelector('[name="prop_id"]');
         if (propIdInput) {
             propIdInput.value = '';
+        }
+
+        // The duplicate override is granted for one specific capture the officer
+        // looked at and approved. It must never survive into the next one.
+        const allowDupInput = elements.registrationForm?.querySelector('[name="allow_duplicate"]');
+        if (allowDupInput) {
+            allowDupInput.value = '';
         }
 
         // A reset returns a CofO capture to the default Regular variant.
@@ -1873,31 +1880,11 @@ document.addEventListener('DOMContentLoaded', function () {
         // Re-enable updatePropertyDescription
         window._suppressPropertyDescUpdate = false;
 
-        // Solicitor details from prior instrument record
-        if (prior.solicitor_name) {
-            const solToggle = document.getElementById('includeSolicitorSidebar');
-            if (solToggle && !solToggle.checked) {
-                solToggle.checked = true;
-                solToggle.dispatchEvent(new Event('change'));
-            }
-            safeSetValue('solicitorName', prior.solicitor_name);
-            safeSetValue('solicitorAddress', prior.solicitor_address);
-            if (prior.solicitor_district) {
-                setSelectOrManual('solicitorDistrict', prior.solicitor_district);
-            }
-            // solicitor_state/solicitor_lga columns don't exist - extract from address
-            if (prior.solicitor_address) {
-                const solState = extractStateFromText(prior.solicitor_address, 'solicitorState') || 'Kano';
-                safeSetValue('solicitorState', solState);
-                const solLga = extractLgaFromText(prior.solicitor_address, '');
-                if (solLga) {
-                    fetchLgas(solState, 'solicitorLga', solLga);
-                } else {
-                    fetchLgas(solState, 'solicitorLga');
-                }
-            }
-            console.log('[autoFillFromConsent] Solicitor filled from prior instrument:', prior.solicitor_name);
-        }
+        // Solicitor details are deliberately NOT carried over from the prior
+        // instrument. The solicitor is the legal practitioner who prepared THIS
+        // deed, not a property attribute: a second assignment on the same file is
+        // normally drawn by a different lawyer, and pre-filling the previous one
+        // silently attributed the new transaction to them. The clerk types it in.
 
         // Property & survey fields from prior instrument
         if (prior.tp_no) safeSetValue('tp_no', prior.tp_no);
@@ -2581,7 +2568,7 @@ document.addEventListener('DOMContentLoaded', function () {
         setHidden('consent_application_id', consent.id);
 
         alreadyCapturedLock = false;
-        handleCreateNew();
+        handleCreateNew({ explicit: true });
 
         if (typeof Swal !== 'undefined') {
             Swal.fire({
@@ -2823,7 +2810,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (event && typeof event.preventDefault === 'function') {
                 event.preventDefault();
             }
-            handleCreateNew();
+            handleCreateNew({ explicit: true });
             closeDuplicateModal();
         };
         if (closeBtnClone) {
@@ -2915,10 +2902,27 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    function handleCreateNew() {
+    /**
+     * @param {{explicit?: boolean}} options  explicit:true means the officer
+     *   actively chose to capture a new instrument on this file (the "Create New"
+     *   button, or picking a fresh consent) rather than merely dismissing the
+     *   duplicate warning by closing it. Only an active choice lifts the submit
+     *   lock and stamps the override the server records — closing a dialog is not
+     *   a decision to register a second instrument.
+     */
+    function handleCreateNew(options = {}) {
         duplicateCheckState.isUpdateMode = false;
-        // Do NOT clear alreadyCapturedLock here — if a duplicate was found,
-        // the lock persists to prevent re-submitting the same instrument.
+
+        if (options.explicit === true) {
+            // A file can legitimately be assigned more than once. The officer has
+            // seen the existing record and said this is a further dealing, so the
+            // lock lifts and the submission carries an explicit override that the
+            // server logs against the record it collided with. Without this the
+            // button stayed dead and there was no way forward at all.
+            alreadyCapturedLock = false;
+            setHidden('allow_duplicate', '1');
+        }
+
         if (!alreadyCapturedLock) {
             resetSubmitButton();
         }
@@ -6816,10 +6820,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 data = JSON.parse(responseText);
             } catch (parseError) {
                 console.error('Failed to parse response as JSON:', parseError);
+                // Production hides the stack trace, so "invalid response format" was all
+                // the clerk could report. Surface whatever the HTML error page carries -
+                // status code, <title>, and the first readable line - so a failure is
+                // reportable without server log access.
+                const htmlTitle = (responseText.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || '';
+                const plain = responseText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                const detail = (htmlTitle.trim() || plain).slice(0, 300);
                 Swal.fire({
                     icon: 'error',
-                    title: 'Server Error',
-                    text: 'Received an invalid response format from the server. Please check the logs.'
+                    title: `Server Error (${response.status})`,
+                    html: `<p class="mb-2">The server did not return a valid response.</p>`
+                        + (detail ? `<pre class="text-left text-xs whitespace-pre-wrap bg-gray-100 p-2 rounded">${detail.replace(/</g, '&lt;')}</pre>` : '')
+                        + `<p class="mt-2 text-xs text-gray-500">Please report this message — nothing was saved.</p>`
                 });
                 elements.submitBtn.disabled = false;
                 elements.submitBtn.innerHTML = originalContent;
@@ -8148,14 +8161,19 @@ document.addEventListener('DOMContentLoaded', function () {
         // Map Parties (Surrenderor = Mortgagee, Surrenderee = Mortgagor)
         const mortgagor = record.party_1 || record.Mortgagor || '';
         const mortgagee = record.party_2 || record.Mortgagee || '';
+        const mortgagorAddress = record.party_1_address || record.MortgagorAddress || record.Mortgagor_Address || '';
+        const mortgageeAddress = record.party_2_address || record.MortgageeAddress || record.Mortgagee_Address || '';
 
-        // Surrenderor/Releasor is the BANK (Party 2/Mortgagee)
+        // The source mortgage stores the bank as Party 2. A Surrender & Release
+        // reverses that mapping so the bank/mortgagee becomes Party 1.
         const firstPartyInput = document.getElementById('firstPartyName');
         if (firstPartyInput) firstPartyInput.value = mortgagee;
+        safeSetValue('firstPartyStreet', mortgageeAddress);
 
-        // Surrenderee/Releasee is the OWNER (Party 1/Mortgagor)
+        // The mortgagor/other party becomes Party 2 on the release instrument.
         const secondPartyInput = document.getElementById('secondPartyName');
         if (secondPartyInput) secondPartyInput.value = mortgagor;
+        safeSetValue('secondPartyStreet', mortgagorAddress);
 
         // Map Particulars
         const serNo = record.serialNo || record.serial_no || '0';

@@ -12,6 +12,7 @@ use App\Services\InstrumentCaptureService;
 use App\Models\Gender;
 use App\Models\StreetName;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Arr;
 
 class InstrumentController extends Controller
 {
@@ -125,9 +126,56 @@ class InstrumentController extends Controller
         return view('instruments.create', compact('PageTitle', 'PageDescription', 'states', 'lgas', 'districts', 'streetNames'));
     }
 
+    /**
+     * Everything one instrument capture does goes to its own channel
+     * (storage/logs/instrument_capture-Y-m-d.log). A failed capture reaches the
+     * officer as a single modal with no detail, and hunting the reason among every
+     * other request in laravel.log is not something the person who hit the error
+     * can do. Errors are additionally mirrored to the default channel so existing
+     * monitoring still sees them.
+     */
+    private function captureLog(): \Psr\Log\LoggerInterface
+    {
+        return Log::stack(['instrument_capture', config('logging.default')]);
+    }
+
+    /**
+     * Short, quotable id for one capture attempt: it is stamped on every log line
+     * for the request and shown in the failure message, so an officer can report
+     * "CAP-260818-143902-K7QP" and we can find the exact trace.
+     */
+    private function newCaptureRef(): string
+    {
+        return 'CAP-' . now()->format('ymd-His') . '-' . strtoupper(substr(md5(uniqid('', true)), 0, 4));
+    }
+
+    /**
+     * The first frames of a trace, flattened to file:line function - enough to
+     * place the failure without dumping the whole framework stack into the file.
+     */
+    private function shortTrace(\Throwable $e, int $frames = 10): array
+    {
+        return collect($e->getTrace())
+            ->take($frames)
+            ->map(fn ($f) => ($f['file'] ?? '?') . ':' . ($f['line'] ?? '?') . ' ' . ($f['function'] ?? ''))
+            ->all();
+    }
+
     public function store(Request $request)
     {
-        Log::info('Instrument Store Request', $request->all());
+        // One reference per capture attempt, stamped on every line this request
+        // writes and echoed back in any error shown to the officer. It is what
+        // turns "it failed on my screen" into a line we can find in the log.
+        $ref = $this->newCaptureRef();
+
+        $this->captureLog()->info('Capture submitted', [
+            'ref' => $ref,
+            'user_id' => Auth::id(),
+            'instrument_type' => $request->input('instrument_type'),
+            'fileno' => $request->input('fileno') ?: $request->input('temp_fileno'),
+            'payload' => Arr::except($request->all(), ['_token', '_method']),
+        ]);
+
         try {
             // Basic Validation
             $instrumentType = $request->input('instrument_type');
@@ -173,6 +221,10 @@ class InstrumentController extends Controller
             $validator = Validator::make($request->all(), $rules, $messages);
 
             if ($validator->fails()) {
+                $this->captureLog()->warning('Capture rejected by validation', [
+                    'ref' => $ref,
+                    'errors' => $validator->errors()->toArray(),
+                ]);
                 if ($request->expectsJson()) {
                     return response()->json([
                         'success' => false,
@@ -187,23 +239,61 @@ class InstrumentController extends Controller
 
             // --- Robust Duplicate Check (5 Parameters) ---
             $checkType = (stripos($instrumentType, 'Occupancy Permit') !== false) ? 'op' : 'instrument';
+
+            // The party/date keys below must be read from the names the capture form
+            // actually posts. They used to be read as party_1_name/party_2_name/
+            // instrument_date - fields the form has never sent - so all three arrived
+            // null and the "5 parameter" check collapsed into file number + instrument
+            // type. That matches EVERY later dealing on a file: a second assignment on
+            // an already-assigned file was rejected as a duplicate of the first one,
+            // no matter that the parties and the date were different.
             $dupParams = [
                 'fileno' => $request->input('temp_fileno') ?? $request->input('fileno'),
                 'prop_id' => $request->input('prop_id'),
                 'instrument_type' => $instrumentType,
                 'op_serial' => $request->input('op_serial_number'),
                 'reg_no' => $request->input('reg_no'),
-                'party_1' => $request->input('party_1_name'),
-                'party_2' => $request->input('party_2_name'),
-                'instrument_date' => $request->input('instrument_date'),
+                'party_1' => $request->input('party_1_name')
+                    ?: $request->input('Grantor')
+                    ?: $request->input('firstPartyName'),
+                'party_2' => $request->input('party_2_name')
+                    ?: $request->input('Grantee')
+                    ?: $request->input('secondPartyName'),
+                'instrument_date' => $request->input('instrument_date')
+                    ?: $request->input('entryDate')
+                    ?: $request->input('instrumentDate'),
             ];
 
+            // An officer who picked a fresh consent for this file, or chose "Create
+            // New" on the duplicate warning, has already looked at the existing record
+            // and decided this is a further dealing. Their decision stands - but it is
+            // recorded, with what it collided with. Never available for an Occupancy
+            // Permit: a repeated OP serial is a numbering clash, not a new dealing.
+            $allowDuplicate = $checkType !== 'op'
+                && filter_var($request->input('allow_duplicate', false), FILTER_VALIDATE_BOOLEAN);
+
             if ($duplicateFound = check_duplicate($checkType, $dupParams)) {
-                $errorMsg = "A similar " . ($checkType === 'op' ? "Occupancy Permit" : "Instrument") . " already exists for this property or serial number.";
-                if ($request->expectsJson()) {
-                    return response()->json(['success' => false, 'message' => $errorMsg, 'duplicate' => $duplicateFound], 422);
+                if ($allowDuplicate) {
+                    $this->captureLog()->notice('Duplicate overridden by officer', [
+                        'ref' => $ref,
+                        'params' => $dupParams,
+                        'existing_id' => $duplicateFound->id ?? null,
+                        'existing_reg_no' => $duplicateFound->registration_number ?? null,
+                        'consent_application_id' => $request->input('consent_application_id'),
+                        'user_id' => Auth::id(),
+                    ]);
+                } else {
+                    $errorMsg = "A similar " . ($checkType === 'op' ? "Occupancy Permit" : "Instrument") . " already exists for this property or serial number.";
+                    $this->captureLog()->warning('Capture blocked as duplicate', [
+                        'ref' => $ref,
+                        'params' => $dupParams,
+                        'existing_id' => $duplicateFound->id ?? null,
+                    ]);
+                    if ($request->expectsJson()) {
+                        return response()->json(['success' => false, 'message' => $errorMsg, 'duplicate' => $duplicateFound], 422);
+                    }
+                    return redirect()->back()->with('error', $errorMsg)->withInput();
                 }
-                return redirect()->back()->with('error', $errorMsg)->withInput();
             }
             // ----------------------------------------------
 
@@ -230,23 +320,46 @@ class InstrumentController extends Controller
 
             if ($result['success']) {
                 $message = 'Instrument registered successfully. Ref: ' . ($result['reg_number'] ?? '');
+                $this->captureLog()->info('Capture succeeded', [
+                    'ref' => $ref,
+                    'instrument_capture_id' => $result['id'] ?? null,
+                    'deed_registration_id' => $result['deed_registration_id'] ?? null,
+                    'registration_number' => $result['reg_number'] ?? null,
+                    'sync_result' => $result['sync_result'] ?? null,
+                ]);
                 if ($request->expectsJson()) {
                     return response()->json(array_merge(['success' => true, 'message' => $message], $result));
                 }
                 return redirect()->route('instruments.index')->with('success', $message);
             }
 
+            $this->captureLog()->error('Capture returned failure without an exception', ['ref' => $ref]);
+
             if ($request->expectsJson()) {
                 return response()->json(['success' => false, 'message' => 'Failed to register instrument.'], 500);
             }
             return redirect()->back()->with('error', 'Failed to register instrument')->withInput();
 
-        } catch (\Exception $e) {
-            Log::error('Instrument Capture Error: ' . $e->getMessage());
+        } catch (\Throwable $e) {
+            // \Throwable, not \Exception: a TypeError/ValueError raised deeper in the
+            // capture chain is an \Error, so an \Exception-only catch let it escape as
+            // an HTML 500 that the capture form can only report as "invalid response
+            // format from the server" - no message, no clue, nothing in the UI.
+            $this->captureLog()->error('Capture failed: ' . $e->getMessage(), [
+                'ref' => $ref,
+                'exception' => get_class($e),
+                'file' => $e->getFile() . ':' . $e->getLine(),
+                'instrument_type' => $request->input('instrument_type'),
+                'fileno' => $request->input('fileno') ?: $request->input('temp_fileno'),
+                'user_id' => Auth::id(),
+                'trace' => $this->shortTrace($e),
+            ]);
+
+            $message = 'An error occurred: ' . $e->getMessage() . ' [Ref: ' . $ref . ']';
             if ($request->expectsJson()) {
-                return response()->json(['success' => false, 'message' => 'An error occurred: ' . $e->getMessage()], 500);
+                return response()->json(['success' => false, 'message' => $message, 'ref' => $ref], 500);
             }
-            return redirect()->back()->with('error', 'An error occurred: ' . $e->getMessage())->withInput();
+            return redirect()->back()->with('error', $message)->withInput();
         }
     }
 
@@ -329,10 +442,17 @@ class InstrumentController extends Controller
         $praHistory = $praHistoryQuery->orderBy('created_at', 'desc')->get();
 
         // 3. Retrieve Deed Registrations (Instrument Registration) History
-        $deedHistoryQuery = DB::connection('sqlsrv')->table('deed_registrations');
-        $deedHistoryQuery->where('fileno', $fileno);
+        $deedHistoryQuery = DB::connection('sqlsrv')
+            ->table('deed_registrations as dr')
+            ->leftJoin('instrument_capture as ic', 'dr.instrument_capture_id', '=', 'ic.id')
+            ->select([
+                'dr.*',
+                'ic.party_1_address',
+                'ic.party_2_address',
+            ]);
+        $deedHistoryQuery->where('dr.fileno', $fileno);
 
-        $deedHistory = $deedHistoryQuery->orderBy('created_at', 'desc')->get()->map(function ($item) {
+        $deedHistory = $deedHistoryQuery->orderBy('dr.created_at', 'desc')->get()->map(function ($item) {
             $item->is_deed_reg = true; // Mark as deed registration record
 
             // Map common fields to match PRA history structure for unified JS display
@@ -1322,6 +1442,15 @@ class InstrumentController extends Controller
 
     public function update(Request $request, $id)
     {
+        $ref = $this->newCaptureRef();
+
+        $this->captureLog()->info('Update submitted', [
+            'ref' => $ref,
+            'instrument_capture_id' => $id,
+            'user_id' => Auth::id(),
+            'payload' => Arr::except($request->all(), ['_token', '_method']),
+        ]);
+
         try {
             // Validate if necessary?
             // Service handles most logic, but basic presence checks might be good?
@@ -1331,6 +1460,11 @@ class InstrumentController extends Controller
 
             if ($result['success']) {
                 $message = 'Instrument updated successfully. Ref: ' . ($result['reg_number'] ?? '');
+                $this->captureLog()->info('Update succeeded', [
+                    'ref' => $ref,
+                    'instrument_capture_id' => $id,
+                    'sync_result' => $result['sync_result'] ?? null,
+                ]);
 
                 if ($request->expectsJson()) {
                     return response()->json(['success' => true, 'message' => $message]);
@@ -1345,14 +1479,22 @@ class InstrumentController extends Controller
 
             return redirect()->back()->with('error', 'Failed to update instrument')->withInput();
 
-        } catch (\Exception $e) {
-            Log::error('Instrument Update Error: ' . $e->getMessage());
+        } catch (\Throwable $e) {
+            $this->captureLog()->error('Update failed: ' . $e->getMessage(), [
+                'ref' => $ref,
+                'exception' => get_class($e),
+                'file' => $e->getFile() . ':' . $e->getLine(),
+                'instrument_capture_id' => $id,
+                'user_id' => Auth::id(),
+                'trace' => $this->shortTrace($e),
+            ]);
 
+            $message = 'An error occurred: ' . $e->getMessage() . ' [Ref: ' . $ref . ']';
             if ($request->expectsJson()) {
-                return response()->json(['success' => false, 'message' => 'An error occurred: ' . $e->getMessage()], 500);
+                return response()->json(['success' => false, 'message' => $message, 'ref' => $ref], 500);
             }
 
-            return redirect()->back()->with('error', 'An error occurred: ' . $e->getMessage())->withInput();
+            return redirect()->back()->with('error', $message)->withInput();
         }
     }
 

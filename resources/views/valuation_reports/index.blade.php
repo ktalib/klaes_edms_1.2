@@ -153,6 +153,16 @@
                                                         @endif
 
 
+                                                        @if($report->print_count > 0)
+                                                            <button type="button"
+                                                                @click="open = false"
+                                                                onclick="resetValuationPrints({{ $report->id }}, '{{ addslashes($report->file_number) }}', {{ $report->print_count }})"
+                                                                class="flex items-center gap-3 w-full px-4 py-2.5 text-xs text-rose-600 hover:bg-rose-50 transition font-bold">
+                                                                <i data-lucide="rotate-ccw" class="h-4 w-4"></i>
+                                                                <span>Master Reset (Prints)</span>
+                                                            </button>
+                                                        @endif
+
                                                           @if($report->print_count < 2)
                                                         <a href="{{ route('valuation-reports.show', $report->id) }}" target="_blank"
                                                             class="flex items-center gap-3 px-4 py-2.5 text-xs text-blue-600 hover:bg-blue-50 transition font-bold"
@@ -193,6 +203,46 @@
     <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
     <script src="{{ asset('js/valuation_reports.js') }}"></script>
     <script>
+        // Master reset: clears the print count so the report becomes editable
+        // and printable again.
+        window.resetValuationPrints = function (id, fileNumber, printCount) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Master Reset?',
+                html: `This will reset the print count for <b>${fileNumber}</b> from <b>${printCount}</b> back to <b>0</b>.<br><br>The report becomes editable and printable again.`,
+                showCancelButton: true,
+                confirmButtonText: 'Yes, reset it',
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: '#e11d48'
+            }).then(async (result) => {
+                if (!result.isConfirmed) return;
+                try {
+                    const response = await fetch(`/valuation-reports/reset-prints/${id}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                        }
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Print Count Reset',
+                            text: data.message,
+                            timer: 1600,
+                            showConfirmButton: false
+                        }).then(() => window.location.reload());
+                    } else {
+                        Swal.fire('Error', data.message || 'Could not reset the print count.', 'error');
+                    }
+                } catch (e) {
+                    Swal.fire('Error', 'Could not reset the print count. ' + e.message, 'error');
+                }
+            });
+        };
+
         document.addEventListener('DOMContentLoaded', () => {
             if (window.lucide) {
                 window.lucide.createIcons();

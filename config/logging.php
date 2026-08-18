@@ -138,6 +138,21 @@ return [
             'days' => 30,
         ],
 
+        // Instrument capture/registration (/instruments/create). A failed capture
+        // surfaces in the browser only as "invalid response format from the server",
+        // and the reason is otherwise buried among every other request in
+        // laravel.log — which is unusable on production, where the officer who hit
+        // the error is not the person with log access. This channel carries the
+        // submitted payload, the registration number issued, the party-name sync
+        // outcome and the full failure (exception class, file:line, trace) for one
+        // capture on one timeline.
+        'instrument_capture' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/instrument_capture.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => 60,
+        ],
+
         // Plot Subdivision (Deeds → Parcel Update). Subdivision mutates parcel
         // lineage, so a per-application audit trail of who captured/approved/rejected
         // what is worth keeping separate from the general log.

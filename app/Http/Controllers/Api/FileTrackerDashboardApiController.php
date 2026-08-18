@@ -315,13 +315,14 @@ class FileTrackerDashboardApiController extends Controller
             ])
             // Exclude only cancelled files; the three tabs (Requested / In Transit /
             // Not in Transit) between them cover every other tracker:
-            //   • Requested Files  = logged out, purpose/type NOT "In-Transit" (or SUBMITTED)
-            //   • In Transit       = purpose/type = "In-Transit", still logged out
+            //   • Requested Files  = file_request_type SUBMITTED, still logged out
+            //   • In Transit       = every other request type (MANUAL / SYSTEM /
+            //                        In-Transit / unclassified), still logged out
             //   • Not in Transit   = logged back into the registry (status COMPLETED)
             // In-Transit and Completed files are ordered first so they are never
             // truncated by the row limit.
             ->whereRaw("UPPER(ISNULL(status, '')) NOT IN ('CANCELED', 'CANCELLED')")
-            ->orderByRaw("CASE WHEN file_request_type = 'In-Transit' OR request_purpose_name = 'In-Transit' THEN 0 WHEN UPPER(status) = 'COMPLETED' THEN 1 ELSE 2 END")
+            ->orderByRaw('CASE WHEN NOT ' . self::requestedFlagSql() . " THEN 0 WHEN UPPER(status) = 'COMPLETED' THEN 1 ELSE 2 END")
             ->orderByDesc('updated_at')
             ->limit($limit)
             ->get();
@@ -359,15 +360,15 @@ class FileTrackerDashboardApiController extends Controller
             $office = $officeMetadata->get($currentOfficeCode);
 
             // Classify the tracker against the Create File Tracker workflow.
-            //   • request_purpose_name / file_request_type carry the literal "In-Transit"
-            //     value when a file is logged OUT of the registry to a destination office.
+            //   • file_request_type is SUBMITTED only when an officer requested the
+            //     file; anything else (MANUAL, SYSTEM, the legacy "In-Transit"
+            //     literal, or nothing at all) means the file is simply moving.
             //   • status becomes COMPLETED once the file is logged back IN to the registry
             //     (the "Log-in" action in Create File Tracker).
             $fileReqType = Str::upper((string) $tracker->file_request_type);
-            $reqPurpose  = Str::upper((string) $tracker->request_purpose_name);
             $statusUpper = Str::upper((string) $tracker->status);
 
-            $isInTransitFlagged = ($fileReqType === 'IN-TRANSIT' || $reqPurpose === 'IN-TRANSIT');
+            $isInTransitFlagged = ($fileReqType !== self::REQUESTED_REQUEST_TYPE);
             $isCanceled = in_array($statusUpper, ['CANCELED', 'CANCELLED'], true);
 
             if ($isCanceled) {
@@ -377,17 +378,17 @@ class FileTrackerDashboardApiController extends Controller
                 // Logged back into the registry → Not in Transit tab.
                 $movementStatus = 'returned';
             } elseif ($isInTransitFlagged) {
-                // Logged out with an "In-Transit" purpose/type → In Transit tab.
+                // Logged out on any non-SUBMITTED request type → In Transit tab.
                 $movementStatus = 'in_transit';
             } else {
-                // Logged out for a request (SUBMITTED or any non In-Transit purpose),
-                // not yet returned → Requested Files tab, shown as "Log-out".
+                // A SUBMITTED request that has not been returned → Requested Files
+                // tab, shown as "Log-out".
                 $movementStatus = 'logout';
             }
 
             $isReturned  = ($movementStatus === 'returned');
             $isInTransit = ($movementStatus === 'in_transit');
-            // Requested = logged out, purpose/type is not "In-Transit", not yet returned.
+            // Requested = logged out on a SUBMITTED request, not yet returned.
             $isRequested = ($movementStatus === 'logout');
 
             $trackerPayload[] = [
@@ -439,8 +440,27 @@ class FileTrackerDashboardApiController extends Controller
     }
 
     /**
-     * Shared definition of an "in transit" file: logged out with an "In-Transit"
-     * purpose/type and not yet logged back in. Honours the priority and search
+     * The one file_request_type that means "an officer asked for this file",
+     * i.e. the Requested Files tab. It is what Create File Tracker writes for
+     * its "Submitted Request" type. Every other tracker — MANUAL (operator
+     * log-out), SYSTEM (range-home/commissioning row), the legacy "In-Transit"
+     * literal, or a row that was never classified — is a movement and belongs
+     * to the In-Transit (Movement) tab.
+     */
+    protected const REQUESTED_REQUEST_TYPE = 'SUBMITTED';
+
+    /**
+     * The Requested predicate as SQL. The In-Transit tab is its exact negation,
+     * so the two tabs can never drift apart or double-count a tracker.
+     */
+    protected static function requestedFlagSql(): string
+    {
+        return "(UPPER(ISNULL(file_request_type, '')) = '" . self::REQUESTED_REQUEST_TYPE . "')";
+    }
+
+    /**
+     * Shared definition of an "in transit" file: logged out with any request type
+     * other than SUBMITTED and not yet logged back in. Honours the priority and search
      * parameters — but not the office, which is the grouping key — so the group
      * list and the row list always agree.
      */
@@ -451,10 +471,7 @@ class FileTrackerDashboardApiController extends Controller
 
         $query = FileTracker::query()
             ->whereRaw("UPPER(ISNULL(status, '')) NOT IN ('CANCELED', 'CANCELLED', 'COMPLETED')")
-            ->where(function ($inner) {
-                $inner->whereRaw("ISNULL(file_request_type, '') = 'In-Transit'")
-                    ->orWhereRaw("ISNULL(request_purpose_name, '') = 'In-Transit'");
-            });
+            ->whereRaw('NOT ' . self::requestedFlagSql());
 
         if ($priority !== '' && $priority !== 'ALL') {
             $query->whereRaw("UPPER(ISNULL(priority, '')) = ?", [$priority]);
@@ -763,8 +780,9 @@ class FileTrackerDashboardApiController extends Controller
     }
 
     /**
-     * Shared definition of a "requested" file: logged out for a purpose other
-     * than "In-Transit" and not yet logged back in. Honours the period and
+     * Shared definition of a "requested" file: logged out with file_request_type
+     * SUBMITTED and not yet logged back in — the exact complement of
+     * inTransitBaseQuery(). Honours the period and
      * search parameters so the group list and the row list always agree.
      */
     protected function requestedBaseQuery(Request $request)
@@ -774,10 +792,7 @@ class FileTrackerDashboardApiController extends Controller
 
         $query = FileTracker::query()
             ->whereRaw("UPPER(ISNULL(status, '')) NOT IN ('CANCELED', 'CANCELLED', 'COMPLETED')")
-            ->where(function ($inner) {
-                $inner->whereRaw("ISNULL(file_request_type, '') <> 'In-Transit'")
-                    ->whereRaw("ISNULL(request_purpose_name, '') <> 'In-Transit'");
-            });
+            ->whereRaw(self::requestedFlagSql());
 
         // Period filter, applied to the request date (falling back to created_at).
         $startDate = match ($period) {

@@ -951,6 +951,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/re-evaluate/{id}', [ValuationReportController::class, 'reEvaluate'])->name('re-evaluate');
         Route::get('/{id}', [ValuationReportController::class, 'show'])->name('show');
         Route::post('/log-print/{id}', [ValuationReportController::class, 'logPrint'])->name('log-print');
+        Route::post('/reset-prints/{id}', [ValuationReportController::class, 'resetPrints'])->name('reset-prints');
     });
 
     // Valuation for Compensation Routes
