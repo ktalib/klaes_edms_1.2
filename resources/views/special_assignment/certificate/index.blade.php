@@ -77,10 +77,30 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div class="sm:col-span-2">
                     <label class="block text-xs font-medium text-gray-600 mb-1">Application <span class="text-red-500">*</span></label>
+                    {{-- Every file on the Field Data page, rendered here rather
+                         than fetched: the list is small and the page already
+                         knows it, and the old fetch quietly filtered to
+                         status = 'approved', which hid files whose memo was
+                         approved but whose application status had not caught up.
+                         Files without an approved memo are marked — they are
+                         visible so they can be found, and the server still
+                         refuses to issue a sheet for them. --}}
                     <select name="spa_application_id" id="cert-app-select" required
                         class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[rgb(186,191,12)]">
-                        <option value="">Select approved application…</option>
+                        <option value="">Select application…</option>
+                        @foreach ($certApplications as $a)
+                            <option value="{{ $a->id }}"
+                                data-owner="{{ $a->owner_name }}"
+                                data-land-use="{{ $a->land_use_type }}"
+                                data-existing-use="{{ $a->existing_use }}"
+                                data-approved="{{ $a->has_approved_memo ? '1' : '0' }}">
+                                {{ $a->file_number }} – {{ $a->owner_name }}{{ $a->has_approved_memo ? '' : '  (no approved memo)' }}
+                            </option>
+                        @endforeach
                     </select>
+                    <p id="cert-app-warning" class="text-[11px] text-red-500 mt-1 hidden">
+                        This file has no approved Commissioner memo, so a sheet cannot be issued for it yet.
+                    </p>
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-gray-600 mb-1">Holder Name <span class="text-red-500">*</span></label>
@@ -138,7 +158,6 @@
 <script>
 const CSRF      = '{{ csrf_token() }}';
 const STORE_CERT= '{{ route("special-assignment.certificate.issue") }}';
-const APP_AJAX  = '{{ route("special-assignment.land-records") }}';
 const MLS_FILES = '{{ route("api.get-existing-mls-files") }}';
 const PRINT_BASE= '{{ url("special-assignment/certificate") }}';
 
@@ -186,26 +205,18 @@ $(document).ready(function () {
     document.getElementById('btn-issue-cert').addEventListener('click', () => { modal.classList.remove('hidden'); modal.classList.add('flex'); });
     document.querySelectorAll('.modal-close').forEach(b => b.addEventListener('click', () => { modal.classList.add('hidden'); modal.classList.remove('flex'); }));
 
-    // Load approved applications into select
-    fetch(APP_AJAX + '?ajax=1&length=500&start=0&status=approved').then(r=>r.json()).then(d=>{
-        const sel = document.getElementById('cert-app-select');
-        // Only files that already have a Special Assignment application (numeric id)
-        // can receive a certificate — skip rows whose id is null/"null".
-        (d.data||[]).filter(a => a.id != null && String(a.id) !== 'null' && String(a.id) !== '').forEach(a => {
-            const opt = document.createElement('option');
-            opt.value = a.id;
-            opt.dataset.owner = a.owner_name;
-            opt.dataset.landUse = a.land_use_type || '';
-            opt.dataset.existingUse = a.existing_use || '';
-            opt.textContent = `${a.file_number} – ${a.owner_name}`;
-            sel.appendChild(opt);
-        });
-        sel.addEventListener('change', function() {
-            const opt = this.options[this.selectedIndex];
-            document.getElementById('cert-holder').value   = opt.dataset.owner || '';
-            document.getElementById('cert-from-use').value = opt.dataset.landUse || '';
-        });
-    }).catch(()=>{});
+    // The application list is rendered server-side (see the select markup), so
+    // there is nothing to fetch — only the follow-on fields to fill in.
+    document.getElementById('cert-app-select').addEventListener('change', function () {
+        const opt = this.options[this.selectedIndex];
+        document.getElementById('cert-holder').value   = opt.dataset.owner || '';
+        document.getElementById('cert-from-use').value = opt.dataset.landUse || '';
+
+        // Say why an issue will fail before the officer fills the rest of the
+        // form, rather than after they press Issue Sheet.
+        document.getElementById('cert-app-warning')
+            .classList.toggle('hidden', !this.value || opt.dataset.approved === '1');
+    });
 
     // Load existing MLS file numbers into the New File No select
     fetch(MLS_FILES).then(r=>r.json()).then(d=>{

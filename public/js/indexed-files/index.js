@@ -587,7 +587,10 @@ function buildActionsMenu(row, viewUrl) {
         </button>`
     : '';
 
-  // KANGIS variant: only show Print Tracking Sheet
+  // KANGIS variant: a reduced menu — tracking, the placeholder editor, and Edit.
+  // Edit points at the KANGIS-only update flow (see editUrlTemplate on the KANGIS
+  // indexed-files page), which pins the row's "_N" file number instead of letting
+  // a save mint another physical variant.
   if (isKangisVariant) {
     return `
       <div class="relative inline-block text-left" data-action-menu>
@@ -599,6 +602,7 @@ function buildActionsMenu(row, viewUrl) {
             <div class="px-4 py-2 border-b border-slate-50 mb-1">
                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">File Actions</p>
             </div>
+            ${editButton}
             ${trackingButton}
             ${updatePlaceholderButton}
             ${moveToDuplicatesButton ? '<div class="border-t border-slate-50 my-1.5"></div>' + moveToDuplicatesButton : ''}

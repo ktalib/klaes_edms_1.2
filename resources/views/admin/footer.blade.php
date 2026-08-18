@@ -12,6 +12,6 @@
     }
   @endphp
   <div class="flex items-center">
-    <img src="{{ $footerLogo }}" alt="Logo" style="width: 200px; height: auto;">
+    <img src="http://app.klaes.ng/assets/logo/Left_Logo.png" alt="Logo" style="width: 200px; height: auto;">
   </div>
 </div>

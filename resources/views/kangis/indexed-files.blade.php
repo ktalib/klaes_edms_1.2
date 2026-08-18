@@ -115,6 +115,9 @@
                 ],
                 'hideActions' => false,
                 'trackingUrlTemplate' => route('fileindexing.kangis-tracking-sheet') . '?files=__ID__',
+                // KANGIS rows edit through the KANGIS-only update flow, which pins the
+                // "_N" file number. Every other registry keeps /fileindexing/{id}/edit.
+                'editUrlTemplate' => url('kangis/file-index/__ID__/edit'),
             ]])
         </div>
 

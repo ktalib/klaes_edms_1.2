@@ -2615,7 +2615,7 @@ class FileNumberController extends Controller
      * lookup so the two can never disagree about which record they mean.
      *
      * @param  string|int $id  numeric fileNumber.id OR a file number string
-     * @return array{record: object|null, is_plot_extension: bool}
+     * @return array{record: object|null, is_plot_extension: bool, keyed_by_file_number: bool}
      */
     private function resolveConversionApplicationRecord($id): array
     {
@@ -2686,6 +2686,29 @@ class FileNumberController extends Controller
             }
         }
 
+        // A PRIMARY ST conversion is filed under its CON number, not under st_file_no,
+        // so the lookup above misses it. Match the CON number itself to pick up the
+        // location captured on the commissioning form.
+        if ($record && (empty($record->lga_derived) || empty($record->plot_no))) {
+            $stByCon = DB::connection('sqlsrv')
+                ->table('st_file_numbers')
+                ->where(function ($q) use ($record) {
+                    $q->where('mls_fileno', $record->mlsfNo)
+                      ->orWhere('fileno', $record->mlsfNo);
+                })
+                ->orderByDesc('id')
+                ->first(['property_lga', 'property_plot_no']);
+
+            if ($stByCon) {
+                if (empty($record->lga_derived) && !empty($stByCon->property_lga)) {
+                    $record->lga_derived = $stByCon->property_lga;
+                }
+                if (empty($record->plot_no) && !empty($stByCon->property_plot_no)) {
+                    $record->plot_no = $stByCon->property_plot_no;
+                }
+            }
+        }
+
         // A SuA has no mls_file_no row to derive the LGA from — the unit keeps its own
         // in subapplications, and that is the Local Government the sheet is addressed to.
         if ($record && empty($record->lga_derived) && !empty($record->st_file_no)) {
@@ -2697,6 +2720,50 @@ class FileNumberController extends Controller
 
             if ($unit && !empty($unit->unit_lga)) {
                 $record->lga_derived = $unit->unit_lga;
+            }
+        }
+
+        // ST fallback: an ST file commissioned through ST File Number Commissioning
+        // is not always mirrored into fileNumber (a PRIMARY conversion never is), so
+        // st_file_numbers is the only row it has. Its location — the LGA the sheet is
+        // addressed to and the plot it names — lives on that row too.
+        $isStOnly = false;
+        if (!$record && !$isNumeric) {
+            $stRow = DB::connection('sqlsrv')
+                ->table('st_file_numbers')
+                ->where(function ($q) use ($id) {
+                    $q->where('fileno', $id)
+                      ->orWhere('mls_fileno', $id)
+                      ->orWhere('np_fileno', $id);
+                })
+                ->orderByDesc('id')
+                ->first();
+
+            if ($stRow) {
+                $isStOnly = true;
+                $record = (object) [
+                    'id'                 => $stRow->id,
+                    'mlsfNo'             => $stRow->mls_fileno ?: $stRow->fileno,
+                    'st_file_no'         => $stRow->fileno,
+                    'tracking_id'        => $stRow->tra ?? null,
+                    // Corporate name wins, then the personal name, then the joint list.
+                    'FileName'           => trim((string) ($stRow->corporate_name ?? ''))
+                        ?: (trim(implode(' ', array_filter([
+                            $stRow->applicant_title ?? null,
+                            $stRow->first_name ?? null,
+                            $stRow->middle_name ?? null,
+                            $stRow->surname ?? null,
+                        ]))) ?: trim((string) ($stRow->multiple_owners_names ?? ''))),
+                    'plot_no'            => $stRow->property_plot_no ?? null,
+                    'tp_no'              => null,
+                    'location'           => $stRow->property_district ?? null,
+                    'lga'                => $stRow->property_lga ?? null,
+                    'land_use_derived'   => $stRow->land_use ?? null,
+                    'lga_derived'        => $stRow->property_lga ?? null,
+                    'created_by_derived' => $stRow->created_by ?? null,
+                    'source_derived'     => $stRow->application_type ?? null,
+                    'batch_no'           => null,
+                ];
             }
         }
 
@@ -2739,7 +2806,13 @@ class FileNumberController extends Controller
             }
         }
 
-        return ['record' => $record, 'is_plot_extension' => $isPlotExtension];
+        return [
+            'record' => $record,
+            'is_plot_extension' => $isPlotExtension,
+            // Neither fallback has a fileNumber.id, so their sheet is keyed by the
+            // file number instead of mls_file_no_id.
+            'keyed_by_file_number' => $isPlotExtension || $isStOnly,
+        ];
     }
 
     /**
@@ -2747,11 +2820,11 @@ class FileNumberController extends Controller
      * Confirmation Sheet. Plot extensions key off the file number (they have no
      * mls_file_no_id); everything else keys off mls_file_no_id.
      */
-    private function conversionApplicationQuery(object $record, bool $isPlotExtension)
+    private function conversionApplicationQuery(object $record, bool $keyedByFileNumber)
     {
         return DB::connection('sqlsrv')
             ->table('conversion_applications')
-            ->when($isPlotExtension,
+            ->when($keyedByFileNumber,
                 fn ($q) => $q->where('full_file_number', $record->mlsfNo),
                 fn ($q) => $q->where('mls_file_no_id', $record->id)
             );
@@ -2810,10 +2883,19 @@ class FileNumberController extends Controller
             ];
         }
 
-        if (!empty($record->st_file_no)) {
+        // A SuA is filed under its own fileno; a PRIMARY conversion under its CON
+        // number, which is what mlsfNo holds. Match either.
+        $stKeys = array_values(array_filter([
+            trim((string) ($record->st_file_no ?? '')),
+            trim((string) ($record->mlsfNo ?? '')),
+        ]));
+
+        if ($stKeys !== []) {
             $stFile = DB::connection('sqlsrv')
                 ->table('st_file_numbers')
-                ->where('fileno', trim((string) $record->st_file_no))
+                ->where(function ($q) use ($stKeys) {
+                    $q->whereIn('fileno', $stKeys)->orWhereIn('mls_fileno', $stKeys);
+                })
                 ->orderByDesc('id')
                 ->first(['allocation_source', 'allocation_entity']);
 
@@ -2868,7 +2950,7 @@ class FileNumberController extends Controller
     public function getConversionAcquisitionMethod(Request $request, $id)
     {
         try {
-            ['record' => $record, 'is_plot_extension' => $isPlotExtension] =
+            ['record' => $record, 'keyed_by_file_number' => $keyedByFileNumber] =
                 $this->resolveConversionApplicationRecord($id);
 
             if (!$record) {
@@ -2879,7 +2961,7 @@ class FileNumberController extends Controller
                 ]);
             }
 
-            $existingApp = $this->conversionApplicationQuery($record, $isPlotExtension)->first();
+            $existingApp = $this->conversionApplicationQuery($record, $keyedByFileNumber)->first();
             // null until the question has been answered once for this sheet.
             $method = $this->normalizeAcquisitionMethod($existingApp->acquisition_method ?? null);
             $allocation = $this->suggestedAllocationForSheet($record, $existingApp);
@@ -2916,7 +2998,7 @@ class FileNumberController extends Controller
     public function generateConversionApplication(Request $request, $id)
     {
         try {
-            ['record' => $record, 'is_plot_extension' => $isPlotExtension] =
+            ['record' => $record, 'keyed_by_file_number' => $keyedByFileNumber] =
                 $this->resolveConversionApplicationRecord($id);
 
             if (!$record) {
@@ -2941,7 +3023,7 @@ class FileNumberController extends Controller
             $allocationAddress = trim((string) $request->query('allocation_address')) ?: null;
 
             // Check for existing Serial Number.
-            $existingApp = $this->conversionApplicationQuery($record, $isPlotExtension)->first();
+            $existingApp = $this->conversionApplicationQuery($record, $keyedByFileNumber)->first();
 
             // The answer is remembered per sheet, so a reprint neither has to ask
             // again nor can quietly contradict the copy already issued.
@@ -2998,7 +3080,7 @@ class FileNumberController extends Controller
 
                 if ($changes !== []) {
                     $changes['updated_at'] = now();
-                    $this->conversionApplicationQuery($record, $isPlotExtension)->update($changes);
+                    $this->conversionApplicationQuery($record, $keyedByFileNumber)->update($changes);
                 }
             } else {
                 // Generate new Serial Number
@@ -3009,7 +3091,7 @@ class FileNumberController extends Controller
                 DB::connection('sqlsrv')
                     ->table('conversion_applications')
                     ->insert([
-                        'mls_file_no_id' => $isPlotExtension ? null : $record->id,
+                        'mls_file_no_id' => $keyedByFileNumber ? null : $record->id,
                         'tracking_id' => $record->tracking_id,
                         // An ST file (SuA) has no mlsfNo of its own; it is filed under
                         // st_file_no, and the column is NOT NULL.

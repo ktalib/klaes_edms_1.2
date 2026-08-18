@@ -1649,6 +1649,12 @@
 
     window.checkFileAlreadyIndexed = checkFileAlreadyIndexed;
 
+    // Exposed for pages that already hold the exact row and must not re-resolve it by
+    // file number (the KANGIS update page: checkIndexed() strips separators, so
+    // "KNML 1_2" and "KNML 12" collapse to the same key and could populate the
+    // wrong physical file). Additive — nothing in this file's own flow calls it.
+    window.applyExistingIndexedRecord = applyExistingIndexedRecord;
+
     const ENTITY_TEXT_FIELD_IDS = ['entity-name', 'entity-physical-address'];
     const CUSTOMER_TEXT_FIELD_IDS = [
         'customer-name',
@@ -6431,14 +6437,43 @@
             }
         }
 
-        const endpoint = isEditingExisting
-            ? `/fileindexing/${encodeURIComponent(editModeState.recordId)}`
-            : '/fileindexing/store';
-        const httpMethod = isEditingExisting ? 'PUT' : 'POST';
+        // KANGIS update mode: a dedicated endpoint that pins file_number and mirrors the
+        // placeholder into kangis_grouping. Unset on every other page, where this is a no-op.
+        const kangisUpdate = window.kangisUpdateMode || null;
+
+        const endpoint = kangisUpdate
+            ? kangisUpdate.url
+            : (isEditingExisting
+                ? `/fileindexing/${encodeURIComponent(editModeState.recordId)}`
+                : '/fileindexing/store');
+        const httpMethod = (kangisUpdate || isEditingExisting) ? 'PUT' : 'POST';
+
+        if (kangisUpdate) {
+            // The row's _N identity was settled when it was created and never moves.
+            formData.file_number = kangisUpdate.fileNumber || formData.file_number;
+        }
 
         // KANGIS variant confirmation — if a placeholder is provided, ask the user
         // to confirm the automatic suffix assignment before submitting.
-        if (formData.kangis_fileno_placeholder && typeof Swal !== 'undefined') {
+        if (kangisUpdate && formData.kangis_fileno_placeholder && typeof Swal !== 'undefined') {
+            // Updating an existing physical file — no suffix is allocated, so the
+            // create-path confirmation below would state the opposite of what happens.
+            const confirmUpdate = await Swal.fire({
+                title: 'Confirm KANGIS Update',
+                html: `Physical file <strong>${formData.kangis_fileno_placeholder}</strong> will be updated.<br><br>` +
+                    `The file number stays <strong class="text-blue-700">${kangisUpdate.fileNumber}</strong> — no new variant is created.<br><br>` +
+                    `Do you want to proceed?`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Yes, update',
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: '#2563eb',
+            });
+
+            if (!confirmUpdate.isConfirmed) {
+                return;
+            }
+        } else if (formData.kangis_fileno_placeholder && typeof Swal !== 'undefined') {
             const selectedFileNumber = groupingState.record?.awaiting_fileno || formData.file_number || '';
             // Fetch sibling info so we can show the exact file number that will be assigned
             let bareExists = false;

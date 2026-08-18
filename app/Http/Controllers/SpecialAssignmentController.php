@@ -650,7 +650,29 @@ class SpecialAssignmentController extends Controller
 
         $landUseTypes = DB::connection('sqlsrv')->table('klas.dbo.land_uses')->orderBy('landuse')->pluck('landuse');
 
-        return view('special_assignment.certificate.index', compact('PageTitle', 'PageDescription', 'stats', 'landUseTypes'));
+        // Every file that appears on the Field Data page, which is every SPAS
+        // application. The list used to be filtered to status = 'approved',
+        // which hid files whose memo had been approved without the application
+        // status following — the officer then could not find the file at all.
+        // issueCertificate() still refuses anything without an approved memo, so
+        // widening the list cannot issue a sheet that should not exist; it only
+        // stops the file being invisible.
+        $approvedAppIds = SpaMemo::where('commissioner_decision', 'approved')->pluck('spa_application_id')->filter();
+        $approvedFiles  = SpaApplication::whereIn('id', $approvedAppIds)->pluck('file_number')->filter()->unique();
+
+        $certApplications = SpaApplication::orderBy('file_number')
+            ->get(['id', 'file_number', 'owner_name', 'land_use_type', 'existing_use'])
+            ->map(function ($a) use ($approvedAppIds, $approvedFiles) {
+                // Matched by id OR by file number, the same way issueCertificate
+                // does: re-adding a file to SPAS gives it a new application id,
+                // which would otherwise orphan its approved memo.
+                $a->has_approved_memo = $approvedAppIds->contains($a->id)
+                    || $approvedFiles->contains($a->file_number);
+
+                return $a;
+            });
+
+        return view('special_assignment.certificate.index', compact('PageTitle', 'PageDescription', 'stats', 'landUseTypes', 'certApplications'));
     }
 
     public function memo(Request $request)
@@ -670,9 +692,16 @@ class SpecialAssignmentController extends Controller
                                    'forwarded_at'  => $m->forwarded_at?->format('d/m/Y') ?? '—',
                                    'decision'      => $m->commissioner_decision,
                                    'decided_at'    => $m->decided_at?->format('d/m/Y') ?? '—',
-                                   'action'        => $m->commissioner_decision === 'pending'
-                                       ? '<button data-id="'.$m->id.'" data-memo="'.e($m->memo_no).'" class="btn-decide text-xs px-3 py-1 rounded bg-[rgb(186,191,12)] text-white">Approve</button>'
-                                       : '<span class="text-xs text-gray-400">'.ucfirst($m->commissioner_decision).'</span>',
+                                   // A memo is printable at every stage: pending
+                                   // ones are what gets carried to the
+                                   // Commissioner for signing in the first place.
+                                   'action'        => '<div class="flex items-center gap-2">'
+                                       .($m->commissioner_decision === 'pending'
+                                           ? '<button data-id="'.$m->id.'" data-memo="'.e($m->memo_no).'" class="btn-decide text-xs px-3 py-1 rounded bg-[rgb(186,191,12)] text-white">Approve</button>'
+                                           : '<span class="text-xs text-gray-400">'.ucfirst($m->commissioner_decision).'</span>')
+                                       .'<a href="'.route('special-assignment.memo.print', $m->id).'" target="_blank" '
+                                       .'class="text-xs px-3 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50">Print</a>'
+                                       .'</div>',
                                ];
                            });
 
@@ -1084,6 +1113,20 @@ class SpecialAssignmentController extends Controller
             ->update(['status' => 'memo_stage']);
 
         return response()->json(['success' => true, 'id' => $memo->id, 'memo_no' => $memoNo, 'message' => "Memo {$memoNo} generated and forwarded."]);
+    }
+
+    /**
+     * Printable Commissioner memo.
+     *
+     * Available before a decision as well as after: the pending memo is the
+     * document physically carried to the Commissioner for signature, and the
+     * decided one is the record of what was signed.
+     */
+    public function printMemo(int $id)
+    {
+        $memo = SpaMemo::with(['application', 'preparedBy'])->findOrFail($id);
+
+        return view('special_assignment.memo.print', compact('memo'));
     }
 
     public function commissionerDecision(Request $request, int $id)

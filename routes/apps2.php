@@ -180,6 +180,19 @@ Route::middleware(['auth'])->group(function () {
         // Wildcard routes - REMOVED - Already defined in web.php
     });
 
+    // KANGIS-only update flow. Separate from /fileindexing/{id}/edit on purpose: a
+    // KANGIS row's "_N" file number identifies one physical folder among several that
+    // share a printed file number, so it must never be re-resolved on save.
+    // See App\Http\Controllers\KangisFileIndexUpdateController.
+    Route::prefix('kangis/file-index')->group(function () {
+        Route::get('/{id}/edit', [\App\Http\Controllers\KangisFileIndexUpdateController::class, 'edit'])
+            ->where('id', '[0-9]+')
+            ->name('kangis.file-index.edit');
+        Route::put('/{id}', [\App\Http\Controllers\KangisFileIndexUpdateController::class, 'update'])
+            ->where('id', '[0-9]+')
+            ->name('kangis.file-index.update');
+    });
+
     Route::prefix('pagetyping')->group(function () {
         Route::get('/', [PageTypingController::class, 'index'])->name('pagetyping.index');
         Route::get('/create', [PageTypingController::class, 'create'])->name('pagetyping.create');
@@ -465,6 +478,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/other-departments', [\App\Http\Controllers\SpecialAssignmentController::class, 'otherDepartments'])->name('other-departments');
         Route::get('/certificate',       [\App\Http\Controllers\SpecialAssignmentController::class, 'certificate'])->name('certificate');
         Route::get('/memo',              [\App\Http\Controllers\SpecialAssignmentController::class, 'memo'])->name('memo');
+        Route::get('/memo/{id}/print',   [\App\Http\Controllers\SpecialAssignmentController::class, 'printMemo'])->name('memo.print');
         Route::get('/report',            [\App\Http\Controllers\SpecialAssignmentController::class, 'report'])->name('report');
         // AJAX / actions
         Route::get ('/check-file',               [\App\Http\Controllers\SpecialAssignmentController::class, 'checkFileIndexed'])->name('check-file');

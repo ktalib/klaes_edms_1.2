@@ -29,7 +29,11 @@
       "Bash(php -l app/Services/FileIndexingCoordinateBackfillService.php)",
       "Bash(php -l app/Services/InstrumentCaptureService.php)",
       "Bash(php -l app/Console/Commands/RemediateDeedPropIds.php)",
-      "Bash(grep -rhoiE \"plot[_ ]?size[\\\\\"']?\\\\s*[:=>]+\\\\s*[\\\\\"'][^\\\\\"']{1,30}[\\\\\"']\" database/pic/pic_inserts_1.sql)"
+      "Bash(grep -rhoiE \"plot[_ ]?size[\\\\\"']?\\\\s*[:=>]+\\\\s*[\\\\\"'][^\\\\\"']{1,30}[\\\\\"']\" database/pic/pic_inserts_1.sql)",
+      "Bash(cd \"c:/wamp64/www/klaes\" && cp resources/views/fileindexing/addons/create_indexing.blade.php resources/views/fileindexing/addons/kangis_update_indexing.blade.php && wc -l resources/views/fileindexing/addons/kangis_update_indexing.blade.php)"
+    ],
+    "additionalDirectories": [
+      "c:\\wamp64\\www\\klaes\\resources\\views\\fileindexing\\addons"
     ]
   }
 }
