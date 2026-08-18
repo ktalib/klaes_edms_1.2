@@ -36,22 +36,6 @@
                   @endif
                 </p>
               </div>
-              {{-- Standalone entry points: pick any file, move it between registries
-                   or file it into one of the EDMS master folders --}}
-              <div class="flex items-center gap-2">
-                <button type="button" class="btn btn-action btn-sm gap-2"
-                        title="Move a file's documents to another registry"
-                        onclick="EdmsRegistryTransfer.open(null, null, () => window.location.reload())">
-                  <i data-lucide="folder-symlink" class="h-4 w-4"></i>
-                  Move to NR
-                </button>
-                <button type="button" class="btn btn-action btn-sm gap-2"
-                        title="File a document set into a master folder (Regular, Subdivision, Merger, ...)"
-                        onclick="EdmsFileType.open(null, null, () => window.location.reload())">
-                  <i data-lucide="folder-tree" class="h-4 w-4"></i>
-                  Master Folder
-                </button>
-              </div>
             </div>
         
             @if(!$showPageTypeMore)
@@ -830,6 +814,97 @@
           delete button.dataset.loading;
         }
 
+        function escapeAttribute(value) {
+          return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+        }
+
+        /**
+         * One row in the actions menu. `extraClass` carries the class the existing
+         * row handlers already listen for (.view-file, .edit-file, ...), so moving
+         * a button into the menu needs no new wiring.
+         */
+        function fileActionsMenuItem({ action, icon, label, fileId, fileNumber }) {
+          return `
+            <button type="button" class="${action} flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-100"
+                    data-id="${fileId}" data-file-number="${fileNumber}">
+              <i data-lucide="${icon}" class="h-4 w-4 text-blue-600"></i>
+              ${label}
+            </button>`;
+        }
+
+        /**
+         * The per-file actions menu.
+         *
+         * @param {object} file
+         * @param {Array} extraItems  rows to put above the folder actions —
+         *                            {action, icon, label}. Use this for View/Edit
+         *                            rather than leaving loose icon buttons in the
+         *                            row, so a file has exactly one action surface.
+         *
+         * The panel is positioned with `position: fixed` at open time
+         * (positionFileActionsMenu) because the tables scroll inside
+         * `overflow-x-auto` wrappers, which clip an absolutely-positioned child —
+         * that is what made the menu appear cut off inside the table.
+         */
+        function fileActionsMenu(file, extraItems = []) {
+          const fileId = escapeAttribute(file.id);
+          const fileNumber = escapeAttribute(file.file_number);
+
+          const rows = [
+            ...extraItems.map(item => fileActionsMenuItem({ ...item, fileId, fileNumber })),
+            fileActionsMenuItem({ action: 'move-registry-file', icon: 'folder-symlink', label: 'Move to NR', fileId, fileNumber }),
+            fileActionsMenuItem({ action: 'file-master-folder', icon: 'folder-tree', label: 'File into Master Folder', fileId, fileNumber }),
+          ];
+
+          return `
+            <details class="file-actions-menu">
+              <summary class="btn btn-ghost btn-sm cursor-pointer list-none px-2" title="File actions" aria-label="File actions">
+                <i data-lucide="more-vertical" class="h-4 w-4"></i>
+              </summary>
+              <div class="file-actions-panel fixed z-[9999] w-56 overflow-hidden rounded-md border bg-white py-1 shadow-lg">
+                ${rows.join('')}
+              </div>
+            </details>
+          `;
+        }
+
+        /**
+         * Pin an open menu's panel next to its button.
+         *
+         * Fixed positioning takes the panel out of the scrolling table, so the
+         * coordinates have to be supplied here. Flips to the left of the button, or
+         * above it, when it would otherwise run off screen.
+         */
+        function positionFileActionsMenu(details) {
+          const summary = details.querySelector('summary');
+          const panel = details.querySelector('.file-actions-panel');
+          if (!summary || !panel) return;
+
+          const anchor = summary.getBoundingClientRect();
+          const margin = 8;
+
+          panel.style.visibility = 'hidden';
+          const { width, height } = panel.getBoundingClientRect();
+
+          let left = anchor.right - width;
+          if (left < margin) left = Math.min(anchor.left, window.innerWidth - width - margin);
+          left = Math.max(margin, left);
+
+          let top = anchor.bottom + 4;
+          if (top + height > window.innerHeight - margin) {
+            const above = anchor.top - height - 4;
+            top = above >= margin ? above : Math.max(margin, window.innerHeight - height - margin);
+          }
+
+          panel.style.left = `${left}px`;
+          panel.style.top = `${top}px`;
+          panel.style.visibility = '';
+        }
+
         async function handleFileAction(button, options = {}) {
           if (!button || button.dataset.loading === 'true') return;
           const fileId = button.getAttribute('data-id');
@@ -870,6 +945,54 @@
         }
 
         function setupActionHandlers() {
+          // A fixed-position panel does not follow its button, so an open menu is
+          // repositioned while the page or the table scrolls under it.
+          const repositionOpenMenus = () => {
+            document.querySelectorAll('.file-actions-menu[open]').forEach(positionFileActionsMenu);
+          };
+          window.addEventListener('scroll', repositionOpenMenus, true);
+          window.addEventListener('resize', repositionOpenMenus);
+
+          // `toggle` fires on every <details>, including ones rendered after load,
+          // which is why this is captured on the document rather than bound per row.
+          document.addEventListener('toggle', (event) => {
+            const details = event.target;
+            if (!(details instanceof HTMLElement) || !details.classList.contains('file-actions-menu')) return;
+            if (!details.open) return;
+
+            document.querySelectorAll('.file-actions-menu[open]').forEach(other => {
+              if (other !== details) other.removeAttribute('open');
+            });
+
+            positionFileActionsMenu(details);
+          }, true);
+
+          document.addEventListener('click', (event) => {
+            // Picking anything from the menu closes it. The click-outside handler
+            // below cannot do this, since the target is inside the menu.
+            event.target.closest('.file-actions-panel button')
+              ?.closest('details.file-actions-menu')?.removeAttribute('open');
+
+            const transferButton = event.target.closest('.move-registry-file, .file-master-folder');
+            if (transferButton) {
+              event.preventDefault();
+              const dialog = transferButton.classList.contains('move-registry-file')
+                ? window.EdmsRegistryTransfer
+                : window.EdmsFileType;
+              transferButton.closest('details')?.removeAttribute('open');
+              dialog.open(
+                transferButton.dataset.id,
+                transferButton.dataset.fileNumber,
+                () => window.location.reload()
+              );
+              return;
+            }
+
+            document.querySelectorAll('.file-actions-menu[open]').forEach(menu => {
+              if (!menu.contains(event.target)) menu.removeAttribute('open');
+            });
+          });
+
           if (elements.pendingFilesList) {
             elements.pendingFilesList.addEventListener('click', (event) => {
               const startBtn = event.target.closest('.start-typing');
@@ -3408,6 +3531,7 @@
                           <i data-lucide="type" class="h-4 w-4 mr-1"></i>
                           Start Typing
                         </button>
+                        ${fileActionsMenu(file)}
                       </div>
                     </div>
                   </div>
@@ -3505,6 +3629,7 @@
                           <i data-lucide="edit" class="h-4 w-4 mr-1"></i>
                           Continue
                         </button>
+                        ${fileActionsMenu(file)}
                       </div>
                     </div>
                   </div>
@@ -3595,13 +3720,11 @@
                       <span class="badge badge-secondary">${file.page_typings_count} pages</span>
                     </td>
                     <td class="p-3">
-                      <div class="flex items-center gap-2">
-                        <button class="btn btn-ghost btn-sm view-file" data-id="${file.id}" title="View File">
-                          <i data-lucide="eye" class="h-4 w-4"></i>
-                        </button>
-                        <button class="btn btn-outline btn-sm edit-file" data-id="${file.id}" title="Edit">
-                          <i data-lucide="edit" class="h-4 w-4"></i>
-                        </button>
+                      <div class="flex items-center justify-end gap-2">
+                        ${fileActionsMenu(file, [
+                          { action: 'view-file', icon: 'eye', label: 'View File' },
+                          { action: 'edit-file', icon: 'edit', label: 'Edit' },
+                        ])}
                       </div>
                     </td>
                   </tr>
@@ -3721,13 +3844,13 @@
                   </td>
                   <td class="p-3">
                     <div class="flex items-center gap-2">
-                      <button class="btn btn-ghost btn-sm view-combined" data-id="${file.id}" title="View Combined File">
-                        <i data-lucide="eye" class="h-4 w-4"></i>
-                      </button>
                       <button class="btn btn-primary btn-sm pagetype-more-action" data-id="${file.id}" title="PageType More">
                         <i data-lucide="edit" class="h-4 w-4 mr-1"></i>
                        More Pages
                       </button>
+                      ${fileActionsMenu(file, [
+                        { action: 'view-combined', icon: 'eye', label: 'View Combined File' },
+                      ])}
                     </div>
                   </td>
                 </tr>
@@ -4074,16 +4197,6 @@
                   </p>
                 </div>
                 <div class="flex items-center gap-2">
-                  <button class="btn btn-action btn-sm move-registry-button"
-                          title="Move this file's documents to another registry">
-                    <i data-lucide="folder-symlink" class="h-4 w-4 mr-1.5"></i>
-                    Move to NR
-                  </button>
-                  <button class="btn btn-action btn-sm file-type-button"
-                          title="File this file into a master folder (Regular, Subdivision, Merger, ...)">
-                    <i data-lucide="folder-tree" class="h-4 w-4 mr-1.5"></i>
-                    Master Folder
-                  </button>
                   <button class="btn btn-back btn-sm back-button">
                     <i data-lucide="arrow-left" class="h-4 w-4 mr-1.5"></i>
                     ${state.typingState.selectedPageInFolder !== null ? 'Back to Folder' : (state.pageTypeMoreMode ? 'Back to PageType More' : 'Back to Dashboard')}
@@ -4653,28 +4766,6 @@
 
         // Add event listeners for typing interface
         function addTypingEventListeners(file) {
-          // Move this file's documents to another registry. The typed copies and
-          // the Doc-WARE archive copies move with the scans, so reload the file
-          // afterwards to pick up the new paths.
-          const openRelocationDialog = (dialog) => {
-            const fileIndexingId = file.id || state.selectedFile;
-            if (!fileIndexingId) {
-              Swal.fire({ icon: 'warning', title: 'No file selected', timer: 2000 });
-              return;
-            }
-
-            dialog.open(fileIndexingId, file.file_number, () => {
-              startPageTyping(fileIndexingId);
-            });
-          };
-
-          document.querySelector('.move-registry-button')
-            ?.addEventListener('click', () => openRelocationDialog(window.EdmsRegistryTransfer));
-
-          // Same move, the other folder segment: file it into its master folder.
-          document.querySelector('.file-type-button')
-            ?.addEventListener('click', () => openRelocationDialog(window.EdmsFileType));
-
           // Back button
           document.querySelector('.back-button')?.addEventListener('click', () => {
             if (state.typingState.selectedPageInFolder !== null) {

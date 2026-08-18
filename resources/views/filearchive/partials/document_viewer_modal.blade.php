@@ -4,6 +4,17 @@
         <div class="modal-content bg-white rounded-lg shadow-xl h-full flex flex-col">
             <div class="flex-shrink-0 flex items-center justify-between p-4 border-b bg-gray-50">
                 <h2 class="text-lg font-semibold">Document Viewer</h2>
+                <div class="flex items-center gap-2" aria-label="File navigation">
+                    <button type="button" id="viewer-previous-file" class="btn btn-outline btn-sm gap-1" title="Preview previous file">
+                        <i data-lucide="chevron-left" class="h-4 w-4"></i>
+                        <span class="hidden sm:inline">Previous File</span>
+                    </button>
+                    <span id="viewer-file-position" class="min-w-16 text-center text-xs font-medium text-gray-500">File 0 of 0</span>
+                    <button type="button" id="viewer-next-file" class="btn btn-outline btn-sm gap-1" title="Preview next file">
+                        <span class="hidden sm:inline">Next File</span>
+                        <i data-lucide="chevron-right" class="h-4 w-4"></i>
+                    </button>
+                </div>
                 <button id="close-viewer" class="btn btn-ghost btn-sm">
                     <i data-lucide="x" class="h-4 w-4"></i>
                 </button>
@@ -47,7 +58,7 @@
                                 <i data-lucide="folder-symlink" class="h-4 w-4"></i>
                                 <span class="hidden sm:inline">Move to NR</span>
                             </button>
-                            <button class="btn btn-sm bg-violet-600 hover:bg-violet-700 text-white flex items-center gap-1" id="viewer-file-type" title="File this file into a master folder (Regular, Subdivision, Merger, ...)">
+                            <button class="btn btn-sm bg-violet-600 hover:bg-violet-700 text-white flex items-center gap-1" id="viewer-file-type" title="File this file into a master folder">
                                 <i data-lucide="folder-tree" class="h-4 w-4"></i>
                                 <span class="hidden sm:inline">Master Folder</span>
                             </button>
@@ -272,21 +283,17 @@ function clearDocumentViewerData() {
 
 window.clearDocumentViewerData = clearDocumentViewerData;
 
-/**
- * Move the file currently open in the viewer — to another registry, or into one
- * of the EDMS master folders.
- *
- * Both the registry and the master folder are part of every document's folder
- * path, so either move relocates the pages being viewed: the viewer is closed
- * and the page reloaded afterwards rather than left showing URLs that no longer
- * resolve.
- */
 document.addEventListener('DOMContentLoaded', function () {
-    const reopen = function (dialog) {
+    const openFileAction = function (dialog) {
         return function () {
             if (!currentFileMeta || !currentFileMeta.id) {
                 if (window.Swal) {
-                    Swal.fire({ icon: 'warning', title: 'No file open', text: 'Open a file in the viewer first.', timer: 2500 });
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'No file open',
+                        text: 'Open a file in the viewer first.',
+                        timer: 2500
+                    });
                 }
                 return;
             }
@@ -299,10 +306,10 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     document.getElementById('viewer-move-registry')
-        ?.addEventListener('click', reopen(window.EdmsRegistryTransfer));
+        ?.addEventListener('click', openFileAction(window.EdmsRegistryTransfer));
 
     document.getElementById('viewer-file-type')
-        ?.addEventListener('click', reopen(window.EdmsFileType));
+        ?.addEventListener('click', openFileAction(window.EdmsFileType));
 });
 
 function loadDocumentPages(fileMeta, pages) {

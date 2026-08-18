@@ -159,29 +159,36 @@ class EdmsFileTypeTransferController extends Controller
             ->where('file_indexing_id', $validated['file_indexing_id'])
             ->orderByRaw('CASE WHEN display_order IS NULL THEN 1 ELSE 0 END ASC, display_order ASC')
             ->orderBy('id')
-            ->limit(5)
             ->get();
 
-        foreach ($scans as $scan) {
+        $pages = $scans->map(function ($scan) use ($file) {
             $url = $this->paths->resolveUrl(
                 $scan->document_path,
                 $this->paths->contextFromScanning($scan, $file)
             );
 
-            if ($url) {
-                return response()->json([
-                    'success' => true,
-                    'data' => [
-                        'url' => $url,
-                        'scanning_id' => $scan->id,
-                        'filename' => $scan->original_filename,
-                        'is_pdf' => (bool) preg_match('/\.pdf$/i', (string) $scan->document_path),
-                        'total_scans' => Scanning::on('sqlsrv')
-                            ->where('file_indexing_id', $validated['file_indexing_id'])
-                            ->count(),
-                    ],
-                ]);
+            if (!$url) {
+                return null;
             }
+
+            return [
+                'url' => $url,
+                'scanning_id' => $scan->id,
+                'filename' => $scan->original_filename,
+                'is_pdf' => (bool) preg_match('/\.pdf$/i', (string) $scan->document_path),
+            ];
+        })->filter()->values();
+
+        if ($pages->isNotEmpty()) {
+            $firstPage = $pages->first();
+
+            return response()->json([
+                'success' => true,
+                'data' => $firstPage + [
+                    'pages' => $pages,
+                    'total_scans' => $scans->count(),
+                ],
+            ]);
         }
 
         return response()->json([

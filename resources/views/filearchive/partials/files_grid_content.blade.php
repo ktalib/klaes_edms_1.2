@@ -1,7 +1,7 @@
 @if($files->count() > 0)
     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" id="files-grid">
         @foreach($files as $file)
-        <div class="border rounded-lg overflow-hidden hover:shadow-md transition-shadow cursor-pointer file-card" 
+        <div class="border rounded-lg overflow-hidden hover:shadow-md transition-shadow cursor-pointer file-card"
             data-id="{{ $file->id }}"
             data-pages-url="{{ route('filearchive.document-pages', ['id' => $file->id, 'url' => request('url')]) }}"
             data-file-number="{{ e($file->file_number) }}"
@@ -159,23 +159,6 @@
                         <span class="badge badge-secondary text-xs">{{ $districtName }}</span>
                     @endif
 
-                    {{-- Keep this in step with files_grid.blade.php: this partial is what
-                         re-renders after a search or filter, so the action must exist in both. --}}
-                    <button type="button"
-                            class="badge text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 ml-auto"
-                            title="Move {{ e($file->file_number) }} to another registry"
-                            onclick="event.stopPropagation(); EdmsRegistryTransfer.open({{ (int) $file->id }}, @js($file->file_number), () => window.location.reload());">
-                        <i data-lucide="folder-symlink" class="h-3 w-3 mr-1"></i>
-                        Move to NR
-                    </button>
-
-                    <button type="button"
-                            class="badge text-xs font-medium bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200"
-                            title="File {{ e($file->file_number) }} into a master folder"
-                            onclick="event.stopPropagation(); EdmsFileType.open({{ (int) $file->id }}, @js($file->file_number), () => window.location.reload());">
-                        <i data-lucide="folder-tree" class="h-3 w-3 mr-1"></i>
-                        Master Folder
-                    </button>
                 </div>
             </div>
         @endforeach

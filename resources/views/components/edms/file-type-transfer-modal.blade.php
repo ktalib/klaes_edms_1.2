@@ -39,7 +39,19 @@
         <div class="flex flex-col">
           <div class="flex items-center justify-between mb-2">
             <label class="block text-sm font-semibold text-gray-900">Cover page</label>
-            <span class="text-xs text-gray-500" id="file-type-cover-caption"></span>
+            <div class="flex items-center gap-2">
+              <button type="button" id="file-type-cover-previous"
+                      class="hidden btn btn-ghost btn-sm btn-icon" title="Previous page"
+                      onclick="EdmsFileType.navigateCover(-1)">
+                <i data-lucide="chevron-left" class="h-4 w-4"></i>
+              </button>
+              <span class="text-xs font-medium text-gray-600" id="file-type-cover-caption"></span>
+              <button type="button" id="file-type-cover-next"
+                      class="hidden btn btn-ghost btn-sm btn-icon" title="Next page"
+                      onclick="EdmsFileType.navigateCover(1)">
+                <i data-lucide="chevron-right" class="h-4 w-4"></i>
+              </button>
+            </div>
           </div>
           <div id="file-type-cover-box"
                class="flex-1 min-h-[320px] rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden">
@@ -203,6 +215,8 @@
     onDone: null,
     preview: null,
     coverToken: 0,
+    coverPages: [],
+    coverPageIndex: 0,
 
     /**
      * Open the dialog. Both arguments are optional — called with no file, it
@@ -349,6 +363,8 @@
       this.fileNumber = null;
       this.preview = null;
       this.coverToken++;
+      this.coverPages = [];
+      this.coverPageIndex = 0;
 
       el('file-type-transfer-search').value = '';
       el('file-type-transfer-file-number').textContent = '—';
@@ -362,6 +378,8 @@
       el('file-type-transfer-confirm').disabled = true;
       el('file-type-transfer-target').innerHTML = '<option value="">Select a file first…</option>';
       el('file-type-cover-caption').textContent = '';
+      el('file-type-cover-previous').classList.add('hidden');
+      el('file-type-cover-next').classList.add('hidden');
       el('file-type-cover-box').innerHTML =
         '<p class="text-sm text-gray-500 px-4 text-center">Select a file to see its cover.</p>';
       el('file-type-transfer-search').focus();
@@ -375,10 +393,38 @@
       el('file-type-transfer-loading').classList.remove('flex');
     },
 
-    /**
-     * Show the file's first page. Guarded by a token so a slow response for a
-     * file the operator has already moved on from cannot overwrite a newer one.
-     */
+    renderCoverPage() {
+      const box = el('file-type-cover-box');
+      const caption = el('file-type-cover-caption');
+      const previous = el('file-type-cover-previous');
+      const next = el('file-type-cover-next');
+      const page = this.coverPages[this.coverPageIndex];
+      if (!page) return;
+
+      caption.textContent = `page ${this.coverPageIndex + 1} of ${this.coverPages.length}`;
+      const showNavigation = this.coverPages.length > 1;
+      previous.classList.toggle('hidden', !showNavigation);
+      next.classList.toggle('hidden', !showNavigation);
+      previous.disabled = this.coverPageIndex === 0;
+      next.disabled = this.coverPageIndex >= this.coverPages.length - 1;
+
+      box.innerHTML = page.is_pdf
+        ? `<embed src="${escapeHtml(page.url)}#page=1&view=FitH" type="application/pdf" class="w-full h-full min-h-[320px]">`
+        : `<a href="${escapeHtml(page.url)}" target="_blank" rel="noopener" class="block w-full h-full">
+             <img src="${escapeHtml(page.url)}" alt="Page ${this.coverPageIndex + 1} of ${escapeHtml(this.fileNumber)}"
+                  class="w-full h-full object-contain max-h-[52vh]">
+           </a>`;
+
+      if (window.lucide) lucide.createIcons();
+    },
+
+    navigateCover(direction) {
+      const targetIndex = this.coverPageIndex + Number(direction);
+      if (targetIndex < 0 || targetIndex >= this.coverPages.length) return;
+      this.coverPageIndex = targetIndex;
+      this.renderCoverPage();
+    },
+
     async loadCover() {
       const box = el('file-type-cover-box');
       const caption = el('file-type-cover-caption');
@@ -387,6 +433,10 @@
       if (!this.fileIndexingId) return;
 
       caption.textContent = '';
+      this.coverPages = [];
+      this.coverPageIndex = 0;
+      el('file-type-cover-previous').classList.add('hidden');
+      el('file-type-cover-next').classList.add('hidden');
       box.innerHTML = '<p class="text-sm text-gray-500">Loading cover…</p>';
 
       try {
@@ -398,19 +448,23 @@
 
         const data = json.data || {};
 
-        if (!data.url) {
+        const pages = Array.isArray(data.pages) && data.pages.length
+          ? data.pages
+          : (data.url ? [{
+              url: data.url,
+              filename: data.filename,
+              is_pdf: data.is_pdf,
+              scanning_id: data.scanning_id,
+            }] : []);
+
+        if (!pages.length) {
           box.innerHTML = `<p class="text-sm text-gray-500 px-4 text-center">${escapeHtml(data.message || 'No cover available.')}</p>`;
           return;
         }
 
-        caption.textContent = data.total_scans ? `page 1 of ${data.total_scans}` : '';
-
-        box.innerHTML = data.is_pdf
-          ? `<embed src="${escapeHtml(data.url)}#page=1&view=FitH" type="application/pdf" class="w-full h-full min-h-[320px]">`
-          : `<a href="${escapeHtml(data.url)}" target="_blank" rel="noopener" class="block w-full h-full">
-               <img src="${escapeHtml(data.url)}" alt="Cover page of ${escapeHtml(this.fileNumber)}"
-                    class="w-full h-full object-contain max-h-[52vh]">
-             </a>`;
+        this.coverPages = pages;
+        this.coverPageIndex = 0;
+        this.renderCoverPage();
       } catch (err) {
         if (token !== this.coverToken) return;
         box.innerHTML = `<p class="text-sm text-red-600 px-4 text-center">Could not load the cover: ${escapeHtml(err.message)}</p>`;

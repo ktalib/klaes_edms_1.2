@@ -7,6 +7,7 @@
     const $viewerDialog = $('#document-viewer-dialog');
     console.log('[File Archive] $viewerDialog found:', $viewerDialog.length > 0, 'Element:', $viewerDialog[0]);
     let documentRequestToken = 0;
+    let activeFileCardIndex = -1;
     const statusColorClasses = ['bg-green-600', 'bg-orange-500', 'bg-amber-600'];
     const defaultHeaderState = buildRegistryState();
 
@@ -23,8 +24,37 @@
         window.location.href = currentUrl.toString();
     });
 
-    $('.file-card').on('click', function () {
-      const $card = $(this);
+    function fileCards() {
+      return $('.file-card');
+    }
+
+    function updateFileNavigation() {
+      const $cards = fileCards();
+      const total = $cards.length;
+      const hasSelection = activeFileCardIndex >= 0 && activeFileCardIndex < total;
+
+      $('#viewer-previous-file').prop('disabled', !hasSelection || activeFileCardIndex === 0);
+      $('#viewer-next-file').prop('disabled', !hasSelection || activeFileCardIndex >= total - 1);
+      $('#viewer-file-position').text(hasSelection ? `File ${activeFileCardIndex + 1} of ${total}` : `File 0 of ${total}`);
+
+      if (hasSelection) {
+        const previousNumber = activeFileCardIndex > 0
+          ? $cards.eq(activeFileCardIndex - 1).attr('data-file-number')
+          : null;
+        const nextNumber = activeFileCardIndex < total - 1
+          ? $cards.eq(activeFileCardIndex + 1).attr('data-file-number')
+          : null;
+        $('#viewer-previous-file').attr('title', previousNumber ? `Previous file: ${previousNumber}` : 'No previous file');
+        $('#viewer-next-file').attr('title', nextNumber ? `Next file: ${nextNumber}` : 'No next file');
+      }
+    }
+
+    function openFileCardAt(index) {
+      const $cards = fileCards();
+      if (index < 0 || index >= $cards.length) return;
+
+      activeFileCardIndex = index;
+      const $card = $cards.eq(index);
       const pagesUrl = $card.attr('data-pages-url');
       const meta = {
         number: $card.attr('data-file-number') || '-',
@@ -35,8 +65,23 @@
         return;
       }
 
+      updateFileNavigation();
       openDocumentViewer(pagesUrl, false, meta);
+    }
+
+    $('.file-card').on('click', function () {
+      openFileCardAt(fileCards().index(this));
     });
+
+    $('#viewer-previous-file').on('click', function () {
+      openFileCardAt(activeFileCardIndex - 1);
+    });
+
+    $('#viewer-next-file').on('click', function () {
+      openFileCardAt(activeFileCardIndex + 1);
+    });
+
+    updateFileNavigation();
 
     $('.dialog-backdrop').on('click', function (e) {
       if ($(e.target).hasClass('dialog-backdrop')) {

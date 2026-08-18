@@ -21,7 +21,7 @@ class ScanUploadsIndexedFilesController extends Controller
 
         try {
             $query = FileIndexing::on('sqlsrv')
-                ->select(['id', 'file_number', 'file_title', 'land_use_type', 'district'])
+                ->select(['id', 'file_number', 'file_title', 'land_use_type', 'district', 'edms_file_type'])
                 ->withCount('scannings')
                 ->where(function ($builder) {
                     $builder->where('is_deleted', 0)
@@ -47,6 +47,10 @@ class ScanUploadsIndexedFilesController extends Controller
                     'name' => $file->file_title,
                     'landUseType' => $file->land_use_type,
                     'district' => $file->district,
+                    // Lets the Scan Upload dialog preselect the master folder the
+                    // file is already filed under, so a second batch of scans lands
+                    // beside the first instead of starting a new folder.
+                    'edmsFileType' => \App\Services\Edms\EdmsFileType::normalize($file->edms_file_type),
                     'has_scans' => $file->scannings_count > 0,
                     'scans_count' => $file->scannings_count,
                 ];

@@ -37,15 +37,6 @@
               <h1 class="text-3xl font-bold tracking-tight text-gray-900">Document Upload</h1>
               <p class="text-gray-600 mt-1">Manage scanned documents and organize files</p>
             </div>
-            {{-- The backlog path: documents already uploaded (but not yet page
-                 typed) still sit naked under their registry. This files them into
-                 a master folder, cover shown, without re-uploading anything. --}}
-            <button type="button" class="btn btn-outline btn-sm gap-2 ml-auto"
-                    title="File an already-uploaded document set into a master folder"
-                    onclick="EdmsFileType.open(null, null, () => window.location.reload())">
-              <i data-lucide="folder-tree" class="h-4 w-4"></i>
-              Master Folder
-            </button>
           </div>
         </div>
 
@@ -271,8 +262,14 @@
                         <span class="font-semibold text-gray-900"><i data-lucide="check-circle-2"
                             class="h-5 w-5 inline text-green-600 mr-2"></i><span id="selected-files-count">0</span> files
                           selected</span>
-                        <button class="btn btn-outline btn-sm text-red-600 hover:bg-red-50" id="clear-all-btn">Clear
-                          All</button>
+                        <div class="flex items-center gap-2">
+                          <button type="button" class="btn btn-outline btn-sm gap-1" id="preview-selected-files-btn">
+                            <i data-lucide="eye" class="h-4 w-4"></i>
+                            Preview
+                          </button>
+                          <button class="btn btn-outline btn-sm text-red-600 hover:bg-red-50" id="clear-all-btn">Clear
+                            All</button>
+                        </div>
                       </div>
 
                       <!-- Grid container for file cards -->
@@ -362,7 +359,7 @@
                 </div>
 
                 <!-- List view -->
-                <div id="list-view" class="rounded-lg border border-gray-200 hidden overflow-hidden">
+                <div id="list-view" class="rounded-lg border border-gray-200 hidden overflow-visible">
                   <!-- Batches will be added here dynamically -->
                 </div>
 
@@ -492,6 +489,13 @@
                 <p class="text-xs text-gray-500 mt-1">Select the registry to proceed.</p>
               </div>
 
+              <div class="border border-gray-200 rounded-lg p-4 bg-blue-50/50 mb-4">
+                <label for="global-selected-fileno-select" class="block text-sm font-semibold text-blue-900 mb-2">Search via smart file number Selector</label>
+                <select id="global-selected-fileno-select" class="input w-full text-sm bg-blue-50 border-blue-200 text-blue-900 font-mono font-bold" disabled>
+                  <option value="">Select registry first...</option>
+                </select>
+              </div>
+
               {{-- The EDMS master folder these scans go into. The registry folder
                    holds one folder per file type, and the file number folder sits
                    inside it, so this decides the upload path:
@@ -520,25 +524,6 @@
                     <option value="change_of_purpose_old">Change of Purpose — Old</option>
                     <option value="change_of_purpose_new">Change of Purpose — New</option>
                   </optgroup>
-                </select>
-                <p class="text-xs text-gray-500 mt-1">
-                  The instruction is usually written on the file's cover.
-                  <button type="button" id="scan-upload-preview-cover"
-                          class="text-blue-600 hover:text-blue-800 font-semibold underline decoration-dotted disabled:text-gray-400 disabled:no-underline"
-                          disabled>
-                    Preview the cover
-                  </button>
-                </p>
-                <div id="scan-upload-cover-preview"
-                     class="hidden mt-2 rounded-lg border border-gray-200 bg-gray-50 p-2">
-                  <div id="scan-upload-cover-body" class="flex items-center justify-center min-h-[180px]"></div>
-                </div>
-              </div>
-
-              <div class="border border-gray-200 rounded-lg p-4 bg-blue-50/50 mb-4">
-                <label for="global-selected-fileno-select" class="block text-sm font-semibold text-blue-900 mb-2">Search via smart file number Selector</label>
-                <select id="global-selected-fileno-select" class="input w-full text-sm bg-blue-50 border-blue-200 text-blue-900 font-mono font-bold" disabled>
-                  <option value="">Select registry first...</option>
                 </select>
               </div>
 
@@ -577,6 +562,34 @@
                     </div>
                   </label>
                  
+                </div>
+              </div>
+
+              <div class="rounded-lg border border-gray-200 p-4">
+                <div class="flex items-center justify-between gap-3">
+                  <div>
+                    <p class="text-sm font-semibold text-gray-800">Preview</p>
+                    <p class="text-xs text-gray-500">The file-type instruction is usually written on the file's cover.</p>
+                  </div>
+                  <button type="button" id="scan-upload-preview-cover"
+                          class="btn btn-outline btn-sm gap-2"
+                          disabled>
+                    <i data-lucide="eye" class="h-4 w-4"></i>
+                    Preview file
+                  </button>
+                </div>
+                <div id="scan-upload-cover-preview"
+                     class="hidden mt-3 rounded-lg border border-gray-200 bg-gray-50 p-2">
+                  <div id="scan-upload-cover-body" class="flex items-center justify-center min-h-[180px]"></div>
+                  <div id="scan-upload-cover-navigation" class="hidden items-center justify-center gap-3 border-t border-gray-200 pt-2 mt-2">
+                    <button type="button" id="scan-upload-cover-previous" class="btn btn-outline btn-sm btn-icon" title="Previous page">
+                      <i data-lucide="chevron-left" class="h-4 w-4"></i>
+                    </button>
+                    <span id="scan-upload-cover-position" class="min-w-24 text-center text-xs font-semibold text-gray-700">Page 1 of 1</span>
+                    <button type="button" id="scan-upload-cover-next" class="btn btn-outline btn-sm btn-icon" title="Next page">
+                      <i data-lucide="chevron-right" class="h-4 w-4"></i>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -667,6 +680,7 @@
 
         @include('scan_uploads.partials.blind_scan_modal')
         @include('scan_uploads.partials.reassign_modal')
+        @include('components.edms.registry-transfer-modal')
         @include('components.edms.file-type-transfer-modal')
 
         <!-- Upload Progress Modal -->

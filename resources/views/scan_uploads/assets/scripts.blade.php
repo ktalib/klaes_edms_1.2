@@ -25,6 +25,9 @@
         rotation: 0,
         currentPreviewPage: 1,
         selectedIndexedFile: null,
+        selectedFilePreviewPages: [],
+        selectedFilePreviewIndex: 0,
+        selectedFilePreviewToken: 0,
         showFileSelector: false,
         selectedUploadFiles: [],
         showFolderView: false,
@@ -198,7 +201,6 @@
     const documentTypes = ["Certificate", "Deed", "Letter", "Application Form", "Map", "Survey Plan", "Receipt", "Other"];
 
     const indexedFilesEndpoint = "{{ route('scan-uploads.api.indexed-files.quick') }}";
-    const disableFileSelectorConfirmForNow = true;
     let indexedFiles = [];
     let indexedFilesPagination = { current_page: 1, per_page: 10, last_page: 1, total: 0 };
     let indexedFilesLoading = false;
@@ -225,6 +227,7 @@
             selectedFilesContainer: document.getElementById('selected-files-container'),
             selectedFilesCount: document.getElementById('selected-files-count'),
             selectedFilesList: document.getElementById('selected-files-list'),
+            previewSelectedFilesBtn: document.getElementById('preview-selected-files-btn'),
             clearAllBtn: document.getElementById('clear-all-btn'),
             uploadProgress: document.getElementById('upload-progress'),
             uploadingCount: document.getElementById('uploading-count'),
@@ -311,6 +314,10 @@
             previewCoverBtn: document.getElementById('scan-upload-preview-cover'),
             coverPreview: document.getElementById('scan-upload-cover-preview'),
             coverPreviewBody: document.getElementById('scan-upload-cover-body'),
+            coverPreviewNavigation: document.getElementById('scan-upload-cover-navigation'),
+            coverPreviewPrevious: document.getElementById('scan-upload-cover-previous'),
+            coverPreviewNext: document.getElementById('scan-upload-cover-next'),
+            coverPreviewPosition: document.getElementById('scan-upload-cover-position'),
             uploadMethodRadios: document.querySelectorAll('input[name="upload-method"]'),
             globalSelectedFileNoSelect: document.getElementById('global-selected-fileno-select'),
 
@@ -867,10 +874,52 @@
         elements.uploadError.classList.add('hidden');
 
         closeBlindScanModal(false);
-        state.showFileSelector = false;
         toggleDirectUploadAvailability(true);
-        showNotification('Blind scan documents are ready. Click "Start Upload" to ingest them.');
+
+        // Stay in the file selector and show what was just loaded in the Preview
+        // card. The operator still has to pick a File Type before confirming, and
+        // that instruction is written on these very pages — closing the dialog here
+        // would take them away just as they need to read it.
+        showBlindScanFilesInPreview(stagedDocs);
+
+        // updateUI() does not touch the confirm button, so re-evaluate it here —
+        // the documents are loaded now, which is what it was waiting on.
+        syncConfirmButtonState();
+
+        showNotification('Blind scan documents loaded. Review them in Preview, then Confirm Selection.');
         updateUI();
+    }
+
+    /**
+     * Render the staged blind-scan documents in the Preview card.
+     *
+     * Reuses the selected-file page viewer, so the pager and the full-size link
+     * behave exactly as they do for a file's already-scanned pages. These previews
+     * point at EDMS/BLIND_SCAN, since the documents have not been ingested yet.
+     */
+    function showBlindScanFilesInPreview(stagedDocs) {
+        const pages = (stagedDocs || [])
+            .filter(doc => doc.downloadUrl)
+            .map(doc => ({
+                url: doc.downloadUrl,
+                filename: doc.fileName,
+                is_pdf: /\.pdf$/i.test(doc.fileName || ''),
+            }));
+
+        state.selectedFilePreviewToken++;
+
+        if (!pages.length) {
+            if (elements.coverPreview && elements.coverPreviewBody) {
+                elements.coverPreview.classList.remove('hidden');
+                elements.coverPreviewBody.innerHTML =
+                    '<p class="text-sm text-gray-500 text-center px-4">The loaded documents could not be previewed.</p>';
+            }
+            return;
+        }
+
+        state.selectedFilePreviewPages = pages;
+        state.selectedFilePreviewIndex = 0;
+        renderSelectedFilePagePreview();
     }
 
     function renderBlindScanModal() {
@@ -928,21 +977,20 @@
             renderBlindScanTable();
         }
 
+        // Load Documents stages the discovered files and hands them to the preview
+        // card, so it only lights up once there is something to load.
         if (transferBtn) {
             transferBtn.disabled = !hasFiles || processing || isLoading;
-            if (processing) {
-                transferBtn.innerHTML = '<div class="loading-spinner"></div><span>Moving...</span>';
-                transferBtn.classList.add('gap-2');
-            } else {
-                transferBtn.innerHTML = '<i data-lucide="arrow-right" class="h-4 w-4"></i>Load Documents';
-                transferBtn.classList.add('gap-2');
-            }
+            transferBtn.classList.add('gap-2');
+            transferBtn.innerHTML = processing
+                ? '<div class="loading-spinner"></div><span>Loading...</span>'
+                : '<i data-lucide="arrow-right" class="h-4 w-4"></i>Load Documents';
         }
 
         if (footnote) {
             footnote.textContent = processing
                 ? 'Moving documents into Scan Uploads. Please wait...'
-                : 'Load the discovered documents into the selection list, then click Start Upload to ingest them.';
+                : 'Review the files, then click Load Documents to add them to the upload list.';
         }
 
         lucide.createIcons();
@@ -1042,6 +1090,7 @@
         } finally {
             state.blindScan.loading = false;
             renderBlindScanModal();
+            syncConfirmButtonState();
         }
     }
 
@@ -1118,6 +1167,7 @@
         state.blindScan.error = null;
         state.blindScan.processing = false;
         state.blindScan.files = [];
+        state.blindScan.stagedFiles = [];
         state.blindScan.counts = {
             total: 0,
             byPaperSize: {},
@@ -1126,6 +1176,7 @@
         state.blindScan.fileNumber = state.selectedFileNumberForUpload;
 
         renderBlindScanModal();
+        syncConfirmButtonState();
         toggleDirectUploadAvailability(true);
         fetchBlindScanManifest(state.selectedFileNumberForUpload);
     }
@@ -1162,7 +1213,7 @@
             return;
         }
 
-        if (forceDisable || disableFileSelectorConfirmForNow) {
+        if (forceDisable) {
             elements.confirmFileSelectBtn.disabled = true;
             return;
         }
@@ -1170,8 +1221,10 @@
         const hasFile = Boolean(state.selectedIndexedFile);
         const hasMethod = Boolean(state.selectedUploadMethod);
         const hasRegistry = blindScanElements.registry ? Boolean(blindScanElements.registry.value) : true;
+        const blindScanReady = state.selectedUploadMethod !== 'blind'
+            || (!state.blindScan.loading && !state.blindScan.error && state.blindScan.files.length > 0);
 
-        elements.confirmFileSelectBtn.disabled = !(hasFile && hasMethod && hasRegistry);
+        elements.confirmFileSelectBtn.disabled = !(hasFile && hasMethod && hasRegistry && blindScanReady);
     }
 
     function updateSelectedUploadMethodLabel() {
@@ -1204,6 +1257,94 @@
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#039;');
+    }
+
+    function documentUploadActionsMenu(batch) {
+        const batchId = escapeHtml(batch?.id || '');
+        const fileNumber = escapeHtml(batch?.fileNumber || '');
+
+        return `
+          <details class="relative document-upload-actions-menu">
+            <summary class="btn btn-outline btn-xs btn-icon cursor-pointer list-none" title="File actions" aria-label="File actions">
+              <i data-lucide="ellipsis" class="h-4 w-4"></i>
+            </summary>
+            <div class="document-upload-actions-popover fixed z-[10000] w-56 overflow-hidden rounded-md border bg-white py-1 text-gray-700 shadow-lg"
+                 style="visibility: hidden;">
+              <button type="button" class="preview-batch flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-100"
+                      data-id="${batchId}" data-doc-index="0">
+                <i data-lucide="eye" class="h-4 w-4 text-blue-600"></i>
+                Preview
+              </button>
+              <button type="button" class="start-typing flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-100"
+                      data-id="${batchId}">
+                <i data-lucide="type" class="h-4 w-4 text-blue-600"></i>
+                Page Typing
+              </button>
+              <button type="button" class="upload-more-to-folder flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-100"
+                      data-file-number="${fileNumber}">
+                <i data-lucide="upload" class="h-4 w-4 text-blue-600"></i>
+                Upload More
+              </button>
+              <div class="my-1 border-t border-gray-100"></div>
+              <button type="button" class="move-upload-to-registry flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-100"
+                      data-batch-id="${batchId}">
+                <i data-lucide="folder-symlink" class="h-4 w-4 text-blue-600"></i>
+                Move to NR
+              </button>
+              <button type="button" class="file-upload-into-master flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-100"
+                      data-batch-id="${batchId}">
+                <i data-lucide="folder-tree" class="h-4 w-4 text-blue-600"></i>
+                File into Master Folder
+              </button>
+            </div>
+          </details>
+        `;
+    }
+
+    function positionDocumentUploadActionsMenu(details) {
+        if (!details?.open) return;
+
+        const trigger = details.querySelector('summary');
+        const menu = details.querySelector('.document-upload-actions-popover');
+        if (!trigger || !menu) return;
+
+        const triggerRect = trigger.getBoundingClientRect();
+        const viewportPadding = 8;
+        const gap = 4;
+        const menuWidth = menu.offsetWidth || 224;
+        const menuHeight = menu.offsetHeight || 240;
+
+        const maximumLeft = Math.max(viewportPadding, window.innerWidth - menuWidth - viewportPadding);
+        const left = Math.min(
+            Math.max(viewportPadding, triggerRect.right - menuWidth),
+            maximumLeft
+        );
+
+        const spaceBelow = window.innerHeight - triggerRect.bottom - viewportPadding;
+        const top = spaceBelow >= menuHeight
+            ? triggerRect.bottom + gap
+            : Math.max(viewportPadding, triggerRect.top - menuHeight - gap);
+
+        menu.style.left = `${left}px`;
+        menu.style.top = `${top}px`;
+        menu.style.visibility = 'visible';
+    }
+
+    function openDocumentUploadEdmsAction(button) {
+        const batch = state.documentBatches.find(item => String(item.id) === String(button.dataset.batchId));
+        const fileIndexingId = resolveFileIndexingIdFromBatch(batch);
+
+        if (!fileIndexingId) {
+            alert('Unable to open file actions: file reference is missing.');
+            return;
+        }
+
+        const dialog = button.classList.contains('move-upload-to-registry')
+            ? window.EdmsRegistryTransfer
+            : window.EdmsFileType;
+
+        button.closest('details')?.removeAttribute('open');
+        dialog.open(fileIndexingId, batch.fileNumber, () => window.location.reload());
     }
 
     // File to URL conversion
@@ -4794,15 +4935,7 @@
           </td>
           <td class="px-4 py-3 whitespace-nowrap">
             <div class="flex items-center justify-end gap-2">
-              <button class="btn btn-outline btn-xs upload-more-to-folder" data-file-number="${safeFileNumber}">
-                Upload More
-              </button>
-              <button class="btn btn-outline btn-xs preview-batch" data-id="${batch.id}" data-doc-index="0">
-                Preview
-              </button>
-              <button class="btn btn-outline btn-xs start-typing" data-id="${batch.id}">
-                Page Typing
-              </button>
+              ${documentUploadActionsMenu(batch)}
             </div>
           </td>
         `;
@@ -4825,26 +4958,37 @@
 
         lucide.createIcons();
 
-        document.querySelectorAll('.preview-batch').forEach(btn => {
+        elements.listView.querySelectorAll('.preview-batch').forEach(btn => {
             btn.addEventListener('click', () => {
+                btn.closest('details')?.removeAttribute('open');
                 const id = btn.getAttribute('data-id');
                 const docIndex = parseInt(btn.getAttribute('data-doc-index') || '0', 10);
                 openPreview(id, Number.isNaN(docIndex) ? 0 : docIndex);
             });
         });
 
-        document.querySelectorAll('.start-typing').forEach(btn => {
+        elements.listView.querySelectorAll('.start-typing').forEach(btn => {
             btn.addEventListener('click', () => {
+                btn.closest('details')?.removeAttribute('open');
                 const id = btn.getAttribute('data-id');
                 openFilePagesInPageTyping(id);
             });
         });
 
-        document.querySelectorAll('.upload-more-to-folder').forEach(btn => {
+        elements.listView.querySelectorAll('.upload-more-to-folder').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
+                btn.closest('details')?.removeAttribute('open');
                 const fileNumber = btn.getAttribute('data-file-number');
                 handleUploadMoreToFolder(fileNumber);
+            });
+        });
+
+        elements.listView.querySelectorAll('.move-upload-to-registry, .file-upload-into-master').forEach(btn => {
+            btn.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openDocumentUploadEdmsAction(btn);
             });
         });
     }
@@ -4875,12 +5019,15 @@
             const folderWrapper = document.createElement('div');
             folderWrapper.className = 'border rounded-lg bg-white shadow-sm';
 
+            const headerRow = document.createElement('div');
+            headerRow.className = 'flex items-center';
+
             const documentCount = batch.documents.filter(doc => !doc.isPdfFolder).length;
             const pdfFolderCount = batch.documents.filter(doc => doc.isPdfFolder).length;
 
             const headerButton = document.createElement('button');
             headerButton.type = 'button';
-            headerButton.className = 'w-full flex items-center justify-between px-4 py-3 text-left folder-header-button';
+            headerButton.className = 'flex-1 flex items-center justify-between px-4 py-3 text-left folder-header-button';
             headerButton.setAttribute('data-folder-toggle', batch.id);
             headerButton.setAttribute('aria-expanded', 'false');
             headerButton.innerHTML = `
@@ -4899,7 +5046,13 @@
             <i data-lucide="chevron-down" class="h-4 w-4 text-gray-500 transition-transform" data-folder-chevron></i>
           </div>
         `;
-            folderWrapper.appendChild(headerButton);
+            headerRow.appendChild(headerButton);
+
+            const headerActions = document.createElement('div');
+            headerActions.className = 'pr-4';
+            headerActions.innerHTML = documentUploadActionsMenu(batch);
+            headerRow.appendChild(headerActions);
+            folderWrapper.appendChild(headerRow);
 
             const contentWrapper = document.createElement('div');
             contentWrapper.className = 'hidden border-t bg-gray-50';
@@ -4925,12 +5078,6 @@
                   </div>
                   <div class="flex items-center gap-2">
                     <span class="badge bg-green-500 text-white text-xs">PDF Converted</span>
-                    <button class="btn btn-outline btn-xs upload-more-to-folder" data-file-number="${escapeHtml(batch.fileNumber || '')}">
-                      Upload More
-                    </button>
-                    <button class="btn btn-outline btn-xs start-typing" data-id="${batch.id}" data-folder="${doc.id}">
-                      Page Typing
-                    </button>
                   </div>
                 </div>
                 <div class="p-4">
@@ -5008,9 +5155,6 @@
                   <p class="font-medium text-blue-600">${escapeHtml(batch.fileNumber || '')}</p>
                   <p class="text-xs text-gray-500">${individualFiles.length} file${individualFiles.length === 1 ? '' : 's'}</p>
                 </div>
-                <button class="btn btn-outline btn-xs upload-more-to-folder" data-file-number="${escapeHtml(batch.fileNumber || '')}">
-                  Upload More
-                </button>
               </div>
               <div class="p-4">
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 documents-grid" data-batch-id="${batch.id}"></div>
@@ -5080,12 +5224,6 @@
               </div>
               <div class="flex items-center gap-2">
                 <span class="badge badge-outline text-xs">${batch.documents.length} item${batch.documents.length === 1 ? '' : 's'}</span>
-                <button class="btn btn-outline btn-xs upload-more-to-folder" data-file-number="${escapeHtml(batch.fileNumber || '')}">
-                  Upload More
-                </button>
-                <button class="btn btn-outline btn-xs start-typing" data-id="${batch.id}">
-                  Page Typing
-                </button>
               </div>
             </div>
             <div class="p-4">
@@ -5172,8 +5310,18 @@
             });
         });
 
-        document.querySelectorAll('.start-typing').forEach(btn => {
+        elements.folderView.querySelectorAll('.preview-batch').forEach(btn => {
             btn.addEventListener('click', () => {
+                btn.closest('details')?.removeAttribute('open');
+                const id = btn.getAttribute('data-id');
+                const docIndex = parseInt(btn.getAttribute('data-doc-index') || '0', 10);
+                openPreview(id, Number.isNaN(docIndex) ? 0 : docIndex);
+            });
+        });
+
+        elements.folderView.querySelectorAll('.start-typing').forEach(btn => {
+            btn.addEventListener('click', () => {
+                btn.closest('details')?.removeAttribute('open');
                 const id = btn.getAttribute('data-id');
                 const folderId = btn.getAttribute('data-folder');
                 openFilePagesInPageTyping(id, { folderId });
@@ -5217,11 +5365,20 @@
             });
         });
 
-        document.querySelectorAll('.upload-more-to-folder').forEach(btn => {
+        elements.folderView.querySelectorAll('.upload-more-to-folder').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
+                btn.closest('details')?.removeAttribute('open');
                 const fileNumber = btn.getAttribute('data-file-number');
                 handleUploadMoreToFolder(fileNumber);
+            });
+        });
+
+        elements.folderView.querySelectorAll('.move-upload-to-registry, .file-upload-into-master').forEach(btn => {
+            btn.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openDocumentUploadEdmsAction(btn);
             });
         });
     }
@@ -5826,6 +5983,10 @@
         syncConfirmButtonState();
         updateSelectedUploadMethodLabel();
         syncFileTypeControls();
+
+        if (state.selectedUploadMethod === 'blind' && selectedFile) {
+            openBlindScanModal();
+        }
     }
 
     /**
@@ -5852,6 +6013,10 @@
         if (button) {
             button.disabled = !numericIndexingId();
         }
+
+        if (numericIndexingId()) {
+            loadSelectedFilePagePreview();
+        }
     }
 
     /** The selected file's real file_indexings id, or null for a synthetic one. */
@@ -5861,56 +6026,116 @@
         return Number.isInteger(id) && id > 0 ? id : null;
     }
 
-    function hideCoverPreview() {
+    function hideCoverPreview(clearPages = true) {
+        state.selectedFilePreviewToken++;
         elements.coverPreview?.classList.add('hidden');
         if (elements.coverPreviewBody) {
             elements.coverPreviewBody.innerHTML = '';
         }
+        elements.coverPreviewNavigation?.classList.add('hidden');
+        elements.coverPreviewNavigation?.classList.remove('flex');
+        if (clearPages) {
+            state.selectedFilePreviewPages = [];
+            state.selectedFilePreviewIndex = 0;
+        }
     }
 
-    /**
-     * Show the file's first scanned page.
-     *
-     * The instruction that decides the file type ("subdivision — mother",
-     * "extension") is written on the cover, so the operator reads it here rather
-     * than guessing. Only useful for a file that already has scans on the server;
-     * for a brand-new batch the staged thumbnails below are the cover.
-     */
-    async function toggleCoverPreview() {
+    function renderSelectedFilePagePreview() {
+        const box = elements.coverPreview;
+        const body = elements.coverPreviewBody;
+        const pages = state.selectedFilePreviewPages;
+        const index = state.selectedFilePreviewIndex;
+        const page = pages[index];
+
+        if (!box || !body || !page) return;
+
+        box.classList.remove('hidden');
+        body.innerHTML = page.is_pdf
+            ? `<embed src="${escapeHtml(page.url)}#page=1&view=FitH" type="application/pdf" class="w-full h-[320px]">`
+            : `<a href="${escapeHtml(page.url)}" target="_blank" rel="noopener">
+                 <img src="${escapeHtml(page.url)}" alt="${escapeHtml(page.filename || `Page ${index + 1}`)}" class="max-h-[320px] object-contain">
+               </a>`;
+
+        const showNavigation = pages.length > 1;
+        elements.coverPreviewNavigation?.classList.toggle('hidden', !showNavigation);
+        elements.coverPreviewNavigation?.classList.toggle('flex', showNavigation);
+        if (elements.coverPreviewPosition) {
+            elements.coverPreviewPosition.textContent = `Page ${index + 1} of ${pages.length}`;
+        }
+        if (elements.coverPreviewPrevious) {
+            elements.coverPreviewPrevious.disabled = index === 0;
+        }
+        if (elements.coverPreviewNext) {
+            elements.coverPreviewNext.disabled = index >= pages.length - 1;
+        }
+        if (window.lucide) lucide.createIcons();
+    }
+
+    function navigateSelectedFilePreview(direction) {
+        const nextIndex = state.selectedFilePreviewIndex + Number(direction);
+        if (nextIndex < 0 || nextIndex >= state.selectedFilePreviewPages.length) return;
+
+        state.selectedFilePreviewIndex = nextIndex;
+        renderSelectedFilePagePreview();
+    }
+
+    async function loadSelectedFilePagePreview() {
         const box = elements.coverPreview;
         const body = elements.coverPreviewBody;
         const id = numericIndexingId();
-
         if (!box || !body || !id) return;
 
-        if (!box.classList.contains('hidden')) {
-            hideCoverPreview();
-            return;
-        }
+        const token = ++state.selectedFilePreviewToken;
+        state.selectedFilePreviewPages = [];
+        state.selectedFilePreviewIndex = 0;
 
         box.classList.remove('hidden');
         body.innerHTML = '<p class="text-sm text-gray-500">Loading cover…</p>';
+        elements.coverPreviewNavigation?.classList.add('hidden');
+        elements.coverPreviewNavigation?.classList.remove('flex');
 
         try {
             const response = await fetch(`/edms/file-type/cover?file_indexing_id=${encodeURIComponent(id)}`, {
                 headers: { 'Accept': 'application/json' }
             });
             const payload = await response.json();
+            if (token !== state.selectedFilePreviewToken || id !== numericIndexingId()) return;
             const data = payload.data || {};
+            const pages = Array.isArray(data.pages) && data.pages.length
+                ? data.pages
+                : (data.url ? [{
+                    url: data.url,
+                    filename: data.filename,
+                    is_pdf: data.is_pdf,
+                    scanning_id: data.scanning_id,
+                }] : []);
 
-            if (!data.url) {
+            if (!pages.length) {
                 body.innerHTML = `<p class="text-sm text-gray-500 text-center px-4">${escapeHtml(data.message || 'No cover available.')}</p>`;
                 return;
             }
 
-            body.innerHTML = data.is_pdf
-                ? `<embed src="${escapeHtml(data.url)}#page=1&view=FitH" type="application/pdf" class="w-full h-[320px]">`
-                : `<a href="${escapeHtml(data.url)}" target="_blank" rel="noopener">
-                     <img src="${escapeHtml(data.url)}" alt="Cover page" class="max-h-[320px] object-contain">
-                   </a>`;
+            state.selectedFilePreviewPages = pages;
+            state.selectedFilePreviewIndex = 0;
+            renderSelectedFilePagePreview();
         } catch (error) {
+            if (token !== state.selectedFilePreviewToken) return;
             body.innerHTML = `<p class="text-sm text-red-600 text-center px-4">Could not load the cover: ${escapeHtml(error.message)}</p>`;
         }
+    }
+
+    async function toggleCoverPreview() {
+        if (!elements.coverPreview?.classList.contains('hidden')) {
+            hideCoverPreview(false);
+            return;
+        }
+
+        if (state.selectedFilePreviewPages.length) {
+            renderSelectedFilePagePreview();
+            return;
+        }
+
+        await loadSelectedFilePagePreview();
     }
 
     function selectIndexedFile() {
@@ -5928,15 +6153,38 @@
 
         state.selectedFileNumberForUpload = selectedFile.fileNumber;
         applyDefinitionToStagedDocs();
+
+        if (state.selectedUploadMethod === 'blind') {
+            if (state.blindScan.loading) {
+                alert('Please wait while the blind scan documents are loaded.');
+                return;
+            }
+
+            if (state.blindScan.error) {
+                alert(state.blindScan.error);
+                return;
+            }
+
+            if (!state.blindScan.files.length) {
+                alert('No blind scan documents were found for this file number.');
+                return;
+            }
+
+            // "Load Documents" in the Blind Scan dialog is what stages the files.
+            // If the operator confirmed without going through it, stage them here
+            // rather than losing their selection.
+            if (!(state.blindScan.stagedFiles || []).length) {
+                stageBlindScanFiles();
+                return;
+            }
+        }
+
         state.showFileSelector = false;
         updateUI();
         const methodLabel = getUploadMethodLabel(state.selectedUploadMethod);
         const methodSuffix = methodLabel ? ` via <strong>${methodLabel}</strong>` : '';
         showNotification(`Ready to upload documents to <strong>${selectedFile.fileNumber}</strong>${methodSuffix}`);
 
-        if (state.selectedUploadMethod === 'blind') {
-            openBlindScanModal();
-        }
     }
 
     function deleteBatch(id) {
@@ -5965,6 +6213,21 @@
 
     // Initialize the page
     async function init() {
+        document.addEventListener('toggle', (event) => {
+            const menu = event.target.closest?.('.document-upload-actions-menu');
+            if (menu?.open) {
+                requestAnimationFrame(() => positionDocumentUploadActionsMenu(menu));
+            }
+        }, true);
+
+        document.addEventListener('click', (event) => {
+            document.querySelectorAll('.document-upload-actions-menu[open]').forEach(menu => {
+                if (!menu.contains(event.target)) {
+                    menu.removeAttribute('open');
+                }
+            });
+        });
+
         // Initialize Core Dependencies
         if (typeof lucide !== 'undefined') {
             lucide.createIcons();
@@ -6038,6 +6301,7 @@
 
         // Upload actions
         elements.clearAllBtn.addEventListener('click', resetUpload);
+        elements.previewSelectedFilesBtn?.addEventListener('click', () => previewSelectedFile(0));
         elements.startUploadBtn.addEventListener('click', startUpload);
         elements.cancelUploadBtn.addEventListener('click', resetUpload);
         elements.uploadMoreBtn.addEventListener('click', resetUpload);
@@ -6213,6 +6477,8 @@
 
         // Cover preview: the instruction that decides the file type is on the cover.
         elements.previewCoverBtn?.addEventListener('click', toggleCoverPreview);
+        elements.coverPreviewPrevious?.addEventListener('click', () => navigateSelectedFilePreview(-1));
+        elements.coverPreviewNext?.addEventListener('click', () => navigateSelectedFilePreview(1));
 
         if (elements.uploadMethodRadios && elements.uploadMethodRadios.length) {
             elements.uploadMethodRadios.forEach(radio => {
@@ -6256,8 +6522,19 @@
 
         initializeSmartFileNumberSelector();
 
+        // "Load Documents" — stages the discovered files and shows them in Preview.
         if (blindScanElements.transferBtn) {
             blindScanElements.transferBtn.addEventListener('click', stageBlindScanFiles);
+        }
+
+        // Clicking the backdrop closes the dialog, as it does for every other modal.
+        if (blindScanElements.modal) {
+            blindScanElements.modal.addEventListener('click', (event) => {
+                if (event.target === blindScanElements.modal) {
+                    closeBlindScanModal();
+                    updateUI();
+                }
+            });
         }
 
         if (blindScanElements.closeButtons && blindScanElements.closeButtons.length) {
@@ -6272,15 +6549,6 @@
                     }
                     updateUI();
                 });
-            });
-        }
-
-        if (blindScanElements.modal) {
-            blindScanElements.modal.addEventListener('click', (event) => {
-                if (event.target === blindScanElements.modal) {
-                    closeBlindScanModal();
-                    updateUI();
-                }
             });
         }
 
