@@ -25,6 +25,18 @@ class SpaPayment extends Model
         return $this->belongsTo(SpaBill::class, 'spa_bill_id');
     }
 
+    /**
+     * How this payment was split across the bill's items.
+     *
+     * Empty for payments recorded before item-by-item entry existed — those
+     * were a lump figure against the bill, and the receipt says so rather than
+     * inventing a split.
+     */
+    public function lines()
+    {
+        return $this->hasMany(SpaPaymentLine::class, 'spa_payment_id');
+    }
+
     public function application()
     {
         return $this->belongsTo(SpaApplication::class, 'spa_application_id');

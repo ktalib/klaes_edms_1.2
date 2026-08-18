@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\SpaNotice;
-use App\Services\BetaSmsService;
+use App\Services\BulkSmsNgService;
 use Illuminate\Console\Command;
 
 /**
@@ -13,6 +13,12 @@ use Illuminate\Console\Command;
  * sends fine locally and silently fails in production, and the UI could only
  * say "SMS could not be sent". Each check below is a thing that differs
  * between the two boxes, ordered cheapest-to-check first.
+ *
+ * SPAS notices go out through Bulk-SMS.ng. They used to go through BetaSMS,
+ * whose API is plain HTTP on port 80 — which the production server cannot make
+ * outbound connections on, so every notice there died with a connection
+ * timeout. Bulk-SMS.ng is https, so it reaches the internet on the port that
+ * box actually has open.
  */
 class SpaSmsDoctor extends Command
 {
@@ -23,24 +29,28 @@ class SpaSmsDoctor extends Command
     public function handle(): int
     {
         $this->info('SPAS SMS diagnostics — '.config('app.env').' @ '.gethostname());
+        $this->line('provider: Bulk-SMS.ng (account.bulk-sms.ng)');
         $this->newLine();
 
         $ok = true;
 
         // 1. Credentials. .env is not deployed by a file upload (it is gitignored),
         //    so this is the single most likely difference on a fresh production box.
-        $username = config('services.betasms.username');
-        $password = config('services.betasms.password');
-        $sender   = config('services.betasms.sender');
+        $email    = config('services.bulk_sms_ng.email');
+        $password = config('services.bulk_sms_ng.password');
+        $sender   = config('services.bulk_sms_ng.sender');
 
         $this->line('1. Credentials (config/services.php ← .env)');
-        $this->line('   BETASMS_USERNAME : '.($username ? $this->mask($username) : '<fg=red>NOT SET</>'));
-        $this->line('   BETASMS_PASSWORD : '.($password ? '<fg=green>set ('.strlen($password).' chars)</>' : '<fg=red>NOT SET</>'));
-        $this->line('   BETASMS_SENDER   : '.($sender ?: '<fg=red>NOT SET</>'));
+        $this->line('   BULK_SMS_NG_EMAIL    : '.($email ? $this->mask($email) : '<fg=red>NOT SET</>'));
+        $this->line('   BULK_SMS_NG_PASSWORD : '.($password ? '<fg=green>set ('.strlen($password).' chars)</>' : '<fg=red>NOT SET</>'));
+        $this->line('   BULK_SMS_NG_SENDER   : '.($sender ?: '<fg=red>NOT SET</>'));
 
-        if (!$username || !$password) {
+        if (!$email || !$password) {
             $this->newLine();
-            $this->error('   → Add BETASMS_USERNAME / BETASMS_PASSWORD / BETASMS_SENDER to this server\'s .env.');
+            $this->error('   → Add these to this server\'s .env:');
+            $this->line('     BULK_SMS_NG_EMAIL=...');
+            $this->line('     BULK_SMS_NG_PASSWORD=...');
+            $this->line('     BULK_SMS_NG_SENDER=SPAS');
             $this->line('     .env is gitignored, so it is NOT copied by a code upload — it must be edited on the server.');
             $ok = false;
         }
@@ -56,114 +66,51 @@ class SpaSmsDoctor extends Command
             $this->line('   <fg=green>not cached</> — .env is read live');
         }
 
-        // 3. Outbound HTTP. Shared hosting commonly blocks arbitrary outbound
-        //    ports; the API is plain HTTP on port 80.
+        // 3. Outbound HTTPS. The whole reason for this provider: the previous one
+        //    needed outbound :80, which production does not have.
         $this->newLine();
-        $this->line('3. Outbound connection to login.betasms.com');
-
-        // DNS first, separately from the connection: "site can't be reached" in a
-        // browser covers both a name that will not resolve and a port that is
-        // firewalled, and the fixes are completely different (hosts entry vs a
-        // firewall rule vs a different port).
-        $ip = gethostbyname('login.betasms.com');
-        $dnsOk = $ip !== 'login.betasms.com' && filter_var($ip, FILTER_VALIDATE_IP);
-        $this->line('   DNS  : '.($dnsOk
-            ? '<fg=green>resolves to '.$ip.'</>'
-            : '<fg=red>does NOT resolve on this server</>'));
-
-        // Then a ladder of routes. Each is a real workaround, so whichever one
-        // answers is the value to put in this server's .env — no guessing.
-        $configured = config('services.betasms.endpoint');
-        $proxy      = config('services.betasms.proxy');
-
-        $routes = [
-            'http  :80 (default)' => ['url' => 'http://login.betasms.com/api/', 'proxy' => null, 'ip' => null],
-            'https :443'          => ['url' => 'https://login.betasms.com/api/', 'proxy' => null, 'ip' => null],
-        ];
-        if ($dnsOk) {
-            // Same URL, DNS bypassed — separates "name will not resolve" from
-            // "network will not carry the packets".
-            $routes['http  :80 IP-pinned'] = ['url' => 'http://login.betasms.com/api/', 'proxy' => null, 'ip' => $ip];
-        }
-        if ($proxy) {
-            $routes['via BETASMS_PROXY'] = ['url' => $configured, 'proxy' => $proxy, 'ip' => null];
-        }
-
-        $working = null;
-        foreach ($routes as $label => $route) {
-            [$usable, $detail] = $this->probe($route);
-            $this->line(sprintf('   %-20s %s', $label, $usable
-                ? '<fg=green>WORKS</> — gateway answered '.$detail
-                : '<fg=red>no</> — '.$detail));
-
-            if ($usable && !$working) {
-                $working = $route;
-            }
-        }
-
-        $curlErr = '';
-        if (!$working) {
-            $curlErr = 'no route reachable';
-            $this->newLine();
-            $this->error('   → This server cannot reach the SMS gateway by any route.');
-            $this->line('     Nothing in the app can fix that. Either ask the host to allow outbound');
-            $this->line('     traffic to login.betasms.com, set BETASMS_PROXY to a proxy this box can');
-            $this->line('     use, or send from a machine that has internet access.');
-            if (!$dnsOk) {
-                $this->line('     DNS also fails here — a hosts-file entry for login.betasms.com may be');
-                $this->line('     enough if the block turns out to be name resolution only.');
-            }
-            $ok = false;
-        } elseif ($working['url'] !== $configured
-               || ($working['proxy'] ?? null) !== $proxy
-               || ($working['ip'] ?? null) !== config('services.betasms.ip')) {
-            $this->newLine();
-            $this->line('   <fg=yellow>→ The configured route is not the one that works. Put this in .env:</>');
-            $this->line('     BETASMS_ENDPOINT='.$working['url']);
-            if ($working['proxy'] ?? null) {
-                $this->line('     BETASMS_PROXY='.$working['proxy']);
-            }
-            if ($working['ip'] ?? null) {
-                $this->line('     BETASMS_IP='.$working['ip']);
-            }
-            $this->line('     then run: php artisan config:clear');
+        $this->line('3. Outbound connection to account.bulk-sms.ng (https, :443)');
+        [$reachable, $detail] = $this->probeConnect('https://account.bulk-sms.ng/api/promotional/balance');
+        if ($reachable) {
+            $this->line('   <fg=green>reachable</> ('.$detail.')');
+        } else {
+            $this->error('   → UNREACHABLE: '.$detail);
+            $this->line('     This server cannot reach the SMS provider. Check outbound :443 and DNS.');
+            $this->line('     Public IP of this server: '.$this->publicIp());
             $ok = false;
         }
 
-        // 4. Whether the gateway accepts these credentials, without sending anything:
-        //    a deliberately invalid number is rejected before any message goes out,
-        //    but bad credentials are reported first, which is what we are testing.
-        if ($username && $password && !$curlErr) {
+        // 4. Whether the gateway accepts these credentials, and what is left to
+        //    spend. Reading the balance sends nothing and costs nothing, and it
+        //    fails the same way bad credentials would (601).
+        if ($email && $password && $reachable) {
             $this->newLine();
-            $this->line('4. Gateway credential check (no SMS is sent)');
-            $probe = $this->rawPost([
-                'username' => $username,
-                'password' => $password,
-                'sender'   => $sender ?: 'KLASE',
-                'message'  => 'diagnostic',
-                'mobiles'  => '12',   // invalid on purpose: nothing can be delivered
-            ]);
-            $this->line('   gateway replied: '.$probe);
-            if ($probe === '1703') {
-                $this->line('   <fg=green>credentials accepted</> (1703 = the deliberately invalid number)');
-            } elseif ($probe === '1702') {
-                $this->error('   → 1702 = invalid username or password on THIS server.');
+            $this->line('4. Account check (no SMS is sent)');
+            $balance = app(BulkSmsNgService::class)->balance();
+
+            if ($balance === null) {
+                $this->error('   → could not read the balance — credentials rejected or the API changed.');
                 $ok = false;
             } else {
-                $this->line('   <fg=yellow>unexpected reply — see the code map in BetaSmsService</>');
+                $this->line('   <fg=green>credentials accepted</> — balance: ₦'.$balance);
+                // A notice is 2 pages; an empty wallet fails sends with 604 and
+                // is invisible until someone tries to serve one.
+                if ((float) $balance < 100) {
+                    $this->line('   <fg=yellow>balance is low — top up before a serving run</>');
+                }
             }
         }
 
-        // 5. The wording itself: the gateway refuses some content outright (1713).
+        // 5. The wording. This provider has no equivalent of the previous one's
+        //    content filter, but page count still drives what a send costs.
         $this->newLine();
-        $this->line('5. Notice wording vs the content filter');
+        $this->line('5. Notice wording');
         foreach (['first', 'second'] as $type) {
             $body = SpaNotice::smsBody($type);
-            $this->line(sprintf('   %-6s serve: %d chars, %d page(s)%s',
+            $this->line(sprintf('   %-6s serve: %d chars, %d page(s)',
                 $type,
                 strlen($body),
-                (int) ceil(mb_strlen($body) / 160),
-                stripos($body, 'notice') !== false ? ' <fg=red>contains "notice" — refused with 1713</>' : ''
+                (int) ceil(mb_strlen($body) / 160)
             ));
         }
 
@@ -171,10 +118,10 @@ class SpaSmsDoctor extends Command
         if ($phone = $this->option('phone')) {
             $this->newLine();
             $this->line('6. Live test SMS to '.$phone);
-            $sms  = new BetaSmsService();
+            $sms  = app(BulkSmsNgService::class);
             $sent = $sms->send($phone, 'KLAES diagnostic message from '.config('app.env').'. The SPAS message route is working.');
             if ($sent) {
-                $this->line('   <fg=green>accepted by the gateway</> (code '.$sms->lastStatusCode().') — check the handset');
+                $this->line('   <fg=green>accepted by the gateway</> — check the handset');
             } else {
                 $this->error('   → NOT sent: '.$sms->lastFailureReason().' (code '.($sms->lastStatusCode() ?: 'none').')');
                 $ok = false;
@@ -191,94 +138,54 @@ class SpaSmsDoctor extends Command
     }
 
     /**
-     * Is that route good enough to actually send on?
+     * Can this machine open a connection to that URL at all?
      *
-     * This posts to the API rather than merely opening a socket, because
-     * "reachable" and "usable" are not the same thing here: https://…/api/
-     * accepts the connection and then answers 301 back to http://…, so a box
-     * with only :443 open would look fine on a connectivity test and still fail
-     * every send. A route counts as usable only when the gateway itself replies
-     * with one of its numeric codes.
+     * Any HTTP status counts: we are testing whether the network carries the
+     * request, not what the endpoint thinks of it.
      *
-     * Nothing is sent: the mobile number is deliberately invalid, which the
-     * gateway rejects (1703) before any message goes out. Redirects are not
-     * followed, for the reason above.
-     *
-     * @param  array{url:string, proxy:?string, ip:?string}  $route
      * @return array{0:bool, 1:string}
      */
-    private function probe(array $route): array
+    private function probeConnect(string $url): array
     {
-        $ch = curl_init($route['url']);
+        $ch = curl_init($url);
         curl_setopt_array($ch, [
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => http_build_query([
-                'username' => config('services.betasms.username'),
-                'password' => config('services.betasms.password'),
-                'sender'   => config('services.betasms.sender') ?: 'KLASE',
-                'message'  => 'diagnostic',
-                'mobiles'  => '12',   // invalid on purpose: nothing can be delivered
-            ]),
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_TIMEOUT        => 20,
-            CURLOPT_CONNECTTIMEOUT => 8,
-            // Diagnostic only, and the gateway's :443 serves a self-signed
-            // certificate. Verifying here would mask the more useful finding —
-            // that the https route answers a 301 back to plain http. Real sends
-            // (BetaSmsService) leave verification on.
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => 0,
+            CURLOPT_NOBODY         => true,
+            CURLOPT_TIMEOUT        => 15,
+            CURLOPT_CONNECTTIMEOUT => 10,
         ]);
-
-        if ($route['proxy'] ?? null) {
-            curl_setopt($ch, CURLOPT_PROXY, $route['proxy']);
-        }
-
-        if ($route['ip'] ?? null) {
-            $parts = parse_url($route['url']);
-            $host  = $parts['host'] ?? 'login.betasms.com';
-            $port  = $parts['port'] ?? (($parts['scheme'] ?? 'http') === 'https' ? 443 : 80);
-            curl_setopt($ch, CURLOPT_RESOLVE, [$host.':'.$port.':'.$route['ip']]);
-        }
-
-        $body = trim((string) curl_exec($ch));
+        curl_exec($ch);
         $err  = curl_error($ch);
-        $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
-        if ($err) {
-            return [false, $err];
-        }
-
-        $code = trim(explode('|', $body)[0]);
-        if (preg_match('/^\d{4}$/', $code)) {
-            return [true, $code];
-        }
-
-        if ($http >= 300 && $http < 400) {
-            return [false, 'HTTP '.$http.' redirect to plain http — cannot carry a send on its own'];
-        }
-
-        return [false, 'HTTP '.$http.', gateway did not answer with a status code'];
+        return $err ? [false, $err] : [true, 'HTTP '.$code];
     }
 
-    private function rawPost(array $fields): string
+    /**
+     * The address this server appears as on the internet, for a whitelist
+     * request. Sends nothing about the server but the request itself.
+     */
+    private function publicIp(): string
     {
-        $ch = curl_init(config('services.betasms.endpoint') ?: 'http://login.betasms.com/api/');
+        $ch = curl_init('https://api.ipify.org');
         curl_setopt_array($ch, [
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => http_build_query($fields),
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 25,
+            CURLOPT_TIMEOUT        => 12,
+            CURLOPT_CONNECTTIMEOUT => 8,
         ]);
-        $r = curl_exec($ch);
+        $ip  = trim((string) curl_exec($ch));
+        $err = curl_error($ch);
         curl_close($ch);
 
-        return trim((string) $r);
+        if ($err || !filter_var($ip, FILTER_VALIDATE_IP)) {
+            return '<fg=yellow>could not determine</>'.($err ? ' ('.$err.')' : '');
+        }
+
+        return $ip;
     }
 
-    /** Show enough of the username to recognise it, not enough to reuse it. */
+    /** Show enough of the value to recognise it, not enough to reuse it. */
     private function mask(string $value): string
     {
         if (strlen($value) <= 4) {

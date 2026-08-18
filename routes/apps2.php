@@ -489,6 +489,10 @@ Route::middleware(['auth'])->group(function () {
         Route::get ('/report/export-csv',           [\App\Http\Controllers\SpecialAssignmentController::class, 'exportCsv'])->name('report.export-csv');
         Route::post('/bills/store',                 [\App\Http\Controllers\SpecialAssignmentController::class, 'storeBill'])->name('bills.store');
         Route::post('/bills/pay',                   [\App\Http\Controllers\SpecialAssignmentController::class, 'recordBillPayment'])->name('bills.pay');
+        // Payments are collected item by item, so the form has to know what the
+        // bill is made of and what is still owed on each part of it.
+        Route::get ('/bills/{id}/sheet',            [\App\Http\Controllers\SpecialAssignmentController::class, 'billPaymentSheet'])->name('bills.sheet');
+        Route::get ('/bills/receipt/{id}',          [\App\Http\Controllers\SpecialAssignmentController::class, 'printBillReceipt'])->name('bills.receipt');
 
         // The contravention tariff. Bills themselves are raised automatically
         // when a record is found in contravention, so there is no longer a

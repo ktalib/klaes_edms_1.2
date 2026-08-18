@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\SpaNotice;
-use App\Services\BetaSmsService;
+use App\Services\BulkSmsNgService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -48,7 +48,7 @@ class SpaTriggerSecondService extends Command
             return 0;
         }
 
-        $sms    = app(BetaSmsService::class);
+        $sms    = app(BulkSmsNgService::class);
         $count  = 0;
         $failed = 0;
 

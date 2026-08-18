@@ -72,6 +72,19 @@ return [
         'ip'       => env('BETASMS_IP'),
     ],
 
+    /*
+     | Bulk-SMS.ng — the SPAS notice provider. Distinct from 'bulksmsnigeria'
+     | below, which is a different vendor entirely. Credentials are the account
+     | login, so they live in .env and are never committed; spa:sms-doctor says
+     | exactly what to add when they are missing on a server.
+     */
+    'bulk_sms_ng' => [
+        'email'    => env('BULK_SMS_NG_EMAIL'),
+        'password' => env('BULK_SMS_NG_PASSWORD'),
+        'sender'   => env('BULK_SMS_NG_SENDER', 'SPAS'),
+        'gateway'  => env('BULK_SMS_NG_GATEWAY', '1'),
+    ],
+
     'bulksmsnigeria' => [
         'api_token' => env('BULKSMSNG_API_TOKEN', '488|sKKj8eoZkgxFWLvdaBobT2aISYSZT055IcFJjZA994a7f693'),
         'sender' => env('BULKSMSNG_SENDER', 'KANGIS'),

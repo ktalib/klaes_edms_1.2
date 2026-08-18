@@ -541,9 +541,8 @@
                 $sheetLga = trim((string) ($record->lga_derived ?? $record->lga ?? ''));
                 $isStateAllocation = $sheetSource === 'State Government';
 
-                // A state entity and its address make one line: "<Entity>, <plot>,
-                // <district>, <LGA>, Kano" — the entity is the head of the address,
-                // not a separate block.
+                // A state entity prints as a name over its address — the same shape
+                // as the Local Government block, which names the council first.
                 $sheetAddress = '';
                 if ($isStateAllocation) {
                     $parts = array_values(array_filter(array_map(
@@ -562,19 +561,18 @@
                         $parts[] = 'Kano';
                     }
 
-                    if ($sheetEntity !== '') {
-                        array_unshift($parts, $sheetEntity);
-                    }
-
                     $sheetAddress = implode(', ', $parts);
                 }
             @endphp
             <div class="recipient-block">
                 @if($isStateAllocation)
-                    {{-- One underlined line: the entity heads its own address. No
-                         salutation — nobody enters one for a state entity. --}}
+                    {{-- One heading line — source then the entity it allocated through,
+                         e.g. "State Government HOUSING" — with the address ruled beneath
+                         it. padding-left is zeroed so both lines start flush with
+                         "Our Ref:" above them. --}}
+                    <span style="text-transform: uppercase;">{{ trim($sheetSource . ' ' . ($sheetEntity ?: '............')) }}</span><br>
                     <span class="underline-box"
-                        style="min-width: 420px; border-bottom-width: 2px;">{{ $sheetAddress ?: '............' }}</span>
+                        style="min-width: 420px; padding-left: 0;">{{ $sheetAddress ?: '............' }}</span>
                 @else
                     The Chairman,<br>
                     <span class="underline-box"

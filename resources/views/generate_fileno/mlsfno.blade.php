@@ -18,7 +18,7 @@
                 height: 40px !important;
             }
         </style>
-    @endpush
+     @endpush
     <style>
         /* Action Dropdown Styles */
         .action-dropdown {
@@ -2092,6 +2092,28 @@
                                        readonly>
                             </div>
 
+                            <!-- Related / Old File Number -->
+                            <div class="mb-4">
+                                <div class="flex items-center justify-between mb-2">
+                                    <label for="editRelatedFileNo" id="editRelatedFileNoLabel" class="block text-sm font-medium text-gray-700">
+                                        <i data-lucide="link" class="w-4 h-4 inline mr-1"></i>
+                                        Related File Number
+                                    </label>
+                                    <label class="inline-flex items-center text-xs font-medium text-gray-600 cursor-pointer select-none">
+                                        <input type="checkbox" id="editIsOldFileNo" onchange="onEditIsOldFileNoChange(this.checked)"
+                                               class="mr-2 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                        Old File Number
+                                    </label>
+                                </div>
+                                <input type="text" id="editRelatedFileNo" name="related_fileno"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
+                                       placeholder="Enter related file number">
+                                <!-- Tells the backend which column the value belongs in -->
+                                <input type="hidden" id="editIsOldFileNoValue" name="is_old_fileno" value="0">
+                                <p id="editRelatedFileNoHint" class="mt-1 text-xs text-gray-500">
+                                    Separate multiple related file numbers with a comma.
+                                </p>
+                            </div>
 
                              <!-- Customer Type -->
                               <div class="mb-4">

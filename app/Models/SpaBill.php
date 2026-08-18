@@ -35,6 +35,12 @@ class SpaBill extends Model
         return $this->hasMany(SpaPayment::class, 'spa_bill_id');
     }
 
+    /** What this bill was composed of, as at the moment it was raised. */
+    public function lines()
+    {
+        return $this->hasMany(SpaBillLine::class, 'spa_bill_id');
+    }
+
     public function getTotalPaidAttribute(): float
     {
         return (float) $this->payments()->sum('amount_paid');

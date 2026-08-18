@@ -1474,6 +1474,9 @@ class FileNumberController extends Controller
                     'purpose_id'    => $pe->purpose_id,
                     'phone_no'      => $pe->phone_no,
                     'address'       => $pe->address,
+                    // Plot extensions keep no related/old file number of their own.
+                    'related_fileno' => null,
+                    'old_fileno'     => null,
                 ]);
             }
 
@@ -1506,7 +1509,9 @@ class FileNumberController extends Controller
                     'ma.property_house_no as ma_house_no',
                     'ma.property_street_name as ma_street_name',
                     'mls_file_no.customer_type',
-                    'mls_file_no.purpose_id'
+                    'mls_file_no.purpose_id',
+                    // The edit modal shows one field for both, picked by a checkbox.
+                    'mls_file_no.old_fileno'
                 ])
                 ->where('fileNumber.id', $id)
                 ->where(function ($q) {
@@ -1563,7 +1568,9 @@ class FileNumberController extends Controller
             'phone_no' => 'nullable|string|max:50',
             'address' => 'nullable|string|max:255',
             'rep_phone_no' => 'nullable|string|max:50',
-            'rep_address' => 'nullable|string|max:255'
+            'rep_address' => 'nullable|string|max:255',
+            'related_fileno' => 'nullable|string|max:255',
+            'is_old_fileno' => 'nullable|boolean'
         ]);
 
         if ($validator->fails()) {
@@ -1713,6 +1720,27 @@ class FileNumberController extends Controller
                 $updateData['rep_address'] = $request->rep_address;
             }
 
+            // The edit modal ships a single file-number field plus an "Old File Number"
+            // checkbox that decides which column it lands in: related_fileno (a JSON
+            // array on fileNumber) or old_fileno (a plain string on mls_file_no).
+            // Only one is kept, so ticking/unticking the box clears the other.
+            $isOldFileNo = false;
+            $relatedFileNoInput = '';
+            if ($request->has('related_fileno')) {
+                $isOldFileNo = filter_var($request->input('is_old_fileno'), FILTER_VALIDATE_BOOLEAN);
+                $relatedFileNoInput = trim((string) $request->input('related_fileno'));
+                $relatedFileNumbers = array_values(array_filter(
+                    array_map('trim', preg_split('/\s*,\s*/', $relatedFileNoInput)),
+                    fn ($v) => $v !== ''
+                ));
+
+                if (\Illuminate\Support\Facades\Schema::connection('sqlsrv')->hasColumn('fileNumber', 'related_fileno')) {
+                    $updateData['related_fileno'] = (!$isOldFileNo && !empty($relatedFileNumbers))
+                        ? json_encode($relatedFileNumbers)
+                        : null;
+                }
+            }
+
             // Update the record in fileNumber
             DB::connection('sqlsrv')
                 ->table('fileNumber')
@@ -1757,6 +1785,13 @@ class FileNumberController extends Controller
                 }
                 if ($request->has('rep_address')) {
                     $mlsUpdateData['rep_address'] = $request->rep_address;
+                }
+
+                if ($request->has('related_fileno')
+                    && \Illuminate\Support\Facades\Schema::connection('sqlsrv')->hasColumn('mls_file_no', 'old_fileno')) {
+                    $mlsUpdateData['old_fileno'] = ($isOldFileNo && $relatedFileNoInput !== '')
+                        ? $relatedFileNoInput
+                        : null;
                 }
 
                 if (!empty($mlsUpdateData)) {

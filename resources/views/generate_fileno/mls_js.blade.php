@@ -3501,6 +3501,17 @@
                     document.getElementById('editAddress').value = data.address || '';
                 }
 
+                // Related / Old file number share one input. An existing old_fileno wins
+                // and ticks the checkbox, which relabels the field.
+                const relatedInput = document.getElementById('editRelatedFileNo');
+                if (relatedInput) {
+                    const oldFileNo = (data.old_fileno || '').toString().trim();
+                    relatedInput.value = oldFileNo || parseRelatedFileNo(data.related_fileno);
+                    const oldCheckbox = document.getElementById('editIsOldFileNo');
+                    if (oldCheckbox) oldCheckbox.checked = oldFileNo !== '';
+                    onEditIsOldFileNoChange(oldFileNo !== '');
+                }
+
                 const modal = document.getElementById('editModal');
                 if (modal) {
                      // TELEPORT: Move modal to body
@@ -3532,6 +3543,50 @@
                     confirmButtonColor: '#ef4444'
                 });
             });
+    }
+
+    // related_fileno is stored as a JSON array on fileNumber, but older rows hold a
+    // plain string. Render either shape as a comma-separated list for the edit field.
+    function parseRelatedFileNo(raw) {
+        const val = (raw === null || raw === undefined) ? '' : raw.toString().trim();
+        if (!val) return '';
+        if (val.startsWith('[')) {
+            try {
+                const arr = JSON.parse(val);
+                return Array.isArray(arr) ? arr.filter(Boolean).join(', ') : '';
+            } catch (e) {
+                return '';
+            }
+        }
+        return val;
+    }
+
+    // The Edit modal carries one file-number field. Ticking "Old File Number" relabels
+    // it and flips the hidden flag so the backend saves it as the old file number
+    // (mls_file_no.old_fileno) instead of a related file number.
+    function onEditIsOldFileNoChange(checked) {
+        const isOld = !!checked;
+        const label = document.getElementById('editRelatedFileNoLabel');
+        const hidden = document.getElementById('editIsOldFileNoValue');
+        const input = document.getElementById('editRelatedFileNo');
+        const hint = document.getElementById('editRelatedFileNoHint');
+
+        if (hidden) hidden.value = isOld ? '1' : '0';
+        if (label) {
+            label.innerHTML = '<i data-lucide="link" class="w-4 h-4 inline mr-1"></i>'
+                + (isOld ? 'Old File Number' : 'Related File Number');
+        }
+        if (input) {
+            input.placeholder = isOld ? 'Enter old file number' : 'Enter related file number';
+        }
+        if (hint) {
+            hint.textContent = isOld
+                ? "Saved as this file's previous (old) file number."
+                : 'Separate multiple related file numbers with a comma.';
+        }
+        if (window.lucide && typeof lucide.createIcons === 'function') {
+            lucide.createIcons();
+        }
     }
 
     function closeEditModal() {
@@ -4446,7 +4501,8 @@
             landUses: @json($landUses),
             purpose: '',
             prefix: '',
-            customerType: '',
+            // Most commissioned files are individuals — default the card to it.
+            customerType: 'Individual',
             gender: '',
             // Passport is an image upload filed into the new file number's EDMS folder.
             // `passport` holds only the chosen file's name — the image itself stays on the
@@ -6347,7 +6403,7 @@
                     // Reset SIT-specific overrides if switching from SIT
                     if (this.landUse === 'SIT') {
                         this.landUse = '';
-                        this.customerType = '';
+                        this.customerType = 'Individual';
                         this.purposes = [];
                         this.purpose = '';
                         this.prefix = '';

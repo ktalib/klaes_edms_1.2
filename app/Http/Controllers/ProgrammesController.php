@@ -3247,18 +3247,77 @@ class ProgrammesController extends Controller
 
     // ─── Special Assignment Bills & Payments ──────────────────────────────────
 
+    /**
+     * Row buttons for a SPAS bill.
+     *
+     * "Pay" disappears once nothing is owed — a paid bill with a live Pay button
+     * invites a second collection against it. The receipt of the most recent
+     * payment stays reachable for reprinting, which is the copy an owner asks
+     * for after losing theirs.
+     */
+    private function spaBillActions(\App\Models\SpaBill $bill): string
+    {
+        $buttons = [];
+
+        if ($bill->status !== 'paid') {
+            $buttons[] = '<button data-id="'.$bill->id.'" class="btn-pay text-xs px-3 py-1 rounded bg-[rgb(186,191,12)] text-white">Pay</button>';
+        }
+
+        $latest = $bill->payments->sortByDesc('id')->first();
+
+        if ($latest) {
+            $buttons[] = '<a href="'.route('special-assignment.bills.receipt', $latest->id).'" target="_blank" '
+                .'class="text-xs px-3 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50">Receipt</a>';
+        }
+
+        return $buttons ? '<div class="flex items-center gap-2">'.implode('', $buttons).'</div>' : '—';
+    }
+
+    /**
+     * The bill-item columns the bills table shows, in tariff order.
+     *
+     * Taken from what bills were actually COMPOSED OF, not from the current
+     * tariff: an item removed from the tariff still has to have a column, or an
+     * old bill's figures would vanish from the table while its total kept
+     * counting them. Tariff order is applied where it is known so the columns
+     * read the way the settings screen does, with anything retired sorted last.
+     *
+     * @return array<int,string>
+     */
+    private function spaBillItemColumns(): array
+    {
+        $used = \App\Models\SpaBillLine::select('name')->distinct()->pluck('name');
+
+        if ($used->isEmpty()) {
+            return [];
+        }
+
+        $order = \App\Models\SpaBillItem::orderBy('sort_order')->pluck('sort_order', 'name');
+
+        return $used->sortBy(fn ($name) => $order[$name] ?? PHP_INT_MAX)->values()->all();
+    }
+
     private function spaBills(Request $request)
     {
         $csrf = csrf_token();
 
+        // One column per bill item, so the composition of a bill is readable at a
+        // glance instead of being buried in the description sentence.
+        $itemColumns = $this->spaBillItemColumns();
+
         if ($request->ajax()) {
-            $query = \App\Models\SpaBill::with('application')->orderByDesc('created_at');
+            // Payments and lines come along so a row can offer a receipt reprint
+            // and show its per-item figures without a query per row.
+            $query = \App\Models\SpaBill::with(['application', 'payments', 'lines'])->orderByDesc('created_at');
             $total = $query->count();
             $data  = $query->skip($request->input('start', 0))
                            ->take($request->input('length', 10))
                            ->get()
-                           ->map(function ($b, $i) use ($request) {
-                               return [
+                           ->map(function ($b, $i) use ($request, $itemColumns) {
+                               $paid    = (float) $b->payments->sum('amount_paid');
+                               $byName  = $b->lines->keyBy('name');
+
+                               $row = [
                                    'DT_RowIndex'  => $request->input('start', 0) + $i + 1,
                                    'reference_id' => $b->reference_id ?? '—',
                                    'file_number'  => optional($b->application)->file_number ?? '—',
@@ -3266,10 +3325,24 @@ class ProgrammesController extends Controller
                                    'bill_type'    => $b->bill_type ?? '—',
                                    'description'  => $b->description ?? '—',
                                    'amount'       => number_format($b->amount, 2),
+                                   'paid'         => number_format($paid, 2),
+                                   'balance'      => number_format(max(0, (float) $b->amount - $paid), 2),
                                    'due_date'     => $b->due_date?->format('d/m/Y') ?? '—',
                                    'status'       => $b->status,
-                                   'action'       => '<button data-id="'.$b->id.'" class="btn-pay text-xs px-3 py-1 rounded bg-[rgb(186,191,12)] text-white">Pay</button>',
+                                   'action'       => $this->spaBillActions($b),
                                ];
+
+                               // Keyed by position rather than by name: item names
+                               // contain spaces and are edited by officers, and the
+                               // column list is built from the same source, so the
+                               // two cannot drift apart.
+                               foreach ($itemColumns as $index => $name) {
+                                   $row['item_'.$index] = isset($byName[$name])
+                                       ? number_format($byName[$name]->amount, 2)
+                                       : '—';
+                               }
+
+                               return $row;
                            });
 
             return response()->json([
@@ -3293,7 +3366,7 @@ class ProgrammesController extends Controller
         $PageTitle       = 'Special Assignment – Bills';
         $PageDescription = 'Manage billing for Special Assignment cases.';
 
-        return view('programmes.spa_bills', compact('PageTitle', 'PageDescription', 'stats', 'applications'));
+        return view('programmes.spa_bills', compact('PageTitle', 'PageDescription', 'stats', 'applications', 'itemColumns'));
     }
 
     private function spaPayments(Request $request)

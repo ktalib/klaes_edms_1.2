@@ -9,7 +9,7 @@ use App\Models\SpaNotice;
 use App\Models\SpaDepartmentReferral;
 use App\Models\SpaMemo;
 use App\Models\SpaCertificate;
-use App\Services\BetaSmsService;
+use App\Services\BulkSmsNgService;
 use App\Services\SpaMobileService;
 use App\Services\UserNotificationService;
 use Illuminate\Http\Request;
@@ -1382,32 +1382,169 @@ class SpecialAssignmentController extends Controller
         ]);
     }
 
+    /**
+     * The items on a bill, with what is still owed on each.
+     *
+     * Feeds the payment form so an officer collects against the actual items
+     * rather than typing one lump figure. "Paid so far" is per ITEM, summed
+     * from previous payments' lines.
+     */
+    public function billPaymentSheet(int $id)
+    {
+        $bill = \App\Models\SpaBill::with(['lines', 'application'])->findOrFail($id);
+
+        $paidPerLine = \App\Models\SpaPaymentLine::whereIn('spa_bill_line_id', $bill->lines->pluck('id'))
+            ->selectRaw('spa_bill_line_id, SUM(amount_paid) AS paid')
+            ->groupBy('spa_bill_line_id')
+            ->pluck('paid', 'spa_bill_line_id');
+
+        $lines = $bill->lines->map(function ($line) use ($paidPerLine) {
+            $paid = (float) ($paidPerLine[$line->id] ?? 0);
+
+            return [
+                'id'          => $line->id,
+                'name'        => $line->name,
+                'amount'      => (float) $line->amount,
+                'paid'        => $paid,
+                'outstanding' => max(0, (float) $line->amount - $paid),
+            ];
+        })->values();
+
+        // Payments made before item-by-item entry existed have no lines, so the
+        // per-item figures above cannot account for them. Report the bill-level
+        // total separately rather than letting the form imply nothing is paid.
+        $billPaid    = (float) \App\Models\SpaPayment::where('spa_bill_id', $bill->id)->sum('amount_paid');
+        $allocated   = (float) $lines->sum('paid');
+        $unallocated = max(0, round($billPaid - $allocated, 2));
+
+        return response()->json([
+            'success' => true,
+            'bill'    => [
+                'id'           => $bill->id,
+                'reference_id' => $bill->reference_id,
+                'file_number'  => optional($bill->application)->file_number,
+                'owner_name'   => optional($bill->application)->owner_name,
+                'amount'       => (float) $bill->amount,
+                'status'       => $bill->status,
+                'total_paid'   => $billPaid,
+                'balance'      => max(0, (float) $bill->amount - $billPaid),
+                'unallocated'  => $unallocated,
+            ],
+            'lines'   => $lines,
+        ]);
+    }
+
+    /**
+     * Record a payment, item by item.
+     *
+     * The total is SUMMED FROM THE ITEMS on the server and never taken from the
+     * request: the browser sends what was collected against each item, and a
+     * posted total could disagree with them, leaving a receipt whose lines do
+     * not add up to its own figure.
+     *
+     * A single `amount_paid` is still accepted for bills that have no items
+     * (older hand-entered ones), so those keep working unchanged.
+     */
     public function recordBillPayment(Request $request)
     {
         $request->validate([
-            'spa_bill_id'  => 'required|exists:sqlsrv.spa_bills,id',
-            'amount_paid'  => 'required|numeric|min:0.01',
-            'payment_date' => 'required|date',
+            'spa_bill_id'          => 'required|exists:sqlsrv.spa_bills,id',
+            'payment_date'         => 'required|date',
+            'lines'                => 'array',
+            'lines.*.id'           => 'required|integer',
+            'lines.*.amount_paid'  => 'required|numeric|min:0',
+            'amount_paid'          => 'nullable|numeric|min:0',
         ]);
 
-        $bill = \App\Models\SpaBill::findOrFail($request->spa_bill_id);
+        $bill  = \App\Models\SpaBill::with('lines')->findOrFail($request->spa_bill_id);
+        $posted = collect($request->input('lines', []))
+            ->mapWithKeys(fn ($l) => [(int) $l['id'] => round((float) $l['amount_paid'], 2)])
+            ->filter(fn ($amount) => $amount > 0);
 
-        $payment = \App\Models\SpaPayment::create([
-            'spa_bill_id'        => $bill->id,
-            'spa_application_id' => $bill->spa_application_id,
-            'amount_paid'        => $request->amount_paid,
-            'receipt_number'     => $request->receipt_number,
-            'payment_date'       => $request->payment_date,
-            'payment_method'     => $request->payment_method ?? 'cash',
-            'recorded_by'        => auth()->user()->name ?? auth()->id(),
+        // Only items that belong to THIS bill, so a tampered or stale form
+        // cannot post an allocation against another bill's item.
+        $billLines = $bill->lines->keyBy('id');
+        $unknown   = $posted->keys()->reject(fn ($id) => $billLines->has($id));
+
+        if ($unknown->isNotEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This form is out of date — reopen the bill and try again.',
+            ], 422);
+        }
+
+        $total = $posted->isNotEmpty()
+            ? round($posted->sum(), 2)
+            : round((float) $request->input('amount_paid', 0), 2);
+
+        if ($total <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Enter an amount against at least one item.',
+            ], 422);
+        }
+
+        $alreadyPaid = (float) \App\Models\SpaPayment::where('spa_bill_id', $bill->id)->sum('amount_paid');
+        $balance     = round((float) $bill->amount - $alreadyPaid, 2);
+
+        // Refuse to collect more than is owed. Without this the bill goes 'paid'
+        // while the receipt shows a figure nobody can reconcile against it.
+        if ($total > $balance) {
+            return response()->json([
+                'success' => false,
+                'message' => 'That is more than the outstanding balance of ₦'.number_format($balance, 2).'.',
+            ], 422);
+        }
+
+        $payment = DB::connection('sqlsrv')->transaction(function () use ($bill, $posted, $billLines, $total, $request) {
+            $payment = \App\Models\SpaPayment::create([
+                'spa_bill_id'        => $bill->id,
+                'spa_application_id' => $bill->spa_application_id,
+                'amount_paid'        => $total,
+                'receipt_number'     => $request->receipt_number,
+                'payment_date'       => $request->payment_date,
+                'payment_method'     => $request->payment_method ?? 'cash',
+                'recorded_by'        => auth()->user()->name ?? auth()->id(),
+            ]);
+
+            foreach ($posted as $lineId => $amount) {
+                \App\Models\SpaPaymentLine::create([
+                    'spa_payment_id'   => $payment->id,
+                    'spa_bill_line_id' => $lineId,
+                    // Copied, not referenced — see SpaPaymentLine.
+                    'name'             => $billLines[$lineId]->name,
+                    'amount_paid'      => $amount,
+                ]);
+            }
+
+            $totalPaid = \App\Models\SpaPayment::where('spa_bill_id', $bill->id)->sum('amount_paid');
+            $bill->update(['status' => $totalPaid >= $bill->amount ? 'paid' : 'partial']);
+
+            return $payment;
+        });
+
+        $bill->refresh();
+
+        return response()->json([
+            'success'     => true,
+            'id'          => $payment->id,
+            'receipt_url' => route('special-assignment.bills.receipt', $payment->id),
+            'message'     => 'Payment of ₦'.number_format($total, 2).' recorded. Bill status: '.$bill->status.'.',
         ]);
+    }
 
-        // Update bill status
-        $totalPaid = \App\Models\SpaPayment::where('spa_bill_id', $bill->id)->sum('amount_paid');
-        $newStatus = $totalPaid >= $bill->amount ? 'paid' : 'partial';
-        $bill->update(['status' => $newStatus]);
+    /** Printable receipt for one payment, itemised as it was collected. */
+    public function printBillReceipt(int $id)
+    {
+        $payment = \App\Models\SpaPayment::with(['lines', 'bill.application', 'bill.lines'])->findOrFail($id);
 
-        return response()->json(['success' => true, 'id' => $payment->id, 'message' => 'Payment recorded. Bill status: ' . $newStatus . '.']);
+        // Everything paid on this bill BEFORE this receipt, so it can show what
+        // remains without the reader having to gather up the other receipts.
+        $priorPaid = (float) \App\Models\SpaPayment::where('spa_bill_id', $payment->spa_bill_id)
+            ->where('id', '<', $payment->id)
+            ->sum('amount_paid');
+
+        return view('special_assignment.bills.receipt', compact('payment', 'priorPaid'));
     }
 
     // ─── PRIVATE HELPERS ──────────────────────────────────────────────────────
@@ -1510,7 +1647,7 @@ class SpecialAssignmentController extends Controller
     {
         // Resolve per call: lastStatusCode()/lastFailureReason() describe the most
         // recent send on that instance, so a shared singleton would report stale state.
-        $sms = new BetaSmsService();
+        $sms = new BulkSmsNgService();
 
         try {
             $sent = $sms->send($phone, SpaNotice::smsBody($type));
