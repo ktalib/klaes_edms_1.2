@@ -10,7 +10,7 @@
          Match on user-is-super-admin, not on the role string. --}}
     <meta name="user-role" content="{{ auth()->user()->assign_role }}">
     <meta name="user-is-super-admin" content="{{ auth()->user()->isSuperAdmin() ? 'true' : 'false' }}">
-  @endauth
+  @endauth 
   <title>KLAES File Tracker</title>
   {{-- Set theme before paint to avoid flash --}}
   <script>

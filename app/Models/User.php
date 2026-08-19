@@ -453,10 +453,16 @@ class User extends Authenticatable implements MustVerifyEmail
      * matches the hierarchy in config/file_request_priority.php. OFS requests are
      * prioritised, colour-coded on the SCB Feedback table, and floated to the top
      * of the SCB Monitor's mobile list.
+     *
+     * Super Admins (users.type / assign_role = "Super Admin" / "Supper Admin")
+     * always qualify, whatever their rank reads — their users.rank is often a
+     * local title (e.g. "HOS") that isn't part of the OFS hierarchy, which would
+     * otherwise hide the Send-File-Search-Request form from them entirely.
      */
     public function isOfs(): bool
     {
-        return \App\Models\FileSearchRequest::priorityFor($this->rank) > 0;
+        return $this->isSuperAdmin()
+            || \App\Models\FileSearchRequest::priorityFor($this->rank) > 0;
     }
 
     /**
