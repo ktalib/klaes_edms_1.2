@@ -51,6 +51,7 @@ use App\Http\Controllers\LandsOneStopShop\LossOfDocumentController;
 use App\Http\Controllers\LandsOneStopShop\TemporaryFileController;
 use App\Http\Controllers\Deeds\ParcelUpdate\PlotSubdivisionController;
 use App\Http\Controllers\Deeds\ParcelUpdate\PlotSeparationController;
+use App\Http\Controllers\Deeds\ParcelUpdate\DuplexParcelUpdateController;
 use App\Http\Controllers\Deeds\ParcelUpdate\PlotMergerController;
 use App\Http\Controllers\ChangeOfPurpose\ChangeOfPurposeController;
 use App\Http\Controllers\TitleStatus\TitleStatusController;
@@ -380,6 +381,30 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/find-by-file/{fileNumber}', [PlotMergerController::class, 'findByFileNo'])->name('find-by-file');
         Route::get('/approved-list', [PlotMergerController::class, 'approvedList'])->name('approved-list');
         Route::post('/{id}/knupda', [PlotMergerController::class, 'updateKnupda'])->name('knupda')->where('id', '[0-9]+');
+    });
+
+    // Duplex Parcel Update - several parcel updates carried as ONE instruction, on a
+    // page of its own. The Land confirm/reject step lives here too, so nothing is
+    // added to the existing commissioning screen. A one-stage duplex is valid.
+    Route::prefix('duplex-parcel-update')->name('duplex-parcel-update.')->group(function () {
+        Route::get('/', [DuplexParcelUpdateController::class, 'index'])->name('index');
+        Route::post('/', [DuplexParcelUpdateController::class, 'store'])->name('store');
+        Route::get('/{id}', [DuplexParcelUpdateController::class, 'show'])->name('show')->where('id', '[0-9]+');
+        Route::post('/{id}/stages/{stageId}', [DuplexParcelUpdateController::class, 'saveStage'])->name('save-stage')->where(['id' => '[0-9]+', 'stageId' => '[0-9]+']);
+        Route::post('/{id}/stages/{stageId}/reject', [DuplexParcelUpdateController::class, 'rejectStage'])->name('reject-stage')->where(['id' => '[0-9]+', 'stageId' => '[0-9]+']);
+        Route::post('/{id}/knupda', [DuplexParcelUpdateController::class, 'updateKnupda'])->name('knupda')->where('id', '[0-9]+');
+        Route::post('/{id}/approve', [DuplexParcelUpdateController::class, 'approve'])->name('approve')->where('id', '[0-9]+');
+        Route::post('/{id}/reject', [DuplexParcelUpdateController::class, 'reject'])->name('reject')->where('id', '[0-9]+');
+        Route::post('/{id}/generate-application', [DuplexParcelUpdateController::class, 'generateApplication'])->name('generate-application')->where('id', '[0-9]+');
+        Route::get('/{id}/print-application', [DuplexParcelUpdateController::class, 'printApplication'])->name('print-application')->where('id', '[0-9]+');
+        Route::post('/{id}/generate-recommendation', [DuplexParcelUpdateController::class, 'generateRecommendation'])->name('generate-recommendation')->where('id', '[0-9]+');
+        Route::get('/{id}/print-recommendation', [DuplexParcelUpdateController::class, 'printRecommendation'])->name('print-recommendation')->where('id', '[0-9]+');
+        Route::post('/{id}/generate-conveyance', [DuplexParcelUpdateController::class, 'generateConveyance'])->name('generate-conveyance')->where('id', '[0-9]+');
+        Route::get('/{id}/print-conveyance', [DuplexParcelUpdateController::class, 'printConveyance'])->name('print-conveyance')->where('id', '[0-9]+');
+        Route::post('/{id}/send-to-land', [DuplexParcelUpdateController::class, 'sendToLand'])->name('send-to-land')->where('id', '[0-9]+');
+        Route::get('/{id}/commission', [DuplexParcelUpdateController::class, 'commissionView'])->name('commission')->where('id', '[0-9]+');
+        Route::post('/{id}/commit', [DuplexParcelUpdateController::class, 'commit'])->name('commit')->where('id', '[0-9]+');
+        Route::delete('/{id}', [DuplexParcelUpdateController::class, 'destroy'])->name('destroy')->where('id', '[0-9]+');
     });
 
     Route::prefix('loss-of-document')->name('loss-of-document.')->group(function () {
@@ -1054,6 +1079,9 @@ Route::middleware(['auth'])->group(function () {
         // Every RofO in a batch, for the Batches tab — unpaginated on purpose.
         Route::get('/batch/{batchId}/children', [\App\Http\Controllers\LandRofoController::class, 'batchChildren'])->name('batch-children');
         Route::post('/batch-print-log', [\App\Http\Controllers\LandRofoController::class, 'batchPrintLog'])->name('batch-print-log');
+        // How far a previous split print of these ids got, so the print dialog can
+        // offer to resume run 2 instead of reprinting the Originals.
+        Route::post('/batch-print-status', [\App\Http\Controllers\LandRofoController::class, 'batchPrintStatus'])->name('batch-print-status');
         Route::post('/{id}/generate', [\App\Http\Controllers\LandRofoController::class, 'generate'])->name('generate');
         Route::post('/{id}/assign-security-paper', [\App\Http\Controllers\LandRofoController::class, 'assignSecurityPaperCode'])->name('assign-security-paper');
         Route::post('/{id}/reset-security-paper', [\App\Http\Controllers\LandRofoController::class, 'resetSecurityPaperCode'])->name('reset-security-paper');

@@ -43,6 +43,10 @@
         $watermarkText = $isCtc ? 'CERTIFIED TRUE COPY' : (($status === 'Certified True Copy') ? 'CERTIFIED TRUE COPY' : 'ORIGINAL');
         $qrPayload = $trackingId ?: $fileNumber;
 
+        // Passport photograph filed at commissioning (already a data URI or URL, resolved
+        // by CommissioningSheetController); absent on files commissioned without one.
+        $passportImage = $data['passport_image'] ?? '';
+
         try {
             if (!empty($timeCommissioned)) {
                 $timeCommissioned = \Carbon\Carbon::parse($timeCommissioned)->format('h:i A');
@@ -168,6 +172,52 @@
             width: 24mm;
             height: 24mm;
             image-rendering: pixelated;
+        }
+
+        /* QR keeps the centre of the sheet; the passport sits in the right margin beside it. */
+        .qr-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        .qr-table td {
+            padding: 0;
+            vertical-align: top;
+        }
+
+        .qr-table .qr-side {
+            width: 18mm;
+        }
+
+        .qr-table .passport-cell {
+            text-align: right;
+        }
+
+        .passport-box {
+            width: 30mm;
+            height: 38mm;
+            border: 0.3mm solid #444444;
+            display: inline-block;
+            overflow: hidden;
+        }
+
+        .passport-box img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .passport-caption {
+            font-size: 3mm;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.3mm;
+            margin-top: 1.5mm;
+            text-align: center;
+            width: 30mm;
+            display: inline-block;
         }
 
         .qr-subtitle {
@@ -306,7 +356,7 @@
             <table class="header-table">
                 <tr>
                     <td class="logo-cell">
-                        <img src="{{ asset('assets/logo/logo1.jpg') }}" alt="Left Logo" onerror="this.style.display='none'">
+                        <img src="http://app.klaes.ng/assets/logo/ministry2.png" alt="Ministry Logo" onerror="this.style.display='none'">
                     </td>
                     <td class="title-cell">
                         <h1 class="title-main">MINISTRY OF LAND &amp; PHYSICAL PLANNING</h1>
@@ -319,11 +369,28 @@
                 </tr>
             </table>
 
-            <div class="qr-wrap">
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={{ urlencode($qrPayload) }}" alt="QR Code">
-                    @if($isOss)
-                    <div class="qr-subtitle" style="color:#ea1b1b">LANDS ONE STOP SHOP</div>
-                    @endif
+            <table class="qr-table">
+                <tr>
+                    <td class="qr-side"></td>
+                    <td>
+                        <div class="qr-wrap">
+                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={{ urlencode($qrPayload) }}" alt="QR Code">
+                            @if($isOss)
+                            <div class="qr-subtitle" style="color:#ea1b1b">LANDS ONE STOP SHOP</div>
+                            @endif
+                        </div>
+                    </td>
+                    {{-- The applicant's passport photograph, uploaded when the file number was
+                         generated. Files commissioned without one simply print nothing here. --}}
+                    <td class="qr-side passport-cell">
+                        @if(!empty($passportImage))
+                        <div class="passport-box">
+                            <img src="{{ $passportImage }}" alt="Passport Photograph" onerror="this.parentElement.style.display='none'">
+                        </div>
+                        @endif
+                    </td>
+                </tr>
+            </table>
             <div class="fields">
                 {{-- On an ST sheet the ST number leads and the CON mother file follows;
                      everywhere else the file's own number comes first. --}}
@@ -418,7 +485,7 @@
         </div>{{-- end .sheet-body --}}
 <br><br>
         <div class="sheet-footer">
-            <img src="http://app.klaes.ng/storage/upload/logo/Klase.png" alt="Left Footer Logo" class="footer-logo-left" style="height: 16mm; width: auto; max-height: 16mm; object-fit: contain;" onerror="this.style.display='none'">
+            <img src="http://app.klaes.ng/assets/logo/Left_Logo.png" alt="Left Footer Logo" class="footer-logo-left" style="height: 16mm; width: auto; max-height: 16mm; object-fit: contain;" onerror="this.style.display='none'">
             <img src="http://app.klaes.ng/assets/logo/las.jpg" alt="Right Footer Logo" class="footer-logo-right" onerror="this.style.display='none'">
         </div>
     </div>

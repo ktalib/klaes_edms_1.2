@@ -1233,6 +1233,21 @@ function rofoPill(ok, okLabel, pendingLabel) {
         + (ok ? okLabel : pendingLabel) + '</span>';
 }
 
+// The Printed column of the expanded batch table. A split print leaves a real
+// third state between printed and not: the Original is on the applicant's paper
+// while the office copies are still owed, and that is the state the resume prompt
+// acts on — so it has to be visible here too, not folded into "Printed".
+function rofoPrintStagePill(c) {
+    var stage = c.print_stage || (c.print_count > 0 ? 'complete' : 'none');
+
+    if (stage === 'originals') {
+        return '<span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-700" '
+            + 'title="The Original is printed. The Duplicate and Triplicate have not been.">Original only</span>';
+    }
+
+    return rofoPill(stage === 'complete', 'Printed', 'Not printed');
+}
+
 function loadRofoBatchChildren(batchId) {
     return fetch(ROFO_BATCH_URL + '/' + encodeURIComponent(batchId) + '/children', {
         credentials: 'same-origin',
@@ -1279,7 +1294,7 @@ document.addEventListener('click', function (e) {
                     + '<td class="px-4 py-2.5 text-xs text-slate-600">' + rofoEscHtml(c.location) + '</td>'
                     + '<td class="px-4 py-2.5 font-mono text-[11px] text-slate-500">' + rofoEscHtml(c.serial_no || '—') + '</td>'
                     + '<td class="px-4 py-2.5 text-center">' + rofoPill(generated, 'Generated', 'Pending') + '</td>'
-                    + '<td class="px-4 py-2.5 text-center">' + rofoPill(c.print_count > 0, 'Printed', 'Not printed') + '</td>'
+                    + '<td class="px-4 py-2.5 text-center">' + rofoPrintStagePill(c) + '</td>'
                     + '<td class="px-4 py-2.5 text-right whitespace-nowrap">'
                     +   (generated
                             ? '<a href="' + c.print_url + '" target="_blank" class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-50 rounded">Print</a>'
@@ -1333,9 +1348,79 @@ function printBatchGroup(batchId) {
         });
 }
 
+function rofoCsrf() {
+    return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+}
+
+// Entry point for every batch print. It asks the server where these ids stand
+// first, because a batch printed in two runs can have been abandoned between them
+// — the Originals already on security paper, the office copies still owed. Without
+// that answer the only thing the dialog can offer is starting the whole batch
+// again, which is a second Original on security stock for every file in it.
 function printRofoBatch(ids) {
     if (!ids || !ids.length) return;
 
+    var csrf = rofoCsrf();
+
+    fetch('{{ route('land-rofos.batch-print-status') }}', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' },
+        body: JSON.stringify({ ids: ids })
+    })
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+        if (data && data.success && data.awaiting_office > 0) {
+            askResumeOrRestart(ids, data, csrf);
+        } else {
+            askHowToPrintBatch(ids, csrf);
+        }
+    })
+    // The status is a convenience, not a gate: if it cannot be read the operator
+    // still gets the ordinary dialog rather than a dead button.
+    .catch(function () { askHowToPrintBatch(ids, csrf); });
+}
+
+// Shown when a previous split print stopped after the Originals. Resuming prints
+// only the office copies still owed, and only for the files that owe them.
+function askResumeOrRestart(ids, status, csrf) {
+    var resumeIds = status.resume_ids || [];
+
+    Swal.fire({
+        icon: 'info',
+        title: 'Resume this batch?',
+        html: '<b>' + status.awaiting_office + '</b> of <b>' + status.total + '</b> RofO(s) in this selection '
+            + 'already had the <b>Original</b> printed'
+            + (status.originals_at ? ' on <b>' + rofoEscHtml(status.originals_at) + '</b>' : '')
+            + ', but not the Duplicate and Triplicate.'
+            + '<div style="margin-top:14px;text-align:left;font-size:13px;line-height:1.5">'
+            +   '<div><b>Resume</b> &mdash; prints the <b>' + (resumeIds.length * 2) + '</b> office copies still '
+            +     'outstanding, on plain paper. No Original is reprinted, so no security paper is used.</div>'
+            +   '<div style="margin-top:6px"><b>Start over</b> &mdash; prints all <b>' + (ids.length * 3) + '</b> '
+            +     'letters again from the top, Originals included. Use this only if the first run was spoilt.</div>'
+            + '</div>',
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonText: 'Resume &mdash; Duplicate &amp; Triplicate',
+        denyButtonText: 'Start over',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#0f766e',
+        denyButtonColor: '#7c3aed',
+    }).then(function (r) {
+        if (r.isDenied) {
+            askHowToPrintBatch(ids, csrf);
+            return;
+        }
+        if (!r.isConfirmed) return;
+
+        // Claimed inside the click, or the pop-up blocker takes it.
+        var officeWindow = window.open('', 'rofoPrintOffice');
+        runOfficeCopies(resumeIds, csrf, officeWindow);
+    });
+}
+
+// The original dialog: one run, or two with the paper changed in between.
+function askHowToPrintBatch(ids, csrf) {
     // Two ways to put the same letters on paper. Asked here rather than as a second
     // button in the table, because the difference is only meaningful once explained
     // — and this is the dialog that already stands between a click and a lot of paper.
@@ -1348,7 +1433,8 @@ function printRofoBatch(ids) {
             +   '<div><b>All at once</b> &mdash; one run: each file\'s Original, Duplicate and Triplicate together.</div>'
             +   '<div style="margin-top:6px"><b>Originals first</b> &mdash; <b>two runs</b>. All the Originals print '
             +     'on their own, so the colour / security paper goes in the tray for those alone. Change the paper, '
-            +     'then the second run prints every Duplicate and Triplicate.</div>'
+            +     'then the second run prints every Duplicate and Triplicate. If you stop after the first run, this '
+            +     'button picks the batch up at the second one instead of starting again.</div>'
             + '</div>',
         showCancelButton: true,
         showDenyButton: true,
@@ -1365,15 +1451,14 @@ function printRofoBatch(ids) {
         // opening it after the await below is what pop-up blockers stop.
         var printWindow = window.open('', twoRuns ? 'rofoPrintOriginals' : 'rofoBatchPrint');
 
-        var csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-
-        // Logged once for the whole batch, on the first run. The second run puts the
-        // office copies of those same letters on paper — it is not a second print of
-        // the batch, and counting it again would overstate every batch by double.
+        // Each run records its own half. The Originals run is what counts the batch
+        // as printed; the office run that follows it does not count it a second
+        // time. Recording per run is also what leaves the batch resumable — a run
+        // that never happened is not stamped, so the dialog can still see it is due.
         fetch('{{ route('land-rofos.batch-print-log') }}', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' },
-            body: JSON.stringify({ ids: ids })
+            body: JSON.stringify({ ids: ids, copies: twoRuns ? 'original' : 'all' })
         })
         .then(function (res) { return res.json(); })
         .then(function (data) {
@@ -1394,6 +1479,32 @@ function printRofoBatch(ids) {
     });
 }
 
+// Run 2, from either route into it: straight after run 1, or resumed later. The
+// office copies are stamped only once they are actually sent to a printer, so a
+// run abandoned here leaves the batch exactly as resumable as it was.
+function runOfficeCopies(ids, csrf, officeWindow) {
+    if (!ids || !ids.length) {
+        if (officeWindow) { try { officeWindow.close(); } catch (e) {} }
+        Swal.fire({ icon: 'info', title: 'Nothing outstanding', text: 'Every office copy in this batch has already been printed.' });
+        return;
+    }
+
+    fetch('{{ route('land-rofos.batch-print-log') }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' },
+        body: JSON.stringify({ ids: ids, copies: 'office' })
+    })
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+        if (!data.success) throw new Error(data.message || 'Failed to record the print.');
+        submitBatchPrint(ids, csrf, officeWindow, 'office', 'rofoPrintOffice', true);
+    })
+    .catch(function (err) {
+        if (officeWindow) { try { officeWindow.close(); } catch (e) {} }
+        Swal.fire({ icon: 'error', title: 'Not printed', text: err.message || 'Network error recording the office copies.' });
+    });
+}
+
 // Run 2 of the two-run print. Deliberately a button the operator presses rather
 // than something that fires on its own: between the runs the paper in the tray has
 // to be changed, and only they know when that is done. The second tab is opened
@@ -1406,6 +1517,10 @@ function promptOfficeCopiesRun(ids, csrf) {
             + '<div style="margin-top:12px;text-align:left;font-size:13px;line-height:1.5">'
             +   'When that is done, run the second half: <b>' + (ids.length * 2) + '</b> office copies '
             +   '(a Duplicate and a Triplicate for each of the ' + ids.length + ' files), black &amp; white.'
+            + '</div>'
+            + '<div style="margin-top:10px;text-align:left;font-size:12px;color:#475569">'
+            +   'Not now is safe: the batch is held at this point, and pressing <b>Print batch</b> again '
+            +   'picks it up here rather than reprinting the Originals.'
             + '</div>',
         showCancelButton: true,
         confirmButtonText: 'Print Duplicate &amp; Triplicate',
@@ -1414,14 +1529,14 @@ function promptOfficeCopiesRun(ids, csrf) {
         allowOutsideClick: false,
     }).then(function (r) {
         if (!r.isConfirmed) {
-            // Declined for now. The batch is already recorded as printed, so the
-            // list still needs to catch up — and the office copies can be run again
-            // from the same button whenever the paper is ready.
+            // Declined for now. The Originals are already recorded, so the list has
+            // to catch up — and the office copies are still stamped as outstanding,
+            // which is what the resume prompt reads when the paper is ready.
             window.location.reload();
             return;
         }
         var officeWindow = window.open('', 'rofoPrintOffice');
-        submitBatchPrint(ids, csrf, officeWindow, 'office', 'rofoPrintOffice', true);
+        runOfficeCopies(ids, csrf, officeWindow);
     });
 }
 

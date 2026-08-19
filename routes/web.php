@@ -1306,6 +1306,9 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'commissioning-sheet'
     Route::get('/', [App\Http\Controllers\CommissioningSheetController::class, 'index'])->name('commissioning-sheet.index');
     Route::post('/store', [App\Http\Controllers\CommissioningSheetController::class, 'store'])->name('commissioning-sheet.store');
     Route::post('/generate-print', [App\Http\Controllers\CommissioningSheetController::class, 'generateAndPrint'])->name('commissioning-sheet.generate-print');
+    // Passport photograph for a commissioned file, as a data URI (used by the client-side
+    // PDF builder). Declared before /{id} so the literal segment is not read as an id.
+    Route::get('/passport-photo', [App\Http\Controllers\CommissioningSheetController::class, 'passportPhoto'])->name('commissioning-sheet.passport-photo');
     Route::get('/print/{id}', [App\Http\Controllers\CommissioningSheetController::class, 'print'])->name('commissioning-sheet.print');
     Route::get('/{id}', [App\Http\Controllers\CommissioningSheetController::class, 'show'])->name('commissioning-sheet.show');
     Route::put('/{id}', [App\Http\Controllers\CommissioningSheetController::class, 'update'])->name('commissioning-sheet.update');

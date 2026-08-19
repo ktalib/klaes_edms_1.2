@@ -39,6 +39,29 @@ class LandRecommendation extends Model
     const ROFO_PENDING = 'pending';
     const ROFO_GENERATED = 'generated';
 
+    // How far a split batch print got on this record. Derived from the two
+    // timestamps rather than stored, so it can never disagree with them.
+    const PRINT_STAGE_NONE      = 'none';       // nothing on paper yet
+    const PRINT_STAGE_ORIGINALS = 'originals';  // run 1 done, office copies outstanding
+    const PRINT_STAGE_COMPLETE  = 'complete';   // both halves on paper
+
+    public function getRofoPrintStageAttribute(): string
+    {
+        if ($this->rofo_office_copies_printed_at) {
+            return self::PRINT_STAGE_COMPLETE;
+        }
+
+        if ($this->rofo_originals_printed_at) {
+            return self::PRINT_STAGE_ORIGINALS;
+        }
+
+        // Records printed before these columns existed carry only the counter.
+        // Their run was the old single pass, which put all three copies on paper.
+        return (int) ($this->rofo_print_count ?? 0) > 0
+            ? self::PRINT_STAGE_COMPLETE
+            : self::PRINT_STAGE_NONE;
+    }
+
     protected $fillable = [
         'file_number',
         'old_file_number',
@@ -78,6 +101,9 @@ class LandRecommendation extends Model
         'rofo_status',
         'rofo_generated_at',
         'rofo_print_count',
+        'rofo_originals_printed_at',
+        'rofo_office_copies_printed_at',
+        'rofo_print_run_mode',
         'rofo_survey_fees',
         'rofo_dev_charge',
         'rofo_director_survey',
@@ -131,6 +157,8 @@ class LandRecommendation extends Model
         // 'development_charge' => 'decimal:2',
         'approved_at' => 'datetime',
         'rofo_generated_at' => 'datetime',
+        'rofo_originals_printed_at' => 'datetime',
+        'rofo_office_copies_printed_at' => 'datetime',
         'application_date' => 'date',
         'use_standard_template' => 'boolean',
         'is_reissuance' => 'boolean',

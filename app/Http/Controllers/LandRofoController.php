@@ -49,7 +49,7 @@ class LandRofoController extends Controller
             ->get([
                 'id', 'batch_seq', 'file_number', 'applicant_name', 'plot_number', 'location',
                 'purpose_of_clause', 'land_use', 'status', 'rofo_status', 'land_rofo_serial_no',
-                'rofo_print_count',
+                'rofo_print_count', 'rofo_originals_printed_at', 'rofo_office_copies_printed_at',
             ]);
 
         if ($children->isEmpty()) {
@@ -72,6 +72,9 @@ class LandRofoController extends Controller
                 'rofo_status'    => $c->rofo_status,
                 'serial_no'      => $c->land_rofo_serial_no,
                 'print_count'    => (int) ($c->rofo_print_count ?? 0),
+                // 'none' | 'originals' | 'complete' -- the batch table shows which
+                // half of a split print this child is still owed.
+                'print_stage'    => $c->rofo_print_stage,
                 'print_url'      => route('land-rofos.print', $c->id),
             ])->values(),
         ]);
@@ -976,7 +979,16 @@ class LandRofoController extends Controller
         ]);
     }
 
-    public function batchPrintLog(Request $request)
+    /**
+     * Where a batch stands between the two runs of a split print.
+     *
+     * A split print is Originals on security paper, then Duplicate + Triplicate on
+     * plain paper, with the tray reloaded in between. The gap is where a run gets
+     * abandoned, so the dialog asks this first: if the Originals are already on
+     * paper it offers to resume from the office copies instead of starting the
+     * whole batch again.
+     */
+    public function batchPrintStatus(Request $request)
     {
         $ids = array_filter((array) $request->input('ids', []), 'is_numeric');
 
@@ -986,12 +998,68 @@ class LandRofoController extends Controller
 
         $records = LandRecommendation::whereIn('id', $ids)
             ->where('rofo_status', LandRecommendation::ROFO_GENERATED)
+            ->get(['id', 'file_number', 'rofo_print_count',
+                   'rofo_originals_printed_at', 'rofo_office_copies_printed_at', 'rofo_print_run_mode']);
+
+        $byStage = $records->groupBy('rofo_print_stage');
+
+        $awaitingOffice = $byStage->get(LandRecommendation::PRINT_STAGE_ORIGINALS, collect());
+
+        return response()->json([
+            'success'         => true,
+            'total'           => $records->count(),
+            'not_started'     => $byStage->get(LandRecommendation::PRINT_STAGE_NONE, collect())->count(),
+            'awaiting_office' => $awaitingOffice->count(),
+            'complete'        => $byStage->get(LandRecommendation::PRINT_STAGE_COMPLETE, collect())->count(),
+            // The ids run 2 still owes, so resuming prints those and nothing else --
+            // a file whose office copies are already out must not come round again.
+            'resume_ids'      => $awaitingOffice->pluck('id')->values()->all(),
+            'originals_at'    => optional($awaitingOffice->max('rofo_originals_printed_at'))->format('d/m/Y H:i'),
+        ]);
+    }
+
+    /**
+     * Records a batch print run.
+     *
+     * copies says which half of the paper this call is for, and mirrors the same
+     * parameter on batchPrint():
+     *   'all'      -- the single pass: Original, Duplicate and Triplicate together.
+     *   'original' -- run 1 of a split print.
+     *   'office'   -- run 2 of a split print.
+     * Absent reads as 'all', so an older caller records exactly what it always did.
+     *
+     * rofo_print_count counts prints of the batch, not passes through the printer:
+     * the two runs of a split print are one print of the same letters, so only the
+     * run that first puts paper in the tray increments it.
+     */
+    public function batchPrintLog(Request $request)
+    {
+        $ids = array_filter((array) $request->input('ids', []), 'is_numeric');
+
+        if (empty($ids)) {
+            return response()->json(['success' => false, 'message' => 'No records specified.'], 422);
+        }
+
+        $copies = in_array($request->input('copies'), ['original', 'office'], true)
+            ? $request->input('copies')
+            : 'all';
+
+        $copyVersions = [
+            'all'      => ['Original', 'Duplicate', 'Triplicate'],
+            'original' => ['Original'],
+            'office'   => ['Duplicate', 'Triplicate'],
+        ][$copies];
+
+        $records = LandRecommendation::whereIn('id', $ids)
+            ->where('rofo_status', LandRecommendation::ROFO_GENERATED)
             ->get();
+
+        $now = now();
 
         DB::connection('sqlsrv')->beginTransaction();
         try {
             foreach ($records as $rec) {
-                foreach (['Original', 'Duplicate', 'Triplicate'] as $copy) {
+                foreach ($copyVersions as $copy) {
                     PrintLog::create([
                         'reference_number' => $rec->file_number,
                         'document_type'    => 'Land ROFO',
@@ -1000,10 +1068,42 @@ class LandRofoController extends Controller
                         'user_id'          => Auth::id(),
                     ]);
                 }
-                $rec->increment('rofo_print_count');
+
+                // Whether this run is the one that starts the batch off, which is
+                // what rofo_print_count measures. An 'office' run resuming an
+                // abandoned split was already counted by its 'original' run.
+                $startsTheBatch = $copies !== 'office' || !$rec->rofo_originals_printed_at;
+
+                $stamps = ['rofo_print_run_mode' => $copies === 'all' ? 'all' : 'split'];
+
+                if ($copies === 'all') {
+                    $stamps['rofo_originals_printed_at'] = $now;
+                    $stamps['rofo_office_copies_printed_at'] = $now;
+                } elseif ($copies === 'original') {
+                    $stamps['rofo_originals_printed_at'] = $now;
+                    // Reprinting the Originals reopens the run: the office copies of
+                    // this new set are outstanding again.
+                    $stamps['rofo_office_copies_printed_at'] = null;
+                } else {
+                    $stamps['rofo_office_copies_printed_at'] = $now;
+                    // Office copies with no Originals run behind them (an operator
+                    // resuming a batch printed before these columns existed) still
+                    // close the run.
+                    $stamps['rofo_originals_printed_at'] = $rec->rofo_originals_printed_at ?: $now;
+                }
+
+                $rec->forceFill($stamps)->save();
+
+                if ($startsTheBatch) {
+                    $rec->increment('rofo_print_count');
+                }
             }
             DB::connection('sqlsrv')->commit();
-            return response()->json(['success' => true, 'count' => $records->count()]);
+            return response()->json([
+                'success' => true,
+                'count'   => $records->count(),
+                'copies'  => $copies,
+            ]);
         } catch (\Exception $e) {
             DB::connection('sqlsrv')->rollBack();
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);

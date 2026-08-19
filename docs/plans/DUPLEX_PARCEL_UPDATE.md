@@ -5,7 +5,8 @@ follow-up client conversation. Captured 2026-08-19. Supersedes the one-line
 placeholder "Master Folder for Duplex Parcel Update" (item 13 of
 `Update August 18 2026.md`).
 
-**Status:** planning only — no code written.
+**Status:** built 2026-08-19. Capture pipeline verified end to end; the final commit
+step is code-complete but not yet run against live files (see §8).
 
 ---
 
@@ -231,3 +232,67 @@ Not part of the duplex itself, but the same sheet, same module:
 5. Should the Land officer be able to **edit** stage details at the commissioning
    screen, or only confirm/reject the whole thing?
 6. Holding numbers: reuse the `(T)` convention, or a distinct duplex namespace?
+
+
+---
+
+## 8. As built (2026-08-19)
+
+Client answers that shaped the build:
+
+| Q | Answer |
+|---|---|
+| Separation in the selector | Yes — all five types |
+| Same type twice | Optional; ranks are 1..N and a type may repeat |
+| Rejected stage | That stage alone reopens; the others hold their payloads and holding numbers |
+| Approver | Same authority the single workflows already use |
+| Land editing at commissioning | No — confirm or reject the whole duplex |
+| Holding numbers | Distinct namespace: `DPX-2026-0007-H03` |
+
+Also: the existing UI is untouched. The Duplex is **a page of its own**, and the Land
+confirm/reject step lives on that page rather than as a tab on the commissioning screen —
+partly because a duplex is often just one update, and the officer should still work here.
+
+### Files
+
+| Layer | Path |
+|---|---|
+| Schema | `database/migrations/2026_08_19_000000_create_duplex_parcel_update_tables.php` |
+| Production SQL | `database/sql/2026_08_19_create_duplex_parcel_update_tables.sql` + `..._ledger.mysql.sql` + `verify_duplex_parcel_update_schema.sql` |
+| Models | `app/Models/DuplexParcelUpdate{,Stage,File}.php` |
+| Holding numbers | `app/Services/DuplexHoldingNumberService.php` |
+| Commit | `app/Services/DuplexCommitService.php` |
+| Controller | `app/Http/Controllers/Deeds/ParcelUpdate/DuplexParcelUpdateController.php` |
+| Views | `resources/views/deeds/parcel_update/duplex/` (index, wizard, commission, js, 3 print templates) |
+| Routes | `routes/app3.php` — `duplex-parcel-update.*`, 18 routes |
+| Sidebar | one entry below the Parcel Update items in `lands.blade.php` |
+
+### How the chain actually resolves at commit
+
+Holding numbers are a **planning device**. At commit, stages run in rank order and each one
+consumes the *real* file numbers the previous stage just produced, so by the time a stage runs
+its input is always a real registry file — which is exactly what the commissioning engine
+expects. Each stage materialises a row in the matching existing application table
+(`plot_subdivision_applications`, `plot_merger_applications`, …), tagged
+`[Duplex DPX-… · stage N]`, because that is where `generateBatch` reads its lineage from.
+
+Decommissioning then falls out for free: each stage retires its own input, so the original
+sources go with stage 1 and every intermediate file is retired by the stage that consumes it.
+
+### Verified
+
+- Migration applied; all three tables confirmed on **sqlsrv** via the catalog, not the ledger.
+- 3-stage duplex (Merger → Subdivision ×4 → CoP on 2 of 4) captured end to end;
+  holding chain came out `H01` → `H02..H05` → `H06..H09`.
+- **Registry untouched by capture** — `fileNumber`, `file_indexings`, `mls_file_no`, `pra`,
+  `decommissioned_files` row counts unchanged.
+- Holding namespace clean — no `DPX-…-Hnn` value present in any registry table.
+- Gates hold: memo blocked without KNUPDA, send-to-land blocked without the conveyance.
+- Test rows deleted by id afterwards.
+
+### Not yet verified
+
+The **commit** has not been run. Doing so would mint live file numbers and decommission real
+files in the shared dev database, so it needs a supervised run against files chosen for the
+purpose. Note also that no merger or separation has ever been commissioned in production, so a
+duplex containing either exercises that path for the first time.

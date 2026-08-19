@@ -455,6 +455,13 @@
               <i data-lucide="link" class="h-3.5 w-3.5 text-orange-400"></i>
               <span>Parcel Update-Legacy</span>
             </a>
+
+            <!-- 6. Duplex Parcel Update - several updates as one instruction, on its own page -->
+            {{-- <a href="{{ route('duplex-parcel-update.index') }}?mode=land"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('duplex-parcel-update.*') ? 'active' : '' }}">
+              <i data-lucide="layers" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>Duplex Parcel Update</span>
+            </a> --}}
           </div>
           @endif
 

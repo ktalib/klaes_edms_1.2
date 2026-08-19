@@ -7586,6 +7586,47 @@
         }
     }
 
+    // ── Passport photograph on the commissioning sheet ────────────────────────────
+    // The photograph uploaded when the file number was generated is filed into EDMS
+    // (scannings row of type "Passport Photograph"), so the PDF has to ask the server
+    // for it — jsPDF runs in the browser and cannot read the storage disk.
+    async function fetchCommissioningPassport(fileNumber) {
+        const number = String(fileNumber || '').trim();
+        if (!number) return null;
+
+        try {
+            const res = await fetch('{{ route('commissioning-sheet.passport-photo') }}?file_number=' + encodeURIComponent(number), {
+                headers: { 'Accept': 'application/json' }
+            });
+            if (!res.ok) return null;
+            const result = await res.json();
+            return result && result.image ? result.image : null;
+        } catch (e) {
+            console.warn('Passport photograph lookup failed', e);
+            return null;
+        }
+    }
+
+    // Prints the photograph in the right margin beside the QR code. Files commissioned
+    // without a passport simply leave the space blank.
+    function drawCommissioningPassport(doc, image) {
+        if (!image) return;
+
+        // Directly under the right-hand ministry logo and flush with its right edge
+        // (logo occupies x 170-190, y 12-32), so the two read as one column.
+        const x = 160, y = 35, w = 30, h = 34;
+        try {
+            const format = String(image).slice(0, 30).toUpperCase().includes('IMAGE/PNG') ? 'PNG' : 'JPEG';
+            doc.addImage(image, format, x, y, w, h);
+            doc.setLineWidth(0.3);
+            doc.rect(x, y, w, h);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+        } catch (e) {
+            console.warn('Could not draw passport photograph', e);
+        }
+    }
+
     async function generateCommissioningSheetPDF(formData, watermarkText = 'ORIGINAL') {
         try {
             showGlobalLoading('Generating PDF...');
@@ -7595,9 +7636,9 @@
 
             // Fetch logos
             const logo1Base64 = await getImageBase64('/assets/logo/logo1.png') || await getImageBase64('/assets/logo/logo1.jpg') || await getImageBase64('/assets/logo/logoKlase.png');
-            const logo2Base64 = await getImageBase64('/assets/logo/logo3.jpeg') || await getImageBase64('/assets/logo/las.jpeg') || await getImageBase64('/assets/logo/logo3.jpg');
+            const logo2Base64 = await getImageBase64('/assets/logo/ministry2.png') || await getImageBase64('http://app.klaes.ng/assets/logo/ministry2.png') || await getImageBase64('/assets/logo/logo3.jpeg');
             // LAS logo for footer
-            const leftFooterLogoBase64 = await getImageBase64('/assets/logo/Klase.png');
+            const leftFooterLogoBase64 = await getImageBase64('http://app.klaes.ng/assets/logo/Left_Logo.png');
             // Try PNG first, fallback to JPEG
             // Try local asset path for LAS logo
             let footerLogoBase64 = await getImageBase64('/assets/logo/las.png');
@@ -7653,6 +7694,9 @@
                     }
                 } catch (e) { console.warn('QR failed', e); }
             }
+
+            // Applicant's passport photograph, beside the QR code.
+            drawCommissioningPassport(doc, await fetchCommissioningPassport(fileNumberVal));
 
             // Body content
             doc.setFontSize(10);
@@ -7728,8 +7772,8 @@
 
             // Fetch logos once and reuse for all pages.
             const logo1Base64 = await getImageBase64('/assets/logo/logo1.png') || await getImageBase64('/assets/logo/logo1.jpg') || await getImageBase64('/assets/logo/logoKlase.png');
-            const logo2Base64 = await getImageBase64('/assets/logo/logo3.jpeg') || await getImageBase64('/assets/logo/las.jpeg') || await getImageBase64('/assets/logo/logo3.jpg');
-            const leftFooterLogoBase64 = await getImageBase64('/assets/logo/Klase.png');
+            const logo2Base64 = await getImageBase64('/assets/logo/ministry2.png') || await getImageBase64('http://app.klaes.ng/assets/logo/ministry2.png') || await getImageBase64('/assets/logo/logo3.jpeg');
+            const leftFooterLogoBase64 = await getImageBase64('http://app.klaes.ng/assets/logo/Left_Logo.png');
             const footerLogoBase64 = await getImageBase64('/assets/logo/las.jpeg');
 
             const totalPages = records.length;
@@ -7782,6 +7826,9 @@
                         console.warn('QR failed', e);
                     }
                 }
+
+                // Applicant's passport photograph for this record.
+                drawCommissioningPassport(doc, await fetchCommissioningPassport(rowFileNo));
 
                 // Body fields for this row/page
                 doc.setFontSize(10);

@@ -552,11 +552,129 @@ class CommissioningSheetController extends Controller
                 }
             }
 
+            // 4. The applicant's passport photograph, filed at commissioning, prints on the sheet.
+            $data['passport_image'] = $this->resolveCommissioningPassport($fileNo)
+                ?? $this->resolveCommissioningPassport((string) ($data['related_file_number'] ?? ''));
+
             return view('commissioning_sheet.pdf', compact('data'));
 
         } catch (\Exception $e) {
             \Log::error('Error printing commissioning sheet: ' . $e->getMessage());
             abort(500, 'Failed to print commissioning sheet');
         }
+    }
+
+    /**
+     * Passport photograph for a file number, as a data URI.
+     *
+     * The commissioning sheet is also built client-side with jsPDF (Generate File Number /
+     * Commission modals), which cannot read the storage disk — it asks here instead.
+     */
+    public function passportPhoto(Request $request)
+    {
+        $fileNumber = trim((string) $request->query('file_number', ''));
+
+        if ($fileNumber === '') {
+            return response()->json(['success' => false, 'image' => null], 200);
+        }
+
+        $image = $this->resolveCommissioningPassport($fileNumber);
+
+        return response()->json([
+            'success' => (bool) $image,
+            'image'   => $image,
+        ]);
+    }
+
+    /**
+     * Find the passport photograph filed against a commissioned file and return it as a
+     * data URI so it prints (and PDFs) without depending on a reachable storage URL.
+     *
+     * Two places hold it, in the order the commissioning writes them:
+     *   1. a `scannings` row of document_type "Passport Photograph" hanging off the
+     *      file's file_indexings record (written by MlsFileNoController);
+     *   2. oss_applications.passport_photo, mirrored there for the OSS record.
+     *
+     * Best-effort: any lookup or read failure simply means no photograph is printed.
+     */
+    private function resolveCommissioningPassport(string $fileNumber): ?string
+    {
+        $fileNumber = trim($fileNumber);
+        if ($fileNumber === '') {
+            return null;
+        }
+
+        try {
+            $path = DB::connection('sqlsrv')
+                ->table('scannings as s')
+                ->join('file_indexings as fi', 'fi.id', '=', 's.file_indexing_id')
+                ->where('fi.file_number', $fileNumber)
+                ->where('s.document_type', 'Passport Photograph')
+                ->orderByDesc('s.id')
+                ->value('s.document_path');
+
+            if (empty($path)) {
+                $path = DB::connection('sqlsrv')
+                    ->table('oss_applications')
+                    ->where('file_no', $fileNumber)
+                    ->whereNotNull('passport_photo')
+                    ->orderByDesc('id')
+                    ->value('passport_photo');
+            }
+
+            return $this->passportDataUri($path);
+        } catch (\Throwable $e) {
+            \Log::warning('Could not resolve commissioning passport photograph', [
+                'file_number' => $fileNumber,
+                'error'       => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Read a stored passport image into a base64 data URI. Paths are stored relative to
+     * the public disk, but older/mirrored rows may carry a `storage/...` public path or a
+     * full URL — the first two are read from disk, a URL is passed straight through.
+     */
+    private function passportDataUri($path): ?string
+    {
+        $path = trim((string) $path);
+        if ($path === '') {
+            return null;
+        }
+
+        if (preg_match('#^(https?:)?//#i', $path) || str_starts_with($path, 'data:')) {
+            return $path;
+        }
+
+        $relative = ltrim(str_replace("\\", '/', $path), '/');
+        $candidates = [
+            storage_path('app/public/' . $relative),
+            public_path($relative),
+            public_path('storage/' . $relative),
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (is_file($candidate) && is_readable($candidate)) {
+                $contents = @file_get_contents($candidate);
+                if ($contents === false || $contents === '') {
+                    continue;
+                }
+
+                $mime = 'image/jpeg';
+                if (function_exists('mime_content_type')) {
+                    $detected = @mime_content_type($candidate);
+                    if (is_string($detected) && str_starts_with($detected, 'image/')) {
+                        $mime = $detected;
+                    }
+                }
+
+                return 'data:' . $mime . ';base64,' . base64_encode($contents);
+            }
+        }
+
+        return null;
     }
 }
