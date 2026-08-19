@@ -1031,6 +1031,13 @@ Route::middleware(['auth'])->group(function () {
         ->group(function () {
             Route::get('/', 'index')->name('index');
             Route::get('/alerts', 'alerts')->name('alerts');
+
+            // Portal accounts. `destroy` is irreversible and refuses any
+            // applicant whose work has entered the land registry — see
+            // LaasAdminController::destroyApplicant.
+            Route::get('/applicants', 'applicants')->name('applicants');
+            Route::post('/applicants/{id}/toggle', 'toggleApplicant')->name('applicants.toggle')->where('id', '[0-9]+');
+            Route::delete('/applicants/{id}', 'destroyApplicant')->name('applicants.destroy')->where('id', '[0-9]+');
             Route::post('/alerts/{id}/read', 'markAlertRead')->name('alerts.read')->where('id', '[0-9]+');
             Route::get('/{id}', 'show')->name('show')->where('id', '[0-9]+');
             Route::post('/{id}/approve', 'approve')->name('approve')->where('id', '[0-9]+');

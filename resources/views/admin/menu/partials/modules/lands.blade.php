@@ -29,9 +29,14 @@
            roles that already review and allocate land applications. -->
         @if($hasRole('Land') || $hasRole('Land One Stop Shop') || $hasRole('Generate New FileNo (MLSFileNo)'))
         <a href="{{ route('laas-admin.index') }}"
-          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('laas-admin.*') ? 'active' : '' }}">
+          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('laas-admin.index') || request()->routeIs('laas-admin.show') ? 'active' : '' }}">
           <i data-lucide="globe" class="h-4 w-4 text-orange-500"></i>
           <span>LAAS Portal Applications</span>
+        </a>
+        <a href="{{ route('laas-admin.applicants') }}"
+          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('laas-admin.applicants*') ? 'active' : '' }}">
+          <i data-lucide="users" class="h-4 w-4 text-orange-500"></i>
+          <span>LAAS Portal Applicants</span>
         </a>
       @endif 
 

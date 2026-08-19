@@ -3,7 +3,10 @@
 namespace App\Http\Controllers\Laas;
 
 use App\Http\Controllers\Controller;
+use App\Models\Laas\LaasApplicant;
 use App\Models\Laas\LaasApplication;
+use App\Models\Laas\LaasApplicationEvent;
+use App\Models\Laas\LaasDocument;
 use App\Models\Laas\LaasStageNotification;
 use App\Models\MlsFileNo;
 use App\Models\Prefix;
@@ -15,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -270,6 +274,154 @@ class LaasAdminController extends Controller
 
         return ' NOTE: the SMS could not be delivered — the applicant will still see this'
              . ' when they sign in to the portal. Consider telephoning them.';
+    }
+
+    // ---------------------------------------------------------- applicants
+
+    /** Portal accounts, with what each one has in flight. */
+    public function applicants(Request $request)
+    {
+        $search = trim((string) $request->query('q', ''));
+
+        $applicants = LaasApplicant::query()
+            ->when($search !== '', function ($q) use ($search) {
+                $q->where(function ($inner) use ($search) {
+                    $inner->where('name', 'like', "%{$search}%")
+                          ->orWhere('phone', 'like', "%{$search}%")
+                          ->orWhere('email', 'like', "%{$search}%");
+                });
+            })
+            ->orderByDesc('id')
+            ->paginate(25)
+            ->withQueryString();
+
+        // Two grouped queries rather than two per row.
+        $ids = $applicants->pluck('id');
+
+        // sqlsrv returns COUNT(*) as a string; cast so callers can compare
+        // numbers rather than discovering "1" !== 1 the hard way.
+        $totals = array_map('intval', LaasApplication::whereIn('laas_applicant_id', $ids)
+            ->groupBy('laas_applicant_id')
+            ->selectRaw('laas_applicant_id, count(*) as total')
+            ->pluck('total', 'laas_applicant_id')
+            ->toArray());
+
+        $inRegistry = array_map('intval', LaasApplication::whereIn('laas_applicant_id', $ids)
+            ->whereIn('stage', LaasApplication::registryStages())
+            ->groupBy('laas_applicant_id')
+            ->selectRaw('laas_applicant_id, count(*) as total')
+            ->pluck('total', 'laas_applicant_id')
+            ->toArray());
+
+        return view('laas_admin.applicants', [
+            'applicants'   => $applicants,
+            'totals'       => $totals,
+            'inRegistry'   => $inRegistry,
+            'search'       => $search,
+            'unreadAlerts' => LaasStageNotification::where('is_read', false)->count(),
+        ]);
+    }
+
+    /** Suspend an account without destroying anything. The reversible option. */
+    public function toggleApplicant(int $id)
+    {
+        $applicant = LaasApplicant::findOrFail($id);
+        $suspending = $applicant->isActive();
+
+        $applicant->forceFill(['status' => $suspending ? 'suspended' : 'active'])->save();
+
+        return back()->with('status', $suspending
+            ? "{$applicant->name} can no longer sign in. Their applications are untouched."
+            : "{$applicant->name} can sign in again.");
+    }
+
+    /**
+     * Delete an applicant and everything belonging to them.
+     *
+     * IRREVERSIBLE, and deliberately refused once any of their applications has
+     * reached `fileno_assigned`. At that point a file number exists in
+     * mls_file_no and a Land 12, recommendation or RoFO may be keyed to it —
+     * removing the applicant would leave those registry rows pointing at nobody
+     * and destroy the audit trail for a statutory process. Suspend instead;
+     * that is what the toggle above is for.
+     *
+     * The typed-confirmation phone number is not ceremony: this is the one
+     * action in the console that cannot be undone, and a mis-click on a list of
+     * similar names would be unrecoverable.
+     */
+    public function destroyApplicant(Request $request, int $id)
+    {
+        $applicant = LaasApplicant::findOrFail($id);
+
+        $blocking = LaasApplication::where('laas_applicant_id', $applicant->id)
+            ->whereIn('stage', LaasApplication::registryStages())
+            ->pluck('file_number', 'reference_no')
+            ->toArray();
+
+        if ($blocking) {
+            $refs = implode(', ', array_map(
+                fn ($ref, $file) => $file ? "{$ref} ({$file})" : $ref,
+                array_keys($blocking),
+                $blocking
+            ));
+
+            return back()->with('error',
+                "{$applicant->name} cannot be deleted: " . count($blocking)
+                . ' application(s) have already been issued a file number and are part of the land'
+                . " registry — {$refs}. Suspend the account instead.");
+        }
+
+        $typed = trim((string) $request->input('confirm_phone'));
+
+        if ($typed !== (string) $applicant->phone) {
+            return back()->with('error',
+                'To delete this applicant, type their phone number exactly as shown.');
+        }
+
+        $name  = $applicant->name;
+        $phone = $applicant->phone;
+
+        $counts = DB::connection('sqlsrv')->transaction(function () use ($applicant) {
+            $applicationIds = LaasApplication::where('laas_applicant_id', $applicant->id)
+                ->pluck('id');
+
+            // Uploaded files first: a deleted row would leave the file on disk
+            // with nothing pointing at it, and identification documents are
+            // exactly what should not be left lying around.
+            $documents = LaasDocument::whereIn('laas_application_id', $applicationIds)->get();
+            $filesGone = 0;
+
+            foreach ($documents as $document) {
+                if ($document->path && Storage::disk('local')->exists($document->path)) {
+                    Storage::disk('local')->delete($document->path);
+                    $filesGone++;
+                }
+            }
+
+            $counts = [
+                'documents'     => LaasDocument::whereIn('laas_application_id', $applicationIds)->delete(),
+                'files'         => $filesGone,
+                'events'        => LaasApplicationEvent::whereIn('laas_application_id', $applicationIds)->delete(),
+                'alerts'        => LaasStageNotification::whereIn('laas_application_id', $applicationIds)->delete(),
+                'applications'  => LaasApplication::whereIn('id', $applicationIds)->delete(),
+            ];
+
+            $applicant->delete();
+
+            return $counts;
+        });
+
+        Log::warning('LAAS: applicant deleted', [
+            'applicant_id' => $id,
+            'name'         => $name,
+            'phone'        => LaasApplicant::maskPhone($phone),
+            'deleted_by'   => Auth::id(),
+            'removed'      => $counts,
+        ]);
+
+        return redirect()->route('laas-admin.applicants')->with('status',
+            "{$name} deleted, with {$counts['applications']} application(s), "
+            . "{$counts['events']} timeline entrie(s) and {$counts['documents']} document(s).");
     }
 
     /** Spec (h): the Land Office / OSS Unit desk inbox. */

@@ -130,6 +130,19 @@ class LaasApplication extends Model
 
     // ---- Stage helpers ----------------------------------------------------
 
+    /**
+     * Stages from which an application has entered the land registry.
+     *
+     * At `fileno_assigned` a real file number is minted into `mls_file_no`, and
+     * a Land 12, recommendation and RoFO may follow — all keyed to it. From
+     * that point the application is a statutory record, and deleting the
+     * applicant behind it would orphan every one of those rows.
+     */
+    public static function registryStages(): array
+    {
+        return array_slice(self::ORDER, self::rank(self::STAGE_FILENO_ASSIGNED));
+    }
+
     /** Position on the main line, or -1 for `rejected` / anything unrecognised. */
     public static function rank(?string $stage): int
     {

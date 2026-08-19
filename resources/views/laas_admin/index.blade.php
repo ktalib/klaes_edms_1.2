@@ -21,6 +21,11 @@
                     <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">Application queue</h1>
                     <p class="text-slate-500 text-sm mt-1">Review, approve and assign file numbers to portal applications.</p>
                 </div>
+                <div class="flex items-center gap-2">
+                <a href="{{ route('laas-admin.applicants') }}"
+                   class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                    <i data-lucide="users" class="h-4 w-4"></i> Applicants
+                </a>
                 <a href="{{ route('laas-admin.alerts') }}"
                    class="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
                     <i data-lucide="bell" class="h-4 w-4"></i> Desk alerts
@@ -28,6 +33,7 @@
                         <span class="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-white">{{ $unreadAlerts }}</span>
                     @endif
                 </a>
+                </div>
             </div>
 
             @if(session('status'))
