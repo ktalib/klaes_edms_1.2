@@ -503,6 +503,10 @@ class ScanReassignmentManager {
     showModal() {
         if (this.modal) {
             this.modal.classList.remove('hidden');
+            // Belt and braces: some host pages hide every dialog at startup with
+            // jQuery, which leaves an INLINE display:none that a class toggle
+            // cannot beat. Clear it so the dialog is visible wherever it is used.
+            this.modal.style.removeProperty('display');
             this.modal.setAttribute('aria-hidden', 'false');
             document.body.style.overflow = 'hidden';
         }

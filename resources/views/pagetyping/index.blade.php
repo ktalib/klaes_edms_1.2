@@ -475,7 +475,6 @@
     @include('components.edms.registry-transfer-modal')
     @include('components.edms.file-type-transfer-modal')
     @include('scan_uploads.partials.reassign_modal')
-    <script src="{{ asset('js/scan-reassignment.js') }}"></script>
 
     <!-- Page Typing Dashboard JavaScript -->
     <script>
@@ -4385,9 +4384,19 @@
                                   'aria-label="Page ' + (position + 1) + ' - ' + scanning.original_filename + '" ' +
                                   'title="' + (state.typingState.isMultiSelectMode ? 'Click to select/deselect page ' + (position + 1) : 'Click to select page ' + (position + 1)) + '">' +
                                   '<div class="relative h-24 w-24 bg-gray-100 rounded-md overflow-hidden border ' + (isSelected ? 'border-purple-500' : isCurrentPage ? 'border-blue-500' : 'border-gray-200') + '">' +
-                                    (isSelected ? '<div class="absolute top-1 left-1 z-10"><span class="badge bg-purple-500 text-white text-xs px-1 py-0.5"><i data-lucide="check" class="h-2 w-2"></i></span></div>' : '') +
+                                    // In multi-select (and BC+FC) mode every page shows a real
+                                    // checkbox, ticked or not. Previously selection only appeared
+                                    // as a ring AFTER clicking, so nothing on screen said the
+                                    // pages were selectable at all.
+                                    (state.typingState.isMultiSelectMode
+                                      ? '<div class="absolute top-1 left-1 z-10 pointer-events-none">' +
+                                          '<span class="flex h-4 w-4 items-center justify-center rounded-sm border-2 shadow-sm ' +
+                                            (isSelected ? 'border-purple-600 bg-purple-600 text-white' : 'border-gray-500 bg-white') + '">' +
+                                            (isSelected ? '<i data-lucide="check" class="h-2.5 w-2.5"></i>' : '') +
+                                          '</span></div>'
+                                      : '') +
                                     (isProcessed ? '<div class="absolute top-1 right-1 z-10"><span class="badge bg-green-500 text-white text-xs px-1 py-0.5"><i data-lucide="check" class="h-2 w-2"></i></span></div>' : '') +
-                                    (isCurrentPage && !isSelected ? '<div class="absolute top-1 left-1 z-10"><span class="badge bg-blue-500 text-white text-xs px-1 py-0.5"><i data-lucide="eye" class="h-2 w-2"></i></span></div>' : '') +
+                                    (isCurrentPage && !isSelected && !state.typingState.isMultiSelectMode ? '<div class="absolute top-1 left-1 z-10"><span class="badge bg-blue-500 text-white text-xs px-1 py-0.5"><i data-lucide="eye" class="h-2 w-2"></i></span></div>' : '') +
                                     '<div class="loading absolute inset-0 flex items-center justify-center" id="loading-' + index + '">' +
                                       '<div class="w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"></div>' +
                                     '</div>' +
@@ -6742,5 +6751,15 @@
         </div>
       </div>
     </div>
+
+  {{-- Reassignment dialog dependencies. Order matters: the dialog's file picker
+       (GlobalFileNoModal) is a select2 widget, so jQuery must load first, then
+       select2, then the picker, then the manager. Loading scan-reassignment.js
+       ahead of these throws "$(...).select2 is not a function". --}}
+  <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+  <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
+  <script src="{{ asset('js/scan-reassignment.js') }}"></script>
 
 @endsection

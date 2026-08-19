@@ -1,5 +1,47 @@
 <!-- Scan Reassignment Modal -->
-<div id="reassign-modal" class="dialog-backdrop hidden z-50" aria-hidden="true" data-reassign-modal style="z-index: 9999;">
+{{--
+  Self-contained styling, and deliberately NOT the shared `.dialog-backdrop`
+  class, for two reasons:
+
+  1. `.dialog-backdrop` is defined per page (scan_uploads and filearchive each
+     have their own copy). On a page without it, showModal() strips `hidden` and
+     leaves an unstyled block in the page flow — the dialog "does not open".
+  2. Doc-WARE's own script runs `$('.dialog-backdrop').hide()` at startup, which
+     sets an INLINE display:none on every backdrop. ScanReassignmentManager only
+     toggles the `hidden` class, so the inline style won that fight and the dialog
+     stayed invisible with nothing in the console.
+
+  Owning the class means no page script can reach in and hide it.
+--}}
+<style>
+  #reassign-modal.reassign-backdrop {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    z-index: 9999;
+  }
+  #reassign-modal.reassign-backdrop.hidden {
+    display: none !important;
+    visibility: hidden;
+  }
+  #reassign-modal .dialog-content {
+    background-color: #fff;
+    border-radius: 0.75rem;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    /* Width is left to the element's own utility class (max-w-2xl) — this rule is
+       more specific than Tailwind's, so hardcoding it here would shrink the
+       dialog on the pages that already render it correctly. */
+    width: 95vw;
+    max-height: 90vh;
+    overflow-y: auto;
+    border: 1px solid #e5e7eb;
+  }
+</style>
+<div id="reassign-modal" class="reassign-backdrop hidden" aria-hidden="true" data-reassign-modal>
   <div class="dialog-content max-w-2xl animate-fade-in" style="z-index: 10000;">
     <div class="p-6 border-b border-gray-200 flex items-start justify-between gap-4">
       <div>

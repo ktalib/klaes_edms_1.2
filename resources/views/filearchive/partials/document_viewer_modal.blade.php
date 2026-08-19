@@ -25,6 +25,23 @@
                     <div class="p-3 border-b">
                         <h3 class="text-sm font-medium text-gray-700">Document Pages</h3>
                     </div>
+                    {{-- Shown while the operator is picking pages to classify together.
+                         Started from the Edit Page Classification dialog, which closes
+                         so the whole panel is reachable, and reopens on Apply. --}}
+                    <div id="page-select-bar" class="hidden border-b bg-amber-50 p-3 space-y-2">
+                        <p class="text-xs font-semibold text-amber-900">
+                            Select the pages to classify
+                        </p>
+                        <p class="text-xs text-amber-700">
+                            <span id="page-select-count">0</span> selected
+                        </p>
+                        <div class="flex items-center gap-2">
+                            <button type="button" id="page-select-apply"
+                                    class="btn btn-sm bg-amber-600 hover:bg-amber-700 text-white flex-1">Apply</button>
+                            <button type="button" id="page-select-cancel"
+                                    class="btn btn-sm btn-outline">Cancel</button>
+                        </div>
+                    </div>
                     <div class="flex-1 overflow-auto">
                         <div id="pages-list" class="p-2 space-y-2"></div>
                     </div>
@@ -210,6 +227,9 @@
                 </button>
             </div>
 
+            <div id="edit-filetype-scope" class="hidden mx-4 mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Applying to <strong id="edit-filetype-scope-count">0</strong> selected page(s).
+            </div>
             <form id="edit-filetype-form" class="p-4 space-y-4 overflow-y-auto" autocomplete="off">
                 <div class="text-xs text-gray-500">
                     Editing <span class="font-mono font-semibold text-blue-700" id="eft-page-label">page</span>
@@ -266,17 +286,25 @@
                         <span id="eft-code-preview" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-semibold bg-blue-100 text-blue-800">—</span>
                         <span id="eft-definition-preview" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-semibold bg-green-100 text-green-800">—</span>
                     </div>
-                    <p class="text-xs text-gray-500 mt-2">Format: CoverType-PageType-SubType-SerialNo</p>
-                    <p class="text-xs text-gray-500">Definition Code: AutoPosition-PageCode</p>
+                    <p class="text-xs text-gray-500 mt-2" id="eft-format-note">Format: CoverType-PageType-SubType-SerialNo</p>
+                    <p class="text-xs text-gray-500" id="eft-definition-note">Definition Code: AutoPosition-PageCode</p>
                 </div>
             </form>
 
-            <div class="flex-shrink-0 flex items-center justify-end gap-2 p-4 border-t bg-gray-50 rounded-b-lg">
+            <div class="flex-shrink-0 flex items-center justify-between gap-2 p-4 border-t bg-gray-50 rounded-b-lg">
+                {{-- Closes this dialog so the Document Pages panel is reachable, then
+                     reopens it on Apply with whatever was already entered. --}}
+                <button type="button" id="edit-filetype-select-pages" class="btn btn-outline btn-sm flex items-center gap-1">
+                    <i data-lucide="list-checks" class="h-4 w-4"></i>
+                    <span>Select pages</span>
+                </button>
+                <div class="flex items-center gap-2">
                 <button type="button" id="edit-filetype-cancel" class="btn btn-outline btn-sm">Cancel</button>
                 <button type="button" id="edit-filetype-save" class="btn btn-sm bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1">
                     <i data-lucide="save" class="h-4 w-4"></i>
                     <span>Save Classification</span>
                 </button>
+                </div>
             </div>
         </div>
     </div>
@@ -467,6 +495,61 @@ function loadDocumentPages(fileMeta, pages) {
     }
 }
 
+/**
+ * Multi-page selection for the Document Pages panel.
+ *
+ * The Edit Page Classification dialog covers the panel, so picking several pages
+ * cannot happen while it is open. The flow is therefore: dialog remembers what
+ * you typed and closes -> you tick pages here -> Apply reopens the dialog with
+ * your entries intact -> Save applies them to every ticked page.
+ */
+const pageSelection = {
+    active: false,
+    selected: new Set(),
+    onApply: null,
+};
+
+function enterPageSelectionMode(onApply) {
+    pageSelection.active = true;
+    pageSelection.onApply = typeof onApply === 'function' ? onApply : null;
+
+    // Start from the page that was being edited, so a single-page edit that turns
+    // into a multi-page one does not lose the page it began with.
+    pageSelection.selected = new Set([currentPageIndex]);
+
+    document.getElementById('page-select-bar')?.classList.remove('hidden');
+    renderPagesList();
+    updatePageSelectionCount();
+}
+
+function exitPageSelectionMode() {
+    pageSelection.active = false;
+    pageSelection.onApply = null;
+    pageSelection.selected.clear();
+    document.getElementById('page-select-bar')?.classList.add('hidden');
+    renderPagesList();
+}
+
+function togglePageSelection(index) {
+    if (pageSelection.selected.has(index)) {
+        pageSelection.selected.delete(index);
+    } else {
+        pageSelection.selected.add(index);
+    }
+    renderPagesList();
+    updatePageSelectionCount();
+}
+
+function updatePageSelectionCount() {
+    const el = document.getElementById('page-select-count');
+    if (el) el.textContent = String(pageSelection.selected.size);
+}
+
+/** Indexes the classification should be applied to, in page order. */
+function selectedPageIndexes() {
+    return Array.from(pageSelection.selected).sort((a, b) => a - b);
+}
+
 function renderPagesList() {
     const pagesList = document.getElementById('pages-list');
     if (!pagesList) {
@@ -506,8 +589,17 @@ function renderPagesList() {
         }
         const secondaryLabel = secondaryParts.join(' · ');
 
+        const isTicked = pageSelection.active && pageSelection.selected.has(index);
+        if (isTicked) {
+            pageItem.classList.add('ring-2', 'ring-amber-500', 'bg-amber-50');
+        }
+
         pageItem.innerHTML = `
             <div class="flex items-center gap-2">
+                ${pageSelection.active ? `
+                    <span class="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-sm border-2 ${isTicked ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-400 bg-white'}">
+                        ${isTicked ? '<i data-lucide="check" class="h-3 w-3"></i>' : ''}
+                    </span>` : ''}
                 <div class="w-10 h-10 bg-gray-100 rounded overflow-hidden flex items-center justify-center">
                     <img src="${thumbnail}" alt="Page ${index + 1}" class="w-full h-full object-cover" onerror="this.src='${thumbnailPlaceholder}'" />
                 </div>
@@ -522,10 +614,19 @@ function renderPagesList() {
             </div>
         `;
 
-        pageItem.addEventListener('click', () => selectPage(index));
+        // While selecting, a click ticks the page instead of navigating to it —
+        // navigating would swap the viewer image out from under the operator.
+        pageItem.addEventListener('click', () => {
+            if (pageSelection.active) {
+                togglePageSelection(index);
+            } else {
+                selectPage(index);
+            }
+        });
         pagesList.appendChild(pageItem);
     });
 
+    if (window.lucide) lucide.createIcons();
     updatePageIndicator();
 }
 
@@ -1358,6 +1459,89 @@ document.addEventListener('DOMContentLoaded', function () {
         const position = page.definition != null ? page.definition : page.page_number;
         $('eft-code-preview').textContent = code;
         $('eft-definition-preview').textContent = `${position ?? ''}-${code}`;
+
+        // With several pages ticked the code shown is only the FIRST one — each
+        // page gets its own serial, so spell out the run rather than letting the
+        // operator assume all pages share this exact code.
+        const selectedCount = (typeof pageSelection !== 'undefined' && pageSelection.selected.size) || 0;
+        const formatNote = $('eft-format-note');
+        const definitionNote = $('eft-definition-note');
+        const startSerial = parseInt(serial, 10);
+
+        if (selectedCount > 1 && !isNaN(startSerial)) {
+            const endSerial = startSerial + selectedCount - 1;
+            const prefix = `${coverCode}-${pageCode}${subCode ? '-' + subCode : ''}`;
+
+            if (formatNote) {
+                formatNote.textContent =
+                    `BC+FC apply: ${selectedCount} pages numbered ${prefix}-${startSerial} through ${prefix}-${endSerial}`;
+            }
+            if (definitionNote) {
+                definitionNote.textContent =
+                    'Serial increments per page, in panel order. Definition Code: AutoPosition-PageCode';
+            }
+        } else {
+            if (formatNote) formatNote.textContent = 'Format: CoverType-PageType-SubType-SerialNo';
+            if (definitionNote) definitionNote.textContent = 'Definition Code: AutoPosition-PageCode';
+        }
+    }
+
+    // What the operator had typed before the dialog stepped aside for page
+    // selection. Restored on reopen so nothing has to be entered twice.
+    let pendingEntries = null;
+
+    function snapshotEntries() {
+        return {
+            cover: $('eft-cover-type').value,
+            pageType: $('eft-page-type').value,
+            pageTypeOther: $('eft-page-type-other').value,
+            subtype: $('eft-page-subtype').value,
+            subtypeOther: $('eft-page-subtype-other').value,
+            serial: $('eft-serial').value,
+            registry: $('eft-registry').value,
+        };
+    }
+
+    function restoreEntries(entry) {
+        if (!entry) return;
+
+        $('eft-cover-type').value = entry.cover || '';
+        $('eft-page-type').value = entry.pageType || '';
+        $('eft-page-type-other').value = entry.pageTypeOther || '';
+        toggleOther('eft-page-type', 'eft-page-type-other');
+
+        populateSubtypes($('eft-page-type').value, null);
+        $('eft-page-subtype').value = entry.subtype || '';
+        $('eft-page-subtype-other').value = entry.subtypeOther || '';
+        toggleOther('eft-page-subtype', 'eft-page-subtype-other');
+
+        if (entry.serial !== '') $('eft-serial').value = entry.serial;
+        if (entry.registry) $('eft-registry').value = entry.registry;
+
+        updatePreview();
+    }
+
+    /** Step aside so the Document Pages panel can be used, then come back. */
+    function beginPageSelection() {
+        pendingEntries = snapshotEntries();
+        closeModal({ keepEntries: true });
+
+        enterPageSelectionMode(() => {
+            openModal();
+        });
+    }
+
+    function renderScopeBanner() {
+        const banner = $('edit-filetype-scope');
+        if (!banner) return;
+
+        const count = (typeof pageSelection !== 'undefined' && pageSelection.selected.size) || 0;
+        if (count > 1) {
+            $('edit-filetype-scope-count').textContent = String(count);
+            banner.classList.remove('hidden');
+        } else {
+            banner.classList.add('hidden');
+        }
     }
 
     async function openModal() {
@@ -1420,15 +1604,33 @@ document.addEventListener('DOMContentLoaded', function () {
 
         updatePreview();
 
+        // Coming back from page selection: the operator's entries win over the
+        // page's stored values, which is the whole point of stepping aside.
+        if (pendingEntries) {
+            restoreEntries(pendingEntries);
+            pendingEntries = null;
+        }
+
+        renderScopeBanner();
+
         dialog.style.display = 'flex';
         dialog.setAttribute('aria-hidden', 'false');
         if (window.lucide) lucide.createIcons();
     }
 
-    function closeModal() {
+    function closeModal(options = {}) {
         dialog.style.display = 'none';
         dialog.setAttribute('aria-hidden', 'true');
         editingPageIndex = null;
+
+        // A normal close abandons a selection in progress; stepping aside for the
+        // page picker does not.
+        if (!options.keepEntries) {
+            pendingEntries = null;
+            if (typeof pageSelection !== 'undefined' && pageSelection.active) {
+                exitPageSelectionMode();
+            }
+        }
     }
 
     // Master Edit closes this dialog when editing is switched off, so it needs a
@@ -1464,38 +1666,77 @@ document.addEventListener('DOMContentLoaded', function () {
             registry: $('eft-registry').value || null
         };
 
-        const url = dialog.dataset.saveUrl.replace('__ID__', page.pagetyping_id);
+        // Every ticked page gets this classification; with nothing ticked it is
+        // just the page being edited.
+        const targets = (typeof pageSelection !== 'undefined' && pageSelection.selected.size)
+            ? selectedPageIndexes()
+            : [editingPageIndex];
+
         const saveBtn = $('edit-filetype-save');
         const label = saveBtn.querySelector('span');
         saveBtn.disabled = true;
-        if (label) label.textContent = 'Saving…';
+        if (label) label.textContent = targets.length > 1 ? `Saving 1 of ${targets.length}…` : 'Saving…';
+
+        const failures = [];
+        let saved = 0;
 
         try {
-            const res = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': csrf(),
-                    'Accept': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                body: JSON.stringify(payload)
-            });
-            const data = await res.json();
-            if (!data.success) throw new Error(data.message || 'Save failed');
+            for (const index of targets) {
+                const target = documentPages[index];
+                if (!target || !target.pagetyping_id) {
+                    failures.push(`Page ${index + 1} cannot be re-classified.`);
+                    continue;
+                }
 
-            // Refresh in-memory page + re-render the list/detail in place.
-            page.page_code = data.page_code;
-            page.serial_number = data.serial_number;
-            if (data.cover_type) page.cover_type = data.cover_type;
-            if (data.page_type) page.page_type = data.page_type;
-            page.page_subtype = data.page_subtype || null;
+                if (label && targets.length > 1) {
+                    label.textContent = `Saving ${saved + 1} of ${targets.length}…`;
+                }
 
+                // The serial identifies the page within the file, so each page in a
+                // multi-page apply gets its own — reusing one would collide.
+                const pagePayload = Object.assign({}, payload, {
+                    serial_number: payload.serial_number + saved,
+                });
+
+                const res = await fetch(dialog.dataset.saveUrl.replace('__ID__', target.pagetyping_id), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrf(),
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify(pagePayload)
+                });
+                const data = await res.json();
+
+                if (!data.success) {
+                    failures.push(`Page ${index + 1}: ${data.message || 'save failed'}`);
+                    continue;
+                }
+
+                // Refresh in-memory page + re-render the list/detail in place.
+                target.page_code = data.page_code;
+                target.serial_number = data.serial_number;
+                if (data.cover_type) target.cover_type = data.cover_type;
+                if (data.page_type) target.page_type = data.page_type;
+                target.page_subtype = data.page_subtype || null;
+                saved++;
+            }
+
+            if (typeof pageSelection !== 'undefined' && pageSelection.active) {
+                exitPageSelectionMode();
+            }
             if (typeof renderPagesList === 'function') renderPagesList();
             if (typeof selectPage === 'function') selectPage(editingPageIndex);
 
             closeModal();
-            if (typeof qcToast === 'function') qcToast('Page classification updated.');
+
+            if (failures.length) {
+                alert('Saved ' + saved + ' page(s). These could not be saved: ' + failures.join(' | '));
+            } else if (typeof qcToast === 'function') {
+                qcToast(saved > 1 ? `${saved} pages re-classified.` : 'Page classification updated.');
+            }
         } catch (err) {
             alert('Unable to save: ' + err.message);
         } finally {
@@ -1507,8 +1748,23 @@ document.addEventListener('DOMContentLoaded', function () {
     document.addEventListener('DOMContentLoaded', function () {
         const btn = $('edit-filetype-toggle');
         if (btn) btn.addEventListener('click', openModal);
-        $('edit-filetype-close')?.addEventListener('click', closeModal);
-        $('edit-filetype-cancel')?.addEventListener('click', closeModal);
+        $('edit-filetype-close')?.addEventListener('click', () => closeModal());
+        $('edit-filetype-cancel')?.addEventListener('click', () => closeModal());
+        $('edit-filetype-select-pages')?.addEventListener('click', beginPageSelection);
+
+        // Panel controls: Apply hands control back to the dialog, Cancel drops the
+        // selection entirely.
+        document.getElementById('page-select-apply')?.addEventListener('click', () => {
+            const onApply = pageSelection.onApply;
+            document.getElementById('page-select-bar')?.classList.add('hidden');
+            pageSelection.active = false;
+            renderPagesList();
+            if (onApply) onApply();
+        });
+
+        document.getElementById('page-select-cancel')?.addEventListener('click', () => {
+            exitPageSelectionMode();
+        });
         $('edit-filetype-save')?.addEventListener('click', save);
 
         dialog.addEventListener('click', (e) => { if (e.target === dialog) closeModal(); });

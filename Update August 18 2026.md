@@ -143,6 +143,9 @@ whether PageTyping should share the same switch (see item 10).
 
 The Master Folder for Duplex Parcel Update.
 
+The Duplex feature itself (Update August 17 2026, item 5) is planned in
+[docs/plans/DUPLEX_PARCEL_UPDATE.md](docs/plans/DUPLEX_PARCEL_UPDATE.md).
+
 ## 14. Link / Unlink File Indexing
 
 Add an action menu for **Unlinking and Linking File Indexing** under Scan Upload, PageTyping and
