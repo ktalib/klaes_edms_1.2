@@ -5,7 +5,7 @@ namespace App\Services\Laas;
 use App\Models\Laas\LaasApplication;
 use App\Models\Laas\LaasApplicationEvent;
 use App\Models\Laas\LaasStageNotification;
-use App\Services\BetaSmsService;
+use App\Services\BulkSmsNgService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
@@ -16,15 +16,19 @@ use Illuminate\Support\Facades\Log;
  * drift: a message the gateway refused still appears on the applicant's status
  * page, carrying its failure state, rather than silently vanishing.
  *
- * A note on wording. BetaSMS answers 1713 when its content filter refuses a
- * message and gives no hint which word tripped it — "notice" is refused
- * outright while the same sentence without that one word is accepted (see the
- * status-code table in App\Services\BetaSmsService). None of the templates
- * below contain it; keep it out of any you add.
+ * Messages go out through Bulk-SMS.ng, not BetaSMS: production cannot open
+ * outbound connections on plain HTTP :80, the only port BetaSMS serves its API
+ * on, so notices failed there while sending fine on a developer machine.
+ *
+ * Each stage still carries a plainer fallback wording. It costs nothing, and it
+ * is what got the phone-change code through when BetaSMS's content filter
+ * refused the first attempt — a gateway rejecting a message for how it is
+ * phrased is not hypothetical. Avoid the vocabulary of loan and prize spam
+ * ("approved", "assigned", "quote", "notice") in anything you add.
  */
 class LaasNotificationService
 {
-    public function __construct(private BetaSmsService $sms)
+    public function __construct(private BulkSmsNgService $sms)
     {
     }
 
@@ -76,16 +80,15 @@ class LaasNotificationService
     }
 
     /**
-     * A plainer wording for the same stage, used when the gateway refuses the
-     * first one on content (1713).
+     * A plainer wording for the same stage, used when the gateway rejects the
+     * first one.
      *
-     * Observed on this account: "your application ... has been received and
-     * processing has started" gets through, while "has been approved by the
-     * Director" and "has been assigned File Number ... quote this number" are
-     * both refused. The likely triggers are the words a loan or prize scam
-     * would use — "approved", "assigned", "quote" — so these fall back to the
-     * barest statement of fact, keeping the one detail worth having (the file
-     * number) and pointing at the portal for the rest.
+     * Observed on BetaSMS before the switch: "your application ... has been
+     * received and processing has started" got through, while "has been
+     * approved by the Director" and "has been assigned File Number ... quote
+     * this number" were both refused. These fall back to the barest statement
+     * of fact, keeping the one detail worth having (the file number) and
+     * pointing at the portal for the rest.
      *
      * Verify with: php artisan laas:sms-probe <number>
      */

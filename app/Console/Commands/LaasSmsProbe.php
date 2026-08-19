@@ -2,22 +2,22 @@
 
 namespace App\Console\Commands;
 
-use App\Services\BetaSmsService;
+use App\Services\BulkSmsNgService;
 use Illuminate\Console\Command;
 
 /**
- * Find out which message wordings BetaSMS will actually accept.
+ * Find out which message wordings the SMS gateway will actually accept.
  *
- * The gateway answers 1713 when its content filter refuses a message and names
- * no offending word. The vendor's API page documents neither the code nor any
- * transactional/OTP route parameter, so the only way to learn the rules is to
- * probe — which is how the existing status-code table in BetaSmsService was
- * established in the first place.
+ * Points at Bulk-SMS.ng, the provider LAAS sends through. Only its promotional
+ * route is enabled on this account, and gateways on that route are the ones
+ * that filter on wording — so knowing which phrasings survive is worth being
+ * able to check rather than guess. The variants below were built against
+ * BetaSMS's 1713 content filter and remain the useful set to compare.
  *
  * This sends REAL messages and spends REAL credit, so it asks first, sends one
  * variant at a time with a pause between, and stops early on any failure that
- * is not a content refusal (a bad number or an empty account will not become
- * truer on the fourth attempt).
+ * is not about the message itself (a bad number or an empty account will not
+ * become truer on the fourth attempt).
  */
 class LaasSmsProbe extends Command
 {
@@ -27,7 +27,7 @@ class LaasSmsProbe extends Command
                             {--list : Show the variants without sending anything}
                             {--delay=6 : Seconds to wait between sends}';
 
-    protected $description = 'Probe which SMS wordings the BetaSMS content filter accepts (sends real messages)';
+    protected $description = 'Probe which SMS wordings the gateway accepts (sends real messages)';
 
     /**
      * Ordered plainest-last. Each isolates one suspected trigger so a pass/fail
@@ -48,10 +48,10 @@ class LaasSmsProbe extends Command
             'word_notice'    => "KLAES LAAS: this is a notice that your number is changing.",
             'no_digits'      => "KLAES LAAS: your phone change request has been received.",
 
-            // The live workflow wordings. Observed on this account: `wf_submitted`
+            // The live workflow wordings. Observed on BetaSMS: `wf_submitted`
             // was accepted while `wf_approved` and `wf_fileno` were both refused
-            // 1713 — the suspects are "approved", "assigned" and "quote", the
-            // vocabulary of loan and prize spam. These four isolate them.
+            // — the suspects are "approved", "assigned" and "quote", the
+            // vocabulary of loan and prize spam. These five isolate them.
             'wf_submitted'   => "KLAES LAAS: your land allocation application LAAS-2026-000001 has been received and processing has started. You will be updated at each stage.",
             'wf_approved'    => "KLAES LAAS: your application LAAS-2026-000001 has been approved by the Director. Your file number will be assigned shortly.",
             'wf_fileno'      => "KLAES LAAS: your application LAAS-2026-000001 has been assigned File Number AG-2026-6. Please quote this number in all correspondence.",
@@ -60,7 +60,7 @@ class LaasSmsProbe extends Command
         ];
     }
 
-    public function handle(BetaSmsService $sms): int
+    public function handle(BulkSmsNgService $sms): int
     {
         $code     = (string) random_int(100000, 999999);
         $variants = $this->variants($code);
@@ -113,9 +113,9 @@ class LaasSmsProbe extends Command
 
             // Anything other than a content refusal means the account or the
             // number is the problem; more wording will not fix it.
-            if (!$ok && $status !== BetaSmsService::CODE_CONTENT_REFUSED) {
+            if (!$ok && $status !== BulkSmsNgService::CODE_REWORDABLE) {
                 $this->newLine();
-                $this->error("Stopped: status {$status} is not a content refusal. Check the account balance, sender ID, and the number.");
+                $this->error("Stopped: status {$status} is not about the message. Check the account balance, sender ID, and the number.");
                 break;
             }
         }
@@ -129,7 +129,7 @@ class LaasSmsProbe extends Command
             $this->info('Accepted wordings: ' . implode(', ', array_column($accepted, 0)));
             $this->line('Use the shortest accepted variant as the primary template in LaasProfileController::sendCode().');
         } else {
-            $this->warn('Nothing was accepted. The filter is refusing this sender or account outright rather than specific words — take it up with BetaSMS.');
+            $this->warn('Nothing was accepted. The gateway is refusing this sender or account outright rather than specific words — take it up with Bulk-SMS.ng.');
         }
 
         return self::SUCCESS;

@@ -41,6 +41,25 @@ class SroFormSchema
         self::TYPE_AGRICULTURAL => ['label' => 'Agricultural Land', 'icon' => 'wheat'],
     ];
 
+    /**
+     * The literal a select carries when the applicant's answer is not on the
+     * list. Seeing it stored anywhere means resolveOther() was skipped — the
+     * controller always swaps it for what they actually typed.
+     */
+    public const OTHER = 'Other';
+
+    /**
+     * No nationalities lookup table exists either. Nigerian leads because it is
+     * the overwhelming majority; the rest are the neighbours and the communities
+     * with a standing presence in Kano. "Other" catches everyone else.
+     */
+    public const NATIONALITIES = [
+        'Nigerian',
+        'Beninese', 'Cameroonian', 'Chadian', 'Ghanaian', 'Nigerien', 'Togolese',
+        'British', 'American', 'Chinese', 'Indian', 'Lebanese',
+        'Other',
+    ];
+
     public const SEX = ['Male', 'Female'];
     public const MARITAL_STATUS = ['Single', 'Married', 'Divorced', 'Widowed'];
     public const YES_NO = ['Yes', 'No'];
@@ -120,11 +139,58 @@ class SroFormSchema
     {
         return [
             'plot'     => ['label' => 'Plot Number', 'type' => 'text',     'col' => 2],
-            'street'   => ['label' => 'Street Name', 'type' => 'select',   'col' => 4, 'lookup' => 'street'],
-            'district' => ['label' => 'District',    'type' => 'select',   'col' => 2, 'lookup' => 'district'],
-            'lga'      => ['label' => 'L.G.A.',      'type' => 'select',   'col' => 2, 'lookup' => 'lga'],
-            'state'    => ['label' => 'State',       'type' => 'select',   'col' => 2, 'lookup' => 'state'],
+            'street'   => ['label' => 'Street Name', 'type' => 'select', 'col' => 4, 'lookup' => 'street',   'other' => true, 'other_key' => 'street_other'],
+            'district' => ['label' => 'District',    'type' => 'select', 'col' => 2, 'lookup' => 'district', 'other' => true, 'other_key' => 'district_other'],
+            'lga'      => ['label' => 'L.G.A.',      'type' => 'select', 'col' => 2, 'lookup' => 'lga',      'other' => true],
+            'state'    => ['label' => 'State',       'type' => 'select', 'col' => 2, 'lookup' => 'state',    'other' => true],
         ];
+    }
+
+    /**
+     * Name of the scratch input that captures what the applicant typed after
+     * choosing "Other".
+     *
+     * Deliberately NOT a real oss_applications column: the controller consumes
+     * it and drops it, so nothing that could never be promoted ever reaches
+     * form_data.
+     */
+    public static function specifyKey(string $key): string
+    {
+        return $key . '__specify';
+    }
+
+    /**
+     * Every select on this form that offers "Other", as
+     * [main key => the *_other column to also fill, or null].
+     *
+     * Null means the typed value simply replaces the selection: `nationality`
+     * has no companion column, and storing the literal "Other" there would
+     * tell an officer nothing.
+     */
+    public static function otherFields(string $type): array
+    {
+        $map = [];
+
+        foreach (self::sections($type) as $section) {
+            foreach ($section['fields'] as $field) {
+                if ($field['type'] === 'address') {
+                    foreach (self::addressParts() as $part => $meta) {
+                        if (!empty($meta['other'])) {
+                            $map[$field['prefix'] . $part] = isset($meta['other_key'])
+                                ? $field['prefix'] . $meta['other_key']
+                                : null;
+                        }
+                    }
+                    continue;
+                }
+
+                if (!empty($field['other'])) {
+                    $map[$field['key']] = null;
+                }
+            }
+        }
+
+        return $map;
     }
 
     /** Every field key for a type, flattened — address groups expanded. */
@@ -188,6 +254,12 @@ class SroFormSchema
 
                 $rules[$field['key']] = $rule;
             }
+        }
+
+        // The "Other" text boxes. Never required: the select itself carries the
+        // requirement, and an empty specify simply leaves "Other" as the answer.
+        foreach (array_keys(self::otherFields($type)) as $key) {
+            $rules[self::specifyKey($key)] = ['nullable', 'string', 'max:255'];
         }
 
         return $rules;
@@ -267,7 +339,7 @@ class SroFormSchema
                 'title'  => '6. Nationality and origin',
                 'icon'   => 'flag',
                 'fields' => [
-                    ['key' => 'nationality', 'label' => 'Nationality', 'type' => 'text', 'col' => 4, 'help' => 'Indicate if naturalised'],
+                    ['key' => 'nationality', 'label' => 'Nationality', 'type' => 'select', 'col' => 4, 'options' => self::NATIONALITIES, 'other' => true, 'help' => 'Indicate if naturalised'],
                     ['key' => 'state_of_origin', 'label' => '(A) State of origin', 'type' => 'select', 'col' => 4, 'lookup' => 'state', 'help' => 'If Nigerian'],
                     ['key' => 'lga', 'label' => '(B) Local Government of origin', 'type' => 'select', 'col' => 4, 'lookup' => 'lga', 'parent' => 'state_of_origin', 'help' => 'If Nigerian'],
                 ],
@@ -276,7 +348,7 @@ class SroFormSchema
                 'title'  => '7. Occupation',
                 'icon'   => 'hard-hat',
                 'fields' => [
-                    ['key' => 'occupation', 'label' => 'Occupation', 'type' => 'select', 'col' => 6, 'options' => self::OCCUPATIONS],
+                    ['key' => 'occupation', 'label' => 'Occupation', 'type' => 'select', 'col' => 6, 'options' => self::OCCUPATIONS, 'other' => true],
                     ['key' => 'annual_income', 'label' => '(a) Annual income', 'type' => 'text', 'col' => 6, 'help' => 'e.g. 2,400,000'],
                 ],
             ],
@@ -306,10 +378,10 @@ class SroFormSchema
                 'title'  => '2. Nationality and background',
                 'icon'   => 'flag',
                 'fields' => [
-                    ['key' => 'nationality', 'label' => 'Nationality', 'type' => 'text', 'col' => 4, 'help' => 'Indicate if naturalised'],
+                    ['key' => 'nationality', 'label' => 'Nationality', 'type' => 'select', 'col' => 4, 'options' => self::NATIONALITIES, 'other' => true, 'help' => 'Indicate if naturalised'],
                     ['key' => 'state_of_origin', 'label' => '(a) State of origin', 'type' => 'select', 'col' => 4, 'lookup' => 'state'],
                     ['key' => 'home_domicile', 'label' => '(b) Home domicile', 'type' => 'text', 'col' => 4],
-                    ['key' => 'occupation_or_business', 'label' => '(c) Occupation or business', 'type' => 'select', 'col' => 6, 'options' => self::OCCUPATIONS],
+                    ['key' => 'occupation_or_business', 'label' => '(c) Occupation or business', 'type' => 'select', 'col' => 6, 'options' => self::OCCUPATIONS, 'other' => true],
                     ['key' => 'annual_income', 'label' => '(e) Annual income', 'type' => 'text', 'col' => 6],
                     ['key' => 'nature_of_commerce', 'label' => '(d) Nature of commercial activity', 'type' => 'textarea', 'col' => 12],
                 ],
@@ -367,7 +439,7 @@ class SroFormSchema
                 'title'  => '2. Nationality',
                 'icon'   => 'flag',
                 'fields' => [
-                    ['key' => 'nationality', 'label' => 'Nationality', 'type' => 'text', 'col' => 4, 'help' => 'Indicate if naturalised'],
+                    ['key' => 'nationality', 'label' => 'Nationality', 'type' => 'select', 'col' => 4, 'options' => self::NATIONALITIES, 'other' => true, 'help' => 'Indicate if naturalised'],
                     ['key' => 'state_of_origin', 'label' => '(a) State of origin', 'type' => 'select', 'col' => 4, 'lookup' => 'state'],
                     ['key' => 'home_domicile', 'label' => '(b) Home domicile', 'type' => 'text', 'col' => 4],
                 ],
@@ -376,7 +448,7 @@ class SroFormSchema
                 'title'  => '3. Occupation or business',
                 'icon'   => 'hard-hat',
                 'fields' => [
-                    ['key' => 'occupation_or_business', 'label' => '3. Occupation or business', 'type' => 'select', 'col' => 6, 'options' => self::OCCUPATIONS],
+                    ['key' => 'occupation_or_business', 'label' => '3. Occupation or business', 'type' => 'select', 'col' => 6, 'options' => self::OCCUPATIONS, 'other' => true],
                     ['key' => 'nature_of_occupation', 'label' => '4. Nature of occupation or business', 'type' => 'textarea', 'col' => 6],
                 ],
             ],

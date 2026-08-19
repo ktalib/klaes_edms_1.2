@@ -7756,6 +7756,9 @@ class LegalSearchService
      * mls_file_no.source is the authority for the commissioning route: a bare
      * "Direct Allocation" means the file came off an Allocation List, while
      * "OP Direct Allocation" / "OP Resettlement" mean it was opened on an OP.
+     * mls_file_no covers only files commissioned through KLAES (~4.5% of
+     * file_indexings), so a legacy file has no route on record at all — there the
+     * root is inferred from the earliest State grant (RofO, else CofO) instead.
      *
      * Sets 'root_of_title' on the one row it belongs to; the print templates render
      * it beneath that row's Comments cell.
@@ -7769,6 +7772,27 @@ class LegalSearchService
         $ownFileNo = $this->normalizeLifecycleFileNo(
             preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', (string) $commissioningFileNo)
         );
+
+        // A KANGIS alias (e.g. "MLKN 337") is not a lifecycle of its own — the whole report
+        // is rendered under the land file it resolves to, so no row would ever carry the
+        // searched number. When that happens, adopt the lifecycle of the report's own
+        // File Commissioning row instead, otherwise every row is judged "not this file"
+        // and the remark silently never appears.
+        $ownFileNoOnAnyRow = false;
+        foreach ($rows as $row) {
+            if ($this->normalizeLifecycleFileNo((string) ($row['lifecycle_file_no'] ?? '')) === $ownFileNo) {
+                $ownFileNoOnAnyRow = true;
+                break;
+            }
+        }
+        if (!$ownFileNoOnAnyRow) {
+            foreach ($rows as $row) {
+                if (trim((string) ($row['source_table'] ?? '')) === 'File Commissioning') {
+                    $ownFileNo = $this->normalizeLifecycleFileNo((string) ($row['lifecycle_file_no'] ?? ''));
+                    break;
+                }
+            }
+        }
 
         // The comment describes THIS applicant's title, so an OP sitting on a linked or
         // successor file does not count. A SYSTEM temp number ("TEMP-91442") is the
@@ -7807,26 +7831,75 @@ class LegalSearchService
             break;
         }
 
-        // 2. No OP row on the file — fall back to how the file was commissioned.
-        if ($targetIndex === null) {
-            $src = strtolower(trim(preg_replace('/\s+/', ' ', (string) $commissioningSource)));
-            if ($src === '') {
-                return $rows;
-            }
+        // With no OP on the file the root is not an instrument at all — it is how the FILE
+        // itself was opened, so the remark belongs on the File Commissioning row. Only the
+        // LABEL is derived below; the anchor is the commissioning row either way.
+        //
+        // Where to put the remark if this file has no File Commissioning row of its own
+        // (a KANGIS alias, or a file suppressed from commissioning) — better on the grant
+        // that established the root than nowhere.
+        $fallbackIndex = null;
+        $src = strtolower(trim(preg_replace('/\s+/', ' ', (string) $commissioningSource)));
+
+        // 2. mls_file_no.source records how the file was commissioned.
+        if ($targetIndex === null && $src !== '') {
             if ($src === 'direct allocation' || $src === 'allocation list') {
                 $label = 'Allocation List';
             } elseif ($src === 'op' || str_starts_with($src, 'op ') || str_contains($src, 'occupancy permit')) {
                 $label = 'Occupancy Permit (OP)';
             } else {
+                // Rule 3 — "Other File Commissioning". The route is neither allocation
+                // nor OP (a Conversion, Re-grant, Subdivision…), so the title did not
+                // start at commissioning: the root is the earliest real instrument
+                // executed BEFORE the final commissioning, marked on that entry itself.
+                $earliest = $this->earliestInstrumentBeforeCommissioning($rows, $belongsToOwnFile);
+                if ($earliest === null) {
+                    return $rows;
+                }
+                $rows[$earliest['index']]['root_of_title'] = $earliest['label'];
+
                 return $rows;
             }
+        }
 
+        // 3. Nothing recorded at all — the file predates mls_file_no, which holds only
+        //    files commissioned through KLAES (~4.5% of file_indexings). For those legacy
+        //    files the root is read off the earliest State grant on the file: a Right of
+        //    Occupancy (or, failing that, the Certificate of Occupancy) means the land came
+        //    off an allocation list. Rows are already in timeline order, so the first match
+        //    IS the earliest.
+        if ($targetIndex === null && $src === '') {
+            $rofoIndex = null;
+            $cofoIndex = null;
+            foreach ($rows as $i => $row) {
+                $type = strtolower(trim((string) ($row['instrument_type'] ?? '')));
+                if ($type === '' || !$belongsToOwnFile($row)) {
+                    continue;
+                }
+                if (str_contains($type, 'right of occupancy')) {
+                    $rofoIndex = $i;
+                    break;
+                }
+                if ($cofoIndex === null && str_contains($type, 'certificate of occupancy')) {
+                    $cofoIndex = $i;
+                }
+            }
+            $fallbackIndex = $rofoIndex ?? $cofoIndex;
+            if ($fallbackIndex === null) {
+                return $rows;
+            }
+            $label = 'Allocation List';
+        }
+
+        // Anchor on the File Commissioning row.
+        if ($targetIndex === null) {
             foreach ($rows as $i => $row) {
                 if (trim((string) ($row['source_table'] ?? '')) === 'File Commissioning') {
                     $targetIndex = $i;
                     break;
                 }
             }
+            $targetIndex ??= $fallbackIndex;
         }
 
         if ($targetIndex === null || $label === null) {
@@ -7836,6 +7909,98 @@ class LegalSearchService
         $rows[$targetIndex]['root_of_title'] = $label;
 
         return $rows;
+    }
+
+    /**
+     * Rule 3 — "Other File Commissioning": the earliest real instrument executed before
+     * the file's final commissioning, as ['index' => int, 'label' => string], or null
+     * when the file carries none.
+     *
+     * "Real" excludes the synthetic rows the timeline builds for itself — commissioning,
+     * decommissioning, temporary-file and recertification markers — and the parcel-update
+     * rows (subdivision, merger, change of purpose, extension, separation), which record
+     * an administrative reshaping of the parcel rather than a dealing in the title.
+     *
+     * Timeline order is weight-based, not purely chronological, so "earliest" is decided
+     * on the parsed dates rather than on row position.
+     */
+    private function earliestInstrumentBeforeCommissioning(array $rows, callable $belongsToOwnFile): ?array
+    {
+        // The file's own final commissioning is the cut-off.
+        $commissioningTs = null;
+        foreach ($rows as $row) {
+            if (trim((string) ($row['source_table'] ?? '')) !== 'File Commissioning') {
+                continue;
+            }
+            if (!$belongsToOwnFile($row)) {
+                continue;
+            }
+            $ts = $this->rootOfTitleRowTimestamp($row);
+            if ($ts !== null && ($commissioningTs === null || $ts > $commissioningTs)) {
+                $commissioningTs = $ts;
+            }
+        }
+        if ($commissioningTs === null) {
+            return null;
+        }
+
+        $realSources = ['pra', 'file_history_staging', 'CofO_staging', 'deed_registrations'];
+
+        $bestIndex = null;
+        $bestTs = null;
+        foreach ($rows as $i => $row) {
+            if (!in_array(trim((string) ($row['source_table'] ?? '')), $realSources, true)) {
+                continue;
+            }
+            if (!$belongsToOwnFile($row)) {
+                continue;
+            }
+            $type = trim((string) ($row['instrument_type'] ?? ''));
+            if ($type === '' || $type === '-') {
+                continue;
+            }
+            if (preg_match('/subdivision|merger|change of purpose|plot extension|separation|parcel update/i', $type)) {
+                continue;
+            }
+            $ts = $this->rootOfTitleRowTimestamp($row);
+            if ($ts === null || $ts >= $commissioningTs) {
+                continue;
+            }
+            if ($bestTs === null || $ts < $bestTs) {
+                $bestTs = $ts;
+                $bestIndex = $i;
+            }
+        }
+
+        if ($bestIndex === null) {
+            return null;
+        }
+
+        return ['index' => $bestIndex, 'label' => trim((string) $rows[$bestIndex]['instrument_type'])];
+    }
+
+    /**
+     * A timeline row's date as a timestamp, for Root of Title comparisons. Prefers the
+     * transaction date and falls back to the registration date. A bare year (all a legacy
+     * file's commissioning row carries) counts as 1 January of that year.
+     */
+    private function rootOfTitleRowTimestamp(array $row): ?int
+    {
+        foreach (['transaction_date', 'reg_date'] as $key) {
+            $raw = trim((string) ($row[$key] ?? ''));
+            if ($raw === '' || $raw === '-') {
+                continue;
+            }
+            if (preg_match('/^(?:19|20)\d{2}$/', $raw)) {
+                return (int) \Carbon\Carbon::create((int) $raw, 1, 1, 0, 0, 0)->timestamp;
+            }
+            $parsed = rescue(fn () => \Carbon\Carbon::parse($raw), null, false);
+            if ($parsed) {
+                return (int) $parsed->timestamp;
+            }
+        }
+
+        return null;
     }
 
     /**

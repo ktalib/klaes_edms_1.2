@@ -265,6 +265,49 @@ class LaasApplicationController extends Controller
             }
         }
 
+        return $this->resolveOther($request, $type, $values);
+    }
+
+    /**
+     * Turn an "Other" selection into the answer the applicant actually typed.
+     *
+     * Two shapes, because the two are stored differently downstream:
+     *
+     *  - Street and district have real *_other columns in oss_applications (the
+     *    staff modal's "Specify" boxes). Both are written: the main column gets
+     *    the real name so every screen and the composed address line read
+     *    properly, and the companion column keeps the staff form's own shape so
+     *    a promoted record round-trips into it.
+     *
+     *  - Nationality, occupation, LGA and state have no companion column, so the
+     *    typed value simply replaces the selection. Storing the literal "Other"
+     *    in `nationality` would tell an officer nothing.
+     *
+     * The scratch `__specify` inputs are consumed here and never stored — they
+     * are not oss_applications columns and could not be promoted.
+     */
+    private function resolveOther(Request $request, string $type, array $values): array
+    {
+        foreach (SroFormSchema::otherFields($type) as $key => $companion) {
+            $specify = trim((string) $request->input(SroFormSchema::specifyKey($key), ''));
+
+            if (($values[$key] ?? null) !== SroFormSchema::OTHER) {
+                continue;
+            }
+
+            // "Other" with nothing typed stays as "Other" — an honest record of
+            // an unanswered question, rather than a silently blanked field.
+            if ($specify === '') {
+                continue;
+            }
+
+            $values[$key] = $specify;
+
+            if ($companion) {
+                $values[$companion] = $specify;
+            }
+        }
+
         return $values;
     }
 

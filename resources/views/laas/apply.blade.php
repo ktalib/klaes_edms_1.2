@@ -126,12 +126,26 @@
                                                    style="color: var(--ink-soft);">{{ $meta['label'] }}</label>
 
                                             @if($meta['type'] === 'select')
+                                                @php
+                                                    // Street and district have real *_other columns; a value
+                                                    // there is how a resumed draft remembers it was an "Other".
+                                                    $companion   = isset($meta['other_key']) ? $field['prefix'] . $meta['other_key'] : null;
+                                                    $specifyName = SroFormSchema::specifyKey($name);
+                                                @endphp
                                                 <select id="{{ $name }}" name="{{ $name }}" class="laas-input mt-1.5"
                                                         data-lookup="{{ $meta['lookup'] }}"
                                                         @if($parent) data-parent="{{ $parent }}" @endif
+                                                        @if(!empty($meta['other'])) data-allow-other="1" @endif
                                                         data-selected="{{ $v($name) }}">
                                                     <option value="">-- Select --</option>
                                                 </select>
+                                                @if(!empty($meta['other']))
+                                                    <input type="text" id="{{ $specifyName }}" name="{{ $specifyName }}"
+                                                           value="{{ old($specifyName, $companion ? $v($companion) : '') }}"
+                                                           placeholder="Specify {{ strip_tags($meta['label']) }}"
+                                                           data-specify-for="{{ $name }}"
+                                                           class="laas-input mt-1.5 hidden">
+                                                @endif
                                             @elseif($meta['type'] === 'combobox')
                                                 <input id="{{ $name }}" type="text" name="{{ $name }}"
                                                        value="{{ $v($name) }}" list="dl-{{ $name }}"
@@ -203,15 +217,33 @@
                                     {!! $field['label'] !!}
                                     @if($required)<span style="color: var(--danger);">*</span>@endif
                                 </label>
+                                @php
+                                    $options     = $field['options'] ?? [];
+                                    $cur         = $v($key);
+                                    $specifyName = SroFormSchema::specifyKey($key);
+                                    // A stored answer that is not on the list can only have come from
+                                    // "Other" — reopen it that way so a resumed draft keeps the answer.
+                                    $isOther = !empty($field['other']) && $options
+                                               && $cur !== '' && !in_array($cur, $options, true);
+                                @endphp
                                 <select id="{{ $key }}" name="{{ $key }}" class="laas-input mt-1.5"
                                         @if($required) required @endif
-                                        @if(!empty($field['lookup'])) data-lookup="{{ $field['lookup'] }}" data-selected="{{ $v($key) }}" @endif
+                                        @if(!empty($field['other'])) data-allow-other="1" @endif
+                                        @if(!empty($field['lookup'])) data-lookup="{{ $field['lookup'] }}" data-selected="{{ $cur }}" @endif
                                         @if(!empty($field['parent'])) data-parent="{{ $field['parent'] }}" @endif>
                                     <option value="">-- Select --</option>
-                                    @foreach($field['options'] ?? [] as $option)
-                                        <option value="{{ $option }}" @selected($v($key) === $option)>{{ $option }}</option>
+                                    @foreach($options as $option)
+                                        <option value="{{ $option }}"
+                                                @selected($isOther ? $option === SroFormSchema::OTHER : $cur === $option)>{{ $option }}</option>
                                     @endforeach
                                 </select>
+                                @if(!empty($field['other']))
+                                    <input type="text" id="{{ $specifyName }}" name="{{ $specifyName }}"
+                                           value="{{ old($specifyName, $isOther ? $cur : '') }}"
+                                           placeholder="Please specify"
+                                           data-specify-for="{{ $key }}"
+                                           class="laas-input mt-1.5 hidden">
+                                @endif
                                 @if(!empty($field['help']))
                                     <p class="mt-1 text-xs" style="color: var(--ink-faint);">{{ $field['help'] }}</p>
                                 @endif
@@ -304,17 +336,60 @@
             .catch(function () { return []; });
     }
 
+    var OTHER = @json(\App\Support\Laas\SroFormSchema::OTHER);
+
+    /** Show a select's "Specify" box only while it is on "Other". */
+    function toggleSpecify(select) {
+        var box = document.querySelector('[data-specify-for="' + select.id + '"]');
+        if (!box) { return; }
+
+        var on = select.value === OTHER;
+        box.classList.toggle('hidden', !on);
+        if (!on) { box.value = ''; }
+    }
+
     function fillSelect(select, rows, placeholder) {
-        var wanted = select.dataset.selected || select.value || '';
-        select.innerHTML = '<option value="">' + placeholder + '</option>' + rows.map(function (r) {
+        var wanted  = select.dataset.selected || select.value || '';
+        var matched = false;
+
+        var html = '<option value="">' + placeholder + '</option>' + rows.map(function (r) {
             var name = String(r.name);
             // Values are stored as NAMES, not ids: oss_applications keeps
             // addresses as text, and a numeric id there would be meaningless
             // to the officer reading the file.
-            var sel = name.toLowerCase() === String(wanted).toLowerCase() ? ' selected' : '';
-            return '<option value="' + name + '"' + sel + '>' + name + '</option>';
+            var hit = name.toLowerCase() === String(wanted).toLowerCase();
+            if (hit) { matched = true; }
+            return '<option value="' + name + '"' + (hit ? ' selected' : '') + '>' + name + '</option>';
         }).join('');
+
+        if (select.dataset.allowOther) {
+            html += '<option value="' + OTHER + '">' + OTHER + '</option>';
+        }
+
+        select.innerHTML = html;
+
+        // A stored answer the reference table does not contain can only have
+        // come from "Other". Reopen it that way, or a resumed draft would
+        // silently lose the answer.
+        if (!matched && wanted && select.dataset.allowOther) {
+            select.value = OTHER;
+            var box = document.querySelector('[data-specify-for="' + select.id + '"]');
+            if (box && !box.value) { box.value = wanted; }
+        }
+
+        toggleSpecify(select);
     }
+
+    // Every Other-capable select, including the plain ones fillSelect never
+    // touches (nationality, occupation), gets the reveal behaviour.
+    form.querySelectorAll('select[data-allow-other]').forEach(function (sel) {
+        sel.addEventListener('change', function () {
+            toggleSpecify(sel);
+            var box = document.querySelector('[data-specify-for="' + sel.id + '"]');
+            if (box && sel.value === OTHER) { box.focus(); }
+        });
+        toggleSpecify(sel);   // server-rendered selects start in the right state
+    });
 
     // ---- States, and the LGA lists that cascade from them -------------------
     var stateSelects = form.querySelectorAll('select[data-lookup="state"]');

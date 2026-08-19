@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Laas;
 use App\Http\Controllers\Controller;
 use App\Models\Laas\LaasApplicant;
 use App\Models\Laas\LaasApplication;
-use App\Services\BetaSmsService;
+use App\Services\BulkSmsNgService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -39,7 +39,7 @@ class LaasProfileController extends Controller
     /** Gateway status from the last code we tried to send, for the error text. */
     private ?string $lastSmsCode = null;
 
-    public function __construct(private BetaSmsService $sms)
+    public function __construct(private BulkSmsNgService $sms)
     {
     }
 
@@ -273,22 +273,19 @@ class LaasProfileController extends Controller
      * Text the confirmation code, working down from the friendliest wording to
      * the barest one the gateway will accept.
      *
-     * BetaSMS answers 1713 when its content filter refuses a message, names no
-     * offending word, and documents the code nowhere — the vendor's own API
-     * page lists neither 1713 nor any transactional/OTP route parameter, so
-     * wording is the only lever there is. Its filter is evidently a keyword
-     * blocklist ("notice" is refused outright while the same sentence without
-     * it is accepted), and the phrasings a one-time passcode normally uses —
-     * "code", "do not share", "if you did not request this" — are exactly what
-     * such filters are tuned to catch.
+     * Sent through Bulk-SMS.ng, whose promotional route is the only one enabled
+     * on this account. Promotional routes are exactly where gateways filter on
+     * wording, and the phrasings a one-time passcode normally uses — "code",
+     * "do not share", "if you did not request this" — are what such filters are
+     * tuned to catch. BetaSMS refused this very message before the switch.
      *
-     * So: try a natural sentence first, then fall back to something too plain
-     * to trip anything. A 1713 means the gateway delivered NOTHING, so a retry
-     * cannot double-send. Any other failure stops the walk — retrying a bad
-     * number or an empty account would just burn attempts.
+     * So: a natural sentence first, then something too plain to trip anything.
+     * A rejected message reached nobody, so the retry cannot double-send. Any
+     * failure that is not about the message stops the walk — retrying a bad
+     * number or an empty account would only burn attempts.
      *
-     * Use artisan laas:sms-probe to work out which wording this account's
-     * filter currently tolerates; it changes without notice.
+     * Use artisan laas:sms-probe to check which wordings this account currently
+     * tolerates; gateways change their rules without notice.
      */
     private function sendCode(string $phone, string $code, LaasApplicant $applicant): bool
     {
@@ -318,21 +315,21 @@ class LaasProfileController extends Controller
     /** Say what actually went wrong, rather than blaming the applicant's number. */
     private function sendFailureMessage(): string
     {
+        // Codes are Bulk-SMS.ng's; see the status table in BulkSmsNgService.
         switch ($this->lastSmsCode) {
-            case BetaSmsService::CODE_CONTENT_REFUSED:
+            case BulkSmsNgService::CODE_REWORDABLE:   // 602 — malformed request
                 return 'We could not send the confirmation message — our SMS provider rejected it. '
                      . 'This is a problem on our side, not with your number. Please try again shortly, '
                      . 'or contact the Lands office if it keeps happening.';
 
-            case '1703':
-                return 'That phone number was not accepted by our SMS provider. '
-                     . 'Please check it and try again.';
-
-            case '1702':
-            case '1704':
-            case '1025':
+            case '601':   // bad credentials
+            case '604':   // no balance
+            case '608':   // route not enabled for this account
                 return 'We could not send the confirmation message because of a problem with our SMS account. '
                      . 'Please contact the Lands office.';
+
+            case '606':   // gateway internal error
+                return 'Our SMS provider is having trouble right now. Please try again in a few minutes.';
 
             default:
                 return 'We could not send the confirmation message just now. Please try again shortly.';

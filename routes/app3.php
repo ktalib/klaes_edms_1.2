@@ -415,6 +415,12 @@ Route::middleware(['auth'])->group(function () {
         Route::delete('/{id}', [LossOfDocumentController::class, 'destroy'])->name('destroy')->where('id', '[0-9]+');
     });
 
+    // Information Products Verification — front-end only for now; the verify /
+    // flag / export endpoints get added here once the backend design is settled.
+    Route::get('/information-products/verification', function () {
+        return view('information_products.verification');
+    })->name('information-products.verification');
+
     // Title Status
     Route::prefix('title-status')->name('title-status.')->group(function () {
         Route::get('/', [TitleStatusController::class, 'index'])->name('index');

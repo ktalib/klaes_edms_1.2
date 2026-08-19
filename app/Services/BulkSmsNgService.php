@@ -61,6 +61,49 @@ class BulkSmsNgService
     }
 
     /**
+     * The only status worth rewording a message for.
+     *
+     * Unlike BetaSMS — whose 1713 is an outright content filter — this gateway
+     * documents no such rejection. 602 ("invalid request") is the one code that
+     * could plausibly be about the payload rather than the account, so it is
+     * the only one a second wording is tried on. Everything else (bad
+     * credentials, no balance, route not enabled) is an account problem that
+     * rephrasing cannot fix.
+     */
+    public const CODE_REWORDABLE = '602';
+
+    /**
+     * Send the first wording the gateway accepts, and report which one won.
+     *
+     * Mirrors BetaSmsService::sendFirstAccepted so callers can be switched
+     * between the two gateways without changing shape. A rejected message was
+     * delivered to nobody, so falling through cannot double-send.
+     *
+     * @param  array<int,string|null>  $messages  Best wording first.
+     * @return string|null  The message that was accepted, or null if none was.
+     */
+    public function sendFirstAccepted(string $phone, array $messages): ?string
+    {
+        foreach (array_values(array_filter($messages)) as $i => $message) {
+            if ($this->send($phone, $message)) {
+                return $message;
+            }
+
+            if ($this->lastCode !== self::CODE_REWORDABLE) {
+                return null;
+            }
+
+            Log::warning('BulkSmsNgService: wording rejected, trying the next one', [
+                'variant'   => $i,
+                'remaining' => count($messages) - $i - 1,
+                'reason'    => $this->lastReason,
+            ]);
+        }
+
+        return null;
+    }
+
+    /**
      * Send an SMS to a single Nigerian number.
      *
      * Messages are NOT truncated: the statutory notice texts run past one page

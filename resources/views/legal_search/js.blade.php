@@ -5001,7 +5001,9 @@ const executeSearchAjax = (filters, searchData) => {
   // mls_file_no.source (surfaced as _file_commissioning_source) is the authority
   // for the commissioning route: a bare "Direct Allocation" means the file came
   // off an Allocation List, while "OP Direct Allocation" / "OP Resettlement" mean
-  // the file was opened on an Occupancy Permit.
+  // the file was opened on an Occupancy Permit. mls_file_no only covers files
+  // commissioned through KLAES, so a legacy file has no route on record at all —
+  // there the root is inferred from the earliest State grant instead.
   const ROOT_OF_TITLE_OP = 'Occupancy Permit (OP)';
   const ROOT_OF_TITLE_ALLOCATION = 'Allocation List';
 
@@ -5013,6 +5015,50 @@ const executeSearchAjax = (filters, searchData) => {
     return null;
   };
 
+  // Rule 3 — "Other File Commissioning": the earliest real instrument executed before
+  // the file's final commissioning, as { index, label }, or null when it carries none.
+  //
+  // "Real" excludes the synthetic rows the timeline builds for itself — commissioning,
+  // decommissioning, temporary-file and recertification markers — and the parcel-update
+  // rows (subdivision, merger, change of purpose…), which record an administrative
+  // reshaping of the parcel rather than a dealing in the title.
+  //
+  // Timeline order is weight-based, not purely chronological, so "earliest" is decided on
+  // the parsed dates rather than on row position.
+  const REAL_INSTRUMENT_TABLES = ['pra', 'file_history_staging', 'CofO_staging', 'deed_registrations'];
+
+  const earliestInstrumentBeforeCommissioning = (rows, belongsToOwnFile) => {
+    // The file's own final commissioning is the cut-off.
+    let commissioningTs = null;
+    for (const r of rows) {
+      if (!r || !r._is_commissioning || !belongsToOwnFile(r)) continue;
+      const ts = getTransactionTimestamp(r);
+      if (ts !== null && (commissioningTs === null || ts > commissioningTs)) commissioningTs = ts;
+    }
+    if (commissioningTs === null) return null;
+
+    let bestIndex = -1;
+    let bestTs = null;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r || !belongsToOwnFile(r)) continue;
+      if (!REAL_INSTRUMENT_TABLES.includes(timelineSourceToDbTable(r.source_table))) continue;
+      if (isParcelUpdateRow(r)) continue;
+      const type = String(getMappedValue(r, 'transactionType') || '').trim();
+      if (!type || type === '-') continue;
+      const ts = getTransactionTimestamp(r);
+      if (ts === null || ts >= commissioningTs) continue;
+      if (bestTs === null || ts < bestTs) { bestTs = ts; bestIndex = i; }
+    }
+
+    if (bestIndex === -1) return null;
+
+    return {
+      index: bestIndex,
+      label: toProperCase(getMappedValue(rows[bestIndex], 'transactionType')),
+    };
+  };
+
   // Returns { index, label } for the row the Root of Title comment belongs under,
   // or null when neither root can be established for the searched file.
   const resolveRootOfTitle = (rows) => {
@@ -5022,7 +5068,7 @@ const executeSearchAjax = (filters, searchData) => {
     // file's own lifecycle block — an OP sitting on a linked/successor file is that
     // file's root, not this one's.
     const commIndex = rows.findIndex((r) => r && r._is_commissioning);
-    const ownFileNo = commIndex !== -1
+    let ownFileNo = commIndex !== -1
       ? extractLifecycleFileNo(rows[commIndex])
       : normalizeLifecycleFileNo(
           (userSelectedFileNumber && String(userSelectedFileNumber).trim())
@@ -5030,6 +5076,12 @@ const executeSearchAjax = (filters, searchData) => {
           || window.__lsLastSearchedFileNumber
           || ''
         );
+    // A KANGIS alias (e.g. "MLKN 337") is not a lifecycle of its own — the whole timeline
+    // renders under the land file it resolves to, so no row carries the searched number
+    // and every row would be judged "not this file". Adopt the first row's lifecycle then.
+    if (ownFileNo && !rows.some((r) => extractLifecycleFileNo(r) === ownFileNo)) {
+      ownFileNo = extractLifecycleFileNo(rows[0]) || ownFileNo;
+    }
     const belongsToOwnFile = (r) => {
       if (!ownFileNo) return true;
       const fn = extractLifecycleFileNo(r);
@@ -5052,10 +5104,48 @@ const executeSearchAjax = (filters, searchData) => {
       }
     }
 
-    // 2. No OP row captured — fall back to how the file was commissioned.
-    if (commIndex === -1) return null;
-    const label = commissioningSourceRoot(selectedFile && selectedFile._file_commissioning_source);
-    return label ? { index: commIndex, label } : null;
+    // With no OP on the file the root is not an instrument at all — it is how the FILE
+    // itself was opened, so the remark belongs on the File Commissioning row. Only the
+    // LABEL is derived below; the anchor is the commissioning row either way.
+    let label = null;
+    // Where to put the remark if this file has no File Commissioning row of its own
+    // (a KANGIS alias, or a file suppressed from commissioning) — better on the grant
+    // that established the root than nowhere.
+    let fallbackIndex = -1;
+
+    // 2. mls_file_no.source records how the file was commissioned.
+    const src = String((selectedFile && selectedFile._file_commissioning_source) || '').trim();
+    if (src !== '') {
+      label = commissioningSourceRoot(src);
+      if (!label) {
+        // Rule 3 — "Other File Commissioning". The route is neither allocation nor OP
+        // (a Conversion, Re-grant, Subdivision…), so the title did not start at
+        // commissioning: the root is the earliest real instrument executed BEFORE the
+        // final commissioning, marked on that entry itself.
+        return earliestInstrumentBeforeCommissioning(rows, belongsToOwnFile);
+      }
+    } else {
+      // 3. Nothing recorded at all — the file predates mls_file_no, which holds only files
+      // commissioned through KLAES (~4.5% of file_indexings). For those legacy files the
+      // root is read off the earliest State grant on the file: a Right of Occupancy (or,
+      // failing that, the Certificate of Occupancy) means the land came off an allocation
+      // list. Rows arrive in timeline order, so the first match IS the earliest.
+      let rofoIndex = -1;
+      let cofoIndex = -1;
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r || !belongsToOwnFile(r)) continue;
+        const type = canonicalWeightingInstrumentType(getMappedValue(r, 'transactionType'));
+        if (type === 'right of occupancy') { rofoIndex = i; break; }
+        if (type === 'certificate of occupancy' && cofoIndex === -1) cofoIndex = i;
+      }
+      fallbackIndex = rofoIndex !== -1 ? rofoIndex : cofoIndex;
+      if (fallbackIndex === -1) return null;
+      label = ROOT_OF_TITLE_ALLOCATION;
+    }
+
+    const index = commIndex !== -1 ? commIndex : fallbackIndex;
+    return index !== -1 ? { index, label } : null;
   };
 
   const rootOfTitleText = (label) => 'Root of Title: ' + label;
