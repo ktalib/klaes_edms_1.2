@@ -54,11 +54,6 @@
 
           <div class="fileinfo-tab-content active" data-fitab-content="basic">
             <div class="space-y-4">
-              {{-- Root of Title — the foundational grant the applicant's title traces
-                   back to. Populated by renderRootOfTitleBanner() in legal_search/js. --}}
-              <div class="hidden" id="ls-root-of-title-banner">
-                <span class="ls-root-of-title" id="ls-root-of-title-banner-text"></span>
-              </div>
               <div class="form-row">
                 <span class="form-label" id="file-number-label">File Number (MLPPFNo):</span>
                 <div class="form-value flex flex-col items-end gap-0.5">
@@ -149,6 +144,13 @@
               <div id="digital-archive-empty" class="hidden text-xs text-slate-500">No digital archive available.</div>
               <div id="digital-archive-folders" class="flex flex-col gap-2"></div>
             </div>
+          </div>
+
+          {{-- Root of Title — the foundational grant the applicant's title traces back
+               to. Sits below the Digital Archive, outside the tab panels so it shows on
+               both tabs. Populated by renderRootOfTitleBanner() in legal_search/js. --}}
+          <div class="hidden mt-4" id="ls-root-of-title-banner">
+            <span class="ls-root-of-title-lg" id="ls-root-of-title-banner-text"></span>
           </div>
         </div>
 

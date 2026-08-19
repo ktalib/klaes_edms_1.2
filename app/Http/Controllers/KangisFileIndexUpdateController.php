@@ -2,12 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ApplicationMother;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
 
@@ -35,110 +34,62 @@ use Throwable;
  * Everything else is delegated to FileIndexingController::update() so the two paths
  * cannot drift, and nothing in the existing create/edit workflow is modified.
  */
-class KangisFileIndexUpdateController extends Controller
+class KangisFileIndexUpdateController extends FileIndexUpdatePageController
 {
     /**
-     * Render the KANGIS update form (a clone of the create form, prefilled).
+     * Render the KANGIS update form: the same prepared payload as the generic update
+     * screen, rendered through the KANGIS clone (which pins the file number and forces
+     * the placeholder block open).
      */
+    public function __invoke(Request $request, $id)
+    {
+        $prepared = $this->prepareUpdateForm($request, $id);
+
+        if (!is_array($prepared)) {
+            return $prepared;
+        }
+
+        return view($this->formView(), $prepared);
+    }
+
+    /** Kept so the route's ->name('kangis.file-index.edit') action reads naturally. */
     public function edit(Request $request, $id)
     {
-        try {
-            $record = DB::connection('sqlsrv')
-                ->table('file_indexings')
-                ->where('id', (int) $id)
-                ->first();
+        return $this->__invoke($request, $id);
+    }
 
-            if (!$record) {
-                return redirect()->route('kangis.indexed-files')
-                    ->with('error', 'KANGIS indexed file not found.');
-            }
+    protected function formView(): string
+    {
+        return 'fileindexing.addons.kangis_update_indexing';
+    }
 
-            // Attach the related-file rows the form's edit mode reads
-            // (window.editingRecord.related_details).
-            $relatedDetails = DB::connection('sqlsrv')
-                ->table('file_indexing_links')
-                ->where('file_indexing_id', $record->id)
-                ->get()
-                ->map(function ($link) {
-                    return [
-                        'file_number' => $link->file_number,
-                        'related_fileno' => $link->file_number,
-                        'file_title' => $link->file_title ?? null,
-                        'plot_number' => $link->plot_number ?? null,
-                        'tp_no' => $link->tp_no ?? null,
-                        'lpkn_no' => $link->lpkn_no ?? null,
-                        'location' => $link->location ?? null,
-                        'entity_type' => $link->entity_type ?? null,
-                        'entity_name' => $link->entity_name ?? null,
-                        'customer_name' => $link->customer_name ?? null,
-                        'land_use_type' => $link->land_use_type ?? null,
-                        'district' => $link->district ?? null,
-                        'lga' => $link->lga ?? null,
-                    ];
-                })
-                ->values()
-                ->all();
+    protected function prepareUpdateForm(Request $request, $id)
+    {
+        $prepared = parent::prepareUpdateForm($request, $id);
 
-            // The shared form partials read a handful of properties that are NOT columns
-            // on file_indexings ($record->has_related_file, $record->land_use, ...) and
-            // read them unguarded, inside branches that only run when $record is set.
-            // No page ever set $record before this one, so those branches had never
-            // executed; on a plain stdClass row they raise "Undefined property", which
-            // Laravel promotes to an ErrorException and 500s the page.
-            //
-            // Fluent returns null for anything absent, so the partials stay untouched and
-            // any property they reach for in future degrades to "empty" instead of fatal.
-            $attributes = (array) $record;
-            $attributes['related_details'] = $relatedDetails;
-            $record = new \Illuminate\Support\Fluent($attributes);
-
-            $PageTitle = 'Update KANGIS File Index';
-            $PageDescription = 'Update an existing KANGIS indexed file';
-
-            $availableApplications = $this->getAvailableApplications();
-            $registries = \App\Models\Registry::orderBy('name')->get();
-            $lgas = \App\Models\Lga::orderBy('name')->pluck('name');
-            $districts = \App\Models\District::orderBy('name')->pluck('name');
-            $physicalRegistries = \App\Models\PhysicalRegistry::orderBy('name')->get();
-            $landUseTypes = \App\Models\LandUseType::orderBy('name')->get()->pluck('name', 'name');
-            $streetNames = \App\Models\StreetName::orderBy('name')->get();
-
-            $backButton = [
-                'label' => 'Back to KANGIS Indexed Files',
-                'route' => route('kangis.indexed-files'),
-            ];
-
-            $isNewKnMode = false;
-            $prefillFileNumber = '';
-            $prefillTrackingId = '';
-            $returnTo = (string) $request->query('return_to', route('kangis.indexed-files'));
-
-            return view('fileindexing.addons.kangis_update_indexing', compact(
-                'record',
-                'PageTitle',
-                'PageDescription',
-                'availableApplications',
-                'registries',
-                'lgas',
-                'districts',
-                'physicalRegistries',
-                'landUseTypes',
-                'streetNames',
-                'backButton',
-                'isNewKnMode',
-                'prefillFileNumber',
-                'prefillTrackingId',
-                'returnTo'
-            ));
-        } catch (Throwable $e) {
-            Log::error('KangisFileIndexUpdate::edit - failed to load form', [
-                'id' => $id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return redirect()->route('kangis.indexed-files')
-                ->with('error', 'Error loading KANGIS update form: ' . $e->getMessage());
+        if (!is_array($prepared)) {
+            return $prepared;
         }
+
+        $prepared['PageTitle'] = 'Update KANGIS File Index';
+        $prepared['PageDescription'] = 'Update an existing KANGIS indexed file';
+        $prepared['returnTo'] = (string) $request->query('return_to', route('kangis.indexed-files'));
+
+        return $prepared;
+    }
+
+    protected function backButton(Request $request): ?array
+    {
+        return [
+            'label' => 'Back to KANGIS Indexed Files',
+            'route' => route('kangis.indexed-files'),
+        ];
+    }
+
+    /** The KANGIS screen never falls back to the legacy edit page. */
+    protected function shouldUseLegacyForm(Request $request): bool
+    {
+        return false;
     }
 
     /**
@@ -167,10 +118,24 @@ class KangisFileIndexUpdateController extends Controller
         // physical folder from its same-numbered siblings and must survive every edit;
         // letting the form change it would drag the whole collision/cascade-rename
         // problem back into a flow whose entire purpose is to avoid it.
-        $request->merge([
+        $merge = [
             'file_number' => $pinnedFileNumber,
             'general_registry' => $request->input('general_registry') ?: ($existing->general_registry ?? 'KANGIS'),
-        ]);
+        ];
+
+        // Preserve the temporary-file link. The create form has no temp-file input — it
+        // infers temp status purely from a "(T)" suffix on the file number, and update()
+        // then does an unconditional reset (has_temp_file = false, temp_file_no = null)
+        // whenever no "(T)" reaches it. But a temp record stores the BASE number in
+        // file_number and keeps the "(T)" only in temp_file_no, so nothing on this form
+        // can carry it, and every save would silently sever the link. Feed it back so
+        // update()'s detector sees it.
+        $existingTempFileNo = trim((string) ($existing->temp_file_no ?? ''));
+        if ($existingTempFileNo !== '' && trim((string) $request->input('temp_file_no', '')) === '') {
+            $merge['temp_file_no'] = $existingTempFileNo;
+        }
+
+        $request->merge($merge);
 
         // Delegate the actual save. Reused rather than copied so this path picks up
         // every fix made to the shared one (bills, links, PRA, prop_id, entity/customer).
@@ -268,17 +233,4 @@ class KangisFileIndexUpdateController extends Controller
         }
     }
 
-    private function getAvailableApplications()
-    {
-        return ApplicationMother::on('sqlsrv')
-            ->whereNotExists(function ($query) {
-                $query->select(DB::raw(1))
-                    ->from('file_indexings')
-                    ->whereRaw('file_indexings.main_application_id = mother_applications.id');
-            })
-            ->select('id', 'fileno', 'np_fileno', 'first_name', 'middle_name', 'surname', 'corporate_name', 'applicant_type')
-            ->orderBy('created_at', 'desc')
-            ->limit(100)
-            ->get();
-    }
 }

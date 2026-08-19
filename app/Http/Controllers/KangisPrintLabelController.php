@@ -500,14 +500,6 @@ class KangisPrintLabelController extends Controller
                 $createdBatchesData = [];
                 $allLabelItems = [];
 
-                // Anchor = lowest loaded registry batch. It maps to the shelf the user selected;
-                // every other batch is offset from it so gaps in the loaded batches are preserved
-                // (e.g. start B1 at batch 25 -> batch 32 lands on B8, not B2).
-                $anchorBatch = $groups->keys()
-                    ->filter(function ($k) { return is_numeric($k); })
-                    ->map(function ($k) { return (int) $k; })
-                    ->min();
-
                 foreach ($groups as $regBatchNo => $groupFiles) {
                     $regBatchNoStr = (string)$regBatchNo;
 
@@ -525,13 +517,10 @@ class KangisPrintLabelController extends Controller
                         $currentRackSecondary = $a['rack_secondary'];
                         $currentShelfNumber   = $a['shelf_number'];
                         $currentFullLabel     = $a['full_label'];
-                    } elseif ($anchorBatch !== null && is_numeric($regBatchNoStr)) {
-                        // Derive the shelf from the file's registry batch range, preserving gaps:
-                        //   shelf = selected start shelf + (this batch - lowest loaded batch)
-                        // so batch 25 -> B1, 32 -> B8, regardless of which batches were skipped.
-                        $currentShelfNumber = max(1, $shelfNumber + ((int) $regBatchNoStr - $anchorBatch));
-                        $currentFullLabel   = $currentRackPrimary . $currentShelfNumber;
                     }
+                    // Batches with no explicit assignment keep the selected rack/shelf as-is.
+                    // Registry batches routinely share one shelf, so they are not spread
+                    // across consecutive shelves by their batch number.
 
                     // 2. Generate Batch Number
                     $batchNumber = 'KANGIS-' . $prefix . '-' . $now->format('YmdHis') . ($groups->count() > 1 ? '-' . $regBatchNoStr : '');

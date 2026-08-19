@@ -708,7 +708,7 @@
         <tr>
           <td>${row.sn}</td>
           <td class="file-no-col">${row.file_no || '-'}</td>
-          <td>${row.instrument_type}</td>
+          <td>${row.instrument_type}${row.root_of_title ? `<div class="root-of-title">Root of Title: ${row.root_of_title}</div>` : ''}</td>
           <td>${row.grantor}</td>
           <td>${row.grantee}</td>
           <td class="party-3-col">${row.party_3 || '-'}</td>

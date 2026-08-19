@@ -1564,7 +1564,9 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'fileindexing'], func
 
     // Parameterized routes (must come last)
     Route::get('/{id}', [App\Http\Controllers\FileIndexingController::class, 'show'])->name('fileindexing.show');
-    Route::get('/{id}/edit', [App\Http\Controllers\FileIndexingController::class, 'edit'])->name('fileindexing.edit');
+    // Renders the create form in update mode, replacing the drifted
+    // fileindexing/edit.blade.php. Add ?legacy=1 to fall back to the old screen.
+    Route::get('/{id}/edit', App\Http\Controllers\FileIndexUpdatePageController::class)->name('fileindexing.edit');
     Route::put('/{id}', [App\Http\Controllers\FileIndexingController::class, 'update'])->name('fileindexing.update');
     Route::delete('/{id}', [App\Http\Controllers\FileIndexController::class, 'destroy'])->name('fileindexing.destroy');
 });

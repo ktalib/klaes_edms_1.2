@@ -571,9 +571,9 @@
     }
 
     /* Root of Title — the foundational grant the applicant's title traces back to.
-       Shown as a comment on the timeline row it belongs to, and echoed above the File
-       Number in the File Information card. Bold + italic in indigo so it reads as a
-       remark rather than as record data. */
+       Shown as a comment on the timeline row it belongs to, and echoed below the
+       Digital Archive in the File Information card. Bold + italic in indigo so it
+       reads as a remark rather than as record data. */
     .ls-root-of-title {
       font-weight: 700;
       font-style: italic;
@@ -581,19 +581,35 @@
       font-size: 0.75rem;
       letter-spacing: 0.01em;
     }
+    /* Inside a timeline cell the remark always sits on its own line, beneath the
+       value it annotates (the instrument type, or any existing comment). */
+    #timeline-table .ls-root-of-title {
+      display: block;
+      margin-top: 0.15rem;
+      line-height: 1.25;
+    }
     /* The Comments column truncates to one line; the row carrying the Root of Title
        wraps instead so the remark is never clipped. */
     #timeline-table td.ls-comments-cell-root {
       white-space: normal;
     }
-    #timeline-table td.ls-comments-cell-root .ls-root-of-title {
+    /* The File Information card's copy sits below the Digital Archive and is the
+       headline reading of the file, so it prints larger and heavier than the
+       timeline's inline remark. */
+    .ls-root-of-title-lg {
       display: block;
-      margin-top: 0.15rem;
-      line-height: 1.25;
+      font-weight: 800;
+      font-style: italic;
+      color: #6d28d9;
+      font-size: 1rem;
+      line-height: 1.35;
+      letter-spacing: 0.01em;
     }
     #ls-root-of-title-banner {
-      padding-bottom: 0.25rem;
-      border-bottom: 1px dashed #ddd6fe;
+      padding: 0.5rem 0.75rem;
+      background: #f5f3ff;
+      border: 1px solid #ddd6fe;
+      border-radius: 0.5rem;
     }
 
     /* Timeline & detail tables – prevent cramped columns */

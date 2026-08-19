@@ -88,6 +88,8 @@ class LaasApplication extends Model
         'existing_allocation_ref',
         'applicant_remarks',
         'stage',
+        'land_type',
+        'form_data',
         'file_number',
         'survey_report_request_id',
         'land_recommendation_id',
@@ -102,6 +104,9 @@ class LaasApplication extends Model
     ];
 
     protected $casts = [
+        // The full Statutory Right of Occupancy answers, keyed by
+        // oss_applications column name. See App\Support\Laas\SroFormSchema.
+        'form_data'            => 'array',
         'director_approved_at' => 'datetime',
         'fileno_assigned_at'   => 'datetime',
         'submitted_at'         => 'datetime',

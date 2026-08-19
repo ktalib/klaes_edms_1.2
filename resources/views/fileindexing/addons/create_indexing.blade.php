@@ -1793,6 +1793,10 @@
             };
         })();
     </script>
+
+    @isset($record)
+        @include('fileindexing.addons.partials.update_bootstrap')
+    @endisset
 @endsection
 
 @push('scripts')

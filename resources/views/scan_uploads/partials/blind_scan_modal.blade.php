@@ -9,7 +9,7 @@
           <div>
             <h2 class="text-xl font-bold text-gray-900">Blind Scan Documents</h2>
             <p class="text-sm text-gray-600" id="blind-scan-modal-file-number">Searching for folder...</p>
-          </div>
+          </div> 
         </div>
         <p class="text-xs text-gray-500 mt-3">
           The system will move selected files into Scan Uploads and register them automatically.

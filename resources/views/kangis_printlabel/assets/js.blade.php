@@ -392,17 +392,8 @@ document.addEventListener('DOMContentLoaded', function() {
             el.classList.toggle('cursor-not-allowed',!!disabled);
         });
     }
-    function batchGroupDuplicateLabels() {
-        var seen={},dups=[];
-        state.batchGroups.forEach(function(g){
-            if(seen[g.fullLabel])dups.push('Batches '+seen[g.fullLabel]+' & '+g.key+' (“'+g.fullLabel+'”)');
-            else seen[g.fullLabel]=g.key;
-        });
-        return dups;
-    }
     function batchGroupMetaText() {
-        var dups=batchGroupDuplicateLabels();
-        if(dups.length)return 'Duplicate shelf/rack on '+dups.join(', ');
+        // Registry batches are allowed to share the same shelf/rack.
         var n=state.batchGroups.length;
         return n+' registry batch'+(n===1?'':'es');
     }
@@ -449,9 +440,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 lastFile:files[files.length-1].file_number,
                 rackPrimary:p.rackPrimary||(state.rackPrimary||'A'),
                 rackSecondary:p.rackSecondary||'',
-                // Default to consecutive shelves from the selected one, matching the
-                // server's anchor-offset behaviour when nothing is assigned.
-                shelfNumber:p.shelfNumber||String(Math.max(1,(parseInt(state.shelfNumber,10)||1)+i))
+                // Every batch starts on the shelf selected above; batches routinely
+                // share one shelf, so they are not spread across consecutive ones.
+                shelfNumber:p.shelfNumber||String(Math.max(1,parseInt(state.shelfNumber,10)||1))
             };
             g.fullLabel=buildBatchGroupLabel(g);
             return g;
@@ -496,7 +487,7 @@ document.addEventListener('DOMContentLoaded', function() {
             var meta=document.getElementById('batchGroupPanelMeta');
             if(!meta)return;
             meta.textContent=batchGroupMetaText();
-            meta.className='text-xs font-medium '+(batchGroupDuplicateLabels().length?'text-red-600':'text-slate-600');
+            meta.className='text-xs font-medium text-slate-600';
         };
         updateMeta();
 
@@ -632,8 +623,6 @@ document.addEventListener('DOMContentLoaded', function() {
         };
 
         if (isBatchGroupMode()) {
-            var dups = batchGroupDuplicateLabels();
-            if (dups.length) throw new Error(dups.join(', ') + ' share the same shelf/rack. Give each registry batch its own shelf.');
             // Only send assignments for batches that still have a selected file; a batch
             // whose files were all unticked must not claim a shelf.
             var selectedKeys = {};

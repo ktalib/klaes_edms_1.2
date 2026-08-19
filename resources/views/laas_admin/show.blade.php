@@ -149,22 +149,20 @@
 
                     <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
                         <h2 class="mb-4 text-sm font-extrabold uppercase tracking-widest text-slate-700">Application details</h2>
-                        <dl class="grid gap-x-6 gap-y-4 sm:grid-cols-3">
+
+                        {{-- Everything the applicant answered, rendered from the same
+                             schema the form was built from, so the two cannot drift. --}}
+                        @include('laas.partials.answers', [
+                            'sections'  => $sections,
+                            'answers'   => $answers,
+                            'typeLabel' => $typeLabel,
+                        ])
+
+                        <dl class="mt-6 grid gap-x-6 gap-y-4 border-t border-slate-200 pt-5 sm:grid-cols-3">
                             @foreach([
-                                'Applicant type' => $application->applicant_type,
-                                'Applicant'      => $application->applicant_name,
-                                'Phone'          => $application->applicant_phone,
-                                'Email'          => $application->applicant_email,
-                                'NIN'            => $application->applicant_nin,
-                                'Address'        => $application->applicant_address,
-                                'Land use'       => $application->land_use,
-                                'LGA'            => $lga->name ?? null,
-                                'District'       => $district->name ?? null,
-                                'Location'       => $application->location,
-                                'Plot number'    => $application->plot_no,
-                                'Approx. size'   => $application->approx_size,
-                                'Existing ref.'  => $application->existing_allocation_ref,
-                                'Submitted'      => $application->submitted_at?->format('j M Y, g:ia'),
+                                'Reference'  => $application->reference_no,
+                                'Land type'  => $typeLabel,
+                                'Submitted'  => $application->submitted_at?->format('j M Y, g:ia'),
                             ] as $term => $value)
                                 @if($value)
                                     <div>
@@ -174,13 +172,6 @@
                                 @endif
                             @endforeach
                         </dl>
-
-                        @if($application->applicant_remarks)
-                            <div class="mt-5 border-t border-slate-200 pt-4">
-                                <p class="text-xs font-medium text-slate-500">Applicant's remarks</p>
-                                <p class="mt-1 text-sm text-slate-900">{{ $application->applicant_remarks }}</p>
-                            </div>
-                        @endif
                     </div>
 
                     @if($documents->isNotEmpty())

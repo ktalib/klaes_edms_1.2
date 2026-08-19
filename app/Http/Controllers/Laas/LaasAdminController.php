@@ -3,15 +3,14 @@
 namespace App\Http\Controllers\Laas;
 
 use App\Http\Controllers\Controller;
-use App\Models\District;
 use App\Models\Laas\LaasApplication;
 use App\Models\Laas\LaasStageNotification;
-use App\Models\Lga;
 use App\Models\MlsFileNo;
 use App\Models\Prefix;
 use App\Services\Laas\LaasNotificationService;
 use App\Services\Laas\LaasWorkflowService;
 use App\Services\MlsSerialAllocationService;
+use App\Support\Laas\SroFormSchema;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -79,13 +78,17 @@ class LaasAdminController extends Controller
     public function show(int $id)
     {
         $application = LaasApplication::findOrFail($id);
+        $type = $application->land_type ?: SroFormSchema::TYPE_RESIDENTIAL;
 
         return view('laas_admin.show', [
             'application' => $application,
             'events'      => $application->events()->orderBy('id')->get(),
             'documents'   => $application->documents()->orderBy('id')->get(),
-            'lga'         => $application->lga_id ? Lga::find($application->lga_id) : null,
-            'district'    => $application->district_id ? District::find($application->district_id) : null,
+            // Rendered through the same schema the applicant filled, so the
+            // office reads back exactly the questions that were asked.
+            'sections'    => SroFormSchema::sections($type),
+            'answers'     => (array) ($application->form_data ?? []),
+            'typeLabel'   => SroFormSchema::typeLabel($type),
             'prefixes'    => $this->prefixesFor($application),
             'docTypes'    => LaasApplicationController::DOC_TYPES,
         ]);
@@ -179,22 +182,18 @@ class LaasAdminController extends Controller
             $allocation = DB::connection('sqlsrv')->transaction(function () use ($application, $data, $year) {
                 $allocation = $this->serials->allocateNextFreeSerial($data['prefix'], $year);
 
-                $lga      = $application->lga_id ? Lga::find($application->lga_id) : null;
-                $district = $application->district_id ? District::find($application->district_id) : null;
-
+                // plot_no / location / lga / district describe the PARCEL, and
+                // the Statutory Right of Occupancy form never asks for one —
+                // the Ministry allocates the plot. They stay null here and are
+                // filled in downstream, once a parcel is actually chosen.
                 MlsFileNo::create([
                     'land_use'           => $data['prefix'],
                     'year'               => $year,
                     'serial_number'      => $allocation['serial'],
                     'full_file_number'   => $allocation['file_number'],
                     'file_name'          => $application->applicant_name,
-                    'plot_no'            => $application->plot_no,
-                    'location'           => $application->location,
-                    'lga'                => $lga->name ?? null,
-                    'district'           => $district->name ?? null,
-                    'customer_type'      => $application->applicant_type ?: 'Individual',
+                    'customer_type'      => $this->customerTypeFor($application),
                     'file_option'        => 'normal',
-                    'purpose_id'         => $application->purpose_id,
                     'created_by'         => Auth::user()->name ?? Auth::user()->email ?? 'LAAS Portal',
                     'commissioning_date' => now(),
 
@@ -240,6 +239,18 @@ class LaasAdminController extends Controller
         ]);
 
         return back()->with('status', "File number {$allocation['file_number']} assigned." . $this->notifiedNote());
+    }
+
+    /**
+     * Residential applications are filed by a person; the commercial,
+     * industrial and agricultural forms are filed by an applicant *or company*
+     * and are treated as corporate for the file record.
+     */
+    private function customerTypeFor(LaasApplication $application): string
+    {
+        return $application->land_type === SroFormSchema::TYPE_RESIDENTIAL
+            ? 'Individual'
+            : 'Corporate';
     }
 
     /**

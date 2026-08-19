@@ -5734,7 +5734,23 @@
         const baseFileNumber = hasTempFile
             ? tempSource.replace(tempSuffixPattern, '').trim()
             : fileNumber.trim();
-        const tempFileNo = hasTempFile ? `${baseFileNumber}(T)` : null;
+        let tempFileNo = hasTempFile ? `${baseFileNumber}(T)` : null;
+
+        // Edit mode: this form has no temp-file input — it infers temp status purely from
+        // a "(T)" suffix on the file number. A stored temp record keeps the BASE number in
+        // file_number and the "(T)" only in temp_file_no, so nothing on screen carries it,
+        // and update() unconditionally resets has_temp_file/temp_file_no when no "(T)"
+        // reaches it. Inherit the stored value so editing never severs the link. The
+        // backend re-derives has_temp_file and the base file number from this.
+        if (!tempFileNo) {
+            const inheritedTempFileNo = (editModeState.record?.temp_file_no
+                || window.editingRecord?.temp_file_no
+                || '').toString().trim();
+
+            if (inheritedTempFileNo !== '') {
+                tempFileNo = inheritedTempFileNo;
+            }
+        }
 
         // Check if any related file inputs have values (array inputs)
         const relatedFileInputs = document.querySelectorAll('input[name="related_fileno[]"]');

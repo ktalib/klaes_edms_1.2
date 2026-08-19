@@ -1813,6 +1813,8 @@
         })();
     </script>
 
+    @include('fileindexing.addons.partials.update_bootstrap')
+
     {{-- KANGIS update bootstrap. Runs after create-indexing-dialog.js has initialised.
          Populates the form straight from the server-provided row and pins the file
          number so this page can only ever update the variant it was opened for. --}}
@@ -1942,23 +1944,10 @@
                 }
             }
 
-            function applyRecord() {
-                // Populate by id — never via /fileindex/check-indexed, whose normalisation
-                // cannot tell "KNML 1_2" apart from "KNML 12".
-                if (typeof window.applyExistingIndexedRecord === 'function') {
-                    window.applyExistingIndexedRecord(window.editingRecord);
-                }
+            window.addEventListener('fileindex:update-populated', function () {
                 applyKangisFields();
                 freezeFileNumber();
-            }
-
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', function () {
-                    setTimeout(applyRecord, 0);
-                });
-            } else {
-                setTimeout(applyRecord, 0);
-            }
+            });
         })();
     </script>
 @endsection

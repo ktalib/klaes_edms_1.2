@@ -3,12 +3,10 @@
 namespace App\Http\Controllers\Laas;
 
 use App\Http\Controllers\Controller;
-use App\Models\District;
-use App\Models\LandUse;
 use App\Models\Laas\LaasApplication;
 use App\Models\Laas\LaasDocument;
-use App\Models\Lga;
 use App\Services\Laas\LaasNotificationService;
+use App\Support\Laas\SroFormSchema;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,15 +16,21 @@ use Illuminate\Support\Facades\Storage;
 /**
  * The applicant's own view of their applications — spec steps (a) and (b), plus
  * the status page they return to for every later stage.
+ *
+ * The form itself is the official Application for Statutory Right of Occupancy,
+ * in all four land-type variants. Its shape lives in
+ * App\Support\Laas\SroFormSchema, and the answers are stored as a JSON payload
+ * keyed by `oss_applications` column name, so an approved application can be
+ * promoted into the live OSS table without a translation layer.
  */
 class LaasApplicationController extends Controller
 {
-    /** Uploads the applicant may attach, and whether one is required to submit. */
+    /** Uploads the applicant may attach. */
     public const DOC_TYPES = [
-        'id_card'  => ['label' => 'Means of identification', 'required' => true],
-        'passport' => ['label' => 'Passport photograph',     'required' => true],
-        'sketch'   => ['label' => 'Sketch / site plan',      'required' => false],
-        'other'    => ['label' => 'Supporting document',     'required' => false],
+        'passport' => ['label' => 'Passport photograph',      'required' => true],
+        'id_card'  => ['label' => 'Means of identification',  'required' => true],
+        'sketch'   => ['label' => 'Sketch / site plan',       'required' => false],
+        'other'    => ['label' => 'Supporting document',      'required' => false],
     ];
 
     public function __construct(private LaasNotificationService $notifications)
@@ -35,9 +39,9 @@ class LaasApplicationController extends Controller
 
     /**
      * The application form (spec a). Resumes the applicant's open draft if they
-     * left one behind.
+     * left one behind, and opens on whichever land type that draft was for.
      */
-    public function form()
+    public function form(Request $request)
     {
         $applicant = Auth::guard('laas')->user();
 
@@ -46,11 +50,20 @@ class LaasApplicationController extends Controller
             ->orderByDesc('id')
             ->first();
 
+        // ?type= wins so the land-type tabs can switch without losing the draft;
+        // otherwise resume the draft's own type.
+        $type = $request->query('type') ?: ($draft->land_type ?? SroFormSchema::TYPE_RESIDENTIAL);
+
+        if (!SroFormSchema::isValidType($type)) {
+            $type = SroFormSchema::TYPE_RESIDENTIAL;
+        }
+
         return view('laas.apply', [
             'draft'     => $draft,
             'applicant' => $applicant,
-            'landUses'  => LandUse::orderBy('landuse')->get(['id', 'landuse']),
-            'lgas'      => Lga::where('is_active', true)->orderBy('name')->get(['id', 'name']),
+            'type'      => $type,
+            'sections'  => SroFormSchema::sections($type),
+            'answers'   => $this->answersFor($draft, $applicant),
             'docTypes'  => self::DOC_TYPES,
         ]);
     }
@@ -63,6 +76,11 @@ class LaasApplicationController extends Controller
     public function saveDraft(Request $request): JsonResponse
     {
         $applicant = Auth::guard('laas')->user();
+
+        $type = $request->input('land_type');
+        if (!SroFormSchema::isValidType($type)) {
+            $type = SroFormSchema::TYPE_RESIDENTIAL;
+        }
 
         $draft = LaasApplication::where('laas_applicant_id', $applicant->id)
             ->where('stage', LaasApplication::STAGE_DRAFT)
@@ -77,7 +95,17 @@ class LaasApplicationController extends Controller
             ]);
         }
 
-        $draft->fill($this->draftableInput($request));
+        // Switching land type keeps the answers already given: the two forms
+        // share most keys, and silently discarding the rest would lose work the
+        // applicant may come back to.
+        $answers = array_merge(
+            (array) ($draft->form_data ?? []),
+            $this->collect($request, $type)
+        );
+
+        $draft->land_type = $type;
+        $draft->form_data = $answers;
+        $this->applySummary($draft, $type, $answers);
         $draft->save();
 
         return response()->json([
@@ -89,32 +117,26 @@ class LaasApplicationController extends Controller
     }
 
     /**
-     * Submit (spec b): freeze the applicant snapshot, stamp the reference, and
-     * fire the "received, processing has started" text.
+     * Submit (spec b): freeze the answers, stamp the reference, and fire the
+     * "received, processing has started" text.
      */
     public function store(Request $request)
     {
         $applicant = Auth::guard('laas')->user();
 
-        $data = $request->validate([
-            'applicant_type'          => ['required', 'string', 'max:50'],
-            'applicant_name'          => ['required', 'string', 'max:200'],
-            'applicant_phone'         => ['required', 'string', 'max:30'],
-            'applicant_email'         => ['nullable', 'email', 'max:150'],
-            'applicant_address'       => ['required', 'string', 'max:500'],
-            'applicant_nin'           => ['nullable', 'string', 'max:30'],
-            'land_use'                => ['required', 'string', 'max:50'],
-            'purpose_id'              => ['nullable', 'integer'],
-            'lga_id'                  => ['required', 'integer'],
-            'district_id'             => ['nullable', 'integer'],
-            'location'                => ['required', 'string', 'max:500'],
-            'plot_no'                 => ['nullable', 'string', 'max:100'],
-            'approx_size'             => ['nullable', 'string', 'max:100'],
-            'existing_allocation_ref' => ['nullable', 'string', 'max:100'],
-            'applicant_remarks'       => ['nullable', 'string', 'max:2000'],
-        ]);
+        $type = $request->input('land_type');
+        abort_unless(SroFormSchema::isValidType($type), 422, 'Unknown land type.');
 
-        $application = DB::connection('sqlsrv')->transaction(function () use ($applicant, $data) {
+        $request->validate(array_merge(
+            SroFormSchema::rules($type),
+            ['passport_photo' => ['nullable', 'file', 'max:5120', 'mimes:jpg,jpeg,png']]
+        ));
+
+        $answers = $this->collect($request, $type);
+        $answers['prev_allocation_details'] = $this->collectPrevAllocations($request, $type)
+            ?? ($answers['prev_allocation_details'] ?? null);
+
+        $application = DB::connection('sqlsrv')->transaction(function () use ($applicant, $type, $answers) {
             $application = LaasApplication::where('laas_applicant_id', $applicant->id)
                 ->where('stage', LaasApplication::STAGE_DRAFT)
                 ->orderByDesc('id')
@@ -128,13 +150,20 @@ class LaasApplicationController extends Controller
                 ]);
             }
 
-            $application->fill($data);
+            $application->land_type = $type;
+            $application->form_data = $answers;
+            $this->applySummary($application, $type, $answers);
+
             $application->stage        = LaasApplication::STAGE_SUBMITTED;
             $application->submitted_at = now();
             $application->save();
 
             return $application;
         });
+
+        if ($request->hasFile('passport_photo')) {
+            $this->storeDocument($application, $request->file('passport_photo'), 'passport');
+        }
 
         // Outside the transaction on purpose: the gateway is a network call and
         // must not hold a database lock open, nor roll a saved application back
@@ -151,10 +180,11 @@ class LaasApplicationController extends Controller
             ->with('status', "Application {$application->reference_no} submitted. You will be updated by SMS at each stage.");
     }
 
-    /** The status page: stage tracker, event timeline, documents. */
+    /** The status page: stage tracker, event timeline, documents, answers. */
     public function show(string $reference)
     {
         $application = $this->findOwned($reference);
+        $type = $application->land_type ?: SroFormSchema::TYPE_RESIDENTIAL;
 
         return view('laas.application', [
             'application' => $application,
@@ -163,8 +193,9 @@ class LaasApplicationController extends Controller
                                 ->orderBy('id')
                                 ->get(),
             'documents'   => $application->documents()->orderBy('id')->get(),
-            'lga'         => $application->lga_id ? Lga::find($application->lga_id) : null,
-            'district'    => $application->district_id ? District::find($application->district_id) : null,
+            'sections'    => SroFormSchema::sections($type),
+            'answers'     => (array) ($application->form_data ?? []),
+            'typeLabel'   => SroFormSchema::typeLabel($type),
             'docTypes'    => self::DOC_TYPES,
         ]);
     }
@@ -178,24 +209,7 @@ class LaasApplicationController extends Controller
             'file'     => ['required', 'file', 'max:5120', 'mimes:pdf,jpg,jpeg,png'],
         ]);
 
-        $file = $request->file('file');
-
-        // The `local` disk, not `public`: identification documents must not be
-        // reachable by guessing a URL under /storage. They come back out only
-        // through downloadDocument() below, which checks ownership first.
-        $path = $file->store("laas/{$application->id}", 'local');
-
-        LaasDocument::create([
-            'laas_application_id' => $application->id,
-            'source'              => LaasDocument::SOURCE_APPLICANT,
-            'doc_type'            => $request->input('doc_type'),
-            'original_name'       => $file->getClientOriginalName(),
-            'path'                => $path,
-            'mime'                => $file->getClientMimeType(),
-            'size'                => $file->getSize(),
-            'uploaded_by'         => $application->laas_applicant_id,
-            'uploaded_at'         => now(),
-        ]);
+        $this->storeDocument($application, $request->file('file'), $request->input('doc_type'));
 
         return back()->with('status', 'Document uploaded.');
     }
@@ -216,6 +230,127 @@ class LaasApplicationController extends Controller
         );
     }
 
+    // ------------------------------------------------------------------ bits
+
+    /**
+     * The `local` disk, not `public`: identification documents and passport
+     * photographs must not be reachable by guessing a URL under /storage. They
+     * come back out only through downloadDocument(), which checks ownership.
+     */
+    private function storeDocument(LaasApplication $application, $file, string $docType): void
+    {
+        LaasDocument::create([
+            'laas_application_id' => $application->id,
+            'source'              => LaasDocument::SOURCE_APPLICANT,
+            'doc_type'            => $docType,
+            'original_name'       => $file->getClientOriginalName(),
+            'path'                => $file->store("laas/{$application->id}", 'local'),
+            'mime'                => $file->getClientMimeType(),
+            'size'                => $file->getSize(),
+            'uploaded_by'         => $application->laas_applicant_id,
+            'uploaded_at'         => now(),
+        ]);
+    }
+
+    /** Pull just this land type's fields out of the request. */
+    private function collect(Request $request, string $type): array
+    {
+        $values = [];
+
+        foreach (SroFormSchema::fieldKeys($type) as $key) {
+            $value = $request->input($key);
+
+            if ($value !== null && $value !== '') {
+                $values[$key] = is_string($value) ? trim($value) : $value;
+            }
+        }
+
+        return $values;
+    }
+
+    /**
+     * The residential form asks for up to three prior allocations as rows.
+     * Stored as JSON in the same column the staff modal writes, so both read
+     * back the same way.
+     */
+    private function collectPrevAllocations(Request $request, string $type): ?string
+    {
+        if ($type !== SroFormSchema::TYPE_RESIDENTIAL) {
+            return null;
+        }
+
+        $rows = [];
+
+        for ($i = 1; $i <= SroFormSchema::PREV_ALLOCATION_ROWS; $i++) {
+            $row = [
+                'plot_no'  => trim((string) $request->input("prev_plot_{$i}")),
+                'location' => trim((string) $request->input("prev_location_{$i}")),
+                'cert_no'  => trim((string) $request->input("prev_cert_{$i}")),
+            ];
+
+            if ($row['plot_no'] !== '' || $row['location'] !== '' || $row['cert_no'] !== '') {
+                $rows[] = $row;
+            }
+        }
+
+        return $rows ? json_encode($rows) : null;
+    }
+
+    /**
+     * Mirror the few answers the rest of the portal needs onto real columns.
+     *
+     * The queue, the dashboard and — critically — the SMS notifier read these
+     * directly; LaasNotificationService texts `applicant_phone`, so leaving it
+     * inside the JSON blob would mean no applicant is ever contacted.
+     */
+    private function applySummary(LaasApplication $application, string $type, array $answers): void
+    {
+        $application->applicant_name    = $answers['applicant_name'] ?? $application->applicant_name;
+        $application->applicant_phone   = $answers['phone'] ?? $application->applicant_phone;
+        $application->applicant_email   = $answers['email'] ?? $application->applicant_email;
+        $application->applicant_remarks = $answers['remarks'] ?? null;
+        $application->land_use          = SroFormSchema::typeLabel($type);
+        $application->applicant_address = $this->addressSummary($type, $answers);
+    }
+
+    /** Flatten the applicant's main address block into one readable line. */
+    private function addressSummary(string $type, array $answers): ?string
+    {
+        // Residential states a home address; the business forms give a
+        // correspondence address instead, each under its own column prefix.
+        $prefix = [
+            SroFormSchema::TYPE_RESIDENTIAL  => 'res_addr_',
+            SroFormSchema::TYPE_COMMERCIAL   => 'com_corr_',
+            SroFormSchema::TYPE_INDUSTRIAL   => 'ind_corr_',
+            SroFormSchema::TYPE_AGRICULTURAL => 'agr_corr_',
+        ][$type] ?? 'res_addr_';
+
+        $parts = [];
+
+        foreach (array_keys(SroFormSchema::addressParts()) as $part) {
+            $value = trim((string) ($answers[$prefix . $part] ?? ''));
+            if ($value !== '') {
+                $parts[] = $value;
+            }
+        }
+
+        return $parts ? implode(', ', $parts) : null;
+    }
+
+    /** Draft answers, pre-seeded from the account on a fresh form. */
+    private function answersFor(?LaasApplication $draft, $applicant): array
+    {
+        $answers = (array) ($draft->form_data ?? []);
+
+        // Only seed what the applicant already told us at registration, and only
+        // when they have not typed something else.
+        $answers['applicant_name'] = $answers['applicant_name'] ?? $applicant->name;
+        $answers['phone']          = $answers['phone'] ?? $applicant->phone;
+        $answers['email']          = $answers['email'] ?? $applicant->email;
+
+        return $answers;
+    }
+
     /**
      * Resolve a reference to an application the signed-in applicant owns.
      * 404 rather than 403 on someone else's reference — a wrong-owner 403 would
@@ -228,19 +363,5 @@ class LaasApplicationController extends Controller
         return LaasApplication::where('reference_no', $reference)
             ->where('laas_applicant_id', $applicant->id)
             ->firstOrFail();
-    }
-
-    /** The subset of the form an autosave is allowed to write. */
-    private function draftableInput(Request $request): array
-    {
-        return array_filter(
-            $request->only([
-                'applicant_type', 'applicant_name', 'applicant_phone', 'applicant_email',
-                'applicant_address', 'applicant_nin', 'land_use', 'purpose_id', 'lga_id',
-                'district_id', 'location', 'plot_no', 'approx_size',
-                'existing_allocation_ref', 'applicant_remarks',
-            ]),
-            fn ($value) => $value !== null && $value !== ''
-        );
     }
 }

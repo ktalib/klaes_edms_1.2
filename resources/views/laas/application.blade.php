@@ -162,34 +162,17 @@
         <!-- Submitted details -->
         <div class="rounded-2xl border border-[var(--border)] bg-[var(--surface-card)] p-6 dark:border-[var(--border)] dark:bg-[var(--surface-card)]">
             <h2 class="mb-4 text-sm font-extrabold uppercase tracking-widest text-[var(--ink-soft)] dark:text-[var(--ink-soft)]">What you submitted</h2>
-            <dl class="grid gap-x-6 gap-y-4 sm:grid-cols-2">
-                @foreach([
-                    'Applicant'      => $application->applicant_name,
-                    'Applicant type' => $application->applicant_type,
-                    'Phone'          => $application->applicant_phone,
-                    'Email'          => $application->applicant_email,
-                    'Land use'       => $application->land_use,
-                    'LGA'            => $lga->name ?? null,
-                    'District'       => $district->name ?? null,
-                    'Location'       => $application->location,
-                    'Plot number'    => $application->plot_no,
-                    'Approx. size'   => $application->approx_size,
-                    'Submitted'      => $application->submitted_at?->format('j M Y, g:ia'),
-                ] as $term => $value)
-                    @if($value)
-                        <div>
-                            <dt class="text-xs font-medium text-[var(--ink-soft)] dark:text-[var(--ink-soft)]">{{ $term }}</dt>
-                            <dd class="mt-0.5 text-sm text-[var(--ink)] dark:text-[var(--ink)]">{{ $value }}</dd>
-                        </div>
-                    @endif
-                @endforeach
-            </dl>
 
-            @if($application->applicant_remarks)
-                <div class="mt-5 border-t border-[var(--border)] pt-4 dark:border-[var(--border)]">
-                    <p class="text-xs font-medium text-[var(--ink-soft)] dark:text-[var(--ink-soft)]">Your remarks</p>
-                    <p class="mt-1 text-sm text-[var(--ink)] dark:text-[var(--ink)]">{{ $application->applicant_remarks }}</p>
-                </div>
+            @include('laas.partials.answers', [
+                'sections'  => $sections,
+                'answers'   => $answers,
+                'typeLabel' => $typeLabel,
+            ])
+
+            @if($application->submitted_at)
+                <p class="mt-6 border-t border-[var(--border)] pt-4 text-xs text-[var(--ink-faint)] dark:border-[var(--border)] dark:text-[var(--ink-faint)]">
+                    Submitted {{ $application->submitted_at->format('j M Y, g:ia') }}
+                </p>
             @endif
         </div>
     </div>

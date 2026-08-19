@@ -925,7 +925,17 @@
     function renderBlindScanModal() {
         const { modal, fileNumber, loading, error, empty, summary, total, paperSizes, documentTypes, tableWrapper, transferBtn, footnote } = blindScanElements;
         if (!modal) {
+            // Silence here reads as "blind scan is broken and throws nothing".
+            console.error('[scan-uploads] #blind-scan-modal is not in the DOM — the blind_scan_modal partial did not render.');
             return;
+        }
+
+        // The partial must be the standalone dialog. If a stale copy is deployed
+        // (an inline <section>), toggling `hidden` renders it as a plain block at
+        // the foot of the page instead of an overlay — it looks like nothing
+        // happened, with no console error to explain why.
+        if (!modal.classList.contains('dialog-backdrop')) {
+            console.error('[scan-uploads] #blind-scan-modal is missing the .dialog-backdrop class — a stale blind_scan_modal partial is deployed. Redeploy the view and run: php artisan view:clear');
         }
 
         const { modalOpen, loading: isLoading, error: errorMessage, files, counts, processing } = state.blindScan;
@@ -1296,6 +1306,12 @@
                 <i data-lucide="folder-tree" class="h-4 w-4 text-blue-600"></i>
                 File into Master Folder
               </button>
+              <div class="my-1 border-t border-gray-100"></div>
+              <button type="button" class="reassign-upload-file-number flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-amber-700 hover:bg-amber-50"
+                      data-batch-id="${batchId}">
+                <i data-lucide="unlink" class="h-4 w-4 text-amber-600"></i>
+                Reassign File Number
+              </button>
             </div>
           </details>
         `;
@@ -1328,6 +1344,53 @@
         menu.style.left = `${left}px`;
         menu.style.top = `${top}px`;
         menu.style.visibility = 'visible';
+    }
+
+    /**
+     * Unlink this upload from its file number and attach it to another.
+     *
+     * For the case the folder actions cannot fix: the documents were uploaded
+     * against the WRONG FILE ENTIRELY. Every scan in the batch moves to the target
+     * file — and therefore into that file's registry and master folder — with its
+     * typed pages and Doc-WARE copies following, all audited in
+     * scan_reassignment_logs.
+     *
+     * Reuses the existing reassignment dialog and its /scan-uploads/reassign
+     * endpoints; this is only a new way in, scoped to a whole batch rather than a
+     * single page.
+     */
+    function openDocumentUploadReassign(button) {
+        const batch = state.documentBatches.find(item => String(item.id) === String(button.dataset.batchId));
+        button.closest('details')?.removeAttribute('open');
+
+        if (!batch) {
+            alert('Unable to reassign: this upload could not be found.');
+            return;
+        }
+
+        // Only saved scans can be reassigned — a document still staged in the
+        // browser has no scannings row to move.
+        const documents = (batch.documents || []).filter(doc => Number(doc.scanId ?? doc.id) > 0);
+        const scanIds = documents.map(doc => Number(doc.scanId ?? doc.id));
+
+        if (!scanIds.length) {
+            alert('Unable to reassign: no saved documents were found for this file.');
+            return;
+        }
+
+        if (!window.scanReassignmentManager) {
+            alert('The reassignment dialog is not available on this page.');
+            return;
+        }
+
+        window.scanReassignmentManager.openModal(scanIds, documents.map(doc => ({
+            id: doc.scanId ?? doc.id,
+            fileName: doc.fileName,
+            fileNumber: batch.fileNumber,
+            paperSize: doc.paperSize,
+            documentType: doc.documentType,
+            registry: doc.registry || batch.registry || null,
+        })));
     }
 
     function openDocumentUploadEdmsAction(button) {
@@ -4991,6 +5054,14 @@
                 openDocumentUploadEdmsAction(btn);
             });
         });
+
+        elements.listView.querySelectorAll('.reassign-upload-file-number').forEach(btn => {
+            btn.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openDocumentUploadReassign(btn);
+            });
+        });
     }
 
     async function renderFolderView(batches) {
@@ -5379,6 +5450,14 @@
                 event.preventDefault();
                 event.stopPropagation();
                 openDocumentUploadEdmsAction(btn);
+            });
+        });
+
+        elements.folderView.querySelectorAll('.reassign-upload-file-number').forEach(btn => {
+            btn.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openDocumentUploadReassign(btn);
             });
         });
     }

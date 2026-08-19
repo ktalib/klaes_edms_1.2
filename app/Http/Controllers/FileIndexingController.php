@@ -1503,6 +1503,13 @@ class FileIndexingController extends Controller
             $updatedRecord = DB::connection('sqlsrv')->table('file_indexings')->where('id', $id)->first();
             $fileNumber = $updatedRecord->file_number ?? ($validated['file_number'] ?? null);
 
+            // Push whatever the operator actually changed out to the systems that hold the
+            // same facts — PRA, mls_file_no, the file-number registers and the originating
+            // OSS application. Runs after the commit and swallows its own failures: this is
+            // downstream propagation, and file_indexings is already the authoritative row.
+            $propagation = app(\App\Services\FileIndexingPropagationService::class)
+                ->propagate($existingRecord, $updatedRecord);
+
             // Persist Bill Balance + Grant Rent (billing + file_indexing_bills tables).
             $billFileIndexing = FileIndexing::on('sqlsrv')->find($id);
             if ($billFileIndexing) {
@@ -1565,6 +1572,7 @@ class FileIndexingController extends Controller
                 'data' => $updatedRecord,
                 'file_transactions' => $fileTransactions,
                 'storage_summary' => $storageSummary,
+                'propagation' => $propagation,
             ]);
         } catch (\Exception $e) {
             Log::error('FileIndexing::update - failed', [

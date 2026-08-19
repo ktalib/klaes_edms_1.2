@@ -5231,7 +5231,7 @@ const executeSearchAjax = (filters, searchData) => {
         <td class="file-no-col text-xs text-gray-600 whitespace-nowrap${hideFileNoCol ? ' hidden' : ''}">${renderFileNumberSpan(item, 'fileNumber')}</td>
         <td><span class="source-badge ${sourceBadgeClass(item.source_table)}">${item.source_table}</span></td>
         <td class="text-center text-xs ${weightColorClass}" title="${weightTitle}">${weightDisplay}</td>
-        <td>${transType}</td>
+        <td>${transType}${rootOfTitleHtml}</td>
         <td style="white-space:nowrap;">${party1}</td>
         <td>${party2}</td>
         <td>${party3}</td>
