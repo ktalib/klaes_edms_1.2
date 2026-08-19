@@ -98,7 +98,9 @@
         .sheet-footer {
             display: flex;
             align-items: flex-end;
-            justify-content: space-between;
+            /* One logo now, so flex-end rather than space-between — space-between
+               with a single child would park it on the left. */
+            justify-content: flex-end;
             margin-top: 8mm;
         }
 
@@ -485,8 +487,10 @@
         </div>{{-- end .sheet-body --}}
 <br><br>
         <div class="sheet-footer">
-            <img src="http://app.klaes.ng/assets/logo/Left_Logo.png" alt="Left Footer Logo" class="footer-logo-left" style="height: 16mm; width: auto; max-height: 16mm; object-fit: contain;" onerror="this.style.display='none'">
-            <img src="http://app.klaes.ng/assets/logo/las.jpg" alt="Right Footer Logo" class="footer-logo-right" onerror="this.style.display='none'">
+            {{-- One logo, on the right. Left_Logo.png was the same Land Admin
+                 Enterprise System mark as las.jpg, printed twice across the foot of
+                 the sheet — and squashed on the left, where it was forced to 16mm. --}}
+            <img src="http://app.klaes.ng/assets/logo/las.jpg" alt="Footer Logo" class="footer-logo-right" onerror="this.style.display='none'">
         </div>
     </div>
 </body>

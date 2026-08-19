@@ -312,6 +312,14 @@
       border: 1px solid var(--border);
     }
 
+    /* The indexed-file picker carries several stacked controls plus a scrolling
+       list; at 32rem they queue up in one thin column. Widened here (not on
+       .dialog-content) so every other dialog on the page keeps its size. */
+    .dialog-content.dialog-file-selector {
+      width: min(96vw, 60rem);
+      max-width: 60rem;
+    }
+
     .dialog-content .border-b {
       border-color: var(--border);
     }
@@ -1504,6 +1512,11 @@
       }
 
       .dialog-content {
+        max-width: 95vw;
+      }
+
+      .dialog-content.dialog-file-selector {
+        width: 95vw;
         max-width: 95vw;
       }
 

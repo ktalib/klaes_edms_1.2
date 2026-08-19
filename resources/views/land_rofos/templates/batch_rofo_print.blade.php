@@ -135,9 +135,9 @@
 </div>
 
 @php
-    // Duplicate/Triplicate write-ups take the header red (#c90202), as in
-    // rofo_print.blade.php; only the Original keeps its own brighter red.
-    $versionColors = ['Original'=>'#ff0000','Duplicate'=>'#c90202','Triplicate'=>'#c90202'];
+    // Each copy keeps its own colour (red / blue / green), as in
+    // rofo_print.blade.php — they are no longer blacked out on the office copies.
+    $versionColors = ['Original'=>'#ff0000','Duplicate'=>'#0000ff','Triplicate'=>'#008000'];
     $versions      = ['Original','Duplicate','Triplicate'];
     $categories    = [
         ['label'=>'Agriculture',           'fee'=>10000],

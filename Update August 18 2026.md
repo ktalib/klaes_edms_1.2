@@ -92,9 +92,11 @@ label black. That wrapper filter has been removed and the copies are now desatur
 element, because a CSS filter applies to the whole subtree and a descendant cannot opt out of it —
 so the coat of arms and the red badge could not be given colour back any other way.
 
-The copy label now prints in the header red `#c90202` on both Duplicate and Triplicate (it was
-blue `#0000ff` and green `#008000`). The Original keeps its own brighter `#ff0000`, which items c
-and d do not ask to change.
+**Copy label colours (c and d):** each copy keeps its own colour as before — Original red
+`#ff0000`, Duplicate blue `#0000ff`, Triplicate green `#008000`. What changed is that these were
+being overridden to black on the office copies; that override is gone, so all three now actually
+print in their own colour. (A first pass set both office labels to the header red `#c90202`; the
+client asked for the original per-copy colours back.)
 
 **Knock-on:** with the wrapper filter gone, the ornate border frame also prints in colour on the
 office copies. The frame is a `border-image`, so it cannot be desaturated independently of its

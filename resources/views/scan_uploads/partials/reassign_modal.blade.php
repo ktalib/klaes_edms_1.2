@@ -50,7 +50,7 @@
             <i data-lucide="git-branch" class="h-5 w-5 text-amber-600"></i>
           </div>
           <div>
-            <h2 class="text-xl font-bold text-gray-900">Reassign Scanned Document</h2>
+            <h2 id="reassign-modal-title" class="text-xl font-bold text-gray-900">Reassign Scanned Page</h2>
             <p class="text-sm text-gray-600">Move misplaced pages to the correct file number</p>
           </div>
         </div>

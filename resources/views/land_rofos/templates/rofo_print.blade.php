@@ -671,13 +671,14 @@
             $supersedeOn = optional($originalIssuedAt)->format('jS F, Y') ?? '';
         }
 
-        // The copy label is written in the same red as the header (.title-center
-        // and the ministry badge, #c90202). The Duplicate used to print blue and
-        // the Triplicate green; only the Original keeps its own brighter red.
+        // Each copy is written in its own colour, which is how the office tells
+        // them apart at a glance: red Original, blue Duplicate, green Triplicate.
+        // These used to be overridden to black on the office copies; they are not
+        // any more, so all three now print in the colours set here.
         $versionColors = [
             'Original' => '#ff0000',
-            'Duplicate' => '#c90202',
-            'Triplicate' => '#c90202',
+            'Duplicate' => '#0000ff',
+            'Triplicate' => '#008000',
         ];
     @endphp
 

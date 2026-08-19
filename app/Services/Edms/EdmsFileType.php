@@ -111,29 +111,54 @@ class EdmsFileType
             'folder' => 'Separation',
             'group'  => null,
         ],
-        'title_status_litigation' => [
-            'label'  => 'Title Status — Litigation',
-            'folder' => 'Title_Status/Litigation',
+        'title_status_litigation_old' => [
+            'label'  => 'Litigation — Old',
+            'folder' => 'Title_Status/Litigation/Old',
             'group'  => 'Title Status',
         ],
-        'title_status_revocation' => [
-            'label'  => 'Title Status — Revocation',
-            'folder' => 'Title_Status/Revocation',
+        'title_status_litigation_new' => [
+            'label'  => 'Litigation — New',
+            'folder' => 'Title_Status/Litigation/New',
             'group'  => 'Title Status',
         ],
-        'title_status_cancellation' => [
-            'label'  => 'Title Status — Cancellation',
-            'folder' => 'Title_Status/Cancellation',
+        'title_status_revocation_old' => [
+            'label'  => 'Revocation — Old',
+            'folder' => 'Title_Status/Revocation/Old',
             'group'  => 'Title Status',
         ],
-        'title_status_withdrawal' => [
-            'label'  => 'Title Status — Withdrawal',
-            'folder' => 'Title_Status/Withdrawal',
+        'title_status_revocation_new' => [
+            'label'  => 'Revocation — New',
+            'folder' => 'Title_Status/Revocation/New',
             'group'  => 'Title Status',
         ],
-        'title_status_amendment' => [
-            'label'  => 'Title Status — Amendment',
-            'folder' => 'Title_Status/Amendment',
+        'title_status_cancellation_old' => [
+            'label'  => 'Cancellation — Old',
+            'folder' => 'Title_Status/Cancellation/Old',
+            'group'  => 'Title Status',
+        ],
+        'title_status_cancellation_new' => [
+            'label'  => 'Cancellation — New',
+            'folder' => 'Title_Status/Cancellation/New',
+            'group'  => 'Title Status',
+        ],
+        'title_status_withdrawal_old' => [
+            'label'  => 'Withdrawal — Old',
+            'folder' => 'Title_Status/Withdrawal/Old',
+            'group'  => 'Title Status',
+        ],
+        'title_status_withdrawal_new' => [
+            'label'  => 'Withdrawal — New',
+            'folder' => 'Title_Status/Withdrawal/New',
+            'group'  => 'Title Status',
+        ],
+        'title_status_amendment_old' => [
+            'label'  => 'Amendment — Old',
+            'folder' => 'Title_Status/Amendment/Old',
+            'group'  => 'Title Status',
+        ],
+        'title_status_amendment_new' => [
+            'label'  => 'Amendment — New',
+            'folder' => 'Title_Status/Amendment/New',
             'group'  => 'Title Status',
         ],
     ];
@@ -159,19 +184,37 @@ class EdmsFileType
         'change_of_purpose/new' => 'change_of_purpose_new',
         'change of purpose old' => 'change_of_purpose_old',
         'change of purpose new' => 'change_of_purpose_new',
-        'title_status/litigation'   => 'title_status_litigation',
-        'title_status/revocation'   => 'title_status_revocation',
-        'title_status/cancellation' => 'title_status_cancellation',
-        'title_status/withdrawal'   => 'title_status_withdrawal',
-        'title_status/amendment'    => 'title_status_amendment',
+        // Folder round-trips for the split Title Status types.
+        'title_status/litigation/old' => 'title_status_litigation_old',
+        'title_status/litigation/new' => 'title_status_litigation_new',
+        'title_status/revocation/old' => 'title_status_revocation_old',
+        'title_status/revocation/new' => 'title_status_revocation_new',
+        'title_status/cancellation/old' => 'title_status_cancellation_old',
+        'title_status/cancellation/new' => 'title_status_cancellation_new',
+        'title_status/withdrawal/old' => 'title_status_withdrawal_old',
+        'title_status/withdrawal/new' => 'title_status_withdrawal_new',
+        'title_status/amendment/old' => 'title_status_amendment_old',
+        'title_status/amendment/new' => 'title_status_amendment_new',
+        // Values written before Title Status split into Old/New — a file
+        // classified back then was the already-existing file, so it lands on Old.
+        'title_status_litigation'   => 'title_status_litigation_old',
+        'title_status_revocation'   => 'title_status_revocation_old',
+        'title_status_cancellation' => 'title_status_cancellation_old',
+        'title_status_withdrawal'   => 'title_status_withdrawal_old',
+        'title_status_amendment'    => 'title_status_amendment_old',
+        'title_status/litigation'   => 'title_status_litigation_old',
+        'title_status/revocation'   => 'title_status_revocation_old',
+        'title_status/cancellation' => 'title_status_cancellation_old',
+        'title_status/withdrawal'   => 'title_status_withdrawal_old',
+        'title_status/amendment'    => 'title_status_amendment_old',
         // The bare words, since a Title Status folder is usually named by its
         // action alone ("Revocation") rather than by the group it sits in.
-        'litigation'   => 'title_status_litigation',
-        'revocation'   => 'title_status_revocation',
-        'cancellation' => 'title_status_cancellation',
-        'cancelation'  => 'title_status_cancellation',
-        'withdrawal'   => 'title_status_withdrawal',
-        'amendment'    => 'title_status_amendment',
+        'litigation'   => 'title_status_litigation_old',
+        'revocation'   => 'title_status_revocation_old',
+        'cancellation' => 'title_status_cancellation_old',
+        'cancelation'  => 'title_status_cancellation_old',
+        'withdrawal'   => 'title_status_withdrawal_old',
+        'amendment'    => 'title_status_amendment_old',
         're-grant'     => 'regrant',
         're grant'     => 'regrant',
     ];

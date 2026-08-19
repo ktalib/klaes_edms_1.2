@@ -106,18 +106,18 @@
                                   {{-- Expected fields --}}
                                   <p class="text-xs font-semibold text-blue-800 mb-1.5">Expected columns:</p>
                                   <div class="flex flex-wrap gap-1.5 mb-3">
-                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-mono">title</span>
-                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs font-mono">first name <span class="ml-1 text-red-500">*</span></span>
-                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-mono">middle name</span>
+                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-mono">buyerTitle</span>
+                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs font-mono">firstName <span class="ml-1 text-red-500">*</span></span>
+                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-mono">middleName</span>
                                       <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs font-mono">surname <span class="ml-1 text-red-500">*</span></span>
-                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs font-mono">land use <span class="ml-1 text-red-500">*</span></span>
-                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs font-mono">unit number <span class="ml-1 text-red-500">*</span></span>
-                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs font-mono">block <span class="ml-1 text-red-500">*</span></span>
-                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs font-mono">section number <span class="ml-1 text-red-500">*</span></span>
-                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs font-mono">unit measurement <span class="ml-1 text-red-500">*</span></span>
-                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-mono">cubic measurement</span>
+                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs font-mono">unit_no <span class="ml-1 text-red-500">*</span></span>
+                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-100 text-red-700 text-xs font-mono">sectionNumber <span class="ml-1 text-red-500">*</span></span>
+                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-mono">blockNo</span>
+                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-mono">landUse</span>
+                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-mono">unitMeasurement</span>
+                                      <span class="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-mono">cubicMeasurement</span>
                                   </div>
-                                  <p class="text-xs text-blue-600 mb-3"><span class="text-red-500 font-semibold">*</span> Required</p>
+                                  <p class="text-xs text-blue-600 mb-3"><span class="text-red-500 font-semibold">*</span> Required. The older column names (<span class="font-mono">first name</span>, <span class="font-mono">unit number</span>, <span class="font-mono">block</span>, <span class="font-mono">section number</span>) are still accepted, so files prepared from the previous template keep working.</p>
 
                               </div>
 
@@ -260,6 +260,15 @@
                                                  name="records[0][sectionNumber]"
                                                  class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus-border-blue-500 transition-all shadow-sm"
                                                  placeholder="Enter Section Number">
+                                      </div>
+
+                                      <div>
+                                          <label class="block text-sm font-medium text-gray-700 mb-2">Block No</label>
+                                          <input type="text"
+                                                 name="records[0][blockNo]"
+                                                 class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus-border-blue-500 transition-all shadow-sm uppercase"
+                                                 placeholder="Enter Block No"
+                                                 oninput="this.value = this.value.toUpperCase()">
                                       </div>
 
                                       <div>

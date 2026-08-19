@@ -270,6 +270,10 @@ function createBuyerRowHtml(index) {
                     <input type="text" name="records[${index}][sectionNumber]" class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm" placeholder="Enter Section Number">
                 </div>
                 <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Block No</label>
+                    <input type="text" name="records[${index}][blockNo]" class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm uppercase" placeholder="Enter Block No" oninput="this.value = this.value.toUpperCase()">
+                </div>
+                <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Unit Measurement (sqm)</label>
                     <input type="text" name="records[${index}][unitMeasurement]" class="w-full py-2 px-3 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm" placeholder="e.g. 50">
                 </div>
@@ -380,27 +384,43 @@ function handleCsvImport() {
                     console.log(`  Header: "${header}" -> Value: "${value}"`);
                     switch(header) {
                         case 'title':
+                        case 'buyertitle':
+                        case 'buyer_title':
                             buyer.buyerTitle = value;
                             break;
                         case 'first name':
                         case 'first_name':
+                        case 'firstname':
                             buyer.firstName = value.toUpperCase();
                             break;
                         case 'middle name':
                         case 'middle_name':
+                        case 'middlename':
                             buyer.middleName = value.toUpperCase();
                             break;
                         case 'surname':
                         case 'last name':
                         case 'last_name':
+                        case 'lastname':
                             buyer.surname = value.toUpperCase();
                             break;
                         case 'unit number':
+                        case 'unit no':
                         case 'unit_no':
+                        case 'unitno':
+                        case 'unitnumber':
                             buyer.unit_no = value.toUpperCase();
+                            break;
+                        case 'block':
+                        case 'block no':
+                        case 'block_no':
+                        case 'blockno':
+                        case 'block number':
+                            buyer.blockNo = value.toUpperCase();
                             break;
                         case 'unit measurement (sqm)':
                         case 'unit measurement':
+                        case 'unitmeasurement':
                         case 'measurement (sqm)':
                         case 'measurement':
                         case 'unit_measurement':
@@ -409,13 +429,9 @@ function handleCsvImport() {
                         case 'unit cubic measurement':
                         case 'unit cubic measurement (cbm)':
                         case 'cubic measurement':
-                        case 'cubic_measurement':
                         case 'cubic measurement (cbm)':
-                            buyer.cubicMeasurement = value;
-                            break;
-                        case 'unit cubic measurement':
-                        case 'unit cubic measurement (cbm)':
-                        case 'cubic measurement':
+                        case 'cubicmeasurement':
+                        case 'cubic_measurement':
                         case 'cubic_easurement':
                             buyer.cubicMeasurement = value;
                             break;
@@ -426,12 +442,9 @@ function handleCsvImport() {
                             buyer.landUse = normalizedLandUse;
                             console.log(`Parsed land use: "${value}" -> normalized: "${normalizedLandUse}" for buyer`);
                             break;
-                        case 'unit measurement':
-                        case 'unit_measurement':
-                            buyer.unitMeasurement = value;
-                            break;
                         case 'section number':
                         case 'section_number':
+                        case 'sectionnumber':
                         case 'section':
                             buyer.sectionNumber = value;
                             break;
@@ -497,6 +510,7 @@ function populateBuyersFromCsv(buyers) {
         const unitMeasurementInput = buyerRow.querySelector(`input[name="records[${index}][unitMeasurement]"]`);
         const cubicMeasurementInput = buyerRow.querySelector(`input[name="records[${index}][cubicMeasurement]"]`);
         const sectionNumberInput = buyerRow.querySelector(`input[name="records[${index}][sectionNumber]"]`);
+        const blockNoInput = buyerRow.querySelector(`input[name="records[${index}][blockNo]"]`);
         
         if (titleSelect) titleSelect.value = buyer.buyerTitle || '';
         if (firstNameInput) firstNameInput.value = buyer.firstName || '';
@@ -507,6 +521,7 @@ function populateBuyersFromCsv(buyers) {
         if (unitMeasurementInput) unitMeasurementInput.value = buyer.unitMeasurement || '';
         if (cubicMeasurementInput) cubicMeasurementInput.value = buyer.cubicMeasurement || '';
         if (sectionNumberInput) sectionNumberInput.value = buyer.sectionNumber || '';
+        if (blockNoInput) blockNoInput.value = buyer.blockNo || '';
         if (landUseHidden && !isMixedLandUseConfig()) {
             landUseHidden.value = getFixedLandUseValue() || '';
         }

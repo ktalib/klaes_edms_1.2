@@ -445,7 +445,7 @@
 
         <!-- File Selector Dialog -->
         <div id="file-selector-dialog" class="dialog-backdrop hidden" aria-hidden="true">
-          <div class="dialog-content animate-fade-in">
+          <div class="dialog-content dialog-file-selector animate-fade-in">
             <div class="p-6 border-b border-gray-200">
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-3">
@@ -471,6 +471,10 @@
               </div>
             </div>
             <div class="py-4 px-6 space-y-4">
+              {{-- Filters on the left, the list they drive on the right; stacks
+                   back to one column below lg. --}}
+              <div class="grid gap-4 lg:grid-cols-2 lg:items-start">
+              <div class="space-y-4">
               <!-- Registry Selection (Always visible) -->
               <div id="registry-selection-container">
                 <label for="blind-scan-registry" class="block text-sm font-semibold text-gray-700 mb-2">Select Registry
@@ -528,7 +532,9 @@
                 </select>
               </div>
 
-              <div class="rounded-lg border border-gray-200 divide-y max-h-[400px] overflow-y-auto"
+              </div>
+
+              <div class="rounded-lg border border-gray-200 divide-y max-h-[400px] lg:max-h-[420px] overflow-y-auto"
                 id="indexed-files-list">
                 <div class="p-4 text-sm text-gray-500">
                   <div class="flex items-center gap-2">
@@ -537,12 +543,14 @@
                   </div>
                 </div>
               </div>
+              </div>
+              <div class="grid gap-4 lg:grid-cols-2 lg:items-start">
               <div class="border border-gray-200 rounded-lg p-4 space-y-3">
                 <div>
                   <p class="text-sm font-semibold text-gray-800">Upload Method</p>
                   <p class="text-xs text-gray-500">Choose how these documents will be added to the file.</p>
                 </div>
-                <div class="grid gap-3 md:grid-cols-2" id="upload-method-options">
+                <div class="grid gap-3 sm:grid-cols-2" id="upload-method-options">
                    <label for="upload-method-blind"
                     class="flex items-start gap-3 rounded-lg border border-gray-200 p-3 hover:border-blue-400 cursor-pointer transition-colors">
                     <input type="radio" name="upload-method" id="upload-method-blind" value="blind"
@@ -592,6 +600,7 @@
                     </button>
                   </div>
                 </div>
+              </div>
               </div>
             </div>
             <div class="flex justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">

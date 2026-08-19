@@ -949,6 +949,19 @@ class PrimaryApplicationController extends Controller
      */
     public function downloadBuyersTemplate()
     {
+        // One template for both buyer imports. The primary form and the sectional
+        // titling tab feed the same buyer_list columns, so two templates with
+        // different header spellings only ever produced files that imported in one
+        // place and silently dropped fields in the other.
+        return app(BuyerListController::class)->downloadTemplate();
+    }
+
+    /**
+     * Superseded by the shared template above. Kept only as a record of the
+     * legacy header spellings the CSV parser still accepts as aliases.
+     */
+    private function legacyBuyersTemplate()
+    {
         $csvContent = "title,first name,middle name,surname,land use,unit number,block,section number,unit measurement,cubic measurement\r\n";
         $csvContent .= "Mr.,John,Michael,Doe,Residential,A001,BLK-1,SEC-01,50,15\r\n";
         $csvContent .= "Mrs.,Jane,Elizabeth,Smith,Commercial,B002,BLK-2,SEC-02,75,20\r\n";

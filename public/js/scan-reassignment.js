@@ -259,10 +259,19 @@ class ScanReassignmentManager {
     /**
      * Update the header count for the selected documents.
      */
-    renderScopeSummary(count) {
+    renderScopeSummary(count, siblings) {
         const countEl = document.querySelector('#reassign-scope-count');
         if (countEl) {
             countEl.textContent = `${count} document(s) will move`;
+        }
+
+        // Whole upload moving vs. a page (or a few) picked out of it
+        const total = siblings && Array.isArray(siblings.documents) ? siblings.documents.length : null;
+        const wholeFile = count > 1 && (total === null || count === total);
+
+        const titleEl = document.querySelector('#reassign-modal-title');
+        if (titleEl) {
+            titleEl.textContent = wholeFile ? 'Reassign Uploaded File' : 'Reassign Scanned Page';
         }
     }
 

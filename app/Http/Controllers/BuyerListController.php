@@ -814,13 +814,14 @@ class BuyerListController extends Controller
             'sectionNumber',
             'blockNo',
             'landUse',
-            'unitMeasurement'
+            'unitMeasurement',
+            'cubicMeasurement'
         ];
         
         $sampleData = [
-            ['Mr.', 'JOHN', 'A', 'DOE', 'A101', 'SEC-01', 'BLK-A', 'RESIDENTIAL', '50.00'],
-            ['Mrs.', 'JANE', 'B', 'SMITH', 'A102', 'SEC-02', 'BLK-A', 'COMMERCIAL', '75.50'],
-            ['Dr.', 'ROBERT', '', 'JOHNSON', 'B201', 'SEC-03', '', 'INDUSTRIAL', '100.00']
+            ['Mr.', 'JOHN', 'A', 'DOE', 'A101', 'SEC-01', 'BLK-A', 'RESIDENTIAL', '50.00', '15.00'],
+            ['Mrs.', 'JANE', 'B', 'SMITH', 'A102', 'SEC-02', 'BLK-A', 'COMMERCIAL', '75.50', '20.00'],
+            ['Dr.', 'ROBERT', '', 'JOHNSON', 'B201', 'SEC-03', '', 'INDUSTRIAL', '100.00', '']
         ];
         
         $filename = 'buyer_import_template_' . date('Y-m-d') . '.csv';
@@ -879,4 +880,6 @@ class BuyerListController extends Controller
             ->get()
             ->toArray();
     }
+
+     
 }
