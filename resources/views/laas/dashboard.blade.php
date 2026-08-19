@@ -51,11 +51,14 @@
                     @if($isDraft)
                         <span class="flex-shrink-0 rounded-full bg-[var(--brand-tint)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[var(--ink-soft)] dark:bg-[var(--brand-tint)] dark:text-[var(--ink-soft)]">Draft</span>
                     @elseif($application->stage === LaasApplication::STAGE_REJECTED)
-                        <span class="flex-shrink-0 rounded-full bg-red-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-red-900 dark:bg-red-900/50 dark:text-red-200">Not approved</span>
+                        <span class="flex-shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide"
+                              style="border-color: var(--danger); color: var(--danger);">Not approved</span>
                     @elseif($application->stage === LaasApplication::STAGE_ROFO_SIGNED)
-                        <span class="flex-shrink-0 rounded-full bg-green-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[var(--brand)] dark:bg-[var(--brand-tint)] dark:text-[var(--brand)]">Complete</span>
+                        <span class="flex-shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide"
+                              style="background: var(--brand); color: var(--on-brand);">Complete</span>
                     @else
-                        <span class="flex-shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-900 dark:bg-amber-900/50 dark:text-amber-200">In progress</span>
+                        <span class="flex-shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide"
+                              style="border-color: var(--border); color: var(--ink-soft);">In progress</span>
                     @endif
                 </div>
 

@@ -72,7 +72,9 @@ class SpasAutoBillingTest extends TestCase
         $this->assertSame('contravention', $bill->source);
         $this->assertEquals(75000, (float) $bill->amount);
         $this->assertSame('unpaid', $bill->status);
-        $this->assertMatchesRegularExpression('/^SPA-BILL-\d{4}-\d{3}$/', $bill->reference_id);
+        // SpaBill::nextReference() is the single source of the numbering, so
+        // an auto-raised bill is numbered exactly like a hand-entered one.
+        $this->assertMatchesRegularExpression('/^SPAS-BILL-\d{4}-\d{3}$/', $bill->reference_id);
     }
 
     public function test_the_bill_records_the_lines_it_was_composed_of(): void

@@ -50,6 +50,8 @@
 
             @include('components.edms.registry-transfer-modal')
             @include('components.edms.file-type-transfer-modal')
+            @include('scan_uploads.partials.reassign_modal')
+            <script src="{{ asset('js/scan-reassignment.js') }}"></script>
         </div>
         <!-- Footer -->
         @include('admin.footer')

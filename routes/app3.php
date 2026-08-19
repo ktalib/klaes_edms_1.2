@@ -152,6 +152,9 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/reassign/check-constraints', [ScanUploadsController::class, 'reassignCheckConstraints'])->name('reassign.check-constraints');
         Route::post('/reassign/siblings', [ScanUploadsController::class, 'reassignSiblings'])->name('reassign.siblings');
         Route::get('/scan-file-info', [ScanUploadsController::class, 'getScanFileInfo'])->name('scan-file-info');
+        // Every scan on one file — lets Page Typing and Doc-WARE open the same
+        // reassignment dialog, which is keyed on scan ids rather than the file.
+        Route::get('/file-scans', [ScanUploadsController::class, 'fileScans'])->name('file-scans');
         Route::post('/reassign', [ScanUploadsController::class, 'reassign'])->name('reassign');
 
         // Standard CRUD & utilities

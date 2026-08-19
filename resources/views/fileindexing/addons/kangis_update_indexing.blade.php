@@ -1546,6 +1546,188 @@
                 if (seePicker) seePicker.value = '';
             }
 
+            // ---- Counterpart file number, asked for right after the direction ----------------
+            //
+            // Once the officer says which way a Re-grant / Resettlement / Closure runs, the very
+            // next question is WHICH file it runs to or from, so a second popup asks for that
+            // number there and then. Whatever is entered is pre-filled into the Related File
+            // Number card below, which stays fully editable afterwards.
+
+            // How the counterpart reads for each direction, so the popup asks for the right thing.
+            const SEE_LABEL_BY_KIND = {
+                [REGRANT_FROM]:   'Re-granted From FileNo',
+                [REGRANT_TO]:     'Re-granted To FileNo',
+                [RESETTLED_FROM]: 'Resettled From FileNo',
+                [RESETTLED_TO]:   'Resettled To FileNo',
+                [CLOSED_TO]:      'Continued In FileNo',
+                [CONTINUED_FROM]: 'Continued From FileNo',
+            };
+            const SEE_HELP_BY_KIND = {
+                [REGRANT_FROM]:   'The OLD file number this file was re-granted from.',
+                [REGRANT_TO]:     'The NEW file number this file was re-granted to.',
+                [RESETTLED_FROM]: 'The OLD file number this file was resettled from.',
+                [RESETTLED_TO]:   'The NEW file number this file was resettled to.',
+                [CLOSED_TO]:      'The file number this file continues in now that it is closed.',
+                [CONTINUED_FROM]: 'The CLOSED file number this file carries on from.',
+            };
+
+            // File numbers compare loosely: case and spacing vary by typist, and a "(T)"
+            // temporary suffix names the same physical file as the number without it.
+            const normFileNo = (v) => (v || '')
+                .toString()
+                .trim()
+                .toUpperCase()
+                .replace(/\s+/g, ' ')
+                .replace(/\(\s*T\s*\)$/, '')
+                .trim();
+
+            // A file cannot be re-granted / resettled / continued from ITSELF — that is the
+            // officer entering the number they are already indexing, so it is refused outright.
+            function isSelfFileNo(no) {
+                const self = normFileNo(getFileNo());
+                return self !== '' && normFileNo(no) === self;
+            }
+
+            // Pre-fill the counterpart into the Related File Number card. Reuses a row that
+            // already holds it, then the first blank row, and only then adds a new one — the
+            // officer's own rows are never overwritten. Nothing is ever removed here: the number
+            // stays there to be edited or deleted by hand, which is the point of pre-filling
+            // rather than owning it.
+            function prefillRelatedFileNo(no) {
+                const wrapper = document.getElementById('related-files-wrapper');
+                if (!wrapper || !no) return;
+
+                const inputs = () => Array.from(wrapper.querySelectorAll('.related-file-input'));
+                if (inputs().some(i => normFileNo(i.value) === normFileNo(no))) return; // already listed
+
+                // A file with a counterpart is by definition a "Has Related File?" record.
+                const hasCb = document.getElementById('has-related-file');
+                if (hasCb && !hasCb.checked) {
+                    hasCb.checked = true;
+                    hasCb.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+
+                const blank = inputs().find(i => !(i.value || '').trim());
+                if (blank) {
+                    blank.value = no;
+                    blank.dispatchEvent(new Event('input', { bubbles: true }));
+                    return;
+                }
+
+                // addRelatedFileRow() clones a row and fills it without firing 'input',
+                // so re-sync by hand afterwards.
+                if (typeof window.addRelatedFileRow === 'function') {
+                    window.addRelatedFileRow(no);
+                } else {
+                    document.getElementById('add-related-file-btn')?.click();
+                    const last = inputs().pop();
+                    if (last) last.value = no;
+                }
+                syncSeeOptions();
+            }
+
+            // Adopt a counterpart: pre-fill it below, then hold it as the pick. syncSeeOptions()
+            // rebuilds the picker from the card and only keeps a pick that is on it, which the
+            // pre-fill has just made true — so re-assert afterwards.
+            function applySeeFileNo(no) {
+                const value = (no || '').trim();
+                if (!value) return;
+                prefillRelatedFileNo(value);
+                syncSeeOptions();
+                if (seeHidden) seeHidden.value = value;
+                if (seePicker && Array.from(seePicker.options).some(o => o.value === value)) {
+                    seePicker.value = value;
+                }
+                refreshRemark();
+            }
+
+            // Ask for the counterpart file number through the global file-number selector, so
+            // the officer picks a real, existing file off the registry tabs rather than typing a
+            // number that may not exist. Closing the selector without applying simply leaves the
+            // number unset — it is optional.
+            function promptSeeFileNo(kind) {
+                const label = SEE_LABEL_BY_KIND[kind] || 'Related FileNo';
+                const help  = SEE_HELP_BY_KIND[kind] || '';
+
+                // No selector on the page (scripts still loading, or a stripped-down view) —
+                // fall back to typing the number so the flow is never a dead end.
+                if (typeof GlobalFileNoModal === 'undefined') {
+                    const entered = (window.prompt(`${label}\n\n${help}\n\n(Leave blank to skip)`) || '').trim();
+                    if (!entered) return;
+                    if (isSelfFileNo(entered)) {
+                        window.alert(`${label} cannot be ${getFileNo()} — that is the file being indexed.`);
+                        promptSeeFileNo(kind);
+                        return;
+                    }
+                    applySeeFileNo(entered);
+                    return;
+                }
+
+                GlobalFileNoModal.open({
+                    // This picks the OTHER file, so it must not overwrite the fields describing
+                    // the file being indexed — same stance as the Related File Number rows.
+                    autoPopulateGenericFields: false,
+                    callback: function (data) {
+                        const picked = (data?.fileNumber || '').trim();
+                        if (!picked) return;
+                        if (isSelfFileNo(picked)) {
+                            flagSelfFileNo(label, picked, kind);
+                            return;
+                        }
+                        applySeeFileNo(picked);
+                    },
+                });
+            }
+
+            // The counterpart may not be the file being indexed — nothing is re-granted,
+            // resettled or continued from itself. Say so, then put the selector back up.
+            function flagSelfFileNo(label, picked, kind) {
+                const msg = `${picked} is the file you are indexing. ${label} must be a different file.`;
+
+                if (typeof Swal === 'undefined') {
+                    window.alert(msg);
+                    reopenSeeSelector(kind);
+                    return;
+                }
+
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Same file number',
+                    text: msg,
+                    confirmButtonText: 'Pick another file',
+                    confirmButtonColor: '#4f46e5',
+                    // The selector sits at z-index 2000000 and lingers for a moment after
+                    // applying, so this has to be told to sit above it.
+                    didOpen: (el) => {
+                        const container = el.closest('.swal2-container') || el.parentElement;
+                        if (container) container.style.zIndex = '2000001';
+                    },
+                }).then(() => reopenSeeSelector(kind));
+            }
+
+            // apply() closes the selector on a timer, so reopening straight away would be undone
+            // by that pending close. Wait for it to actually go, with a cap so a change in the
+            // selector's own behaviour can never strand the officer without a prompt.
+            function reopenSeeSelector(kind) {
+                const el = document.getElementById('global-fileno-modal');
+                let tries = 0;
+                (function wait() {
+                    if (!el || el.classList.contains('hidden') || tries++ > 40) {
+                        promptSeeFileNo(kind);
+                        return;
+                    }
+                    setTimeout(wait, 50);
+                })();
+            }
+
+            // Chain the two steps: direction first, then the file it points at. The status UI is
+            // settled before the selector opens — picking a number refreshes the remark itself,
+            // so closing the selector without picking leaves a consistent form either way.
+            function afterKindChosen(kind, done) {
+                done();
+                if (kind) promptSeeFileNo(kind);
+            }
+
             // Ask which way the re-grant runs when "Re-grant" is picked. Cancelling clears the
             // selection — a direction is what makes the Initial FileNo readable either way.
             function promptRegrantKind(cb) {
@@ -1555,7 +1737,7 @@
                 if (typeof Swal === 'undefined') {
                     const isFrom = window.confirm('Re-grant direction:\n\nOK = Re-granted From (this is the new file)\nCancel = Re-granted To (this is the old file)');
                     setRegrantKind(isFrom ? REGRANT_FROM : REGRANT_TO);
-                    finish();
+                    afterKindChosen(getRegrantKind(), finish);
                     return;
                 }
 
@@ -1581,7 +1763,7 @@
                         cb.checked = false;
                         setRegrantKind('');
                     }
-                    finish();
+                    afterKindChosen(getRegrantKind(), finish);
                 });
             }
 
@@ -1594,7 +1776,7 @@
                 if (typeof Swal === 'undefined') {
                     const isTo = window.confirm('Closure direction:\n\nOK = Closed To (this file is being closed)\nCancel = Continued From (this file continues a closed file)');
                     setClosedKind(isTo ? CLOSED_TO : CONTINUED_FROM);
-                    finish();
+                    afterKindChosen(getClosedKind(), finish);
                     return;
                 }
 
@@ -1620,7 +1802,7 @@
                         cb.checked = false;
                         setClosedKind('');
                     }
-                    finish();
+                    afterKindChosen(getClosedKind(), finish);
                 });
             }
 
@@ -1632,7 +1814,7 @@
                 if (typeof Swal === 'undefined') {
                     const isFrom = window.confirm('Resettlement direction:\n\nOK = Resettled From (this is the new file)\nCancel = Resettled To (this is the old file)');
                     setResettleKind(isFrom ? RESETTLED_FROM : RESETTLED_TO);
-                    finish();
+                    afterKindChosen(getResettleKind(), finish);
                     return;
                 }
 
@@ -1658,7 +1840,7 @@
                         cb.checked = false;
                         setResettleKind('');
                     }
-                    finish();
+                    afterKindChosen(getResettleKind(), finish);
                 });
             }
 

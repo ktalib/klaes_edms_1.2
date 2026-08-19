@@ -137,6 +137,9 @@
                             <option value="{{ $lu }}">{{ $lu }}</option>
                         @endforeach
                     </select>
+                    <p id="cert-same-purpose" class="text-[11px] text-red-500 mt-1 hidden">
+                        Same as the approved land use — there is no change of purpose to issue.
+                    </p>
                 </div>
 
                 {{-- Dates together, below the pair they qualify. --}}
@@ -226,7 +229,32 @@ $(document).ready(function () {
         // form, rather than after they press Issue Sheet.
         document.getElementById('cert-app-warning')
             .classList.toggle('hidden', !this.value || opt.dataset.approved === '1');
+
+        // Changing the application changes From Use, so a purpose picked
+        // earlier may now clash with it.
+        checkPurposeChanged();
     });
+
+    // A change of purpose that does not change the purpose is not a change of
+    // purpose. Flagged as soon as it is chosen rather than on submit, so the
+    // officer is not told after filling in the dates.
+    const toUseSelect  = document.querySelector('select[name="to_use"]');
+    const samePurposeMsg = document.getElementById('cert-same-purpose');
+
+    function purposesClash() {
+        const from = (document.getElementById('cert-from-use').value || '').trim().toUpperCase();
+        const to   = (toUseSelect.value || '').trim().toUpperCase();
+        return from !== '' && to !== '' && from === to;
+    }
+
+    function checkPurposeChanged() {
+        const clash = purposesClash();
+        samePurposeMsg.classList.toggle('hidden', !clash);
+        toUseSelect.classList.toggle('border-red-400', clash);
+        return !clash;
+    }
+
+    toUseSelect.addEventListener('change', checkPurposeChanged);
 
     // Load existing MLS file numbers into the New File No select
     fetch(MLS_FILES).then(r=>r.json()).then(d=>{
@@ -250,6 +278,19 @@ $(document).ready(function () {
         // Guard: must have a real (numeric) SPAS application selected
         if (!body.spa_application_id || body.spa_application_id === 'null') {
             Swal.fire({ icon:'warning', title:'Select an application', text:'Please choose an approved Special Assignment application before issuing a certificate.' });
+            return;
+        }
+
+        // Guard: the sheet records a move from one use to another. Issuing one
+        // where both are the same would put a conversion that never happened on
+        // the file, and flip the application to "certificate issued" on the
+        // strength of it. The server refuses this too.
+        if (!checkPurposeChanged()) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'No change of purpose',
+                text: `The new purpose is the same as the approved land use (${body.from_use}). Choose a different purpose, or there is nothing to issue.`
+            });
             return;
         }
 

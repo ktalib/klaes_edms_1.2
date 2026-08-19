@@ -37,7 +37,9 @@
     }
 
     // Build the inline card HTML (styled like the PRA "Existing CofO for this File" card).
-    function buildCardHtml(records, locked) {
+    // `warnOnly` consumers do not block saving — the server holds duplicates back for
+    // confirmation instead — so the card is worded as a heads-up, not a wall.
+    function buildCardHtml(records, locked, warnOnly) {
         const rowsHtml = records.map((r, i) => {
             const party2 = r.party_2 || r.Grantee || r.Assignee || r.Lessee || r.Mortgagee || '—';
             const regParts = [r.volumeNo, r.pageNo, r.serialNo].filter(Boolean).join(' / ');
@@ -76,9 +78,15 @@
             `;
         }).join('');
 
-        const headerClass = locked
+        const headerClass = (locked && !warnOnly)
             ? 'bg-red-50 border border-red-300 text-red-800'
             : 'bg-amber-50 border border-amber-200 text-amber-800';
+
+        const notice = warnOnly
+            ? 'A Certificate of Occupancy already exists for this file number. You can still save — anything that looks like a duplicate is held back and returned for you to confirm.'
+            : (locked
+                ? 'A Certificate of Occupancy already exists for this file number. Saving has been blocked to prevent a duplicate.'
+                : 'A Certificate of Occupancy already exists for this file number. The form will be blocked if the remaining details also match.');
 
         return `
             <div class="rounded-lg ${headerClass} p-3 mb-2">
@@ -91,11 +99,7 @@
                         Existing CofO for this File (${records.length})
                     </div>
                 </div>
-                <div class="text-[11px]">
-                    ${escHtml(locked
-                        ? 'A Certificate of Occupancy already exists for this file number. Saving has been blocked to prevent a duplicate.'
-                        : 'A Certificate of Occupancy already exists for this file number. The form will be blocked if the remaining details also match.')}
-                </div>
+                <div class="text-[11px]">${escHtml(notice)}</div>
             </div>
             <div class="space-y-2 max-h-64 overflow-y-auto pr-1">${rowsHtml}</div>
         `;
@@ -116,6 +120,9 @@
         // When true, ANY existing CofO for the file number blocks the form (only one
         // CofO per file). When false, blocking follows the backend hit-count rule.
         const lockOnAnyMatch = !!config.lockOnAnyMatch;
+        // Informational consumers: the card is a heads-up and setLocked is still called
+        // (so the consumer can flag rows), but nothing is worded as a block.
+        const warnOnly = !!config.warnOnly;
 
         let inFlight = false;
         let lastKey = '';
@@ -176,7 +183,7 @@
 
                 const shouldLock = lockOnAnyMatch ? matches.length > 0 : !!data.lock_form;
                 if (card) {
-                    card.innerHTML = buildCardHtml(matches, shouldLock);
+                    card.innerHTML = buildCardHtml(matches, shouldLock && !warnOnly, warnOnly);
                     card.classList.remove('hidden');
                 }
 

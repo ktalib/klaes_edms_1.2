@@ -9,10 +9,21 @@
     /** Current value for a field: what was posted, else the draft, else blank. */
     $v = fn ($key, $fallback = '') => old($key, $answers[$key] ?? $fallback);
 
-    $label = 'block text-sm font-bold';
+    /**
+     * Grid spans as literal class strings. Tailwind's play CDN reads the
+     * rendered DOM, so an interpolated "sm:col-span-{{ $n }}" would work — but
+     * a lookup table cannot silently produce a class that does not exist.
+     */
+    $span = [
+        1 => 'md:col-span-1',  2 => 'md:col-span-2',  3 => 'md:col-span-3',
+        4 => 'md:col-span-4',  5 => 'md:col-span-5',  6 => 'md:col-span-6',
+        7 => 'md:col-span-7',  8 => 'md:col-span-8',  9 => 'md:col-span-9',
+        10 => 'md:col-span-10', 11 => 'md:col-span-11', 12 => 'md:col-span-12',
+    ];
+    $col = fn ($n) => 'col-span-12 ' . ($span[$n] ?? $span[12]);
 @endphp
 
-<div class="mx-auto max-w-3xl">
+<div class="mx-auto max-w-6xl">
 
     <div class="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -28,35 +39,27 @@
         </p>
     </div>
 
-    {{-- ---------- Land type ---------- --}}
+    {{-- ---------- Land type + statutory heading, on one line ---------- --}}
     <div class="laas-card mb-6 p-5">
-        <p class="laas-eyebrow mb-3" style="color: var(--ink-soft);">Select land type</p>
+        <div class="flex flex-wrap items-center justify-between gap-4">
+            <div class="flex flex-wrap items-center gap-2" role="tablist">
+                <span class="laas-eyebrow mr-1" style="color: var(--ink-faint);">Land type</span>
+                @foreach(SroFormSchema::TYPES as $key => $meta)
+                    @php $active = $key === $type; @endphp
+                    <a href="{{ route('laas.apply.form', ['type' => $key]) }}"
+                       role="tab" aria-selected="{{ $active ? 'true' : 'false' }}"
+                       class="inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-bold transition"
+                       style="{{ $active
+                            ? 'background: var(--brand); border-color: var(--brand); color: var(--on-brand);'
+                            : 'background: transparent; border-color: var(--border); color: var(--ink-soft);' }}">
+                        <i data-lucide="{{ $meta['icon'] }}" class="h-4 w-4" aria-hidden="true"></i>
+                        {{ $meta['label'] }}
+                    </a>
+                @endforeach
+            </div>
 
-        <div class="flex flex-wrap gap-2" role="tablist">
-            @foreach(SroFormSchema::TYPES as $key => $meta)
-                @php $active = $key === $type; @endphp
-                <a href="{{ route('laas.apply.form', ['type' => $key]) }}"
-                   role="tab" aria-selected="{{ $active ? 'true' : 'false' }}"
-                   class="inline-flex items-center gap-2 rounded-lg border-2 px-4 py-2.5 text-sm font-bold transition"
-                   style="{{ $active
-                        ? 'background: var(--brand); border-color: var(--brand); color: var(--on-brand);'
-                        : 'background: transparent; border-color: var(--border); color: var(--ink-soft);' }}">
-                    <i data-lucide="{{ $meta['icon'] }}" class="h-4 w-4" aria-hidden="true"></i>
-                    {{ $meta['label'] }}
-                </a>
-            @endforeach
+            <p class="text-xs" style="color: var(--ink-faint);">Switching keeps what you have typed.</p>
         </div>
-
-        <p class="mt-3 text-xs" style="color: var(--ink-faint);">
-            Switching type keeps everything you have already typed.
-        </p>
-    </div>
-
-    {{-- Statutory banner, mirroring the official paper form --}}
-    <div class="mb-6 rounded-xl border-2 px-5 py-3" style="border-color: var(--gold); background: rgba(245,179,1,.08);">
-        <p class="laas-eyebrow" style="color: var(--warn-ink);">
-            Application for Statutory Right of Occupancy — {{ SroFormSchema::typeLabel($type) }}
-        </p>
     </div>
 
     @if($errors->any())
@@ -72,73 +75,115 @@
     @endif
 
     <form id="laas-apply-form" method="POST" action="{{ route('laas.apply.store') }}"
-          enctype="multipart/form-data" class="space-y-6">
+          enctype="multipart/form-data" class="space-y-5">
         @csrf
         <input type="hidden" name="land_type" value="{{ $type }}">
 
         @foreach($sections as $section)
             <section class="laas-card p-6">
-                <h2 class="mb-1 flex items-center gap-2 text-sm font-extrabold uppercase tracking-widest"
-                    style="color: var(--brand);">
-                    <i data-lucide="{{ $section['icon'] }}" class="h-4 w-4" aria-hidden="true"></i>
-                    {{ $section['title'] }}
-                </h2>
+                <div class="mb-5 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b pb-3"
+                     style="border-color: var(--border);">
+                    <h2 class="flex items-center gap-2 text-sm font-extrabold uppercase tracking-widest"
+                        style="color: var(--ink);">
+                        <i data-lucide="{{ $section['icon'] }}" class="h-4 w-4" style="color: var(--brand);" aria-hidden="true"></i>
+                        {{ $section['title'] }}
+                    </h2>
+                    @if(!empty($section['note']))
+                        <p class="text-xs" style="color: var(--ink-faint);">{{ $section['note'] }}</p>
+                    @endif
+                </div>
 
-                @if(!empty($section['note']))
-                    <p class="mb-5 text-xs" style="color: var(--ink-soft);">{{ $section['note'] }}</p>
-                @else
-                    <div class="mb-5"></div>
-                @endif
-
-                <div class="space-y-5">
+                <div class="grid grid-cols-12 gap-x-5 gap-y-4">
                     @foreach($section['fields'] as $field)
-                        @php $key = $field['key']; @endphp
+                        @php
+                            $key      = $field['key'];
+                            $required = $field['required'] ?? false;
+                            $showIf   = $field['show_if'] ?? null;
+                            $showWhen = $showIf['field'] ?? null;
+                            $showVal  = $showIf['value'] ?? null;
+                            $initialVisible = !$showWhen || (string) old($showWhen, $answers[$showWhen] ?? '') === (string) $showVal;
+                        @endphp
 
-                        {{-- ---- Address block ---- --}}
+                        {{-- ---- Address block: its own 12-column row ---- --}}
                         @if($field['type'] === 'address')
-                            <fieldset class="rounded-xl border p-4" style="border-color: var(--border);">
+                            <fieldset class="col-span-12 rounded-xl border p-4"
+                                      data-address-prefix="{{ $field['prefix'] }}"
+                                      data-address-output="{{ $key }}"
+                                      style="border-color: var(--border);">
                                 <legend class="px-2 text-xs font-bold" style="color: var(--ink-soft);">
                                     {!! $field['label'] !!}
                                 </legend>
-                                <div class="grid gap-4 sm:grid-cols-2">
-                                    @foreach(SroFormSchema::addressParts() as $part => $partLabel)
-                                        @php $name = $field['prefix'] . $part; @endphp
-                                        <div>
+
+                                <div class="grid grid-cols-12 gap-x-4 gap-y-3">
+                                    @foreach(SroFormSchema::addressParts() as $part => $meta)
+                                        @php
+                                            $name = $field['prefix'] . $part;
+                                            // The LGA list cascades off the state select in this same block.
+                                            $parent = $part === 'lga' ? $field['prefix'] . 'state' : null;
+                                        @endphp
+                                        <div class="{{ $col($meta['col']) }}">
                                             <label for="{{ $name }}" class="block text-xs font-semibold"
-                                                   style="color: var(--ink-soft);">{{ $partLabel }}</label>
-                                            <input id="{{ $name }}" type="text" name="{{ $name }}"
-                                                   value="{{ $v($name) }}" class="laas-input mt-1.5">
+                                                   style="color: var(--ink-soft);">{{ $meta['label'] }}</label>
+
+                                            @if($meta['type'] === 'select')
+                                                <select id="{{ $name }}" name="{{ $name }}" class="laas-input mt-1.5"
+                                                        data-lookup="{{ $meta['lookup'] }}"
+                                                        @if($parent) data-parent="{{ $parent }}" @endif
+                                                        data-selected="{{ $v($name) }}">
+                                                    <option value="">-- Select --</option>
+                                                </select>
+                                            @elseif($meta['type'] === 'combobox')
+                                                <input id="{{ $name }}" type="text" name="{{ $name }}"
+                                                       value="{{ $v($name) }}" list="dl-{{ $name }}"
+                                                       autocomplete="off" data-lookup="{{ $meta['lookup'] }}"
+                                                       class="laas-input mt-1.5">
+                                                <datalist id="dl-{{ $name }}"></datalist>
+                                            @else
+                                                <input id="{{ $name }}" type="text" name="{{ $name }}"
+                                                       value="{{ $v($name) }}" class="laas-input mt-1.5">
+                                            @endif
                                         </div>
                                     @endforeach
+                                </div>
+
+                                <div class="mt-3">
+                                    <label for="{{ $key }}" class="block text-xs font-semibold" style="color: var(--ink-soft);">
+                                        Full address
+                                    </label>
+                                    <textarea id="{{ $key }}" name="{{ $key }}" rows="2" readonly
+                                              class="laas-input mt-1.5"
+                                              style="background: rgba(2, 8, 23, 0.03); color: var(--ink-soft);">{{ $v($key) }}</textarea>
                                 </div>
                             </fieldset>
 
                         {{-- ---- Prior allocations (residential) ---- --}}
                         @elseif($field['type'] === 'prev_allocations')
                             @php $rows = json_decode((string) ($answers['prev_allocation_details'] ?? ''), true) ?: []; @endphp
-                            <fieldset class="rounded-xl border p-4" style="border-color: var(--border);">
+                            <fieldset class="col-span-12 rounded-xl border p-4 {{ $initialVisible ? '' : 'hidden' }}"
+                                      @if($showWhen) data-show-if-field="{{ $showWhen }}" data-show-if-value="{{ $showVal }}" @endif
+                                      style="border-color: var(--border);">
                                 <legend class="px-2 text-xs font-bold" style="color: var(--ink-soft);">
                                     {!! $field['label'] !!}
                                 </legend>
-                                <div class="space-y-4">
+                                <div class="space-y-3">
                                     @for($i = 1; $i <= SroFormSchema::PREV_ALLOCATION_ROWS; $i++)
                                         @php $row = $rows[$i - 1] ?? []; @endphp
-                                        <div class="grid gap-3 sm:grid-cols-3">
-                                            <div>
+                                        <div class="grid grid-cols-12 gap-x-4 gap-y-2">
+                                            <div class="col-span-12 md:col-span-3">
                                                 <label for="prev_plot_{{ $i }}" class="block text-[11px] font-semibold"
                                                        style="color: var(--ink-faint);">({{ $i }}) a. Plot No.</label>
                                                 <input id="prev_plot_{{ $i }}" type="text" name="prev_plot_{{ $i }}"
                                                        value="{{ old('prev_plot_' . $i, $row['plot_no'] ?? '') }}"
                                                        class="laas-input mt-1.5">
                                             </div>
-                                            <div>
+                                            <div class="col-span-12 md:col-span-5">
                                                 <label for="prev_location_{{ $i }}" class="block text-[11px] font-semibold"
                                                        style="color: var(--ink-faint);">b. Location</label>
                                                 <input id="prev_location_{{ $i }}" type="text" name="prev_location_{{ $i }}"
                                                        value="{{ old('prev_location_' . $i, $row['location'] ?? '') }}"
                                                        class="laas-input mt-1.5">
                                             </div>
-                                            <div>
+                                            <div class="col-span-12 md:col-span-4">
                                                 <label for="prev_cert_{{ $i }}" class="block text-[11px] font-semibold"
                                                        style="color: var(--ink-faint);">c. Cert. of Occupancy No.</label>
                                                 <input id="prev_cert_{{ $i }}" type="text" name="prev_cert_{{ $i }}"
@@ -152,52 +197,57 @@
 
                         {{-- ---- Select ---- --}}
                         @elseif($field['type'] === 'select')
-                            <div>
-                                <label for="{{ $key }}" class="{{ $label }}" style="color: var(--ink);">
+                            <div class="{{ $col($field['col']) }} {{ $initialVisible ? '' : 'hidden' }}"
+                                 @if($showWhen) data-show-if-field="{{ $showWhen }}" data-show-if-value="{{ $showVal }}" @endif>
+                                <label for="{{ $key }}" class="block text-sm font-bold" style="color: var(--ink);">
                                     {!! $field['label'] !!}
-                                    @if($field['required'] ?? false)<span style="color: var(--danger);">*</span>@endif
+                                    @if($required)<span style="color: var(--danger);">*</span>@endif
                                 </label>
-                                <select id="{{ $key }}" name="{{ $key }}" class="laas-input mt-2"
-                                        @if($field['required'] ?? false) required @endif>
+                                <select id="{{ $key }}" name="{{ $key }}" class="laas-input mt-1.5"
+                                        @if($required) required @endif
+                                        @if(!empty($field['lookup'])) data-lookup="{{ $field['lookup'] }}" data-selected="{{ $v($key) }}" @endif
+                                        @if(!empty($field['parent'])) data-parent="{{ $field['parent'] }}" @endif>
                                     <option value="">-- Select --</option>
-                                    @foreach($field['options'] as $option)
+                                    @foreach($field['options'] ?? [] as $option)
                                         <option value="{{ $option }}" @selected($v($key) === $option)>{{ $option }}</option>
                                     @endforeach
                                 </select>
                                 @if(!empty($field['help']))
-                                    <p class="mt-1.5 text-xs" style="color: var(--ink-soft);">{{ $field['help'] }}</p>
+                                    <p class="mt-1 text-xs" style="color: var(--ink-faint);">{{ $field['help'] }}</p>
                                 @endif
                             </div>
 
                         {{-- ---- Textarea ---- --}}
                         @elseif($field['type'] === 'textarea')
-                            <div>
-                                <label for="{{ $key }}" class="{{ $label }}" style="color: var(--ink);">
+                            <div class="{{ $col($field['col']) }} {{ $initialVisible ? '' : 'hidden' }}"
+                                 @if($showWhen) data-show-if-field="{{ $showWhen }}" data-show-if-value="{{ $showVal }}" @endif>
+                                <label for="{{ $key }}" class="block text-sm font-bold" style="color: var(--ink);">
                                     {!! $field['label'] !!}
-                                    @if($field['required'] ?? false)<span style="color: var(--danger);">*</span>@endif
+                                    @if($required)<span style="color: var(--danger);">*</span>@endif
                                 </label>
-                                <textarea id="{{ $key }}" name="{{ $key }}" rows="3" class="laas-input mt-2"
-                                          @if($field['required'] ?? false) required @endif>{{ $v($key) }}</textarea>
+                                <textarea id="{{ $key }}" name="{{ $key }}" rows="2" class="laas-input mt-1.5"
+                                          @if($required) required @endif>{{ $v($key) }}</textarea>
                                 @if(!empty($field['help']))
-                                    <p class="mt-1.5 text-xs" style="color: var(--ink-soft);">{{ $field['help'] }}</p>
+                                    <p class="mt-1 text-xs" style="color: var(--ink-faint);">{{ $field['help'] }}</p>
                                 @endif
                             </div>
 
                         {{-- ---- Text / number ---- --}}
                         @else
-                            <div>
-                                <label for="{{ $key }}" class="{{ $label }}" style="color: var(--ink);">
+                            <div class="{{ $col($field['col']) }} {{ $initialVisible ? '' : 'hidden' }}"
+                                 @if($showWhen) data-show-if-field="{{ $showWhen }}" data-show-if-value="{{ $showVal }}" @endif>
+                                <label for="{{ $key }}" class="block text-sm font-bold" style="color: var(--ink);">
                                     {!! $field['label'] !!}
-                                    @if($field['required'] ?? false)<span style="color: var(--danger);">*</span>@endif
+                                    @if($required)<span style="color: var(--danger);">*</span>@endif
                                 </label>
                                 <input id="{{ $key }}" name="{{ $key }}" value="{{ $v($key) }}"
                                        type="{{ $field['type'] === 'number' ? 'number' : 'text' }}"
                                        @if($field['type'] === 'number') min="0" @endif
-                                       @if($field['required'] ?? false) required @endif
+                                       @if($required) required @endif
                                        @if(!empty($field['help'])) aria-describedby="{{ $key }}-help" @endif
-                                       class="laas-input mt-2">
+                                       class="laas-input mt-1.5">
                                 @if(!empty($field['help']))
-                                    <p id="{{ $key }}-help" class="mt-1.5 text-xs" style="color: var(--ink-soft);">{{ $field['help'] }}</p>
+                                    <p id="{{ $key }}-help" class="mt-1 text-xs" style="color: var(--ink-faint);">{{ $field['help'] }}</p>
                                 @endif
                             </div>
                         @endif
@@ -206,15 +256,15 @@
                     {{-- The passport photograph sits beside the applicant's name on
                          the paper form, so it belongs in the first section. --}}
                     @if($loop->first)
-                        <div>
-                            <label for="passport_photo" class="{{ $label }}" style="color: var(--ink);">
+                        <div class="col-span-12 md:col-span-6">
+                            <label for="passport_photo" class="block text-sm font-bold" style="color: var(--ink);">
                                 Passport photograph
                             </label>
                             <input id="passport_photo" type="file" name="passport_photo"
                                    accept=".jpg,.jpeg,.png" aria-describedby="passport-help"
-                                   class="laas-input mt-2 file:mr-3 file:rounded file:border-0 file:px-3 file:py-1.5 file:text-xs file:font-semibold">
-                            <p id="passport-help" class="mt-1.5 text-xs" style="color: var(--ink-soft);">
-                                JPG or PNG, up to 5&nbsp;MB. You can also add it later from the application page.
+                                   class="laas-input mt-1.5 file:mr-3 file:rounded file:border-0 file:px-3 file:py-1.5 file:text-xs file:font-semibold">
+                            <p id="passport-help" class="mt-1 text-xs" style="color: var(--ink-faint);">
+                                JPG or PNG, up to 5&nbsp;MB. You can also add it later.
                             </p>
                         </div>
                     @endif
@@ -240,33 +290,174 @@
     var form  = document.getElementById('laas-apply-form');
     var token = document.querySelector('meta[name="csrf-token"]').content;
 
+    var URLS = {
+        states:   '{{ route('laas.api.reference.states') }}',
+        lgas:     '{{ route('laas.api.reference.lgas') }}',
+        district: '{{ route('laas.api.reference.districts') }}',
+        street:   '{{ route('laas.api.reference.streets') }}'
+    };
+
+    function getJson(url) {
+        return fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (r) { return r.json(); })
+            .then(function (j) { return j.data || []; })
+            .catch(function () { return []; });
+    }
+
+    function fillSelect(select, rows, placeholder) {
+        var wanted = select.dataset.selected || select.value || '';
+        select.innerHTML = '<option value="">' + placeholder + '</option>' + rows.map(function (r) {
+            var name = String(r.name);
+            // Values are stored as NAMES, not ids: oss_applications keeps
+            // addresses as text, and a numeric id there would be meaningless
+            // to the officer reading the file.
+            var sel = name.toLowerCase() === String(wanted).toLowerCase() ? ' selected' : '';
+            return '<option value="' + name + '"' + sel + '>' + name + '</option>';
+        }).join('');
+    }
+
+    // ---- States, and the LGA lists that cascade from them -------------------
+    var stateSelects = form.querySelectorAll('select[data-lookup="state"]');
+    var lgaSelects   = form.querySelectorAll('select[data-lookup="lga"]');
+    var districtSelects = form.querySelectorAll('select[data-lookup="district"]');
+    var streetSelects   = form.querySelectorAll('select[data-lookup="street"]');
+
+    var statesPromise = stateSelects.length ? getJson(URLS.states) : Promise.resolve([]);
+
+    statesPromise.then(function (states) {
+        stateSelects.forEach(function (sel) { fillSelect(sel, states, '-- Select state --'); });
+
+        lgaSelects.forEach(function (lgaSel) {
+            var parentId = lgaSel.dataset.parent;
+            var stateSel = parentId ? document.getElementById(parentId) : null;
+
+            function loadLgas() {
+                if (!stateSel || !stateSel.value) {
+                    // Kano LGAs are the sensible default: this is the Kano State
+                    // portal, and most applicants never change the state.
+                    getJson(URLS.lgas).then(function (rows) {
+                        fillSelect(lgaSel, rows, '-- Select L.G.A. --');
+                    });
+                    return;
+                }
+                var match = states.filter(function (s) {
+                    return String(s.name).toLowerCase() === stateSel.value.toLowerCase();
+                })[0];
+                if (!match) { return; }
+                getJson(URLS.lgas + '?state_id=' + encodeURIComponent(match.id)).then(function (rows) {
+                    fillSelect(lgaSel, rows, '-- Select L.G.A. --');
+                });
+            }
+
+            if (stateSel) {
+                stateSel.addEventListener('change', function () {
+                    lgaSel.dataset.selected = '';   // the old LGA belongs to the old state
+                    loadLgas();
+                });
+            }
+            loadLgas();
+        });
+    });
+
+    if (districtSelects.length) {
+        getJson(URLS.district + '?limit=5000').then(function (rows) {
+            districtSelects.forEach(function (sel) { fillSelect(sel, rows, '-- Select district --'); });
+        });
+    }
+
+    if (streetSelects.length) {
+        getJson(URLS.street + '?limit=5000').then(function (rows) {
+            streetSelects.forEach(function (sel) { fillSelect(sel, rows, '-- Select street --'); });
+        });
+    }
+
+    function buildAddress(prefix) {
+        var order = ['plot', 'street', 'district', 'lga', 'state'];
+        var parts = [];
+        order.forEach(function (part) {
+            var el = document.getElementById(prefix + part);
+            var value = String(el ? (el.value || '') : '').trim();
+            if (value) parts.push(value);
+        });
+        return parts.join(', ');
+    }
+
+    function bindAddressBuilders() {
+        form.querySelectorAll('[data-address-prefix][data-address-output]').forEach(function (fieldSet) {
+            var prefix = fieldSet.dataset.addressPrefix;
+            var outputId = fieldSet.dataset.addressOutput;
+            var output = document.getElementById(outputId);
+            if (!prefix || !outputId || !output) return;
+
+            function sync() {
+                output.value = buildAddress(prefix);
+            }
+
+            ['plot', 'street', 'district', 'lga', 'state'].forEach(function (part) {
+                var el = document.getElementById(prefix + part);
+                if (!el || el.dataset.addressWired === '1') return;
+                el.dataset.addressWired = '1';
+                el.addEventListener('input', sync);
+                el.addEventListener('change', sync);
+            });
+
+            sync();
+        });
+    }
+
+    function applyConditionalVisibility() {
+        form.querySelectorAll('[data-show-if-field]').forEach(function (el) {
+            var sourceId = el.dataset.showIfField;
+            var expected = String(el.dataset.showIfValue || '').toLowerCase();
+            var source = sourceId ? document.getElementById(sourceId) : null;
+            var actual = String(source ? source.value : '').toLowerCase();
+            var visible = source && actual === expected;
+            el.classList.toggle('hidden', !visible);
+        });
+    }
+
+    var wiredConditions = {};
+    form.querySelectorAll('[data-show-if-field]').forEach(function (el) {
+        var sourceId = el.dataset.showIfField;
+        if (!sourceId || wiredConditions[sourceId]) return;
+        var source = document.getElementById(sourceId);
+        if (!source) return;
+        wiredConditions[sourceId] = true;
+        source.addEventListener('change', applyConditionalVisibility);
+    });
+
+    applyConditionalVisibility();
+    bindAddressBuilders();
+
+    // ---- Autosave ----------------------------------------------------------
     var badge     = document.getElementById('laas-autosave');
     var badgeText = badge.querySelector('span');
     var timer = null;
     var dirty = false;
 
-    function showSaved(at) {
-        badge.classList.remove('hidden');
-        badge.classList.add('inline-flex');
-        badgeText.textContent = 'Saved ' + at;
+    function payload() {
+        var body = new FormData(form);
+        body.delete('_token');
+        body.delete('passport_photo');   // files are stored on submit, not autosave
+        return body;
     }
 
     function save() {
         if (!dirty) return;
         dirty = false;
 
-        var body = new FormData(form);
-        body.delete('_token');
-        // Files are not part of an autosave; the passport is stored on submit.
-        body.delete('passport_photo');
-
         fetch('{{ route('laas.apply.draft') }}', {
             method: 'POST',
             headers: { 'X-CSRF-TOKEN': token, 'X-Requested-With': 'XMLHttpRequest' },
-            body: body
+            body: payload()
         })
         .then(function (r) { return r.json(); })
-        .then(function (json) { if (json.success) showSaved(json.saved_at); })
+        .then(function (json) {
+            if (!json.success) return;
+            badge.classList.remove('hidden');
+            badge.classList.add('inline-flex');
+            badgeText.textContent = 'Saved ' + json.saved_at;
+        })
         .catch(function () {
             // A failed autosave is not worth interrupting the applicant over —
             // the next keystroke schedules another attempt, and Submit is what
@@ -280,26 +471,21 @@
         clearTimeout(timer);
         timer = setTimeout(save, 2000);
     });
+    form.addEventListener('change', function () { dirty = true; });
 
-    // Don't autosave a form the applicant is in the middle of submitting.
     form.addEventListener('submit', function () { clearTimeout(timer); dirty = false; });
 
-    // Switching land type is a plain link, so flush any pending answers first —
+    // Switching land type is a plain link, so flush pending answers first —
     // otherwise the last two seconds of typing would be lost on the hop.
     document.querySelectorAll('[role="tab"]').forEach(function (tab) {
         tab.addEventListener('click', function (e) {
             if (!dirty) return;
             e.preventDefault();
             var href = tab.getAttribute('href');
-
-            var body = new FormData(form);
-            body.delete('_token');
-            body.delete('passport_photo');
-
             fetch('{{ route('laas.apply.draft') }}', {
                 method: 'POST',
                 headers: { 'X-CSRF-TOKEN': token, 'X-Requested-With': 'XMLHttpRequest' },
-                body: body
+                body: payload()
             }).finally(function () { window.location.href = href; });
         });
     });

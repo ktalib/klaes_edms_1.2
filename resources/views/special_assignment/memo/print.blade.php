@@ -50,6 +50,17 @@
         .gov-title-container { text-align: center; }
         .gov-title-container h1 { font-size: 18px; margin: 0; }
         .gov-title-container h2 { font-size: 14px; margin: 2px 0 0; font-weight: normal; }
+        /* Slightly smaller and tracked out, so the department reads as
+           subordinate to the Ministry rather than competing with it. */
+        .gov-title-container h2.dept-line {
+            font-size: 12px; letter-spacing: .04em; text-transform: uppercase;
+            margin-top: 3px; color: #333;
+        }
+        .memo-footer-logo {
+            margin-top: 26px; padding-top: 12px;
+            border-top: 1px solid #ddd; text-align: center;
+        }
+        .memo-footer-logo img { max-height: 46px; width: auto; object-fit: contain; }
         .gov-title-container h3 {
             font-size: 15px; margin: 8px 0 0;
             text-transform: uppercase; letter-spacing: 1.5px;
@@ -160,6 +171,10 @@
         <div class="gov-title-container">
             <h1>Kano State Government</h1>
             <h2>Ministry of Land &amp; Physical Planning</h2>
+            {{-- The issuing department. A SPAS memo lands on desks across the
+                 Ministry, so the heading has to say which department raised
+                 it, not only which Ministry. --}}
+            <h2 class="dept-line">Department of Special Assignment</h2>
             <h3>Internal Memo</h3>
         </div>
         <div class="logo-box">
@@ -225,6 +240,13 @@
                 <span style="font-size:11px;color:#555;">Signature &amp; Date</span>
             </div>
         </div>
+    </div>
+
+    {{-- Ministry mark at the foot of the printed page. Served from the live
+         host rather than asset(), because these documents are printed and
+         emailed from environments whose APP_URL is not app.klaes.ng. --}}
+    <div class="memo-footer-logo">
+        <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="">
     </div>
 
 </div>

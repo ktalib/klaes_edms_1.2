@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', 'LAAS Portal')</title>
-    <meta name="theme-color" content="#06301E">
+    <meta name="theme-color" content="#14201A">
     <link rel="icon" href="{{ asset('assets/logo/laas-light-logo.jpeg') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -28,81 +28,70 @@
         /*
          * LAAS design tokens.
          *
-         * Contrast is the constraint that set these values, not taste: every
-         * text/background pair below meets WCAG AAA (7:1 for body copy, 4.5:1
-         * for text at 24px, or 18.66px bold and above). The greens are pushed
-         * much darker than the brand mark's mid-green because mid-green on
-         * white lands around 4:1 — fine for a logo, and nowhere near enough for
-         * body text.
+         * Neutral-first. Surfaces, borders and body text are true greys with no
+         * colour cast; green appears only where it carries meaning — a primary
+         * action, a completed step, the brand mark. An earlier pass tinted every
+         * neutral green and used gold decoratively, which made an ordinary form
+         * look like a themed product rather than a government service.
          *
-         *   --ink on --surface            16.1:1
-         *   --ink-soft on --surface        8.9:1
-         *   --brand on --surface          10.4:1
-         *   #FFFFFF on --brand-deep       14.6:1   (the hero)
-         *   --on-deep-soft on --brand-deep 9.7:1   (hero sub-copy)
-         *   #1A1200 on --gold              9.8:1   (primary button)
+         * Colour is therefore rationed to: one green, one red for errors, and a
+         * yellow that appears ONLY as a keyboard focus ring (transient, and the
+         * accessibility convention).
+         *
+         * Every text/background pair meets WCAG AAA (7:1 body, 4.5:1 for text at
+         * 24px or 18.66px bold):
+         *
+         *   --ink on --surface-card            18.3:1
+         *   --ink-soft on --surface-card        7.8:1
+         *   --brand on --surface-card           9.7:1
+         *   #FFFFFF on --brand                  9.7:1
+         *   --on-deep-soft on --brand-deep      9.3:1
          */
         :root {
-            --brand:        #0B4F31;  /* deep emerald — primary on light */
+            --brand:        #0B4F31;  /* deep forest — primary action only */
             --brand-strong: #083D26;
-            --brand-deep:   #06301E;  /* hero ground */
-            --brand-tint:   #EAF2ED;  /* faint green wash for cards/chips */
-            --brand-line:   #C3DAcc;
+            --brand-deep:   #14201A;  /* dark ground for the hero and footer */
+            --brand-tint:   #EDF1EE;  /* barely-there wash for chips and cards */
+            --brand-line:   #C9D8CF;
 
-            --gold:         #F5B301;  /* accent, from the LAAS mark */
-            --gold-strong:  #D99A00;
-
-            --surface:      #F7F9F7;  /* off-white page */
+            --surface:      #F5F6F7;  /* neutral grey page */
             --surface-card: #FFFFFF;
-            --border:       #D8E0DA;
+            --border:       #DBDEE2;
 
-            --ink:          #10201A;  /* body copy */
-            --ink-soft:     #46564E;  /* secondary copy */
-            --ink-faint:    #64756C;  /* meta only — never body copy */
+            --ink:          #14171A;  /* body copy */
+            --ink-soft:     #4B5259;  /* secondary copy */
+            --ink-faint:    #6C747C;  /* meta only — never body copy */
 
+            --on-brand:     #FFFFFF;  /* ink on a brand fill */
             --on-deep:      #FFFFFF;
-            --on-deep-soft: #C9DED4;
+            --on-deep-soft: #B9C4BD;
 
             --danger:       #9F1239;
-            --focus:        #F5B301;
-
-            /* Text colour for "in progress" copy. The gold itself is far too
-             * light to set type in — #F5B301 on white is about 1.8:1 — so the
-             * warning voice gets its own darkened tone at 7.1:1. */
-            --warn-ink:     #7A4E00;
-            /* Readable ink for anything sitting ON a gold or brand fill. */
-            --on-gold:      #1A1200;
-            --on-brand:     #FFFFFF;
+            --focus:        #E8B93E;  /* keyboard focus only — see :focus-visible */
         }
 
         .dark {
-            --brand:        #6EE7B7;  /* light mint reads as "brand" on dark */
-            --brand-strong: #A7F3D0;
-            --brand-deep:   #041F13;
-            --brand-tint:   #0C2A1E;
-            --brand-line:   #1D4736;
+            /* Neutral charcoals, not green-black. */
+            --brand:        #8FBFA5;  /* muted sage — legible without glowing */
+            --brand-strong: #A9CFB9;
+            --brand-deep:   #0D0F11;
+            --brand-tint:   #1C2321;
+            --brand-line:   #2F3A34;
 
-            --gold:         #FBBF24;
-            --gold-strong:  #F5B301;
+            --surface:      #101214;
+            --surface-card: #17191C;
+            --border:       #2B2F34;
 
-            --surface:      #060F0B;
-            --surface-card: #0E1A14;
-            --border:       #24382D;
+            --ink:          #E9EBED;
+            --ink-soft:     #AAB1B8;
+            --ink-faint:    #868E96;
 
-            --ink:          #ECFDF5;
-            --ink-soft:     #B6C9BE;
-            --ink-faint:    #90A69A;
-
+            --on-brand:     #0E1611;
             --on-deep:      #FFFFFF;
-            --on-deep-soft: #C9DED4;
+            --on-deep-soft: #B9C4BD;
 
-            --danger:       #FDA4AF;
-            --focus:        #FBBF24;
-
-            --warn-ink:     #FCD34D;
-            --on-gold:      #1A1200;
-            /* On dark, --brand is a light mint, so ink on it must be dark. */
-            --on-brand:     #04281A;
+            --danger:       #F7A8B8;
+            --focus:        #E8B93E;
         }
 
         body {
@@ -113,19 +102,27 @@
         }
 
         /* ---- Focus -----------------------------------------------------
-         * One visible ring everywhere, gold so it clears both the off-white
-         * page and the deep emerald hero. :focus-visible only, so a mouse
-         * click does not leave a ring behind.
+         * A DUAL ring, because no single colour clears every surface a focus
+         * indicator can land on: a bright amber that fails against the light
+         * page (2.1:1) but sings against the dark hero, wrapped in a dark outer
+         * ring that does the opposite. Between them the indicator always meets
+         * the 3:1 required of non-text UI (WCAG 2.1 SC 1.4.11), whether focus
+         * lands on a white card, a green button, or the hero.
+         *
+         * Amber is the only colour in the interface outside brand green and the
+         * error red — and it is transient, so it never adds to the page palette.
+         * :focus-visible only, so a mouse click leaves no ring behind.
          */
         :focus-visible {
             outline: 3px solid var(--focus);
-            outline-offset: 3px;
+            outline-offset: 2px;
+            box-shadow: 0 0 0 6px rgba(17, 20, 23, .55);
             border-radius: 4px;
         }
 
         /* ---- Buttons ---------------------------------------------------- */
         .laas-btn,
-        .laas-btn-gold,
+        .laas-btn-invert,
         .laas-btn-ghost {
             display: inline-flex;
             align-items: center;
@@ -133,7 +130,7 @@
             gap: .5rem;
             font-weight: 700;
             border-radius: .625rem;
-            transition: background-color .15s, border-color .15s, transform .15s, box-shadow .15s;
+            transition: background-color .15s, border-color .15s;
         }
 
         /* Primary on light backgrounds. */
@@ -142,9 +139,10 @@
         .dark .laas-btn { background: var(--brand); color: #04281A; border-color: var(--brand); }
         .dark .laas-btn:hover { background: var(--brand-strong); border-color: var(--brand-strong); }
 
-        /* Primary on the deep hero — gold carries further than green on green. */
-        .laas-btn-gold { background: var(--gold); color: #1A1200; border: 2px solid var(--gold); }
-        .laas-btn-gold:hover { background: var(--gold-strong); border-color: var(--gold-strong); transform: translateY(-1px); }
+        /* Primary on a dark ground: white fill, dark ink. Highest possible
+           contrast without introducing a third colour. */
+        .laas-btn-invert { background: #FFFFFF; color: #14201A; border: 2px solid #FFFFFF; }
+        .laas-btn-invert:hover { background: #E8EAEC; border-color: #E8EAEC; }
 
         /* Secondary — outline, deliberately quieter than either fill. */
         .laas-btn-ghost { background: transparent; color: #fff; border: 2px solid rgba(255,255,255,.7); }
@@ -178,9 +176,9 @@
         /* Faint survey-grid texture for the hero. Decorative only. */
         .laas-grid-texture {
             background-image:
-                linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px);
-            background-size: 56px 56px;
+                linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px);
+            background-size: 64px 64px;
         }
 
         /* Skip link — visible the moment it takes focus. */
@@ -194,8 +192,8 @@
             left: 1rem;
             top: 1rem;
             padding: .75rem 1.25rem;
-            background: var(--gold);
-            color: #1A1200;
+            background: var(--focus);
+            color: #14171A;
             font-weight: 700;
             border-radius: .5rem;
         }

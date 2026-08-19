@@ -1224,6 +1224,55 @@ class ScanUploadsController extends Controller
      * List every document that would move with the current selection.
      * Expects: { scan_ids: [int] }
      */
+    /**
+     * Every scan belonging to one indexed file.
+     *
+     * The reassignment dialog is keyed on scan ids, but Page Typing and Doc-WARE
+     * only know the file. This bridges the two so those screens can offer the same
+     * "wrong file number" fix Scan Upload has, without duplicating the dialog.
+     */
+    public function fileScans(Request $request)
+    {
+        $validated = $request->validate([
+            'file_indexing_id' => 'required|integer|exists:sqlsrv.file_indexings,id',
+        ]);
+
+        try {
+            $file = FileIndexing::on('sqlsrv')->find($validated['file_indexing_id']);
+
+            $scans = Scanning::on('sqlsrv')
+                ->where('file_indexing_id', $validated['file_indexing_id'])
+                ->orderByRaw('CASE WHEN display_order IS NULL THEN 1 ELSE 0 END ASC, display_order ASC')
+                ->orderBy('id')
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'file_number' => $file->file_number ?? null,
+                    'registry' => $this->paths->registryName($file->registry ?? null),
+                    'documents' => $scans->map(function ($scan) use ($file) {
+                        return [
+                            'id' => $scan->id,
+                            'fileName' => $scan->original_filename,
+                            'fileNumber' => $file->file_number ?? null,
+                            'paperSize' => $scan->paper_size,
+                            'documentType' => $scan->document_type,
+                            'registry' => $scan->registry ?? $file->registry ?? null,
+                        ];
+                    })->values(),
+                ],
+            ]);
+        } catch (Throwable $ex) {
+            Log::error('fileScans failed', [
+                'error' => $ex->getMessage(),
+                'file_indexing_id' => $validated['file_indexing_id'],
+            ]);
+
+            return response()->json(['success' => false, 'message' => 'Could not load the documents for this file.'], 500);
+        }
+    }
+
     public function reassignSiblings(Request $request)
     {
         $validated = $request->validate([

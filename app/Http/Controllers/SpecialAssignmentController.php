@@ -1009,14 +1009,28 @@ class SpecialAssignmentController extends Controller
             'phone'              => $request->phone,
             'served_by'          => auth()->id(),
             'served_date'        => $request->served_date,
-            'scheduled_date'     => now()->addDays(14)->toDateString(),
+            // scheduled_date is set below, from the moment the SMS actually
+            // went — not from now. A notice whose SMS failed has no second
+            // serve due, because the first serve has not happened yet.
             'status'             => 'served',
             'created_by'         => auth()->user()->name ?? auth()->id(),
         ]);
 
         $sms = $this->sendNoticeSms($request->phone, $request->recipient_name, 'first', $request->file_number);
 
-        $notice->update(['sms_sent' => $sms['sent'], 'sms_sent_at' => $sms['sent'] ? now() : null]);
+        $sentAt = $sms['sent'] ? now() : null;
+
+        $notice->update([
+            'sms_sent'       => $sms['sent'],
+            'sms_sent_at'    => $sentAt,
+            // The statutory two weeks run from delivery. Stamping a due date on
+            // an undelivered notice would show the office a deadline that is
+            // not actually running, and spa:trigger-second-service (correctly)
+            // will not escalate it.
+            'scheduled_date' => $sentAt
+                ? $sentAt->copy()->addDays(\App\Models\SpaNotice::SECOND_SERVE_AFTER_DAYS)->toDateString()
+                : null,
+        ]);
 
         return response()->json([
             'success'    => true,
@@ -1025,6 +1039,66 @@ class SpecialAssignmentController extends Controller
             'sms_code'   => $sms['code'],
             'sms_reason' => $sms['reason'],
             'message'    => 'First serve notice issued.',
+        ]);
+    }
+
+    /**
+     * Re-attempt the SMS for a notice whose send failed.
+     *
+     * Without this, a first serve whose SMS never went was a dead end: it is
+     * (correctly) never escalated to a second serve, so it would sit forever
+     * with the owner unaware and nothing chasing it. The gateway refuses some
+     * messages on wording and still answers 200, so this is a routine state,
+     * not a rare one.
+     *
+     * Re-sending a notice that already went is refused rather than duplicated —
+     * the owner should not receive the same statutory warning twice.
+     */
+    public function resendNoticeSms(int $id)
+    {
+        $notice = SpaNotice::findOrFail($id);
+
+        if ($notice->sms_sent) {
+            return response()->json([
+                'success' => false,
+                'message' => 'That notice was already delivered on '
+                    .optional($notice->sms_sent_at)->format('d/m/Y H:i').'.',
+            ], 409);
+        }
+
+        $sms = $this->sendNoticeSms(
+            $notice->phone,
+            $notice->recipient_name,
+            $notice->notice_type,
+            $notice->file_number
+        );
+
+        if (! $sms['sent']) {
+            return response()->json([
+                'success'    => false,
+                'sms_code'   => $sms['code'],
+                'sms_reason' => $sms['reason'],
+                'message'    => 'Still could not send: '.($sms['reason'] ?: 'gateway refused the message').'.',
+            ], 422);
+        }
+
+        $sentAt = now();
+
+        $notice->update([
+            'sms_sent'    => true,
+            'sms_sent_at' => $sentAt,
+            // The clock starts now, not when the row was first created.
+            'scheduled_date' => $notice->notice_type === 'first'
+                ? $sentAt->copy()->addDays(SpaNotice::SECOND_SERVE_AFTER_DAYS)->toDateString()
+                : $notice->scheduled_date,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => $notice->notice_type === 'first'
+                ? 'First serve delivered. The second serve falls due on '
+                    .$sentAt->copy()->addDays(SpaNotice::SECOND_SERVE_AFTER_DAYS)->format('d/m/Y').'.'
+                : 'Notice delivered.',
         ]);
     }
 
@@ -1172,12 +1246,31 @@ class SpecialAssignmentController extends Controller
             'holder_name'        => 'required|string|max:255',
             'new_file_number'    => 'required|string|max:255',
             'from_use'           => 'required|string|max:255',
-            'to_use'             => 'required|string|max:255',
+            // A change of purpose that does not change the purpose is not a
+            // change of purpose. Issuing one would put a sheet on the file
+            // recording a conversion that never happened, and flip the
+            // application to `certificate_issued` on the strength of it.
+            //
+            // `different:from_use` alone compares raw strings, so
+            // "COMMERCIAL" and "Commercial " would slip through — the values
+            // come from a free-text-ish land-use list. The explicit check
+            // below normalises case and padding first.
+            'to_use'             => 'required|string|max:255|different:from_use',
             'issue_date'         => 'required|date',
         ], [
             'spa_application_id.integer' => 'Please select a valid Special Assignment application.',
             'spa_application_id.exists'  => 'The selected file does not have a Special Assignment application yet.',
+            'to_use.different'           => 'The new purpose must differ from the approved land use.',
         ]);
+
+        if (strtoupper(trim($request->from_use)) === strtoupper(trim($request->to_use))) {
+            return response()->json([
+                'success' => false,
+                'errors'  => ['to_use' => ['The new purpose must differ from the approved land use.']],
+                'message' => 'The new purpose is the same as the approved land use ('
+                    .$request->from_use.'), so there is no change of purpose to issue.',
+            ], 422);
+        }
 
         $app = SpaApplication::findOrFail($request->spa_application_id);
 

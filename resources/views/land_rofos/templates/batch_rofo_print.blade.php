@@ -106,12 +106,15 @@
            border-image, which no img rule can reach — and the coloured text rules
            are overridden to black because grayscale alone leaves red and blue as
            mid-greys. */
-        .copy-bw .content-wrapper { filter:grayscale(100%); -webkit-filter:grayscale(100%); }
-        /* The security paper is a sibling of .content-wrapper, so it needs its own
-           grayscale or a black-and-white copy prints on colour paper. */
+        /* The wrapper-level grayscale is gone: the coat of arms and the ministry
+           badge must carry colour on every copy, and a CSS filter cannot be undone
+           on a descendant. The ornate frame prints in colour on the office copies
+           as a consequence. Kept in step with rofo_print.blade.php. */
+        /* The security paper is a sibling of .content-wrapper and is not part of
+           the letter's identity, so office copies still print on plain paper. */
         .copy-bw .security-bg { filter:grayscale(100%); -webkit-filter:grayscale(100%); }
         .copy-bw .title-center { color:#000!important; }
-        .copy-bw .version-label { color:#000!important; }
+        /* No .version-label override: the copy label prints in the header red. */
         /* Batch print button */
         .print-btn-container { position:fixed; top:20px; right:20px; z-index:1000; display:flex; gap:10px; }
         .print-btn { padding:12px 24px; background-color:#006b3f; color:#fff; border:none; border-radius:4px; cursor:pointer; font-weight:bold; box-shadow:0 2px 8px rgba(0,0,0,0.2); font-size:14px; }
@@ -132,7 +135,9 @@
 </div>
 
 @php
-    $versionColors = ['Original'=>'#ff0000','Duplicate'=>'#0000ff','Triplicate'=>'#008000'];
+    // Duplicate/Triplicate write-ups take the header red (#c90202), as in
+    // rofo_print.blade.php; only the Original keeps its own brighter red.
+    $versionColors = ['Original'=>'#ff0000','Duplicate'=>'#c90202','Triplicate'=>'#c90202'];
     $versions      = ['Original','Duplicate','Triplicate'];
     $categories    = [
         ['label'=>'Agriculture',           'fee'=>10000],

@@ -50,7 +50,7 @@ storage/app/public/EDMS/
 
 ### The master folders
 
-`App\Services\Edms\EdmsFileType` is the single source of truth. Ten types, each a folder under every registry in all three managed trees:
+`App\Services\Edms\EdmsFileType` is the single source of truth. Nineteen types, each a folder under every registry in all three managed trees:
 
 | Key (stored in DB) | Folder on disk | Label |
 |---|---|---|
@@ -64,6 +64,15 @@ storage/app/public/EDMS/
 | `temporary` | `Temporary_File` | Temporary File |
 | `change_of_purpose_old` | `Change_of_Purpose/Old` | Change of Purpose — Old |
 | `change_of_purpose_new` | `Change_of_Purpose/New` | Change of Purpose — New |
+| `regrant` | `Regrant` | Regrant |
+| `resettlement` | `Resettlement` | Resettlement |
+| `surrender` | `Surrender` | Surrender |
+| `separation` | `Separation` | Separation |
+| `title_status_litigation` | `Title_Status/Litigation` | Title Status — Litigation |
+| `title_status_revocation` | `Title_Status/Revocation` | Title Status — Revocation |
+| `title_status_cancellation` | `Title_Status/Cancellation` | Title Status — Cancellation |
+| `title_status_withdrawal` | `Title_Status/Withdrawal` | Title Status — Withdrawal |
+| `title_status_amendment` | `Title_Status/Amendment` | Title Status — Amendment |
 
 Created by `php artisan edms:create-file-type-folders` (idempotent; supports `--dry-run`, `--registry`, `--tree`). It builds the same skeleton under **every** registry in all three trees, so an operator browsing any of them sees a consistent shape.
 

@@ -68,7 +68,10 @@
                 mortgagor3: '',
                 includeFourthParty: false,
                 fourthParty: '',
-                fifthParty: ''
+                fifthParty: '',
+                // Set when the server holds this row back as a possible duplicate.
+                duplicateInfo: null,
+                forceSave: false
             }],
 
             // File indexing data (will be populated from outside)
@@ -208,7 +211,9 @@
                     includeThirdParty: false,
                     includeCoMortgagor: false,
                     includeFourthParty: false,
-                    fourthParty: ''
+                    fourthParty: '',
+                    duplicateInfo: null,
+                    forceSave: false
                 });
             },
 
@@ -701,6 +706,48 @@
                                     </svg>
                                 </button>
                             </div>
+
+                            {{-- Held back by the server as a possible duplicate. The row was NOT
+                                 saved; the user either removes it or confirms it is genuine and
+                                 saves again with force_save set. --}}
+                            <template x-if="transaction.duplicateInfo">
+                                <div class="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3">
+                                    <div class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-tight text-amber-800">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M12 9v2m0 4h.01M4.93 19h14.14a2 2 0 001.73-3L13.73 4a2 2 0 00-3.46 0L3.2 16a2 2 0 001.73 3z" />
+                                        </svg>
+                                        Not saved — possible duplicate
+                                    </div>
+                                    <div class="mt-1 text-[11px] text-amber-900" x-text="transaction.duplicateInfo.message"></div>
+
+                                    <div class="mt-2 space-y-1.5">
+                                        <template x-for="(m, mi) in (transaction.duplicateInfo.matches || [])" :key="mi">
+                                            <div class="rounded border border-amber-200 bg-white p-2 text-[10px] leading-tight text-gray-700">
+                                                <div class="font-bold text-gray-800"
+                                                    x-text="(m.transaction_type || 'Certificate of Occupancy') + ' — ' + (m.regNo || '—')"></div>
+                                                <div>
+                                                    <span class="font-semibold text-gray-700">Date:</span>
+                                                    <span x-text="(m.transaction_date || '—').toString().substring(0, 10)"></span>
+                                                    <span class="mx-1 text-gray-300">|</span>
+                                                    <span class="font-semibold text-gray-700">Party 2:</span>
+                                                    <span x-text="m.party_2 || m.Grantee || m.Assignee || m.Lessee || '—'"></span>
+                                                </div>
+                                                <div>
+                                                    <span class="font-semibold text-gray-700">Captured by:</span>
+                                                    <span x-text="m.captured_by_name || m.captured_by || m.created_by || '—'"></span>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
+
+                                    <label class="mt-2 flex items-start gap-2 text-[11px] font-semibold text-amber-900">
+                                        <input type="checkbox" x-model="transaction.forceSave"
+                                            class="mt-0.5 rounded border-amber-400 text-amber-600 focus:ring-amber-500">
+                                        <span>I have checked — this is not a duplicate. Save it anyway.</span>
+                                    </label>
+                                </div>
+                            </template>
 
                             <div class="space-y-3">
                                 <!-- Transaction Type and Date - 2x2 Grid -->
@@ -1521,6 +1568,78 @@
         return '';
     }
 
+    /**
+     * Handle a partial save: the server stored every non-duplicate transaction and
+     * returned the ones that look like duplicates.
+     *
+     * The saved rows are dropped from the form (so a re-submit cannot insert them a
+     * second time) and only the held-back rows are left behind, each flagged with the
+     * existing records it matched and a "save it anyway" checkbox. Ticking that box and
+     * saving again re-submits the row with force_save, which skips the check.
+     *
+     * The modal deliberately stays open, and existing records are NOT re-read — that
+     * would repopulate the form from the database and discard what the user typed.
+     */
+    function handleDeferredDuplicates(response, deferred, transactions, submitBtn, originalBtnText) {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerText = originalBtnText;
+        }
+
+        const data = response.data || {};
+        const savedCount = (data.file_history_count || 0) + (data.cofo_count || 0) + (data.pra_count || 0);
+
+        const heldRows = [];
+        deferred.forEach(d => {
+            const row = transactions[d.index];
+            if (!row) return;
+            row.duplicateInfo = {
+                message: d.message || 'A matching record already exists on this file number.',
+                matches: d.matches || [],
+                strongMatch: !!d.strong_match
+            };
+            row.forceSave = false;
+            heldRows.push(row);
+        });
+
+        if (heldRows.length > 0) {
+            try {
+                const alpineElement = document.querySelector('#property-transaction-dialog [x-data]');
+                if (alpineElement && typeof Alpine !== 'undefined') {
+                    const alpineComponent = Alpine.$data(alpineElement);
+                    if (alpineComponent) {
+                        alpineComponent.transactions = heldRows;
+                    }
+                }
+            } catch (e) {
+                console.warn('Could not prune already-saved transactions from the form:', e);
+            }
+        }
+
+        const heldLabel = deferred.length + ' transaction' + (deferred.length > 1 ? 's' : '');
+        let html = '';
+        if (savedCount > 0) {
+            html += '<div style="text-align:left; margin-bottom:8px;"><b>' + savedCount + ' transaction'
+                + (savedCount > 1 ? 's' : '') + '</b> saved successfully.</div>';
+        }
+        html += '<div style="text-align:left;">' + heldLabel + ' matched a record already on this file and '
+            + (deferred.length > 1 ? 'were' : 'was') + ' <b>not saved</b>. '
+            + 'Review ' + (deferred.length > 1 ? 'them' : 'it') + ' below — remove '
+            + (deferred.length > 1 ? 'any that are' : 'it if it is') + ' a duplicate, or tick '
+            + '"this is not a duplicate" and save again.</div>';
+
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Confirm possible duplicate' + (deferred.length > 1 ? 's' : ''),
+                html: html,
+                confirmButtonText: 'Review'
+            });
+        } else {
+            alert(html.replace(/<[^>]+>/g, ''));
+        }
+    }
+
     // Global function to submit property transactions
     function submitPropertyTransactions(transactions, fileIndexingData) {
         console.log('=== SUBMITTING PROPERTY TRANSACTIONS ===');
@@ -1567,6 +1686,9 @@
         const convertedTransactions = transactions.map(t => ({
             record_id: t.recordId || null,
             _source: t.source || null,
+            // Set by the user on a row the server held back as a possible duplicate:
+            // "I have checked — this is a separate instrument, save it."
+            force_save: t.forceSave ? 1 : 0,
             transaction_type: t.transactionType || '',
             instrument_type: t.instrumentType || '',
             status: t.status || 'Normal',
@@ -1632,6 +1754,14 @@
             },
             success: function (response) {
                 console.log('Success:', response);
+
+                // Partial save: everything that was not a duplicate is already stored.
+                // The rows the server held back come back here for the user to confirm.
+                const deferred = response.duplicates || [];
+                if (deferred.length > 0) {
+                    handleDeferredDuplicates(response, deferred, transactions, submitBtn, originalBtnText);
+                    return;
+                }
 
                 // Build detailed toast message showing where records went
                 let toastParts = [];
@@ -1862,21 +1992,15 @@
             return null;
         }
 
+        // Advisory only. Saving is never blocked here: the form submits, the server
+        // saves everything that is not a duplicate, and returns the duplicates for the
+        // user to confirm (see handleDeferredDuplicates below).
         const guard = window.CofoDuplicateGuard.create({
             card: card,
             lockOnAnyMatch: true,
+            warnOnly: true,
             getFields: getFirstCofoTxn,
-            setLocked: function (locked, message) {
-                if (locked) {
-                    form.dataset.cofoDupLocked = '1';
-                    form.dataset.cofoDupMessage = message || 'A Certificate of Occupancy with matching details already exists for this file number.';
-                    if (saveBtn) { saveBtn.disabled = true; saveBtn.classList.add('opacity-50', 'cursor-not-allowed'); }
-                } else {
-                    delete form.dataset.cofoDupLocked;
-                    delete form.dataset.cofoDupMessage;
-                    if (saveBtn) { saveBtn.disabled = false; saveBtn.classList.remove('opacity-50', 'cursor-not-allowed'); }
-                }
-            },
+            setLocked: function () {},
         });
 
         // Debounced runner shared across the various triggers.
@@ -1898,19 +2022,10 @@
             dialog.addEventListener('click', () => schedule());
         }
 
-        // Block submitting a locked (duplicate) CofO.
-        form.addEventListener('submit', function (e) {
-            if (form.dataset.cofoDupLocked === '1') {
-                e.preventDefault();
-                e.stopPropagation();
-                const msg = form.dataset.cofoDupMessage || 'A Certificate of Occupancy with matching details already exists for this file number.';
-                if (typeof Swal !== 'undefined') {
-                    Swal.fire({ icon: 'error', title: 'Duplicate CofO', text: msg, confirmButtonText: 'OK' });
-                } else {
-                    alert(msg);
-                }
-            }
-        }, true);
+        // Clear any lock left on the form by an earlier build of this guard.
+        delete form.dataset.cofoDupLocked;
+        delete form.dataset.cofoDupMessage;
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.classList.remove('opacity-50', 'cursor-not-allowed'); }
     }
 
     if (document.readyState === 'loading') {

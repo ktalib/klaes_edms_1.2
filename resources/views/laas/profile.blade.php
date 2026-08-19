@@ -119,8 +119,8 @@
 
         @if($pending)
             {{-- Waiting on the code --}}
-            <div class="rounded-xl border-2 p-5" style="border-color: var(--gold);">
-                <p class="mb-1 flex items-center gap-2 text-sm font-extrabold" style="color: var(--warn-ink);">
+            <div class="rounded-xl border-2 p-5" style="border-color: var(--brand);">
+                <p class="mb-1 flex items-center gap-2 text-sm font-extrabold" style="color: var(--brand);">
                     <i data-lucide="clock" class="h-4 w-4" aria-hidden="true"></i>
                     Waiting for confirmation
                 </p>

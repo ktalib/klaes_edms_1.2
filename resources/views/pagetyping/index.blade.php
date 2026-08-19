@@ -474,6 +474,8 @@
 
     @include('components.edms.registry-transfer-modal')
     @include('components.edms.file-type-transfer-modal')
+    @include('scan_uploads.partials.reassign_modal')
+    <script src="{{ asset('js/scan-reassignment.js') }}"></script>
 
     <!-- Page Typing Dashboard JavaScript -->
     <script>
@@ -858,6 +860,7 @@
             ...extraItems.map(item => fileActionsMenuItem({ ...item, fileId, fileNumber })),
             fileActionsMenuItem({ action: 'move-registry-file', icon: 'folder-symlink', label: 'Move to NR', fileId, fileNumber }),
             fileActionsMenuItem({ action: 'file-master-folder', icon: 'folder-tree', label: 'File into Master Folder', fileId, fileNumber }),
+            fileActionsMenuItem({ action: 'reassign-file-number', icon: 'unlink', label: 'Reassign File Number', fileId, fileNumber }),
           ];
 
           return `
@@ -944,6 +947,46 @@
           }
         }
 
+        /**
+         * Unlink this file's scans and attach them to a different file number.
+         *
+         * For documents captured against the WRONG FILE ENTIRELY — the folder
+         * actions cannot fix that, because the file itself is wrong. The dialog is
+         * keyed on scan ids, so the file's scans are fetched first.
+         */
+        async function openReassignForFile(fileIndexingId, fileNumber) {
+          if (!fileIndexingId) {
+            Swal.fire({ icon: 'warning', title: 'No file selected', timer: 2000 });
+            return;
+          }
+
+          if (!window.scanReassignmentManager) {
+            Swal.fire({ icon: 'error', title: 'Reassignment unavailable', text: 'The reassignment dialog did not load on this page.' });
+            return;
+          }
+
+          try {
+            const response = await fetch(`/scan-uploads/file-scans?file_indexing_id=${encodeURIComponent(fileIndexingId)}`, {
+              headers: { 'Accept': 'application/json' }
+            });
+            const payload = await response.json();
+            const documents = payload?.data?.documents || [];
+
+            if (!documents.length) {
+              Swal.fire({
+                icon: 'info',
+                title: 'Nothing to reassign',
+                text: `${fileNumber || 'This file'} has no scanned documents to move.`
+              });
+              return;
+            }
+
+            window.scanReassignmentManager.openModal(documents.map(doc => doc.id), documents);
+          } catch (error) {
+            Swal.fire({ icon: 'error', title: 'Could not load the documents', text: error.message });
+          }
+        }
+
         function setupActionHandlers() {
           // A fixed-position panel does not follow its button, so an open menu is
           // repositioned while the page or the table scrolls under it.
@@ -972,6 +1015,13 @@
             // below cannot do this, since the target is inside the menu.
             event.target.closest('.file-actions-panel button')
               ?.closest('details.file-actions-menu')?.removeAttribute('open');
+
+            const reassignButton = event.target.closest('.reassign-file-number');
+            if (reassignButton) {
+              event.preventDefault();
+              openReassignForFile(reassignButton.dataset.id, reassignButton.dataset.fileNumber);
+              return;
+            }
 
             const transferButton = event.target.closest('.move-registry-file, .file-master-folder');
             if (transferButton) {

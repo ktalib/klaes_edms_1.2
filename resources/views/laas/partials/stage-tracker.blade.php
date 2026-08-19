@@ -34,12 +34,13 @@
 @endphp
 
 @if($isRejected)
-    <div class="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/30">
-        <i data-lucide="x-circle" class="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600 dark:text-red-400"></i>
+    <div class="flex items-start gap-3 rounded-xl border p-4"
+         style="border-color: var(--danger); background: rgba(159,18,57,.07);">
+        <i data-lucide="x-circle" class="mt-0.5 h-5 w-5 flex-shrink-0" style="color: var(--danger);"></i>
         <div>
-            <p class="text-sm font-semibold text-red-900 dark:text-red-200">This application was not approved</p>
+            <p class="text-sm font-semibold" style="color: var(--ink);">This application was not approved</p>
             @if($application->rejection_reason)
-                <p class="mt-1 text-sm text-red-800 dark:text-red-300">{{ $application->rejection_reason }}</p>
+                <p class="mt-1 text-sm" style="color: var(--ink-soft);">{{ $application->rejection_reason }}</p>
             @endif
         </div>
     </div>
@@ -67,7 +68,7 @@
                 <div class="flex flex-col items-center">
                     <div class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border-2 transition
                         @if($isDone) border-[var(--brand)] bg-[var(--brand)] text-[var(--on-brand)]
-                        @elseif($isCurrent) border-[var(--gold)] bg-[var(--gold)] text-[var(--on-gold)]
+                        @elseif($isCurrent) border-[var(--brand)] bg-[var(--surface-card)] text-[var(--brand)]
                         @else border-[var(--border)] bg-[var(--surface-card)] text-[var(--ink-faint)] dark:border-[var(--border)] dark:bg-[var(--surface-card)] dark:text-[var(--ink-faint)] @endif">
                         <i data-lucide="{{ $isDone ? 'check' : ($icons[$step] ?? 'circle') }}" class="h-4 w-4"></i>
                     </div>
@@ -79,12 +80,12 @@
                 <!-- Label -->
                 <div class="{{ $isLast ? 'pb-0' : 'pb-6' }} pt-1">
                     <p class="text-sm font-semibold
-                        @if($isCurrent) text-[var(--warn-ink)]
+                        @if($isCurrent) text-[var(--brand)]
                         @elseif($isDone) text-[var(--ink)] dark:text-[var(--ink)]
                         @else text-[var(--ink-faint)] dark:text-[var(--ink-faint)] @endif">
                         {{ LaasApplication::label($step) }}
                         @if($isCurrent)
-                            <span class="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900 dark:bg-amber-900/50 dark:text-amber-200">Current</span>
+                            <span class="ml-2 rounded-full bg-[var(--brand-tint)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--brand)]">Current</span>
                         @endif
                     </p>
                 </div>

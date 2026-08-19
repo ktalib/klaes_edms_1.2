@@ -73,9 +73,24 @@
         .gov-title-container h2 {
             font-size: 15px;
             font-weight: normal;
-            margin: 0 0 25px 0;
+            margin: 0 0 3px 0;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+        }
+
+        /* The gap down to the sheet title belongs to whichever line is last,
+           so it stays correct whether or not the department line is present.
+           :last-of-type rather than :has(), which print renderers do not all
+           support. */
+        .gov-title-container h2:last-of-type {
+            margin-bottom: 25px;
+        }
+
+        /* The department sits under the Ministry. Smaller, so it reads as
+           subordinate to it rather than competing with it. */
+        .gov-title-container h2.dept-line {
+            font-size: 12.5px;
+            color: #333;
         }
 
         .gov-title-container h3 {
@@ -230,6 +245,10 @@
         <div class="gov-title-container">
             <h1>Kano State Government</h1>
             <h2>Ministry of Land &amp; Physical Planning</h2>
+            {{-- The issuing department. A Change of Purpose Sheet is a document
+                 the holder keeps, so it has to say which department issued it,
+                 not only which Ministry. --}}
+            <h2 class="dept-line">Department of Special Assignment</h2>
             <h3>Change of Purpose Sheet</h3>
         </div>
 

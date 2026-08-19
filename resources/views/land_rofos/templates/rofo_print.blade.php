@@ -585,22 +585,24 @@
             print-color-adjust: exact;
         }
 
-        /* ── Duplicate / Triplicate are black & white ──────────────────────
-           Only the ORIGINAL copy carries colour (red superseding notice, red
-           ministry banner, colour coat of arms / KLAES logo). The office copies
-           print monochrome, so images are desaturated and every coloured text
-           rule is overridden to black — grayscale alone would leave the red and
-           blue as mid-greys instead of black.
-           Desaturating the whole wrapper (rather than each image) is what takes
-           the ornate frame with it: the frame is a border-image, which no img
-           rule can reach. */
-        .copy-bw .content-wrapper {
-            filter: grayscale(100%);
-            -webkit-filter: grayscale(100%);
-        }
-        /* The security paper is a sibling of .content-wrapper, so the grayscale
-           above does not reach it — a black-and-white copy would otherwise print
-           on colour paper. */
+        /* ── Duplicate / Triplicate: office copies, but no longer monochrome ──
+           These copies used to be forced fully black & white by a
+           grayscale(100%) filter on .content-wrapper. That filter had to go: the
+           coat of arms and the red ministry badge must now carry colour on EVERY
+           copy, and a CSS filter applies to the whole subtree with no way for a
+           descendant to opt out — grayscale cannot be undone on a child.
+
+           So the copies are desaturated element by element instead. What that
+           leaves in colour on the office copies, as a consequence of dropping the
+           wrapper filter, is the ornate border frame (a border-image, which no
+           img rule can reach) and the coat of arms — the latter deliberately.
+
+           The body text of an office copy still reads black: the coloured text
+           rules below stay overridden, because grayscale alone would have left
+           red as a mid-grey anyway. */
+
+        /* The security paper is a sibling of .content-wrapper and is not part of
+           the letter's identity, so office copies still print on plain paper. */
         .copy-bw .security-bg {
             filter: grayscale(100%);
             -webkit-filter: grayscale(100%);
@@ -614,12 +616,8 @@
         .copy-bw .title-center {
             color: #000 !important;
         }
-        .copy-bw .version-label {
-            color: #000 !important;
-        }
-        .copy-bw [data-rofo-badge] {
-            background: #000 !important;
-        }
+        /* No .version-label or [data-rofo-badge] override any more: the copy
+           label prints in the header red and the badge stays red on all copies. */
     </style>
 </head>
 <body spellcheck="false">
@@ -673,10 +671,13 @@
             $supersedeOn = optional($originalIssuedAt)->format('jS F, Y') ?? '';
         }
 
+        // The copy label is written in the same red as the header (.title-center
+        // and the ministry badge, #c90202). The Duplicate used to print blue and
+        // the Triplicate green; only the Original keeps its own brighter red.
         $versionColors = [
             'Original' => '#ff0000',
-            'Duplicate' => '#0000ff',
-            'Triplicate' => '#008000',
+            'Duplicate' => '#c90202',
+            'Triplicate' => '#c90202',
         ];
     @endphp
 
@@ -1143,10 +1144,9 @@
             var frameUrl = '{{ asset('assets/images/pages/1779539656370(1).png') }}';
             var css = '.ornate-border { border-image-source: url("' + frameUrl + '") !important; }\n';
             document.getElementById('scheme-override').textContent = css;
-            // Black & white copies keep the black banner set in CSS; only the
-            // colour copies get the red ministry banner.
+            // The red ministry banner is carried by every copy — Original,
+            // Duplicate and Triplicate alike.
             document.querySelectorAll('[data-rofo-badge]').forEach(function(badge) {
-                if (badge.closest('.copy-bw')) return;
                 badge.style.background = '#c90202';
             });
         });

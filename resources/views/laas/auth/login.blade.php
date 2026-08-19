@@ -89,16 +89,16 @@
            style="background: var(--brand-deep);">
         <div class="laas-grid-texture absolute inset-0" aria-hidden="true"></div>
         <div class="pointer-events-none absolute -left-32 top-1/3 h-[460px] w-[460px] rounded-full opacity-35 blur-3xl"
-             style="background: radial-gradient(circle, #12A06A 0%, transparent 68%);" aria-hidden="true"></div>
+             style="background: radial-gradient(circle, rgba(255,255,255,.06) 0%, transparent 70%);" aria-hidden="true"></div>
 
         <div class="relative px-14 py-16">
             <p class="mb-5 inline-flex items-center gap-2.5 rounded-full border py-2 pl-2 pr-4"
-               style="border-color: rgba(245,179,1,.45); background: rgba(245,179,1,.10);">
+               style="border-color: rgba(255,255,255,.22); background: rgba(255,255,255,.06);">
                 <span class="flex h-6 w-6 items-center justify-center rounded-full bg-white">
                     <img src="{{ asset('assets/logo/ministry2.png') }}" alt="" aria-hidden="true"
                          class="h-5 w-5 rounded-full object-contain">
                 </span>
-                <span class="laas-eyebrow" style="color: #FFD97A;">Official Government Portal</span>
+                <span class="laas-eyebrow" style="color: var(--on-deep-soft);">Official Government Portal</span>
             </p>
 
             <h2 class="max-w-md text-4xl font-black leading-tight text-white">
@@ -117,7 +117,7 @@
                     <li class="flex gap-4">
                         <span class="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl"
                               style="background: rgba(255,255,255,.10);">
-                            <i data-lucide="{{ $icon }}" class="h-5 w-5" style="color: var(--gold);" aria-hidden="true"></i>
+                            <i data-lucide="{{ $icon }}" class="h-5 w-5" style="color: var(--on-deep-soft);" aria-hidden="true"></i>
                         </span>
                         <div>
                             <p class="font-bold text-white">{{ $title }}</p>

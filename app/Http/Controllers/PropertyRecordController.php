@@ -44,6 +44,197 @@ class PropertyRecordController extends Controller
     }
 
     /**
+     * Find existing CofO_staging rows for a file number, and decide which one (if any)
+     * matches the incoming transaction closely enough to count as a real duplicate.
+     *
+     * Shared by the live pre-check (checkCofoDuplicate) and the save path
+     * (storeFromIndexing), so the warning the form shows and the rows the server
+     * holds back for confirmation always agree on what a duplicate is.
+     *
+     * `matches` is every CofO on the file number; `locking` is the first one whose
+     * remaining details also line up (2+ corroborating fields).
+     *
+     * @param  array<string, mixed>  $params  cofo_type, party_2, transaction_date,
+     *                                        reg_no, vol, page, serial, lgsaOrCity, location
+     * @return array{matches: \Illuminate\Support\Collection, locking: object|null}
+     */
+    private function findCofoDuplicates(string $fileNumber, array $params): array
+    {
+        $cofoType = $this->normalizeValue($params['cofo_type'] ?? null);
+
+        // Base query: any CofO row that shares this file number
+        $matches = DB::connection('sqlsrv')->table(self::COFO_TABLE)
+            ->where(function ($q) {
+                $q->where('is_deleted', 0)->orWhereNull('is_deleted');
+            })
+            ->where(function ($q) use ($fileNumber) {
+                $q->where('mlsFNo', $fileNumber)
+                    ->orWhere('kangisFileNo', $fileNumber)
+                    ->orWhere('NewKANGISFileno', $fileNumber)
+                    ->orWhere('np_fileno', $fileNumber)
+                    ->orWhere('temp_fileno', $fileNumber)
+                    ->orWhere('fileno', $fileNumber);
+            })
+            ->orderByDesc('id')
+            ->limit(10)
+            ->get();
+
+        // Attach the capturing user's name (captured_by / created_by hold a user id)
+        // so the duplicate card can show who captured the existing CofO.
+        $this->attachCapturedByName($matches);
+
+        $lockingRecord = null;
+
+        $party2 = trim((string) ($params['party_2'] ?? ''));
+        $transactionDate = $params['transaction_date'] ?? null;
+        $regNo = trim((string) ($params['reg_no'] ?? ''));
+        $vol = trim((string) ($params['vol'] ?? ''));
+        $page = trim((string) ($params['page'] ?? ''));
+        $serial = trim((string) ($params['serial'] ?? ''));
+        $lga = trim((string) ($params['lgsaOrCity'] ?? ''));
+        $location = trim((string) ($params['location'] ?? ''));
+
+        foreach ($matches as $row) {
+            if ($cofoType && ($row->cofo_type ?? null) !== $cofoType) {
+                continue;
+            }
+
+            $hits = 0;
+
+            if ($party2 !== '') {
+                $candidates = array_filter([
+                    $row->party_2 ?? null,
+                    $row->Grantee ?? null,
+                    $row->Assignee ?? null,
+                    $row->Lessee ?? null,
+                    $row->Mortgagee ?? null,
+                ]);
+                foreach ($candidates as $c) {
+                    if (stripos((string) $c, $party2) !== false || stripos($party2, (string) $c) !== false) {
+                        $hits++;
+                        break;
+                    }
+                }
+            }
+
+            if ($transactionDate && !empty($row->transaction_date)) {
+                if (substr((string) $row->transaction_date, 0, 10) === substr((string) $transactionDate, 0, 10)) {
+                    $hits++;
+                }
+            }
+
+            if ($regNo !== '' && (string) ($row->regNo ?? '') === $regNo) {
+                $hits++;
+            } elseif (
+                $vol !== '' && $page !== '' && $serial !== ''
+                && (string) ($row->volumeNo ?? '') === $vol
+                && (string) ($row->pageNo ?? '') === $page
+                && (string) ($row->serialNo ?? '') === $serial
+            ) {
+                $hits++;
+            }
+
+            if (
+                $lga !== '' && !empty($row->lgsaOrCity)
+                && strcasecmp((string) $row->lgsaOrCity, $lga) === 0
+            ) {
+                $hits++;
+            }
+
+            if (
+                $location !== '' && !empty($row->location)
+                && stripos((string) $row->location, $location) !== false
+            ) {
+                $hits++;
+            }
+
+            if ($hits >= 2) {
+                $lockingRecord = $row;
+                break;
+            }
+        }
+
+        return ['matches' => $matches, 'locking' => $lockingRecord];
+    }
+
+    /**
+     * Split a submitted transaction set into the rows to save now and the rows to hold
+     * back for the user to confirm.
+     *
+     * Nothing is rejected outright: a held-back row is returned to the form with the
+     * existing records it matched, and the user re-submits it with force_save=1 if it
+     * really is a separate instrument. Only new CofO captures are checked — they are
+     * the one instrument with a real duplicate rule (one CofO per file); updates
+     * (record_id present) and every other transaction type pass straight through.
+     *
+     * @param  array<int, array<string, mixed>>  $transactions
+     * @return array{0: array<int, array<string, mixed>>, 1: array<int, array<string, mixed>>}
+     */
+    private function splitDuplicateTransactions(string $fileNumber, array $transactions): array
+    {
+        $accepted = [];
+        $deferred = [];
+
+        foreach (array_values($transactions) as $index => $transaction) {
+            $type = trim((string) ($transaction['transaction_type'] ?? ''));
+
+            $recordId = isset($transaction['record_id']) && $transaction['record_id'] !== ''
+                ? (int) $transaction['record_id']
+                : null;
+
+            $forced = filter_var($transaction['force_save'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
+            if ($recordId || $forced || !in_array($type, self::COFO_TRANSACTION_TYPES, true)) {
+                $accepted[] = $transaction;
+                continue;
+            }
+
+            $result = $this->findCofoDuplicates($fileNumber, [
+                'cofo_type' => $transaction['cofo_type'] ?? null,
+                'party_2' => $transaction['second_party'] ?? null,
+                'transaction_date' => $transaction['transaction_date'] ?? null,
+                'reg_no' => trim(implode('/', array_filter([
+                    $transaction['serial_no'] ?? '',
+                    $transaction['page_no'] ?? '',
+                    $transaction['volume_no'] ?? '',
+                ]))),
+                'vol' => $transaction['volume_no'] ?? null,
+                'page' => $transaction['page_no'] ?? null,
+                'serial' => $transaction['serial_no'] ?? null,
+            ]);
+
+            if ($result['matches']->isEmpty()) {
+                $accepted[] = $transaction;
+                continue;
+            }
+
+            \Log::info('Transaction held back as a possible duplicate', [
+                'file_number' => $fileNumber,
+                'index' => $index,
+                'transaction_type' => $type,
+                'match_ids' => $result['matches']->pluck('id')->all(),
+            ]);
+
+            $deferred[] = [
+                'index' => $index,
+                'transaction' => $transaction,
+                'transaction_type' => $type,
+                'transaction_date' => $transaction['transaction_date'] ?? null,
+                'party_2' => $transaction['second_party'] ?? null,
+                'matches' => $result['matches'],
+                // A details-level match is a stronger signal than merely sharing a file
+                // number; the form uses it to word the confirmation.
+                'strong_match' => $result['locking'] !== null,
+                'message' => $result['locking'] !== null
+                    ? 'A ' . ($type ?: 'Certificate of Occupancy') . ' with matching details already exists on file number ' . $fileNumber . '.'
+                    : 'A Certificate of Occupancy already exists on file number ' . $fileNumber . '.',
+            ];
+        }
+
+        return [$accepted, $deferred];
+    }
+
+    /**
      * Pre-check for duplicate property records before submission.
      *
      * For CofO variants, matches are read from CofO_staging and the form is locked only
@@ -74,109 +265,27 @@ class PropertyRecordController extends Controller
         $transactionType = trim((string) $request->input('transaction_type'));
         $isCofOType = in_array($transactionType, self::COFO_TRANSACTION_TYPES, true);
 
-        $cofoType = $isCofOType ? $this->normalizeValue($request->input('cofo_type')) : null;
-
         if ($isCofOType) {
-            // Base query: any CofO row that shares this file number
-            $baseQuery = DB::connection('sqlsrv')->table(self::COFO_TABLE)
-                ->where(function ($q) {
-                    $q->where('is_deleted', 0)->orWhereNull('is_deleted');
-                })
-                ->where(function ($q) use ($fileNumber) {
-                    $q->where('mlsFNo', $fileNumber)
-                        ->orWhere('kangisFileNo', $fileNumber)
-                        ->orWhere('NewKANGISFileno', $fileNumber)
-                        ->orWhere('np_fileno', $fileNumber)
-                        ->orWhere('temp_fileno', $fileNumber)
-                        ->orWhere('fileno', $fileNumber);
-                });
+            $result = $this->findCofoDuplicates($fileNumber, [
+                'transaction_type' => $transactionType,
+                'cofo_type' => $request->input('cofo_type'),
+                'party_2' => $request->input('party_2'),
+                'transaction_date' => $request->input('transaction_date'),
+                'reg_no' => $request->input('reg_no'),
+                'vol' => $request->input('vol'),
+                'page' => $request->input('page'),
+                'serial' => $request->input('serial'),
+                'lgsaOrCity' => $request->input('lgsaOrCity'),
+                'location' => $request->input('location'),
+            ]);
 
-            $matches = (clone $baseQuery)->orderByDesc('id')->limit(10)->get();
-
-            // Attach the capturing user's name (captured_by / created_by hold a user id)
-            // so the duplicate card can show who captured the existing CofO.
-            $this->attachCapturedByName($matches);
-
-            // Decide whether to lock the form
-            $lockForm = false;
-            $lockingRecord = null;
-
-            $party2 = trim((string) $request->input('party_2'));
-            $transactionDate = $request->input('transaction_date');
-            $regNo = trim((string) $request->input('reg_no'));
-            $vol = trim((string) $request->input('vol'));
-            $page = trim((string) $request->input('page'));
-            $serial = trim((string) $request->input('serial'));
-            $lga = trim((string) $request->input('lgsaOrCity'));
-            $location = trim((string) $request->input('location'));
-
-            foreach ($matches as $row) {
-                if ($cofoType && ($row->cofo_type ?? null) !== $cofoType) {
-                    continue;
-                }
-
-                $hits = 0;
-
-                if ($party2 !== '') {
-                    $candidates = array_filter([
-                        $row->party_2 ?? null,
-                        $row->Grantee ?? null,
-                        $row->Assignee ?? null,
-                        $row->Lessee ?? null,
-                        $row->Mortgagee ?? null,
-                    ]);
-                    foreach ($candidates as $c) {
-                        if (stripos((string) $c, $party2) !== false || stripos($party2, (string) $c) !== false) {
-                            $hits++;
-                            break;
-                        }
-                    }
-                }
-
-                if ($transactionDate && !empty($row->transaction_date)) {
-                    if (substr((string) $row->transaction_date, 0, 10) === substr((string) $transactionDate, 0, 10)) {
-                        $hits++;
-                    }
-                }
-
-                if ($regNo !== '' && (string) ($row->regNo ?? '') === $regNo) {
-                    $hits++;
-                } elseif (
-                    $vol !== '' && $page !== '' && $serial !== ''
-                    && (string) ($row->volumeNo ?? '') === $vol
-                    && (string) ($row->pageNo ?? '') === $page
-                    && (string) ($row->serialNo ?? '') === $serial
-                ) {
-                    $hits++;
-                }
-
-                if (
-                    $lga !== '' && !empty($row->lgsaOrCity)
-                    && strcasecmp((string) $row->lgsaOrCity, $lga) === 0
-                ) {
-                    $hits++;
-                }
-
-                if (
-                    $location !== '' && !empty($row->location)
-                    && stripos((string) $row->location, $location) !== false
-                ) {
-                    $hits++;
-                }
-
-                if ($hits >= 2) {
-                    $lockForm = true;
-                    $lockingRecord = $row;
-                    break;
-                }
-            }
             return response()->json([
                 'success' => true,
-                'matches' => $matches,
-                'duplicate' => $lockingRecord,
+                'matches' => $result['matches'],
+                'duplicate' => $result['locking'],
                 'duplicate_type' => 'cofo_staging',
-                'lock_form' => $lockForm,
-                'message' => $lockForm
+                'lock_form' => $result['locking'] !== null,
+                'message' => $result['locking'] !== null
                     ? 'A Certificate of Occupancy with matching details already exists for file number ' . $fileNumber . '.'
                     : null,
             ]);
@@ -2953,7 +3062,39 @@ class PropertyRecordController extends Controller
 
             $tempFileno = trim((string) ($request->input('temp_fileno') ?? '')) ?: null;
 
-            $response = DB::connection('sqlsrv')->transaction(function () use ($request, $fileNumber, $transactions, $mlsFNo, $kangisFileNo, $newKangisFileNo, $tempFileno, $testControl) {
+            // Hold back — rather than block — transactions that look like duplicates.
+            // Everything else is saved in this request; the held-back rows come back to
+            // the form for the user to confirm, and are re-submitted with force_save=1
+            // when the user says they are genuinely not duplicates.
+            [$transactions, $deferredDuplicates] = $this->splitDuplicateTransactions($fileNumber, $transactions);
+
+            if (empty($transactions)) {
+                \Log::info('All submitted transactions held back as possible duplicates', [
+                    'file_number' => $fileNumber,
+                    'count' => count($deferredDuplicates),
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Nothing was saved — every transaction submitted matches a record already on this file. Confirm the ones that are not duplicates to save them.',
+                    'duplicates' => $deferredDuplicates,
+                    'instruments' => [],
+                    'data' => [
+                        'property_record_ids' => [],
+                        'created_ids' => [],
+                        'updated_ids' => [],
+                        'cofo_ids' => [],
+                        'pra_ids' => [],
+                        'transaction_count' => 0,
+                        'file_history_count' => 0,
+                        'cofo_count' => 0,
+                        'pra_count' => 0,
+                        'duplicate_count' => count($deferredDuplicates),
+                    ]
+                ]);
+            }
+
+            $response = DB::connection('sqlsrv')->transaction(function () use ($request, $fileNumber, $transactions, $deferredDuplicates, $mlsFNo, $kangisFileNo, $newKangisFileNo, $tempFileno, $testControl) {
                 $propertyTable = self::PROPERTY_TABLE;
 
                 // Check if file number already exists in fileNumber table.
@@ -3563,11 +3704,19 @@ class PropertyRecordController extends Controller
                     'file_history_staging' => $allIds,
                 ]);
 
+                if (!empty($deferredDuplicates)) {
+                    $held = count($deferredDuplicates);
+                    $message .= '. ' . $held . ' transaction' . ($held > 1 ? 's were' : ' was')
+                        . ' held back as a possible duplicate — confirm below to save';
+                }
+
                 return response()->json([
                     'success' => true,
                     'message' => $message,
                     'instruments' => $instruments,
+                    'duplicates' => $deferredDuplicates,
                     'data' => [
+                        'duplicate_count' => count($deferredDuplicates),
                         'property_record_ids' => $allIds,
                         'created_ids' => $persistedRecords['created'],
                         'updated_ids' => $persistedRecords['updated'],

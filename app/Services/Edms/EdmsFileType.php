@@ -91,6 +91,51 @@ class EdmsFileType
             'folder' => 'Change_of_Purpose/New',
             'group'  => 'Change of Purpose',
         ],
+        'regrant' => [
+            'label'  => 'Regrant',
+            'folder' => 'Regrant',
+            'group'  => null,
+        ],
+        'resettlement' => [
+            'label'  => 'Resettlement',
+            'folder' => 'Resettlement',
+            'group'  => null,
+        ],
+        'surrender' => [
+            'label'  => 'Surrender',
+            'folder' => 'Surrender',
+            'group'  => null,
+        ],
+        'separation' => [
+            'label'  => 'Separation',
+            'folder' => 'Separation',
+            'group'  => null,
+        ],
+        'title_status_litigation' => [
+            'label'  => 'Title Status — Litigation',
+            'folder' => 'Title_Status/Litigation',
+            'group'  => 'Title Status',
+        ],
+        'title_status_revocation' => [
+            'label'  => 'Title Status — Revocation',
+            'folder' => 'Title_Status/Revocation',
+            'group'  => 'Title Status',
+        ],
+        'title_status_cancellation' => [
+            'label'  => 'Title Status — Cancellation',
+            'folder' => 'Title_Status/Cancellation',
+            'group'  => 'Title Status',
+        ],
+        'title_status_withdrawal' => [
+            'label'  => 'Title Status — Withdrawal',
+            'folder' => 'Title_Status/Withdrawal',
+            'group'  => 'Title Status',
+        ],
+        'title_status_amendment' => [
+            'label'  => 'Title Status — Amendment',
+            'folder' => 'Title_Status/Amendment',
+            'group'  => 'Title Status',
+        ],
     ];
 
     /**
@@ -114,6 +159,21 @@ class EdmsFileType
         'change_of_purpose/new' => 'change_of_purpose_new',
         'change of purpose old' => 'change_of_purpose_old',
         'change of purpose new' => 'change_of_purpose_new',
+        'title_status/litigation'   => 'title_status_litigation',
+        'title_status/revocation'   => 'title_status_revocation',
+        'title_status/cancellation' => 'title_status_cancellation',
+        'title_status/withdrawal'   => 'title_status_withdrawal',
+        'title_status/amendment'    => 'title_status_amendment',
+        // The bare words, since a Title Status folder is usually named by its
+        // action alone ("Revocation") rather than by the group it sits in.
+        'litigation'   => 'title_status_litigation',
+        'revocation'   => 'title_status_revocation',
+        'cancellation' => 'title_status_cancellation',
+        'cancelation'  => 'title_status_cancellation',
+        'withdrawal'   => 'title_status_withdrawal',
+        'amendment'    => 'title_status_amendment',
+        're-grant'     => 'regrant',
+        're grant'     => 'regrant',
     ];
 
     /** @return string[] every valid key, in display order */

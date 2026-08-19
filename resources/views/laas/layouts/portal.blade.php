@@ -57,7 +57,7 @@
                         {{ $label }}
                         @if($route === 'laas.notifications' && ($unreadUpdates ?? 0) > 0)
                             <span class="ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-black"
-                                  style="background: var(--gold); color: #1A1200;">{{ $unreadUpdates }}</span>
+                                  style="background: var(--brand); color: var(--on-brand);">{{ $unreadUpdates }}</span>
                         @endif
                     </a>
                 @endforeach

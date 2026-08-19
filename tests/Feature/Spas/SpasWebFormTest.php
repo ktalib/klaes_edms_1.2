@@ -168,6 +168,72 @@ class SpasWebFormTest extends TestCase
     }
 
     // -----------------------------------------------------------------------
+    // Change of Purpose Sheet
+    // -----------------------------------------------------------------------
+
+    /**
+     * A change of purpose that does not change the purpose is not one.
+     *
+     * Issuing it would put a sheet on the file recording a conversion that
+     * never happened, and flip the application to `certificate_issued` on the
+     * strength of it — so the record would read as fully processed off a
+     * document that says nothing.
+     */
+    public function test_a_change_of_purpose_to_the_same_use_is_refused(): void
+    {
+        $this->actingAsStaff();
+
+        $created = $this->postJson(route('special-assignment.land-records.store'), [
+            'land_title_type' => 'statutory',
+            'file_number'     => 'ZZ-COP-'.Str::random(8),
+            'owner_name'      => 'ZZ TEST Holder',
+            'proposed_use'    => 'AGRICULTURAL',
+            'existing_use'    => 'COMMERCIAL',
+        ])->assertOk();
+
+        $this->postJson(route('special-assignment.certificate.issue'), [
+            'spa_application_id' => $created->json('id'),
+            'holder_name'        => 'ZZ TEST Holder',
+            'new_file_number'    => 'ZZ-NEW-0001',
+            'from_use'           => 'AGRICULTURAL',
+            'to_use'             => 'AGRICULTURAL',
+            'issue_date'         => now()->toDateString(),
+        ])->assertStatus(422);
+
+        // The application must not have been advanced by a refused issue.
+        $this->assertNotSame(
+            'certificate_issued',
+            SpaApplication::find($created->json('id'))->status
+        );
+    }
+
+    /**
+     * The land-use values are free text in places, so a raw string comparison
+     * would let "COMMERCIAL" past "Commercial ".
+     */
+    public function test_the_same_use_check_ignores_case_and_padding(): void
+    {
+        $this->actingAsStaff();
+
+        $created = $this->postJson(route('special-assignment.land-records.store'), [
+            'land_title_type' => 'statutory',
+            'file_number'     => 'ZZ-COP-'.Str::random(8),
+            'owner_name'      => 'ZZ TEST Holder',
+            'proposed_use'    => 'AGRICULTURAL',
+            'existing_use'    => 'COMMERCIAL',
+        ])->assertOk();
+
+        $this->postJson(route('special-assignment.certificate.issue'), [
+            'spa_application_id' => $created->json('id'),
+            'holder_name'        => 'ZZ TEST Holder',
+            'new_file_number'    => 'ZZ-NEW-0002',
+            'from_use'           => 'COMMERCIAL',
+            'to_use'             => '  commercial ',
+            'issue_date'         => now()->toDateString(),
+        ])->assertStatus(422);
+    }
+
+    // -----------------------------------------------------------------------
     // Edit Land Record (office)
     // -----------------------------------------------------------------------
 

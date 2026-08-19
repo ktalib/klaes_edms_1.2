@@ -132,6 +132,12 @@
         }
         .toolbar .btn-close { background: #6b7280; }
 
+        .doc-footer-logo {
+            margin-top: 24px; padding-top: 12px;
+            border-top: 1px solid #ddd; text-align: center;
+        }
+        .doc-footer-logo img { max-height: 44px; width: auto; object-fit: contain; }
+
         @media print {
             body { background: #fff; }
             .toolbar { display: none; }
@@ -233,6 +239,14 @@
     <div class="sign-row">
         <div class="sign-box"><div class="sign-line">Payer's Signature</div></div>
         <div class="sign-box"><div class="sign-line">Cashier / Authorised Officer</div></div>
+    </div>
+
+    {{-- Ministry mark at the foot of the printed receipt, matching the memo and
+         certificate. Served from the live host rather than asset(), because
+         these documents are printed and emailed from environments whose
+         APP_URL is not app.klaes.ng. --}}
+    <div class="doc-footer-logo">
+        <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="">
     </div>
 
 </div>

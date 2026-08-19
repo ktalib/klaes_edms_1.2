@@ -81,7 +81,13 @@ return [
     'bulk_sms_ng' => [
         'email'    => env('BULK_SMS_NG_EMAIL'),
         'password' => env('BULK_SMS_NG_PASSWORD'),
-        'sender'   => env('BULK_SMS_NG_SENDER', 'SPAS'),
+        // KANOMLPP is the registered sender ID for SPAS notices. Kept as the
+        // DEFAULT, not only in .env, because .env is gitignored and never
+        // travels with a deployment — a server missing the key would
+        // otherwise quietly fall back to an unregistered sender and the
+        // gateway would refuse or relabel the messages.
+        // Max 11 characters at the gateway; this is 8.
+        'sender'   => env('BULK_SMS_NG_SENDER', 'KANOMLPP'),
         'gateway'  => env('BULK_SMS_NG_GATEWAY', '1'),
     ],
 

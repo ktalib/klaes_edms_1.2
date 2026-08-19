@@ -54,22 +54,41 @@
                                 <i data-lucide="rotate-cw" class="h-4 w-4"></i>
                             </button>
                             <div class="w-px h-5 bg-gray-300 mx-1"></div>
-                            <button class="btn btn-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1" id="viewer-move-registry" title="Move this file's documents to another registry">
-                                <i data-lucide="folder-symlink" class="h-4 w-4"></i>
-                                <span class="hidden sm:inline">Move to NR</span>
+
+                            {{-- Master Edit — the single switch for every action on this toolbar
+                                 that changes something. The actions below it stay out of sight
+                                 until it is switched on, so a document being read cannot be
+                                 altered by a stray click. Off again for every file opened. --}}
+                            <button class="btn btn-sm bg-slate-700 hover:bg-slate-800 text-white flex items-center gap-1"
+                                    id="master-edit-toggle" type="button" aria-pressed="false"
+                                    aria-controls="master-edit-actions"
+                                    title="Turn on edit mode to show the editing actions">
+                                <i data-lucide="lock" class="h-4 w-4"></i>
+                                <span class="hidden sm:inline">Edit Mode</span>
                             </button>
-                            <button class="btn btn-sm bg-violet-600 hover:bg-violet-700 text-white flex items-center gap-1" id="viewer-file-type" title="File this file into a master folder">
-                                <i data-lucide="folder-tree" class="h-4 w-4"></i>
-                                <span class="hidden sm:inline">Master Folder</span>
-                            </button>
-                            <button class="btn btn-sm bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1" id="edit-filetype-toggle" title="Edit page classification (file type)">
-                                <i data-lucide="tag" class="h-4 w-4"></i>
-                                <span class="hidden sm:inline">Edit Type</span>
-                            </button>
-                            <button class="btn btn-sm bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1" id="qc-edit-toggle" title="Quality control tools">
-                                <i data-lucide="sliders-horizontal" class="h-4 w-4"></i>
-                                <span class="hidden sm:inline">Quality Control</span>
-                            </button>
+
+                            <div id="master-edit-actions" class="hidden items-center gap-2">
+                                <button class="btn btn-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1" id="viewer-move-registry" title="Move this file's documents to another registry">
+                                    <i data-lucide="folder-symlink" class="h-4 w-4"></i>
+                                    <span class="hidden sm:inline">Move to NR</span>
+                                </button>
+                                <button class="btn btn-sm bg-violet-600 hover:bg-violet-700 text-white flex items-center gap-1" id="viewer-file-type" title="File this file into a master folder">
+                                    <i data-lucide="folder-tree" class="h-4 w-4"></i>
+                                    <span class="hidden sm:inline">Master Folder</span>
+                                </button>
+                                <button class="btn btn-sm bg-amber-600 hover:bg-amber-700 text-white flex items-center gap-1" id="viewer-reassign" title="Unlink these documents and attach them to a different file number">
+                                    <i data-lucide="unlink" class="h-4 w-4"></i>
+                                    <span class="hidden sm:inline">Reassign</span>
+                                </button>
+                                <button class="btn btn-sm bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1" id="edit-filetype-toggle" title="Edit page classification (file type)">
+                                    <i data-lucide="tag" class="h-4 w-4"></i>
+                                    <span class="hidden sm:inline">Edit Type</span>
+                                </button>
+                                <button class="btn btn-sm bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1" id="qc-edit-toggle" title="Quality control tools">
+                                    <i data-lucide="sliders-horizontal" class="h-4 w-4"></i>
+                                    <span class="hidden sm:inline">Quality Control</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -279,9 +298,66 @@ function clearDocumentViewerData() {
     currentPageIndex = 0;
     zoomLevel = 100;
     rotation = 0;
+    // Edit mode never carries over from one file to the next: whoever opens a
+    // document has to ask for editing again before anything can be changed.
+    if (typeof setMasterEditMode === 'function') setMasterEditMode(false);
 }
 
 window.clearDocumentViewerData = clearDocumentViewerData;
+
+/* ============================================================
+ * Master Edit — one switch over every editing action in the viewer.
+ * Move to NR, Master Folder, Reassign, Edit Type and Quality Control
+ * are hidden until it is on, so a document that is only being read
+ * cannot be modified by a mis-click. Switching it back off closes
+ * whatever editor was open rather than leaving it stranded on screen.
+ * ============================================================ */
+let masterEditMode = false;
+
+function setMasterEditMode(on) {
+    masterEditMode = !!on;
+
+    const actions = document.getElementById('master-edit-actions');
+    if (actions) {
+        actions.classList.toggle('hidden', !masterEditMode);
+        actions.classList.toggle('flex', masterEditMode);
+    }
+
+    const toggle = document.getElementById('master-edit-toggle');
+    if (toggle) {
+        toggle.setAttribute('aria-pressed', masterEditMode ? 'true' : 'false');
+        // Off is slate — a solid button that belongs to the action row but reads
+        // as shut. On is red on purpose: it is the state in which the document
+        // can be changed. Text stays white either way.
+        toggle.classList.add('text-white');
+        toggle.classList.toggle('bg-slate-700', !masterEditMode);
+        toggle.classList.toggle('hover:bg-slate-800', !masterEditMode);
+        toggle.classList.toggle('bg-rose-600', masterEditMode);
+        toggle.classList.toggle('hover:bg-rose-700', masterEditMode);
+        toggle.title = masterEditMode
+            ? 'Editing is on — click to lock this document again'
+            : 'Turn on edit mode to show the editing actions';
+
+        const icon = toggle.querySelector('i');
+        if (icon) icon.setAttribute('data-lucide', masterEditMode ? 'unlock' : 'lock');
+        const label = toggle.querySelector('span');
+        if (label) label.textContent = masterEditMode ? 'Editing On' : 'Edit Mode';
+    }
+
+    // An editor left open would outlive the switch that revealed it.
+    if (!masterEditMode) {
+        if (typeof qcEditMode !== 'undefined' && qcEditMode && typeof exitQcEditMode === 'function') {
+            exitQcEditMode();
+        }
+        if (typeof window.closeEditFileTypeDialog === 'function') {
+            window.closeEditFileTypeDialog();
+        }
+    }
+
+    if (window.lucide) lucide.createIcons();
+}
+
+window.setMasterEditMode = setMasterEditMode;
 
 document.addEventListener('DOMContentLoaded', function () {
     const openFileAction = function (dialog) {
@@ -310,7 +386,61 @@ document.addEventListener('DOMContentLoaded', function () {
 
     document.getElementById('viewer-file-type')
         ?.addEventListener('click', openFileAction(window.EdmsFileType));
+
+    // Reassignment is keyed on scan ids, not the file, so it cannot use openFileAction().
+    document.getElementById('viewer-reassign')?.addEventListener('click', function () {
+        if (!currentFileMeta || !currentFileMeta.id) {
+            if (window.Swal) {
+                Swal.fire({ icon: 'warning', title: 'No file open', text: 'Open a file in the viewer first.', timer: 2500 });
+            }
+            return;
+        }
+
+        openArchiveReassign(currentFileMeta.id, currentFileMeta.file_number);
+    });
 });
+
+/**
+ * Unlink a file's scans and attach them to a different file number.
+ *
+ * Shared by the viewer toolbar and the file cards. The reassignment dialog works
+ * on scan ids, so the file's scans are fetched first.
+ */
+async function openArchiveReassign(fileIndexingId, fileNumber) {
+    if (!window.scanReassignmentManager) {
+        if (window.Swal) {
+            Swal.fire({ icon: 'error', title: 'Reassignment unavailable', text: 'The reassignment dialog did not load on this page.' });
+        }
+        return;
+    }
+
+    try {
+        const response = await fetch(`/scan-uploads/file-scans?file_indexing_id=${encodeURIComponent(fileIndexingId)}`, {
+            headers: { 'Accept': 'application/json' }
+        });
+        const payload = await response.json();
+        const documents = payload?.data?.documents || [];
+
+        if (!documents.length) {
+            if (window.Swal) {
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Nothing to reassign',
+                    text: `${fileNumber || 'This file'} has no scanned documents to move.`
+                });
+            }
+            return;
+        }
+
+        window.scanReassignmentManager.openModal(documents.map(doc => doc.id), documents);
+    } catch (error) {
+        if (window.Swal) {
+            Swal.fire({ icon: 'error', title: 'Could not load the documents', text: error.message });
+        }
+    }
+}
+
+window.openArchiveReassign = openArchiveReassign;
 
 function loadDocumentPages(fileMeta, pages) {
     currentFileMeta = fileMeta || null;
@@ -1082,6 +1212,7 @@ function qcToast(msg) {
 document.addEventListener('DOMContentLoaded', function () {
     const on = (id, evt, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(evt, fn); };
 
+    on('master-edit-toggle', 'click', () => setMasterEditMode(!masterEditMode));
     on('qc-edit-toggle', 'click', () => { qcEditMode ? exitQcEditMode() : enterQcEditMode(); if (window.lucide) lucide.createIcons(); });
     on('qc-cancel-btn', 'click', () => {
         if (qcDirty && !confirm('Discard unsaved edits?')) return;
@@ -1299,6 +1430,10 @@ document.addEventListener('DOMContentLoaded', function () {
         dialog.setAttribute('aria-hidden', 'true');
         editingPageIndex = null;
     }
+
+    // Master Edit closes this dialog when editing is switched off, so it needs a
+    // way in from outside this module.
+    window.closeEditFileTypeDialog = closeModal;
 
     async function save() {
         const page = documentPages[editingPageIndex];

@@ -14,7 +14,7 @@
         {{-- Survey-grid texture + a soft emerald bloom behind the artwork --}}
         <div class="laas-grid-texture absolute inset-0" aria-hidden="true"></div>
         <div class="pointer-events-none absolute -right-40 top-1/2 h-[560px] w-[560px] -translate-y-1/2 rounded-full opacity-40 blur-3xl"
-             style="background: radial-gradient(circle, #12A06A 0%, transparent 68%);" aria-hidden="true"></div>
+             style="background: radial-gradient(circle, rgba(255,255,255,.07) 0%, transparent 70%);" aria-hidden="true"></div>
         <div class="pointer-events-none absolute inset-0"
              style="background: linear-gradient(100deg, var(--brand-deep) 32%, rgba(6,48,30,.72) 58%, rgba(6,48,30,.35) 100%);"
              aria-hidden="true"></div>
@@ -24,12 +24,12 @@
             <div>
                 {{-- State badge --}}
                 <p class="mb-6 inline-flex items-center gap-2.5 rounded-full border py-2 pl-2 pr-4"
-                   style="border-color: rgba(245,179,1,.45); background: rgba(245,179,1,.10);">
+                   style="border-color: rgba(255,255,255,.22); background: rgba(255,255,255,.06);">
                     <span class="flex h-6 w-6 items-center justify-center rounded-full bg-white">
                         <img src="{{ asset('assets/logo/ministry2.png') }}" alt="" aria-hidden="true"
                              class="h-5 w-5 rounded-full object-contain">
                     </span>
-                    <span class="laas-eyebrow" style="color: #FFD97A;">
+                    <span class="laas-eyebrow" style="color: var(--on-deep-soft);">
                         Official Portal · Ministry of Land &amp; Physical Planning
                     </span>
                 </p>
@@ -45,7 +45,7 @@
                 </p>
 
                 <div class="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
-                    <a href="{{ route('laas.register') }}" class="laas-btn-gold px-7 py-4 text-base">
+                    <a href="{{ route('laas.register') }}" class="laas-btn-invert px-7 py-4 text-base">
                         <i data-lucide="file-plus-2" class="h-5 w-5" aria-hidden="true"></i>
                         Start an Application
                     </a>
@@ -64,7 +64,7 @@
                         ['clock', 'Track progress in real time'],
                     ] as [$icon, $label])
                         <li class="flex items-center gap-2.5 text-sm font-semibold" style="color: var(--on-deep-soft);">
-                            <i data-lucide="{{ $icon }}" class="h-4 w-4 flex-shrink-0" style="color: var(--gold);" aria-hidden="true"></i>
+                            <i data-lucide="{{ $icon }}" class="h-4 w-4 flex-shrink-0" style="color: var(--on-deep-soft);" aria-hidden="true"></i>
                             {{ $label }}
                         </li>
                     @endforeach
@@ -198,7 +198,7 @@
                         and you can save and come back at any time.
                     </p>
                     <div class="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-                        <a href="{{ route('laas.register') }}" class="laas-btn-gold px-7 py-4 text-base">
+                        <a href="{{ route('laas.register') }}" class="laas-btn-invert px-7 py-4 text-base">
                             <i data-lucide="file-plus-2" class="h-5 w-5" aria-hidden="true"></i>
                             Start an Application
                         </a>

@@ -49,7 +49,8 @@
                                     <i data-lucide="message-square-check" class="h-3 w-3"></i> Sent to {{ $event->sms_to }}
                                 </span>
                             @elseif($event->sms_status === 'failed')
-                                <span class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                                      style="border-color: var(--danger); color: var(--danger);">
                                     <i data-lucide="message-square-x" class="h-3 w-3"></i> SMS could not be delivered
                                 </span>
                             @endif

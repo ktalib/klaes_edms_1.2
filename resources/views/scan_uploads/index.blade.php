@@ -504,26 +504,27 @@
                    registry, exactly as before, until someone classifies it. --}}
               <div id="file-type-selection-container">
                 <label for="scan-upload-file-type" class="block text-sm font-semibold text-gray-700 mb-2">File Type</label>
+                {{-- Rendered from EdmsFileType so it cannot drift from the folders
+                     that actually exist on disk. Ungrouped types list first, then
+                     each group as an optgroup, matching the master-folder dialog. --}}
+                @php
+                  $edmsFileTypes = collect(\App\Services\Edms\EdmsFileType::options())->groupBy(fn ($t) => $t['group'] ?? '');
+                @endphp
                 <select id="scan-upload-file-type" class="input w-full text-sm">
                   <option value="">Not specified — keep under the registry</option>
-                  <option value="regular">Regular</option>
-                  <optgroup label="Merger">
-                    <option value="merger_children">Merger — Children</option>
-                    <option value="merger_new">Merger — New File</option>
-                  </optgroup>
-                  <optgroup label="Subdivision">
-                    <option value="subdivision_mother">Subdivision — Mother</option>
-                    <option value="subdivision_children">Subdivision — Children</option>
-                  </optgroup>
-                  <optgroup label="Extension">
-                    <option value="extension_old">Extension — Old</option>
-                    <option value="extension_new">Extension — New</option>
-                  </optgroup>
-                  <option value="temporary">Temporary File</option>
-                  <optgroup label="Change of Purpose">
-                    <option value="change_of_purpose_old">Change of Purpose — Old</option>
-                    <option value="change_of_purpose_new">Change of Purpose — New</option>
-                  </optgroup>
+                  @foreach($edmsFileTypes as $group => $types)
+                    @if($group === '')
+                      @foreach($types as $type)
+                        <option value="{{ $type['key'] }}">{{ $type['label'] }}</option>
+                      @endforeach
+                    @else
+                      <optgroup label="{{ $group }}">
+                        @foreach($types as $type)
+                          <option value="{{ $type['key'] }}">{{ $type['label'] }}</option>
+                        @endforeach
+                      </optgroup>
+                    @endif
+                  @endforeach
                 </select>
               </div>
 

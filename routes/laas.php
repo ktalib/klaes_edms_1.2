@@ -69,8 +69,10 @@ Route::prefix('laas')->name('laas.')->group(function () {
         Route::prefix('api/reference')->name('api.reference.')
             ->controller(\App\Http\Controllers\ReferenceDataController::class)
             ->group(function () {
+                Route::get('states', 'states')->name('states');
                 Route::get('lgas', 'lgas')->name('lgas');
                 Route::get('districts', 'districts')->name('districts');
+                Route::get('streets', 'streets')->name('streets');
                 Route::get('land-uses', 'landUses')->name('land-uses');
                 Route::get('purposes', 'purposes')->name('purposes');
             });

@@ -491,6 +491,9 @@ Route::middleware(['auth'])->group(function () {
         Route::delete('/field-data/{id}',         [\App\Http\Controllers\SpecialAssignmentController::class, 'deleteFieldData'])->name('field-data.delete');
         Route::post('/notice/store',             [\App\Http\Controllers\SpecialAssignmentController::class, 'storeNotice'])->name('notice.store');
         Route::post('/notice/{id}/second',       [\App\Http\Controllers\SpecialAssignmentController::class, 'triggerSecondNotice'])->name('notice.second');
+        // Re-attempt a failed send. A first serve whose SMS never went is never
+        // escalated, so without this it is a dead end.
+        Route::post('/notice/{id}/resend',       [\App\Http\Controllers\SpecialAssignmentController::class, 'resendNoticeSms'])->name('notice.resend');
         Route::post('/other-departments/store',          [\App\Http\Controllers\SpecialAssignmentController::class, 'storeDepartmentReferral'])->name('departments.store');
         Route::post('/other-departments/{id}/response',  [\App\Http\Controllers\SpecialAssignmentController::class, 'recordDepartmentResponse'])->name('departments.response');
         Route::post('/other-departments/{id}/delete',    [\App\Http\Controllers\SpecialAssignmentController::class, 'deleteDepartmentReferral'])->name('departments.delete');
