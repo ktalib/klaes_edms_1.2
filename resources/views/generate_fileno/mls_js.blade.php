@@ -7627,6 +7627,26 @@
         }
     }
 
+    // jsPDF applies `align` in the UNROTATED axis, so `align: 'center'` on rotated
+    // text lands off-centre. Anchor at the left edge instead and walk back half the
+    // string length along the rotated baseline so the text straddles the page centre.
+    // `yOffset` nudges the watermark off the vertical centre (negative = higher).
+    function drawCenteredWatermark(doc, text, angle = 45, size = 45, yOffset = -25) {
+        const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
+        doc.setTextColor(255, 0, 0);
+        doc.setGState(doc.GState({ opacity: 0.2 }));
+        doc.setFontSize(size);
+        const half = doc.getTextWidth(text) / 2;
+        const rad = angle * Math.PI / 180;
+        doc.text(text, pageW / 2 - half * Math.cos(rad), pageH / 2 + yOffset + half * Math.sin(rad), {
+            angle: angle,
+            baseline: 'middle'
+        });
+        doc.setGState(doc.GState({ opacity: 1.0 }));
+        doc.setTextColor(0, 0, 0);
+    }
+
     async function generateCommissioningSheetPDF(formData, watermarkText = 'ORIGINAL') {
         try {
             showGlobalLoading('Generating PDF...');
@@ -7637,22 +7657,8 @@
             // Fetch logos
             const logo1Base64 = await getImageBase64('/assets/logo/logo1.png') || await getImageBase64('/assets/logo/logo1.jpg') || await getImageBase64('/assets/logo/logoKlase.png');
             const logo2Base64 = await getImageBase64('/assets/logo/ministry2.png') || await getImageBase64('http://app.klaes.ng/assets/logo/ministry2.png') || await getImageBase64('/assets/logo/logo3.jpeg');
-            // LAS logo for footer
-            const leftFooterLogoBase64 = await getImageBase64('http://app.klaes.ng/assets/logo/Left_Logo.png');
-            // Try PNG first, fallback to JPEG
-            // Try local asset path for LAS logo
-            let footerLogoBase64 = await getImageBase64('/assets/logo/las.png');
-            if (!footerLogoBase64) {
-                footerLogoBase64 = await getImageBase64('/assets/logo/las.jpg');
-            }
-            // Fallback to remote if local fails
-            if (!footerLogoBase64) {
-                footerLogoBase64 = await getImageBase64('http://app.klaes.ng/assets/logo/las.png');
-            }
-            if (!footerLogoBase64) {
-                footerLogoBase64 = await getImageBase64('http://app.klaes.ng/assets/logo/las.jpg');
-            }
-
+            // Footer logo — local path first; the remote host is blocked by CORS off production.
+            const footerLogoBase64 = await getImageBase64('/assets/logo/Left_Logo.png') || await getImageBase64('http://app.klaes.ng/assets/logo/Left_Logo.png');
             // Add Header
             if (logo1Base64) doc.addImage(logo1Base64, 'JPEG', 20, 12, 20, 20);
             if (logo2Base64) doc.addImage(logo2Base64, 'JPEG', 170, 12, 20, 20);
@@ -7675,12 +7681,7 @@
 
 
             // Add Watermark
-            doc.setTextColor(255, 0, 0);
-            doc.setGState(doc.GState({ opacity: 0.2 }));
-            doc.setFontSize(45);
-            doc.text(watermarkText, 105, 148.5, { align: "center", angle: 45, baseline: 'middle' });
-            doc.setGState(doc.GState({ opacity: 1.0 }));
-            doc.setTextColor(0, 0, 0);
+            drawCenteredWatermark(doc, watermarkText);
 
             // Time/Date/TrackingID Logic
             const trackingId = formData.get('tracking_id') || '';
@@ -7751,8 +7752,8 @@
             doc.text("Created by Signature", 50, y + 6, { align: "center" });
             doc.text("Approved by Signature", 150, y + 6, { align: "center" });
 
-            if (leftFooterLogoBase64) doc.addImage(leftFooterLogoBase64, 'JPEG', 15, 272, 18, 18);
-            if (footerLogoBase64) doc.addImage(footerLogoBase64, 'JPEG', 165, 272, 28, 12);
+            // Footer logo (centered at the bottom of the sheet)
+            if (footerLogoBase64) doc.addImage(footerLogoBase64, 'PNG', 96, 272, 18, 18);
 
             hideGlobalLoading();
             doc.save(`commissioning-sheet-${formData.get('file_number')}.pdf`);
@@ -7773,8 +7774,7 @@
             // Fetch logos once and reuse for all pages.
             const logo1Base64 = await getImageBase64('/assets/logo/logo1.png') || await getImageBase64('/assets/logo/logo1.jpg') || await getImageBase64('/assets/logo/logoKlase.png');
             const logo2Base64 = await getImageBase64('/assets/logo/ministry2.png') || await getImageBase64('http://app.klaes.ng/assets/logo/ministry2.png') || await getImageBase64('/assets/logo/logo3.jpeg');
-            const leftFooterLogoBase64 = await getImageBase64('http://app.klaes.ng/assets/logo/Left_Logo.png');
-            const footerLogoBase64 = await getImageBase64('/assets/logo/las.jpeg');
+            const footerLogoBase64 = await getImageBase64('/assets/logo/Left_Logo.png') || await getImageBase64('http://app.klaes.ng/assets/logo/Left_Logo.png');
 
             const totalPages = records.length;
 
@@ -7807,12 +7807,7 @@
 
 
                 // Watermark
-                doc.setTextColor(255, 0, 0);
-                doc.setGState(doc.GState({ opacity: 0.2 }));
-                doc.setFontSize(45);
-                doc.text(watermarkText, 105, 148.5, { align: 'center', angle: 45, baseline: 'middle' });
-                doc.setGState(doc.GState({ opacity: 1.0 }));
-                doc.setTextColor(0, 0, 0);
+                drawCenteredWatermark(doc, watermarkText);
 
                 // QR per record
                 const trackingId = row.tracking_id || '';
@@ -7890,8 +7885,7 @@
                 // Footer
                 doc.setFontSize(8);
                 doc.text(`Generated on ${new Date().toLocaleString()} | Batch: ${batchNo || 'N/A'} | Page ${i + 1} of ${totalPages}`, 105, 270, { align: 'center' });
-                if (leftFooterLogoBase64) doc.addImage(leftFooterLogoBase64, 'JPEG', 15, 272, 18, 18);
-                if (footerLogoBase64) doc.addImage(footerLogoBase64, 'JPEG', 150, 272, 45, 18);
+                if (footerLogoBase64) doc.addImage(footerLogoBase64, 'PNG', 96, 272, 18, 18);
             }
 
             hideGlobalLoading();

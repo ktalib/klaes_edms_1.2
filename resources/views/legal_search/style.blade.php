@@ -588,6 +588,13 @@
       margin-top: 0.15rem;
       line-height: 1.25;
     }
+    /* In the Instrument/Transaction Type cell the marker rides on the same line as
+       the instrument name — "File Commissioning -RoT" — so it never adds a row. */
+    #timeline-table .ls-root-of-title-inline {
+      display: inline;
+      margin-top: 0;
+      white-space: nowrap;
+    }
     /* The Comments column truncates to one line; the row carrying the Root of Title
        wraps instead so the remark is never clipped. */
     #timeline-table td.ls-comments-cell-root {

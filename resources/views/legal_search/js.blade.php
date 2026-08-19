@@ -5140,7 +5140,11 @@ const executeSearchAjax = (filters, searchData) => {
         if (type === 'certificate of occupancy' && cofoIndex === -1) cofoIndex = i;
       }
       fallbackIndex = rofoIndex !== -1 ? rofoIndex : cofoIndex;
-      if (fallbackIndex === -1) return null;
+      // A file whose timeline holds nothing but its own File Commissioning row still has
+      // a root — the commissioning IS the root. Only give up when there is no grant AND
+      // no commissioning row to anchor on, otherwise the remark silently disappears for
+      // every legacy file with no dealings captured yet.
+      if (fallbackIndex === -1 && commIndex === -1) return null;
       label = ROOT_OF_TITLE_ALLOCATION;
     }
 
@@ -5289,6 +5293,11 @@ const executeSearchAjax = (filters, searchData) => {
       const isRootOfTitleRow = !!(rootOfTitle && rootOfTitle.index === idx);
       const rootOfTitleHtml = isRootOfTitleRow
         ? `<div class="ls-root-of-title">${rootOfTitleText(rootOfTitle.label)}</div>` : '';
+      // The Instrument/Transaction Type cell already names the record, so the marker
+      // there rides inline after the instrument name — "File Commissioning -RoT" —
+      // with the full remark as its tooltip.
+      const rootOfTitleShortHtml = isRootOfTitleRow
+        ? ` <span class="ls-root-of-title ls-root-of-title-inline" title="${rootOfTitleText(rootOfTitle.label)}">-RoT</span>` : '';
       const commentsTitle = isRootOfTitleRow
         ? [comments, rootOfTitleText(rootOfTitle.label)].filter(Boolean).join(' — ') : comments;
       const alreadyCaveated = hasCaveatOnRow(item);
@@ -5321,7 +5330,7 @@ const executeSearchAjax = (filters, searchData) => {
         <td class="file-no-col text-xs text-gray-600 whitespace-nowrap${hideFileNoCol ? ' hidden' : ''}">${renderFileNumberSpan(item, 'fileNumber')}</td>
         <td><span class="source-badge ${sourceBadgeClass(item.source_table)}">${item.source_table}</span></td>
         <td class="text-center text-xs ${weightColorClass}" title="${weightTitle}">${weightDisplay}</td>
-        <td>${transType}${rootOfTitleHtml}</td>
+        <td>${transType}${rootOfTitleShortHtml}</td>
         <td style="white-space:nowrap;">${party1}</td>
         <td>${party2}</td>
         <td>${party3}</td>

@@ -7885,8 +7885,21 @@ class LegalSearchService
                 }
             }
             $fallbackIndex = $rofoIndex ?? $cofoIndex;
+            // A file whose report holds nothing but its own File Commissioning row still
+            // has a root — the commissioning IS the root. Only give up when there is no
+            // grant AND no commissioning row to anchor on, otherwise the remark silently
+            // disappears for every legacy file with no dealings captured yet.
             if ($fallbackIndex === null) {
-                return $rows;
+                $hasCommissioningRow = false;
+                foreach ($rows as $row) {
+                    if (trim((string) ($row['source_table'] ?? '')) === 'File Commissioning') {
+                        $hasCommissioningRow = true;
+                        break;
+                    }
+                }
+                if (!$hasCommissioningRow) {
+                    return $rows;
+                }
             }
             $label = 'Allocation List';
         }

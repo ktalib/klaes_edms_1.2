@@ -30,7 +30,7 @@
 <div class="sidebar border-r border-gray-200 bg-white transition-all duration-300 ease-in-out">
   <!-- Sidebar Header -->
   @include('admin.menu.partials.sidebar_header')
-
+ 
   <!-- Sidebar Content -->
   <div class="sidebar-content p-2 overflow-y-auto max-h-[calc(100vh-8rem)] scroll-smooth scrollbar-visible">
     @include('admin.menu.partials.modules.dashboard')

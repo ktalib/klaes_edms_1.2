@@ -27,18 +27,30 @@
 
       <!-- LAAS Portal — applications submitted by the public. Gated on the same
            roles that already review and allocate land applications. -->
-        @if($hasRole('Land') || $hasRole('Land One Stop Shop') || $hasRole('Generate New FileNo (MLSFileNo)'))
-        <a href="{{ route('laas-admin.index') }}"
-          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('laas-admin.index') || request()->routeIs('laas-admin.show') ? 'active' : '' }}">
-          <i data-lucide="globe" class="h-4 w-4 text-orange-500"></i>
-          <span>LAAS Portal Applications</span>
-        </a>
-        <a href="{{ route('laas-admin.applicants') }}"
-          class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('laas-admin.applicants*') ? 'active' : '' }}">
-          <i data-lucide="users" class="h-4 w-4 text-orange-500"></i>
-          <span>LAAS Portal Applicants</span>
-        </a>
-      @endif 
+      @if($hasRole('Land') || $hasRole('Land One Stop Shop') || $hasRole('Generate New FileNo (MLSFileNo)'))
+        <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
+          data-section="laas-portal">
+          <div class="flex items-center gap-2">
+            <i data-lucide="globe" class="h-4 w-4 text-orange-500"></i>
+            <span>LAAS Portal</span>
+          </div>
+          <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200"
+            data-chevron="laas-portal"></i>
+        </div>
+
+        <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="laas-portal">
+          <a href="{{ route('laas-admin.index') }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('laas-admin.index') || request()->routeIs('laas-admin.show') ? 'active' : '' }}">
+            <i data-lucide="file-text" class="h-3.5 w-3.5 text-orange-400"></i>
+            <span>Applications</span>
+          </a>
+          <a href="{{ route('laas-admin.applicants') }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('laas-admin.applicants*') ? 'active' : '' }}">
+            <i data-lucide="users" class="h-3.5 w-3.5 text-orange-400"></i>
+            <span>Applicants</span>
+          </a>
+        </div>
+      @endif
 
       <!-- a. Land -->
       @if($hasRole('Land'))
