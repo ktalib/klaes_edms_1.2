@@ -1066,7 +1066,6 @@
             const occupancyPermitFieldMap = {
                 'occupancy-permit-op-type': record.occupancy_permit_op_type,
                 'occupancy-permit-op-serial-number': record.occupancy_permit_op_serial_number,
-                'occupancy-permit-cofo-type': record.occupancy_permit_cofo_type,
                 'occupancy-permit-date': record.occupancy_permit_date,
                 'occupancy-permit-file-number': record.occupancy_permit_file_number || record.file_number,
                 'occupancy-permit-land-use': record.occupancy_permit_land_use,
@@ -5443,7 +5442,6 @@
         const occupancyPermitFields = [
             'occupancy-permit-op-type',
             'occupancy-permit-op-serial-number',
-            'occupancy-permit-cofo-type',
             'occupancy-permit-date',
             'occupancy-permit-file-number',
             'occupancy-permit-grantee',
@@ -6049,7 +6047,6 @@
             occupancy_permit_instrument_type: document.getElementById('occupancy-permit-instrument-type')?.value || '',
             occupancy_permit_op_type: document.getElementById('occupancy-permit-op-type')?.value || '',
             occupancy_permit_op_serial_number: document.getElementById('occupancy-permit-op-serial-number')?.value || '',
-            occupancy_permit_cofo_type: document.getElementById('occupancy-permit-cofo-type')?.value || '',
             occupancy_permit_date: document.getElementById('occupancy-permit-date')?.value || '',
             occupancy_permit_file_number: document.getElementById('occupancy-permit-file-number')?.value || '',
             occupancy_permit_land_use: document.getElementById('occupancy-permit-land-use')?.value || '',
