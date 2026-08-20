@@ -275,6 +275,103 @@ class PlotWorkflowService
     }
 
     /**
+     * Is this file already flagged as decommissioned?
+     *
+     * Mirrors decommissionFiles()' lookup (MLS number OR KANGIS number) so a
+     * KANGIS-only mother is recognised too.
+     */
+    public function isDecommissioned(string $fileNo): bool
+    {
+        $flagged = DB::connection('sqlsrv')->table('fileNumber')
+            ->where(function ($q) use ($fileNo) {
+                $q->where('mlsfNo', $fileNo)->orWhere('kangisFileNo', $fileNo);
+            })
+            ->where('is_decommissioned', 1)
+            ->exists();
+
+        if ($flagged) {
+            return true;
+        }
+
+        return DB::connection('sqlsrv')->table('decommissioned_files')
+            ->where('file_no', $fileNo)
+            ->exists();
+    }
+
+    /**
+     * Add successors to a file that is ALREADY decommissioned, without archiving it again.
+     *
+     * A subdivision larger than the generator's 200-file batch cap is commissioned in
+     * several runs. The mother is decommissioned by the first run; later runs must not
+     * write a second decommissioned_files / deprecated_records row for the same event —
+     * they only need their fragments appended to the successor list so the
+     * Decommissioned Files screen shows every fragment, not just the first chunk's.
+     *
+     * Nothing is deleted here either: this only rewrites the successor column on rows
+     * that already exist.
+     */
+    public function appendSuccessors(string $fileNo, array $successorFileNumbers): int
+    {
+        $successorFileNumbers = array_values(array_filter($successorFileNumbers, fn ($f) => $f !== null && $f !== ''));
+        if (empty($successorFileNumbers)) {
+            return 0;
+        }
+
+        $merge = function (?string $existing) use ($successorFileNumbers): string {
+            $current = array_filter(array_map('trim', explode(',', (string) $existing)));
+
+            return implode(',', array_values(array_unique(array_merge($current, $successorFileNumbers))));
+        };
+
+        $updated = 0;
+
+        try {
+            if (Schema::connection('sqlsrv')->hasColumn('decommissioned_files', 'successor_file_no')) {
+                $rows = DB::connection('sqlsrv')->table('decommissioned_files')
+                    ->where('file_no', $fileNo)
+                    ->get(['id', 'successor_file_no']);
+
+                foreach ($rows as $row) {
+                    $updated += DB::connection('sqlsrv')->table('decommissioned_files')
+                        ->where('id', $row->id)
+                        ->update([
+                            'successor_file_no' => $merge($row->successor_file_no ?? null),
+                            'updated_at'        => now(),
+                        ]);
+                }
+            }
+
+            foreach ([['fileNumber', 'mlsfNo'], ['file_indexings', 'file_number']] as [$table, $column]) {
+                if (!Schema::connection('sqlsrv')->hasColumn($table, 'successor_file_no')) {
+                    continue;
+                }
+
+                $rows = DB::connection('sqlsrv')->table($table)
+                    ->where($column, $fileNo)
+                    ->get(['id', 'successor_file_no']);
+
+                foreach ($rows as $row) {
+                    $updated += DB::connection('sqlsrv')->table($table)
+                        ->where('id', $row->id)
+                        ->update(['successor_file_no' => $merge($row->successor_file_no ?? null)]);
+                }
+            }
+        } catch (\Exception $e) {
+            $this->logPlotsWorkflow('warning', "Could not append successors for $fileNo", [
+                'error'      => $e->getMessage(),
+                'successors' => $successorFileNumbers,
+            ]);
+        }
+
+        $this->logPlotsWorkflow('info', "Successors appended to decommissioned file: $fileNo", [
+            'successors' => $successorFileNumbers,
+            'rows'       => $updated,
+        ]);
+
+        return $updated;
+    }
+
+    /**
      * Update historical prop_id across various tables.
      */
     public function updateHistoricalPropId(array $oldPropIds, int $newPropId): int

@@ -250,7 +250,7 @@
                                                     class="ts-title-type-cb peer sr-only">
                                                 <span class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-600 transition hover:border-indigo-300 hover:bg-indigo-50/40 peer-checked:border-indigo-500 peer-checked:bg-indigo-50 peer-checked:text-indigo-700 peer-checked:font-medium peer-focus:ring-2 peer-focus:ring-indigo-200">
                                                     <i data-lucide="{{ $tsMeta[1] }}" class="h-4 w-4 flex-shrink-0"></i>
-                                                    <span class="leading-tight"@if($tsValue === 'Re-grant') id="ts-regrant-label"@elseif($tsValue === 'Closed') id="ts-closed-label"@elseif($tsValue === 'Resettlement') id="ts-resettlement-label"@endif>{{ $tsMeta[0] }}</span>
+                                                    <span class="leading-tight"@if($tsValue === 'Re-grant') id="ts-regrant-label"@elseif($tsValue === 'Closed') id="ts-closed-label"@endif>{{ $tsMeta[0] }}</span>
                                                 </span>
                                             </label>
                                         @endforeach
@@ -265,9 +265,6 @@
                                          is the file it continues in; "Continued From" means this file is
                                          the continuation and the picked number is the closed file. --}}
                                     <input type="hidden" id="ts-closed-kind" value="">
-                                    {{-- Holds the chosen resettlement direction (Resettled From /
-                                         Resettled To), same From/To sense as Re-grant. --}}
-                                    <input type="hidden" id="ts-resettlement-kind" value="">
                                 </div>
                             </div>
                         </div>
@@ -1247,8 +1244,6 @@
             const regrantLabelEl = document.getElementById('ts-regrant-label');
             const closedKindEl   = document.getElementById('ts-closed-kind');
             const closedLabelEl  = document.getElementById('ts-closed-label');
-            const resettleKindEl  = document.getElementById('ts-resettlement-kind');
-            const resettleLabelEl = document.getElementById('ts-resettlement-label');
             const seeLabelEl   = document.getElementById('ts-see-label');
             const seeHintEl    = document.getElementById('ts-see-hint');
             const reasonRow    = document.getElementById('ts-reason-row');
@@ -1278,22 +1273,10 @@
                 if (closedLabelEl) closedLabelEl.textContent = kind ? kind : 'Closed';
             };
 
-            // Resettlement direction (Resettled From / Resettled To), same From/To sense as
-            // Re-grant: "From" = this file is the new one, "To" = this file is the old one.
-            const RESETTLED_FROM = 'Resettled From';
-            const RESETTLED_TO   = 'Resettled To';
-            const getResettleKind = () => (resettleKindEl?.value || '').trim();
-            const setResettleKind = (kind) => {
-                if (resettleKindEl)  resettleKindEl.value = kind || '';
-                if (resettleLabelEl) resettleLabelEl.textContent = kind ? kind : 'Resettlement';
-            };
-
-            // Resolve the effective title type: a ticked "Re-grant" / "Closed" /
-            // "Resettlement" reports the chosen sub-kind.
+            // Resolve the effective title type for statuses that still use a direction.
             const resolveType = (t) => {
                 if (t === 'Re-grant')     return getRegrantKind()   || t;
                 if (t === 'Closed')       return getClosedKind()    || t;
-                if (t === 'Resettlement') return getResettleKind()  || t;
                 return t;
             };
 
@@ -1328,12 +1311,10 @@
             const RELATED_SOURCED_TYPES = ['Re-grant', 'Resettlement', 'Closed'];
 
             // Statuses whose auto remark is a fixed sentence about a counterpart file, so the
-            // Reason box has nothing to feed. Kept in step with buildRemarkFor() below: a bare
-            // "Resettlement" with no direction still falls through to the generic sentence.
-            const REASONLESS_TYPES = ['Re-grant', 'Closed', ...CLASSIFICATION_TYPES];
+            // Reason box has nothing to feed. Kept in step with buildRemarkFor() below.
+            const REASONLESS_TYPES = ['Re-grant', 'Resettlement', 'Closed', ...CLASSIFICATION_TYPES];
             const usesReason = (t) => {
                 if (!isRemarkType(t) || REASONLESS_TYPES.includes(t)) return false;
-                if (t === 'Resettlement') return !getResettleKind();
                 return true;
             };
 
@@ -1353,12 +1334,10 @@
                         ? `This File has been Re-granted to ${seeFileno}`
                         : `This File has been Re-granted from ${seeFileno}`;
                 }
-                if (type === 'Resettlement' && getResettleKind()) {
+                if (type === 'Resettlement') {
                     const seeFileno = (seeHidden?.value || '').trim();
                     if (!seeFileno) return 'This File has been Resettled';
-                    return getResettleKind() === RESETTLED_TO
-                        ? `This File has been Resettled to ${seeFileno}`
-                        : `This File has been Resettled from ${seeFileno}`;
+                    return `This File has been Resettled with related FileNo ${seeFileno}`;
                 }
                 if (type === 'Closed') {
                     const seeFileno = (seeHidden?.value || '').trim();
@@ -1402,7 +1381,6 @@
                 // fires a change event on the option that lost its tick. Drop any stale sub-kind.
                 if (!isRegrant && getRegrantKind()) setRegrantKind('');
                 if (!isClosed && getClosedKind()) setClosedKind('');
-                if (!isResettle && getResettleKind()) setResettleKind('');
 
                 // Label the counterpart picker for whichever direction was chosen. The trailing
                 // sentence is the same everywhere: the officer picks, they do not type.
@@ -1424,12 +1402,9 @@
                             : 'The file number this file continues in now that it is closed.') + fromRelated;
                     }
                 } else if (isResettle) {
-                    const to = getResettleKind() === RESETTLED_TO;
-                    if (seeLabelEl) seeLabelEl.textContent = to ? 'Resettled To FileNo' : 'Resettled From FileNo';
+                    if (seeLabelEl) seeLabelEl.textContent = 'Related Resettlement FileNo';
                     if (seeHintEl) {
-                        seeHintEl.textContent = (to
-                            ? 'The NEW file number this file was resettled to.'
-                            : 'The OLD file number this file was resettled from.') + fromRelated;
+                        seeHintEl.textContent = 'The related file number for this resettlement.' + fromRelated;
                     }
                 }
 
@@ -1527,10 +1502,10 @@
                 if (seePicker) seePicker.value = '';
             }
 
-            // ---- Counterpart file number, asked for right after the direction ----------------
+            // ---- Counterpart file number, asked for right after the status choice ------------
             //
-            // Once the officer says which way a Re-grant / Resettlement / Closure runs, the very
-            // next question is WHICH file it runs to or from, so a second popup asks for that
+            // Once the officer chooses a directed Re-grant or Closure, or Resettlement, the
+            // next question is which related file it references, so a popup asks for that
             // number there and then. Whatever is entered is pre-filled into the Related File
             // Number card below, which stays fully editable afterwards.
 
@@ -1538,16 +1513,14 @@
             const SEE_LABEL_BY_KIND = {
                 [REGRANT_FROM]:   'Re-granted From FileNo',
                 [REGRANT_TO]:     'Re-granted To FileNo',
-                [RESETTLED_FROM]: 'Resettled From FileNo',
-                [RESETTLED_TO]:   'Resettled To FileNo',
+                'Resettlement':   'Related Resettlement FileNo',
                 [CLOSED_TO]:      'Continued In FileNo',
                 [CONTINUED_FROM]: 'Continued From FileNo',
             };
             const SEE_HELP_BY_KIND = {
                 [REGRANT_FROM]:   'The OLD file number this file was re-granted from.',
                 [REGRANT_TO]:     'The NEW file number this file was re-granted to.',
-                [RESETTLED_FROM]: 'The OLD file number this file was resettled from.',
-                [RESETTLED_TO]:   'The NEW file number this file was resettled to.',
+                'Resettlement':   'Select the related file number for this resettlement.',
                 [CLOSED_TO]:      'The file number this file continues in now that it is closed.',
                 [CONTINUED_FROM]: 'The CLOSED file number this file carries on from.',
             };
@@ -1701,7 +1674,7 @@
                 })();
             }
 
-            // Chain the two steps: direction first, then the file it points at. The status UI is
+            // Continue from the selected status/direction to its related file. The status UI is
             // settled before the selector opens — picking a number refreshes the remark itself,
             // so closing the selector without picking leaves a consistent form either way.
             function afterKindChosen(kind, done) {
@@ -1787,44 +1760,6 @@
                 });
             }
 
-            // Ask which way the resettlement runs when "Resettlement" is picked.
-            function promptResettleKind(cb) {
-                const finish = () => { toggleStatusFields(); refreshRemark(); };
-                resetSeeFileno();
-
-                if (typeof Swal === 'undefined') {
-                    const isFrom = window.confirm('Resettlement direction:\n\nOK = Resettled From (this is the new file)\nCancel = Resettled To (this is the old file)');
-                    setResettleKind(isFrom ? RESETTLED_FROM : RESETTLED_TO);
-                    afterKindChosen(getResettleKind(), finish);
-                    return;
-                }
-
-                Swal.fire({
-                    title: 'Resettlement Direction',
-                    html: 'Is this file the <b>new</b> file or the <b>old</b> one?<br>'
-                        + '<span class="text-sm text-gray-500">Resettled From = this file received the resettlement.<br>'
-                        + 'Resettled To = the holder on this file was resettled to a newer file.</span>',
-                    icon: 'question',
-                    showDenyButton: true,
-                    showCancelButton: true,
-                    confirmButtonText: RESETTLED_FROM,
-                    denyButtonText: RESETTLED_TO,
-                    cancelButtonText: 'Cancel',
-                    confirmButtonColor: '#4f46e5',
-                    denyButtonColor: '#0d9488',
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        setResettleKind(RESETTLED_FROM);
-                    } else if (result.isDenied) {
-                        setResettleKind(RESETTLED_TO);
-                    } else {
-                        cb.checked = false;
-                        setResettleKind('');
-                    }
-                    afterKindChosen(getResettleKind(), finish);
-                });
-            }
-
             document.addEventListener('change', function (e) {
                 const cb = e.target;
                 if (!cb || !cb.classList || !cb.classList.contains('ts-title-type-cb')) return;
@@ -1848,10 +1783,13 @@
                     return; // popup callback runs toggleStatusFields()/refreshRemark()
                 }
 
-                // "Resettlement" picked → ask Resettled From vs To, same radio caveat.
                 if (cb.value === 'Resettlement' && cb.checked) {
-                    promptResettleKind(cb);
-                    return; // popup callback runs toggleStatusFields()/refreshRemark()
+                    resetSeeFileno();
+                    afterKindChosen('Resettlement', () => {
+                        toggleStatusFields();
+                        refreshRemark();
+                    });
+                    return;
                 }
 
                 toggleStatusFields();
@@ -1906,7 +1844,7 @@
                 if (!types.length) return;
 
                 // Tick directly rather than dispatching change: the change handler opens the
-                // From/To popup for Re-grant / Closed / Resettlement, which would ambush the
+                // direction popup for Re-grant / Closed, which would ambush the
                 // operator on page load. The stored direction is applied below instead.
                 typeCbs().forEach(cb => {
                     if (types.includes(cb.value)) cb.checked = true;
@@ -1915,7 +1853,6 @@
                 // Sub-kinds first — toggleStatusFields() reads them to label the See row.
                 if (TS_EXISTING.regrant_kind)      setRegrantKind(TS_EXISTING.regrant_kind);
                 if (TS_EXISTING.closed_kind)       setClosedKind(TS_EXISTING.closed_kind);
-                if (TS_EXISTING.resettlement_kind) setResettleKind(TS_EXISTING.resettlement_kind);
 
                 toggleStatusFields();
                 syncSeeOptions();
@@ -1967,7 +1904,6 @@
                 typeCbs().forEach(cb => { cb.checked = false; });
                 setRegrantKind('');
                 setClosedKind('');
-                setResettleKind('');
                 if (reasonEl) reasonEl.value = '';
                 if (remarkEl) remarkEl.value = '';
                 resetSeeFileno();
@@ -2010,8 +1946,8 @@
                     return reuseCustom ? customRemark : buildRemarkFor(type);
                 });
 
-                // Report the chosen sub-kinds — Re-granted From/To, Closed To / Continued From,
-                // Resettled From/To — in place of the generic label so they persist distinctly.
+                // Report the chosen sub-kinds for Re-grant and Closed. Resettlement remains
+                // a single, non-directional status.
                 const reportedTypes = types.map(resolveType);
 
                 // One request carrying every selected type so the backend records all of them

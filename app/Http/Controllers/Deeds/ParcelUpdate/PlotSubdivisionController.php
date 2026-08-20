@@ -19,6 +19,13 @@ use Illuminate\Support\Facades\Validator;
 
 class PlotSubdivisionController extends Controller
 {
+    /**
+     * Files the MLS number generator will mint in one batch run
+     * (MlsFileNoController::generateBatch validates batch_quantity max:200).
+     * A subdivision bigger than this is commissioned in several runs.
+     */
+    public const BATCH_CAP = 200;
+
     public function __construct(
         protected ParcelUpdateNotificationService $parcelNotifier
     ) {}
@@ -73,7 +80,7 @@ class PlotSubdivisionController extends Controller
             'file_no' => 'required|string|max:100',
             'file_title' => 'required|string|max:500',
             'applicant_name' => 'nullable|string|max:255',
-            'num_plots' => 'required|integer|min:1|max:200',
+            'num_plots' => 'required|integer|min:1|max:600',
             'plot_no' => 'nullable|string|max:100',
             'house_no' => 'nullable|string|max:100',
             'street_name' => 'nullable|string|max:255',
@@ -175,7 +182,15 @@ class PlotSubdivisionController extends Controller
         $record = PlotSubdivisionApplication::with('plotSizes')
             ->findOrFail($id);
 
-        return response()->json(['success' => true, 'data' => $record]);
+        return response()->json([
+            'success' => true,
+            'data'    => array_merge($record->toArray(), [
+                'commissioned_count' => $record->commissionedCount(),
+                'remaining_plots'    => $record->remainingPlots(),
+                'batches_done'       => count($record->commissionedBatches()),
+                'batch_cap'          => self::BATCH_CAP,
+            ]),
+        ]);
     }
 
 
@@ -183,6 +198,17 @@ class PlotSubdivisionController extends Controller
     {
         $record = PlotSubdivisionApplication::findOrFail($id);
         $previousStatus = $record->status;
+
+        // Never walk a commissioned application back to 'approved' — its fragments
+        // already exist and the mother file is decommissioned. A partially commissioned
+        // application legitimately sits at 'approved' (see recordCommissionedBatch), so
+        // it is only the finished ones and any already-minted work that are protected.
+        if ($previousStatus === PlotSubdivisionApplication::STATUS_COMMISSIONED || $record->commissionedCount() > 0) {
+            return response()->json([
+                'success' => false,
+                'message' => "This application already has {$record->commissionedCount()} of {$record->num_plots} plots commissioned.",
+            ], 422);
+        }
         $record->update([
             'status' => PlotSubdivisionApplication::STATUS_APPROVED,
             'updated_by' => Auth::id(),
@@ -319,7 +345,23 @@ class PlotSubdivisionController extends Controller
             return response()->json(['success' => false, 'message' => 'No approved subdivision application found for this file number.'], 404);
         }
 
-        return response()->json(['success' => true, 'data' => $record]);
+        // The generator's batch mode tops out at self::BATCH_CAP files per run, so a
+        // subdivision larger than that is commissioned across several runs. Tell the
+        // caller what is left and how big the next chunk may be; the application stays
+        // 'approved' (and so keeps being found here) until the last plot is minted.
+        $remaining = $record->remainingPlots();
+
+        return response()->json([
+            'success' => true,
+            'data'    => array_merge($record->toArray(), [
+                'planned_plots'      => (int) $record->num_plots,
+                'commissioned_count' => $record->commissionedCount(),
+                'remaining_plots'    => $remaining,
+                'batch_cap'          => self::BATCH_CAP,
+                'next_batch_size'    => min($remaining ?: (int) $record->num_plots, self::BATCH_CAP),
+                'batches_done'       => count($record->commissionedBatches()),
+            ]),
+        ]);
     }
 
     public function destroy(int $id): JsonResponse

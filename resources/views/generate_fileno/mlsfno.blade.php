@@ -693,6 +693,30 @@
                                             Serial Range: <span x-text="serialRangePreview"></span>
                                         </div>
                                     </div>
+                                    {{-- Chunked subdivision progress: batch mode mints at most 200 files
+                                         per run, so a 500-plot subdivision is commissioned as 200 + 200 + 100. --}}
+                                    <template x-if="subdivisionAppId && subdivisionPlanned > 0">
+                                        <div class="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                                            <p class="font-bold">
+                                                <i data-lucide="layers" class="w-3 h-3 inline"></i>
+                                                Subdivision progress:
+                                                <span x-text="subdivisionCommissioned"></span> of
+                                                <span x-text="subdivisionPlanned"></span> plots commissioned
+                                            </p>
+                                            <p class="mt-1">
+                                                This run generates <b x-text="batchQuantity"></b> file number(s).
+                                                <template x-if="(subdivisionRemaining - batchQuantity) > 0">
+                                                    <span>
+                                                        <b x-text="subdivisionRemaining - batchQuantity"></b> will still be left &mdash;
+                                                        re-open this file after commissioning to run the next batch.
+                                                    </span>
+                                                </template>
+                                                <template x-if="(subdivisionRemaining - batchQuantity) <= 0">
+                                                    <span>This completes the subdivision.</span>
+                                                </template>
+                                            </p>
+                                        </div>
+                                    </template>
                                     <p class="text-xs text-gray-500 mt-2 font-bold">
                                         <i data-lucide="info" class="w-3 h-3 inline"></i>
                                        All files will share the same File Name (File Title) and Prefix. You can only add unique location details for each file (if need be)

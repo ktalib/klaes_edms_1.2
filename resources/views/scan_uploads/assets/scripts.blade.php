@@ -864,11 +864,11 @@
             return;
         }
 
-        state.uploadDocuments = stagedDocs;
-        state.selectedUploadFiles = stagedDocs.map(() => null);
+        // "Next" only holds the documents — it does not hand them to the main
+        // upload screen yet. That screen must stay empty until the operator
+        // confirms with Load Documents, otherwise a batch they are still
+        // reviewing (or about to cancel) already looks selected behind the dialog.
         state.blindScan.stagedFiles = stagedDocs;
-        detectFileTypes(stagedDocs);
-        updatePdfConversionButtonVisibility();
         state.uploadStatus = 'idle';
         state.uploadProgress = 0;
         elements.uploadError.classList.add('hidden');
@@ -888,6 +888,28 @@
 
         showNotification('Blind scan documents loaded. Review them in Preview, then Load Documents.');
         updateUI();
+    }
+
+    /**
+     * Hand the staged blind-scan documents to the main upload screen.
+     *
+     * Called only from Load Documents, so the dropzone shows a file count at the
+     * same moment the dialog closes on it — never while the operator is still
+     * previewing pages inside the dialog.
+     */
+    function commitStagedBlindScanFiles() {
+        const stagedDocs = state.blindScan.stagedFiles || [];
+        if (!stagedDocs.length) {
+            return;
+        }
+
+        state.uploadDocuments = stagedDocs;
+        state.selectedUploadFiles = stagedDocs.map(() => null);
+        detectFileTypes(stagedDocs);
+        updatePdfConversionButtonVisibility();
+        state.uploadStatus = 'idle';
+        state.uploadProgress = 0;
+        elements.uploadError.classList.add('hidden');
     }
 
     /**
@@ -6256,6 +6278,9 @@
                 stageBlindScanFiles();
                 return;
             }
+
+            // Confirmed: only now do the staged pages reach the upload screen.
+            commitStagedBlindScanFiles();
         }
 
         state.showFileSelector = false;

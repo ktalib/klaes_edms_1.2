@@ -1703,6 +1703,19 @@ class MlsFileNoController extends Controller
                 'file_option' => $fileOption
             ]);
 
+            // A subdivision is worked off plot by plot (or 200 at a time in batch mode).
+            // Once every approved plot has been minted, refuse another fragment rather
+            // than letting the count run past num_plots.
+            if (!empty($validated['subdivision_app_id'])) {
+                $progressApp = \App\Models\PlotSubdivisionApplication::find($validated['subdivision_app_id']);
+                if ($progressApp && (int) $progressApp->num_plots > 0 && $progressApp->remainingPlots() <= 0) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "All {$progressApp->num_plots} plots for {$progressApp->file_no} have already been commissioned.",
+                    ], 422);
+                }
+            }
+
             // Require related file info for Recertification (-RC) prefixes
             if ($landUse && str_contains(strtoupper($landUse), '-RC')) {
                 if (empty($validated['related_fileno'])) {
@@ -3222,11 +3235,15 @@ class MlsFileNoController extends Controller
                                 ]);
                         }
 
-                        // Decommission mother if not already done
+                        // Decommission mother if not already done. Later fragments of the same
+                        // subdivision only widen the successor list — nothing is archived twice
+                        // and nothing is ever deleted; the mother keeps its rows, flagged.
                         $motherRecord = DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $motherFile)->first();
                         if ($motherRecord && !$motherRecord->is_decommissioned) {
                             $res = $workflowService->decommissionFiles([$motherFile], "Plot Subdivision into fragments (e.g. $fullFileNumber)", $commissionedBy, $fullFileNumber);
                             $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
+                        } elseif ($motherRecord) {
+                            $workflowService->appendSuccessors($motherFile, [$fullFileNumber]);
                         }
 
                         // PRA comment on the new fragment and the mother file
@@ -3239,11 +3256,10 @@ class MlsFileNoController extends Controller
                             ->where('fileno', $motherFile)
                             ->update(['comments' => $subdivisionComment]);
 
-                        $subdivisionApp->update([
-                            'status' => PlotSubdivisionApplication::STATUS_COMMISSIONED,
-                            'remarks' => "Commissioned fragment: {$fullFileNumber} on " . now()->toDateTimeString(),
-                            'updated_by' => Auth::id()
-                        ]);
+                        // One fragment booked. Status only reaches 'commissioned' when the
+                        // last of num_plots is minted, so a subdivision can be worked off
+                        // one file (or one 200-file batch) at a time.
+                        $subdivisionApp->recordCommissionedBatch([$fullFileNumber], $commissionedBy);
 
                         $parcelNotifier->notifyCommissioned(
                             'subdivision',
@@ -3809,6 +3825,29 @@ class MlsFileNoController extends Controller
             $year = $validated['year'];
             $startSerial = $validated['serial_start'];
             $batchQuantity = $validated['batch_quantity'];
+
+            // A subdivision bigger than the 200-file batch cap is commissioned in chunks
+            // (500 = 200 + 200 + 100). Refuse a chunk that would overshoot the approved
+            // plot count — the fragments are minted before the linkage block runs, so an
+            // over-large chunk would leave real file numbers with nothing to hang off.
+            if (!empty($validated['subdivision_app_id'])) {
+                $progressApp = PlotSubdivisionApplication::find($validated['subdivision_app_id']);
+                if ($progressApp && (int) $progressApp->num_plots > 0) {
+                    $remaining = $progressApp->remainingPlots();
+                    if ($remaining <= 0) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => "All {$progressApp->num_plots} plots for {$progressApp->file_no} have already been commissioned.",
+                        ], 422);
+                    }
+                    if ($batchQuantity > $remaining) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => "Only {$remaining} of {$progressApp->num_plots} plots are left to commission for {$progressApp->file_no}. Reduce this batch to {$remaining} files.",
+                        ], 422);
+                    }
+                }
+            }
 
             DB::connection('sqlsrv')->beginTransaction();
 
@@ -4741,24 +4780,44 @@ class MlsFileNoController extends Controller
                                 ]);
                         }
 
-                        // Decommission mother if exists in registry
+                        // Book this chunk against the application. A subdivision larger than the
+                        // 200-file batch cap is commissioned across several runs (e.g. 500 =
+                        // 200 + 200 + 100); the application only flips to 'commissioned' once
+                        // the last plot is minted, so the next run can still find it.
+                        $priorFragments = $subdivisionApp->commissionedFileNumbers();
+                        $subdivisionApp->recordCommissionedBatch($allFileNumbers, $commissionedBy);
+                        $subdivisionApp->refresh();
+                        $allFragmentsSoFar = array_values(array_unique(array_merge($priorFragments, $allFileNumbers)));
+
+                        // Decommission mother if exists in registry. Nothing is deleted here —
+                        // the mother stays in fileNumber / file_indexings / the staging and
+                        // grouping tables, flagged is_decommissioned, so its history survives.
                         $motherExists = DB::connection('sqlsrv')->table('fileNumber')->where('mlsfNo', $motherFile)->exists()
                             || DB::connection('sqlsrv')->table('file_indexings')->where('file_number', $motherFile)->exists();
 
                         if ($motherExists) {
-                            // Pass every new fragment as the successor (CSV) so the Decommissioned Files
-                            // list's Related File column shows all fragments, not just the first.
-                            $res = $workflowService->decommissionFiles([$motherFile], "Plot Subdivision into batch of " . count($allFileNumbers) . " fragments", $commissionedBy, (!empty($allFileNumbers) ? implode(',', $allFileNumbers) : null));
-                            $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
+                            if ($workflowService->isDecommissioned($motherFile)) {
+                                // Second and later chunks: the mother was archived by the first
+                                // run. Re-running decommissionFiles would write a duplicate
+                                // decommissioned_files / deprecated_records row for a single
+                                // event, so only widen the successor list with this chunk.
+                                $workflowService->appendSuccessors($motherFile, $allFileNumbers);
+                            } else {
+                                // Pass every new fragment as the successor (CSV) so the Decommissioned Files
+                                // list's Related File column shows all fragments, not just the first.
+                                $res = $workflowService->decommissionFiles([$motherFile], "Plot Subdivision into " . ((int) $subdivisionApp->num_plots ?: count($allFragmentsSoFar)) . " fragments", $commissionedBy, (!empty($allFragmentsSoFar) ? implode(',', $allFragmentsSoFar) : null));
+                                $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
+                            }
                         }
-
-                        $subdivisionApp->update([
-                            'status' => PlotSubdivisionApplication::STATUS_COMMISSIONED,
-                            'remarks' => "Commissioned to Batch of {$batchQuantity} files (First: {$allFileNumbers[0]}) on " . now()->toDateTimeString(),
-                            'updated_by' => Auth::id()
-                        ]);
                     }
-                    $this->logPlotsWorkflow('info', 'Batch Subdivision application marked as commissioned', ['app_id' => $validated['subdivision_app_id']]);
+                    $this->logPlotsWorkflow('info', 'Batch Subdivision chunk commissioned', [
+                        'app_id'       => $validated['subdivision_app_id'],
+                        'chunk_size'   => count($allFileNumbers),
+                        'commissioned' => $subdivisionApp->commissioned_count ?? null,
+                        'planned'      => $subdivisionApp->num_plots ?? null,
+                        'remaining'    => $subdivisionApp ? $subdivisionApp->remainingPlots() : null,
+                        'status'       => $subdivisionApp->status ?? null,
+                    ]);
                 }
 
                 if (!empty($validated['separation_app_id'])) {

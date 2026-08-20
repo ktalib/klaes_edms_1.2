@@ -161,7 +161,22 @@
                                     <td class="px-4 py-3 text-slate-700 font-bold">{{ $record->applicant_name ?: '—' }}</td>
                                     <td class="px-4 py-3 font-bold text-slate-700 whitespace-nowrap">{{ $record->file_no }}</td>
                                     <td class="px-4 py-3 text-slate-600">{{ $record->file_title }}</td>
-                                    <td class="px-4 py-3 text-slate-600">{{ $record->num_plots }}</td>
+                                    <td class="px-4 py-3 text-slate-600">
+                                        {{ $record->num_plots }}
+                                        {{-- Commissioning runs in chunks of 200, so show how much of the
+                                             subdivision has actually been minted so far. --}}
+                                        @if($record->commissionedCount() > 0 && !$record->isCommissioningComplete())
+                                            <span class="ml-1 inline-flex items-center rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800"
+                                                  title="{{ $record->commissionedCount() }} commissioned in {{ count($record->commissionedBatches()) }} batch(es), {{ $record->remainingPlots() }} remaining">
+                                                {{ $record->commissionedCount() }}/{{ $record->num_plots }} done
+                                            </span>
+                                        @elseif($record->commissionedCount() > 0)
+                                            <span class="ml-1 inline-flex items-center rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800"
+                                                  title="Commissioned in {{ count($record->commissionedBatches()) ?: 1 }} batch(es)">
+                                                all commissioned
+                                            </span>
+                                        @endif
+                                    </td>
                                     <td class="px-4 py-3 text-slate-600 text-xs">
                                         {{ implode(', ', array_filter([
                                             $record->house_no ? 'House No '.$record->house_no : null,
@@ -195,8 +210,23 @@
                                                                 <i data-lucide="handshake" class="w-4 h-4 text-purple-500"></i> KNUPDA Handshake
                                                             </button>
                                                         @endif
-                                                        @if($record->knupda_status === 'Approved')
-                                                            {{-- Approval is now automatic via KNUPDA Handshake --}}
+                                                        {{-- Process Approval. Clickable for any application not yet
+                                                             approved — the KNUPDA handshake also approves on its own, so
+                                                             this is the direct route as well as the fallback for records
+                                                             the handshake left behind. Once approved or part-commissioned
+                                                             it stays visible but disabled, with the reason. --}}
+                                                        @if($record->commissionedCount() > 0 || $record->status === 'commissioned')
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50 border-t border-slate-50 mt-1" title="Approved — {{ $record->commissionedCount() }} of {{ $record->num_plots }} plots already commissioned">
+                                                                <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-300"></i> Approved
+                                                            </button>
+                                                        @elseif($record->status === 'approved')
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50 border-t border-slate-50 mt-1" title="Already approved{{ $record->knupda_status === 'Approved' ? ' via the KNUPDA Handshake' : '' }}">
+                                                                <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-300"></i> Approved
+                                                            </button>
+                                                        @else
+                                                            <button onclick="approveRecord({{ $record->id }}, {{ $record->knupda_status === 'Approved' ? 'false' : 'true' }})" class="flex items-center w-full px-4 py-2.5 text-sm text-emerald-700 hover:bg-emerald-50 gap-2 font-bold border-t border-slate-50 mt-1">
+                                                                <i data-lucide="check-circle" class="w-4 h-4 text-emerald-500"></i> Approve
+                                                            </button>
                                                         @endif
                                                     </div>
                                                     <div class="py-1">
@@ -329,7 +359,7 @@
 
                     <div>
                         <label class="block text-xs font-bold text-slate-600 uppercase mb-2">No. of Plots <span class="text-red-500">*</span></label>
-                        <input type="number" name="num_plots" id="num_plots" min="1" max="200" oninput="generateFragments()" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm">
+                        <input type="number" name="num_plots" id="num_plots" min="1" max="600" oninput="generateFragments()" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm">
                     </div>
 
 
@@ -348,14 +378,14 @@
                         </div>
 
                         <div id="applyAllRow" class="hidden flex flex-wrap items-end gap-3 mb-4 p-3 rounded-xl bg-slate-50 border border-slate-200">
-                            <div class="flex-1 min-w-[160px]">
-                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Apply Size To All Plots</label>
+                            <label for="apply_all_toggle" class="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 bg-white cursor-pointer select-none">
+                                <input type="checkbox" id="apply_all_toggle" onchange="toggleApplyAll()" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                <span class="text-xs font-bold uppercase text-slate-600">Apply Same Size To All Plots</span>
+                            </label>
+                            <div id="applyAllSizeWrapper" class="hidden flex-1 min-w-[160px]">
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Size For All Plots</label>
                                 <input type="number" id="apply_all_size" step="0.01" placeholder="0.00" oninput="applySizeToAllPlots()" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">
                             </div>
-                            <label for="apply_all_toggle" class="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 bg-white cursor-pointer select-none">
-                                <input type="checkbox" id="apply_all_toggle" onchange="applySizeToAllPlots()" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-                                <span class="text-xs font-bold uppercase text-slate-600">Apply All</span>
-                            </label>
                         </div>
 
                         <div id="fragmentsContainer" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
@@ -668,6 +698,7 @@
         if (num <= 0) {
             const toggle = document.getElementById('apply_all_toggle');
             if (toggle) toggle.checked = false;
+            toggleApplyAll();
         }
 
         if (num > 0) {
@@ -685,6 +716,19 @@
         }
 
         applySizeToAllPlots();
+    }
+
+    function toggleApplyAll() {
+        const toggle = document.getElementById('apply_all_toggle');
+        const wrapper = document.getElementById('applyAllSizeWrapper');
+        const checked = !!(toggle && toggle.checked);
+
+        if (wrapper) wrapper.classList.toggle('hidden', !checked);
+        if (checked) {
+            const source = document.getElementById('apply_all_size');
+            if (source) source.focus();
+            applySizeToAllPlots();
+        }
     }
 
     function applySizeToAllPlots() {
@@ -722,7 +766,14 @@
                             if (data.record.plot_no) document.getElementById('loc_plot_no').value = data.record.plot_no;
                             if (data.record.house_no) document.getElementById('loc_house_no').value = data.record.house_no;
                             if (data.record.street_name) document.getElementById('loc_street_name').value = data.record.street_name;
-                            if (data.record.district) document.getElementById('loc_district').value = data.record.district;
+                            const district = [
+                                data.record.district,
+                                data.record.property_district,
+                                data.record.address_district,
+                                data.record.ma_district
+                            ].find(value => String(value || '').trim())
+                                || extractDistrictFromLocation(data.record);
+                            backfillDistrict(district);
                             if (data.record.lga) document.getElementById('loc_lga').value = data.record.lga;
                             if (data.record.state) document.getElementById('loc_state').value = data.record.state;
 
@@ -732,6 +783,66 @@
                     }
                 }
             });
+        }
+    }
+
+    function extractDistrictFromLocation(record) {
+        const location = String(
+            record.location || record.Location || record.ma_location || ''
+        ).trim();
+        if (!location) return '';
+
+        const parts = location.split(',').map(part => part.trim()).filter(Boolean);
+        if (!parts.length) return '';
+
+        // Prefer a location component that is an actual configured district.
+        const configuredDistrict = [...parts].reverse().find(part =>
+            _districtNames.some(name =>
+                String(name || '').trim().toLocaleLowerCase() === part.toLocaleLowerCase()
+            )
+        );
+        if (configuredDistrict) return configuredDistrict;
+
+        // Some legacy records only store a combined address. In the established
+        // "plot, street, district, LGA, state" shape, District precedes LGA.
+        const lga = String(record.lga || record.property_lga || '').trim();
+        const lgaIndex = lga
+            ? parts.findIndex(part => part.toLocaleLowerCase() === lga.toLocaleLowerCase())
+            : -1;
+
+        return lgaIndex >= 3 ? parts[lgaIndex - 1] : '';
+    }
+
+    function backfillDistrict(value) {
+        const district = String(value || '').trim();
+        if (!district) return;
+
+        const select = document.getElementById('loc_district');
+        const otherInput = document.getElementById('loc_district_other');
+        if (!select) return;
+
+        const matchingOption = Array.from(select.options).find(option =>
+            option.value.trim().toLocaleLowerCase() === district.toLocaleLowerCase()
+        );
+
+        if (matchingOption) {
+            select.value = matchingOption.value;
+            if (otherInput) {
+                otherInput.value = '';
+                otherInput.classList.add('hidden');
+            }
+            return;
+        }
+
+        const otherOption = Array.from(select.options).find(option =>
+            option.value.toUpperCase() === 'OTHER'
+        );
+        if (otherOption) {
+            select.value = otherOption.value;
+            if (otherInput) {
+                otherInput.value = district;
+                otherInput.classList.remove('hidden');
+            }
         }
     }
 
@@ -778,7 +889,6 @@
         const card = document.getElementById(`location_card_${index}`);
         if (!card) return;
         
-        const plot = card.querySelector(`[name="location_details[${index}][plot_no]"]`)?.value || '';
         const house = card.querySelector(`[name="location_details[${index}][house_no]"]`)?.value || '';
         
         let street = card.querySelector(`[name="location_details[${index}][street_name]"]`)?.value || '';
@@ -795,7 +905,6 @@
         const state = card.querySelector(`[name="location_details[${index}][state]"]`)?.value || '';
         
         let parts = [];
-        if (plot) parts.push(plot);
         if (house) parts.push(`House No. ${house}`);
         if (street) parts.push(street);
         if (district) parts.push(district);
@@ -1069,6 +1178,37 @@
         }
     }
 
+
+    async function approveRecord(id, knupdaPending = false) {
+        const result = await Swal.fire({
+            title: 'Approve Application?',
+            html: knupdaPending
+                ? "Are you sure you want to approve this subdivision application?<br><span class='text-amber-600 font-bold'>Note: the KNUPDA Handshake has not been recorded yet.</span>"
+                : "Are you sure you want to approve this subdivision application?",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#10b981',
+            confirmButtonText: 'Yes, approve'
+        });
+
+        if (result.isConfirmed) {
+            try {
+                const response = await fetch(`{{ url('plot-subdivision') }}/${id}/approve`, {
+                    method: 'POST',
+                    headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json' }
+                });
+                const res = await response.json();
+                if (res.success) {
+                    Swal.fire('Approved!', res.message, 'success');
+                    location.reload();
+                } else {
+                    Swal.fire('Error!', res.message || 'Failed to approve record.', 'error');
+                }
+            } catch (error) {
+                Swal.fire('Error!', 'Failed to approve record.', 'error');
+            }
+        }
+    }
 
     async function rejectRecord(id) {
         const { value: reason } = await Swal.fire({

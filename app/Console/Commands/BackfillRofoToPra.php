@@ -54,15 +54,25 @@ class BackfillRofoToPra extends Command
         $this->info('Backfilling Land / OSS ROFOs...');
         $synced = 0;
 
-        // A ROFO counts as issued if rofo_status says so, if it came from OSS, or if
+        // A ROFO counts as issued if rofo_status says so, if it came from OSS, if
         // it holds a security paper serial — the serial is only ever written against
         // a physically printed document, and a batch of older records was left on
-        // rofo_status=pending despite having one.
+        // rofo_status=pending despite having one — or if it has simply been printed.
+        //
+        // The print-count branch is the one that catches RofOs printed without ever
+        // being generated. LandRofoController::print() has no "must be generated"
+        // guard (unlike batchPrint(), which filters on it), so a single print of a
+        // pending record puts the letter in the applicant's hand, increments
+        // rofo_print_count and never trips RofoPraSyncer. Those records carry no
+        // rofo_generated_at and no serial, so without this branch they match nothing
+        // above and can never reach PRA at all — while still counting as printed on
+        // the RofO register.
         $query = LandRecommendation::query()
             ->where(function ($q) {
                 $q->where('rofo_status', LandRecommendation::ROFO_GENERATED)
                   ->orWhereRaw("UPPER(ISNULL(type, '')) = 'OSS'")
-                  ->orWhereRaw("LTRIM(RTRIM(ISNULL(land_rofo_serial_no, ''))) <> ''");
+                  ->orWhereRaw("LTRIM(RTRIM(ISNULL(land_rofo_serial_no, ''))) <> ''")
+                  ->orWhereRaw("ISNULL(rofo_print_count, 0) > 0");
             })
             ->whereNotNull('file_number')
             ->where('file_number', '<>', '');

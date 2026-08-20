@@ -4705,6 +4705,9 @@
 
             // Subdivision / Merger / Separation Properties
             subdivisionAppId: '',
+            subdivisionPlanned: 0,
+            subdivisionCommissioned: 0,
+            subdivisionRemaining: 0,
             mergerAppId: '',
             separationAppId: '',
             subdivisionFileNo: '',
@@ -6038,11 +6041,24 @@
                                         if (luEntity) self.landUseId = luEntity.id;
                                     }
 
-                                    self.batchMode = true;
-                                    
-                                    // Populate locationEntries for batch mode FIRST to prevent watcher from overwriting
-                                    const bQty = parseInt(res.data.num_plots) || 0;
-                                    if (bQty > 0) {
+                                    // A final chunk of exactly one plot cannot use batch mode:
+                                    // generateBatch validates batch_quantity min:2. Fall back to the
+                                    // single-file path, which books that one fragment the same way.
+                                    self.batchMode = (parseInt(res.data.next_batch_size) || 0) !== 1;
+
+                                    // Batch mode mints at most batch_cap (200) files per run, so a
+                                    // subdivision bigger than that is commissioned in chunks —
+                                    // 500 plots = 200 + 200 + 100. next_batch_size is what is left
+                                    // capped at 200; run the generator again for each remaining chunk.
+                                    const planned      = parseInt(res.data.planned_plots ?? res.data.num_plots) || 0;
+                                    const alreadyDone  = parseInt(res.data.commissioned_count) || 0;
+                                    const remaining    = parseInt(res.data.remaining_plots ?? planned);
+                                    const batchCap     = parseInt(res.data.batch_cap) || 200;
+                                    const bQty = parseInt(res.data.next_batch_size) || Math.min(remaining || planned, batchCap);
+                                    self.subdivisionPlanned      = planned;
+                                    self.subdivisionCommissioned = alreadyDone;
+                                    self.subdivisionRemaining    = remaining;
+                                    if (bQty > 1) {
                                         let entries = [];
                                         for (let i = 0; i < bQty; i++) {
                                             entries.push({
@@ -6058,8 +6074,11 @@
                                         }
                                         self.locationEntries = entries;
                                     }
-                                    
-                                    self.batchQuantity = bQty;
+
+                                    self.batchQuantity = bQty > 1 ? bQty : 1;
+                                    if (bQty === 1) {
+                                        self.locationEntries = [];
+                                    }
 
                                     // Trigger Alpine reactivity
                                     self.$nextTick(() => {
@@ -6068,13 +6087,25 @@
                                         }
                                     });
                                     
-                                    Swal.fire({
-                                        icon: 'success',
-                                        title: 'Subdivision Found',
-                                        text: `This file has an approved subdivision for ${res.data.num_plots} plots. Batch mode enabled.`,
-                                        timer: 3000,
-                                        showConfirmButton: false
-                                    });
+                                    if (alreadyDone > 0 || bQty < planned) {
+                                        const left = Math.max(remaining - bQty, 0);
+                                        Swal.fire({
+                                            icon: 'info',
+                                            title: 'Subdivision Found (chunked)',
+                                            html: `Approved for <b>${planned}</b> plots &mdash; <b>${alreadyDone}</b> already commissioned.<br>` +
+                                                  `This run will generate <b>${bQty}</b> file numbers (max ${batchCap} per batch).` +
+                                                  (left > 0 ? `<br>Come back and repeat for the remaining <b>${left}</b>.` : `<br>This completes the subdivision.`),
+                                            confirmButtonText: 'Continue'
+                                        });
+                                    } else {
+                                        Swal.fire({
+                                            icon: 'success',
+                                            title: 'Subdivision Found',
+                                            text: `This file has an approved subdivision for ${planned} plots. Batch mode enabled.`,
+                                            timer: 3000,
+                                            showConfirmButton: false
+                                        });
+                                    }
                                 } else {
                                     Swal.fire('Not Found', res.message, 'warning');
                                 }
@@ -6479,6 +6510,9 @@
                 } else if (this.fileOption === 'subdivision' || this.fileOption === 'merger' || this.fileOption === 'separation') {
                     this.serialNo = '';
                     this.subdivisionAppId = '';
+                    this.subdivisionPlanned = 0;
+                    this.subdivisionCommissioned = 0;
+                    this.subdivisionRemaining = 0;
                     this.mergerAppId = '';
                     this.separationAppId = '';
                     this.subdivisionFileNo = '';
