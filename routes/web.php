@@ -889,6 +889,15 @@ Route::get('planning-recommendation/print/{id}', function ($id) {
         })));
     };
 
+    // Conversion-only meta rows are stashed as sentinel descriptions
+    // (__need_for_eia__, __conversion_reservation_meta__, __existing_structure__,
+    // __conversion_purpose_lut__). They are never real units or utilities and must
+    // not reach an ST One Stop Shop letter - JointSiteInspectionEditController and
+    // the inspection-details tab already reject them, this route did not.
+    $isMetaSentinel = function ($value) {
+        return preg_match('/^__.+__$/', trim((string) $value)) === 1;
+    };
+
     $sectionMap = [];
 
     foreach ($sectionRecords as $record) {
@@ -897,6 +906,10 @@ Route::get('planning-recommendation/print/{id}', function ($id) {
             $sectionMap[$variant] = $record->section_number;
         }
     }
+
+    $dimensionRecords = $dimensionRecords->reject(function ($record) use ($isMetaSentinel) {
+        return $isMetaSentinel($record->description ?? ($record->unit_no ?? ''));
+    })->values();
 
     $dimensionsData = $dimensionRecords->map(function ($record, $index) use ($sectionMap, $generateUnitVariants) {
         $serial = isset($record->sn) && is_numeric($record->sn)
@@ -957,7 +970,14 @@ Route::get('planning-recommendation/print/{id}', function ($id) {
             $sharedUtilities = [];
         }
 
-        $utilitiesData = collect($sharedUtilities)->filter()->values()->map(function ($utility, $index) {
+        $utilitiesData = collect($sharedUtilities)
+            ->filter()
+            ->reject(function ($utility) use ($isMetaSentinel) {
+                $label = is_array($utility) ? ($utility['utility_type'] ?? reset($utility)) : $utility;
+                return $isMetaSentinel($label);
+            })
+            ->values()
+            ->map(function ($utility, $index) {
             $label = is_array($utility) ? ($utility['utility_type'] ?? reset($utility)) : $utility;
 
             return [
@@ -979,6 +999,10 @@ Route::get('planning-recommendation/print/{id}', function ($id) {
             ->orderBy('order')
             ->orderBy('id')
             ->get();
+
+        $utilityRecords = $utilityRecords->reject(function ($record) use ($isMetaSentinel) {
+            return $isMetaSentinel($record->utility_type ?? $record->name ?? $record->label ?? '');
+        })->values();
 
         $utilitiesData = $utilityRecords->map(function ($record, $index) {
             $utilityType = $record->utility_type ?? $record->name ?? $record->label ?? null;

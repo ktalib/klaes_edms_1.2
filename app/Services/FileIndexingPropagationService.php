@@ -29,12 +29,22 @@ use Throwable;
  *    to the file-identity mirrors — fileNumber.FileName, mls_file_no.file_name,
  *    customers_staging.customer_name, entities_staging.entity_name — which is exactly the
  *    set InstrumentRegistrationService::syncPartyNames() already maintains in the other
- *    direction. It is deliberately NOT written to:
- *      - pra.party_1 / party_2: those are the grantor and grantee of a REGISTERED
- *        instrument. Rewriting them from a file-title edit would falsify the deed.
- *      - mother_applications first_name / surname / corporate_name: the identity of who
- *        submitted an application, not a property attribute of the file.
- *    Both are one-line additions to the maps below if that is ever wanted.
+ *    direction — PLUS the holder name on PRA, under a strict condition described below.
+ *
+ *    The holder-name case matters because the OSS listings show
+ *    COALESCE(pra.Grantee, fileNumber.FileName) as the file title
+ *    (OpResettlementApplicationController). Updating only FileName left those screens
+ *    showing the previous owner forever, which is the bug this was reported for.
+ *
+ *    PRA holder names are only rewritten where the stored value STILL EQUALS THE OLD
+ *    FILE TITLE — i.e. that row was already mirroring the file title and is simply
+ *    stale. A pra row whose Grantee is some other party is a genuine, different party
+ *    to a registered instrument and is never touched: rewriting it would falsify the
+ *    deed. Grantor / party_1 is never written at all — that is the PREVIOUS owner.
+ *
+ *    Still deliberately NOT written: mother_applications first_name / surname /
+ *    corporate_name — the identity of who submitted an application, not a property
+ *    attribute of the file.
  */
 class FileIndexingPropagationService
 {
@@ -63,7 +73,7 @@ class FileIndexingPropagationService
      */
     public function propagate($before, $after): array
     {
-        $changes = $this->diff($before, $after);
+        [$changes, $previous] = $this->diff($before, $after);
 
         if (empty($changes)) {
             return ['changed' => [], 'targets' => []];
@@ -86,6 +96,12 @@ class FileIndexingPropagationService
             'fileNumber' => fn () => $this->syncFileNumber($changes, $fileNumbers),
             'mls_file_no' => fn () => $this->syncMlsFileNo($changes, $fileNumbers),
             'pra' => fn () => $this->syncPra($changes, $fileNumbers),
+            'pra_holder_name' => fn () => $this->syncHolderName('pra', ['Grantee', 'party_2'],
+                ['mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'temp_fileno', 'resolved_fileno'],
+                $changes, $previous, $fileNumbers),
+            'instrument_capture_holder_name' => fn () => $this->syncHolderName('instrument_capture', ['party_2_name'],
+                ['mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'temp_fileno'],
+                $changes, $previous, $fileNumbers),
             'customers_staging' => fn () => $this->syncNameMirror('customers_staging', 'customer_name', 'file_number', $changes, $fileNumbers),
             'entities_staging' => fn () => $this->syncNameMirror('entities_staging', 'entity_name', 'file_number', $changes, $fileNumbers),
             'oss_applications' => fn () => $this->syncOssApplications($changes, $fileNumbers),
@@ -120,11 +136,12 @@ class FileIndexingPropagationService
     }
 
     /**
-     * @return array<string,mixed> changed field => new value
+     * @return array{0:array<string,mixed>,1:array<string,mixed>} [changed => new, changed => old]
      */
     private function diff($before, $after): array
     {
         $changes = [];
+        $previous = [];
 
         foreach (self::SYNCABLE_FIELDS as $field) {
             $old = $this->scalarize($before->$field ?? null);
@@ -139,10 +156,70 @@ class FileIndexingPropagationService
 
             if ($this->normalize($old) !== $this->normalize($new)) {
                 $changes[$field] = $new;
+                $previous[$field] = $old;
             }
         }
 
-        return $changes;
+        return [$changes, $previous];
+    }
+
+    /**
+     * Rename the current holder on instrument rows that were already mirroring the file
+     * title, and only those.
+     *
+     * The guard is the whole point: `WHERE column = old_title`. A row holding any other
+     * name belongs to a genuinely different party on a registered instrument and must
+     * survive untouched. Grantor / party_1 is never a target — that is the previous owner.
+     *
+     * @param  array<int,string>  $nameColumns
+     * @param  array<int,string>  $keyColumns
+     */
+    private function syncHolderName(string $table, array $nameColumns, array $keyColumns, array $changes, array $previous, array $fileNumbers): int
+    {
+        $newTitle = $changes['file_title'] ?? null;
+        $oldTitle = $previous['file_title'] ?? null;
+
+        if ($newTitle === null || $oldTitle === null || trim((string) $oldTitle) === '') {
+            return 0;
+        }
+
+        if (!Schema::connection('sqlsrv')->hasTable($table)) {
+            return 0;
+        }
+
+        $nameColumns = array_values(array_filter(
+            $nameColumns,
+            fn ($column) => Schema::connection('sqlsrv')->hasColumn($table, $column)
+        ));
+
+        $keyColumns = array_values(array_filter(
+            $keyColumns,
+            fn ($column) => Schema::connection('sqlsrv')->hasColumn($table, $column)
+        ));
+
+        if (empty($nameColumns) || empty($keyColumns)) {
+            return 0;
+        }
+
+        $affected = 0;
+
+        // One statement per column: a row may carry the stale title in Grantee but a
+        // different, correct value in party_2, and each must be judged on its own.
+        foreach ($nameColumns as $column) {
+            $affected += DB::connection('sqlsrv')
+                ->table($table)
+                ->where(function ($query) use ($keyColumns, $fileNumbers) {
+                    foreach ($keyColumns as $index => $key) {
+                        $index === 0
+                            ? $query->whereIn($key, $fileNumbers)
+                            : $query->orWhereIn($key, $fileNumbers);
+                    }
+                })
+                ->whereRaw('UPPER(LTRIM(RTRIM(' . $column . '))) = UPPER(?)', [trim((string) $oldTitle)])
+                ->update([$column => $newTitle]);
+        }
+
+        return $affected;
     }
 
     /**

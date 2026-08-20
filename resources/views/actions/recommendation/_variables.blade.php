@@ -5,6 +5,13 @@
         ->where('application_id', $application->id)
         ->first();
 
+    // Conversion-only meta sentinels (__need_for_eia__, __conversion_reservation_meta__,
+    // ...) are stored alongside real utilities but must never be shown on an ST
+    // One Stop Shop recommendation.
+    $isMetaSentinel = function ($value) {
+        return preg_match('/^__.+__$/', trim((string) $value)) === 1;
+    };
+
     $sharedUtilitiesOptions = [];
     try {
         $sharedUtilitiesOptions = DB::connection('sqlsrv')
@@ -12,6 +19,7 @@
             ->where('application_id', $application->id)
             ->pluck('utility_type')
             ->filter()
+            ->reject($isMetaSentinel)
             ->unique()
             ->values()
             ->toArray();
@@ -52,6 +60,16 @@
     } else {
         $selectedSharedUtilities = $sharedUtilitiesOptions;
     }
+
+    // One guard after the branch, so the sentinels are stripped whether the list
+    // came from the JSI report (array or JSON) or from the shared_utilities table.
+    $selectedSharedUtilities = collect($selectedSharedUtilities)
+        ->reject(function ($utility) use ($isMetaSentinel) {
+            $label = is_array($utility) ? ($utility['utility_type'] ?? reset($utility)) : $utility;
+            return $isMetaSentinel($label);
+        })
+        ->values()
+        ->all();
 
     $jointInspectionApplicant = $jointInspectionReport->applicant_name ?? '';
     if (empty($jointInspectionApplicant)) {
