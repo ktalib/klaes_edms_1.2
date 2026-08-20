@@ -15,7 +15,7 @@
      | LEGAL_SEARCH_LOADING=false in .env (then `php artisan config:clear`) or by
      | flipping the fallback below to false.
      */
-    $forceLoading = filter_var(env('LEGAL_SEARCH_LOADING', true), FILTER_VALIDATE_BOOLEAN)
+    $forceLoading = filter_var(env('LEGAL_SEARCH_LOADING', false), FILTER_VALIDATE_BOOLEAN)
         && (int) (auth()->id() ?? 0) !== 1;
 @endphp
 @if ($forceLoading)

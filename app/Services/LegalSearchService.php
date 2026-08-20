@@ -10,6 +10,18 @@ use Illuminate\Support\Facades\Schema;
 class LegalSearchService
 {
     private const ARRANGEMENT_TABLE = 'legal_search_timeline_arrangements';
+
+    /**
+     * Below this many bind parameters the file-number filter keeps its original
+     * per-value OR form. SQL Server's hard limit is 2100 per statement; the gap
+     * leaves room for the other filters on the same query.
+     */
+    private const FILE_MATCH_PARAM_BUDGET = 1200;
+
+    /** Separator for the STRING_SPLIT list. Never occurs in a file number. */
+    private const FILE_MATCH_DELIMITER = '|';
+
+    private ?bool $stringSplitSupported = null;
     private array $softDeleteColumnCache = [];
     private ?array $decommissionedFileNumbers = null;
 
@@ -3493,6 +3505,101 @@ class LegalSearchService
     // --- Shared filter logic -----------------------------------------
     // Table-aware: uses correct real column names per table
 
+    /**
+     * Match any of $fileColumns against any of $fileNumbers.
+     *
+     * The obvious form - one "UPPER(col) = ?" per column per value - costs
+     * values x columns bind parameters, and SQL Server hard-caps a statement at
+     * 2100. A 530-plot subdivision search (mother + 530 successors, each also
+     * expanded to its "(T)" variant = 1062 values, x 4 file columns = 4248) blew
+     * that ceiling and made the whole search 500 with
+     * "Tried to bind parameter number 2101", which the UI rendered as the
+     * misleading "0 results found" (production: CON-IND-2024-9).
+     *
+     * Small sets keep the original predicate exactly, so ordinary searches are
+     * untouched. Large sets switch to a set-based form whose parameter count no
+     * longer multiplies by the number of columns:
+     *   - STRING_SPLIT (SQL Server 2016+): ONE parameter per column, so it scales
+     *     to any number of fragments.
+     *   - VALUES table fallback for older servers: parameters = values only, i.e.
+     *     the 4x column multiplier is still removed.
+     */
+    private function applyFileNumberMatch($query, array $fileNumbers, array $fileColumns): void
+    {
+        $values = [];
+        foreach ($fileNumbers as $fn) {
+            $v = strtoupper(trim((string) $fn));
+            if ($v !== '') {
+                $values[$v] = true;
+            }
+        }
+        $values = array_keys($values);
+
+        if (empty($values) || empty($fileColumns)) {
+            return;
+        }
+
+        // Leave the well-trodden path alone: only reshape when the naive form
+        // would approach the 2100-parameter ceiling.
+        if (count($values) * count($fileColumns) <= self::FILE_MATCH_PARAM_BUDGET) {
+            $query->where(function ($subQ) use ($values, $fileColumns) {
+                foreach ($fileColumns as $col) {
+                    foreach ($values as $fn) {
+                        $subQ->orWhereRaw("UPPER(LTRIM(RTRIM({$col}))) = UPPER(?)", [$fn]);
+                    }
+                }
+            });
+
+            return;
+        }
+
+        if ($this->supportsStringSplit($query->getConnection())) {
+            // One parameter per column, whatever the number of values.
+            $joined = implode(self::FILE_MATCH_DELIMITER, $values);
+            $query->where(function ($subQ) use ($joined, $fileColumns) {
+                foreach ($fileColumns as $col) {
+                    $subQ->orWhereRaw(
+                        "EXISTS (SELECT 1 FROM STRING_SPLIT(?, ?) s WHERE s.value = UPPER(LTRIM(RTRIM({$col}))))",
+                        [$joined, self::FILE_MATCH_DELIMITER]
+                    );
+                }
+            });
+
+            return;
+        }
+
+        // Fallback: parameters = values, independent of the column count.
+        $placeholders = implode(',', array_fill(0, count($values), '(?)'));
+        $columnList = implode(', ', array_map(
+            fn ($col) => "UPPER(LTRIM(RTRIM({$col})))",
+            $fileColumns
+        ));
+        $query->whereRaw(
+            "EXISTS (SELECT 1 FROM (VALUES {$placeholders}) AS v(fn) WHERE v.fn IN ({$columnList}))",
+            $values
+        );
+    }
+
+    /**
+     * Is STRING_SPLIT available on this server? Probed once per request and cached;
+     * any failure answers "no" so the caller uses the portable fallback.
+     */
+    private function supportsStringSplit($conn): bool
+    {
+        if ($this->stringSplitSupported !== null) {
+            return $this->stringSplitSupported;
+        }
+
+        try {
+            $conn->select("SELECT TOP 1 value FROM STRING_SPLIT('a|b', '|')");
+            $this->stringSplitSupported = true;
+        } catch (\Throwable $e) {
+            $this->stringSplitSupported = false;
+        }
+
+        return $this->stringSplitSupported;
+    }
+
     private function applyFilters($query, array $f, string $tableName, array $fileColumns): void
     {
         $isDeed = ($tableName === 'deed_registrations');
@@ -3524,13 +3631,7 @@ class LegalSearchService
             // both refer to the same physical file.
             $searchFileNos = $this->fileNumberVariants(...$searchFileNos);
             
-            $query->where(function ($subQ) use ($searchFileNos, $fileColumns) {
-                foreach ($fileColumns as $col) {
-                    foreach ($searchFileNos as $fn) {
-                        $subQ->orWhereRaw("UPPER(LTRIM(RTRIM({$col}))) = UPPER(?)", [$fn]);
-                    }
-                }
-            });
+            $this->applyFileNumberMatch($query, $searchFileNos, $fileColumns);
         }
 
         // Guarantor / party_1 filter
