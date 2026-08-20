@@ -841,8 +841,8 @@ class PlanningRecommendationController extends Controller
                         'dimension_display' => $dimensionDisplay,
                         'dimension_raw' => $dimensionRaw,
                         'count' => $countValue,
-                        'block' => $entry['block'] ?? '1',
-                        'section' => $entry['section'] ?? '1',
+                        'block' => $entry['block'] ?? null,
+                        'section' => $entry['section'] ?? null,
                         'order' => $entry['sn'] ?? ($index + 1),
                     ];
                 })->filter(function ($item) {
@@ -881,8 +881,8 @@ class PlanningRecommendationController extends Controller
                                 'dimension' => $dimensionValue,
                                 'dimension_display' => $utility['dimension_display'] ?? ($dimensionValue ?? null),
                                 'count' => $utility['count'] ?? 1,
-                                'block' => $utility['block'] ?? ($utility['block_label'] ?? '1'),
-                                'section' => $utility['section'] ?? ($utility['section_label'] ?? '1'),
+                                'block' => $utility['block'] ?? ($utility['block_label'] ?? null),
+                                'section' => $utility['section'] ?? ($utility['section_label'] ?? null),
                                 'order' => $index + 1,
                             ];
                         }
@@ -896,8 +896,8 @@ class PlanningRecommendationController extends Controller
                                 'dimension' => null,
                                 'dimension_display' => null,
                                 'count' => 1,
-                                'block' => '1',
-                                'section' => '1',
+                                'block' => null,
+                                'section' => null,
                                 'order' => $index + 1,
                             ];
                         }
@@ -929,8 +929,8 @@ class PlanningRecommendationController extends Controller
                             ? ($utility->dimension_display ?? $dimensionValue)
                             : $dimensionValue,
                         'count' => $utility->count ?? 1,
-                        'block' => $utility->block ?? '1',
-                        'section' => $utility->section ?? '1',
+                        'block' => $utility->block ?? null,
+                        'section' => $utility->section ?? null,
                         'order' => $utility->order ?? ($index + 1),
                     ];
                 })
@@ -954,15 +954,16 @@ class PlanningRecommendationController extends Controller
             return [
                 'id' => $entry['id'] ?? null,
                 'application_id' => $entry['application_id'] ?? null,
-                'sn' => isset($entry['sn']) && is_numeric($entry['sn'])
-                    ? (int) $entry['sn']
-                    : ($index + 1),
+                // Always a display counter, never the stored sn. Dropping the
+                // conversion sentinels leaves gaps in the original numbering
+                // (4, 5 instead of 1, 2), and this is the printed SN column.
+                'sn' => $index + 1,
                 'utility_type' => $entry['utility_type'] ?? ($entry['description'] ?? null),
                 'dimension' => $entry['dimension'] ?? ($entry['dimension_numeric'] ?? null),
                 'dimension_display' => $entry['dimension_display'] ?? ($entry['dimension_raw'] ?? ($entry['dimension'] ?? null)),
                 'count' => $count,
-                'block' => $entry['block'] ?? '1',
-                'section' => $entry['section'] ?? '1',
+                'block' => $entry['block'] ?? null,
+                'section' => $entry['section'] ?? null,
                 'order' => $entry['order'] ?? ($index + 1),
             ];
         })->values();
@@ -2419,6 +2420,14 @@ class PlanningRecommendationController extends Controller
                 }
 
                 $description = isset($entry['description']) ? trim((string) $entry['description']) : '';
+
+                // Conversion-only meta rows share this JSON with real measurements.
+                // They are never units or utilities and must not reach an ST One
+                // Stop Shop recommendation letter.
+                if (preg_match('/^__.+__$/', $description) === 1) {
+                    return null;
+                }
+
                 $dimension = isset($entry['dimension']) ? trim((string) $entry['dimension']) : '';
                 if ($dimension === '' && isset($entry['measurement']) && !is_null($entry['measurement'])) {
                     $dimension = trim((string) $entry['measurement']);
@@ -2475,8 +2484,10 @@ class PlanningRecommendationController extends Controller
                     'measurement_dimension' => $measurementDimension === '' ? null : $measurementDimension,
                     'measurement_dimension_display' => $measurementDimension === '' ? null : $measurementDimension,
                     'count' => $countValue,
-                    'block' => $block === null || $block === '' ? '1' : $block,
-                    'section' => $section === null || $section === '' ? '1' : $section,
+                    // No invented block/section. A letter must not state a block
+                    // number the inspecting officer never recorded.
+                    'block' => $block === null || $block === '' ? null : $block,
+                    'section' => $section === null || $section === '' ? null : $section,
                 ];
             })
             ->filter()
