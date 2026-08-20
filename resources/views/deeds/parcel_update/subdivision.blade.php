@@ -347,6 +347,17 @@
                             </div>
                         </div>
 
+                        <div id="applyAllRow" class="hidden flex flex-wrap items-end gap-3 mb-4 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                            <div class="flex-1 min-w-[160px]">
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Apply Size To All Plots</label>
+                                <input type="number" id="apply_all_size" step="0.01" placeholder="0.00" oninput="applySizeToAllPlots()" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                            </div>
+                            <label for="apply_all_toggle" class="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 bg-white cursor-pointer select-none">
+                                <input type="checkbox" id="apply_all_toggle" onchange="applySizeToAllPlots()" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                <span class="text-xs font-bold uppercase text-slate-600">Apply All</span>
+                            </label>
+                        </div>
+
                         <div id="fragmentsContainer" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                             <p class="col-span-full text-slate-400 text-xs italic">Enter "No. of Plots" above to define subdivided plot sizes.</p>
                         </div>
@@ -650,8 +661,15 @@
         const sizeContainer = document.getElementById('fragmentsContainer');
         const num = parseInt(document.getElementById('num_plots').value) || 0;
         
+        const applyAllRow = document.getElementById('applyAllRow');
+
         sizeContainer.innerHTML = '';
-        
+        if (applyAllRow) applyAllRow.classList.toggle('hidden', num <= 0);
+        if (num <= 0) {
+            const toggle = document.getElementById('apply_all_toggle');
+            if (toggle) toggle.checked = false;
+        }
+
         if (num > 0) {
             for (let i = 1; i <= num; i++) {
                 const sizeDiv = document.createElement('div');
@@ -665,6 +683,18 @@
             sizeContainer.innerHTML = '<p class="col-span-full text-slate-400 text-xs italic">Enter "No. of Plots" above to define fragment sizes.</p>';
             document.getElementById('totalSize').value = "0.00 Ha";
         }
+
+        applySizeToAllPlots();
+    }
+
+    function applySizeToAllPlots() {
+        const toggle = document.getElementById('apply_all_toggle');
+        if (!toggle || !toggle.checked) return;
+
+        const source = document.getElementById('apply_all_size');
+        const value = source ? source.value : '';
+        document.querySelectorAll('.fragment-input').forEach(input => { input.value = value; });
+        calculateTotal();
     }
 
     function calculateTotal() {

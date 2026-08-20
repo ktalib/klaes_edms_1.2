@@ -36,11 +36,15 @@ use Throwable;
  *    (OpResettlementApplicationController). Updating only FileName left those screens
  *    showing the previous owner forever, which is the bug this was reported for.
  *
- *    PRA holder names are only rewritten where the stored value STILL EQUALS THE OLD
- *    FILE TITLE — i.e. that row was already mirroring the file title and is simply
- *    stale. A pra row whose Grantee is some other party is a genuine, different party
- *    to a registered instrument and is never touched: rewriting it would falsify the
- *    deed. Grantor / party_1 is never written at all — that is the PREVIOUS owner.
+ *    The holder name is rewritten WHATEVER it currently says. An earlier rule only
+ *    touched rows whose stored value still equalled the old file title, which defeated
+ *    the point: the reason someone edits the title is that the recorded name is wrong,
+ *    so it rarely matches. What bounds the write instead is WHICH ROW is touched —
+ *    only the row those screens actually read: the newest row per instrument type per
+ *    property (see currentHolderRows()). Older rows of the same type name PREVIOUS
+ *    owners and are historical fact, as is an Occupancy Permit sitting behind a
+ *    Transfer of Title — that permit names the original allottee, not today's holder.
+ *    Grantor / party_1 is never written on PRA at all — that is the previous owner.
  *
  *    Still deliberately NOT written: mother_applications first_name / surname /
  *    corporate_name — the identity of who submitted an application, not a property
@@ -52,6 +56,23 @@ class FileIndexingPropagationService
      * Indexing fields whose changes are worth pushing outward, and how they are named
      * on the indexing record.
      */
+    /**
+     * Instrument types whose party_2 / Grantee IS the current owner of the file.
+     *
+     * Mortgages, tripartite mortgages and surrender/release are deliberately absent:
+     * their party_2 is a lender or the State, not the owner, and renaming it from a
+     * file-title edit would corrupt the instrument.
+     */
+    private const OWNERSHIP_INSTRUMENTS = [
+        'Transfer of Title (OP)',
+        'Occupancy Permit (OP)',
+        'Right of Occupancy',
+        'Certificate of Occupancy',
+        'Deed of Assignment',
+        'Deed of Gift',
+        'Power of Attorney',
+    ];
+
     private const SYNCABLE_FIELDS = [
         'file_title',
         'location',
@@ -71,7 +92,7 @@ class FileIndexingPropagationService
      * @param  object  $after   the file_indexings row as it now is
      * @return array<string,mixed> per-target row counts, for logging and the API response
      */
-    public function propagate($before, $after): array
+    public function propagate($before, $after, array $explicitNames = []): array
     {
         [$changes, $previous] = $this->diff($before, $after);
 
@@ -102,9 +123,20 @@ class FileIndexingPropagationService
             'instrument_capture_holder_name' => fn () => $this->syncHolderName('instrument_capture', ['party_2_name'],
                 ['mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'temp_fileno'],
                 $changes, $previous, $fileNumbers),
-            'customers_staging' => fn () => $this->syncNameMirror('customers_staging', 'customer_name', 'file_number', $changes, $fileNumbers),
-            'entities_staging' => fn () => $this->syncNameMirror('entities_staging', 'entity_name', 'file_number', $changes, $fileNumbers),
+            'pra_current_holder' => fn () => $this->renameCurrentHolder($changes, $fileNumbers),
+            'instrument_capture_current_holder' => fn () => $this->renameCaptureHolder($changes, $fileNumbers),
+            'instrument_capture' => fn () => $this->syncInstrumentCapture($changes, $fileNumbers),
+            'customers_staging' => fn () => $this->syncNameMirror('customers_staging', 'customer_name', 'file_number', $changes, $fileNumbers,
+                $explicitNames['customer_name'] ?? null),
+            'entities_staging' => fn () => $this->syncNameMirror('entities_staging', 'entity_name', 'file_number', $changes, $fileNumbers,
+                $explicitNames['entity_name'] ?? null),
             'oss_applications' => fn () => $this->syncOssApplications($changes, $fileNumbers),
+            'oss_applicant_name' => fn () => $this->syncNameMirror('oss_applications', 'applicant_name', 'file_no', $changes, $fileNumbers),
+            // Land recommendations: the applicant name only. Its other columns are the
+            // recommendation's own findings and must not be overwritten from indexing.
+            'land_recommendations' => fn () => $this->apply('land_recommendations',
+                ['file_title' => 'applicant_name'],
+                $changes, $fileNumbers, ['file_number', 'old_file_number']),
             'mother_applications' => fn () => $this->syncMotherApplication($changes, $after),
             'subapplications' => fn () => $this->syncSubApplication($changes, $after),
         ] as $label => $sync) {
@@ -386,9 +418,298 @@ class FileIndexingPropagationService
     /**
      * The file-identity name mirrors, matching what syncPartyNames() maintains inbound.
      */
-    private function syncNameMirror(string $table, string $column, string $keyColumn, array $changes, array $fileNumbers): int
+    private function syncNameMirror(string $table, string $column, string $keyColumn, array $changes, array $fileNumbers, ?string $explicitName = null): int
     {
+        // The Entity & Customer section of the same form writes these columns directly,
+        // via updateEntityAndCustomerRecords(), INSIDE the transaction — i.e. before this
+        // runs. If the operator deliberately set an entity/customer name different from
+        // the file title in the same save, mirroring the title here would silently
+        // overwrite what they just typed. Their explicit value wins.
+        $explicitName = $explicitName !== null ? trim($explicitName) : '';
+
+        if ($explicitName !== ''
+            && isset($changes['file_title'])
+            && $this->normalize($explicitName) !== $this->normalize($changes['file_title'])) {
+            return 0;
+        }
+
         return $this->apply($table, ['file_title' => $column], $changes, $fileNumbers, [$keyColumn]);
+    }
+
+    /**
+     * Rename the CURRENT owner on the file's latest ownership instrument, whatever name
+     * it currently holds.
+     *
+     * syncHolderName() only touches rows whose stored name still equals the old file
+     * title. That covers rows already mirroring the title, but not the common real case:
+     * pra.Grantee holds the true owner while file_indexings.file_title had drifted to
+     * something else. The OSS listings read COALESCE(pra.Grantee, fileNumber.FileName),
+     * so in that state a rename in File Indexing never showed up on those screens.
+     *
+     * Scope is deliberately one row: the most recent instrument of an OWNERSHIP type
+     * (see OWNERSHIP_INSTRUMENTS). Earlier rows name PREVIOUS owners and are historical
+     * fact — they are never touched, and neither is Grantor / party_1 on any row.
+     *
+     * Note this DOES rewrite a party on a registered instrument. That is intended: File
+     * Indexing is treated as the master for who currently holds the file.
+     */
+    private function renameCurrentHolder(array $changes, array $fileNumbers): int
+    {
+        $newTitle = $changes['file_title'] ?? null;
+
+        if ($newTitle === null || trim((string) $newTitle) === '') {
+            return 0;
+        }
+
+        if (!Schema::connection('sqlsrv')->hasTable('pra')
+            || !Schema::connection('sqlsrv')->hasColumn('pra', 'instrument_type')) {
+            return 0;
+        }
+
+        $rows = DB::connection('sqlsrv')->table('pra')
+            ->where(function ($q) use ($fileNumbers) {
+                $q->whereIn('mlsFNo', $fileNumbers)
+                    ->orWhereIn('temp_fileno', $fileNumbers)
+                    ->orWhereIn('kangisFileNo', $fileNumbers)
+                    ->orWhereIn('NewKANGISFileno', $fileNumbers);
+            })
+            ->whereIn('instrument_type', self::OWNERSHIP_INSTRUMENTS)
+            ->orderByDesc('id')
+            ->get(['id', 'instrument_type', 'prop_id', 'parent_prop_id', 'Grantee', 'party_2']);
+
+        if ($rows->isEmpty()) {
+            return 0;
+        }
+
+        $affected = 0;
+
+        foreach ($this->currentHolderRows($rows) as $row) {
+            $payload = [];
+
+            foreach (['Grantee', 'party_2'] as $column) {
+                if (Schema::connection('sqlsrv')->hasColumn('pra', $column)
+                    && $this->normalize($row->$column ?? '') !== $this->normalize($newTitle)) {
+                    $payload[$column] = $newTitle;
+                }
+            }
+
+            if (empty($payload)) {
+                continue;
+            }
+
+            Log::info('FileIndexingPropagation: renaming current holder', [
+                'pra_id' => $row->id,
+                'instrument_type' => $row->instrument_type,
+                'from' => $row->Grantee ?? null,
+                'to' => $newTitle,
+            ]);
+
+            $affected += DB::connection('sqlsrv')->table('pra')->where('id', $row->id)->update($payload);
+        }
+
+        return $affected;
+    }
+
+    /**
+     * Of the ownership rows found for a file, the one that states who holds it NOW.
+     *
+     * Ownership instruments come in two kinds, and only one row is ever "current":
+     *
+     *   GRANT     (Occupancy Permit, Right of Occupancy, Certificate of Occupancy) —
+     *             the State allocating the land. Its grantee is the ORIGINAL ALLOTTEE.
+     *   TRANSFER  (Transfer of Title, Deed of Assignment, Deed of Gift, Power of
+     *             Attorney) — the holding moving to someone else.
+     *
+     * So: if the property has any transfer, the newest transfer names the current
+     * holder and every grant behind it is allocation history. With no transfer at all,
+     * the newest grant IS the current holding. Real data shows why this matters —
+     * prop 147221 carries an OP naming "BRUCE HANE" and a ToT naming "SALISU UMAR";
+     * renaming the OP from a file-title edit would rewrite who the land was allocated to.
+     *
+     * Rows are grouped by property (parent_prop_id, else prop_id) and ordered by id, the
+     * same way the OSS listings pick the row they display — ids, not transaction_date,
+     * because those are user-entered instrument dates that routinely put an OP after the
+     * ToT superseding it.
+     *
+     * @param  \Illuminate\Support\Collection  $rows
+     * @return array<int,object>
+     */
+    private function currentHolderRows($rows): array
+    {
+        $byGroup = [];
+
+        foreach ($rows as $row) {
+            $group = trim((string) ($row->parent_prop_id ?? '')) !== ''
+                ? trim((string) $row->parent_prop_id)
+                : trim((string) ($row->prop_id ?? ''));
+
+            $kind = $this->isTransferInstrument((string) $row->instrument_type) ? 'transfer' : 'grant';
+
+            $current = $byGroup[$group][$kind] ?? null;
+            if ($current === null || (int) $row->id > (int) $current->id) {
+                $byGroup[$group][$kind] = $row;
+            }
+        }
+
+        $selected = [];
+
+        foreach ($byGroup as $kinds) {
+            // A transfer always wins: it is the later statement of who holds the land.
+            $selected[] = $kinds['transfer'] ?? $kinds['grant'];
+        }
+
+        return array_values(array_filter($selected));
+    }
+
+    /** Does this instrument move the holding to someone else (rather than grant it)? */
+    private function isTransferInstrument(string $instrumentType): bool
+    {
+        foreach (['Transfer of Title', 'Deed of Assignment', 'Deed of Gift', 'Power of Attorney'] as $needle) {
+            if (stripos($instrumentType, $needle) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The same unconditional rename for the capture staging rows.
+     *
+     * The OSS OP listing unions instrument_capture in for OP records that have no PRA row,
+     * and reads `ic.party_1_name as Grantee` there — the permit holder for an OP is
+     * party_1, not party_2. Nothing was rewriting that column, so an FC/IC-sourced row
+     * kept its old name after a file-title edit no matter what.
+     *
+     * party_2_name is written too: on the ownership deeds it is the party taking title.
+     * Nothing is written on a capture row that PRA has already superseded with a Transfer
+     * of Title — behind a transfer the capture row names the original allottee or an
+     * earlier owner, which is history, not the current holder.
+     */
+    private function renameCaptureHolder(array $changes, array $fileNumbers): int
+    {
+        $newTitle = $changes['file_title'] ?? null;
+
+        if ($newTitle === null || trim((string) $newTitle) === '') {
+            return 0;
+        }
+
+        if (!Schema::connection('sqlsrv')->hasTable('instrument_capture')
+            || !Schema::connection('sqlsrv')->hasColumn('instrument_capture', 'instrument_type')) {
+            return 0;
+        }
+
+        $keyColumns = array_values(array_filter(
+            ['mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'temp_fileno'],
+            fn ($column) => Schema::connection('sqlsrv')->hasColumn('instrument_capture', $column)
+        ));
+
+        if (empty($keyColumns)) {
+            return 0;
+        }
+
+        $rows = DB::connection('sqlsrv')->table('instrument_capture')
+            ->where(function ($query) use ($keyColumns, $fileNumbers) {
+                foreach ($keyColumns as $index => $key) {
+                    $index === 0
+                        ? $query->whereIn($key, $fileNumbers)
+                        : $query->orWhereIn($key, $fileNumbers);
+                }
+            })
+            ->whereIn('instrument_type', self::OWNERSHIP_INSTRUMENTS)
+            ->orderByDesc('id')
+            ->get(['id', 'instrument_type', 'prop_id', 'party_1_name', 'party_2_name']);
+
+        if ($rows->isEmpty()) {
+            return 0;
+        }
+
+        // instrument_capture has no parent_prop_id; currentHolderRows() reads it as absent
+        // and groups on prop_id, which is what the listing's IC branch partitions by.
+        $candidates = $this->currentHolderRows($rows);
+        $affected = 0;
+
+        foreach ($candidates as $row) {
+            $instrumentType = (string) $row->instrument_type;
+
+            // PRA holds the authoritative transfer chain. If a Transfer of Title exists for
+            // this property, any capture row that is not itself that transfer has been
+            // superseded and names an earlier party.
+            if (stripos($instrumentType, 'Transfer of Title') === false
+                && $this->propertyHasTransferOfTitle($row->prop_id ?? null)) {
+                continue;
+            }
+
+            $payload = [];
+
+            if (Schema::connection('sqlsrv')->hasColumn('instrument_capture', 'party_2_name')
+                && $this->normalize($row->party_2_name ?? '') !== $this->normalize($newTitle)) {
+                $payload['party_2_name'] = $newTitle;
+            }
+
+            // For an Occupancy Permit the holder is party_1 — and party_1_name is the column
+            // the OSS listing reads as the Grantee for IC-sourced rows.
+            if (stripos($instrumentType, 'Occupancy Permit') !== false
+                && Schema::connection('sqlsrv')->hasColumn('instrument_capture', 'party_1_name')
+                && $this->normalize($row->party_1_name ?? '') !== $this->normalize($newTitle)) {
+                $payload['party_1_name'] = $newTitle;
+            }
+
+            if (empty($payload)) {
+                continue;
+            }
+
+            Log::info('FileIndexingPropagation: renaming capture holder', [
+                'instrument_capture_id' => $row->id,
+                'instrument_type' => $row->instrument_type,
+                'columns' => array_keys($payload),
+                'to' => $newTitle,
+            ]);
+
+            $affected += DB::connection('sqlsrv')->table('instrument_capture')
+                ->where('id', $row->id)
+                ->update($payload);
+        }
+
+        return $affected;
+    }
+
+    /** Does this property already carry a Transfer of Title in PRA? */
+    private function propertyHasTransferOfTitle($propId): bool
+    {
+        $propId = trim((string) ($propId ?? ''));
+
+        if ($propId === '' || $propId === '0') {
+            return false;
+        }
+
+        if (!Schema::connection('sqlsrv')->hasTable('pra')
+            || !Schema::connection('sqlsrv')->hasColumn('pra', 'instrument_type')) {
+            return false;
+        }
+
+        return DB::connection('sqlsrv')->table('pra')
+            ->where(function ($query) use ($propId) {
+                $query->where('prop_id', $propId)->orWhere('parent_prop_id', $propId);
+            })
+            ->where('instrument_type', 'LIKE', '%Transfer of Title%')
+            ->exists();
+    }
+
+    /**
+     * Property attributes on the capture staging rows. The OSS listings read from
+     * instrument_capture for FC-sourced records, so leaving it out left those rows
+     * showing pre-edit values.
+     */
+    private function syncInstrumentCapture(array $changes, array $fileNumbers): int
+    {
+        return $this->apply('instrument_capture', [
+            'district' => 'district',
+            'lga' => 'lga',
+            'tp_no' => 'tp_no',
+            'plot_size' => 'plot_size',
+            'land_use_type' => 'land_use',
+        ], $changes, $fileNumbers, ['mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'temp_fileno']);
     }
 
     private function syncOssApplications(array $changes, array $fileNumbers): int
@@ -423,6 +744,11 @@ class FileIndexingPropagationService
             'street_name' => 'property_street_name',
             'land_use_type' => 'land_use',
             'plot_size' => 'plot_size',
+            // The owner's name as one string. first_name / surname / corporate_name are
+            // still never written: they record who SUBMITTED the application, and
+            // splitting a file title back into those parts is guesswork that would
+            // corrupt the applicant record.
+            'file_title' => 'owner_fullname',
         ];
 
         $payload = [];

@@ -856,12 +856,24 @@ class LandRofoController extends Controller
 
         $records = LandRecommendation::select([
                 'id', 'file_number', 'applicant_name', 'location', 'plot_number',
-                'land_rofo_serial_no', 'rofo_status',
+                'land_rofo_serial_no', 'rofo_status', 'rofo_print_count',
+                'rofo_originals_printed_at', 'rofo_office_copies_printed_at',
             ])
             ->where('rofo_status', LandRecommendation::ROFO_GENERATED)
             ->get()
-            ->filter(fn($r) => !in_array(strtoupper(trim((string) $r->file_number)), $printed))
-            ->values();
+            // A file whose Originals went out in run 1 of a split print has a
+            // LandRofoBatch log row, so the printed test drops it — while its
+            // Duplicate and Triplicate are still owed. Those belong in this queue
+            // more than anything else does: the paper for them has not been used
+            // yet, and the modal flags them so they are not mistaken for untouched
+            // files.
+            ->filter(fn($r) => !in_array(strtoupper(trim((string) $r->file_number)), $printed)
+                || $r->rofo_print_stage === LandRecommendation::PRINT_STAGE_ORIGINALS)
+            ->values()
+            ->map(function ($r) {
+                $r->setAttribute('print_stage', $r->rofo_print_stage);
+                return $r;
+            });
 
         return response()->json(['success' => true, 'data' => $records, 'count' => $records->count()]);
     }
@@ -1050,6 +1062,14 @@ class LandRofoController extends Controller
             'office'   => ['Duplicate', 'Triplicate'],
         ][$copies];
 
+        // A re-issuance reprints a letter that was already issued. Like a CTC it
+        // sits outside the print allowance: it is recorded, but it does not count
+        // against rofo_print_count and does not touch the run stamps — those track
+        // where the file's own issue stands, which a re-issuance does not change.
+        // Its own print_type also keeps it out of the "already batch-printed" test
+        // in unprintedJson(), so re-issuing does not empty a file out of the queue.
+        $isReissuance = filled($request->input('reissuance'));
+
         $records = LandRecommendation::whereIn('id', $ids)
             ->where('rofo_status', LandRecommendation::ROFO_GENERATED)
             ->get();
@@ -1063,10 +1083,14 @@ class LandRofoController extends Controller
                     PrintLog::create([
                         'reference_number' => $rec->file_number,
                         'document_type'    => 'Land ROFO',
-                        'print_type'       => 'LandRofoBatch',
+                        'print_type'       => $isReissuance ? 'LandRofoReissuance' : 'LandRofoBatch',
                         'status'           => $copy,
                         'user_id'          => Auth::id(),
                     ]);
+                }
+
+                if ($isReissuance) {
+                    continue;
                 }
 
                 // Whether this run is the one that starts the batch off, which is

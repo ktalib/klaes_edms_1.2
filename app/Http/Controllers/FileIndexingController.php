@@ -837,6 +837,15 @@ class FileIndexingController extends Controller
                 (string) ($record->new_kangis_file_no ?? '')
             );
 
+            // Title Status / Title Status Update ticks already recorded for this file.
+            // They are not columns on file_indexings — they live in
+            // title_status_applications and the Parcel Update tables — so without this
+            // the update screen opened with every box clear, and since the form makes
+            // the selection mandatory, each edit forced a re-pick that wrote a duplicate
+            // application row.
+            $titleStatusSelection = app(\App\Services\FileIndexingTitleStatusLookup::class)
+                ->forFileNumber($lookupFileNo, $lookupTempNo);
+
             // Return the original Edit View as requested
             $PageTitle = 'Edit File Indexing';
             $PageDescription = '';
@@ -854,7 +863,8 @@ class FileIndexingController extends Controller
                 'hasPropertyRecords',
                 'billBalances',
                 'grantRents',
-                'newKangisTransactions'
+                'newKangisTransactions',
+                'titleStatusSelection'
             ))->with('fileIndexing', $record);
         } catch (\Throwable $e) {
             return redirect()->route('fileindex.index')->with('error', 'Error loading record: ' . $e->getMessage());
@@ -1508,7 +1518,12 @@ class FileIndexingController extends Controller
             // OSS application. Runs after the commit and swallows its own failures: this is
             // downstream propagation, and file_indexings is already the authoritative row.
             $propagation = app(\App\Services\FileIndexingPropagationService::class)
-                ->propagate($existingRecord, $updatedRecord);
+                ->propagate($existingRecord, $updatedRecord, [
+                    // Names the operator typed into the Entity & Customer section on this
+                    // same save. They take precedence over the file-title mirror.
+                    'entity_name' => $request->input('entity_details.entity_name', $request->input('entity_name')),
+                    'customer_name' => $request->input('customer_details.customer_name', $request->input('customer_name')),
+                ]);
 
             // Persist Bill Balance + Grant Rent (billing + file_indexing_bills tables).
             $billFileIndexing = FileIndexing::on('sqlsrv')->find($id);

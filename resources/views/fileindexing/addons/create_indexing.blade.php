@@ -1878,6 +1878,88 @@
                 setTimeout(syncSeeOptions, 0);
             });
 
+            // ---- Restore the selection already on record (update screen) -------------
+            // Nothing on file_indexings says which boxes were ticked: the actionable types
+            // are title_status_applications rows and the parcel-update types are hidden rows
+            // in their own tables. FileIndexingTitleStatusLookup reads both back; without it
+            // this screen opened blank, and because the selection is mandatory every edit
+            // forced a re-pick — which wrote a SECOND application row for a status the file
+            // already had.
+            const TS_EXISTING = @json($titleStatusSelection ?? null) || {};
+
+            // Types already recorded, so a save that leaves the restored ticks alone does not
+            // re-post them. Directional types are compared on their sub-kind, so switching
+            // e.g. "Re-granted From" to "Re-granted To" still counts as new.
+            const tsRecordedValues   = new Set(Array.isArray(TS_EXISTING.types) ? TS_EXISTING.types : []);
+            const tsRecordedResolved = new Set(
+                (Array.isArray(TS_EXISTING.recorded_types) ? TS_EXISTING.recorded_types : []).map(String)
+            );
+            const isAlreadyRecorded = (type) => {
+                const resolved = resolveType(type);
+                return resolved !== type
+                    ? tsRecordedResolved.has(resolved)
+                    : tsRecordedValues.has(type);
+            };
+
+            function restoreExistingSelection() {
+                const types = Array.isArray(TS_EXISTING.types) ? TS_EXISTING.types : [];
+                if (!types.length) return;
+
+                // Tick directly rather than dispatching change: the change handler opens the
+                // From/To popup for Re-grant / Closed / Resettlement, which would ambush the
+                // operator on page load. The stored direction is applied below instead.
+                typeCbs().forEach(cb => {
+                    if (types.includes(cb.value)) cb.checked = true;
+                });
+
+                // Sub-kinds first — toggleStatusFields() reads them to label the See row.
+                if (TS_EXISTING.regrant_kind)      setRegrantKind(TS_EXISTING.regrant_kind);
+                if (TS_EXISTING.closed_kind)       setClosedKind(TS_EXISTING.closed_kind);
+                if (TS_EXISTING.resettlement_kind) setResettleKind(TS_EXISTING.resettlement_kind);
+
+                toggleStatusFields();
+                syncSeeOptions();
+
+                if (TS_EXISTING.see_fileno) {
+                    if (seeHidden) seeHidden.value = TS_EXISTING.see_fileno;
+                    if (seePicker) {
+                        const match = Array.from(seePicker.options)
+                            .find(o => (o.value || '').trim().toUpperCase() === TS_EXISTING.see_fileno.trim().toUpperCase());
+                        // The counterpart file is only offered if it is still in the Related
+                        // File Number card. When it is not, keep the stored value on the hidden
+                        // input rather than silently dropping it.
+                        if (match) seePicker.value = match.value;
+                    }
+                }
+
+                if (reasonEl && TS_EXISTING.reason) reasonEl.value = TS_EXISTING.reason;
+                // Remark last: refreshRemark()/toggleStatusFields() regenerate it from the
+                // ticked types, which would overwrite the wording actually stored.
+                if (remarkEl && TS_EXISTING.remark) remarkEl.value = TS_EXISTING.remark;
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', restoreExistingSelection);
+            } else {
+                restoreExistingSelection();
+            }
+
+            // The See picker is built from the Related File Number card, which the update
+            // bootstrap fills after this runs — so re-apply once it reports it is done,
+            // otherwise the stored counterpart file has no option to select.
+            document.addEventListener('fileindex:update-populated', function () {
+                if (!Array.isArray(TS_EXISTING.types) || !TS_EXISTING.types.length) return;
+                syncSeeOptions();
+                if (TS_EXISTING.see_fileno && seePicker) {
+                    const match = Array.from(seePicker.options)
+                        .find(o => (o.value || '').trim().toUpperCase() === TS_EXISTING.see_fileno.trim().toUpperCase());
+                    if (match) {
+                        seePicker.value = match.value;
+                        if (seeHidden) seeHidden.value = match.value;
+                    }
+                }
+            });
+
             // Called by handleRegistryFieldToggling() when the chosen registry (SLTR /
             // KANGIS / DCIV) hides both Title Status cards — drop any selection so a
             // stale status isn't submitted with the hidden fields.
@@ -1894,8 +1976,11 @@
 
             // Called by create-indexing-dialog.js after a file index is created/updated.
             window.tsAfterFileIndexCreated = function (data, formData) {
-                const types = getActionableTypes();
-                if (!types.length) return; // "Normal" or unselected → no title status
+                // Only what is NOT already on record. Without this the update screen, which
+                // now opens with the stored statuses ticked, would file a duplicate
+                // application every time the file was saved for any unrelated reason.
+                const types = getActionableTypes().filter(t => !isAlreadyRecorded(t));
+                if (!types.length) return; // "Normal", unselected, or nothing new to record
 
                 formData = formData || {};
                 const pick = (v) => Array.isArray(v) ? (v[0] || '') : (v || '');

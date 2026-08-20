@@ -80,8 +80,8 @@ class PlotSubdivisionController extends Controller
             'district' => 'nullable|string|max:255',
             'lga' => 'nullable|string|max:255',
             'state' => 'nullable|string|max:100',
-            'plot_sizes' => 'required|array',
-            'plot_sizes.*' => 'required|numeric|min:0',
+            'plot_sizes' => 'nullable|array',
+            'plot_sizes.*' => 'nullable|numeric|min:0',
             'site_plan'          => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
             'ownership_document' => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
             'application_letter' => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
@@ -129,12 +129,12 @@ class PlotSubdivisionController extends Controller
                 $application->update($docUpdates);
             }
 
-            foreach ($request->plot_sizes as $index => $size) {
+            foreach (($request->plot_sizes ?? []) as $index => $size) {
                 PlotApplicationSize::create([
                     'application_id' => $application->id,
                     'application_type' => 'subdivision',
                     'plot_number' => 'Plot ' . ($index + 1),
-                    'plot_size' => $size,
+                    'plot_size' => ($size === null || $size === '') ? 0 : $size,
                     'type' => 'subdivision_fragment',
                 ]);
             }
@@ -146,7 +146,7 @@ class PlotSubdivisionController extends Controller
                 'file_no' => $application->file_no,
                 'file_title' => $application->file_title,
                 'num_plots' => (int) $application->num_plots,
-                'plot_sizes' => array_values($request->plot_sizes),
+                'plot_sizes' => array_values($request->plot_sizes ?? []),
                 'documents' => array_keys($docUpdates),
             ]);
 

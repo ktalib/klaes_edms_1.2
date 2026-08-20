@@ -489,6 +489,56 @@
                                            :readonly="isInherited"
                                            placeholder="Enter Address">
                                 </div>
+
+                                {{-- Passport photograph — same control as the MLS File Number Generator
+                                     card (generate_fileno/mlsfno.blade.php). Individual customers only:
+                                     a Corporate, Multiple or Government file has no single applicant to
+                                     photograph, so it is hidden and never validated for those, and Batch
+                                     mode posts JSON with no file part. The image is filed into the new
+                                     file number's EDMS scan folder by storeCommissioningPassport() and
+                                     lands on the Change of Ownership application row, which renders it.
+
+                                     Opt-in per page ($commissionModalShowPassport): the submit guard in
+                                     mls_js keys off this input existing, so rendering it makes the
+                                     passport mandatory. Change of Purpose reuses this same card and does
+                                     not ask for one. --}}
+                                @if($commissionModalShowPassport ?? false)
+                                <div x-show="!batchMode && customerType === 'Individual'" x-transition>
+                                    <label for="generatePassport" class="block text-xs font-medium text-gray-600 mb-1">
+                                        Upload Passport
+                                        <span class="text-red-500">*</span>
+                                    </label>
+                                    <input type="file" id="generatePassport" name="passport"
+                                           accept="image/jpeg,image/jpg,image/png"
+                                           @change="handlePassportChange($event)"
+                                           class="w-full text-xs text-gray-600 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-gray-300 rounded-md p-1.5 h-[42px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                           :required="!batchMode && customerType === 'Individual' && !passport">
+                                </div>
+
+                                {{-- Preview, full width under the picker. --}}
+                                <div x-show="!batchMode && customerType === 'Individual'" x-transition class="col-span-2">
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">
+                                        Passport
+                                        <span class="text-red-500">*</span>
+                                    </label>
+                                    <div class="flex items-center gap-3 p-2 border border-gray-200 rounded-md bg-gray-50/60">
+                                        <div class="w-24 h-28 flex-shrink-0 rounded-md border border-dashed border-gray-300 bg-white overflow-hidden flex items-center justify-center">
+                                            <template x-if="passportPreview">
+                                                <img :src="passportPreview" alt="Passport preview" class="w-full h-full object-cover">
+                                            </template>
+                                            <template x-if="!passportPreview">
+                                                <i data-lucide="user-square" class="w-7 h-7 text-gray-300"></i>
+                                            </template>
+                                        </div>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-xs text-gray-700 truncate" x-text="passport || 'No passport selected'"></p>
+                                            <p class="text-[11px] text-gray-500 mt-0.5">JPG or PNG, max 2MB</p>
+                                            <button type="button" x-show="passport" @click="clearPassport()"
+                                                    class="mt-1.5 text-[11px] text-red-600 hover:text-red-700">Remove</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                @endif
                             </div>
 
                             <!-- Local Rep Details (Shown only for Conversion) -->
@@ -803,6 +853,13 @@
                                 </select>
                             </div>
                         </div>
+
+                        {{-- District has no field of its own on this card, but it is backfilled from
+                             the OP's Property Details and MlsFileNoController stores it, so carry it
+                             through hidden. The /file-numbers card has its own visible district
+                             select and is unaffected. --}}
+                        <input type="hidden" name="district"
+                               :value="batchMode ? (locationEntries[currentEntryIndex]?.district || '') : (district || '')">
 
                         <!-- Entry Progress Indicator (batch mode) -->
                         <div x-show="batchMode" class="mt-3 pt-3 border-t border-gray-300 hidden">

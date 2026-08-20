@@ -6159,6 +6159,20 @@ class LegalSearchService
         // manually-entered "Not Paid" comment are independent facts (e.g. an
         // earlier year's charge was paid, a later year's is outstanding) — both
         // print together when both are present, rather than one hiding the other.
+        // An in-place edit of the "Last Paid" card on the Legal Search screen is
+        // saved as a 'ground_rent_paid' comment (amount + date in `comment`) and
+        // supersedes the file_indexings values here, so the print matches what
+        // the screen shows after a correction.
+        $groundRentPaidOverride = $comments->get('ground_rent_paid');
+        if ($groundRentPaidOverride) {
+            if ($groundRentPaidOverride->amount) {
+                $fiGroundRentAmount = $groundRentPaidOverride->amount;
+            }
+            if (trim((string) ($groundRentPaidOverride->comment ?? '')) !== '') {
+                $fiGroundRentReceiptDate = trim((string) $groundRentPaidOverride->comment);
+            }
+        }
+
         $groundRentParts = [];
         if ($fiGroundRentAmount && $fiGroundRentReceiptDate) {
             $grDate = rescue(fn() => \Carbon\Carbon::parse($fiGroundRentReceiptDate)->format('M j, Y'), null, false);

@@ -3054,6 +3054,16 @@ document.addEventListener('DOMContentLoaded', function () {
     let opcfFile = null;        // resolved commissioned file; null until Check succeeds
     let opcfWired = false;      // band listeners are attached once, lazily
 
+    // Blank every Registration Details input, used when the block is hidden so a value from a
+    // previous Match OP cannot be submitted by a later Single capture.
+    function clearOpRegistrationDetails() {
+        ['serial_no', 'reg_page_no', 'reg_page_no_display', 'volume_no',
+            'registration_number', 'registrationDate', 'registrationTime'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+    }
+
     function isOpCommissionedFileMode() {
         return window.opCommissionedFileMode === true;
     }
@@ -3336,6 +3346,79 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    /**
+     * OSS Change of Ownership commissioning. The file changes hands, so the commissioning
+     * card's File Name is the NEW owner and must be typed — the OP's allottee is the
+     * previous holder and must never be backfilled into it. subSource is the primary
+     * signal, but resetForm() (mls_js.blade.php:1462) and the batch card both clear it,
+     * so the OSS URL is the backstop.
+     */
+    function isChangeOfOwnershipCommissioning(component) {
+        const sub = String((component && component.subSource) || '');
+        if (sub === 'OP Change of Ownership' || sub === 'OP Change of Name') return true;
+        try {
+            const url = new URL(window.location.href);
+            return url.searchParams.get('type') === 'change-of-name'
+                && (url.searchParams.get('source') === 'lands-one-stop-shop'
+                    || url.pathname.includes('/lands-one-stop-shop/'));
+        } catch (e) {
+            return false;
+        }
+    }
+
+    /**
+     * Seed the commissioning card's Select Land Use / Select Prefix from the OP's land use.
+     * Uses the Alpine component's own normalizeLandUseCode() + findPrefixForLandUseCode()
+     * (mls_js.blade.php) rather than a second copy of the RES/COM/IND/AG map, so conversion
+     * (CON-) prefixes and the land_use_id join keep behaving the same way.
+     * handlePrefixChange() then sets landUse, customerType, landUseId, loads the purposes
+     * and refreshes the file-number preview.
+     */
+    function applyOpLandUseToCommission(component, record) {
+        if (!component) return;
+        const landUseName = (record.land_use || record.landuse || '').toString().trim();
+        if (!landUseName || typeof component.normalizeLandUseCode !== 'function') return;
+
+        const code = component.normalizeLandUseCode(landUseName);
+        if (!code) return;
+
+        const prefixObj = typeof component.findPrefixForLandUseCode === 'function'
+            ? component.findPrefixForLandUseCode(code)
+            : null;
+
+        if (prefixObj && prefixObj.prefix) {
+            component.prefix = prefixObj.prefix;
+            if (typeof component.handlePrefixChange === 'function') {
+                // Called without an event — it reads this.prefix.
+                component.handlePrefixChange();
+            } else {
+                component.landUse = code;
+            }
+        } else {
+            // No prefix row for this land use: still show the land use so Purpose unlocks.
+            component.landUse = code;
+        }
+
+        // Purpose list is fetched over the network by handlePrefixChange(), so the option
+        // this purpose_id refers to may not exist yet. Poll briefly rather than firing once
+        // into an empty list — Alpine's x-model shows blank for a value with no <option>.
+        const purposeId = (record.purpose_id || '').toString().trim();
+        if (!purposeId) return;
+
+        let attempts = 0;
+        const applyPurpose = () => {
+            const ready = Array.isArray(component.purposes)
+                && component.purposes.some(p => String(p.id) === purposeId);
+            if (ready) {
+                component.purpose = purposeId;
+                if (typeof component.updatePreview === 'function') component.updatePreview();
+                return;
+            }
+            if (++attempts < 20) setTimeout(applyPurpose, 150);
+        };
+        applyPurpose();
+    }
+
     async function continueWithFileCommissioningFromLookup(record) {
         const modalContainer = document.querySelector('#generateModal [x-data="fileNumberGenerator()"]');
         const component = modalContainer && modalContainer._x_dataStack ? modalContainer._x_dataStack[0] : null;
@@ -3343,8 +3426,18 @@ document.addEventListener('DOMContentLoaded', function () {
         const fileName = (record.party_2_name || record.party_1_name || '').toString().trim();
         const plotNo = (record.plot_number || '').toString().trim();
         const tpNo = (record.tp_no || '').toString().trim();
-        const location = (record.property_location || record.property_description || '').toString().trim();
-        const lga = (record.lga || '').toString().trim();
+        const lga = (record.lga || record.survey_lga || '').toString().trim();
+        const street = (record.street_name || '').toString().trim();
+        const state = (record.property_state || record.state || '').toString().trim();
+        // The OP's property description is already "plot, street, district, lga, state"
+        // (updatePropertyDescription()); compose the same shape when it is missing so the
+        // street/district/state the operator typed still reach the commissioning card.
+        const location = (record.property_location || record.property_description || '').toString().trim()
+            || [plotNo, street, (record.district || '').toString().trim(), lga, state]
+                .filter(Boolean).join(', ');
+        const district = (record.district || '').toString().trim()
+            || extractDistrictFromText(location, null, lga)
+            || '';
         const opType = String(record.op_type || '').toLowerCase();
         const defaultAllocationType = opType.includes('resettlement') ? 'resettlement' : 'direct';
         const sourceTable = String(record.source_table || 'instrument_capture').toLowerCase();
@@ -3591,6 +3684,9 @@ document.addEventListener('DOMContentLoaded', function () {
             component.tpNo = tpNo;
             component.location = location;
             component.lga = lga;
+            // The shared commissioning card has no district input; it is carried in a hidden
+            // field so MlsFileNoController::generateMlsFileNumber() can store it.
+            if (district) component.district = district;
             component.sourceInstrumentCaptureId = hasSourceCapture ? (record.id || '') : '';
             component.sourcePropId = record.prop_id || '';
             component.sourcePraId = sourcePraId || '';
@@ -3612,6 +3708,23 @@ document.addEventListener('DOMContentLoaded', function () {
             component.locationEntries[0].tpNo = tpNo;
             component.locationEntries[0].location = location;
             component.locationEntries[0].lga = lga;
+            if (district) component.locationEntries[0].district = district;
+
+            // Show the backfilled LGA/district in their selects (they are not x-model bound).
+            if (typeof component.syncLocationSelects === 'function') {
+                component.syncLocationSelects();
+            }
+
+            // Land Use → Select Land Use + Select Prefix, using the component's own rules
+            // (normalizeLandUseCode / findPrefixForLandUseCode) so RES/COM/IND/AG and the
+            // CON- conversion variants stay consistent with every other backfill.
+            // Re-applied after the radio re-sync below, which wipes prefix/landUse.
+            applyOpLandUseToCommission(component, record);
+
+            // Applicant gender comes from the OP's allottee — both selects are fed by
+            // App\Models\Gender::options(), so the names match.
+            const opGender = (record.party_2_gender || record.gender || '').toString().trim();
+            if (opGender) component.gender = opGender;
 
             if (typeof component.updatePreview === 'function') {
                 component.updatePreview();
@@ -3622,11 +3735,11 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             // Set fileName AFTER handleAllocationFilterChange() which resets it to ''.
-            // For Change of Name, do NOT prefill allottee name as File Name — the whole
-            // point of that flow is that the file changes hands, so the new owner is
+            // For Change of Ownership, do NOT prefill allottee name as File Name — the
+            // whole point of that flow is that the file changes hands, so the new owner is
             // typed fresh. Every other OP hand-off (including the MLS File Number
             // Generator page) backfills the OP's allottee as the File Name.
-            if (component.subSource !== 'OP Change of Name') {
+            if (!isChangeOfOwnershipCommissioning(component)) {
                 component.fileName = fileName;
             }
         }
@@ -3682,9 +3795,24 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             // Re-apply fileName after radio change events which reset it via handleAllocationFilterChange()
-            // For Change of Name, do NOT prefill allottee name as File Name (same guard as the initial set).
-            if (component && fileName && component.subSource !== 'OP Change of Name') {
+            // For Change of Ownership, do NOT prefill allottee name as File Name (same guard as the
+            // initial set). Anything the user typed in the meantime also wins over the OP's allottee.
+            if (component && fileName
+                && !isChangeOfOwnershipCommissioning(component)
+                && !String(component.fileName || '').trim()) {
                 component.fileName = fileName;
+            }
+
+            // The application_type change above runs updateApplicationType(), which clears
+            // landUse and prefix (mls_js.blade.php:5918-5919) — so the land use seeded before
+            // the modal opened is gone by now. Re-apply it here, after the radios settle.
+            if (component) {
+                applyOpLandUseToCommission(component, record);
+                const opGenderNow = (record.party_2_gender || record.gender || '').toString().trim();
+                if (opGenderNow && !String(component.gender || '').trim()) {
+                    component.gender = opGenderNow;
+                }
+                if (typeof component.updatePreview === 'function') component.updatePreview();
             }
         }, 50);
 
@@ -4614,14 +4742,17 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         if (elements.opRegistrationDetails) {
-            // Match OP (commissioned-file mode) submits serial/page/vol/reg date+time in its
-            // payload, so it needs the same Registration Details block as the OSS/FEFR flows.
-            if (typeKey === 'occupancy-permit'
-                && (window.ossOpContext === true || isFfrExistingManualRegistrationFlow() || isOpCommissionedFileMode())) {
-                elements.opRegistrationDetails.classList.remove('hidden');
-            } else {
-                elements.opRegistrationDetails.classList.add('hidden');
-            }
+            // Registration Details belongs to Match OP only: that flow records the particulars
+            // an already-registered permit carries, and opcfSubmit() posts serial/page/vol/reg
+            // date+time. Single and Batch capture mint a brand-new OP that has none yet, so the
+            // block stays hidden for them. FEFR's "existing manual registration" is a separate
+            // entry point with the same recording purpose, so it keeps the block.
+            const showOpRegistration = typeKey === 'occupancy-permit'
+                && (isOpCommissionedFileMode() || isFfrExistingManualRegistrationFlow());
+            elements.opRegistrationDetails.classList.toggle('hidden', !showOpRegistration);
+            // Nothing here carries `required`, so hiding never blocks submit — but a value left
+            // behind by an earlier Match OP would still be posted by the next Single capture.
+            if (!showOpRegistration) clearOpRegistrationDetails();
         }
 
         if (elements.cofoVariantContainer) {
@@ -7168,14 +7299,34 @@ document.addEventListener('DOMContentLoaded', function () {
             op_type: opType,
             party_1_name: formData.get('firstPartyName') || '',
             party_2_name: formData.get('secondPartyName') || '',
+            party_2_gender: formData.get('secondPartyGender') || '',
             serial_no: '',
             page_no: '',
             volume_no: '',
             registration_number: '',
             plot_number: formData.get('plotNumber') || '',
-            tp_no: formData.get('tp_no') || '',
+            tp_no: getTpLookupValue() || formData.get('tp_no') || '',
             property_location: formData.get('propertyDescription') || formData.get('plotLocation') || '',
-            lga: formData.get('desc_lga') || '',
+            // Property Details → commissioning Location Details. District/street/state have no
+            // input of their own on the commissioning card, but district is carried in a hidden
+            // field and the rest ride along inside the composed property description.
+            // Survey Info (when "Include Survey Info" is ticked) supplies the fallbacks.
+            lga: getSelectOrManualValue('desc_lga', null)
+                || formData.get('desc_lga')
+                || (document.getElementById('lga')?.value || '').trim(),
+            district: getSelectOrManualValue('desc_district', 'manual_district')
+                || (document.getElementById('district')?.value || '').trim()
+                || (document.getElementById('manual_survey_district')?.value || '').trim(),
+            street_name: getSelectOrManualValue('streetName', 'manual_street_name'),
+            property_state: (document.getElementById('propertyState')?.value || '').trim(),
+            survey_plan_no: (document.getElementById('surveyPlanNo')?.value || '').trim(),
+            // Land Use drives Select Land Use + Select Prefix on the commissioning card.
+            land_use: (formData.get('land_use') || '').toString().trim()
+                || (document.getElementById('land_use_id')?.value
+                    ? (document.getElementById('land_use_id').selectedOptions[0]?.text || '').trim()
+                    : ''),
+            land_use_id: formData.get('land_use_id') || '',
+            purpose_id: formData.get('purpose_id') || '',
             // This OP row was just persisted in submitPraRecord(); avoid asking
             // to update it again during immediate commissioning handoff.
             skip_pra_update_prompt: true,
@@ -7864,13 +8015,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
             if (window.ossOpContext === true) {
                 const opSerialNumber = document.getElementById('op_serial_number')?.value?.trim();
-                const serialNo = document.getElementById('serial_no')?.value?.trim();
-                const volumeNo = document.getElementById('volume_no')?.value?.trim();
                 if (!opSerialNumber) errors.push('OP Serial Number is required.');
                 else if (/[^0-9]/.test(opSerialNumber)) errors.push('OP Serial Number must contain only digits (no letters).');
                 else if (/^0/.test(opSerialNumber)) errors.push('OP Serial Number must not start with zero.');
-                if (!serialNo) errors.push('OP Registration Serial No is required.');
-                if (!volumeNo) errors.push('OP Registration Volume No is required.');
+                // Registration Serial/Volume No are no longer required here: the Registration
+                // Details block belongs to Match OP only, so in this (Single) flow the fields
+                // are hidden and a brand-new OP has no particulars to enter yet.
             }
         }
 

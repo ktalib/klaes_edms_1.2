@@ -984,6 +984,9 @@
     {{-- ──────────────── Commission New File Number Modal ──────────────── --}}
     {{-- Batch Mode re-enabled (was previously hidden for Change of Ownership). --}}
     <script>window.commissionModalHideBatchMode = false;</script>
+    {{-- Ask for the applicant's passport here: it is filed into the new file's EDMS folder
+         and shown on the Change of Ownership application row this commissioning raises. --}}
+    @php $commissionModalShowPassport = true; @endphp
     @include('components.commission-fileno-modal-include')
 
     {{-- ──────────────── Capture Existing File Number Modal (Inline) ──────────────── --}}

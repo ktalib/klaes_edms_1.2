@@ -496,7 +496,9 @@ class ApplicationController extends Controller
                 'p.tp_no',
                 'p.location as pra_location',
                 'p.property_description as pra_property_description',
-                'p.created_at as pra_created_at',
+                // nvarchar column — convert here so a malformed value surfaces as NULL
+                // rather than reaching Carbon::parse() in the view (see orderByRaw below).
+                DB::raw('TRY_CONVERT(datetime, p.created_at) as pra_created_at'),
                 'p.temp_fileno',
                 DB::raw("COALESCE(NULLIF(oa.file_no, ''), NULLIF(p.mlsFNo, ''), p.fileno) as file_no"),
                 'fn.FileName as indexed_file_title',
@@ -541,7 +543,12 @@ class ApplicationController extends Controller
             ->when($appTypeFilter, function ($builder) use ($appTypeFilter, $applicationTypeSql) {
                 $builder->whereRaw("$applicationTypeSql = ?", [$appTypeFilter]);
             })
-            ->orderByRaw('COALESCE(p.created_at, oa.created_at) DESC');
+            // pra.created_at is nvarchar while oss_applications.created_at is datetime.
+            // A bare COALESCE takes the higher-precedence datetime type and implicitly
+            // casts every pra string, so one malformed value anywhere in the result set
+            // aborts the whole page with a 22007 conversion error. TRY_CONVERT yields
+            // NULL for junk instead, and the oa datetime then carries the ordering.
+            ->orderByRaw('COALESCE(TRY_CONVERT(datetime, p.created_at), oa.created_at) DESC');
 
         if ($request->query('format') === 'json') {
             $limit = 5000;
@@ -720,6 +727,8 @@ class ApplicationController extends Controller
      */
     public function store(Request $request, PraRecordService $praService): JsonResponse
     {
+        $this->normalizeOccupancyPermitInput($request);
+
         $validator = Validator::make($request->all(), $this->validationRules(), $this->passportValidationMessages());
 
         if ($validator->fails()) {
@@ -812,6 +821,8 @@ class ApplicationController extends Controller
     public function update(Request $request, int $id): JsonResponse
     {
         $record = LandsOneStopShopApplication::findOrFail($id);
+
+        $this->normalizeOccupancyPermitInput($request);
 
         $rules = $this->validationRules();
         // On update, application_type and applicant_name are optional
@@ -3897,6 +3908,48 @@ class ApplicationController extends Controller
         } catch (\Throwable $e) {
             return collect();
         }
+    }
+
+    /**
+     * Make `occupancy_permit` survive a client that did not send it as a form array.
+     *
+     * The page builds it as a JS object and flattens it into occupancy_permit[key]
+     * entries. A browser running an older applications.js appends the object itself,
+     * which FormData stringifies to the literal "[object Object]" — the `array` rule
+     * then rejects the whole application with "The occupancy permit must be an array"
+     * and nothing can be saved (a 422 leaves no trace in the log, so it is invisible
+     * server-side). Rather than block data entry on a stale asset:
+     *
+     *  - a JSON object string is decoded and used;
+     *  - "[object Object]" (or any other scalar) carries no data, so it is dropped and
+     *    the request proceeds without the OP block — the application saves, only the
+     *    sync back onto the PRA Occupancy Permit row is skipped for that submission.
+     */
+    private function normalizeOccupancyPermitInput(Request $request): void
+    {
+        if (!$request->has('occupancy_permit')) {
+            return;
+        }
+
+        $value = $request->input('occupancy_permit');
+        if (is_array($value)) {
+            return;
+        }
+
+        $decoded = is_string($value) ? json_decode($value, true) : null;
+        if (is_array($decoded)) {
+            $request->merge(['occupancy_permit' => $decoded]);
+            return;
+        }
+
+        Log::warning('OSS application posted occupancy_permit as a scalar — dropping it', [
+            'file_no' => $request->input('file_no'),
+            'received' => is_scalar($value) ? (string) $value : gettype($value),
+            'hint' => 'The client is probably running a cached or undeployed public/js/lands-one-stop-shop/applications.js.',
+        ]);
+
+        $request->request->remove('occupancy_permit');
+        $request->query->remove('occupancy_permit');
     }
 
     private function validationRules(): array

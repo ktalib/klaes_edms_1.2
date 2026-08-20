@@ -54,11 +54,22 @@
                     <!-- Batch Status Overview -->
                     <div class="grid grid-cols-3 gap-3">
                         <template x-for="(step, index) in sequence" :key="index">
-                            <div class="relative flex flex-col items-center p-3 rounded-2xl border transition-all duration-500"
+                            {{-- Each tile prints the copy it names. The sequence is the
+                                 order the copies are normally run off, not a lock: an
+                                 operator who has to re-run one sheet — a jam, a spoilt
+                                 Duplicate — presses that copy and gets that copy. The
+                                 button below still runs the whole set in one go. --}}
+                            <button type="button"
+                                 @click="printCopy(step.type)"
+                                 :disabled="isPrinting"
+                                 :title="'Print the ' + step.type + ' on its own'"
+                                 class="relative flex flex-col items-center p-3 rounded-2xl border transition-all duration-500 focus:outline-none focus:ring-2 focus:ring-blue-400"
                                  :class="{
                                     'bg-blue-50 border-blue-200 shadow-sm': currentStep === index,
                                     'bg-green-50 border-green-200 scale-95 opacity-70': isCompleted(step.type),
-                                    'bg-slate-50 border-slate-100 grayscale opacity-40': !isCompleted(step.type) && currentStep !== index
+                                    'bg-slate-50 border-slate-100 grayscale opacity-40': !isCompleted(step.type) && currentStep !== index,
+                                    'cursor-wait': isPrinting,
+                                    'cursor-pointer hover:border-blue-400 hover:shadow-md hover:opacity-100': !isPrinting
                                  }">
                                 <div class="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
                                      :class="isCompleted(step.type) ? 'bg-green-500 text-white' : (currentStep === index ? 'bg-blue-600 text-white' : 'bg-slate-300 text-slate-500')">
@@ -74,7 +85,7 @@
                                      :class="currentStep === index ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-500'">
                                     <i :data-lucide="step.icon" class="h-5 w-5"></i>
                                 </div>
-                            </div>
+                            </button>
                         </template>
                     </div>
 
@@ -104,7 +115,7 @@
                                     <span>"Print Original" generates the Original document. You can print multiple copies if needed. Status will be marked as Complete after the first print, enabling CTC generation.</span>
                                 </template>
                                 <template x-if="!isSingleStepType">
-                                    <span>"Print Original" generates the full set: Original, Duplicate, and Triplicate at once. After this, you can generate "Certified True Copies" as needed.</span>
+                                    <span>"Print All 3 Copies" generates the full set — Original, Duplicate and Triplicate — at once. To run off just one of them, click that copy above. A green tick means that copy has already been printed. After the full set, you can generate "Certified True Copies" as needed.</span>
                                 </template>
                             </p>
                         </div>
@@ -205,7 +216,10 @@
                         <template x-if="isPrinting">
                             <span class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
                         </template>
-                        <span x-text="isSingleStepType ? 'Print' : 'Print Original'"></span>
+                        {{-- It prints all three; calling it "Print Original" was the
+                             reason a click here looked like it had done nothing to the
+                             Duplicate and Triplicate. --}}
+                        <span x-text="isSingleStepType ? 'Print' : 'Print All 3 Copies'"></span>
                     </button>
 
                     <!-- Certified True Copy Button (Visible after batch) -->
@@ -578,12 +592,14 @@ document.addEventListener('alpine:init', () => {
             return this.sequence[this.currentStep || 0].type;
         },
 
-        async executePrint() {
+        // One copy, named. Passed nothing it prints wherever the sequence has
+        // got to, which is what the (hidden) stepped button relied on.
+        async executePrint(explicitType = null) {
             if (this.isPrinting) return;
             this.isPrinting = true;
-            
+
             try {
-                const stepType = this.currentStepName;
+                const stepType = explicitType || this.currentStepName;
                 const _sep1 = this.printUrl.includes('?') ? '&' : '?';
                 window.open(`${this.printUrl}${_sep1}status=${stepType}&copies=${this.copies}`, '_blank');
                 
@@ -621,6 +637,19 @@ document.addEventListener('alpine:init', () => {
                 this.isPrinting = false;
                 this.$nextTick(() => lucide.createIcons());
             }
+        },
+
+        // A tile was clicked. Legal Search keeps its own two-button choice, because
+        // there the copy decides the watermark and is not a step in a sequence.
+        async printCopy(copyType) {
+            if (this.isPrinting) return;
+
+            if (this.isLegalSearchType) {
+                await this.executeLegalSearchPrint('Original');
+                return;
+            }
+
+            await this.executePrint(copyType);
         },
 
         async executeBatchPrint() {

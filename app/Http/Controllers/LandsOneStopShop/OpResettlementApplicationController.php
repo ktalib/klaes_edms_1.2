@@ -1632,6 +1632,30 @@ class OpResettlementApplicationController extends Controller
             'placeholder_pra_id' => $placeholder->id ?? null,
         ]);
 
+        // The file is commissioned and now has its OP, so it belongs on the Change of
+        // Ownership application list like any other OP-backed OSS file. The capture itself
+        // has already succeeded — a mirror failure must not undo it.
+        try {
+            app(\App\Services\MlsCommissioningOssApplicationService::class)->sync([
+                'full_file_number' => $fileNo,
+                'file_name' => trim((string) ($mfn->file_name ?? '')) ?: $allottee,
+                'plot_no' => $plotNo,
+                'tp_no' => $tpNo,
+                'location' => $location,
+                'district' => $mfn->district ?? null,
+                'lga' => $lga,
+                'land_use' => $landUse,
+                'system_sub_type' => \App\Support\OssOpCommissionFilter::OSS,
+                'sub_source' => 'OP Change of Ownership',
+                'created_at' => $mfn->created_at ?? $now,
+            ]);
+        } catch (\Throwable $e) {
+            Log::channel('op_batch')->warning('Could not mirror Match OP capture to the OSS application list', [
+                'file_no' => $fileNo,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Occupancy Permit created for ' . $fileNo . ' (Prop ID ' . $propId . '), '

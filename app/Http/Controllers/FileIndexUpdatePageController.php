@@ -52,6 +52,7 @@ class FileIndexUpdatePageController extends Controller
         'billBalances',
         'grantRents',
         'newKangisTransactions',
+        'titleStatusSelection',
     ];
 
     public function __invoke(Request $request, $id)
