@@ -500,38 +500,6 @@
                 </select>
               </div>
 
-              {{-- The EDMS master folder these scans go into. The registry folder
-                   holds one folder per file type, and the file number folder sits
-                   inside it, so this decides the upload path:
-                     EDMS/SCAN_UPLOAD/{Registry}/{File Type}/{FILE NUMBER}/
-                   Optional: leave it blank and the file stays directly under the
-                   registry, exactly as before, until someone classifies it. --}}
-              <div id="file-type-selection-container">
-                <label for="scan-upload-file-type" class="block text-sm font-semibold text-gray-700 mb-2">File Type</label>
-                {{-- Rendered from EdmsFileType so it cannot drift from the folders
-                     that actually exist on disk. Ungrouped types list first, then
-                     each group as an optgroup, matching the master-folder dialog. --}}
-                @php
-                  $edmsFileTypes = collect(\App\Services\Edms\EdmsFileType::options())->groupBy(fn ($t) => $t['group'] ?? '');
-                @endphp
-                <select id="scan-upload-file-type" class="input w-full text-sm">
-                  <option value="">Not specified — keep under the registry</option>
-                  @foreach($edmsFileTypes as $group => $types)
-                    @if($group === '')
-                      @foreach($types as $type)
-                        <option value="{{ $type['key'] }}">{{ $type['label'] }}</option>
-                      @endforeach
-                    @else
-                      <optgroup label="{{ $group }}">
-                        @foreach($types as $type)
-                          <option value="{{ $type['key'] }}">{{ $type['label'] }}</option>
-                        @endforeach
-                      </optgroup>
-                    @endif
-                  @endforeach
-                </select>
-              </div>
-
               </div>
 
               <div class="rounded-lg border border-gray-200 divide-y max-h-[400px] lg:max-h-[420px] overflow-y-auto"
@@ -574,6 +542,7 @@
                 </div>
               </div>
 
+              <div class="space-y-4">
               <div class="rounded-lg border border-gray-200 p-4">
                 <div class="flex items-center justify-between gap-3">
                   <div>
@@ -601,13 +570,46 @@
                   </div>
                 </div>
               </div>
+
+              {{-- The EDMS master folder these scans go into. The registry folder
+                   holds one folder per file type, and the file number folder sits
+                   inside it, so this decides the upload path:
+                     EDMS/SCAN_UPLOAD/{Registry}/{File Type}/{FILE NUMBER}/
+                   Optional: leave it blank and the file stays directly under the
+                   registry, exactly as before, until someone classifies it. --}}
+              <div id="file-type-selection-container">
+                <label for="scan-upload-file-type" class="block text-sm font-semibold text-gray-700 mb-2">File Type</label>
+                {{-- Rendered from EdmsFileType so it cannot drift from the folders
+                     that actually exist on disk. Ungrouped types list first, then
+                     each group as an optgroup, matching the master-folder dialog. --}}
+                @php
+                  $edmsFileTypes = collect(\App\Services\Edms\EdmsFileType::options())->groupBy(fn ($t) => $t['group'] ?? '');
+                @endphp
+                <select id="scan-upload-file-type" class="input w-full text-sm">
+                  <option value="">Not specified — keep under the registry</option>
+                  @foreach($edmsFileTypes as $group => $types)
+                    @if($group === '')
+                      @foreach($types as $type)
+                        <option value="{{ $type['key'] }}">{{ $type['label'] }}</option>
+                      @endforeach
+                    @else
+                      <optgroup label="{{ $group }}">
+                        @foreach($types as $type)
+                          <option value="{{ $type['key'] }}">{{ $type['label'] }}</option>
+                        @endforeach
+                      </optgroup>
+                    @endif
+                  @endforeach
+                </select>
+              </div>
+              </div>
               </div>
             </div>
             <div class="flex justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
               <button class="btn btn-outline" id="cancel-file-select-btn">Cancel</button>
               <button class="btn btn-primary" id="confirm-file-select-btn">
                 <i data-lucide="check" class="h-4 w-4"></i>
-                Confirm Selection
+                Load Documents
               </button>
             </div>
           </div>

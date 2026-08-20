@@ -77,7 +77,7 @@
         <button type="button" class="btn btn-outline" data-blind-scan-close-secondary>Cancel</button>
         <button type="button" class="btn btn-primary" id="blind-scan-transfer-btn" disabled>
           <i data-lucide="arrow-right" class="h-4 w-4"></i>
-          Load Documents
+          Next
         </button>
       </div>
     </div>

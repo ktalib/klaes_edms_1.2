@@ -2335,8 +2335,12 @@
         // drop any stale value for every other file type.
         if (fileOption === 'reissuance') {
             formData.set('old_fileno', (alpineData ? (alpineData.oldFileNo || '') : '').toString().trim());
+            // Carried through so the old_file_numbers ledger row keeps the title the
+            // old file was held under, not just the bare number.
+            formData.set('old_fileno_title', (alpineData ? (alpineData.oldFileTitle || '') : '').toString().trim());
         } else {
             formData.delete('old_fileno');
+            formData.delete('old_fileno_title');
         }
 
         // Handle Direct Allocation (is_allocated check)

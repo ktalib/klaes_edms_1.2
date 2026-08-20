@@ -670,9 +670,45 @@ class PlanningRecommendationController extends Controller
 
     protected function assembleDimensionDataset(int $applicationId)
     {
-        // For ST (Sectional Titling) applications, prioritize st_unit_measurements
-        // This ensures TABLE A displays only unit dimensions, not shared utilities
+        // Table A lists every fragmented unit, which means every buyer row - not
+        // only the units that happen to carry a stored measurement. Reading
+        // st_unit_measurements alone dropped the buyers with none (230 of 249 on
+        // COM-1991-46), so the Recommendation Report disagreed with the Joint Site
+        // Inspection table, which is buyer-driven. Same LEFT JOIN on buyer_id the
+        // JSI table uses: joining on unit_no fans rows out, because ST unit numbers
+        // repeat (U2, U MD).
         $dimensionCollection = DB::connection('sqlsrv')
+            ->table('buyer_list as bl')
+            ->leftJoin('st_unit_measurements as sum', function ($join) {
+                $join->on('bl.id', '=', 'sum.buyer_id')
+                    ->on('bl.application_id', '=', 'sum.application_id');
+            })
+            ->where('bl.application_id', $applicationId)
+            ->select('bl.unit_no', 'bl.section_number', 'sum.measurement')
+            ->orderBy('bl.unit_no')
+            ->get()
+            ->map(function ($record, $index) {
+                $measurement = $record->measurement ?? null;
+                $dimensionNumeric = is_numeric($measurement) ? (float) $measurement : null;
+
+                return [
+                    'sn' => $index + 1,
+                    'description' => $record->unit_no ?? null,
+                    'dimension' => $dimensionNumeric ?? $measurement,
+                    'dimension_numeric' => $dimensionNumeric,
+                    'dimension_raw' => $measurement,
+                    'dimension_display' => $measurement,
+                    'count' => 1,
+                    'section' => $record->section_number ?? null,
+                    'section_number' => $record->section_number ?? null,
+                    'section_no' => $record->section_number ?? null,
+                ];
+            });
+
+        // Older applications indexed before buyers were captured still rely on the
+        // raw measurement rows.
+        if ($dimensionCollection->isEmpty()) {
+            $dimensionCollection = DB::connection('sqlsrv')
             ->table('st_unit_measurements')
             ->where('application_id', $applicationId)
             ->orderBy('unit_no')
@@ -694,6 +730,7 @@ class PlanningRecommendationController extends Controller
                     'section_no' => $record->section_no ?? null,
                 ];
             });
+        }
 
         // If no ST unit measurements, try site_plan_dimensions
         if ($dimensionCollection->isEmpty()) {

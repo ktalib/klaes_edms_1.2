@@ -1800,6 +1800,26 @@ class FileNumberController extends Controller
                         ->where('full_file_number', $record->mlsfNo)
                         ->update($mlsUpdateData);
                 }
+
+                // The old number is not just a column on mls_file_no: route it through
+                // the ledger so the history survives an edit, and so the mirror lands on
+                // file_indexings.old_fileno as well. Unticking the box clears the mirrors
+                // but keeps the ledger -- see OldFileNumberService::clear().
+                if ($request->has('related_fileno')) {
+                    $oldFileNumberService = app(\App\Services\OldFileNumberService::class);
+
+                    if ($isOldFileNo && $relatedFileNoInput !== '') {
+                        $oldFileNumberService->record(
+                            $record->mlsfNo,
+                            $relatedFileNoInput,
+                            \App\Models\OldFileNumber::SOURCE_EDIT,
+                            $updateData['FileName'] ?? null,
+                            Auth::id()
+                        );
+                    } else {
+                        $oldFileNumberService->clear($record->mlsfNo);
+                    }
+                }
             }
 
             // Keep the matching file_indexings row's title in sync — it's edited from a

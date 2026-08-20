@@ -17,13 +17,21 @@
 
             {{-- Opens the Property Transaction Details modal directly (backfills from the
                  selected File Number), without creating/updating the file index.
-                 Restricted to Supper Admin users. --}}
+                 Restricted to Supper Admin users.
+
+                 The label follows the data, not the screen: a file that already has rows
+                 in file_history_staging / CofO_staging / pra is an UPDATE, and the modal
+                 opens with those rows loaded. $hasPropertyRecords is the server's answer
+                 for the record being edited; the JS below re-checks whenever the file
+                 number on the form changes, so the create screen picks it up too. --}}
             @if(str_contains((string) (auth()->user()->assign_role ?? ''), 'Supper Admin'))
             <button type="button"
                 class="inline-flex items-center gap-2 px-4 py-3 border border-emerald-300 text-sm font-medium rounded-lg shadow-sm text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-all duration-200"
-                id="add-property-transaction-btn">
-                <i data-lucide="file-plus-2" class="h-4 w-4"></i>
-                Add Property Transaction Details
+                id="add-property-transaction-btn"
+                data-add-label="Add Property Transaction Details"
+                data-update-label="Update Property Transaction Details">
+                <i data-lucide="{{ ($hasPropertyRecords ?? false) ? 'file-pen-line' : 'file-plus-2' }}" class="h-4 w-4" data-role="property-transaction-btn-icon"></i>
+                <span id="property-transaction-btn-text">{{ ($hasPropertyRecords ?? false) ? 'Update Property Transaction Details' : 'Add Property Transaction Details' }}</span>
             </button>
             @endif
         </div>
@@ -122,11 +130,91 @@
             return (v && v !== 'N/A') ? formVal : (serverVal || '');
         }
 
+        // ---- Add vs Update -------------------------------------------------
+        // Whether this file already has transaction rows decides both the button
+        // label and what the modal opens with. The server answers it for the record
+        // being edited ($hasPropertyRecords); on the create screen — and after the
+        // operator changes the file number — we ask the same endpoint the legacy edit
+        // page used, which searches file_history_staging, CofO_staging, pra and
+        // deed_registrations across file-number variants and tags each row with the
+        // table it came from (_source), so a saved edit goes back to that same table.
+        const PROPERTY_RECORDS_CHECK_BASE = '/api/property-records/check/';
+
+        function setTransactionBtnMode(hasRecords) {
+            const btn = document.getElementById('add-property-transaction-btn');
+            if (!btn) return;
+
+            const label = hasRecords
+                ? (btn.dataset.updateLabel || 'Update Property Transaction Details')
+                : (btn.dataset.addLabel || 'Add Property Transaction Details');
+
+            const text = document.getElementById('property-transaction-btn-text');
+            if (text) text.textContent = label;
+
+            const icon = btn.querySelector('[data-role="property-transaction-btn-icon"]');
+            const wanted = hasRecords ? 'file-pen-line' : 'file-plus-2';
+            // Lucide replaces the <i> with an <svg> on first render, so re-tag whichever
+            // node is currently there and let it redraw.
+            if (icon && icon.getAttribute('data-lucide') !== wanted) {
+                icon.setAttribute('data-lucide', wanted);
+                if (window.lucide && typeof window.lucide.createIcons === 'function') {
+                    try { window.lucide.createIcons(); } catch (e) { /* icons are cosmetic */ }
+                }
+            }
+        }
+
+        // Every stored transaction for this file, or [] when there are none / on failure.
+        // A failed lookup must not block the modal — it just opens in Add mode.
+        async function fetchExistingPropertyRecords(fileNumber) {
+            const fileNo = String(fileNumber || '').trim();
+            if (!fileNo) return [];
+
+            try {
+                const res = await fetch(PROPERTY_RECORDS_CHECK_BASE + encodeURIComponent(fileNo), {
+                    headers: { 'Accept': 'application/json' }
+                });
+                if (!res.ok) return [];
+
+                const data = await res.json();
+                return (data && data.success && Array.isArray(data.records)) ? data.records : [];
+            } catch (err) {
+                console.warn('Existing property record lookup failed; opening in Add mode.', err);
+                return [];
+            }
+        }
+
+        // Refresh just the label (no modal). Debounced so retyping a file number does
+        // not fire a request per keystroke.
+        let labelProbeTimer = null;
+        let lastProbedFileNumber = null;
+        function refreshTransactionBtnLabel(immediate) {
+            const run = async () => {
+                const fileNo = resolveFileNumber();
+                if (!fileNo) {
+                    lastProbedFileNumber = null;
+                    setTransactionBtnMode(false);
+                    return;
+                }
+                if (fileNo === lastProbedFileNumber) return;
+                lastProbedFileNumber = fileNo;
+
+                const records = await fetchExistingPropertyRecords(fileNo);
+                // The field may have moved on while the request was in flight.
+                if (resolveFileNumber() !== fileNo) return;
+                setTransactionBtnMode(records.length > 0);
+            };
+
+            clearTimeout(labelProbeTimer);
+            labelProbeTimer = setTimeout(run, immediate ? 0 : 400);
+        }
+
         // Backfill the payload from the saved record for this file number (property
-        // details only), then open the modal with a fresh, blank transaction card.
-        // We deliberately do NOT pre-load existing transactions here: triggering the
-        // button directly is an "Add" action, so the card starts empty and ready for
-        // a new selection rather than opening in "Update" mode.
+        // details only), then open the modal.
+        //
+        // Transactions already stored for the file are loaded and handed to the modal,
+        // which renders one card per row and switches itself to Update mode. A file with
+        // no stored transactions still opens the single blank card it always did, so
+        // first-time capture is unchanged.
         async function openWithBackfill(payload) {
             const registry =
                 document.getElementById('registry')?.value ||
@@ -164,12 +252,15 @@
                     payload.property_description = payload.location || '';
                 }
 
-                // Keep the transaction card blank (Add mode) — do not pre-load existing
-                // transactions when the modal is opened directly from the button.
-                payload.existing_records = [];
             } catch (err) {
                 console.warn('Property transaction backfill lookup failed; opening with form data only.', err);
             }
+
+            // Load whatever is already stored, so the modal opens showing every existing
+            // transaction instead of an empty card. Fetched at click time rather than
+            // reusing the label probe's result, so a row saved moments ago is included.
+            payload.existing_records = await fetchExistingPropertyRecords(payload.file_number);
+            setTransactionBtnMode(payload.existing_records.length > 0);
 
             if (typeof window.openPropertyTransactionModal === 'function') {
                 window.openPropertyTransactionModal(payload);
@@ -197,5 +288,46 @@
                 console.error('openPropertyTransactionModal function not found');
             }
         });
+
+        // Initial state. On the update screen the server already knows the answer, so
+        // trust it and skip the request; anywhere else, probe once if a file number is
+        // already on the form (e.g. the operator picked an already-indexed file).
+        const serverHasPropertyRecords = @json((bool) ($hasPropertyRecords ?? false));
+
+        function initTransactionBtnState() {
+            if (!document.getElementById('add-property-transaction-btn')) return;
+
+            if (serverHasPropertyRecords) {
+                lastProbedFileNumber = resolveFileNumber() || null;
+                setTransactionBtnMode(true);
+            } else {
+                refreshTransactionBtnLabel(true);
+            }
+
+            // The file number can change after load: picked from the smart selector, typed
+            // into the KANGIS/KN inputs, or written by the update bootstrap. Watch input and
+            // change on the whole form rather than binding to each id, since which field is
+            // live depends on the indexing mode.
+            ['change', 'input'].forEach(function (evt) {
+                document.addEventListener(evt, function (e) {
+                    const el = e.target;
+                    if (!el || !el.id) return;
+                    if (!/^(fileno|file-number-display|new_kangis_file_no_|kangis_file_no_|mls_file_no_|kangis-fileno-placeholder)/.test(el.id)) return;
+                    refreshTransactionBtnLabel(false);
+                }, true);
+            });
+
+            // The update bootstrap fills the fields programmatically, which fires no
+            // trusted input event on some browsers — re-probe once it says it is done.
+            document.addEventListener('fileindex:update-populated', function () {
+                refreshTransactionBtnLabel(true);
+            });
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initTransactionBtnState);
+        } else {
+            initTransactionBtnState();
+        }
     })();
 </script>

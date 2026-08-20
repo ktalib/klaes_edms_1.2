@@ -23,6 +23,7 @@ use App\Services\ParcelUpdateNotificationService;
 use App\Services\PlotWorkflowService;
 use App\Services\PropertyIdAllocationService;
 use App\Services\MlsCommissioningOssApplicationService;
+use App\Services\OldFileNumberService;
 
 class MlsFileNoController extends Controller
 {
@@ -1686,6 +1687,7 @@ class MlsFileNoController extends Controller
                 'sit_reason' => 'nullable|string|max:1000',
                 // Re-Issuance of FileNo: the old (duplicated) number being re-issued.
                 'old_fileno' => 'nullable|string|max:100',
+                'old_fileno_title' => 'nullable|string|max:500',
             ]);
 
             $landUse = $validated['land_use'] ?? null;
@@ -2422,6 +2424,19 @@ class MlsFileNoController extends Controller
                 ]);
 
                 $ossApplicationMirror = app(MlsCommissioningOssApplicationService::class)->sync($mlsRecord);
+
+                // Re-Issuance: the duplicated number the new file replaces. Recorded in
+                // the old_file_numbers ledger and mirrored onto file_indexings.old_fileno
+                // so the indexing side carries it too, not just mls_file_no.
+                if ($fileOption === 'reissuance' && !empty($validated['old_fileno'])) {
+                    app(OldFileNumberService::class)->record(
+                        $fullFileNumber,
+                        $validated['old_fileno'],
+                        \App\Models\OldFileNumber::SOURCE_REISSUANCE,
+                        $validated['old_fileno_title'] ?? null,
+                        Auth::id()
+                    );
+                }
 
                 if ($fileOption !== 'temporary') {
                     // Also create record in fileNumber table for compatibility

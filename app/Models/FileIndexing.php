@@ -75,6 +75,10 @@ class FileIndexing extends Model
         'created_by',
         'updated_by',
         'related_fileno',
+        // Previous / duplicated number this same physical file used to carry.
+        // Distinct from related_fileno (a JSON array of sibling files).
+        // Full history lives in old_file_numbers; see OldFileNumberService.
+        'old_fileno',
         'registry_batch_no',
         'batch_generated',
         'last_batch_id',
@@ -188,6 +192,7 @@ class FileIndexing extends Model
             'is_deleted',
             'deleted_at',
             'related_fileno',
+            'old_fileno',
             'sys_batch_no',
             'group',
             'date_migrated',

@@ -4614,7 +4614,10 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         if (elements.opRegistrationDetails) {
-            if (typeKey === 'occupancy-permit' && (window.ossOpContext === true || isFfrExistingManualRegistrationFlow())) {
+            // Match OP (commissioned-file mode) submits serial/page/vol/reg date+time in its
+            // payload, so it needs the same Registration Details block as the OSS/FEFR flows.
+            if (typeKey === 'occupancy-permit'
+                && (window.ossOpContext === true || isFfrExistingManualRegistrationFlow() || isOpCommissionedFileMode())) {
                 elements.opRegistrationDetails.classList.remove('hidden');
             } else {
                 elements.opRegistrationDetails.classList.add('hidden');

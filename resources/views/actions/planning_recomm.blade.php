@@ -153,10 +153,7 @@
                     }
 
                     if (numericValue === undefined || numericValue === null || numericValue === '') {
-                        if (decimals !== null && Number.isFinite(decimals)) {
-                            return Number(0).toFixed(decimals);
-                        }
-                        return '0';
+                        return '';
                     }
 
                     const numeric = Number(numericValue);
@@ -636,11 +633,7 @@
         }
 
         if ($numericValue === null || $numericValue === '') {
-            if ($decimals !== null) {
-                return number_format(0, (int) $decimals);
-            }
-
-            return '0';
+            return '';
         }
 
         if (is_numeric($numericValue)) {
@@ -660,7 +653,7 @@
         $numericString = is_string($numericValue) ? trim($numericValue) : (string) $numericValue;
 
         if ($numericString === '') {
-            return $decimals !== null ? number_format(0, (int) $decimals) : '0';
+            return '';
         }
 
         if (is_numeric($numericString)) {

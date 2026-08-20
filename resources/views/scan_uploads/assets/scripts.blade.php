@@ -886,7 +886,7 @@
         // the documents are loaded now, which is what it was waiting on.
         syncConfirmButtonState();
 
-        showNotification('Blind scan documents loaded. Review them in Preview, then Confirm Selection.');
+        showNotification('Blind scan documents loaded. Review them in Preview, then Load Documents.');
         updateUI();
     }
 
@@ -987,20 +987,20 @@
             renderBlindScanTable();
         }
 
-        // Load Documents stages the discovered files and hands them to the preview
+        // Next stages the discovered files and hands them to the preview
         // card, so it only lights up once there is something to load.
         if (transferBtn) {
             transferBtn.disabled = !hasFiles || processing || isLoading;
             transferBtn.classList.add('gap-2');
             transferBtn.innerHTML = processing
                 ? '<div class="loading-spinner"></div><span>Loading...</span>'
-                : '<i data-lucide="arrow-right" class="h-4 w-4"></i>Load Documents';
+                : '<i data-lucide="arrow-right" class="h-4 w-4"></i>Next';
         }
 
         if (footnote) {
             footnote.textContent = processing
                 ? 'Moving documents into Scan Uploads. Please wait...'
-                : 'Review the files, then click Load Documents to add them to the upload list.';
+                : 'Review the files, then click Next to add them to the upload list.';
         }
 
         lucide.createIcons();
@@ -6249,7 +6249,7 @@
                 return;
             }
 
-            // "Load Documents" in the Blind Scan dialog is what stages the files.
+            // "Next" in the Blind Scan dialog is what stages the files.
             // If the operator confirmed without going through it, stage them here
             // rather than losing their selection.
             if (!(state.blindScan.stagedFiles || []).length) {
@@ -6601,7 +6601,7 @@
 
         initializeSmartFileNumberSelector();
 
-        // "Load Documents" — stages the discovered files and shows them in Preview.
+        // "Next" — stages the discovered files and shows them in Preview.
         if (blindScanElements.transferBtn) {
             blindScanElements.transferBtn.addEventListener('click', stageBlindScanFiles);
         }

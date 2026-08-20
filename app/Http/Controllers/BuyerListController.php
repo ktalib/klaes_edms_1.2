@@ -401,7 +401,7 @@ class BuyerListController extends Controller
                     $existingMeasurement = DB::connection('sqlsrv')
                         ->table('st_unit_measurements')
                         ->where('application_id', $applicationId)
-                        ->where('unit_no', $unitNo)
+                        ->where('buyer_id', $buyerId)
                         ->first();
 
                     if ($existingMeasurement) {
@@ -409,9 +409,9 @@ class BuyerListController extends Controller
                         DB::connection('sqlsrv')
                             ->table('st_unit_measurements')
                             ->where('application_id', $applicationId)
-                            ->where('unit_no', $unitNo)
+                            ->where('buyer_id', $buyerId)
                             ->update([
-                                'buyer_id' => $buyerId,
+                                'unit_no' => $unitNo,
                                 'measurement' => $record['unitMeasurement'],
                                 'updated_at' => now()
                             ]);
@@ -646,17 +646,19 @@ class BuyerListController extends Controller
                 $existingMeasurement = DB::connection('sqlsrv')
                     ->table('st_unit_measurements')
                     ->where('application_id', $validated['application_id'])
-                    ->where('unit_no', $validated['unit_no'])
+                    ->where('buyer_id', $validated['buyer_id'])
                     ->first();
 
                 if ($existingMeasurement) {
-                    // Update existing measurement
+                    // Update existing measurement. unit_no is written, not
+                    // matched on, so renaming a unit moves its measurement
+                    // instead of orphaning the old row.
                     DB::connection('sqlsrv')
                         ->table('st_unit_measurements')
                         ->where('application_id', $validated['application_id'])
-                        ->where('unit_no', $validated['unit_no'])
+                        ->where('buyer_id', $validated['buyer_id'])
                         ->update([
-                            'buyer_id' => $validated['buyer_id'],
+                            'unit_no' => $validated['unit_no'],
                             'measurement' => $validated['measurement'],
                             'updated_at' => now()
                         ]);
