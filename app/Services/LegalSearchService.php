@@ -87,6 +87,34 @@ class LegalSearchService
         $praRecords = $this->searchPra($conn, $filters);
         $deedRecords = $this->searchDeedRegistrations($conn, $filters);
 
+        // --- split-mother downward expansion ---
+        // A subdivided / merged / separated mother whose own history was never captured under
+        // its own number owns NO row in any of the four tables. The searches above then return
+        // nothing, and because every later expansion collects prop_ids from rows already found,
+        // there is nothing to expand from — the file reads as "no records" even though its
+        // fragments exist and point straight at it (production: CON-IND-2024-9, 530 children,
+        // 0 own rows).
+        //
+        // Expansion elsewhere runs sideways (same prop_id) and upward (child -> ancestor); this
+        // is the one downward step: rows whose parent_prop_id IS the searched mother's prop_id.
+        // Only `pra` carries parent_prop_id, and the fragments are pra rows, so one indexed
+        // predicate covers it — no 500-way OR list of file numbers.
+        //
+        // Deliberately narrow: it fires ONLY when the searched file found nothing of its own AND
+        // was decommissioned by a split. A search that already returns rows cannot change shape,
+        // so the 16-rule timeline behaviour is untouched. Fail-open.
+        $splitMotherPropId = null;
+        if ($fileNo !== '' && empty($fileHistoryRecords) && empty($cofoRecords) && empty($praRecords) && empty($deedRecords)) {
+            try {
+                $splitMotherPropId = $this->resolveSplitMotherPropId($conn, $fileNo);
+                if ($splitMotherPropId !== null) {
+                    $praRecords = $this->searchByPropIds($conn, 'pra', [$splitMotherPropId], [], 'parent_prop_id');
+                }
+            } catch (\Throwable $e) {
+                $splitMotherPropId = null;
+            }
+        }
+
         // Fetch active prop_id and parent_prop_id from active indexes if available (bypass for SME searches)
         $activePropIds = [];
         if ($fileNo !== '' && empty($allowedSmeFileNos)) {
@@ -128,6 +156,13 @@ class LegalSearchService
                     }
                 }
             }
+        }
+
+        // The split mother's own prop_id is what its fragments point at. Registering it here
+        // lets the contamination guard keep them (their parent_prop_id matches) and lets the
+        // expansion below pull the mother's own rows if any exist under an alias.
+        if ($splitMotherPropId !== null) {
+            $activePropIds[] = $splitMotherPropId;
         }
 
         // --- prop_id cross-table expansion (bypass for SME searches) ---
@@ -3728,7 +3763,67 @@ class LegalSearchService
     /**
      * Search a table by prop_id list, excluding already-fetched IDs.
      */
-    private function searchByPropIds($conn, string $tableName, array $propIds, array $excludeIds): array
+    /**
+     * The prop_id of a mother file that was decommissioned by a SPLIT (subdivision,
+     * merger, separation), for use as the seed of a downward expansion.
+     *
+     * Returns null unless the file really is a split-decommissioned mother, so the
+     * caller's fallback stays scoped to that case. The prop_id comes from
+     * PropID_Master — the same authority the Decommissioned Files screen uses for its
+     * PropID column — because a mother in this state has no prop_id on its own
+     * file_indexings row to read (verified on production: CON-IND-2024-9).
+     *
+     * A 1:1 rename-type decommission (recertification, change of purpose/name,
+     * amendment) is excluded on purpose: there the successor inherits the SAME
+     * prop_id and already carries the full history, so no downward step is needed.
+     */
+    private function resolveSplitMotherPropId($conn, string $fileNo): ?string
+    {
+        $fileNo = trim($fileNo);
+        if ($fileNo === '') {
+            return null;
+        }
+
+        $schema = Schema::connection($conn->getName());
+        if (!$schema->hasTable('decommissioned_files')) {
+            return null;
+        }
+
+        $decomQuery = $conn->table('decommissioned_files')
+            ->whereRaw('UPPER(LTRIM(RTRIM(file_no))) = ?', [strtoupper($fileNo)]);
+
+        // Files flagged as falsely decommissioned are not real splits.
+        if ($schema->hasColumn('decommissioned_files', 'false_decommissioning')) {
+            $decomQuery->where(function ($q) {
+                $q->where('false_decommissioning', '<>', \App\Support\DecommissionScope::FALSE_DECOMMISSIONING)
+                  ->orWhereNull('false_decommissioning');
+            });
+        }
+
+        $decom = $decomQuery->orderByDesc('id')->first(['decommissioning_reason']);
+        if (!$decom) {
+            return null;
+        }
+
+        if (!preg_match('/subdivision|merg|separation|fragment/i', (string) ($decom->decommissioning_reason ?? ''))) {
+            return null;
+        }
+
+        $master = $conn->table('PropID_Master')
+            ->where(function ($q) use ($fileNo) {
+                $q->whereRaw('UPPER(LTRIM(RTRIM(primary_file_number))) = ?', [strtoupper($fileNo)])
+                  ->orWhereRaw('UPPER(LTRIM(RTRIM(mlsFNo))) = ?', [strtoupper($fileNo)]);
+            })
+            ->whereNotNull('prop_id')
+            ->orderBy('id')
+            ->first(['prop_id']);
+
+        $propId = trim((string) ($master->prop_id ?? ''));
+
+        return $propId !== '' ? $propId : null;
+    }
+
+    private function searchByPropIds($conn, string $tableName, array $propIds, array $excludeIds, string $matchColumn = 'prop_id'): array
     {
         if (empty($propIds))
             return [];
@@ -3909,7 +4004,7 @@ class LegalSearchService
 
         $query = $conn->table($tableName)
             ->select($select)
-            ->whereIn('prop_id', array_map('strval', $propIds));
+            ->whereIn($matchColumn, array_map('strval', $propIds));
 
         if (!empty($excludeIds)) {
             // Cast exclude IDs to int to match the INT primary key column.

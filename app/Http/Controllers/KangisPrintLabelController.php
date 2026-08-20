@@ -15,7 +15,6 @@ use Illuminate\Validation\ValidationException;
 class KangisPrintLabelController extends Controller
 {
     const RACK_SHELF_CAPACITY = 50;
-    const MAX_BATCH_SELECTION = 500;
 
     /** Batch Index "all statuses except pending" sentinel. */
     const STATUS_ANY = 'any';
@@ -438,7 +437,7 @@ class KangisPrintLabelController extends Controller
                 'prefix'            => ($manualOverride ? 'nullable' : 'required') . '|string' . ($manualOverride ? '' : '|in:' . implode(',', self::PREFIXES)),
                 'manual_override'   => 'nullable|boolean',
                 'registry_batch_no' => 'nullable|string',
-                'file_ids'          => 'required|array|min:1|max:' . self::MAX_BATCH_SELECTION,
+                'file_ids'          => 'required|array|min:1',
                 'file_ids.*'        => 'integer|min:1',
                 'full_label'        => 'required|string|max:20',
                 'rack_primary'      => 'required|string|max:5',
@@ -478,13 +477,20 @@ class KangisPrintLabelController extends Controller
                 // Fetch files from the grouping table to group them by their registry_batch_no.
                 // In manual override mode the selected files may span multiple prefixes,
                 // so match strictly by id and skip the prefix filter.
-                $filesFromDb = DB::connection('sqlsrv')
-                    ->table($cfg['table'])
-                    ->whereIn('id', $fileIds)
-                    ->when(!$manualOverride, function ($q) use ($prefix, $cfg) {
-                        $q->where($cfg['awaiting'], 'like', $prefix . '%');
-                    })
-                    ->get();
+                // Chunked: SQL Server caps a statement at 2100 bind parameters, and the
+                // selection size is no longer capped.
+                $filesFromDb = collect();
+                foreach (array_chunk(array_values($fileIds), 1000) as $idChunk) {
+                    $filesFromDb = $filesFromDb->concat(
+                        DB::connection('sqlsrv')
+                            ->table($cfg['table'])
+                            ->whereIn('id', $idChunk)
+                            ->when(!$manualOverride, function ($q) use ($prefix, $cfg) {
+                                $q->where($cfg['awaiting'], 'like', $prefix . '%');
+                            })
+                            ->get()
+                    );
+                }
 
                 if ($filesFromDb->isEmpty()) {
                     throw ValidationException::withMessages(['file_ids' => 'No valid matching records found in ' . $cfg['table'] . '.']);

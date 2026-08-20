@@ -16,7 +16,6 @@ use Illuminate\Validation\ValidationException;
 class SltrPrintLabelController extends Controller
 {
     const RACK_SHELF_CAPACITY = 999999;
-    const MAX_BATCH_SELECTION = 2000;
 
     const PREFIX = 'SLTR';
 
@@ -334,7 +333,7 @@ class SltrPrintLabelController extends Controller
             $validated = $request->validate([
                 'prefix'       => 'required|string|in:' . self::PREFIX,
                 'sub_prefix'   => 'nullable|string',
-                'file_ids'     => 'required|array|min:1|max:' . self::MAX_BATCH_SELECTION,
+                'file_ids'     => 'required|array|min:1',
                 'file_ids.*'   => 'integer|min:1',
                 'full_label'   => 'required|string|max:20',
                 'rack_primary' => 'required|string|max:5',
@@ -484,12 +483,6 @@ class SltrPrintLabelController extends Controller
             ];
         }
 
-        if (count($seen) > self::MAX_BATCH_SELECTION) {
-            throw ValidationException::withMessages([
-                'sub_groups' => 'Too many files selected. Maximum is ' . self::MAX_BATCH_SELECTION . '.',
-            ]);
-        }
-
         return $groups;
     }
 
@@ -524,11 +517,18 @@ class SltrPrintLabelController extends Controller
         ]);
 
         // Fetch files from file_indexings instead of sltr_grouping
-        $files = FileIndexing::on('sqlsrv')
-            ->whereIn('id', $fileIds)
-            ->orderByRaw('CASE WHEN digit_rank IS NULL THEN 999 ELSE digit_rank END')
-            ->orderBy('file_number')
-            ->get();
+        // Chunked: SQL Server caps a statement at 2100 bind parameters, and the
+        // selection size is no longer capped. Final ordering is applied below.
+        $files = collect();
+        foreach (array_chunk(array_values($fileIds), 1000) as $idChunk) {
+            $files = $files->concat(
+                FileIndexing::on('sqlsrv')
+                    ->whereIn('id', $idChunk)
+                    ->orderByRaw('CASE WHEN digit_rank IS NULL THEN 999 ELSE digit_rank END')
+                    ->orderBy('file_number')
+                    ->get()
+            );
+        }
 
         if ($files->isEmpty()) {
             throw ValidationException::withMessages(['file_ids' => 'No matching files found in indexed files.']);
