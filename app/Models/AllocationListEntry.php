@@ -24,6 +24,11 @@ class AllocationListEntry extends Model
         'allottee_name',
         'location',
         'allocation_year',
+        // Allocation Source: which institution requested it, and who the
+        // correspondence is addressed to.
+        'institution_category',
+        'institution_name',
+        'addressed_to',
         'plot_number',
         'district',
         'lga',

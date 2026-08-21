@@ -147,20 +147,44 @@
                 <input type="hidden" id="hidden_fileno" name="fileno" value="{{ $record->fileno ?? '' }}">
 
 
-                <!-- OP Type Selection (Moved to top) -->
-                <div id="op-type-container" class="hidden mb-6 bg-blue-50 p-3 rounded-lg border border-blue-100">
-                    <label class="block text-sm font-semibold text-blue-800 mb-2">Occupancy Permit (OP) Type</label>
-                    <div class="flex items-center gap-6">
-                        <div class="flex items-center gap-2">
-                            <input type="radio" id="op_type_resettlement" name="op_type" value="OP Resettlement" 
-                                class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500 cursor-pointer">
-                            <label for="op_type_resettlement" class="text-sm text-gray-700 cursor-pointer">Resettlement</label>
+                {{--
+                    OP Type is no longer picked inside the form: it is asked once, as a prompt,
+                    the moment "Occupancy Permit (OP)" is chosen on the instrument-type screen
+                    (promptForOpType() in instruments-capture.js). The radios stay in the DOM —
+                    permanently hidden — because they remain the value the whole capture reads
+                    from (input[name="op_type"]:checked) and what the form posts. The banner
+                    below shows the answer and offers "Change" to re-open the prompt.
+                --}}
+                <div id="op-type-container" class="hidden">
+                    <input type="radio" id="op_type_resettlement" name="op_type" value="OP Resettlement" class="hidden">
+                    <input type="radio" id="op_type_direct_allocation" name="op_type" value="OP Direct Allocation" class="hidden">
+                </div>
+
+                <div id="op-type-summary" class="capture-banner hidden mb-6 px-4 py-3 rounded-lg">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <p id="op-type-summary-lead" class="capture-banner__lead">
+                                You are about to register
+                            </p>
+                            <p class="capture-banner__line">
+                                <span id="op-type-summary-icon" class="capture-banner__icon">
+                                    <i data-lucide="badge-check" class="h-4 w-4"></i>
+                                </span>
+                                <span>
+                                    Occupancy Permit (OP) Type:
+                                    <strong id="op-type-summary-value" class="font-semibold">Not selected</strong>
+                                </span>
+                            </p>
+                            {{-- Read-only peek at the vault (instruments.nextRegistrationParticulars):
+                                 the number is only consumed when the instrument is registered. --}}
+                            <p class="capture-banner__meta">
+                                Next registration particulars:
+                                <strong id="op-type-reg-particulars" class="font-mono font-semibold">&mdash;</strong>
+                            </p>
                         </div>
-                        <div class="flex items-center gap-2">
-                            <input type="radio" id="op_type_direct_allocation" name="op_type" value="OP Direct Allocation" 
-                                class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500 cursor-pointer">
-                            <label for="op_type_direct_allocation" class="text-sm text-gray-700 cursor-pointer">Direct Allocation</label>
-                        </div>
+                        <button type="button" id="op-type-change-btn" class="capture-banner__change">
+                            Change
+                        </button>
                     </div>
                 </div>
 
@@ -188,6 +212,39 @@
                     .cofo-variant-tab:focus { outline: none; }
                     .cofo-variant-tab:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
                 </style>
+
+                {{--
+                    The variant tabs and the C of O Type below are no longer operated here: both
+                    are asked in one prompt the moment "Certificate of Occupancy" is chosen
+                    (promptForCofoSelection() in instruments-capture.js). The markup stays in the
+                    DOM — permanently hidden — because setCofoVariant() drives it and #cofoType is
+                    the field the form posts; #cofo-summary shows the answer with a "Change" link.
+                --}}
+                <div id="cofo-summary" class="capture-banner hidden mb-6 px-4 py-3 rounded-lg">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <p id="cofo-summary-lead" class="capture-banner__lead">
+                                You are about to register
+                            </p>
+                            <p class="capture-banner__line">
+                                <span id="cofo-summary-icon" class="capture-banner__icon">
+                                    <i data-lucide="award" class="h-4 w-4"></i>
+                                </span>
+                                <span>
+                                    Certificate of Occupancy:
+                                    <strong id="cofo-summary-value" class="font-semibold">Regular</strong>
+                                </span>
+                            </p>
+                            <p class="capture-banner__meta">
+                                Next registration particulars:
+                                <strong id="cofo-reg-particulars" class="font-mono font-semibold">&mdash;</strong>
+                            </p>
+                        </div>
+                        <button type="button" id="cofo-change-btn" class="capture-banner__change">
+                            Change
+                        </button>
+                    </div>
+                </div>
 
                 <div id="cofo-variant-container" class="hidden mb-6">
                     <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
@@ -237,6 +294,9 @@
                              reads as a validation error. --}}
                         <div id="coo-type-container" class="mt-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
                             <label for="cofoType" class="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Certificate of Occupancy Type</label>
+                            {{-- First paint carries the Regular options; setCofoVariant() rebuilds
+                                 the list for whichever variant is chosen (SLTR and ST offer
+                                 New C of O / Old C of O instead). --}}
                             <select id="cofoType" name="cofo_type"
                                 class="w-full max-w-sm px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-1 focus:ring-gray-400 outline-none">
                                 <option value="">Select C of O Type</option>
@@ -267,24 +327,30 @@
                     <div class="border-l-4 border-blue-500 pl-4">
                         <h3 id="fileno-label" class="text-sm font-semibold text-gray-800 mb-4">File Number</h3>
 
-                        <div class="flex items-center gap-2">
-                            <div class="relative flex-1 group">
-                                <div
-                                    class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <i data-lucide="file-text" class="h-4 w-4 text-gray-400"></i>
-                                </div>
-                                <input type="text" id="display_fileno"
-                                    class="w-full pl-9 pr-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 font-mono text-sm focus:ring-1 focus:ring-blue-500"
-                                    placeholder="No file number selected" readonly 
-                                    value="{{ ($record->mlsFNo ?? $record->kangisFileNo ?? $record->NewKANGISFileno ?? $record->fileno ?? '') }}">
-                            </div>
-                            @if(!(isset($isView) && $isView))
-                                <button type="button" id="select-file-btn"
-                                    class="px-3 py-2 bg-white text-blue-600 font-medium rounded-lg border border-blue-200 hover:bg-blue-50 text-sm whitespace-nowrap">
-                                    Select
-                                </button>
-                            @endif
+                        {{--
+                            File Number is picked straight from a Select2 dropdown backed by the
+                            INDEXING table (api.file-numbers.indexing-search) — no modal, no manual
+                            entry. The dropdown searches every registry column server-side and pages
+                            as you scroll, so it reaches every indexed file without ever putting tens
+                            of thousands of <option> nodes in the DOM.
+
+                            #display_fileno stays as the hidden source of truth: the whole capture
+                            reads and writes it (temp-number allocation, lookups, duplicate check),
+                            and syncFileNumberSelect() mirrors those writes back into the dropdown.
+                        --}}
+                        @php
+                            $seedFileNo = ($record->mlsFNo ?? $record->kangisFileNo ?? $record->NewKANGISFileno ?? $record->fileno ?? '');
+                        @endphp
+                        <div class="relative">
+                            <select id="file_number_select" class="w-full text-sm"
+                                    data-placeholder="Search a file number…"
+                                    @if(isset($isView) && $isView) disabled @endif>
+                                @if($seedFileNo)
+                                    <option value="{{ $seedFileNo }}" selected>{{ $seedFileNo }}</option>
+                                @endif
+                            </select>
                         </div>
+                        <input type="hidden" id="display_fileno" value="{{ $seedFileNo }}">
                         <p class="mt-2 text-xs text-gray-400 truncate" id="file_source_info">
                             @if(isset($record))
                                 Linked to property records.
@@ -621,8 +687,11 @@
                                         <x-instrument-input id="manual_district" name="manual_district" label="" icon="edit-3" placeholder="Enter District Name" />
                                     </div>
                                 </div>
+                                {{-- Multi-select: one property/layout can straddle more than one LGA.
+                                     Read back as a comma-separated string (see getSelectValueString). --}}
                                 <x-instrument-select id="desc_lga" label="" icon="map" :options="$lgas"
-                                    placeholder="Select LGA " value="" optionValue="name" optionLabel="name" />
+                                    placeholder="Select LGA " value="{{ $record->lga ?? '' }}"
+                                    optionValue="name" optionLabel="name" :multiple="true" />
                             </div>
 
                             <div>

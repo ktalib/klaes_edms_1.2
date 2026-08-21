@@ -6,8 +6,19 @@
     'value' => '',
     'placeholder' => 'Select an option',
     'optionValue' => 'value',
-    'optionLabel' => 'label'
+    'optionLabel' => 'label',
+    // Multi-select: `value` may be a comma-separated list, the field posts as `{id}[]`, and
+    // the placeholder is handed to Select2 (a multi-select has no blank option to carry it).
+    'multiple' => false,
 ])
+
+@php
+    $selectedValues = collect(is_array($value) ? $value : explode(',', (string) $value))
+        ->map(fn ($v) => strtolower(trim((string) $v)))
+        ->reject(fn ($v) => $v === '')
+        ->all();
+    $isSelected = fn ($candidate) => in_array(strtolower(trim((string) $candidate)), $selectedValues, true);
+@endphp
 
 <div {{ $attributes->merge(['class' => '']) }}>
     @if(!empty($label))
@@ -17,9 +28,9 @@
         <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <i data-lucide="{{ $icon }}" class="h-4 w-4 text-gray-400"></i>
         </div>
-        <select id="{{ $id }}" name="{{ $id }}"
+        <select id="{{ $id }}" name="{{ $multiple ? $id . '[]' : $id }}" @if($multiple) multiple data-placeholder="{{ $placeholder }}" @endif
             class="w-full pl-10 px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none transition-all text-sm appearance-none">
-            @if($placeholder)
+            @if($placeholder && !$multiple)
                 <option value="">{{ $placeholder }}</option>
             @endif
             @php
@@ -61,14 +72,15 @@
                     }
                 }
                 
-                // If value doesn't exist in options and is not empty, add it
-                if (!empty($value) && !$valueExistsInOptions) {
+                // If value doesn't exist in options and is not empty, add it.
+                // Skipped for a multi-select, where `value` is a list, not one option.
+                if (!$multiple && !empty($value) && !$valueExistsInOptions) {
                     array_unshift($optionsArray, ['value' => $value, 'label' => $value]);
                 }
             @endphp
             <!-- DEBUG: value="{{ $value }}", optionsCount={{ count($optionsArray) }}, valueExists={{ $valueExistsInOptions ? 'yes' : 'no' }} -->
             @foreach($optionsArray as $opt)
-                <option value="{{ $opt['value'] }}" {{ (string)$value === (string)$opt['value'] ? 'selected' : '' }}>
+                <option value="{{ $opt['value'] }}" {{ $isSelected($opt['value']) ? 'selected' : '' }}>
                     {{ $opt['label'] }}
                 </option>
             @endforeach

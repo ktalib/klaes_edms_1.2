@@ -45,25 +45,7 @@ class InstrumentRegistrationService
                 throw new \Exception("The instrument type [{$vaultName}] is not found in the 'Manage Instrument Types for Vault Registration'. Please configure the vault first.");
             }
 
-            // User requirement: if values are 0/0/1 or NULL, starting point is 1/1/1
-            $currentVolume = (int) ($vault->current_volume ?? 1);
-            $currentPage = (int) ($vault->current_page ?? 0);
-            $currentSerial = (int) ($vault->current_serial ?? 0);
-
-            // If it's a fresh or corrupted vault, ensure we start at 1/1/1
-            if ($currentVolume < 1)
-                $currentVolume = 1;
-
-            $volume = $currentVolume;
-            $serial = $currentSerial + 1;
-            $page = $serial;
-
-            // Rollover Logic: Base-300
-            if ($serial > 300) {
-                $serial = 1;
-                $page = 1;
-                $volume++;
-            }
+            ['volume' => $volume, 'page' => $page, 'serial' => $serial] = $this->nextFromVault($vault);
 
             // Update the vault
             DB::connection('sqlsrv')->table('instrument_number_vaults')
@@ -486,6 +468,70 @@ class InstrumentRegistrationService
         $year = date('Y');
         $random = mt_rand(1000, 9999);
         return "{$prefix}/{$year}/{$random}";
+    }
+
+    /**
+     * The next number a vault row would issue — pure arithmetic, no writes.
+     *
+     * Shared by getRegistrationNumber() (which then persists it) and
+     * peekRegistrationNumber() (which only reports it), so what an officer is
+     * shown before capturing and what the capture actually burns cannot diverge.
+     */
+    private function nextFromVault(?object $vault): array
+    {
+        // A fresh or corrupted vault starts at 1/1/1.
+        $currentVolume = (int) ($vault->current_volume ?? 1);
+        $currentSerial = (int) ($vault->current_serial ?? 0);
+
+        if ($currentVolume < 1) {
+            $currentVolume = 1;
+        }
+
+        $volume = $currentVolume;
+        $serial = $currentSerial + 1;
+        $page = $serial;
+
+        // Rollover Logic: Base-300
+        if ($serial > 300) {
+            $serial = 1;
+            $page = 1;
+            $volume++;
+        }
+
+        return [
+            'volume' => $volume,
+            'page' => $page,
+            'serial' => $serial,
+            'formatted' => "{$serial}/{$page}/{$volume}",
+        ];
+    }
+
+    /**
+     * Report the next available registration particulars WITHOUT consuming them.
+     *
+     * Used by the capture screen to tell the officer which number the instrument
+     * they are about to register will take. Returns `configured => false` when the
+     * vault has not been set up under "Manage Instrument Types", which is not an
+     * error here — the capture form simply shows nothing.
+     *
+     * @return array{vault:string, configured:bool, volume?:int, page?:int, serial?:int, formatted?:string}
+     */
+    public function peekRegistrationNumber(string $instrumentType, ?string $opType = null): array
+    {
+        $vaultName = $this->resolveVaultName($instrumentType, $opType);
+
+        $vault = DB::connection('sqlsrv')->table('instrument_number_vaults')
+            ->where('instrument_type', $vaultName)
+            ->first();
+
+        if (!$vault) {
+            return ['vault' => $vaultName, 'configured' => false];
+        }
+
+        return array_merge(
+            ['vault' => $vaultName, 'configured' => true],
+            $this->nextFromVault($vault)
+        );
     }
 
     public function resolveVaultName(string $instrumentType, ?string $opType = null): string

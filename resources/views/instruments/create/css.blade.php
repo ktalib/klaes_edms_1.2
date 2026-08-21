@@ -42,6 +42,249 @@
         box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
     }
 
+    /* Property LGA is a MULTI select (a property can straddle more than one LGA).
+       Select2 renders it as tags; these mirror the single-select rules above so it lines
+       up with the District field beside it. */
+    .lga-multi-select2.select2-container .select2-selection--multiple {
+        min-height: 42px;
+        border: 1px solid #d1d5db;
+        border-radius: 0.5rem;
+        background-color: #fff;
+        padding-left: 1.75rem;
+        /* leave room for the map icon */
+        padding-right: 0.5rem;
+    }
+
+    .lga-multi-select2.select2-container .select2-selection--multiple .select2-selection__choice {
+        background-color: #eff6ff;
+        border: 1px solid #bfdbfe;
+        color: #1d4ed8;
+        border-radius: 0.375rem;
+        font-size: 0.8125rem;
+        margin-top: 6px;
+    }
+
+    .lga-multi-select2.select2-container .select2-search--inline .select2-search__field {
+        margin-top: 8px;
+        font-size: 0.875rem;
+    }
+
+    .lga-multi-select2.select2-container--open .select2-selection--multiple,
+    .lga-multi-select2.select2-container--focus .select2-selection--multiple {
+        border-color: #60a5fa;
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    }
+
+    /* Fallback for pages that do not load Select2 (edit/show): keep the native multi-select
+       from stretching the row. */
+    select[multiple]#desc_lga {
+        min-height: 42px;
+        max-height: 96px;
+    }
+
+    /* File Number dropdown (Select2 over the indexing table) - match the other
+       instrument inputs, and give each result a number + identifying line. */
+    #file_number_select + .select2-container .select2-selection--single {
+        height: 42px;
+        border: 1px solid #d1d5db;
+        border-radius: 0.5rem;
+        background-color: #fff;
+        display: flex;
+        align-items: center;
+    }
+
+    #file_number_select + .select2-container .select2-selection--single .select2-selection__rendered {
+        line-height: normal;
+        color: #374151;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.875rem;
+    }
+
+    #file_number_select + .select2-container .select2-selection--single .select2-selection__arrow {
+        height: 40px;
+    }
+
+    .fileno-option__no {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.875rem;
+        color: #111827;
+    }
+
+    .fileno-option__sub {
+        font-size: 0.75rem;
+        color: #6b7280;
+        margin-top: 0.125rem;
+    }
+
+    .select2-container--default .select2-results__option--highlighted .fileno-option__no,
+    .select2-container--default .select2-results__option--highlighted .fileno-option__sub {
+        color: #fff;
+    }
+
+    /* The "you are about to register ..." banner on the capture card. Its colour is
+       the chosen type's accent, handed in at runtime as --accent / --accent-soft
+       (paintSummaryBanner), so the banner, the dialog header and the submit button
+       all read as the same thing. */
+    .capture-banner {
+        --accent: #4b5563;
+        --accent-soft: #f9fafb;
+        background: var(--accent-soft);
+        border: 1px solid var(--accent);
+        /* Softened where color-mix is available; the solid accent above is the
+           fallback everywhere else. The left edge stays full strength either way. */
+        border-color: color-mix(in srgb, var(--accent) 35%, #ffffff);
+        border-left: 3px solid var(--accent);
+    }
+
+    .capture-banner__lead {
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--accent);
+    }
+
+    .capture-banner__line {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.25rem;
+        font-size: 0.875rem;
+        color: #1f2937;
+    }
+
+    .capture-banner__icon {
+        display: inline-flex;
+        flex-shrink: 0;
+        color: var(--accent);
+    }
+
+    .capture-banner__meta {
+        margin-top: 0.25rem;
+        font-size: 0.75rem;
+        color: #6b7280;
+    }
+
+    .capture-banner__change {
+        flex-shrink: 0;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-decoration: underline;
+        color: var(--accent);
+    }
+
+    .capture-banner__change:hover {
+        filter: brightness(0.85);
+    }
+
+    /* Shared styling for the "what are we capturing?" prompts (CofO variant + type,
+       OP type) - a row of choice cards, optionally with a follow-up select. */
+    .type-prompt {
+        text-align: left;
+        margin-top: 0.5rem;
+    }
+
+    .type-prompt__label {
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: #6b7280;
+        margin-bottom: 0.5rem;
+        display: block;
+    }
+
+    /* A question, not a field label - reads as a sentence. */
+    .type-prompt__question {
+        font-size: 0.875rem;
+        color: #4b5563;
+        margin-bottom: 0.75rem;
+    }
+
+    .type-prompt__cards {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.5rem;
+    }
+
+    .type-prompt__cards--two {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    /* Cards that confirm on click carry an arrow affordance instead of a radio. */
+    .type-prompt__card--action .type-prompt__card-title::after {
+        content: ' \2192';
+        opacity: 0.55;
+    }
+
+    /* Each choice carries its own accent, handed in as --accent / --accent-soft so
+       one rule set serves every prompt. */
+    .type-prompt__card {
+        --accent: #4b5563;
+        --accent-soft: #f9fafb;
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        padding: 0.75rem;
+        text-align: left;
+        border: 1px solid #e5e7eb;
+        border-radius: 0.5rem;
+        border-top: 3px solid var(--accent);
+        background: #fff;
+        cursor: pointer;
+        transition: border-color .15s, background-color .15s, box-shadow .15s;
+    }
+
+    .type-prompt__card:hover {
+        border-color: var(--accent);
+        border-top-color: var(--accent);
+        background: var(--accent-soft);
+    }
+
+    .type-prompt__card.is-selected {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+        box-shadow: 0 0 0 1px var(--accent) inset;
+    }
+
+    /* A mouse click leaves no ring; tabbing does. */
+    .type-prompt__card:focus { outline: none; }
+
+    .type-prompt__card:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+    }
+
+    .type-prompt__card-title {
+        font-size: 0.875rem;
+        font-weight: 700;
+        color: var(--accent);
+    }
+
+    .type-prompt__card-blurb {
+        font-size: 0.6875rem;
+        line-height: 1.3;
+        color: #6b7280;
+    }
+
+    .type-prompt__type {
+        margin-top: 1rem;
+    }
+
+    .type-prompt__type.is-hidden {
+        display: none;
+    }
+
+    .type-prompt__select {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid #d1d5db;
+        border-radius: 0.5rem;
+        font-size: 0.875rem;
+        color: #374151;
+        background: #fff;
+    }
+
     /* Card styles */
     .card {
         background-color: white;

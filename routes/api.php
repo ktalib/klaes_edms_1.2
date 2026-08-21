@@ -303,6 +303,9 @@ Route::prefix('file-numbers')->controller(FileNumberApiController::class)->group
     Route::get('/', 'index')->name('api.file-numbers.index');
     Route::post('/', 'store')->name('api.file-numbers.store');
     Route::get('/lookup', 'lookup')->name('api.file-numbers.lookup');
+    // Select2-shaped, paged search over file_indexings — backs the instrument-capture
+    // File Number dropdown (every registry, no modal).
+    Route::get('/indexing-search', 'indexingSearch')->name('api.file-numbers.indexing-search');
     Route::get('/tracking/{trackingId}', 'showByTracking')->name('api.file-numbers.show-tracking');
 
     // Legacy file number systems

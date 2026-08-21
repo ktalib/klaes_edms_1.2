@@ -176,7 +176,7 @@
 </div>
 @endsection
 
-@section('scripts')
+@section('footer-scripts')
 <script>
 (function () {
     const CSRF = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');

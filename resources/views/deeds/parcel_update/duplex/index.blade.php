@@ -178,7 +178,7 @@
 @include('components.global-fileno-modal')
 @endsection
 
-@section('scripts')
+@section('footer-scripts')
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 @include('deeds.parcel_update.duplex.js', [
     'types' => $types,

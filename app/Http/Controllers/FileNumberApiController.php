@@ -1991,6 +1991,141 @@ class FileNumberApiController extends Controller
     /**
      * Normalize a search string by removing separators and uppercasing.
      */
+    /**
+     * Select2-shaped file-number search over the INDEXING table (file_indexings).
+     *
+     * The instrument-capture form picks its file number from a dropdown rather than
+     * the global file-number modal, and that dropdown must reach every indexed file
+     * regardless of registry. Results are paged (never "load them all" — the table
+     * runs to tens of thousands of rows) and searched across every column a file
+     * number can live in, punctuation-insensitively, so "KN 1234", "KN-1234" and
+     * "KN1234" all find the same file.
+     *
+     * Response shape is exactly what Select2's ajax adapter expects:
+     *   { results: [{ id, text, ... }], pagination: { more: bool } }
+     */
+    public function indexingSearch(Request $request): JsonResponse
+    {
+        try {
+            $search = trim((string) ($request->get('q') ?? $request->get('search') ?? ''));
+            $page = (int) max(1, (int) $request->get('page', 1));
+            $perPage = (int) max(1, min((int) $request->get('per_page', 30), 100));
+
+            // Every column an indexed file number can sit in. file_number is the
+            // primary; the registry-specific ones carry it for files whose primary
+            // is blank (KANGIS-only rows), and temp_file_no for uncommissioned files.
+            $numberColumns = [
+                'file_number',
+                'mls_file_no',
+                'kangis_file_no',
+                'new_kangis_file_no',
+                'temp_file_no',
+            ];
+
+            $query = DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->select([
+                    'id',
+                    'file_number',
+                    'mls_file_no',
+                    'kangis_file_no',
+                    'new_kangis_file_no',
+                    'temp_file_no',
+                    'file_title',
+                    'registry',
+                    'district',
+                    'lga',
+                    'plot_number',
+                    'tp_no',
+                ]);
+
+            // A row with no number in any column is unusable in the dropdown.
+            $query->where(function ($q) use ($numberColumns) {
+                foreach ($numberColumns as $col) {
+                    $q->orWhereRaw("LTRIM(RTRIM(ISNULL({$col}, ''))) <> ''");
+                }
+            });
+
+            if ($search !== '') {
+                $upper = '%' . strtoupper($search) . '%';
+                $normalized = '%' . $this->normalizeSearch($search) . '%';
+
+                $query->where(function ($q) use ($numberColumns, $upper, $normalized) {
+                    foreach ($numberColumns as $col) {
+                        $q->orWhereRaw("UPPER({$col}) LIKE ?", [$upper])
+                          ->orWhereRaw(
+                              "REPLACE(REPLACE(REPLACE(REPLACE(UPPER({$col}), '-', ''), '/', ''), ' ', ''), '.', '') LIKE ?",
+                              [$normalized]
+                          );
+                    }
+                    // Officers often know the owner, not the number.
+                    $q->orWhereRaw("UPPER(ISNULL(file_title, '')) LIKE ?", [$upper]);
+                });
+            }
+
+            // One extra row answers "is there another page?" without a COUNT(*).
+            $rows = $query
+                ->orderByDesc('id')
+                ->skip(($page - 1) * $perPage)
+                ->take($perPage + 1)
+                ->get();
+
+            $hasMore = $rows->count() > $perPage;
+            $rows = $rows->take($perPage);
+
+            $results = $rows->map(function ($r) {
+                $number = trim((string) ($r->file_number
+                    ?: $r->mls_file_no
+                    ?: $r->kangis_file_no
+                    ?: $r->new_kangis_file_no
+                    ?: $r->temp_file_no));
+
+                // Which hidden field the capture form should carry this number in.
+                // The number's own column wins; otherwise the row's registry decides,
+                // since KANGIS rows often keep their number in file_number alone.
+                $registry = strtoupper(trim((string) $r->registry));
+                $system = 'mls';
+                if ($number !== '' && $number === trim((string) $r->kangis_file_no)) {
+                    $system = 'kangis';
+                } elseif ($number !== '' && $number === trim((string) $r->new_kangis_file_no)) {
+                    $system = 'newkangis';
+                } elseif (str_contains($registry, 'NEW KANGIS')) {
+                    $system = 'newkangis';
+                } elseif (str_contains($registry, 'KANGIS')) {
+                    $system = 'kangis';
+                }
+
+                $title = trim((string) $r->file_title);
+                $where = trim(implode(', ', array_filter([
+                    trim((string) $r->plot_number) !== '' ? 'Plot ' . trim((string) $r->plot_number) : null,
+                    trim((string) $r->district) ?: null,
+                    trim((string) $r->lga) ?: null,
+                ])));
+
+                return [
+                    'id' => $number,
+                    'text' => $number,
+                    'file_number' => $number,
+                    'system' => $system,
+                    'registry' => trim((string) $r->registry),
+                    'file_title' => $title,
+                    'subtitle' => trim(implode(' — ', array_filter([$title ?: null, $where ?: null]))),
+                    'indexing_id' => $r->id,
+                ];
+            })
+            ->filter(fn ($row) => $row['file_number'] !== '')
+            ->values();
+
+            return response()->json([
+                'success' => true,
+                'results' => $results,
+                'pagination' => ['more' => $hasMore],
+            ]);
+        } catch (\Throwable $e) {
+            return $this->error('Indexing search', $e);
+        }
+    }
+
     protected function normalizeSearch(?string $value): string
     {
         $value = strtoupper(trim((string) $value));

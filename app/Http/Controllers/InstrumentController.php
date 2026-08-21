@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
@@ -1320,6 +1321,41 @@ class InstrumentController extends Controller
         }
 
         return response()->json(['success' => true, 'data' => $record]);
+    }
+
+    /**
+     * The next registration particulars the instrument about to be captured would
+     * take — read-only, nothing is consumed.
+     *
+     * Shown on the capture card ("You are about to register ... 19/19/68") so the
+     * officer knows the number before committing. OP passes its sub-type, which is
+     * what selects the vault (OP Resettlement and OP Direct Allocation paginate
+     * separately), and the CofO variants each have their own vault too.
+     */
+    public function nextRegistrationParticulars(Request $request): JsonResponse
+    {
+        $instrumentType = trim((string) $request->query('instrument_type', ''));
+        $opType = trim((string) $request->query('op_type', ''));
+
+        if ($instrumentType === '') {
+            return response()->json(['success' => false, 'message' => 'instrument_type is required.'], 422);
+        }
+
+        try {
+            $preview = app(\App\Services\InstrumentRegistrationService::class)
+                ->peekRegistrationNumber($instrumentType, $opType !== '' ? $opType : null);
+
+            return response()->json(array_merge(['success' => true], $preview));
+        } catch (\Throwable $e) {
+            // Never block the capture screen over a preview.
+            Log::warning('Could not preview registration particulars', [
+                'instrument_type' => $instrumentType,
+                'op_type' => $opType,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 200);
+        }
     }
 
     public function generateParticulars()

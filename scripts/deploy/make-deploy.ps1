@@ -22,6 +22,15 @@
 
         .\scripts\deploy\make-deploy.ps1 -Out D:\drops\release-12
 
+        .\scripts\deploy\make-deploy.ps1 -Paths 'routes\web.php','config\app.php'
+        .\scripts\deploy\make-deploy.ps1 -Paths (Get-Content .\release.txt)
+            Ship exactly these files, ignoring what git thinks changed. Use when the
+            release is one feature out of a working tree (or a history) that also
+            contains unrelated work. Repo-relative paths.
+
+            NEW vs MOD is guessed from the repo: untracked means NEW. Add -Since to
+            decide it properly - a file absent from that ref is NEW to production.
+
     Read-only against the repo. Only the -Out folder is written to.
 #>
 
@@ -32,6 +41,9 @@ param(
 
     # Add working-tree changes on top of -Since.
     [switch]$IncludeUncommitted,
+
+    # Explicit repo-relative paths to ship. Overrides git change detection entirely.
+    [string[]]$Paths,
 
     [string]$Out = 'C:\wamp64\www\_klaes_deploy',
 
@@ -59,7 +71,39 @@ function Add-Change([string]$path, [string]$state) {
     $changes[$p] = $state
 }
 
-if ($Since) {
+if ($Paths) {
+    # Explicit list: the caller has already decided what ships. git is consulted only
+    # to label each file NEW or MOD, never to add or drop one.
+    foreach ($raw in $Paths) {
+        if (-not $raw) { continue }
+        $rel = ($raw.Trim().Trim('"')) -replace '/', '\'
+        if (-not $rel) { continue }
+
+        if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot $rel) -PathType Leaf)) {
+            throw "Not a file in the repo: $rel"
+        }
+
+        $state = 'MOD'
+        $slashed = $rel -replace '\\', '/'
+
+        # ls-tree / ls-files are used rather than cat-file -e and --error-unmatch
+        # because those write to stderr for a path they cannot find, and under
+        # $ErrorActionPreference = 'Stop' PowerShell turns a native command's stderr
+        # into a terminating NativeCommandError. These two stay silent and simply
+        # return nothing, so "absent" is read from the output, not from an exit code.
+        if ($Since) {
+            # Absent from the base ref means production has never seen it.
+            $found = git ls-tree -r --name-only $Since -- $slashed
+        } else {
+            $found = git ls-files -- $rel
+        }
+
+        if (-not $found) { $state = 'NEW' }
+
+        Add-Change $rel $state
+    }
+}
+elseif ($Since) {
     git rev-parse --verify --quiet "$Since" > $null
     if ($LASTEXITCODE -ne 0) { throw "Not a valid commit/ref: $Since" }
 
@@ -78,7 +122,7 @@ if ($Since) {
     }
 }
 
-if (-not $Since -or $IncludeUncommitted) {
+if (-not $Paths -and (-not $Since -or $IncludeUncommitted)) {
     # -uall: without it git collapses a wholly-untracked directory into a single
     # "dir/" entry, and every file inside it would silently miss the release.
     foreach ($line in (git status --porcelain -uall)) {
@@ -224,7 +268,8 @@ if ($migrations.Count -gt 0) {
 $new = ($manifest | Where-Object { $_ -like 'NEW*' }).Count
 $mod = ($manifest | Where-Object { $_ -like 'MOD*' }).Count
 
-$source = if ($Since -and $IncludeUncommitted) { "$Since..HEAD + uncommitted" }
+$source = if ($Paths)                            { "explicit list ($($Paths.Count) path(s))" }
+          elseif ($Since -and $IncludeUncommitted) { "$Since..HEAD + uncommitted" }
           elseif ($Since)                      { "$Since..HEAD" }
           else                                 { "uncommitted working tree" }
 

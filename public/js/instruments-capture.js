@@ -248,6 +248,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     currentInstrumentType = subtype; // Update global state
 
                     elements.dialogTitle.textContent = `Capture ${typeData.name} `;
+                    applyDialogTitleAccent();
                     updatePartyLabels(subtype);
                     showInstrumentForm(subtype);
                     setHidden('instrument_type', typeData.name);
@@ -348,16 +349,371 @@ document.addEventListener('DOMContentLoaded', function () {
         elements.displayFileno.addEventListener('change', updateOpSubmitAvailability);
     }
 
+    /* --- Occupancy Permit type -------------------------------------------------
+     * The OP type is no longer a field inside the capture form: it is asked ONCE,
+     * as a prompt, the moment "Occupancy Permit (OP)" is picked on the instrument
+     * type screen. The hidden radios in #op-type-container remain the value every
+     * other part of the capture reads (input[name="op_type"]:checked) and what the
+     * form posts; #op-type-summary shows the answer with a "Change" link.
+     * ------------------------------------------------------------------------ */
+    const OP_TYPE_OPTIONS = [
+        {
+            value: 'OP Resettlement', label: 'Resettlement',
+            blurb: 'Permit issued under a resettlement scheme.',
+            accent: '#d97706', accentSoft: '#fffbeb',
+        },
+        {
+            value: 'OP Direct Allocation', label: 'Direct Allocation',
+            blurb: 'Permit granted by direct allocation.',
+            accent: '#7c3aed', accentSoft: '#f5f3ff',
+        },
+    ];
+
+    function getSelectedOpType() {
+        return document.querySelector('input[name="op_type"]:checked')?.value || '';
+    }
+
+    function opTypeLabel(value) {
+        return OP_TYPE_OPTIONS.find(t => t.value === value)?.label || '';
+    }
+
+    // Neutral fallback while nothing has been chosen yet.
+    const BANNER_NEUTRAL = { accent: '#4b5563', accentSoft: '#f9fafb' };
+
+    /**
+     * Colour a capture banner with the accent of whatever was chosen — the same
+     * colour its card carried in the prompt, and the one the dialog header and
+     * submit button use. Everything the banner tints reads --accent, so one pair
+     * of custom properties is the whole repaint.
+     */
+    function paintSummaryBanner(bannerId, colours) {
+        const banner = document.getElementById(bannerId);
+        if (!banner) return;
+        const { accent, accentSoft } = colours || BANNER_NEUTRAL;
+        banner.style.setProperty('--accent', accent);
+        banner.style.setProperty('--accent-soft', accentSoft);
+    }
+
+    /**
+     * Show the next registration particulars the instrument being captured would
+     * take (read-only — the number is only consumed at registration). Blank when
+     * the vault is not configured, so the line never shows a misleading value.
+     */
+    function refreshRegistrationPreview(instrumentType, opType, targetId) {
+        const el = document.getElementById(targetId);
+        if (!el) return;
+        if (!instrumentType) { el.textContent = '\u2014'; return; }
+
+        const params = new URLSearchParams({ instrument_type: instrumentType });
+        if (opType) params.set('op_type', opType);
+
+        el.textContent = 'checking\u2026';
+        fetch('/instruments/next-registration-particulars?' + params.toString(), {
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+        })
+            .then(res => res.json())
+            .then(data => {
+                el.textContent = (data && data.success && data.configured && data.formatted)
+                    ? data.formatted
+                    : '\u2014';
+            })
+            .catch(err => {
+                console.warn('Could not read the next registration particulars', err);
+                el.textContent = '\u2014';
+            });
+    }
+
+    // Repaint the banner from whatever radio is currently checked.
+    function updateOpTypeSummary() {
+        const el = document.getElementById('op-type-summary-value');
+        if (!el) return;
+        const label = opTypeLabel(getSelectedOpType());
+        el.textContent = label || 'Not selected';
+        el.classList.toggle('text-rose-600', !label);
+
+        const chosen = OP_TYPE_OPTIONS.find(t => t.value === getSelectedOpType());
+        paintSummaryBanner('op-type-summary', chosen);
+
+        refreshRegistrationPreview(
+            label ? 'Occupancy Permit (OP)' : '',
+            getSelectedOpType(),
+            'op-type-reg-particulars'
+        );
+    }
+    window.updateOpTypeSummary = updateOpTypeSummary;
+
+    // Check the matching radio (and let every existing listener see the change).
+    function applyOpType(value) {
+        document.querySelectorAll('input[name="op_type"]').forEach(r => { r.checked = false; });
+        const radio = value
+            ? document.querySelector('input[name="op_type"][value="' + value + '"]')
+            : null;
+        if (radio) {
+            radio.checked = true;
+            radio.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        updateOpTypeSummary();
+    }
+    window.applyOpType = applyOpType;
+
+    /**
+     * Ask for the OP type. Resolves to the chosen value, or '' when dismissed.
+     *
+     * There is nothing to confirm once a card is clicked — the click IS the
+     * answer, so the dialog closes straight away and there is no Continue button.
+     */
+    function promptForOpType(current) {
+        if (typeof Swal === 'undefined') return Promise.resolve(current || '');
+
+        let chosen = current || '';
+        const cards = OP_TYPE_OPTIONS.map(t => (
+            '<button type="button" class="type-prompt__card type-prompt__card--action"'
+            + ' data-op-type="' + t.value + '"'
+            + ' style="--accent:' + t.accent + ';--accent-soft:' + t.accentSoft + '">'
+            + '<span class="type-prompt__card-title">' + t.label + '</span>'
+            + '<span class="type-prompt__card-blurb">' + t.blurb + '</span>'
+            + '</button>'
+        )).join('');
+
+        return Swal.fire({
+            title: 'Occupancy Permit (OP) Type',
+            html: '<div class="type-prompt">'
+                + '<div class="type-prompt__question">Which kind of permit is being captured?</div>'
+                + '<div class="type-prompt__cards type-prompt__cards--two">' + cards + '</div>'
+                + '</div>',
+            width: 480,
+            showConfirmButton: false,
+            showCancelButton: true,
+            cancelButtonText: 'Cancel',
+            focusConfirm: false,
+            didOpen: () => {
+                document.querySelectorAll('[data-op-type]').forEach(card => {
+                    card.classList.toggle('is-selected', card.dataset.opType === chosen);
+                    card.addEventListener('click', () => {
+                        chosen = card.dataset.opType;
+                        Swal.clickConfirm();   // the pick confirms itself
+                    });
+                });
+            },
+            preConfirm: () => chosen,
+        }).then(result => (result.isConfirmed && result.value) ? String(result.value) : '');
+    }
+    window.promptForOpType = promptForOpType;
+
+    // The commissioning flow hands over a loose hint ("resettlement" / "direct").
+    function opTypeFromCommissionPrefill() {
+        const hint = String(window.prefillOpTypeFromCommission || '').toLowerCase();
+        if (hint.includes('resettlement')) return 'OP Resettlement';
+        if (hint.includes('direct')) return 'OP Direct Allocation';
+        return '';
+    }
+
+    // "Change" on the banner re-opens the same prompt.
+    const opTypeChangeBtn = document.getElementById('op-type-change-btn');
+    if (opTypeChangeBtn) {
+        opTypeChangeBtn.addEventListener('click', () => {
+            promptForOpType(getSelectedOpType()).then(chosen => {
+                if (chosen) applyOpType(chosen);
+            });
+        });
+    }
+
+    // Anything that checks a radio programmatically (consent auto-fill, edit mode,
+    // commissioning prefill) still repaints the banner.
+    document.querySelectorAll('input[name="op_type"]').forEach(radio => {
+        radio.addEventListener('change', updateOpTypeSummary);
+    });
+
+    /* --- File Number dropdown --------------------------------------------------
+     * The file number is chosen from a Select2 dropdown backed by the indexing
+     * table, not from the global file-number modal. #display_fileno remains the
+     * hidden source of truth every other part of the capture reads and writes, so
+     * the dropdown only has to push into it (on pick) and mirror it back (when
+     * something else writes a number, e.g. TEMP allocation for an OP).
+     * ------------------------------------------------------------------------ */
+    const FILE_NUMBER_SEARCH_URL = '/api/file-numbers/indexing-search';
+    let fileNumberSyncing = false;   // guards the two-way mirror against a loop
+
+    function fileNumberSelectEl() {
+        return document.getElementById('file_number_select');
+    }
+
+    function initFileNumberSelect() {
+        const selectEl = fileNumberSelectEl();
+        if (!selectEl) return;
+        if (!(window.jQuery && jQuery.fn.select2)) return;
+
+        const $select = jQuery(selectEl);
+        if ($select.hasClass('select2-hidden-accessible')) return;
+
+        $select.select2({
+            width: '100%',
+            placeholder: selectEl.dataset.placeholder || 'Search a file number',
+            allowClear: true,
+            minimumInputLength: 0,
+            dropdownParent: jQuery('#registration-dialog').length
+                ? jQuery('#registration-dialog')
+                : jQuery(document.body),
+            ajax: {
+                url: FILE_NUMBER_SEARCH_URL,
+                dataType: 'json',
+                delay: 250,
+                cache: true,
+                data: params => ({ q: params.term || '', page: params.page || 1, per_page: 30 }),
+                processResults: (data, params) => ({
+                    results: (data && data.results) ? data.results : [],
+                    pagination: { more: !!(data && data.pagination && data.pagination.more) },
+                }),
+            },
+            // Two lines per row: the number, then whatever identifies the file.
+            templateResult: item => {
+                if (!item.id) return item.text;
+                const subtitle = item.subtitle || item.file_title || '';
+                const registry = item.registry ? ' &middot; ' + escapeHtmlText(item.registry) : '';
+                return jQuery(
+                    '<div class="fileno-option">'
+                    + '<div class="fileno-option__no">' + escapeHtmlText(item.text) + registry + '</div>'
+                    + (subtitle ? '<div class="fileno-option__sub">' + escapeHtmlText(subtitle) + '</div>' : '')
+                    + '</div>'
+                );
+            },
+            templateSelection: item => item.text || item.id || '',
+        });
+
+        // A pick replaces the file the capture is about - same handler the modal used.
+        $select.on('select2:select', function (event) {
+            if (fileNumberSyncing) return;
+            const data = event.params && event.params.data ? event.params.data : {};
+            const fileNumber = String(data.file_number || data.id || '').trim();
+            if (!fileNumber) return;
+            applySelectedFile({ fileNumber, system: data.system || 'mls' });
+        });
+
+        $select.on('select2:clear', function () {
+            if (fileNumberSyncing) return;
+            clearSelectedFileNumber();
+        });
+
+        syncFileNumberSelect(elements.displayFileno ? elements.displayFileno.value : '');
+    }
+
+    /**
+     * Show `value` in the dropdown without treating it as a fresh user pick.
+     * Called whenever something else writes #display_fileno (TEMP allocation,
+     * lookup, reset), so the visible control never drifts from the real value.
+     */
+    function syncFileNumberSelect(value) {
+        const selectEl = fileNumberSelectEl();
+        if (!selectEl) return;
+        const wanted = String(value || '').trim();
+
+        fileNumberSyncing = true;
+        try {
+            if (!wanted) {
+                selectEl.innerHTML = '';
+                selectEl.value = '';
+            } else {
+                const exists = Array.from(selectEl.options).some(o => o.value === wanted);
+                if (!exists) {
+                    // A number the dropdown has never listed (a freshly minted TEMP one,
+                    // for instance) still has to be displayable.
+                    selectEl.appendChild(new Option(wanted, wanted, true, true));
+                }
+                selectEl.value = wanted;
+            }
+            if (window.jQuery && jQuery.fn.select2 && jQuery(selectEl).hasClass('select2-hidden-accessible')) {
+                jQuery(selectEl).trigger('change.select2');
+            }
+        } finally {
+            fileNumberSyncing = false;
+        }
+    }
+    window.syncFileNumberSelect = syncFileNumberSelect;
+
+    // Clearing the dropdown clears the file the capture is attached to.
+    function clearSelectedFileNumber() {
+        if (elements.displayFileno) elements.displayFileno.value = '';
+        if (elements.hiddenMlsFNo) elements.hiddenMlsFNo.value = '';
+        if (elements.hiddenKangisFileNo) elements.hiddenKangisFileNo.value = '';
+        if (elements.hiddenNewKANGISFileno) elements.hiddenNewKANGISFileno.value = '';
+        if (elements.hiddenGenericFileno) elements.hiddenGenericFileno.value = '';
+        if (elements.fileSourceInfo) {
+            elements.fileSourceInfo.textContent = 'Select a file to associate.';
+            elements.fileSourceInfo.className = 'mt-2 text-xs text-gray-400 truncate';
+        }
+        if (typeof updateOpSubmitAvailability === 'function') updateOpSubmitAvailability();
+    }
+
+    // Locked modes (commissioned-file OP, generated TEMP numbers) used to hide the
+    // Select button; with a dropdown they disable it instead.
+    function setFileNumberPickerEnabled(enabled) {
+        const selectEl = fileNumberSelectEl();
+        if (!selectEl) return;
+        selectEl.disabled = !enabled;
+        if (window.jQuery && jQuery.fn.select2 && jQuery(selectEl).hasClass('select2-hidden-accessible')) {
+            jQuery(selectEl).trigger('change.select2');
+        }
+    }
+    window.setFileNumberPickerEnabled = setFileNumberPickerEnabled;
+
+    initFileNumberSelect();
+
+    /**
+     * Mirror EVERY write of #display_fileno into the dropdown.
+     *
+     * The hidden input is written from a dozen places — TEMP allocation, lookups,
+     * reset-after-registration, close — and most of them assign `.value` without
+     * dispatching an event, which is how a spent TEMP number was left showing in
+     * the dropdown after the form behind it had already been cleared. Wrapping the
+     * property on this one element makes the mirror impossible to miss, rather than
+     * relying on every caller to remember. The change listener still covers writes
+     * that come from the browser itself (a native form.reset()).
+     */
+    if (elements.displayFileno) {
+        const nativeValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+        Object.defineProperty(elements.displayFileno, 'value', {
+            configurable: true,
+            get() { return nativeValue.get.call(this); },
+            set(next) {
+                nativeValue.set.call(this, next);
+                if (!fileNumberSyncing) syncFileNumberSelect(next);
+            },
+        });
+
+        elements.displayFileno.addEventListener('change', () => {
+            if (!fileNumberSyncing) syncFileNumberSelect(elements.displayFileno.value);
+        });
+    }
+
     // Attach listeners to instrument type buttons
     const typeButtons = document.querySelectorAll('.instrument-type-btn');
     typeButtons.forEach(btn => {
         btn.addEventListener('click', function () {
             const type = this.getAttribute('data-type');
-            if (typeof openRegistrationDialog === 'function') {
-                openRegistrationDialog(type);
-            } else {
+            if (typeof openRegistrationDialog !== 'function') {
                 console.error('openRegistrationDialog is not defined');
+                return;
             }
+            if (type === 'certificate-of-occupancy') {
+                // CofO: variant (+ type for Regular) is asked before the form opens.
+                promptForCofoSelection(getCofoVariant(), getCofoType()).then(answer => {
+                    if (!answer) return;
+                    openRegistrationDialog(type);   // resets to Regular, so apply afterwards
+                    applyCofoSelection(answer.variant, answer.type);
+                });
+                return;
+            }
+            if (type !== 'occupancy-permit') {
+                openRegistrationDialog(type);
+                return;
+            }
+            // OP: ask for the type first - dismissing leaves the capture form unopened.
+            promptForOpType(getSelectedOpType() || opTypeFromCommissionPrefill()).then(chosen => {
+                if (!chosen) return;
+                openRegistrationDialog(type);   // may reset the form, so apply afterwards
+                applyOpType(chosen);
+            });
         });
     });
 
@@ -406,7 +762,7 @@ document.addEventListener('DOMContentLoaded', function () {
             el.addEventListener(eventType, () => {
                 // If it's a select, also update the custom UI/toggles
                 if (el.tagName === 'SELECT') {
-                    updateCustomSelect(id, el.value);
+                    updateCustomSelect(id, getSelectValueString(el));
                 }
                 updatePropertyDescription();
             });
@@ -503,10 +859,32 @@ document.addEventListener('DOMContentLoaded', function () {
     setupManualSelectListeners();
     ['firstParty', 'secondParty'].forEach(updatePartyAddressMode);
 
+    /**
+     * Read a <select> as a string. A multi-select (Property LGA — one property can straddle
+     * more than one LGA) yields its picks as a comma-separated list; a single select yields
+     * its one value. Everything downstream keeps working on a plain string.
+     */
+    function getSelectValueString(selectEl) {
+        if (!selectEl) return '';
+        if (selectEl.multiple) {
+            return Array.from(selectEl.selectedOptions)
+                .map(o => (o.value || '').trim())
+                .filter(Boolean)
+                .join(', ');
+        }
+        return (selectEl.value || '').trim();
+    }
+
+    // Same, by element id — the form's many `getElementById(x).value` reads route through here.
+    function getSelectValueById(selectId) {
+        return getSelectValueString(document.getElementById(selectId));
+    }
+    window.getInstrumentSelectValue = getSelectValueById;
+
     function getSelectOrManualValue(selectId, manualInputId) {
         const selectEl = document.getElementById(selectId);
         if (!selectEl) return '';
-        let value = (selectEl.value || '').trim();
+        let value = getSelectValueString(selectEl);
         const manualEl = manualInputId ? document.getElementById(manualInputId) : null;
         const manualContainer = manualEl?.closest('.mt-2');
         if (manualEl && manualContainer && !manualContainer.classList.contains('hidden') && manualEl.value.trim()) {
@@ -708,6 +1086,49 @@ document.addEventListener('DOMContentLoaded', function () {
 
     window.initDistrictSelect2 = initDistrictSelect2;
     initDistrictSelect2();
+
+    /**
+     * Property LGA is a MULTI select — a single property/layout can straddle more than one
+     * LGA — rendered with Select2 so it stays searchable and shows the picks as removable
+     * tags. Mirrors initDistrictSelect2, including the native-change re-dispatch that keeps
+     * the addEventListener-based property-description updater working.
+     */
+    function initLgaMultiSelect2(root) {
+        if (!(window.jQuery && jQuery.fn.select2)) return;
+
+        const scope = root && root.querySelectorAll ? root : document;
+        const selectEl = scope.getElementById
+            ? scope.getElementById('desc_lga')
+            : scope.querySelector('#desc_lga');
+        if (!selectEl || !selectEl.multiple) return;
+
+        const $select = jQuery(selectEl);
+        if ($select.hasClass('select2-hidden-accessible')) return;
+
+        $select.select2({
+            width: '100%',
+            placeholder: selectEl.dataset.placeholder || 'Select LGA',
+            allowClear: false,
+            closeOnSelect: false,
+            containerCssClass: 'lga-multi-select2',
+            dropdownParent: jQuery('#registration-dialog').length
+                ? jQuery('#registration-dialog')
+                : jQuery(document.body),
+        });
+
+        $select.on('change', function () {
+            if (selectEl.dataset.select2Syncing === '1') return;
+            selectEl.dataset.select2Syncing = '1';
+            selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+            delete selectEl.dataset.select2Syncing;
+        });
+
+        const chevron = selectEl.parentElement?.querySelector('[data-lucide="chevron-down"]');
+        if (chevron) chevron.style.display = 'none';
+    }
+
+    window.initLgaMultiSelect2 = initLgaMultiSelect2;
+    initLgaMultiSelect2();
 
     // Attach checkbox listeners
     const surveyInfo = document.getElementById('surveyInfo');
@@ -1033,6 +1454,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const system = result.system.toLowerCase();
 
         elements.displayFileno.value = fileNo;
+        syncFileNumberSelect(fileNo);
         elements.fileSourceInfo.textContent = `Selected from ${system.toUpperCase()}`;
         elements.fileSourceInfo.className = "mt-2 text-sm text-green-600 font-medium";
 
@@ -1172,30 +1594,39 @@ document.addEventListener('DOMContentLoaded', function () {
      * type matches the "Certificate of Occupancy" substring, so all three
      * variants register and number identically — only the mirror row differs.
      *
-     * `hasType` marks the one variant that carries the Direct Allocation /
-     * Recertification / Conversion subtype. SLTR and ST files are titled through
-     * their own programmes and have no subtype.
+     * `types` lists the C of O Types the variant offers. Regular carries the
+     * classic subtypes; SLTR and ST are titled through their own programmes and
+     * only distinguish a brand-new certificate from one replacing an existing
+     * (old) title, so they get New / Old instead. `hasType` is derived from it —
+     * every variant has types now, and both validation gates (the confirm dialog
+     * and validateForm) key off `hasType`, so all three ask for a type.
      */
     const cofoVariants = {
         regular: {
             instrumentType: 'Certificate of Occupancy',
-            hasType: true,
+            types: ['Direct Allocation', 'Recertification', 'Conversion'],
             accent: 'red',
             note: ''
         },
         sltr: {
             instrumentType: 'SLTR Certificate of Occupancy',
-            hasType: false,
+            types: ['New C of O', 'Old C of O'],
             accent: 'green',
-            note: 'Systematic Land Titling and Registration — no C of O type applies.'
+            note: 'Systematic Land Titling and Registration.'
         },
         st: {
             instrumentType: 'ST Certificate of Occupancy',
-            hasType: false,
+            types: ['New C of O', 'Old C of O'],
             accent: 'blue',
-            note: 'Sectional Titling — no C of O type applies.'
+            note: 'Sectional Titling.'
         }
     };
+    Object.values(cofoVariants).forEach(v => { v.hasType = v.types.length > 0; });
+
+    // The C of O Types a variant offers.
+    function cofoTypesFor(variant) {
+        return (cofoVariants[variant] || cofoVariants.regular).types || [];
+    }
 
     /**
      * Per-variant segmented-control states, built from the accent each tab carries
@@ -1259,11 +1690,17 @@ document.addEventListener('DOMContentLoaded', function () {
         const cofoTypeSelect = document.getElementById('cofoType');
         if (typeContainer) typeContainer.classList.toggle('hidden', !config.hasType);
 
-        // Clear the subtype when it does not apply, so a value picked on Regular
-        // can never be submitted with an SLTR or ST capture.
-        if (!config.hasType && cofoTypeSelect && cofoTypeSelect.value) {
-            cofoTypeSelect.value = '';
-            cofoTypeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        // Rebuild the type options for this variant, keeping the current value only
+        // when the variant still offers it — a "Conversion" picked on Regular can
+        // never ride along with an SLTR capture, and vice versa.
+        if (cofoTypeSelect) {
+            const previous = cofoTypeSelect.value;
+            const types = cofoTypesFor(variant);
+            const keep = types.includes(previous) ? previous : '';
+            cofoTypeSelect.innerHTML = '<option value="">Select C of O Type</option>'
+                + types.map(t => '<option value="' + t + '">' + t + '</option>').join('');
+            cofoTypeSelect.value = keep;
+            if (keep !== previous) cofoTypeSelect.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
         const note = document.getElementById('cofo-variant-note');
@@ -1281,6 +1718,9 @@ document.addEventListener('DOMContentLoaded', function () {
         // Keep the submitted instrument_type in step with the tab.
         setHidden('instrument_type', config.instrumentType);
 
+        if (typeof updateCofoSummary === 'function') updateCofoSummary();
+        applyDialogTitleAccent();
+
         // Repaint the submit button in the tab's accent. Skipped when another
         // piece of code owns the button's state — the already-captured lock, or
         // update mode, where it is the amber "Update Instrument" and must stay so.
@@ -1294,6 +1734,168 @@ document.addEventListener('DOMContentLoaded', function () {
         const tab = event.target.closest('.cofo-variant-tab');
         if (tab) setCofoVariant(tab.dataset.variant);
     });
+
+    /* --- Certificate of Occupancy: variant + type, asked as one prompt ---------
+     * Both used to be operated inside the form (a segmented control and a select).
+     * They are now asked once, together, when the instrument type is chosen; the
+     * hidden markup they drive stays put, so setCofoVariant() and #cofoType (the
+     * posted cofo_type field) are unchanged.
+     * ------------------------------------------------------------------------ */
+    // The colours match the variant accents the rest of the CofO UI already uses.
+    const COFO_VARIANT_META = {
+        regular: {
+            label: 'Regular', blurb: 'Standard statutory right of occupancy.',
+            accent: '#dc2626', accentSoft: '#fef2f2',
+        },
+        sltr: {
+            label: 'SLTR', blurb: 'Systematic Land Titling and Registration.',
+            accent: '#16a34a', accentSoft: '#f0fdf4',
+        },
+        st: {
+            label: 'ST', blurb: 'Sectional Titling.',
+            accent: '#2563eb', accentSoft: '#eff6ff',
+        },
+    };
+
+    function getCofoType() {
+        return (document.getElementById('cofoType')?.value || '').trim();
+    }
+
+    // Banner text: "Regular - Direct Allocation", or just the variant where no
+    // type applies. Turns red while a Regular capture still has no type.
+    function updateCofoSummary() {
+        const el = document.getElementById('cofo-summary-value');
+        if (!el) return;
+        const variant = getCofoVariant();
+        const meta = COFO_VARIANT_META[variant] || COFO_VARIANT_META.regular;
+        const needsType = !!cofoVariants[variant]?.hasType;
+        const type = getCofoType();
+        el.textContent = needsType
+            ? meta.label + ' \u2014 ' + (type || 'type not selected')
+            : meta.label;
+        el.classList.toggle('text-rose-600', needsType && !type);
+
+        paintSummaryBanner('cofo-summary', meta);
+
+        refreshRegistrationPreview(
+            cofoVariants[variant].instrumentType,
+            null,
+            'cofo-reg-particulars'
+        );
+    }
+    window.updateCofoSummary = updateCofoSummary;
+
+    // Apply a {variant, type} answer to the (hidden) controls the form posts from.
+    function applyCofoSelection(variant, type) {
+        setCofoVariant(variant || 'regular');
+        const typeSelect = document.getElementById('cofoType');
+        if (typeSelect) {
+            const applies = !!cofoVariants[getCofoVariant()]?.hasType;
+            typeSelect.value = applies ? (type || '') : '';
+            typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        updateCofoSummary();
+    }
+
+    /**
+     * Ask for the CofO variant and, for Regular, its type - in one dialog.
+     * Resolves to { variant, type }, or null when dismissed.
+     */
+    function promptForCofoSelection(currentVariant, currentType) {
+        if (typeof Swal === 'undefined') return Promise.resolve(null);
+
+        let variant = cofoVariants[currentVariant] ? currentVariant : 'regular';
+        const cards = Object.keys(COFO_VARIANT_META).map(key => (
+            '<button type="button" class="type-prompt__card" data-variant="' + key + '"'
+            + ' style="--accent:' + COFO_VARIANT_META[key].accent
+            + ';--accent-soft:' + COFO_VARIANT_META[key].accentSoft + '">'
+            + '<span class="type-prompt__card-title">' + COFO_VARIANT_META[key].label + '</span>'
+            + '<span class="type-prompt__card-blurb">' + COFO_VARIANT_META[key].blurb + '</span>'
+            + '</button>'
+        )).join('');
+
+        const typeOptionsFor = key => ['<option value="">Select C of O Type</option>']
+            .concat(cofoTypesFor(key).map(t => '<option value="' + t + '">' + t + '</option>'))
+            .join('');
+
+        const html =
+            '<div class="type-prompt">'
+            + '<div class="type-prompt__label">Variant</div>'
+            + '<div class="type-prompt__cards">' + cards + '</div>'
+            + '<div class="type-prompt__type" id="type-prompt-type-wrap">'
+            + '<label class="type-prompt__label" for="type-prompt-type">Certificate of Occupancy Type</label>'
+            + '<select id="type-prompt-type" class="type-prompt__select">' + typeOptionsFor(variant) + '</select>'
+            + '</div>'
+            + '</div>';
+
+        return Swal.fire({
+            title: 'Certificate of Occupancy',
+            html,
+            width: 520,
+            showCancelButton: true,
+            confirmButtonText: 'Continue',
+            confirmButtonColor: '#dc2626',
+            reverseButtons: true,
+            focusConfirm: false,
+            didOpen: () => {
+                const typeWrap = document.getElementById('type-prompt-type-wrap');
+                const typeSelect = document.getElementById('type-prompt-type');
+                if (typeSelect && currentType) typeSelect.value = currentType;
+
+                const titleEl = Swal.getTitle();
+                const confirmBtn = Swal.getConfirmButton();
+
+                const paint = () => {
+                    document.querySelectorAll('.type-prompt__card').forEach(card => {
+                        card.classList.toggle('is-selected', card.dataset.variant === variant);
+                        card.setAttribute('aria-pressed', card.dataset.variant === variant ? 'true' : 'false');
+                    });
+                    // Header and Continue button carry the selected variant's colour.
+                    const accent = (COFO_VARIANT_META[variant] || COFO_VARIANT_META.regular).accent;
+                    if (titleEl) titleEl.style.color = accent;
+                    if (confirmBtn) confirmBtn.style.backgroundColor = accent;
+                    const applies = !!cofoVariants[variant]?.hasType;
+                    if (typeWrap) typeWrap.classList.toggle('is-hidden', !applies);
+                    if (typeSelect) {
+                        // Each variant offers its own types; keep the pick only if it
+                        // survives the switch.
+                        const previous = typeSelect.value;
+                        typeSelect.innerHTML = typeOptionsFor(variant);
+                        typeSelect.value = cofoTypesFor(variant).includes(previous) ? previous : '';
+                    }
+                };
+
+                document.querySelectorAll('.type-prompt__card').forEach(card => {
+                    card.addEventListener('click', () => { variant = card.dataset.variant; paint(); });
+                });
+                paint();
+            },
+            preConfirm: () => {
+                const applies = !!cofoVariants[variant]?.hasType;
+                const type = (document.getElementById('type-prompt-type')?.value || '').trim();
+                if (applies && !type) {
+                    Swal.showValidationMessage('Select the Certificate of Occupancy type.');
+                    return false;
+                }
+                return { variant, type: applies ? type : '' };
+            },
+        }).then(result => (result.isConfirmed && result.value) ? result.value : null);
+    }
+    window.promptForCofoSelection = promptForCofoSelection;
+
+    // "Change" on the banner re-opens the same prompt.
+    const cofoChangeBtn = document.getElementById('cofo-change-btn');
+    if (cofoChangeBtn) {
+        cofoChangeBtn.addEventListener('click', () => {
+            promptForCofoSelection(getCofoVariant(), getCofoType()).then(answer => {
+                if (answer) applyCofoSelection(answer.variant, answer.type);
+            });
+        });
+    }
+
+    // Anything that sets the type directly (edit mode, consent auto-fill) repaints.
+    document.getElementById('cofoType')?.addEventListener('change', updateCofoSummary);
+
 
     // --- Duplicate Check Logic (Updated) ---
 
@@ -1338,6 +1940,20 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!sel) return;
 
         const options = Array.from(sel.options);
+
+        // A multi-select (Property LGA) restoring a saved comma-separated list: select every
+        // part that matches an option, rather than letting the fuzzy matching below collapse
+        // the whole string onto one.
+        if (sel.multiple && String(value).includes(',')) {
+            const wanted = String(value).split(',').map(v => v.trim().toLowerCase()).filter(Boolean);
+            const hits = options.filter(o => wanted.includes((o.value || '').trim().toLowerCase()));
+            if (hits.length) {
+                options.forEach(o => { o.selected = false; });
+                hits.forEach(o => { o.selected = true; });
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
+                return;
+            }
+        }
 
         // Try exact match first
         const match = options.find(o => o.value.toLowerCase() === value.toLowerCase());
@@ -2972,6 +3588,26 @@ document.addEventListener('DOMContentLoaded', function () {
             : 'blue';
     }
 
+    /**
+     * Paint the capture dialog's header in the CofO variant's accent, so the header,
+     * the banner and the submit button all say the same thing at a glance. Any other
+     * instrument type keeps the neutral heading.
+     *
+     * The accent classes are composed from the variant's `accent` name, which is safe
+     * because Tailwind is loaded as the full CDN build (no purge step to miss them).
+     */
+    function applyDialogTitleAccent() {
+        const title = elements.dialogTitle;
+        if (!title) return;
+
+        const accents = Object.values(cofoVariants).map(v => `text-${v.accent}-700`);
+        title.classList.remove('text-gray-800', ...accents);
+
+        title.classList.add(currentInstrumentType === 'certificate-of-occupancy'
+            ? `text-${cofoVariants[getCofoVariant()].accent}-700`
+            : 'text-gray-800');
+    }
+
     function submitButtonClassName(accent) {
         return `px-6 py-2.5 text-white font-medium bg-${accent}-600 rounded-lg hover:bg-${accent}-700 `
             + `focus:outline-none focus:ring-2 focus:ring-${accent}-500 focus:ring-offset-2 `
@@ -4159,8 +4795,12 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
 
-        // C of O Type Dropdown
-        if (data.op_type) {
+        // C of O Type Dropdown. The stored cofo_type is the authoritative answer —
+        // it is the only place an SLTR/ST "New C of O" / "Old C of O" is kept, and
+        // setCofoVariant() above has already loaded that variant's options.
+        if (data.cofo_type) {
+            safeSetValue('cofoType', data.cofo_type);
+        } else if (data.op_type) {
             safeSetValue('cofoType', data.op_type);
         } else if (data.coo_recertification) {
             safeSetValue('cofoType', 'Recertification');
@@ -4480,6 +5120,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // Initialise searchable District dropdowns rendered by the form/sidebar templates
             if (typeof initDistrictSelect2 === 'function') initDistrictSelect2();
+            if (typeof initLgaMultiSelect2 === 'function') initLgaMultiSelect2();
 
             if (instrumentType === 'deed-of-assignment') {
                 const sidebarToggle = document.getElementById('includeSolicitorSidebar');
@@ -4639,6 +5280,7 @@ document.addEventListener('DOMContentLoaded', function () {
             elements.hiddenNewKANGISFileno.value = '';
             elements.hiddenGenericFileno.value = '';
             elements.displayFileno.value = '';
+            syncFileNumberSelect('');
             elements.fileSourceInfo.textContent = 'Please select a file to associate with this instrument.';
             elements.fileSourceInfo.className = 'mt-2 text-sm text-gray-500';
             setPraHistoryAlertVisibility(false);
@@ -4729,16 +5371,16 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         elements.dialogTitle.textContent = `Capture ${type.name} `;
+        applyDialogTitleAccent();
         updatePartyLabels(typeKey);
         showInstrumentForm(typeKey);
 
-        // Toggle special type containers
-        if (elements.opTypeContainer) {
-            if (typeKey === 'occupancy-permit') {
-                elements.opTypeContainer.classList.remove('hidden');
-            } else {
-                elements.opTypeContainer.classList.add('hidden');
-            }
+        // Toggle special type containers. #op-type-container holds the hidden radios and
+        // stays hidden for every type - the OP type is shown in its banner instead.
+        const opTypeSummary = document.getElementById('op-type-summary');
+        if (opTypeSummary) {
+            opTypeSummary.classList.toggle('hidden', typeKey !== 'occupancy-permit');
+            if (typeKey === 'occupancy-permit') updateOpTypeSummary();
         }
 
         if (elements.opRegistrationDetails) {
@@ -4755,15 +5397,16 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!showOpRegistration) clearOpRegistrationDetails();
         }
 
-        if (elements.cofoVariantContainer) {
-            if (typeKey === 'certificate-of-occupancy') {
-                elements.cofoVariantContainer.classList.remove('hidden');
-                // Fresh dialog opens start on Regular; edit mode restores the
-                // record's own variant afterwards, from populateForm().
-                if (!isEditMode) setCofoVariant('regular');
-            } else {
-                elements.cofoVariantContainer.classList.add('hidden');
-            }
+        // The variant tabs stay hidden for every type now - the banner is what shows.
+        const cofoSummary = document.getElementById('cofo-summary');
+        if (typeKey === 'certificate-of-occupancy') {
+            // Fresh dialog opens start on Regular; edit mode restores the
+            // record's own variant afterwards, from populateForm().
+            if (!isEditMode) setCofoVariant('regular');
+            if (cofoSummary) cofoSummary.classList.remove('hidden');
+            updateCofoSummary();
+        } else if (cofoSummary) {
+            cofoSummary.classList.add('hidden');
         }
 
         // Handle Subtypes
@@ -4897,6 +5540,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 // Hide select button
                 if (selectFileBtn) selectFileBtn.classList.add('hidden');
+                setFileNumberPickerEnabled(false);
 
                 // Fetch next temp file number
                 updateOpSubmitAvailability();
@@ -4930,8 +5574,15 @@ document.addEventListener('DOMContentLoaded', function () {
                     filenoLabel.classList.remove('text-red-600');
                     filenoLabel.classList.add('text-gray-800');
                 }
+                // A TEMP-xxxxx generated for an OP belongs to that OP alone — never let it
+                // carry into the instrument now being captured.
+                if (!isEditMode && isAutoGeneratedTempFilenoActive()) {
+                    clearSelectedFileNumber();
+                    window._generatedTempFileno = null;
+                }
                 // Show select button if not in view mode
                 if (selectFileBtn && !isEditMode) selectFileBtn.classList.remove('hidden');
+                setFileNumberPickerEnabled(!isEditMode);
 
                 // Hide Serial Number Input
                 if (elements.opSerialNumberContainer) {
@@ -4950,26 +5601,18 @@ document.addEventListener('DOMContentLoaded', function () {
             elements.registrationDialog.classList.remove('hidden');
         }
 
-        // OP Type Visibility
-        const opContainer = document.getElementById('op-type-container');
-        if (opContainer) {
+        // OP Type: the radios are hidden inputs now; only the banner is shown/hidden.
+        const opTypeBanner = document.getElementById('op-type-summary');
+        if (opTypeBanner) {
             if (instrumentType === 'occupancy-permit') {
-                opContainer.classList.remove('hidden');
-
-                const prefillType = String(window.prefillOpTypeFromCommission || '').toLowerCase();
-                const prefillTargetId = prefillType === 'resettlement' ? 'op_type_resettlement' :
-                    (prefillType === 'direct' ? 'op_type_direct_allocation' : null);
-                if (prefillTargetId) {
-                    const prefillTarget = document.getElementById(prefillTargetId);
-                    if (prefillTarget) {
-                        prefillTarget.checked = true;
-                        prefillTarget.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                }
+                opTypeBanner.classList.remove('hidden');
+                // A commissioning prefill still wins when nothing was answered at the prompt.
+                const prefill = opTypeFromCommissionPrefill();
+                if (prefill && !getSelectedOpType()) applyOpType(prefill);
+                updateOpTypeSummary();
             } else {
-                opContainer.classList.add('hidden');
-                // Uncheck radios
-                opContainer.querySelectorAll('input[type="radio"]').forEach(el => el.checked = false);
+                opTypeBanner.classList.add('hidden');
+                document.querySelectorAll('input[name="op_type"]').forEach(el => { el.checked = false; });
             }
         }
 
@@ -5015,6 +5658,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             if (elements.opSerialNumberContainer) elements.opSerialNumberContainer.classList.remove('hidden');
             if (selectFileBtn) selectFileBtn.classList.add('hidden');
+            setFileNumberPickerEnabled(false);
 
             if (applyTempFileno) {
                 updateOpSubmitAvailability();
@@ -5046,7 +5690,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 filenoLabel.classList.add('text-gray-800');
             }
 
+            // The TEMP-xxxxx an OP capture generated belongs to that OP alone. Switching
+            // to any other instrument starts from "no file selected", never from a number
+            // left over on screen.
+            if (canShowSelect && isAutoGeneratedTempFilenoActive()) {
+                clearSelectedFileNumber();
+                window._generatedTempFileno = null;
+            }
+
             if (selectFileBtn && canShowSelect) selectFileBtn.classList.remove('hidden');
+            setFileNumberPickerEnabled(canShowSelect);
 
             if (elements.opSerialNumberContainer) {
                 elements.opSerialNumberContainer.classList.add('hidden');
@@ -5073,11 +5726,28 @@ document.addEventListener('DOMContentLoaded', function () {
             elements.registrationDialog.classList.remove('hidden');
         }
 
+        // form.reset() unchecks the OP type radios and blanks #cofoType. When the
+        // instrument type itself is being kept (the reset that runs after a successful
+        // registration, so the next capture starts clean), the answer given at the
+        // prompt is kept with it — otherwise the banner would still name a type the
+        // form no longer holds, and the next submit would stop on "select a sub-type".
+        const keepOpType = resetInstrumentType ? '' : getSelectedOpType();
+        const keepCofoType = resetInstrumentType ? '' : getCofoType();
+
         if (resetInstrumentType) currentInstrumentType = null;
         if (elements.registrationForm) {
             elements.registrationForm.reset();
             resyncFlatpickrInputs(elements.registrationForm);
         }
+
+        if (keepOpType) applyOpType(keepOpType);
+        if (keepCofoType) {
+            const cofoTypeSelect = document.getElementById('cofoType');
+            if (cofoTypeSelect) cofoTypeSelect.value = keepCofoType;
+        }
+        // Repaint both banners from whatever survived the reset.
+        updateOpTypeSummary();
+        updateCofoSummary();
 
         resetManualSelectFields();
 
@@ -6138,7 +6808,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const house = document.getElementById('house_no')?.value?.trim() || '';
         const plot = document.getElementById('plotNumber')?.value?.trim() || '';
         const district = getSelectOrManualValue('desc_district', 'manual_district');
-        const lga = document.getElementById('desc_lga')?.value?.trim() || '';
+        const lga = getSelectValueById('desc_lga');
         const state = document.getElementById('propertyState')?.value?.trim() || 'Kano';
         const streetName = getSelectOrManualValue('streetName', 'manual_street_name');
 
@@ -6260,8 +6930,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 return false;
             }
         } else if (currentInstrumentType === 'certificate-of-occupancy') {
-            // Only the Regular variant has a subtype to confirm; SLTR and ST are
-            // fully described by the variant itself.
+            // Every variant carries a type now (Regular: Direct Allocation /
+            // Recertification / Conversion; SLTR and ST: New / Old C of O).
             if (cofoVariants[getCofoVariant()].hasType) {
                 subType = document.getElementById('cofoType')?.value || '';
                 if (!subType) {
@@ -6627,7 +7297,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 plot_no: (document.getElementById('plotNumber')?.value || '').toString().trim(),
                 tp_no: (document.getElementById('tp_no')?.value || '').toString().trim(),
                 location: (document.getElementById('propertyDescription')?.value || '').toString().trim(),
-                lga: (document.getElementById('desc_lga')?.value || '').toString().trim(),
+                lga: getSelectValueById('desc_lga'),
             };
 
             // Validate Transaction Date on the OP card before proceeding
@@ -7955,8 +8625,8 @@ document.addEventListener('DOMContentLoaded', function () {
             lpkn_no: getVal('lpkn_no') || null,
             plot_size: getVal('plotSize') || getVal('size') || null,
             house_no: getVal('house_no') || null,
-            lgsaOrCity: getVal('desc_lga') || null,
-            location: getVal('desc_district') || getVal('desc_lga') || null,
+            lgsaOrCity: getSelectValueById('desc_lga') || null,
+            location: getVal('desc_district') || getSelectValueById('desc_lga') || null,
             property_description: getVal('propertyDescription') || null,
             instrument_type: 'Occupancy Permit (OP)',
             parties: {
@@ -8025,8 +8695,8 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         // Certificate of Occupancy Specific Validation.
-        // The C of O Type only exists on the Regular variant — requiring it on
-        // SLTR or ST would block a capture that has no such field on screen.
+        // Every variant offers a type (Regular: Direct Allocation / Recertification /
+        // Conversion; SLTR and ST: New / Old C of O), so it is required on all three.
         if (typeId === 'certificate-of-occupancy' || typeId === 'Certificate of Occupancy') {
             if (cofoVariants[getCofoVariant()].hasType) {
                 const cofoType = document.getElementById('cofoType')?.value;
@@ -8058,7 +8728,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         const district = document.getElementById('desc_district')?.value?.trim();
         const manualDistrict = document.getElementById('manual_district')?.value?.trim();
-        const lga = document.getElementById('desc_lga')?.value?.trim();
+        const lga = getSelectValueById('desc_lga');
 
         if (!lga) {
             errors.push('Property LGA is required.');

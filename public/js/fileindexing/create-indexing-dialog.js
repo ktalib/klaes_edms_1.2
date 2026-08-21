@@ -549,8 +549,29 @@
         unlockCofOFieldsForEditing();
     }
 
+    /**
+     * True on /fileindexing/{id}/edit and the KANGIS update screen: the page was opened
+     * FOR a specific record. The create page sets window.isEditMode = false and enters
+     * edit mode dynamically ("Switch to edit mode"), where leaving it again is correct.
+     */
+    function isDedicatedUpdatePage() {
+        return !!(window.isEditMode && window.editingRecord && window.editingRecord.id);
+    }
+
     function exitEditMode() {
         if (!editModeState.isEditing) {
+            return;
+        }
+
+        // On a dedicated update page, dropping edit mode is always wrong: the record is
+        // still open and still being edited. It used to happen whenever the operator
+        // picked a file number that is not itself already indexed — the form flipped back
+        // to "Create File Index", the button disabled itself (updateCreateButtonState()
+        // only enables on isEditing or a grouping record), and the loaded details were
+        // treated as a half-finished create.
+        if (isDedicatedUpdatePage()) {
+            console.info('[file-index update] staying in edit mode: page is bound to record #'
+                + window.editingRecord.id);
             return;
         }
 
@@ -1631,6 +1652,13 @@
             // When KANGIS Registry is selected, skip the "Edit existing record?" prompt —
             // the user is intentionally creating a physical variant.
             if (isKangisVariantMode()) {
+                return record;
+            }
+
+            // Same on a dedicated update page. The operator is re-pointing THIS record at
+            // a different file number; offering to load the other record instead would
+            // replace everything on screen with that record's values.
+            if (isDedicatedUpdatePage()) {
                 return record;
             }
 
@@ -3024,6 +3052,60 @@
 
     window.generateTrackingId = generateTrackingId;
     window.ensureTrackingIdExists = ensureTrackingIdExists;
+
+    /**
+     * The tracking ID belongs to the FILE NUMBER, so re-pointing a record at a different
+     * number must not keep the previous file's ID.
+     *
+     * Order: the ID the picked record already carries, then the file-number register
+     * (/api/file-numbers/lookup, which also answers from `tra`), and only if the file has
+     * no ID anywhere, a freshly generated one. Generating first would mint a second ID for
+     * a file that already has one.
+     */
+    async function refreshTrackingIdForFileNumber(fileNumber, seedTrackingId = '') {
+        const input = document.getElementById('tracking-id');
+        if (!input) {
+            return null;
+        }
+
+        const seed = String(seedTrackingId || '').trim();
+        if (seed) {
+            applyAutofillLock(['tracking-id'], false);
+            setAutoFilledValue(input, seed, { lock: false });
+            return seed;
+        }
+
+        const selected = String(fileNumber || '').trim();
+        applyAutofillLock(['tracking-id'], false);
+        input.value = '';
+
+        if (selected) {
+            try {
+                const url = '/api/file-numbers/lookup?file_number=' + encodeURIComponent(selected)
+                    + '&mlsf_no=' + encodeURIComponent(selected);
+                const response = await fetch(url, {
+                    headers: { Accept: 'application/json' },
+                    credentials: 'same-origin',
+                });
+
+                if (response.ok) {
+                    const json = await response.json().catch(() => null);
+                    const found = String(json?.data?.tracking_id || json?.data?.trackingId
+                        || json?.data?.tra || '').trim();
+
+                    if (found) {
+                        setAutoFilledValue(input, found, { lock: false });
+                        return found;
+                    }
+                }
+            } catch (error) {
+                // Fall through to generating one — a lookup outage must not block the edit.
+                console.warn('[file-index] tracking ID lookup failed, generating a new one', error);
+            }
+        }
+
+        return ensureTrackingIdExists();
+    }
 
     function getCofoAutofillElements() {
         if (!cofoAutofillState.container) {
@@ -7294,7 +7376,14 @@
 
                             const trackingIdInput = document.getElementById('tracking-id');
                             if (trackingIdInput) {
-                                if (record?.tracking_id) {
+                                if (isDedicatedUpdatePage()) {
+                                    // Changing the file number on an update screen re-points the
+                                    // record, so the tracking ID must follow the new number.
+                                    await refreshTrackingIdForFileNumber(
+                                        fileData.fileNumber,
+                                        record?.tracking_id || ''
+                                    );
+                                } else if (record?.tracking_id) {
                                     setAutoFilledValue(trackingIdInput, record.tracking_id, { lock: false });
                                 } else if (!isEditing) {
                                     applyAutofillLock(['tracking-id'], false);
