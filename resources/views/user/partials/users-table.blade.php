@@ -3,6 +3,7 @@
         <thead class="bg-gradient-to-r from-gray-50 to-gray-100">
             <tr>
                 <th>{{ __('User Profile') }}</th>
+                <th>{{ __('Username') }}</th>
                 <th>{{ __('Email') }}</th>
                 <th>{{ __('User Level') }}</th>
                 <th>{{ __('Department') }}</th>
@@ -43,6 +44,13 @@
                                 </div>
                             </div>
                         </div>
+                    </td>
+                    <td class="px-6 py-5 whitespace-nowrap">
+                        @if(!empty($user->username))
+                            <span class="text-sm font-medium text-gray-700 user-username">{{ $user->username }}</span>
+                        @else
+                            <span class="text-sm text-gray-400 italic">{{ __('No username') }}</span>
+                        @endif
                     </td>
                     <td class="px-6 py-5 whitespace-nowrap">
                         <div class="flex items-center space-x-2">
@@ -247,7 +255,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="9" class="px-6 py-12 text-center">
+                    <td colspan="11" class="px-6 py-12 text-center">
                         <div class="flex flex-col items-center justify-center space-y-3">
                             <svg class="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"/>

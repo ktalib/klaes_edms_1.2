@@ -8144,11 +8144,6 @@
     // Print tracker details - routes to KANGIS landscape version for ?url=kangis and ?url=new_kangis, otherwise uses general portrait format
     function printFileTrackerDetails(tracker, options = {}) {
         const urlView = new URLSearchParams(window.location.search).get('url');
-        // Tracking Sheet 1 prints in two identities: the In-Transit copy travels
-        // with the file (full colour, red IN TRANSIT watermark) and the File Copy
-        // stays in the registry folder (black & white, FILE COPY watermark).
-        // 'both' (the default) prints the pair as one job.
-        const copyType = ['transit', 'file', 'both'].includes(options.copyType) ? options.copyType : 'both';
         if (urlView === 'kangis' || urlView === 'new_kangis') {
             // New KANGIS prints one row per log entry on screen, so "Print Log Sheet"
             // there prints only the entry whose action menu was used. The aggregated
@@ -8297,14 +8292,11 @@
                         body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                         .sheet-copy { position: relative; }
                         .copy-break { page-break-before: always; }
-                        .copy-watermark { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); font-size: 4.5rem; font-weight: 900; letter-spacing: 0.18em; white-space: nowrap; pointer-events: none; z-index: 0; }
-                        .copy-colour .copy-watermark { color: #dc2626; opacity: 0.15; }
-                        .copy-mono .copy-watermark { color: #000; opacity: 0.10; }
-                        .copy-ribbon { text-align: right; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; margin-bottom: 0.2rem; }
-                        .copy-ribbon span { border: 1px solid; border-radius: 3px; padding: 0.1rem 0.45rem; }
-                        .copy-colour .copy-ribbon span { color: #dc2626; border-color: #dc2626; }
-                        .copy-mono .copy-ribbon span { color: #000; border-color: #000; }
-                        .print-container > *:not(.copy-watermark) { position: relative; z-index: 1; }
+                        /* Drawn over the whole page at low opacity so it reads as one even
+                           diagonal tint instead of fragments chopped up by the cards. */
+                        .copy-watermark { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); font-size: 4.5rem; font-weight: 900; letter-spacing: 0.18em; white-space: nowrap; pointer-events: none; z-index: 999; }
+                        .copy-colour .copy-watermark { color: #dc2626; opacity: 0.10; }
+                        .copy-mono .copy-watermark { color: #000; opacity: 0.08; }
                         /* File Copy: strip every colour so it photocopies cleanly. */
                         .copy-mono, .copy-mono * { color: #000 !important; border-color: #9ca3af !important; }
                         .copy-mono [style*="background"] { background: #fff !important; }
@@ -8337,7 +8329,6 @@
         const buildSheetCopy = (copyKind) => `
                     <div class="print-container sheet-copy ${copyKind === 'file' ? 'copy-mono' : 'copy-colour'}">
                         <div class="copy-watermark">${copyKind === 'file' ? 'FILE COPY' : 'IN TRANSIT'}</div>
-                        <div class="copy-ribbon"><span>${copyKind === 'file' ? 'FILE COPY' : 'IN-TRANSIT COPY'}</span></div>
                         <div class="header">
                         <div class="header-top">
                             <div class="header-logo-wrap">
@@ -8615,10 +8606,10 @@
                     </div>
                 `;
 
-        // The In-Transit copy prints first, the File Copy on a fresh page after it.
-        const copyKinds = copyType === 'transit'
-            ? ['transit']
-            : (copyType === 'file' ? ['file'] : ['transit', 'file']);
+        // Every print of Tracking Sheet 1 yields both copies: the In-Transit copy
+        // (full colour, red IN TRANSIT watermark) travels with the file, and the
+        // File Copy (black & white) follows on a fresh page for the registry folder.
+        const copyKinds = ['transit', 'file'];
         const printContent = sheetHead
             + copyKinds.map((kind, idx) => (idx > 0 ? '<div class="copy-break"></div>' : '') + buildSheetCopy(kind)).join('')
             + `
@@ -9445,14 +9436,6 @@
     });
     document.getElementById('close-details-btn')?.addEventListener('click', () => {
         document.getElementById('details-dialog')?.classList.remove('show');
-    });
-    // Single-copy shortcuts. The main Print Details button still prints both copies
-    // (and carries the mark-printed side effect); these only re-print one identity.
-    document.getElementById('print-transit-copy-btn')?.addEventListener('click', function() {
-        if (currentDetailsTracker) printFileTrackerDetails(currentDetailsTracker, { copyType: 'transit' });
-    });
-    document.getElementById('print-file-copy-btn')?.addEventListener('click', function() {
-        if (currentDetailsTracker) printFileTrackerDetails(currentDetailsTracker, { copyType: 'file' });
     });
     document.getElementById('print-details-btn')?.addEventListener('click', function() {
         if (currentDetailsTracker) {

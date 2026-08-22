@@ -47,6 +47,7 @@ class UserController extends Controller
                 'id',
                 'first_name',
                 'last_name',
+                'username',
                 'email',
                 'phone_number',
                 'department_id',

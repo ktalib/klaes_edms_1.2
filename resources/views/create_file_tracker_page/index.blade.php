@@ -2668,19 +2668,7 @@
                                          class="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
                                          Close
                                      </button>
-                                     {{-- Single-copy shortcuts: the In-Transit copy travels with the file
-                                          (colour + red watermark), the File Copy stays in the folder (black & white). --}}
-                                     <button id="print-transit-copy-btn" type="button" title="Colour copy with the red IN TRANSIT watermark — travels with the file"
-                                         class="inline-flex items-center px-3 py-2 border border-red-300 rounded-md shadow-sm text-sm font-medium text-red-700 bg-white hover:bg-red-50">
-                                         <i data-lucide="printer" class="h-4 w-4 mr-2"></i>
-                                         In-Transit Copy
-                                     </button>
-                                     <button id="print-file-copy-btn" type="button" title="Black &amp; white copy with the FILE COPY watermark — stays in the registry folder"
-                                         class="inline-flex items-center px-3 py-2 border border-gray-400 rounded-md shadow-sm text-sm font-medium text-gray-800 bg-white hover:bg-gray-100">
-                                         <i data-lucide="printer" class="h-4 w-4 mr-2"></i>
-                                         File Copy
-                                     </button>
-                                     <button id="print-details-btn" title="Prints both copies: In-Transit first, then the File Copy"
+                                     <button id="print-details-btn" title="Prints both copies: In-Transit (colour) first, then the File Copy (black &amp; white)"
                                          class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
                                          <i data-lucide="printer" class="h-4 w-4 mr-2"></i>
                                          Print Details
