@@ -399,29 +399,36 @@ document.addEventListener('DOMContentLoaded', function () {
      * take (read-only — the number is only consumed at registration). Blank when
      * the vault is not configured, so the line never shows a misleading value.
      */
-    function refreshRegistrationPreview(instrumentType, opType, targetId) {
-        const el = document.getElementById(targetId);
-        if (!el) return;
-        if (!instrumentType) { el.textContent = '\u2014'; return; }
+    function fetchRegistrationPreview(instrumentType, opType) {
+        if (!instrumentType) return Promise.resolve(null);
 
         const params = new URLSearchParams({ instrument_type: instrumentType });
         if (opType) params.set('op_type', opType);
 
-        el.textContent = 'checking\u2026';
-        fetch('/instruments/next-registration-particulars?' + params.toString(), {
+        return fetch('/instruments/next-registration-particulars?' + params.toString(), {
             headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
             credentials: 'same-origin',
         })
             .then(res => res.json())
-            .then(data => {
-                el.textContent = (data && data.success && data.configured && data.formatted)
-                    ? data.formatted
-                    : '\u2014';
-            })
+            .then(data => (data && data.success && data.configured) ? data : null)
             .catch(err => {
                 console.warn('Could not read the next registration particulars', err);
-                el.textContent = '\u2014';
+                return null;
             });
+    }
+
+    // `field` picks which part of the peek to show: the whole "serial/page/volume"
+    // string ('formatted', the default) or a single component such as 'volume'.
+    function refreshRegistrationPreview(instrumentType, opType, targetId, field) {
+        const el = document.getElementById(targetId);
+        if (!el) return;
+        if (!instrumentType) { el.textContent = '\u2014'; return; }
+
+        el.textContent = 'checking\u2026';
+        fetchRegistrationPreview(instrumentType, opType).then(data => {
+            const value = data ? data[field || 'formatted'] : null;
+            el.textContent = (value === 0 || value) ? String(value) : '\u2014';
+        });
     }
 
     // Repaint the banner from whatever radio is currently checked.
@@ -438,7 +445,8 @@ document.addEventListener('DOMContentLoaded', function () {
         refreshRegistrationPreview(
             label ? 'Occupancy Permit (OP)' : '',
             getSelectedOpType(),
-            'op-type-reg-particulars'
+            'op-type-reg-particulars',
+            'volume'
         );
     }
     window.updateOpTypeSummary = updateOpTypeSummary;
@@ -501,6 +509,60 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     window.promptForOpType = promptForOpType;
 
+    /**
+     * Confirm the chosen OP type in a popup instead of a banner inside the capture
+     * form: what is about to be registered, and the volume the permit would be
+     * entered into - a read-only peek at the vault, since the number is only
+     * consumed at registration. Resolves true to carry on, false on "Change".
+     */
+    function showOpTypeNotice(opType) {
+        if (typeof Swal === 'undefined') return Promise.resolve(true);
+        // Only the dedicated capture page (/instruments/create) announces the
+        // registration. The same modal is embedded in the OSS Applications and
+        // Land/MLS file-number pages, where the capture is a side errand and the
+        // banner is not rendered - so there is nothing to confirm there either.
+        if (!document.getElementById('op-type-summary')) return Promise.resolve(true);
+
+        const option = OP_TYPE_OPTIONS.find(t => t.value === opType);
+        const label = option?.label || 'Not selected';
+        const accent = option?.accent || BANNER_NEUTRAL.accent;
+        const accentSoft = option?.accentSoft || BANNER_NEUTRAL.accentSoft;
+
+        return fetchRegistrationPreview('Occupancy Permit (OP)', opType).then(preview => {
+            const volume = (preview && (preview.volume === 0 || preview.volume))
+                ? String(preview.volume)
+                : '\u2014';
+
+            return Swal.fire({
+                title: 'You are about to register',
+                html: '<div style="text-align:left;border-left:4px solid ' + accent + ';'
+                    + 'background:' + accentSoft + ';padding:12px 14px;border-radius:8px;">'
+                    + '<p style="margin:0;font-size:14px;color:#374151;">Occupancy Permit (OP) Type: '
+                    + '<strong style="color:' + accent + ';">' + label + '</strong></p>'
+                    + '<p style="margin:8px 0 0;font-size:18px;font-weight:700;color:#374151;">Volume: '
+                    + '<strong style="font-family:ui-monospace,monospace;font-size:22px;color:' + accent + ';">'
+                    + volume + '</strong></p>'
+                    + '</div>',
+                width: 440,
+                showCancelButton: true,
+                confirmButtonText: 'Continue',
+                cancelButtonText: 'Change',
+                confirmButtonColor: accent,
+                reverseButtons: true,
+            }).then(result => result.isConfirmed === true);
+        });
+    }
+    window.showOpTypeNotice = showOpTypeNotice;
+
+    // Ask for the OP type, then show the notice; "Change" re-opens the same prompt.
+    function chooseOpTypeWithNotice(current) {
+        return promptForOpType(current).then(chosen => {
+            if (!chosen) return '';
+            return showOpTypeNotice(chosen).then(ok => (ok ? chosen : chooseOpTypeWithNotice(chosen)));
+        });
+    }
+    window.chooseOpTypeWithNotice = chooseOpTypeWithNotice;
+
     // The commissioning flow hands over a loose hint ("resettlement" / "direct").
     function opTypeFromCommissionPrefill() {
         const hint = String(window.prefillOpTypeFromCommission || '').toLowerCase();
@@ -513,7 +575,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const opTypeChangeBtn = document.getElementById('op-type-change-btn');
     if (opTypeChangeBtn) {
         opTypeChangeBtn.addEventListener('click', () => {
-            promptForOpType(getSelectedOpType()).then(chosen => {
+            chooseOpTypeWithNotice(getSelectedOpType()).then(chosen => {
                 if (chosen) applyOpType(chosen);
             });
         });
@@ -697,7 +759,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             if (type === 'certificate-of-occupancy') {
                 // CofO: variant (+ type for Regular) is asked before the form opens.
-                promptForCofoSelection(getCofoVariant(), getCofoType()).then(answer => {
+                chooseCofoWithNotice(getCofoVariant(), getCofoType()).then(answer => {
                     if (!answer) return;
                     openRegistrationDialog(type);   // resets to Regular, so apply afterwards
                     applyCofoSelection(answer.variant, answer.type);
@@ -709,7 +771,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 return;
             }
             // OP: ask for the type first - dismissing leaves the capture form unopened.
-            promptForOpType(getSelectedOpType() || opTypeFromCommissionPrefill()).then(chosen => {
+            chooseOpTypeWithNotice(getSelectedOpType() || opTypeFromCommissionPrefill()).then(chosen => {
                 if (!chosen) return;
                 openRegistrationDialog(type);   // may reset the form, so apply afterwards
                 applyOpType(chosen);
@@ -1604,7 +1666,11 @@ document.addEventListener('DOMContentLoaded', function () {
     const cofoVariants = {
         regular: {
             instrumentType: 'Certificate of Occupancy',
-            types: ['Direct Allocation', 'Recertification', 'Conversion'],
+            // Regular no longer asks for a C of O Type: the variant IS the answer.
+            // (It used to offer Direct Allocation / Recertification / Conversion.)
+            // An empty list clears hasType, which hides the select in the prompt and
+            // in the form, and drops the "type not selected" validation.
+            types: [],
             accent: 'red',
             note: ''
         },
@@ -1696,9 +1762,16 @@ document.addEventListener('DOMContentLoaded', function () {
         if (cofoTypeSelect) {
             const previous = cofoTypeSelect.value;
             const types = cofoTypesFor(variant);
-            const keep = types.includes(previous) ? previous : '';
+            // Edit mode carries a stored cofo_type that the variant may no longer
+            // offer (every Regular record captured before the type was dropped).
+            // Keep it as an option there, or re-saving the record would post an
+            // empty cofo_type over the value already on file.
+            const isEditMode = !!document.getElementById('instrument_id')?.value;
+            const legacy = (isEditMode && previous && !types.includes(previous)) ? previous : '';
+            const keep = types.includes(previous) ? previous : legacy;
             cofoTypeSelect.innerHTML = '<option value="">Select C of O Type</option>'
-                + types.map(t => '<option value="' + t + '">' + t + '</option>').join('');
+                + types.concat(legacy ? [legacy] : [])
+                    .map(t => '<option value="' + t + '">' + t + '</option>').join('');
             cofoTypeSelect.value = keep;
             if (keep !== previous) cofoTypeSelect.dispatchEvent(new Event('change', { bubbles: true }));
         }
@@ -1780,7 +1853,8 @@ document.addEventListener('DOMContentLoaded', function () {
         refreshRegistrationPreview(
             cofoVariants[variant].instrumentType,
             null,
-            'cofo-reg-particulars'
+            'cofo-reg-particulars',
+            'volume'
         );
     }
     window.updateCofoSummary = updateCofoSummary;
@@ -1883,11 +1957,65 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     window.promptForCofoSelection = promptForCofoSelection;
 
+    /**
+     * The CofO twin of showOpTypeNotice(): confirm what is about to be registered
+     * and the volume it would be entered into, in a popup, before the capture form
+     * opens. The banner inside the form says the same thing and stays.
+     * Resolves true to carry on, false on "Change".
+     */
+    function showCofoNotice(variant, type) {
+        if (typeof Swal === 'undefined') return Promise.resolve(true);
+        // Same rule as showOpTypeNotice(): create page only.
+        if (!document.getElementById('cofo-summary')) return Promise.resolve(true);
+
+        const key = cofoVariants[variant] ? variant : 'regular';
+        const meta = COFO_VARIANT_META[key] || COFO_VARIANT_META.regular;
+        const needsType = !!cofoVariants[key]?.hasType;
+        const label = needsType
+            ? meta.label + ' \u2014 ' + ((type || '').trim() || 'type not selected')
+            : meta.label;
+
+        return fetchRegistrationPreview(cofoVariants[key].instrumentType, null).then(preview => {
+            const volume = (preview && (preview.volume === 0 || preview.volume))
+                ? String(preview.volume)
+                : '\u2014';
+
+            return Swal.fire({
+                title: 'You are about to register',
+                html: '<div style="text-align:left;border-left:4px solid ' + meta.accent + ';'
+                    + 'background:' + meta.accentSoft + ';padding:12px 14px;border-radius:8px;">'
+                    + '<p style="margin:0;font-size:14px;color:#374151;">Certificate of Occupancy: '
+                    + '<strong style="color:' + meta.accent + ';">' + label + '</strong></p>'
+                    + '<p style="margin:8px 0 0;font-size:18px;font-weight:700;color:#374151;">Volume: '
+                    + '<strong style="font-family:ui-monospace,monospace;font-size:22px;color:' + meta.accent + ';">'
+                    + volume + '</strong></p>'
+                    + '</div>',
+                width: 440,
+                showCancelButton: true,
+                confirmButtonText: 'Continue',
+                cancelButtonText: 'Change',
+                confirmButtonColor: meta.accent,
+                reverseButtons: true,
+            }).then(result => result.isConfirmed === true);
+        });
+    }
+    window.showCofoNotice = showCofoNotice;
+
+    // Ask for variant + type, then show the notice; "Change" re-opens the prompt.
+    function chooseCofoWithNotice(currentVariant, currentType) {
+        return promptForCofoSelection(currentVariant, currentType).then(answer => {
+            if (!answer) return null;
+            return showCofoNotice(answer.variant, answer.type)
+                .then(ok => (ok ? answer : chooseCofoWithNotice(answer.variant, answer.type)));
+        });
+    }
+    window.chooseCofoWithNotice = chooseCofoWithNotice;
+
     // "Change" on the banner re-opens the same prompt.
     const cofoChangeBtn = document.getElementById('cofo-change-btn');
     if (cofoChangeBtn) {
         cofoChangeBtn.addEventListener('click', () => {
-            promptForCofoSelection(getCofoVariant(), getCofoType()).then(answer => {
+            chooseCofoWithNotice(getCofoVariant(), getCofoType()).then(answer => {
                 if (answer) applyCofoSelection(answer.variant, answer.type);
             });
         });
@@ -4009,9 +4137,18 @@ document.addEventListener('DOMContentLoaded', function () {
      * (CON-) prefixes and the land_use_id join keep behaving the same way.
      * handlePrefixChange() then sets landUse, customerType, landUseId, loads the purposes
      * and refreshes the file-number preview.
+     *
+     * Customer Type is put back afterwards: handlePrefixChange() derives it from the land use
+     * (COM/IND -> Corporate), which is a fair default when someone picks a prefix by hand but
+     * wrong on an OP hand-off — an industrial plot is routinely allotted to a person. Leaving
+     * it as Corporate hides the Upload Passport control (it is shown for Individual only), and
+     * on the Change of Name flow the user lands back on the card with no way to reach it. The
+     * OP's own allottee is the authority here.
      */
     function applyOpLandUseToCommission(component, record) {
         if (!component) return;
+
+        const customerTypeBefore = component.customerType;
         const landUseName = (record.land_use || record.landuse || '').toString().trim();
         if (!landUseName || typeof component.normalizeLandUseCode !== 'function') return;
 
@@ -4035,6 +4172,8 @@ document.addEventListener('DOMContentLoaded', function () {
             component.landUse = code;
         }
 
+        restoreOpCustomerType(component, record, customerTypeBefore);
+
         // Purpose list is fetched over the network by handlePrefixChange(), so the option
         // this purpose_id refers to may not exist yet. Poll briefly rather than firing once
         // into an empty list — Alpine's x-model shows blank for a value with no <option>.
@@ -4053,6 +4192,32 @@ document.addEventListener('DOMContentLoaded', function () {
             if (++attempts < 20) setTimeout(applyPurpose, 150);
         };
         applyPurpose();
+    }
+
+    /**
+     * Customer Type for a commissioning that came from an OP: the allottee's gender decides it,
+     * not the land use. Male/Female -> Individual (so the passport control stays available),
+     * Corporate -> Corporate, Joint -> Multiple. Returns '' when the OP says nothing, leaving
+     * whatever the card already had.
+     */
+    function opCustomerTypeFromRecord(record) {
+        const gender = (record.party_2_gender || record.gender || '').toString().trim().toUpperCase();
+        if (!gender) return '';
+        if (gender === 'CORPORATE') return 'Corporate';
+        if (gender === 'JOINT') return 'Multiple';
+        if (gender === 'MALE' || gender === 'FEMALE') return 'Individual';
+        return '';
+    }
+
+    /**
+     * Undo handlePrefixChange()'s land-use-driven Customer Type on an OP hand-off — see the
+     * note on applyOpLandUseToCommission(). Applied after every call that can re-derive it.
+     */
+    function restoreOpCustomerType(component, record, customerTypeBefore) {
+        if (!component) return;
+        const fromOp = opCustomerTypeFromRecord(record);
+        const restored = fromOp || customerTypeBefore || '';
+        if (restored) component.customerType = restored;
     }
 
     async function continueWithFileCommissioningFromLookup(record) {
@@ -4865,7 +5030,10 @@ document.addEventListener('DOMContentLoaded', function () {
         if (value == null) return;
         const el = document.getElementById(id);
         if (el) {
-            if (id === 'tp_no' && el.tagName === 'SELECT' && value) {
+            // A stored value the select no longer offers still has to stick: a TP No
+            // that is not in the current lookup page, or a cofo_type on a record
+            // captured before Regular stopped asking for one.
+            if ((id === 'tp_no' || id === 'cofoType') && el.tagName === 'SELECT' && value) {
                 const hasOption = Array.from(el.options).some(option => option.value == value);
                 if (!hasOption) {
                     el.appendChild(new Option(value, value, true, true));
@@ -4969,6 +5137,22 @@ document.addEventListener('DOMContentLoaded', function () {
             if (el._flatpickr) {
                 el._flatpickr.setDate(el.value || '', false);
             }
+        });
+    }
+
+    /**
+     * Repaint every Select2 widget from the state of the <select> behind it.
+     *
+     * form.reset() restores each option's selected state natively, without firing a
+     * change event — so Select2 keeps drawing what was there before. That is how a
+     * captured LGA multi-select was left showing its tags after the form behind it
+     * had already been cleared. `change.select2` only repaints the widget: it does
+     * not run the select2:select handlers, so nothing is re-applied as a fresh pick.
+     */
+    function resyncSelect2Widgets(root) {
+        if (!(window.jQuery && jQuery.fn.select2)) return;
+        (root || document).querySelectorAll('select.select2-hidden-accessible').forEach(function (el) {
+            jQuery(el).trigger('change.select2');
         });
     }
 
@@ -5273,6 +5457,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (elements.registrationForm) {
                 elements.registrationForm.reset();
                 resyncFlatpickrInputs(elements.registrationForm);
+                resyncSelect2Widgets(elements.registrationForm);
             }
             resetManualSelectFields();
             elements.hiddenMlsFNo.value = '';
@@ -5384,16 +5569,18 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         if (elements.opRegistrationDetails) {
-            // Registration Details belongs to Match OP only: that flow records the particulars
-            // an already-registered permit carries, and opcfSubmit() posts serial/page/vol/reg
-            // date+time. Single and Batch capture mint a brand-new OP that has none yet, so the
-            // block stays hidden for them. FEFR's "existing manual registration" is a separate
-            // entry point with the same recording purpose, so it keeps the block.
-            const showOpRegistration = typeKey === 'occupancy-permit'
-                && (isOpCommissionedFileMode() || isFfrExistingManualRegistrationFlow());
+            // Registration Details is shown for every OP capture - it used to be Match OP
+            // only, where opcfSubmit() posts serial/page/vol/reg date+time.
+            const showOpRegistration = typeKey === 'occupancy-permit';
             elements.opRegistrationDetails.classList.toggle('hidden', !showOpRegistration);
-            // Nothing here carries `required`, so hiding never blocks submit — but a value left
-            // behind by an earlier Match OP would still be posted by the next Single capture.
+            // Every OP capture - Single, Batch and Match OP alike - types its own
+            // particulars. Nothing is ever pre-filled from the vault here: the numbers
+            // belong to the paper permit, and the vault's own sequence is only consumed
+            // when an instrument is registered. Cleared on each open so a value left by
+            // the previous capture is never posted by the next one.
+            if (!(isOpCommissionedFileMode() || isFfrExistingManualRegistrationFlow())) {
+                clearOpRegistrationDetails();
+            }
             if (!showOpRegistration) clearOpRegistrationDetails();
         }
 
@@ -5738,6 +5925,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (elements.registrationForm) {
             elements.registrationForm.reset();
             resyncFlatpickrInputs(elements.registrationForm);
+            resyncSelect2Widgets(elements.registrationForm);
         }
 
         if (keepOpType) applyOpType(keepOpType);

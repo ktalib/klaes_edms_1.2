@@ -35,7 +35,7 @@
             </tr>
         </thead>
         <tbody>
-            @foreach ($duplex->stages as $stage)
+            @foreach ($duplex->stageRows as $stage)
             <tr>
                 <td class="mono">{{ $stage->rank }}</td>
                 <td>{{ $stage->label() }}</td>

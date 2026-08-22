@@ -29,24 +29,25 @@
 
     <div class="p-5 space-y-4 overflow-y-auto flex-1">
 
-      {{-- File picker: prefilled when opened from a file, but always changeable --}}
+      {{-- File picker. The file number is chosen in the shared Global File
+           Number selector — the same MLS / KANGIS / New KANGIS picker every
+           other module uses — rather than typed here, so a number that reaches
+           this card is always one that exists. Its file_indexings row is then
+           resolved by an exact lookup, since the transfer needs the row id and
+           the selector deals only in numbers. --}}
       <div>
-        <label for="registry-transfer-search" class="block text-sm font-semibold text-gray-900 mb-2">File number</label>
-        <div class="relative">
-          <i data-lucide="search" class="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
-          <input type="text" id="registry-transfer-search" autocomplete="off"
-                 class="input input-bordered w-full pl-9"
-                 placeholder="Search a file number or title…">
-          <button type="button" id="registry-transfer-clear-file"
-                  class="hidden absolute right-2 top-1/2 -translate-y-1/2 btn btn-ghost btn-icon"
-                  title="Pick a different file" onclick="EdmsRegistryTransfer.clearFile()">
-            <i data-lucide="x" class="h-4 w-4"></i>
-          </button>
-        </div>
+        <label class="block text-sm font-semibold text-gray-900 mb-2">File number</label>
 
-        {{-- Results --}}
-        <div id="registry-transfer-results"
-             class="hidden mt-1 border border-gray-200 rounded-lg max-h-56 overflow-y-auto divide-y divide-gray-100 shadow-sm"></div>
+        <button type="button" id="registry-transfer-pick-file"
+                class="input input-bordered w-full flex items-center gap-2 text-left text-gray-500 hover:border-blue-400 transition-colors"
+                onclick="EdmsRegistryTransfer.pickFile()">
+          <i data-lucide="search" class="h-4 w-4 text-gray-400"></i>
+          <span id="registry-transfer-pick-file-label">Choose a file number…</span>
+        </button>
+
+        {{-- Resolving the chosen number to its indexing row, or saying why it
+             could not be. --}}
+        <p id="registry-transfer-lookup-status" class="hidden mt-2 text-xs"></p>
 
         {{-- The chosen file --}}
         <div id="registry-transfer-selected"
@@ -56,7 +57,14 @@
               <div class="font-semibold text-blue-900" id="registry-transfer-selected-number">—</div>
               <div class="text-xs text-blue-700 truncate" id="registry-transfer-selected-title"></div>
             </div>
-            <div class="text-xs text-blue-700 whitespace-nowrap" id="registry-transfer-selected-counts"></div>
+            <div class="flex items-center gap-2 whitespace-nowrap">
+              <div class="text-xs text-blue-700" id="registry-transfer-selected-counts"></div>
+              <button type="button" id="registry-transfer-clear-file"
+                      class="btn btn-ghost btn-icon" title="Pick a different file"
+                      onclick="EdmsRegistryTransfer.clearFile()">
+                <i data-lucide="x" class="h-4 w-4"></i>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -168,7 +176,8 @@
 
     /**
      * Open the dialog. Both arguments are optional — called with no file, it
-     * opens as a standalone tool and the operator searches for one.
+     * opens as a standalone tool and the operator picks one with the Global File
+     * Number selector.
      */
     async open(fileIndexingId, fileNumber, onDone) {
       this.onDone = typeof onDone === 'function' ? onDone : null;
@@ -177,91 +186,94 @@
       el('registry-transfer-reason').value = '';
       el('registry-transfer-preview').classList.add('hidden');
       el('registry-transfer-blockers').classList.add('hidden');
-      el('registry-transfer-results').classList.add('hidden');
       el('registry-transfer-confirm').disabled = true;
+      this.setLookupStatus('', false);
 
       const modal = el('registry-transfer-modal');
       modal.classList.remove('hidden');
       modal.classList.add('flex');
 
-      this.bindSearch();
-
       if (fileIndexingId) {
         await this.selectFile({ id: fileIndexingId, file_number: fileNumber || '' });
       } else {
         this.clearFile();
-        setTimeout(() => el('registry-transfer-search').focus(), 50);
       }
 
       if (window.lucide) lucide.createIcons();
     },
 
-    bindSearch() {
-      const input = el('registry-transfer-search');
-      if (input.dataset.bound) return;
-      input.dataset.bound = '1';
+    /* ─────────────────── Choosing the file ───────────────────
+       The file number comes from the shared Global File Number selector, the
+       same MLS / KANGIS / New KANGIS picker the rest of the system uses, so a
+       number reaching this card always exists.
 
-      let timer = null;
-      input.addEventListener('input', () => {
-        clearTimeout(timer);
-        const term = input.value.trim();
-        timer = setTimeout(() => this.runSearch(term), 250);
-      });
+       That selector returns a NUMBER, but this transfer works on a
+       file_indexings row, so the number is resolved through the card's own
+       search endpoint and the exact match is taken. A number the selector knows
+       but that has never been indexed has nothing to move, and says so.
+       ──────────────────────────────────────────────────────── */
 
-      // Clicking away closes the result list
-      document.addEventListener('click', (e) => {
-        if (!el('registry-transfer-modal').classList.contains('flex')) return;
-        if (e.target.closest('#registry-transfer-results') || e.target.closest('#registry-transfer-search')) return;
-        el('registry-transfer-results').classList.add('hidden');
-      });
-    },
-
-    async runSearch(term) {
-      const box = el('registry-transfer-results');
-
-      if (term.length < 2) {
-        box.classList.add('hidden');
+    pickFile() {
+      if (typeof GlobalFileNoModal === 'undefined') {
+        this.setLookupStatus('The file number selector is not available on this page.', true);
         return;
       }
 
-      box.innerHTML = '<div class="px-3 py-2 text-sm text-gray-500">Searching…</div>';
-      box.classList.remove('hidden');
+      GlobalFileNoModal.open({
+        callback: (fileData) => {
+          const number = (fileData && fileData.fileNumber) ? String(fileData.fileNumber).trim() : '';
+          if (number) this.resolveFileNumber(number);
+        }
+      });
+    },
+
+    /** The line under the picker button: progress, or why nothing was found. */
+    setLookupStatus(message, isError) {
+      const status = el('registry-transfer-lookup-status');
+
+      if (!message) {
+        status.classList.add('hidden');
+        status.textContent = '';
+        return;
+      }
+
+      status.textContent = message;
+      status.classList.remove('hidden');
+      status.classList.toggle('text-red-600', !!isError);
+      status.classList.toggle('text-gray-500', !isError);
+    },
+
+    /** Turn a chosen file number into the indexing row this card operates on. */
+    async resolveFileNumber(number) {
+      el('registry-transfer-pick-file-label').textContent = number;
+      this.setLookupStatus('Looking up ' + number + '…', false);
 
       try {
-        const res = await fetch(`/edms/registry-transfer/search?search=${encodeURIComponent(term)}`, {
+        const res = await fetch(`/edms/registry-transfer/search?search=${encodeURIComponent(number)}&limit=50`, {
           headers: { 'Accept': 'application/json' }
         });
         const json = await res.json();
         const files = json.data || [];
 
-        if (!files.length) {
-          box.innerHTML = '<div class="px-3 py-2 text-sm text-gray-500">No files match that search.</div>';
+        // The endpoint matches on a LIKE, so a number that is a prefix of others
+        // brings them along; only the exact one is this file.
+        const wanted = number.toLowerCase();
+        const match = files.find((f) => String(f.file_number || '').trim().toLowerCase() === wanted);
+
+        if (!match) {
+          this.clearFile();
+          el('registry-transfer-pick-file-label').textContent = number;
+          this.setLookupStatus(
+            number + ' is not indexed, so it has no documents to move. Index it first.',
+            true
+          );
           return;
         }
 
-        box.innerHTML = files.map((f) => `
-          <button type="button" class="w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors"
-                  data-file='${escapeHtml(JSON.stringify(f))}'>
-            <div class="flex items-center justify-between gap-3">
-              <div class="min-w-0">
-                <div class="text-sm font-semibold text-gray-900">${escapeHtml(f.file_number)}</div>
-                <div class="text-xs text-gray-500 truncate">${escapeHtml(f.file_title || '—')}</div>
-              </div>
-              <div class="text-xs text-gray-500 whitespace-nowrap text-right">
-                <div>${escapeHtml(f.registry)}</div>
-                <div>${f.scannings_count} scan(s), ${f.pagetypings_count} page(s)</div>
-              </div>
-            </div>
-          </button>`).join('');
-
-        box.querySelectorAll('[data-file]').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            box.classList.add('hidden');
-            this.selectFile(JSON.parse(btn.dataset.file));
-          });
-        });
+        this.setLookupStatus('', false);
+        await this.selectFile(match);
       } catch (err) {
-        box.innerHTML = `<div class="px-3 py-2 text-sm text-red-600">Search failed: ${escapeHtml(err.message)}</div>`;
+        this.setLookupStatus('Could not look up ' + number + ': ' + err.message, true);
       }
     },
 
@@ -278,8 +290,8 @@
           : '';
 
       el('registry-transfer-selected').classList.remove('hidden');
-      el('registry-transfer-clear-file').classList.remove('hidden');
-      el('registry-transfer-search').value = this.fileNumber;
+      el('registry-transfer-pick-file-label').textContent = this.fileNumber || `#${file.id}`;
+      this.setLookupStatus('', false);
 
       el('registry-transfer-preview').classList.add('hidden');
       el('registry-transfer-blockers').classList.add('hidden');
@@ -294,17 +306,15 @@
       this.fileNumber = null;
       this.preview = null;
 
-      el('registry-transfer-search').value = '';
+      el('registry-transfer-pick-file-label').textContent = 'Choose a file number…';
       el('registry-transfer-file-number').textContent = '—';
       el('registry-transfer-current').textContent = '—';
       el('registry-transfer-selected').classList.add('hidden');
-      el('registry-transfer-clear-file').classList.add('hidden');
-      el('registry-transfer-results').classList.add('hidden');
       el('registry-transfer-preview').classList.add('hidden');
       el('registry-transfer-blockers').classList.add('hidden');
       el('registry-transfer-confirm').disabled = true;
       el('registry-transfer-target').innerHTML = '<option value="">Select a file first…</option>';
-      el('registry-transfer-search').focus();
+      this.setLookupStatus('', false);
     },
 
     close() {

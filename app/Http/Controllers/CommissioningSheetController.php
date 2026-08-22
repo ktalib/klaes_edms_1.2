@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 
@@ -552,7 +553,43 @@ class CommissioningSheetController extends Controller
                 }
             }
 
-            // 4. The applicant's passport photograph, filed at commissioning, prints on the sheet.
+            // 4. An ST sheet quotes both numbers: the file's own, then the primary it
+            //    sits under, bracketed after it. Only a genuine second number is kept —
+            //    an ST primary is its own mls_fileno and would otherwise print twice.
+            if (stripos($fileNo, 'ST-') === 0 && empty($data['st_primary_file_number'])) {
+                $stRow = DB::connection('sqlsrv')
+                    ->table('st_file_numbers')
+                    ->where('fileno', $fileNo)
+                    ->orderByDesc('id')
+                    ->select('mls_fileno')
+                    ->first();
+
+                $stPrimary = trim((string) ($stRow->mls_fileno ?? ''));
+
+                if ($stPrimary !== '' && strcasecmp($stPrimary, trim($fileNo)) !== 0) {
+                    $data['st_primary_file_number'] = $stPrimary;
+                }
+            }
+
+            // 5. A Re-Issuance carries the duplicated number it replaces. It is kept
+            //    on mls_file_no.old_fileno, and the sheet names it under the new one.
+            //    Guarded, because the column post-dates some deployments.
+            if (empty($data['old_file_number'])
+                && Schema::connection('sqlsrv')->hasColumn('mls_file_no', 'old_fileno')) {
+                $oldRow = DB::connection('sqlsrv')
+                    ->table('mls_file_no')
+                    ->where('full_file_number', $fileNo)
+                    ->select('old_fileno')
+                    ->first();
+
+                $oldFileNo = trim((string) ($oldRow->old_fileno ?? ''));
+
+                if ($oldFileNo !== '' && strcasecmp($oldFileNo, trim($fileNo)) !== 0) {
+                    $data['old_file_number'] = $oldFileNo;
+                }
+            }
+
+            // 6. The applicant's passport photograph, filed at commissioning, prints on the sheet.
             $data['passport_image'] = $this->resolveCommissioningPassport($fileNo)
                 ?? $this->resolveCommissioningPassport((string) ($data['related_file_number'] ?? ''));
 

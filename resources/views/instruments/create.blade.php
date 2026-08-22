@@ -159,7 +159,7 @@
             </div>
 
             <!-- Instrument Registration Form Dialog-->
-            @include('instruments.partials.register_modal')
+            @include('instruments.partials.register_modal', ['showCaptureBanner' => true])
 
             @include('components.global-fileno-modal')
 

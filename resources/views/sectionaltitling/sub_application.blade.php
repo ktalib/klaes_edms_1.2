@@ -1987,10 +1987,10 @@
                             </div>
                             @if($isSUA)
                               <div>
-                                <label class="block text-sm mb-1">Allocation Reference No</label>
+                                <label class="block text-sm mb-1">Allocation Slip No</label>
                                 <input type="text" id="allocationRefNo"
                                   class="w-full p-2 border border-gray-300 rounded-md uppercase" name="allocation_ref_no"
-                                  placeholder="enter allocation reference. eg: ALS/2025/001"
+                                  placeholder="enter allocation slip no. eg: ALS/2025/001"
                                   value="{{ old('allocation_ref_no', isset($sua) ? $sua->allocation_ref_no : '') }}"
                                   oninput="this.value = this.value.toUpperCase();">
                               </div>

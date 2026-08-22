@@ -156,6 +156,14 @@ class MobileFileSearchController extends Controller
                 'holder_history'           => ($result['indexing'] ?? null)
                     ? $this->timelineService->holderHistory($result['file_number'])
                     : [],
+                // Root of Title / Original Holder / Current Holder — resolved from
+                // the transaction chain (client spec 2026-08-20 §12). Kept in step
+                // with the web Quick Search payload, which renders the identical
+                // Ownership block from these same keys.
+                'title_holders'            => ($result['indexing'] ?? null)
+                    ? app(\App\Services\TitleHolderResolver::class)
+                        ->resolveForDisplay($result['file_number'], null, $result['indexing'])
+                    : null,
                 'original_holder'          => $result['indexing']?->formattedHolder('original_holder'),
                 'current_holder'           => $result['indexing']?->formattedHolder('current_holder'),
                 'bill_balance'             => \App\Models\BillBalance::summaryForFile($result['file_number']),

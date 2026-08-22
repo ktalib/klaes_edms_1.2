@@ -221,11 +221,11 @@
                                     </div>
 
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-1">Allocation Reference No <span class="text-red-500">*</span></label>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Allocation Slip No <span class="text-red-500">*</span></label>
                          <input type="text" name="allocation_ref_no" value="{{ old('allocation_ref_no', $suaApplication->allocation_ref_no ?? '') }}"
                              class="w-full p-2 border border-gray-300 rounded-md text-sm uppercase"
                              oninput="this.value = this.value.toUpperCase()" required>
-                                        <p class="mt-1 text-xs text-gray-500">Enter the reference number from the originating allocation authority.</p>
+                                        <p class="mt-1 text-xs text-gray-500">Enter the slip number from the originating allocation authority.</p>
                                     </div>
                                 </div>
                             </div>

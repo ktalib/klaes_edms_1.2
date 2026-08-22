@@ -1524,16 +1524,40 @@ class RofoController extends Controller
             $isCTC = request()->query('isCTC', false);
             $requestedWatermark = strtoupper(request()->query('watermark', ''));
 
-            // Determine watermark sequence for this print job.
-            // Both normal batch and CTC now produce all 3 copies at once:
-            // ORIGINAL (Red), DUPLICATE (Blue), TRIPLICATE (Green).
-            // (CTC differs only in that it does NOT consume the print_counter below.)
-            $watermarkSequence = $watermarkStages;
+            // Which copies this run puts on paper. The Print Manager names the pass
+            // in ?status=, exactly as the Land and SLTR RofO templates read it:
+            //
+            //   Batch / absent — the whole set, ORIGINAL (Red), DUPLICATE (Blue),
+            //                    TRIPLICATE (Green). What this has always printed.
+            //   Original       — the Original alone (run 1: security / colour stock).
+            //   Office         — the Duplicate and Triplicate alone (run 2: plain paper).
+            //
+            // The two halves are separate runs because they are not printed on the
+            // same stock — the tray is changed in between, so it cannot be one
+            // continuous job. Until this read ?status=, all three passes printed the
+            // full set, so "Print Original Only" quietly put three sheets out.
+            //
+            // CTC differs only in that it does NOT consume the print_counter below.
+            $watermarkSequence = [
+                'ORIGINAL' => ['ORIGINAL'],
+                'OFFICE'   => ['DUPLICATE', 'TRIPLICATE'],
+            ][$status] ?? $watermarkStages;
+
+            // An explicit ?watermark= names one copy outright and wins.
+            if (in_array($requestedWatermark, $watermarkStages, true)) {
+                $watermarkSequence = [$requestedWatermark];
+            }
 
             $finalWatermarkForView = $watermarkSequence[0];
 
             // Update print_counter for all prints (not CTC)
             if (!$isCTC) {
+                // What actually went on paper this run. Setting the counter straight
+                // to max was right only while every run was the full set; a partial
+                // pass must not report the copies it did not print, or the Duplicate
+                // and Triplicate look issued when they are still to be run off.
+                $printedThisRun = count($watermarkSequence);
+
                 foreach ($allSubApps as $subApp) {
                     $rofoRecord = DB::connection('sqlsrv')->table('rofo')
                         ->where('sub_application_id', $subApp->id)
@@ -1544,12 +1568,11 @@ class RofoController extends Controller
 
                     $currentCounter = (int) ($rofoRecord->print_counter ?? 0);
 
-                    // All 3 copies printed at once, set counter to max
                     if ($currentCounter < $maxPrints) {
                         DB::connection('sqlsrv')->table('rofo')
                             ->where('sub_application_id', $subApp->id)
                             ->update([
-                                'print_counter' => $maxPrints,
+                                'print_counter' => min($currentCounter + $printedThisRun, $maxPrints),
                                 'updated_at' => now(),
                             ]);
                     }

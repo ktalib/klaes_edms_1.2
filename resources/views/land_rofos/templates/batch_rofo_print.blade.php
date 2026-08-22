@@ -252,7 +252,7 @@
                         <span class="inline-data">{{ $printLocation }}</span>
 
                         <span class="ref-label">DATE OF ISSUE:</span>
-                        <span class="inline-data">{{ $recommendation->rofo_generated_at ? $recommendation->rofo_generated_at->format('Y-m-d') : now()->format('Y-m-d') }}</span>
+                        <span class="inline-data">{{ optional($recommendation->application_date)->format('Y-m-d') }}</span>
                     </div>
                 </div>
             </div>

@@ -284,7 +284,15 @@
             const last = transactions[transactions.length - 1];
             const years = this.calculateYearsBetween(first.date, last.date);
 
+            // Root of Title / Original Holder / Current Holder are three DIFFERENT
+            // things (client spec 2026-08-20 §12) and are resolved server-side by
+            // TitleHolderResolver. Root of Title is blank on files where nothing
+            // predates the Ministry grant — show the dash, never a guess.
             grid.innerHTML = `
+                <div>
+                    <p class="text-xs text-gray-600 uppercase">Root of Title</p>
+                    <p class="font-bold text-lg text-gray-900">${this.data.rootOfTitle ?? '—'}</p>
+                </div>
                 <div>
                     <p class="text-xs text-gray-600 uppercase">Original Holder</p>
                     <p class="font-bold text-lg text-gray-900">${this.data.originalOwner ?? 'Unknown'}</p>

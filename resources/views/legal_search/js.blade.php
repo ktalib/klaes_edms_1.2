@@ -4813,7 +4813,33 @@ const executeSearchAjax = (filters, searchData) => {
         recertBlock.push(arrangedTransactions[++i]);
       }
     }
-    arrangedTransactions = [...beforeRecert, ...recertBlock];
+    // ...unless the KANGIS chapter closed BEFORE this file was commissioned. A land file
+    // commissioned in 2026 that carries a 2021 KANGIS recertification + C of O inherited that
+    // chapter from its predecessor: parking the pair at the foot of the band prints 2021 events
+    // under a 2026 commissioning line. When every dated row of the recert block predates the
+    // file's own commissioning row, the block is spliced in directly ABOVE that commissioning
+    // row instead (rows outranking commissioning — an OP, a Transfer of Title, the old KN line —
+    // keep their place above it). Mirrors LegalSearchService::arrangeLifecycleFileRows().
+    let recertTs = null;
+    for (const r of recertBlock) {
+      const t = getTransactionTimestamp(r);
+      if (t !== null && (recertTs === null || t < recertTs)) recertTs = t;
+    }
+    let commIndex = null;
+    let commTs = null;
+    for (let i = 0; i < beforeRecert.length; i++) {
+      if (!isCommissioningEvent(beforeRecert[i])) continue;
+      commIndex = i;
+      commTs = getTransactionTimestamp(beforeRecert[i]);
+      break;
+    }
+
+    if (recertBlock.length && recertTs !== null && commTs !== null && recertTs < commTs) {
+      arrangedTransactions = [...beforeRecert];
+      arrangedTransactions.splice(commIndex, 0, ...recertBlock);
+    } else {
+      arrangedTransactions = [...beforeRecert, ...recertBlock];
+    }
 
     return [...arrangedTransactions, ...decommissioning];
   };

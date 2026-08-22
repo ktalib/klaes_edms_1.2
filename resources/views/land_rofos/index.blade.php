@@ -578,75 +578,54 @@
                                                 </button>
                                                 <div class="border-t border-slate-100 my-1"></div>
                                                 @endif
+                                                {{-- One way in. The three passes — all copies, the Originals
+                                                     alone, the Duplicate and Triplicate alone — used to sit here
+                                                     as separate menu items beside a "Print Manager" that walked
+                                                     the copies a step at a time and asked for the date of issue
+                                                     in a dialog of its own. That was four entries and two print
+                                                     paths for one decision, and the menu could not show what had
+                                                     already been printed.
 
-                                                {{-- The three passes, listed flat in this menu. They are the
-                                                     same three the Batches tab offers, because the paper does
-                                                     not care whether a letter was captured in a batch: the
-                                                     Original goes on security stock, the office copies on plain
-                                                     paper, and the second pass can be run on its own whenever
-                                                     the tray is ready.
+                                                     The Print Manager now holds the whole of it: the date of
+                                                     issue, a tick against each copy already run off, the three
+                                                     passes, and the CTC. --}}
+                                                @php
+                                                    // A re-issued letter prints with the RE-ISSUANCE watermark
+                                                    // and the superseding notice. A KLAES re-issuance replaces a
+                                                    // set that was already issued, so it is the Original alone —
+                                                    // the manager opens with no pass choice, because the other
+                                                    // two would be paper with no letter behind them. A pre-KLAES
+                                                    // (legacy) one was never issued from here, so it prints the
+                                                    // full set and keeps the three passes.
+                                                    $reissue = $rec->is_reissuance
+                                                        ? (strtolower(trim((string) $rec->reissuance_source)) === 'legacy' ? 'legacy' : 'klaes')
+                                                        : null;
 
-                                                     Deliberately not a submenu. This is already the row's action
-                                                     menu; a menu inside it puts two clicks and a second surface
-                                                     in front of a choice that is three lines long. --}}
-                                                @if($rec->rofo_status === 'generated')
-                                                    @php
-                                                        // A re-issued letter prints with the RE-ISSUANCE watermark
-                                                        // and the superseding notice, and does not consume the
-                                                        // print allowance. A KLAES re-issuance replaces a set that
-                                                        // was already issued, so it is the Original alone — the
-                                                        // other two passes would be paper with no letter behind it.
-                                                        $reissue = $rec->is_reissuance
-                                                            ? (strtolower(trim((string) $rec->reissuance_source)) === 'legacy' ? 'legacy' : 'klaes')
-                                                            : null;
-                                                        $reissueArg = $reissue ? ", { reissuance: '" . $reissue . "' }" : '';
+                                                    $pmType = $reissue
+                                                        ? ($reissue === 'legacy' ? 'Land RofO Re-issuance (Legacy)' : 'Land RofO Re-issuance')
+                                                        : 'Land RofO';
 
-                                                        $passes = $reissue === 'klaes'
-                                                            ? [['original', 'award', 'Print the re-issued Original', 'text-amber-700 hover:bg-amber-50']]
-                                                            : [
-                                                                ['all',      'printer', 'Print all 3 copies',          'text-violet-700 hover:bg-violet-50'],
-                                                                ['original', 'award',   'Print Original only',         'text-emerald-700 hover:bg-emerald-50'],
-                                                                ['office',   'copy',    'Print Duplicate & Triplicate', 'text-teal-700 hover:bg-teal-50'],
-                                                            ];
-                                                    @endphp
+                                                    $pmUrl = $reissue
+                                                        ? route('land-rofos.print', $rec->id) . '?supersede=1&reissue_source=' . $reissue
+                                                        : route('land-rofos.print', $rec->id);
 
-                                                    @if($reissue)
-                                                        <div class="px-4 pt-2 pb-1 text-[10px] font-black uppercase tracking-widest text-amber-600">Re-issuance</div>
-                                                    @endif
+                                                    $pmOptions = [
+                                                        'recordId'  => (int) $rec->id,
+                                                        'issueDate' => optional($rec->application_date)->format('Y-m-d') ?? '',
+                                                    ];
 
-                                                    @foreach($passes as [$copiesArg, $icon, $label, $tone])
-                                                        <button type="button"
-                                                                onclick="printRofoBatch([{{ $rec->id }}], '{{ $copiesArg }}'{!! $reissueArg !!})"
-                                                                class="flex w-full items-center px-4 py-2.5 text-sm {{ $tone }} transition gap-2 font-bold">
-                                                            <i data-lucide="{{ $icon }}" class="h-4 w-4"></i> {{ $label }}
-                                                        </button>
-                                                    @endforeach
+                                                    if ($reissue) {
+                                                        $pmOptions['reissuance'] = $reissue;
+                                                        $pmOptions['passes']     = $reissue === 'legacy';
+                                                    }
+                                                @endphp
 
-                                                    <div class="border-t border-slate-100 my-1"></div>
-                                                @endif
-
-                                                @if($rec->is_reissuance)
-                                                    {{-- Kept as well: the Print Manager is the step-by-step route
-                                                         for a re-issued letter, and the only way to a CTC. --}}
-                                                    <button type="button"
-                                                            onclick="printReissuance('{{ $rec->id }}', @js($rec->file_number), @js($rec->reissuance_source))"
-                                                            class="flex w-full items-center px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition gap-2 font-bold">
-                                                        <i data-lucide="sliders" class="h-4 w-4"></i> Print Manager
-                                                    </button>
-                                                @else
-                                                    {{-- One file goes through the Print Manager, which walks
-                                                         Original → Duplicate → Triplicate a step at a time and
-                                                         works out where it is from the print_logs on the server —
-                                                         so it already picks up where it stopped, on any machine.
-                                                         The batch dialog's Originals-first choice is for runs of
-                                                         many files, which the Print Manager cannot drive: it is
-                                                         keyed to one reference number and one letter. --}}
-                                                    <button type="button"
-                                                            onclick="SmartPrintManager.open('{{ $rec->file_number }}', 'Land RofO', '{{ route('land-rofos.print', $rec->id) }}')"
-                                                            class="flex w-full items-center px-4 py-2.5 text-sm text-blue-700 hover:bg-blue-50 transition gap-2 font-bold">
-                                                        <i data-lucide="printer" class="h-4 w-4"></i> Print Manager
-                                                    </button>
-                                                @endif
+                                                <button type="button"
+                                                        onclick="SmartPrintManager.open(@js($rec->file_number), @js($pmType), @js($pmUrl), @js($pmOptions))"
+                                                        class="flex w-full items-center px-4 py-2.5 text-sm {{ $reissue ? 'text-amber-700 hover:bg-amber-50' : 'text-blue-700 hover:bg-blue-50' }} transition gap-2 font-bold">
+                                                    <i data-lucide="printer" class="h-4 w-4"></i>
+                                                    {{ $reissue ? 'Print Manager — Re-issuance' : 'Print Manager' }}
+                                                </button>
                                             </div>
                                         </div>
                                     </div>
@@ -1066,21 +1045,10 @@ function reissuancePickLegacyFileNo() {
     });
 }
 
-// Print an already-flagged re-issuance through the Print Manager. ?supersede=1
-// gives the watermarked letter; the doc type carries "Re-issuance" so the manager
-// badges itself, and "(Legacy)" tells it to keep the full 3-copy sequence:
-//   klaes  — KLAES already issued the set, so only the Original is re-issued
-//   legacy — pre-KLAES original, so all 3 copies are issued
-function printReissuance(id, fileNumber, source) {
-    var isLegacy = String(source || '').toLowerCase() === 'legacy';
-
-    SmartPrintManager.open(
-        fileNumber,
-        isLegacy ? 'Land RofO Re-issuance (Legacy)' : 'Land RofO Re-issuance',
-        '{{ url('land-rofos') }}/' + id + '/print?supersede=1'
-            + (isLegacy ? '&reissue_source=legacy' : '&reissue_source=klaes')
-    );
-}
+// The row's Print Manager entry opens the manager directly now — it carries the
+// record id and the date already on the record, and asks for the date inside itself
+// instead of behind a dialog. printRofoBatch() below stays: it drives runs of many
+// files, which the manager cannot, being keyed to one reference number.
 
 function reissuanceNext() {
     if (_reiSource === 'klaes') {
@@ -1526,7 +1494,205 @@ function rofoCsrf() {
 // — the Originals already on security paper, the office copies still owed. Without
 // that answer the only thing the dialog can offer is starting the whole batch
 // again, which is a second Original on security stock for every file in it.
+// -- DATE OF ISSUE -----------------------------------------------------------
+// The letter prints the APPLICATION DATE as its DATE OF ISSUE, so no letter goes to
+// paper without the operator seeing the date it will carry.
+//
+//   one record  - always shown. A date already on the record is shown LOCKED, with
+//                 an Edit that asks for confirmation first: it is normally keyed in
+//                 on the recommendation form, and a letter already issued carries it,
+//                 so changing it at the printer is a deliberate act rather than a
+//                 field left open to a stray keystroke.
+//   a selection - shown only when some of them have no date. One answer fills those
+//                 only; the rest keep the date they already carry, and nothing in a
+//                 bulk run can overwrite a date already on record.
+//
+// The date travels WITH the print (a hidden field on the print form, saved up front
+// on a manager URL) instead of being saved and then printed: the print tab has to be
+// claimed inside the click that opened it or the pop-up blocker takes it, and there
+// is no room for an await in between.
+function rofoAskIssueDate(ids, onReady) {
+    fetch('{{ route('land-rofos.issue-dates') }}', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': rofoCsrf(), 'Accept': 'application/json' },
+        body: JSON.stringify({ ids: ids })
+    })
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+        var rows    = (data && data.data) || [];
+        var missing = rows.filter(function (r) { return !r.application_date; });
+        var single  = ids.length === 1;
+
+        // A bulk run where every letter already carries its date has nothing to ask.
+        if (!single && !missing.length) {
+            onReady(null);
+            return;
+        }
+
+        var existing = single && rows.length ? (rows[0].application_date || '') : '';
+
+        rofoIssueDateDialog(ids, rows, missing, existing, single, onReady);
+    })
+    // The date is the point of the dialog, not a nicety, so a failed lookup still
+    // asks - it just cannot prefill.
+    .catch(function () {
+        rofoIssueDateDialog(ids, [], [], '', ids.length === 1, onReady);
+    });
+}
+
+// onReady is handed either null (print with what the record holds) or
+// { issue_date, issue_date_apply } - 'all' only when the operator confirmed an edit.
+function rofoIssueDateDialog(ids, rows, missing, existing, single, onReady) {
+    var subject = single
+        ? (rows.length ? rofoEscHtml(rows[0].file_number) : 'this RofO')
+        : '<b>' + missing.length + '</b> of <b>' + ids.length + '</b> selected RofO(s)';
+
+    // Locked = a date is already on record. The field shows it, greyed, until Edit
+    // is confirmed.
+    var locked = single && !!existing;
+
+    var body = single
+        ? (locked
+            ? 'This letter is dated <b>' + rofoEscHtml(existing) + '</b> and prints with that date.'
+            : 'No application date is on record for <b>' + subject + '</b>, so the letter has nothing to print as its date of issue.')
+        : subject + ' have no application date on record. The date entered here is written to those only &mdash; the rest keep the date they already carry.';
+
+    if (typeof Swal === 'undefined') {
+        if (locked) { onReady(null); return; }
+        var typed = window.prompt('Application date (YYYY-MM-DD) - prints on the letter as DATE OF ISSUE', rofoToday());
+        if (typed) onReady({ issue_date: typed, issue_date_apply: 'missing' });
+        return;
+    }
+
+    // The input is built here rather than handed to Swal's own `input:` option: a
+    // locked field with an Edit beside it and a confirmation in between is more than
+    // that option can express, and a disabled Swal input is not returned at all.
+    var html = '<div style="text-align:left;font-size:13px;line-height:1.5">' + body
+        + '<div style="margin-top:10px;color:#475569;font-size:12px">'
+        +   'This is the <b>application date</b>. It prints on the letter as <b>DATE OF ISSUE</b> '
+        +   'and is saved to the record, so a reprint comes out carrying the same date.'
+        + '</div>'
+        + '<div style="display:flex;gap:8px;align-items:center;margin-top:14px">'
+        +   '<input type="date" id="rofoIssueDateInput" value="' + rofoEscHtml(existing || rofoToday()) + '"'
+        +     ' max="' + rofoToday() + '"' + (locked ? ' disabled' : '')
+        +     ' style="flex:1;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px'
+        +     (locked ? ';background:#f1f5f9;color:#64748b' : '') + '">'
+        +   (locked
+                ? '<button type="button" id="rofoIssueDateEdit"'
+                  + ' style="padding:8px 14px;border:0;border-radius:6px;background:#e2e8f0;color:#334155;'
+                  + 'font-weight:700;font-size:13px;cursor:pointer">Edit</button>'
+                : '')
+        + '</div>'
+        + '<div id="rofoIssueDateConfirm" style="display:none;margin-top:10px;padding:10px 12px;'
+        +   'background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;font-size:12.5px;color:#78350f">'
+        +   '<div>Are you sure you want to edit the date of issue? This letter is already dated '
+        +     '<b>' + rofoEscHtml(existing) + '</b>, and any copy already issued carries that date.</div>'
+        +   '<div style="margin-top:8px;display:flex;gap:8px">'
+        +     '<button type="button" id="rofoIssueDateYes" style="padding:6px 14px;border:0;border-radius:6px;'
+        +       'background:#b45309;color:#fff;font-weight:700;font-size:12.5px;cursor:pointer">Yes, edit it</button>'
+        +     '<button type="button" id="rofoIssueDateNo" style="padding:6px 14px;border:0;border-radius:6px;'
+        +       'background:#e2e8f0;color:#334155;font-weight:700;font-size:12.5px;cursor:pointer">No</button>'
+        +   '</div>'
+        + '</div>'
+        + '<div id="rofoIssueDateError" style="display:none;margin-top:8px;color:#b91c1c;font-size:12.5px"></div>'
+        + '</div>';
+
+    var unlocked = false;
+
+    Swal.fire({
+        icon: 'question',
+        title: 'Application Date',
+        html: html,
+        showCancelButton: true,
+        confirmButtonText: 'Continue to print',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#7c3aed',
+        didOpen: function () {
+            var input   = document.getElementById('rofoIssueDateInput');
+            var edit    = document.getElementById('rofoIssueDateEdit');
+            var confirm = document.getElementById('rofoIssueDateConfirm');
+
+            if (!edit) { if (input) input.focus(); return; }
+
+            edit.addEventListener('click', function () { confirm.style.display = 'block'; });
+
+            document.getElementById('rofoIssueDateNo').addEventListener('click', function () {
+                confirm.style.display = 'none';
+            });
+
+            document.getElementById('rofoIssueDateYes').addEventListener('click', function () {
+                unlocked = true;
+                confirm.style.display = 'none';
+                edit.style.display = 'none';
+                input.disabled = false;
+                input.style.background = '';
+                input.style.color = '';
+                input.focus();
+            });
+        },
+        preConfirm: function () {
+            var input = document.getElementById('rofoIssueDateInput');
+            var error = document.getElementById('rofoIssueDateError');
+            var value = input ? input.value : '';
+
+            // Still locked: print with what the record holds, send nothing.
+            if (locked && !unlocked) return { keep: true };
+
+            if (!value) {
+                error.textContent = 'Enter the application date before printing.';
+                error.style.display = 'block';
+                return false;
+            }
+
+            return { keep: false, value: value };
+        }
+    }).then(function (r) {
+        if (!r.isConfirmed || !r.value) return;
+        if (r.value.keep) { onReady(null); return; }
+
+        // Only a confirmed edit is allowed to replace a date already on record;
+        // filling a blank one never needs to.
+        onReady({
+            issue_date: r.value.value,
+            issue_date_apply: unlocked ? 'all' : 'missing'
+        });
+    });
+}
+
+function rofoToday() {
+    var d = new Date();
+    return d.getFullYear() + '-'
+        + String(d.getMonth() + 1).padStart(2, '0') + '-'
+        + String(d.getDate()).padStart(2, '0');
+}
+
+// Saves the date on its own, for the routes that navigate to the letter instead of
+// posting the print form.
+function rofoSaveIssueDate(ids, chosen) {
+    return fetch('{{ route('land-rofos.issue-date') }}', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': rofoCsrf(), 'Accept': 'application/json' },
+        body: JSON.stringify({ ids: ids, issue_date: chosen.issue_date, issue_date_apply: chosen.issue_date_apply })
+    });
+}
+
+// The public entry point every print button calls: ask for the date, then hand the
+// answer to the pipeline as one more extra.
 function printRofoBatch(ids, copies, extras) {
+    if (!ids || !ids.length) return;
+
+    rofoAskIssueDate(ids, function (chosen) {
+        var merged = extras || {};
+        if (chosen) {
+            merged = Object.assign({}, merged, chosen);
+        }
+        runRofoPrintPipeline(ids, copies, merged);
+    });
+}
+
+function runRofoPrintPipeline(ids, copies, extras) {
     if (!ids || !ids.length) return;
 
     var csrf = rofoCsrf();
@@ -1548,14 +1714,14 @@ function printRofoBatch(ids, copies, extras) {
     .then(function (res) { return res.json(); })
     .then(function (data) {
         if (data && data.success && data.awaiting_office > 0) {
-            askResumeOrRestart(ids, data, csrf);
+            askResumeOrRestart(ids, data, csrf, extras);
         } else {
-            askHowToPrintBatch(ids, csrf);
+            askHowToPrintBatch(ids, csrf, extras);
         }
     })
     // The status is a convenience, not a gate: if it cannot be read the operator
     // still gets the ordinary dialog rather than a dead button.
-    .catch(function () { askHowToPrintBatch(ids, csrf); });
+    .catch(function () { askHowToPrintBatch(ids, csrf, extras); });
 }
 
 // One pass, named by the caller. The print tab is claimed here, synchronously
@@ -1615,7 +1781,7 @@ function runNamedBatchPass(ids, csrf, copies, extras) {
 
 // Shown when a previous split print stopped after the Originals. Resuming prints
 // only the office copies still owed, and only for the files that owe them.
-function askResumeOrRestart(ids, status, csrf) {
+function askResumeOrRestart(ids, status, csrf, extras) {
     var resumeIds = status.resume_ids || [];
 
     Swal.fire({
@@ -1649,19 +1815,19 @@ function askResumeOrRestart(ids, status, csrf) {
         denyButtonColor: '#7c3aed',
     }).then(function (r) {
         if (r.isDenied) {
-            askHowToPrintBatch(ids, csrf);
+            askHowToPrintBatch(ids, csrf, extras);
             return;
         }
         if (!r.isConfirmed) return;
 
         // Claimed inside the click, or the pop-up blocker takes it.
         var officeWindow = window.open('', 'rofoPrintOffice');
-        runOfficeCopies(resumeIds, csrf, officeWindow);
+        runOfficeCopies(resumeIds, csrf, officeWindow, extras);
     });
 }
 
 // The original dialog: one run, or two with the paper changed in between.
-function askHowToPrintBatch(ids, csrf) {
+function askHowToPrintBatch(ids, csrf, extras) {
     // Two ways to put the same letters on paper. Asked here rather than as a second
     // button in the table, because the difference is only meaningful once explained
     // — and this is the dialog that already stands between a click and a lot of paper.
@@ -1699,7 +1865,7 @@ function askHowToPrintBatch(ids, csrf) {
         fetch('{{ route('land-rofos.batch-print-log') }}', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' },
-            body: JSON.stringify({ ids: ids, copies: twoRuns ? 'original' : 'all' })
+            body: JSON.stringify(rofoWithExtras({ ids: ids, copies: twoRuns ? 'original' : 'all' }, extras))
         })
         .then(function (res) { return res.json(); })
         .then(function (data) {
@@ -1707,10 +1873,10 @@ function askHowToPrintBatch(ids, csrf) {
 
             if (twoRuns) {
                 // No reload yet — this page has to stay alive to ask for run 2.
-                submitBatchPrint(ids, csrf, printWindow, 'original', 'rofoPrintOriginals', false);
-                promptOfficeCopiesRun(ids, csrf);
+                submitBatchPrint(ids, csrf, printWindow, 'original', 'rofoPrintOriginals', false, extras);
+                promptOfficeCopiesRun(ids, csrf, extras);
             } else {
-                submitBatchPrint(ids, csrf, printWindow, 'all', 'rofoBatchPrint', true);
+                submitBatchPrint(ids, csrf, printWindow, 'all', 'rofoBatchPrint', true, extras);
             }
         })
         .catch(function (err) {
@@ -1816,6 +1982,16 @@ function submitBatchPrint(ids, csrf, printWindow, copies, windowName, reload, ex
     var which = document.createElement('input');
     which.type = 'hidden'; which.name = 'copies'; which.value = copies || 'all';
     form.appendChild(which);
+
+    // What the letter prints as DATE OF ISSUE, and what the server writes to the
+    // record's application_date as it renders — on the rows that have none.
+    if (extras && extras.issue_date) {
+        [['issue_date', extras.issue_date], ['issue_date_apply', extras.issue_date_apply || 'missing']].forEach(function (pair) {
+            var inp = document.createElement('input');
+            inp.type = 'hidden'; inp.name = pair[0]; inp.value = pair[1];
+            form.appendChild(inp);
+        });
+    }
 
     if (extras && extras.reissuance) {
         [['supersede', '1'], ['reissue_source', extras.reissuance]].forEach(function (pair) {

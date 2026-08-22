@@ -797,11 +797,27 @@ function handleSuaApplicationTypeChange(radioElement) {
 /* =========================================================================
  * Allocation Information (SuA commissioning)
  *
- * Allocation Source / Entity / Reference No used to be typed on the Standalone
- * Unit Application form. They are now answered here, once, and back-filled into
- * that form when the SuA file number is selected. Entity list mirrors
- * setupAllocationDropdowns() in sectionaltitling/sub_application.blade.php.
+ * Allocation Source / Entity / Slip No used to be typed on the Standalone Unit
+ * Application form. They are now answered here, once, and back-filled into that
+ * form when the SuA file number is selected.
+ *
+ * "Allocation Source" is the allocating institution itself, picked from the
+ * shared allocation_source_lookups list (Government names and Other-Institution
+ * names in one dropdown, grouped). The group it came from is posted alongside
+ * it, because that is what decides which Addressee list the Confirmation Sheet
+ * offers - the sheet asks only for the officer, never for the institution again.
+ *
+ * The legacy 'State Government' / 'Local Government' pair is still stored, but
+ * it is derived server-side by AllocationSourceResolver::toLegacy() rather than
+ * answered here.
  * ========================================================================= */
+
+/** The sentinel every lookup-driven dropdown appends. Never stored as a name. */
+const SUA_OTHERS_SPECIFY = 'OTHERS (SPECIFY)';
+
+/** The one institution that needs a second answer: which council. */
+const SUA_LOCAL_GOVERNMENT = 'LOCAL GOVERNMENT';
+
 const SUA_ALLOCATION_ENTITIES = {
     'State Government': ['KSIP', 'HOUSING', 'KUNPDA', 'Other'],
     'Local Government': [
@@ -816,7 +832,7 @@ const SUA_ALLOCATION_ENTITIES = {
 
 window.SUA_ALLOCATION_ENTITIES = SUA_ALLOCATION_ENTITIES;
 
-/** Reveal the "Specify Entity" box only while "Other" is the selection. */
+/** Reveal the "Specify LGA" box only while "Other" is the selection. */
 function handleSuaAllocationEntityChange(selectElement) {
     const wrap = document.getElementById('sua_allocation_entity_other_wrap');
     if (!wrap) return;
@@ -829,29 +845,121 @@ function handleSuaAllocationEntityChange(selectElement) {
     }
 }
 
-function setupSuaAllocationDropdowns() {
-    const source = document.getElementById('sua_allocation_source');
+/** The category of the selected institution: 'GOVERNMENT' or 'OTHER'. */
+function suaSelectedInstitutionCategory() {
+    const select = document.getElementById('sua_allocation_source');
+    const option = select && select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null;
+
+    return (option && option.dataset.category) === 'OTHER' ? 'OTHER' : 'GOVERNMENT';
+}
+
+/**
+ * Picking the institution decides the rest of the card: "Others (Specify)" opens
+ * the name box, and LOCAL GOVERNMENT is the only choice that also asks which
+ * LGA. Anything else names itself, so the LGA half is cleared and hidden rather
+ * than left holding a stale answer.
+ *
+ */
+function handleSuaAllocationSourceChange(selectElement) {
+    const otherWrap = document.getElementById('sua_allocation_source_other_wrap');
+    const otherInput = document.getElementById('sua_allocation_source_other');
+    const entityWrap = document.getElementById('sua_allocation_entity_wrap');
     const entity = document.getElementById('sua_allocation_entity');
-    if (!source || !entity) return;
 
-    source.addEventListener('change', function () {
-        const options = SUA_ALLOCATION_ENTITIES[this.value];
-        entity.innerHTML = '<option value="">Select Entity</option>';
+    const isOther = selectElement.value === SUA_OTHERS_SPECIFY;
+    if (otherWrap) otherWrap.classList.toggle('hidden', !isOther);
+    if (otherInput && !isOther) otherInput.value = '';
+
+    const isLga = selectElement.value.toUpperCase() === SUA_LOCAL_GOVERNMENT;
+    if (entityWrap) entityWrap.classList.toggle('hidden', !isLga);
+    if (!entity) return;
+
+    if (!isLga) {
+        entity.value = '';
         handleSuaAllocationEntityChange(entity);
+        return;
+    }
 
-        if (!options) {
-            entity.disabled = true;
-            return;
+    // Rebuilt each time, so a council typed under "Other" cannot survive a detour
+    // through another institution.
+    entity.innerHTML = '<option value="">Select LGA</option>';
+    SUA_ALLOCATION_ENTITIES['Local Government'].concat('Other').forEach(name => {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        entity.appendChild(option);
+    });
+
+    // The edit screen asks for a stored council before this list exists; apply it
+    // now that it does. A name the list does not offer was typed under "Other".
+    const pendingCouncil = entity.dataset.pendingValue;
+    if (pendingCouncil) {
+        const known = Array.prototype.some.call(entity.options, o => o.value === pendingCouncil);
+        entity.value = known ? pendingCouncil : 'Other';
+
+        if (!known) {
+            const box = document.getElementById('sua_allocation_entity_other');
+            if (box) box.value = pendingCouncil;
         }
 
-        entity.disabled = false;
-        options.forEach(name => {
-            const option = document.createElement('option');
-            option.value = name;
-            option.textContent = name;
-            entity.appendChild(option);
+        delete entity.dataset.pendingValue;
+    }
+
+    handleSuaAllocationEntityChange(entity);
+}
+
+/**
+ * Fill the Allocation Source dropdown from allocation_source_lookups, grouped by
+ * the two lists the registry keeps. Each group ends with "Others (Specify)", and
+ * a name typed there is remembered server-side, so the lists are never hardcoded
+ * here.
+ *
+ * A failed lookup still leaves both sentinels, which answer the card on their own.
+ */
+function setupSuaAllocationDropdowns() {
+    const source = document.getElementById('sua_allocation_source');
+    if (!source) return;
+
+    const render = (lookups) => {
+        const groups = [
+            ['Government', 'GOVERNMENT', lookups.institution_government || []],
+            ['Other Institutions', 'OTHER', lookups.institution_other || []]
+        ];
+
+        source.innerHTML = '<option value="">Select Allocation Source</option>';
+
+        groups.forEach(([label, category, names]) => {
+            const group = document.createElement('optgroup');
+            group.label = label;
+
+            names.concat(SUA_OTHERS_SPECIFY).forEach(name => {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                option.dataset.category = category;
+                group.appendChild(option);
+            });
+
+            source.appendChild(group);
         });
-    });
+
+        // The edit screen fills the card before the lists arrive; re-apply what it
+        // asked for, now that the option exists.
+        const pending = source.dataset.pendingValue;
+        if (pending) {
+            source.value = pending;
+            delete source.dataset.pendingValue;
+        }
+
+        source.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
+    fetch('/api/reference/allocation-source-lookups', {
+        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+    })
+        .then(response => (response.ok ? response.json() : null))
+        .then(payload => render((payload && payload.data) || {}))
+        .catch(() => render({}));
 }
 
 if (document.readyState === 'loading') {
@@ -865,38 +973,57 @@ if (document.readyState === 'loading') {
  * Returns null (after showing the warning) when a required answer is missing.
  */
 function collectSuaAllocationData() {
-    const allocationSource = document.getElementById('sua_allocation_source')?.value || '';
+    const warn = (title, text) => {
+        Swal.fire({ icon: 'warning', title, text, confirmButtonColor: '#f59e0b' });
+        return null;
+    };
+
+    const selectedSource = document.getElementById('sua_allocation_source')?.value || '';
+    const otherSource = (document.getElementById('sua_allocation_source_other')?.value || '').trim();
     const selectedEntity = document.getElementById('sua_allocation_entity')?.value || '';
     const otherEntity = (document.getElementById('sua_allocation_entity_other')?.value || '').trim();
     const allocationRefNo = document.getElementById('sua_allocation_ref_no')?.value || '';
+    const allocationReferenceNo = document.getElementById('sua_allocation_reference_no')?.value || '';
 
-    if (!allocationSource || !selectedEntity) {
-        Swal.fire({
-            icon: 'warning',
-            title: 'Allocation Information Required',
-            text: 'Please select an Allocation Source and Allocation Entity before commissioning.',
-            confirmButtonColor: '#f59e0b'
-        });
-        return null;
+    if (!selectedSource) {
+        return warn('Allocation Source Required',
+            'Please select the institution this unit was allocated by before commissioning.');
     }
 
-    if (selectedEntity === 'Other' && !otherEntity) {
-        Swal.fire({
-            icon: 'warning',
-            title: 'Specify the Entity',
-            text: 'You picked "Other" as the Allocation Entity — type the entity name before commissioning.',
-            confirmButtonColor: '#f59e0b'
-        });
-        return null;
+    if (selectedSource === SUA_OTHERS_SPECIFY && !otherSource) {
+        return warn('Specify the Institution',
+            'You picked "Others (Specify)" as the Allocation Source - type the institution name before commissioning.');
     }
 
-    // "Other" is a picker convenience; what gets stored is the entity itself.
-    const allocationEntity = selectedEntity === 'Other' ? otherEntity : selectedEntity;
+    // "Others (Specify)" is a picker convenience; what gets stored is the name.
+    const institutionName = selectedSource === SUA_OTHERS_SPECIFY ? otherSource : selectedSource;
+    const isLga = institutionName.toUpperCase() === SUA_LOCAL_GOVERNMENT;
+
+    if (isLga && !selectedEntity) {
+        return warn('LGA Required',
+            'Please pick the LGA this unit was allocated by before commissioning.');
+    }
+
+    if (isLga && selectedEntity === 'Other' && !otherEntity) {
+        return warn('Specify the LGA',
+            'You picked "Other" as the LGA - type its name before commissioning.');
+    }
+
+    if (!allocationRefNo.trim()) {
+        return warn('Allocation Slip No Required',
+            'Enter the Allocation Slip No - it is printed on the SuA Confirmation Sheet.');
+    }
 
     return {
-        allocation_source: allocationSource,
-        allocation_entity: allocationEntity,
-        allocation_ref_no: allocationRefNo.trim().toUpperCase() || null
+        institution_category: suaSelectedInstitutionCategory(),
+        institution_name: institutionName,
+        // Only a council allocation has a second name; the server derives the
+        // legacy allocation_source / allocation_entity pair from these two.
+        allocation_entity: isLga ? (selectedEntity === 'Other' ? otherEntity : selectedEntity) : null,
+        allocation_ref_no: allocationRefNo.trim().toUpperCase(),
+        // A second, optional number: the allocation's own reference, kept apart
+        // from the slip it was raised under.
+        allocation_reference_no: allocationReferenceNo.trim().toUpperCase() || null
     };
 }
 
@@ -908,7 +1035,9 @@ window.generateSUAPrimaryFileNo = generateSUAPrimaryFileNo;
 window.generatePuaFileNumber = generatePuaFileNumber;
 window.clearSuaFileNumbers = clearSuaFileNumbers;
 window.setupSuaAllocationDropdowns = setupSuaAllocationDropdowns;
+window.handleSuaAllocationSourceChange = handleSuaAllocationSourceChange;
 window.handleSuaAllocationEntityChange = handleSuaAllocationEntityChange;
+window.suaSelectedInstitutionCategory = suaSelectedInstitutionCategory;
 
 console.log('🎉 SuA JavaScript module loaded successfully');
 console.log('🔧 Available SuA and PuA functions:', {

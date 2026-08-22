@@ -2748,6 +2748,44 @@
         `;
     }
 
+    /**
+     * Paint the read-only Root of Title / Original Holder / Current Holder block
+     * from the resolver's answer on the /api/file-history response (client spec
+     * 2026-08-20 §12). A blank Root of Title is a legitimate result — the file has
+     * nothing on record predating its Ministry grant — so it shows a dash rather
+     * than borrowing the earliest party's name.
+     */
+    function renderTitleHolders(holders) {
+        const panel = document.getElementById('file-history-title-holders');
+        if (!panel) {
+            return;
+        }
+
+        if (!holders) {
+            panel.classList.add('hidden');
+            return;
+        }
+
+        const set = (id, value) => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.textContent = value || '—';
+            }
+        };
+
+        set('file-history-root-of-title', holders.root_of_title);
+        set('file-history-original-holder', holders.original_holder);
+        set('file-history-current-holder', holders.current_holder);
+
+        const typeEl = document.getElementById('file-history-application-type');
+        if (typeEl) {
+            const type = holders.application_type;
+            typeEl.textContent = (type && type !== 'Unknown') ? type : '';
+        }
+
+        panel.classList.remove('hidden');
+    }
+
     function renderFileHistoryEntries(entries) {
         const elements = resolveFileHistoryElements();
         if (!elements.container) {
@@ -2820,6 +2858,7 @@
         }
 
         fileHistoryUI.entries = [];
+        renderTitleHolders(null);
         updateFileHistoryTimelineButtonState();
 
         if (elements.list) {
@@ -2869,6 +2908,7 @@
                 propertyTransactionCache.byFileNumber.delete(normalizeFileno(fileHistoryUI.currentFileNumber));
             }
             fileHistoryUI.currentFileNumber = null;
+            renderTitleHolders(null);
             updateFileHistoryTimelineButtonState();
             if (elements.list) {
                 elements.list.innerHTML = '';
@@ -2927,6 +2967,7 @@
             }
 
             const entries = Array.isArray(response.data) ? response.data : [];
+            renderTitleHolders(response.title_holders);
             renderFileHistoryEntries(entries);
 
             const converted = convertFileHistoryEntriesToTransactions(entries);

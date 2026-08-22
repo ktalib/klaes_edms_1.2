@@ -1315,21 +1315,16 @@ class ApplicationController extends Controller
             ]);
         }
 
-        if (empty($recommendation->land_rofo_serial_no) && strtoupper((string) ($recommendation->type ?? '')) === 'OSS') {
-            DB::connection('sqlsrv')->transaction(function () use ($recommendation) {
-                $maxSerial = DB::connection('sqlsrv')
-                    ->table(DB::raw('land_recommendations WITH (UPDLOCK, HOLDLOCK)'))
-                    ->whereRaw("UPPER(ISNULL(type, '')) = ?", ['OSS'])
-                    ->selectRaw('MAX(TRY_CONVERT(int, land_rofo_serial_no)) as max_serial')
-                    ->value('max_serial');
-
-                $recommendation->update([
-                    'land_rofo_serial_no' => str_pad((int) ($maxSerial ?? 0) + 1, 5, '0', STR_PAD_LEFT),
-                    'updated_by' => Auth::id(),
-                ]);
-            });
-            $recommendation->refresh();
-        }
+        // land_rofo_serial_no is NOT touched here, and must not be. It is the
+        // security paper code, and the only thing entitled to write it is the
+        // "Enter Security Paper Code" card on the RofO screen
+        // (LandRofoController@assignSecurityPaperCode), which takes a real sheet
+        // out of the global_security_paper_codes pool and records who took it.
+        //
+        // This endpoint used to mint a 5-digit number into it when it found the
+        // column empty - from a GET, fired by the recommendation modal merely
+        // opening. Files ended up displaying a "security paper code" nobody had
+        // entered and no sheet existed for. See the note in saveRecommendation().
 
         return response()->json([
             'success' => true,
@@ -1517,27 +1512,22 @@ class ApplicationController extends Controller
             ->orderByDesc('id')
             ->first();
 
-        $assignNextOssSerial = static function (): string {
-            $maxSerial = DB::connection('sqlsrv')
-                ->table(DB::raw('land_recommendations WITH (UPDLOCK, HOLDLOCK)'))
-                ->whereRaw("UPPER(ISNULL(type, '')) = ?", ['OSS'])
-                ->selectRaw('MAX(TRY_CONVERT(int, land_rofo_serial_no)) as max_serial')
-                ->value('max_serial');
-
-            return str_pad((int) ($maxSerial ?? 0) + 1, 5, '0', STR_PAD_LEFT);
-        };
+        // No serial is minted here, or anywhere else in OSS.
+        //
+        // land_rofo_serial_no holds the SECURITY PAPER CODE: a real sheet drawn
+        // from the global_security_paper_codes pool by the "Enter Security Paper
+        // Code" card on the RofO screen, which marks the sheet used and records
+        // who took it. Every code in that pool is 6 digits.
+        //
+        // OSS used to write its own str_pad(MAX + 1, 5, '0') sequence into the
+        // same column - on create, on this existing-record branch, and from
+        // recommendationStatus() on a GET. The result was 5-digit values on the
+        // RofO listing labelled "Security Paper Code" that no one had entered,
+        // that matched no sheet, and that left no assignment trail. The column has
+        // one owner now, and OSS is not it: an OSS RofO shows no code until one is
+        // entered on that card, which is the same rule Land has always followed.
 
         if ($existing) {
-            if (empty($existing->land_rofo_serial_no) && strtoupper((string) ($existing->type ?? '')) === 'OSS') {
-                DB::connection('sqlsrv')->transaction(function () use ($existing, $assignNextOssSerial) {
-                    $existing->update([
-                        'land_rofo_serial_no' => $assignNextOssSerial(),
-                        'updated_by' => Auth::id(),
-                    ]);
-                });
-                $existing->refresh();
-            }
-
             return response()->json([
                 'success' => true,
                 'message' => 'Recommendation already exists.',
@@ -1558,10 +1548,7 @@ class ApplicationController extends Controller
             return $normalized === '' ? null : (float) $normalized;
         };
 
-        $recommendation = DB::connection('sqlsrv')->transaction(function () use ($fileRef, $validated, $toNumber, $assignNextOssSerial) {
-            // Keep OSS serial sequence independent; first record starts at 00001.
-            $nextSerial = $assignNextOssSerial();
-
+        $recommendation = DB::connection('sqlsrv')->transaction(function () use ($fileRef, $validated, $toNumber) {
             return LandRecommendation::create([
                 'file_number' => $fileRef,
                 'applicant_name' => (string) ($validated['applicant_name'] ?? ''),
@@ -1578,7 +1565,6 @@ class ApplicationController extends Controller
                 'recommendation' => (string) ($validated['director_reasons'] ?? ''),
                 'land_use' => (string) ($validated['purpose'] ?? ''),
                 'tracking_id' => (string) ($validated['record_id'] ?? ''),
-                'land_rofo_serial_no' => $nextSerial,
                 'status' => LandRecommendation::STATUS_PENDING,
                 'rofo_status' => LandRecommendation::ROFO_GENERATED,
                 'rofo_generated_at' => now(),

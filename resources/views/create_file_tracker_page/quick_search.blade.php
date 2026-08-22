@@ -919,9 +919,38 @@
             // SCB has reported the file as Not Found (Missing / Pending).
             const isNotFound = /NOT_FOUND/.test(d.status || '');
 
+            // Root of Title / Original Holder / Current Holder — three DIFFERENT
+            // concepts (client spec 2026-08-20 §12), resolved server-side by
+            // TitleHolderResolver. This block is authoritative; the chronological
+            // chain below it is context only, which is why its nodes no longer
+            // label anybody "Original Holder".
+            //
+            // Root of Title is legitimately blank on a file where nothing predates
+            // the Ministry grant — render the dash rather than inventing a name
+            // from the earliest party, which is precisely the assumption the spec
+            // removes.
+            const titleHoldersHtml = (() => {
+                const th = d.title_holders;
+                const forceRow = (l, v) => `<div class="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
+                    <span class="text-xs font-medium text-gray-500">${esc(l)}</span>
+                    <span class="text-sm text-gray-800 text-right">${v ? esc(v) : '—'}</span></div>`;
+                if (!th) {
+                    // Not indexed — no chain to interpret; keep the legacy two rows.
+                    const origVal = d.original_holder || d.current_holder;
+                    const currVal = d.current_holder || d.original_holder;
+                    return row('Original Holder', origVal) + row('Current Holder', currVal);
+                }
+                return `
+                    <div class="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 mb-1">Title</div>
+                    ${forceRow('Root of Title', th.root_of_title)}
+                    ${forceRow('Original Holder', th.original_holder)}
+                    ${forceRow('Current Holder', th.current_holder)}`;
+            })();
+
             // Ownership timeline — chronological holder chain from the cross-table
-            // property timeline. Falls back to the two flat indexing rows when the
-            // file has no transaction history.
+            // property timeline. Context for the block above; hidden entirely when
+            // the file has no transaction history (the three rows already covered
+            // that case from the indexing columns).
             const holderHistoryHtml = (() => {
                 let hist = Array.isArray(d.holder_history) ? d.holder_history : [];
                 // Hide Mortgage and Surrender And Release nodes from the holders list.
@@ -930,12 +959,7 @@
                     return !t.includes('mortgage') && !t.includes('surrender');
                 });
                 if (!hist.length) {
-                    // Mirrors mobile File Search: when only one side is on record
-                    // (e.g. a single CofO grant with no later transfer), the same
-                    // holder is shown on both rows instead of one row disappearing.
-                    const origVal = d.original_holder || d.current_holder;
-                    const currVal = d.current_holder || d.original_holder;
-                    return row('Original Holder', origVal) + row('Current Holder', currVal);
+                    return '';
                 }
                 // Shorten a transaction type to its instrument label (R of O, C of O,
                 // Assignment, Mortgage, …) for the compact ownership list.
@@ -946,15 +970,18 @@
                     if (s.includes('certificate of occupancy')) return 'C of O';
                     return String(t).replace(/^deed of\s+/i, '').trim();
                 };
-                // Render a single holder node: recipient name + role (Original/Current
-                // Holder) and the instrument in brackets. `isLast` controls the rail.
+                // Render a single holder node: recipient name, the instrument in
+                // brackets and the dealing's date. Nodes are NOT labelled Original
+                // or Current Holder any more — position in the chain does not
+                // decide either role (spec §12), the resolver does, and the Title
+                // block above carries the answer.
                 const buildNode = (h, isFirst, isLast) => {
                     const dot = isFirst ? 'bg-emerald-600' : (isLast ? 'bg-indigo-600' : 'bg-gray-300');
                     const dotIcon = (isFirst || isLast) ? 'text-white' : 'text-gray-500';
                     const line = !isLast ? `<span class="absolute left-[6px] top-[18px] -bottom-0.5 w-0.5 bg-gray-200"></span>` : '';
                     const name = h.to || h.holder;
-                    const roleLabel = isFirst ? 'Original Holder' : (isLast ? 'Current Holder' : 'Holder');
-                    const roleColor = isFirst ? 'text-emerald-700' : (isLast ? 'text-indigo-700' : 'text-gray-500');
+                    const roleLabel = h.date || '';
+                    const roleColor = 'text-gray-500';
                     const type = abbrevType(h.transaction_type);
                     return `
                         <div class="relative pl-6 ${isLast ? '' : 'pb-2'}">
@@ -964,19 +991,17 @@
                             </span>
                             <div class="flex items-baseline gap-2 flex-wrap">
                                 <span class="text-[13px] font-bold text-gray-900 leading-tight">${esc(name)}</span>
-                                <span class="text-[11px] font-semibold ${roleColor}">${roleLabel}${type ? ` <span class="text-gray-400 font-medium">(${esc(type)})</span>` : ''}</span>
+                                <span class="text-[11px] font-semibold ${roleColor}">${esc(roleLabel)}${type ? ` <span class="text-gray-400 font-medium">(${esc(type)})</span>` : ''}</span>
                             </div>
                         </div>`;
                 };
-                // A single transaction (e.g. only a CofO grant with no later transfer)
-                // means the same person is both the original AND the current holder.
-                // Render that holder twice — as Original and as Current — mirroring the
-                // flat two-row fallback above, so a Current Holder always shows.
-                const nodes = hist.length === 1
-                    ? buildNode(hist[0], true, false) + buildNode(hist[0], false, true)
-                    : hist.map((h, i) => buildNode(h, i === 0, i === hist.length - 1)).join('');
+                // One node per dealing. A single-transaction file used to be drawn
+                // twice (once as Original, once as Current) so both roles appeared;
+                // the Title block above now states both, so the duplicate node would
+                // only read as a phantom second dealing.
+                const nodes = hist.map((h, i) => buildNode(h, i === 0, i === hist.length - 1)).join('');
                 return `
-                    <div class="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 mb-2.5">Ownership</div>
+                    <div class="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 mt-3 mb-2.5">Dealings</div>
                     <div class="pb-0.5">${nodes}</div>`;
             })();
 
@@ -1081,6 +1106,7 @@
                                 <i data-lucide="users" class="h-3.5 w-3.5"></i> Holder &amp; Bill Details
                             </summary>
                             <div class="px-4 pb-3 pt-1">
+                                ${titleHoldersHtml}
                                 ${holderHistoryHtml}
                                 ${d.bill_balance ? `
                                 <div class="mt-2 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">

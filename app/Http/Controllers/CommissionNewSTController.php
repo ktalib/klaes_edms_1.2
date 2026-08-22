@@ -1,6 +1,9 @@
 <?php
 
 namespace App\Http\Controllers;
+use App\Models\AllocationSourceLookup;
+use App\Services\FileIndexingPropagationService;
+use App\Services\AllocationSourceResolver;
 use App\Services\STFileNumberService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -232,9 +235,16 @@ class CommissionNewSTController extends Controller
                 'corporate_name' => 'nullable|string|max:200',
                 'rc_number' => 'nullable|string|max:50',
                 // SuA only — the other tabs never send these.
+                // Allocation Source is now the allocating institution itself; the
+                // legacy source/entity pair is derived from it in
+                // resolveAllocationColumns(). Both are still accepted so an older
+                // client (or the LGA council box) keeps working.
+                'institution_category' => 'nullable|string|in:GOVERNMENT,OTHER',
+                'institution_name' => 'nullable|string|max:255',
                 'allocation_source' => 'nullable|string|in:State Government,Local Government',
                 'allocation_entity' => 'nullable|string|max:100',
                 'allocation_ref_no' => 'nullable|string|max:100',
+                'allocation_reference_no' => 'nullable|string|max:100',
                 'property_house_no' => 'nullable|string|max:100',
                 'property_plot_no' => 'nullable|string|max:100',
                 'property_street_name' => 'nullable|string|max:255',
@@ -260,7 +270,11 @@ class CommissionNewSTController extends Controller
 
             $fileNumber = $this->registryFileNumberFor($existing);
 
-            $connection->transaction(function () use ($connection, $existing, $validated, $applicantType, $fileName, $fileNumber) {
+            // Allocation source/entity/slip + parcel no, keeping whatever the
+            // request did not send.
+            $allocation = $this->resolveAllocationColumns($validated, $existing);
+
+            $connection->transaction(function () use ($connection, $existing, $validated, $applicantType, $fileName, $fileNumber, $allocation) {
                 $connection->table('st_file_numbers')
                     ->where('id', $existing->id)
                     ->update(array_merge($this->propertyLocationColumns($validated), [
@@ -272,12 +286,8 @@ class CommissionNewSTController extends Controller
                         'corporate_name'  => $validated['corporate_name'] ?? null,
                         'rc_number'       => $validated['rc_number'] ?? null,
                         'gender'          => $validated['gender'] ?? $existing->gender,
-                        // Absent keys mean a non-SuA tab posted; keep what is stored.
-                        'allocation_source' => $validated['allocation_source'] ?? ($existing->allocation_source ?? null),
-                        'allocation_entity' => $validated['allocation_entity'] ?? ($existing->allocation_entity ?? null),
-                        'allocation_ref_no' => $validated['allocation_ref_no'] ?? ($existing->allocation_ref_no ?? null),
                         'updated_at'      => now(),
-                    ]));
+                    ], $allocation));
 
                 // Keep the registry copy of the same facts in step.
                 $indexingUpdate = [
@@ -309,9 +319,43 @@ class CommissionNewSTController extends Controller
                     return $value !== null && $value !== '';
                 });
 
+                // Read before the write, so the propagation below can tell what
+                // actually changed rather than pushing every column every time.
+                $indexingBefore = $connection->table('file_indexings')
+                    ->where('file_number', $fileNumber)
+                    ->first();
+
                 $connection->table('file_indexings')
                     ->where('file_number', $fileNumber)
                     ->update($indexingUpdate);
+
+                // A corrected name has to reach the file-identity mirrors, or every
+                // screen reading them keeps showing the old one — the Confirmation
+                // Sheet prints fileNumber.FileName, never st_file_numbers.
+                if ($indexingBefore) {
+                    $indexingAfter = $connection->table('file_indexings')
+                        ->where('id', $indexingBefore->id)
+                        ->first();
+
+                    if ($indexingAfter) {
+                        app(FileIndexingPropagationService::class)
+                            ->propagate($indexingBefore, $indexingAfter);
+                    }
+                }
+
+                // Not every ST file has an indexing row to propagate from — a
+                // directly commissioned SuA usually has none — so the two identity
+                // copies this screen owns are written from the record itself.
+                $connection->table('fileNumber')
+                    ->where(function ($query) use ($fileNumber) {
+                        $query->where('st_file_no', $fileNumber)
+                            ->orWhere('mlsfNo', $fileNumber);
+                    })
+                    ->update(['FileName' => $fileName]);
+
+                $connection->table('mls_file_no')
+                    ->where('full_file_number', $fileNumber)
+                    ->update(['file_name' => $fileName]);
             });
 
             // Entity / customer staging rows carry the applicant name and address.
@@ -1538,6 +1582,74 @@ class CommissionNewSTController extends Controller
     }
 
     /**
+     * The allocation columns to write for a SuA.
+     *
+     * An absent key means a non-SuA tab posted (or a field the edit screen never
+     * touched), so the stored value is kept rather than blanked.
+     *
+     * The institution IS the Allocation Source, answered here. Only the addressee
+     * the Confirmation Sheet is written to stays a per-letter question, answered
+     * on the print card and stored on conversion_applications.
+     *
+     * allocation_source / allocation_entity are derived, never posted: every
+     * existing reader still expects the 'State Government' / 'Local Government'
+     * pair, and deriving it here is what stops the two shapes drifting apart.
+     *
+     * @param  array       $validated
+     * @param  object|null $existing  the row being updated, if any
+     */
+    private function resolveAllocationColumns(array $validated, $existing = null): array
+    {
+        $stored = function (string $key) use ($existing) {
+            return $existing->{$key} ?? null;
+        };
+
+        $institution = $validated['institution_name'] ?? $stored('institution_name');
+        $entity      = $validated['allocation_entity'] ?? $stored('allocation_entity');
+
+        // A name typed under "Others (Specify)" joins the list, so the next
+        // commissioning offers it instead of asking for it to be typed again.
+        if (isset($validated['institution_name'])) {
+            $remembered = AllocationSourceLookup::remember(
+                AllocationSourceResolver::institutionType($validated['institution_category'] ?? null),
+                $validated['institution_name']
+            );
+
+            $institution = $remembered ?? $institution;
+        }
+
+        $common = [
+            'allocation_ref_no' => $validated['allocation_ref_no'] ?? $stored('allocation_ref_no'),
+            'allocation_reference_no' => $validated['allocation_reference_no']
+                ?? $stored('allocation_reference_no'),
+        ];
+
+        // No institution answered at all (a non-SuA tab, or an older client still
+        // posting the binary question) - leave both new columns as they were and
+        // keep the legacy pair exactly as posted.
+        if (trim((string) $institution) === '') {
+            return $common + [
+                'institution_category' => $stored('institution_category'),
+                'institution_name'     => null,
+                'allocation_source'    => $validated['allocation_source'] ?? $stored('allocation_source'),
+                'allocation_entity'    => $entity,
+            ];
+        }
+
+        $category = AllocationSourceResolver::normalizeCategory(
+            $validated['institution_category'] ?? $stored('institution_category')
+        );
+
+        // Everything downstream - the Standalone Unit Application form, instrument
+        // registration, the LGA sheet - still reads the old pair, so it is derived
+        // from the institution rather than asked for a second time.
+        return $common + [
+            'institution_category' => $category,
+            'institution_name'     => $institution,
+        ] + AllocationSourceResolver::toLegacy($category, $institution, $entity);
+    }
+
+    /**
      * Commission (save) a new SuA file number
      *
      * @param Request $request
@@ -1551,10 +1663,16 @@ class CommissionNewSTController extends Controller
                 'application_type' => 'required|string|in:Direct Allocation,Conversion',
                 // Allocation Information is answered here, at commissioning, and
                 // back-filled into the Standalone Unit Application form when this
-                // file number is selected there.
-                'allocation_source' => 'required|string|in:State Government,Local Government',
-                'allocation_entity' => 'required|string|max:100',
-                'allocation_ref_no' => 'nullable|string|max:100',
+                // file number is selected there. The institution comes from
+                // allocation_source_lookups; only LOCAL GOVERNMENT carries a second
+                // name (the LGA), so the entity is conditional rather than required.
+                'institution_category' => 'required|string|in:GOVERNMENT,OTHER',
+                'institution_name' => 'required|string|max:255',
+                'allocation_entity' => 'required_if:institution_name,LOCAL GOVERNMENT|nullable|string|max:100',
+                // The slip the allocation was raised under — printed on every sheet.
+                'allocation_ref_no' => 'required|string|max:100',
+                // The allocation's own reference, kept apart from that slip.
+                'allocation_reference_no' => 'nullable|string|max:100',
                 'applicant_type' => 'required|string|in:individual,corporate,multiple',
                 'first_name' => 'nullable|string',
                 'middle_name' => 'nullable|string',
@@ -1583,7 +1701,10 @@ class CommissionNewSTController extends Controller
                 ? Carbon::parse($validated['commissioned_date'])->setTimeFrom(now())
                 : now();
 
-            $transactionResult = DB::connection('sqlsrv')->transaction(function () use ($validated, $landUseCode, $year, $creatorName, $commissionedAt) {
+            // Allocation source/entity/slip + the parcel number the sheet quotes.
+            $allocation = $this->resolveAllocationColumns($validated);
+
+            $transactionResult = DB::connection('sqlsrv')->transaction(function () use ($validated, $landUseCode, $year, $creatorName, $commissionedAt, $allocation) {
                 $connection = DB::connection('sqlsrv');
 
                 $nextSerial = $connection->table('st_file_numbers')
@@ -1602,15 +1723,12 @@ class CommissionNewSTController extends Controller
                 // Rule 2: MLS File No must be identical to the newly generated Primary File No
                 $mlsFileNo = $primaryFileNo;
 
-                $suaFileNumberId = $connection->table('st_file_numbers')->insertGetId(array_merge($this->propertyLocationColumns($validated), [
+                $suaFileNumberId = $connection->table('st_file_numbers')->insertGetId(array_merge($this->propertyLocationColumns($validated), $allocation, [
                     'np_fileno' => $primaryFileNo,
                     'fileno' => $unitFileNo,
                     'mls_fileno' => $mlsFileNo,
                     'file_no_type' => $fileNoType,
                     'application_type' => $validated['application_type'],
-                    'allocation_source' => $validated['allocation_source'],
-                    'allocation_entity' => $validated['allocation_entity'],
-                    'allocation_ref_no' => $validated['allocation_ref_no'] ?? null,
                     'land_use' => $validated['land_use'],
                     'land_use_code' => $landUseCode,
                     'year' => $year,

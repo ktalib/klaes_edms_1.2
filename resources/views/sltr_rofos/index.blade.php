@@ -172,7 +172,10 @@
                                             </button>
                                             @else
                                             <button type="button"
-                                                    onclick="SmartPrintManager.open('{{ $rec->sltr_number }}', 'SLTR RofO', '{{ route('sltr-rofos.print', $rec->id) }}')"
+                                                    {{-- SLTR keeps its own recommendations table, which has no
+                                                         application_date column, so the manager opens without the
+                                                         Date Issued panel — but with the same three passes. --}}
+                                                    onclick="SmartPrintManager.open('{{ $rec->sltr_number }}', 'SLTR RofO', '{{ route('sltr-rofos.print', $rec->id) }}', { recordId: {{ (int) $rec->id }} })"
                                                     class="flex w-full items-center px-4 py-2.5 text-blue-700 hover:bg-blue-50 transition gap-2 font-bold">
                                                 <i data-lucide="printer" class="h-4 w-4"></i> Print Manager
                                             </button>

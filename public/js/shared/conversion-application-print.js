@@ -40,7 +40,12 @@
                     // Where a state entity is written to — an LGA needs none.
                     allocationAddress: (payload.allocation_address || ''),
                     // The source was entered at commissioning: confirm, don't rewrite.
-                    allocationLocked: Boolean(payload.allocation_locked)
+                    allocationLocked: Boolean(payload.allocation_locked),
+                    // SuA only: the institution it was allocated by, the officer
+                    // the last copy was addressed to, and the parcel it names.
+                    institutionCategory: (payload.institution_category || ''),
+                    institutionName: (payload.institution_name || ''),
+                    addressedTo: (payload.addressed_to || '')
                 };
             })
             .catch(() => null);
@@ -49,6 +54,101 @@
     /** Entities a State Government allocation can come from. Mirrors the SuA
      *  commissioning form (js/commission_new_st/sua_commission.js). */
     const STATE_ENTITIES = ['KSIP', 'HOUSING', 'KUNPDA'];
+
+    /** The sentinel every lookup-driven dropdown appends. Never stored as a name. */
+    const OTHERS_SPECIFY = 'OTHERS (SPECIFY)';
+
+    /** The institution whose allocating body is a named council. */
+    const LOCAL_GOVERNMENT = 'LOCAL GOVERNMENT';
+
+    /**
+     * The four Allocation Source lists, fetched once per page. Same promise for
+     * every caller, so reopening the card costs nothing.
+     */
+    let lookupsPromise = null;
+
+    function loadAllocationLookups() {
+        if (!lookupsPromise) {
+            lookupsPromise = fetch('/api/reference/allocation-source-lookups', {
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+            })
+                .then(response => (response.ok ? response.json() : null))
+                .then(payload => (payload && payload.data) || {})
+                // A failed lookup leaves "Others (Specify)", which still answers the card.
+                .catch(() => ({}));
+        }
+
+        return lookupsPromise;
+    }
+
+    /** Fill a select with plain names plus the "Others (Specify)" sentinel. */
+    function fillNameSelect(select, names, selectedName, placeholder) {
+        const options = (names || []).slice();
+        options.push(OTHERS_SPECIFY);
+
+        select.innerHTML = `<option value="">${placeholder}</option>` + options
+            .map(name => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`)
+            .join('');
+
+        if (selectedName) {
+            // A stored name the list no longer offers is restored through the
+            // sentinel, with the name itself shown in the "specify" box.
+            select.value = options.indexOf(selectedName) !== -1 ? selectedName : OTHERS_SPECIFY;
+        }
+    }
+
+    /**
+     * Fill a select with both institution lists, grouped, exactly as the SuA
+     * commissioning form offers them. Only a file commissioned before that form
+     * asked the question gets this — every newer file already has an answer, and
+     * shows it back as text instead.
+     *
+     * Each option carries the list it came from, which is what decides the
+     * addressee names offered beside it.
+     */
+    function fillInstitutionGroups(select, lookups, selectedName) {
+        const groups = [
+            ['Government', 'GOVERNMENT', lookups.institution_government || []],
+            ['Other Institutions', 'OTHER', lookups.institution_other || []]
+        ];
+
+        select.innerHTML = '<option value="">Select Institution</option>';
+
+        groups.forEach(([label, category, names]) => {
+            const group = document.createElement('optgroup');
+            group.label = label;
+
+            names.concat(OTHERS_SPECIFY).forEach((name) => {
+                const option = new Option(name, name);
+                option.dataset.category = category;
+                group.appendChild(option);
+            });
+
+            select.appendChild(group);
+        });
+
+        if (selectedName) select.value = selectedName;
+    }
+
+    /** The list the selected institution came from: 'GOVERNMENT' or 'OTHER'. */
+    function selectedInstitutionCategory(select) {
+        const option = select && select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null;
+
+        return (option && option.dataset.category) === 'OTHER' ? 'OTHER' : 'GOVERNMENT';
+    }
+
+    /**
+     * The legacy source/entity pair an institution maps onto — the JS twin of
+     * App\Services\AllocationSourceResolver::toLegacy(). The server settles it
+     * again on a locked sheet; this keeps an unlocked one consistent.
+     */
+    function legacyAllocationFor(institution, council) {
+        if (String(institution || '').toUpperCase() === LOCAL_GOVERNMENT) {
+            return { source: 'Local Government', entity: council || '' };
+        }
+
+        return { source: 'State Government', entity: institution || '' };
+    }
 
     /** Every sheet is a Kano State document — the state line is not a choice. */
     const SHEET_STATE = 'Kano';
@@ -166,11 +266,148 @@
         .replace(/>/g, '&gt;');
 
     /**
-     * @param {string} fileNo   shown in the prompt
-     * @param {object} [saved]  { method, other, allocationSource, allocationEntity }
-     *                          to pre-select, when re-answering
+     * Populate and wire the SuA card.
+     *
+     * Allocation Source is not asked here — it was answered on the SuA File
+     * Number Commissioning form and is shown back as plain text. What it decides
+     * is which of the two lists the Institution / Agency and the Addressee are
+     * picked from, and that is settled before this runs.
+     *
+     * Both remaining lists can still be answered with a typed name under
+     * "Others (Specify)", which is remembered for next time.
      */
-    function promptAcquisitionMethod(fileNo, saved) {
+    function wireSuaAllocationCard(state) {
+        const institutionSelect = document.getElementById('sua_cs_institution');
+        const institutionOther = document.getElementById('sua_cs_institution_other');
+        const addresseeSelect = document.getElementById('sua_cs_addressee');
+        const addresseeOther = document.getElementById('sua_cs_addressee_other');
+        if (!addresseeSelect) return;
+
+        const toggleOther = (select, input) => {
+            const isOther = select.value === OTHERS_SPECIFY;
+            input.classList.toggle('hidden', !isOther);
+            if (!isOther) input.value = '';
+        };
+
+        // On a file that already has an institution there is no select to read a
+        // category from — the file's own is the answer.
+        const currentCategory = () => (institutionSelect
+            ? selectedInstitutionCategory(institutionSelect)
+            : state.category);
+
+        const fillAddressees = (lookups, selectedName) => {
+            fillNameSelect(
+                addresseeSelect,
+                lookups[currentCategory() === 'OTHER' ? 'addressed_to_other' : 'addressed_to_government'],
+                selectedName,
+                'Select Addressee'
+            );
+
+            // A name stored before it was a lookup option comes back through the
+            // sentinel — put the name itself in the box beside it.
+            if (addresseeSelect.value === OTHERS_SPECIFY) addresseeOther.value = selectedName;
+            toggleOther(addresseeSelect, addresseeOther);
+        };
+
+        loadAllocationLookups().then((lookups) => {
+            if (institutionSelect) {
+                fillInstitutionGroups(institutionSelect, lookups, state.institution);
+                if (institutionSelect.value === OTHERS_SPECIFY) institutionOther.value = state.institution;
+                toggleOther(institutionSelect, institutionOther);
+
+                // Answering the institution decides which addressee names apply, so
+                // the list beside it is replaced rather than left contradicting it.
+                institutionSelect.addEventListener('change', () => {
+                    toggleOther(institutionSelect, institutionOther);
+                    fillAddressees(lookups, '');
+                });
+            }
+
+            fillAddressees(lookups, state.addressedTo);
+        });
+
+        addresseeSelect.addEventListener('change', () => toggleOther(addresseeSelect, addresseeOther));
+    }
+
+    /**
+     * Grey out every answer on the card, once they are all filled in.
+     *
+     * A sheet that has been issued already carries its answers on
+     * conversion_applications: a reprint shows what was issued, it does not
+     * re-ask. Leaving the controls in place (disabled) rather than swapping them
+     * for text keeps preConfirm reading exactly the same fields — a disabled
+     * input still reports its value and still matches :checked.
+     */
+    const FROZEN_CLASSES = ['bg-gray-100', 'text-gray-600', 'cursor-not-allowed'];
+
+    /** Exactly what freezeAnsweredCard() disabled, so Edit can undo just that. */
+    let frozenControls = [];
+
+    /** Tell select2 its underlying select changed state. */
+    function refreshSelect2(popup) {
+        const jq = window.jQuery;
+        if (!jq || !jq.fn || !jq.fn.select2) return;
+
+        try {
+            jq(popup).find('select').trigger('change.select2');
+        } catch (e) {
+            /* the native disabled attribute already holds */
+        }
+    }
+
+    function freezeAnsweredCard() {
+        const popup = Swal.getPopup();
+        if (!popup) return;
+
+        frozenControls = Array.prototype.slice.call(popup.querySelectorAll('input, select, textarea'));
+        frozenControls.forEach((el) => {
+            el.disabled = true;
+            el.classList.add(...FROZEN_CLASSES);
+        });
+
+        refreshSelect2(popup);
+    }
+
+    /**
+     * Hand the card back to the user after they confirmed they meant to edit.
+     * Only the controls freezeAnsweredCard() touched are restored — the fields
+     * that are read-only for their own reasons stay that way.
+     */
+    function unfreezeAnsweredCard() {
+        frozenControls.forEach((el) => {
+            el.disabled = false;
+            el.classList.remove(...FROZEN_CLASSES);
+        });
+        frozenControls = [];
+
+        const popup = Swal.getPopup();
+        if (popup) refreshSelect2(popup);
+    }
+
+    /** The value a lookup select answers with: the name, or the typed one. */
+    function chosenName(selectId, otherId) {
+        const select = document.getElementById(selectId);
+        if (!select) return '';
+
+        return select.value === OTHERS_SPECIFY
+            ? (document.getElementById(otherId).value || '').trim()
+            : select.value;
+    }
+
+    /**
+     * @param {string} fileNo     shown in the prompt
+     * @param {object} [saved]    { method, other, allocationSource, allocationEntity }
+     *                            to pre-select, when re-answering
+     * @param {object} [options]  { variant } — 'sua' asks the Institution /
+     *                            Addressee questions instead of the binary
+     *                            State/Local Government one. Anything else keeps
+     *                            the LGA/Conversion card exactly as it was.
+     */
+    function promptAcquisitionMethod(fileNo, saved, options) {
+        const isSua = Boolean(options && options.variant === 'sua');
+        const savedCategory = (saved && saved.institutionCategory === 'OTHER') ? 'OTHER' : 'GOVERNMENT';
+        const savedInstitution = (saved && saved.institutionName) ? String(saved.institutionName) : '';
+        const savedAddressedTo = (saved && saved.addressedTo) ? String(saved.addressedTo) : '';
         const savedMethod = (saved && saved.method) ? String(saved.method) : 'a';
         const savedOther = (saved && saved.other) ? String(saved.other) : '';
         const checkedAttr = (letter) => (savedMethod === letter ? ' checked' : '');
@@ -185,6 +422,22 @@
         const stateOther = isState && savedEntity && !stateEntity ? savedEntity : '';
         const lgaEntity = isState ? '' : savedEntity;
         const savedAddress = (saved && saved.allocationAddress) ? String(saved.allocationAddress) : '';
+
+        // Answered on the SuA File Number Commissioning form. It is shown back
+        // here, never re-asked: it is the file's own Allocation Source, and it is
+        // what decides which Institution / Agency and Addressee lists are offered.
+        // A council allocation reads as the council, which is who the letter goes to.
+        const suaAllocationSource = ((savedInstitution.toUpperCase() === LOCAL_GOVERNMENT && savedEntity)
+            ? `${savedEntity.replace(/\s+$/, '')} LOCAL GOVERNMENT`
+            : savedInstitution).toUpperCase();
+
+        // A file commissioned before Allocation Source named an institution has
+        // nothing to back-fill, and is the only case where the card asks for one.
+        const suaInstitutionKnown = Boolean(savedInstitution);
+
+        // The acquisition method is null until this sheet has been answered once,
+        // so it is what tells a reprint from a first print.
+        const suaReprint = isSua && Boolean(saved && saved.method);
         const addressParts = parseAddress(savedAddress);
         const sourceLocked = Boolean(saved && saved.allocationLocked);
 
@@ -192,15 +445,78 @@
             title: 'Confirmation Sheet',
             width: 900,
             html: `
-                <p class="text-sm text-gray-600 text-left px-2 mb-3">
-                    Confirm both answers for <strong>${fileNo}</strong> before the Confirmation Sheet is generated.
-                </p>
+                <div class="flex items-start justify-between gap-3 px-2 mb-3">
+                    <p id="cs_intro" class="text-sm text-gray-600 text-left">
+                        ${suaReprint
+                            ? `The answers <strong>${fileNo}</strong> was issued with. Choose Edit to change them.`
+                            : `Confirm both answers for <strong>${fileNo}</strong> before the Confirmation Sheet is generated.`}
+                    </p>
+                    ${suaReprint ? `
+                    <button type="button" id="cs_edit_btn"
+                            class="shrink-0 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-all">
+                        Edit
+                    </button>
+                    ` : ''}
+                </div>
+                ${suaReprint ? `
+                <div id="cs_edit_confirm" class="hidden mx-2 mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-md text-left">
+                    <p class="text-xs text-amber-900 mb-2">
+                        Edit the answers this sheet was already issued with?
+                    </p>
+                    <div class="flex gap-2">
+                        <button type="button" id="cs_edit_yes"
+                                class="px-3 py-1 text-xs font-medium text-white bg-amber-600 rounded-md hover:bg-amber-700 transition-all">
+                            Yes
+                        </button>
+                        <button type="button" id="cs_edit_no"
+                                class="px-3 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-all">
+                            No
+                        </button>
+                    </div>
+                </div>
+                ` : ''}
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 p-2 text-left">
 
                 <div class="border border-gray-200 rounded-lg p-3">
                     <h4 class="text-sm font-semibold text-gray-900 mb-1">Allocation Source</h4>
                     <p class="text-xs text-gray-500 mb-3">Decides who the sheet is addressed to.</p>
-                    ${sourceLocked ? `
+                    ${isSua ? `
+                        <div class="space-y-3 mb-3">
+                            <p class="text-sm font-bold text-gray-900">
+                                ${suaAllocationSource ? escapeHtml(suaAllocationSource) : 'Not captured at commissioning'}
+                            </p>
+
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Institution / Agency</label>
+                                ${suaInstitutionKnown ? `
+                                <p class="text-sm text-gray-800">${escapeHtml(savedInstitution)}</p>
+                                ` : `
+                                <select id="sua_cs_institution"
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all">
+                                    <option value="">Loading…</option>
+                                </select>
+                                <input type="text" id="sua_cs_institution_other" value=""
+                                       class="mt-2 w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all hidden"
+                                       placeholder="Specify the institution...">
+                                <p class="text-xs text-gray-500 mt-1">
+                                    This file was commissioned before Allocation Source named an institution — answer it once here.
+                                </p>
+                                `}
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Addressee</label>
+                                <select id="sua_cs_addressee"
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all">
+                                    <option value="">Loading…</option>
+                                </select>
+                                <input type="text" id="sua_cs_addressee_other" value=""
+                                       class="mt-2 w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all hidden"
+                                       placeholder="Specify the addressee...">
+                            </div>
+
+                        </div>
+                    ` : sourceLocked ? `
                         <div class="bg-gray-50 border border-gray-200 rounded-md p-3 mb-3">
                             <div class="text-sm font-semibold text-gray-800">${savedSource}</div>
                             <div class="text-sm text-gray-600">${savedEntity || '—'}</div>
@@ -238,7 +554,7 @@
                         </div>
                     `}
 
-                    <div id="state_address_container" class="${isState ? '' : 'hidden'} border-t border-gray-200 pt-3 space-y-2">
+                    <div id="state_address_container" class="${(isSua || isState) ? '' : 'hidden'} border-t border-gray-200 pt-3 space-y-2">
                         <p class="text-xs font-medium text-gray-700">Address printed on the sheet</p>
                         <div class="grid grid-cols-3 gap-2">
                             <input type="text" id="address_plot_no" value="${escapeAttr(addressParts.plotNo)}"
@@ -302,7 +618,15 @@
             didOpen: () => {
                 const addressContainer = document.getElementById('state_address_container');
 
-                if (!sourceLocked) {
+                if (isSua) {
+                    wireSuaAllocationCard({
+                        category: savedCategory,
+                        institution: savedInstitution,
+                        addressedTo: savedAddressedTo
+                    });
+                }
+
+                if (!isSua && !sourceLocked) {
                     const sourceRadios = document.querySelectorAll('input[name="allocation_source"]');
                     const lgaContainer = document.getElementById('lga_entity_container');
                     const stateContainer = document.getElementById('state_entity_container');
@@ -341,17 +665,51 @@
                     });
                 };
 
-                fetchJson('/api/reference/lgas').then((lgas) => {
+                const lgasReady = fetchJson('/api/reference/lgas').then((lgas) => {
                     fillSelect(lgaSelect, lgas, addressParts.lga, 'Select LGA');
                     refreshPreview();
                 });
 
-                fetchJson('/api/reference/districts').then((districts) => {
+                const districtsReady = fetchJson('/api/reference/districts').then((districts) => {
                     fillSelect(districtSelect, districts, addressParts.district, 'Select District');
                     // 1,800-odd districts need a search box, not a scroll.
                     enhanceWithSelect2(districtSelect, 'Select District');
                     refreshPreview();
                 });
+
+                // Only once every list has landed — greying a select before it is
+                // filled would freeze it on "Loading…".
+                if (suaReprint) {
+                    Promise.all([loadAllocationLookups(), lgasReady, districtsReady])
+                        .then(freezeAnsweredCard);
+
+                    // Editing an issued sheet is deliberate, so Edit asks before it
+                    // unlocks. The buttons are never frozen: freezeAnsweredCard()
+                    // only disables inputs.
+                    const editButton = document.getElementById('cs_edit_btn');
+                    const editConfirm = document.getElementById('cs_edit_confirm');
+                    const intro = document.getElementById('cs_intro');
+
+                    editButton.addEventListener('click', () => {
+                        editConfirm.classList.remove('hidden');
+                        editButton.disabled = true;
+                        editButton.classList.add('opacity-50', 'cursor-not-allowed');
+                    });
+
+                    document.getElementById('cs_edit_no').addEventListener('click', () => {
+                        editConfirm.classList.add('hidden');
+                        editButton.disabled = false;
+                        editButton.classList.remove('opacity-50', 'cursor-not-allowed');
+                    });
+
+                    document.getElementById('cs_edit_yes').addEventListener('click', () => {
+                        unfreezeAnsweredCard();
+                        editConfirm.classList.add('hidden');
+                        editButton.classList.add('hidden');
+                        intro.innerHTML = `Editing the answers for <strong>${fileNo}</strong>. `
+                            + 'Generate Document saves what you change here.';
+                    });
+                }
 
                 plotInput.addEventListener('input', refreshPreview);
                 [lgaSelect, districtSelect].forEach(el => el.addEventListener('change', refreshPreview));
@@ -375,6 +733,60 @@
             preConfirm: () => {
                 const selectedMethod = document.querySelector('input[name="acquisition_method"]:checked').value;
                 const otherValue = document.getElementById('other_specify_input').value;
+
+                if (selectedMethod === 'e' && !otherValue.trim()) {
+                    Swal.showValidationMessage('Please specify the other acquisition method');
+                    return false;
+                }
+
+                if (isSua) {
+                    // Back-filled from the file, unless it predates the institution
+                    // lists — then the card asked, and the answer carries its own list.
+                    const institutionSelect = document.getElementById('sua_cs_institution');
+                    const category = suaInstitutionKnown
+                        ? savedCategory
+                        : selectedInstitutionCategory(institutionSelect);
+                    const institution = suaInstitutionKnown
+                        ? savedInstitution
+                        : chosenName('sua_cs_institution', 'sua_cs_institution_other');
+                    const addressee = chosenName('sua_cs_addressee', 'sua_cs_addressee_other');
+
+                    if (!institution) {
+                        Swal.showValidationMessage('Please choose (or specify) the Institution / Agency');
+                        return false;
+                    }
+
+                    if (!addressee) {
+                        Swal.showValidationMessage('Please choose (or specify) the Addressee');
+                        return false;
+                    }
+
+                    const suaLga = document.getElementById('address_lga').value.trim();
+                    if (!suaLga) {
+                        Swal.showValidationMessage('Please pick the LGA for the address the sheet is sent to');
+                        return false;
+                    }
+
+                    // The council named at commissioning still belongs to a LOCAL
+                    // GOVERNMENT allocation; the address LGA is only a fallback.
+                    const legacy = legacyAllocationFor(institution, savedEntity || suaLga);
+
+                    return {
+                        method: selectedMethod,
+                        other: otherValue,
+                        allocationSource: legacy.source,
+                        allocationEntity: legacy.entity,
+                        allocationAddress: composeAddress({
+                            plotNo: document.getElementById('address_plot_no').value.trim(),
+                            district: document.getElementById('address_district').value.trim(),
+                            lga: suaLga
+                        }),
+                        institutionCategory: category,
+                        institutionName: institution,
+                        addressedTo: addressee
+                    };
+                }
+
                 const selectedSource = sourceLocked
                     ? document.getElementById('locked_allocation_source').value
                     : document.querySelector('input[name="allocation_source"]:checked').value;
@@ -420,11 +832,6 @@
                     }
                 }
 
-                if (selectedMethod === 'e' && !otherValue.trim()) {
-                    Swal.showValidationMessage('Please specify the other acquisition method');
-                    return false;
-                }
-
                 return {
                     method: selectedMethod,
                     other: otherValue,
@@ -436,7 +843,7 @@
         });
     }
 
-    function generateConversionApplication(id, fileNo) {
+    function generateConversionApplication(id, fileNo, options) {
         const convKey = (fileNo && fileNo !== '--' && fileNo !== 'N/A')
             ? encodeURIComponent(fileNo)
             : id;
@@ -444,13 +851,16 @@
         // Ask with whatever this sheet already knows filled in — the stored answers
         // on a reprint, otherwise the file's own allocation info or its LGA.
         return fetchSavedAcquisitionMethod(convKey)
-            .then((saved) => promptAcquisitionMethod(fileNo, saved))
+            .then((saved) => promptAcquisitionMethod(fileNo, saved, options))
             .then((result) => {
                 if (!result.isConfirmed) {
                     return;
                 }
 
-                const { method, other, allocationSource, allocationEntity, allocationAddress } = result.value;
+                const {
+                    method, other, allocationSource, allocationEntity, allocationAddress,
+                    institutionCategory, institutionName, addressedTo
+                } = result.value;
 
                 let url = `/file-numbers/conversion-application/${convKey}?method=${method}`;
                 if (method === 'e' && other) {
@@ -464,6 +874,16 @@
                 }
                 if (allocationAddress) {
                     url += `&allocation_address=${encodeURIComponent(allocationAddress)}`;
+                }
+                // SuA only — the LGA/Conversion card never returns these.
+                if (institutionCategory) {
+                    url += `&institution_category=${encodeURIComponent(institutionCategory)}`;
+                }
+                if (institutionName) {
+                    url += `&institution_name=${encodeURIComponent(institutionName)}`;
+                }
+                if (addressedTo) {
+                    url += `&addressed_to=${encodeURIComponent(addressedTo)}`;
                 }
 
                 window.open(url, '_blank');

@@ -94,6 +94,10 @@ class LandRofoController extends Controller
                 'rofo_status', 'status', 'approved_at', 'land_rofo_serial_no',
                 'created_at', 'created_by', 'land_use', 'land_use_id', 'purpose_id',
                 'is_reissuance', 'reissuance_source',
+                // The Print Manager's Date Issued panel opens showing the date the
+                // record already holds; without it every row would look undated and
+                // ask for a date it already has.
+                'application_date',
                 'rofo_batch_id', 'batch_mother_file_no', 'batch_seq', 'application_type',
             ]);
 
@@ -728,9 +732,98 @@ class LandRofoController extends Controller
         return response()->json(['success' => true]);
     }
 
+    /**
+     * DATE OF ISSUE on the letter is the application date, not the date the RofO
+     * record happened to be generated — a letter is issued as of the day the
+     * application is dated, and back-dated runs must print that day, not today.
+     *
+     * Older rows were printed before the field was collected and hold nothing, so
+     * the print dialog asks for it and sends it here with the print itself. It is
+     * written to the record rather than used for the one printout: a reprint has to
+     * come out carrying the same date as the copy already in the file.
+     *
+     * A date already on a record is what an issued letter out in the world carries,
+     * so it is not replaced casually:
+     *
+     *   issue_date_apply=missing (default) — fills only rows that have none. What a
+     *                                        bulk run sends, so one answer for many
+     *                                        files can never overwrite a dated one.
+     *   issue_date_apply=all              — the operator unlocked the field on one
+     *                                        record and confirmed the edit.
+     */
+    private function applyIssueDate(Request $request, $records): void
+    {
+        $raw = trim((string) $request->input('issue_date', ''));
+        if ($raw === '') {
+            return;
+        }
+
+        try {
+            $date = \Carbon\Carbon::parse($raw)->startOfDay();
+        } catch (\Throwable $e) {
+            // An unparseable date is not worth failing a print over — the letter
+            // prints with whatever the record already holds.
+            return;
+        }
+
+        $overwrite = $request->input('issue_date_apply') === 'all';
+
+        foreach ($records as $rec) {
+            if (!$overwrite && filled($rec->application_date)) {
+                continue;
+            }
+
+            $rec->application_date = $date;
+            $rec->updated_by = Auth::id();
+            $rec->save();
+        }
+    }
+
+    /**
+     * What the print dialog needs to decide whether to ask: the application date
+     * each selected RofO already holds, if any.
+     */
+    public function issueDates(Request $request)
+    {
+        $ids = array_filter((array) $request->input('ids', []), 'is_numeric');
+
+        $records = LandRecommendation::whereIn('id', $ids)
+            ->get(['id', 'file_number', 'application_date'])
+            ->map(function ($r) {
+                return [
+                    'id'               => (int) $r->id,
+                    'file_number'      => (string) $r->file_number,
+                    'application_date' => optional($r->application_date)->format('Y-m-d'),
+                ];
+            });
+
+        return response()->json(['success' => true, 'data' => $records]);
+    }
+
+    /**
+     * Store the application date on its own, for the print routes that navigate
+     * away instead of posting the print form (the Print Manager).
+     */
+    public function saveIssueDate(Request $request)
+    {
+        $request->validate([
+            'ids'   => 'required|array|min:1',
+            'ids.*' => 'integer',
+            'issue_date' => 'required|date',
+        ]);
+
+        $records = LandRecommendation::whereIn('id', $request->input('ids'))->get();
+        $this->applyIssueDate($request, $records);
+
+        return response()->json(['success' => true, 'count' => $records->count()]);
+    }
+
     public function print(Request $request, $id)
     {
         $recommendation = LandRecommendation::findOrFail($id);
+
+        // Keyed in on the print dialog: see applyIssueDate().
+        $this->applyIssueDate($request, [$recommendation]);
 
         // Resolve land_use text from land_use_id if the text column is empty
         if (empty($recommendation->land_use) && $recommendation->land_use_id) {
@@ -896,6 +989,10 @@ class LandRofoController extends Controller
                 : 'None of these have a generated RofO yet, so there is nothing to print: '
                     . $requested->implode(', ') . '. Generate the RofO first.');
         }
+
+        // One date keyed in on the print dialog, filling whichever of these rows
+        // have no application date yet: see applyIssueDate().
+        $this->applyIssueDate($request, $records);
 
         // Use the same service the individual print uses so codes are consistent
         $securityCodeService = app(\App\Services\SecurityCodeService::class);

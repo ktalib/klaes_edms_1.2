@@ -1566,9 +1566,28 @@ async function searchFile() {
               ${indexingBillRows}
             </div>
           </details>`;
-        // Ownership history — a vertical timeline of holders derived from the
-        // cross-table property timeline. Falls back to the two flat indexing
-        // rows when the file has no transaction chain.
+        // Root of Title / Original Holder / Current Holder — three DIFFERENT
+        // concepts (client spec 2026-08-20 §12), resolved server-side by
+        // TitleHolderResolver. Mirrors the web Quick Search block; the two read
+        // the same `title_holders` payload and must stay in step.
+        const titleHoldersHtml = (() => {
+          const th = d.title_holders;
+          if (!th) {
+            // Not indexed — no chain to interpret; keep the legacy two rows.
+            const origVal = has(d.original_holder) ? d.original_holder : d.current_holder;
+            const currVal = has(d.current_holder) ? d.current_holder : d.original_holder;
+            return dRow('Original Holder', origVal) + dRow('Current Holder', currVal);
+          }
+          return `
+            <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:2px 0 6px;">Title</div>
+            ${dRow('Root of Title', th.root_of_title)}
+            ${dRow('Original Holder', th.original_holder)}
+            ${dRow('Current Holder', th.current_holder)}`;
+        })();
+
+        // Ownership history — a vertical timeline of the dealings on the file.
+        // Context for the block above; hidden when there is no chain (the three
+        // rows already covered that case from the indexing columns).
         const holderHistoryHtml = (() => {
           let hist = Array.isArray(d.holder_history) ? d.holder_history : [];
           // Hide Mortgage and Surrender And Release nodes from the holders list.
@@ -1577,9 +1596,7 @@ async function searchFile() {
             return !t.includes('mortgage') && !t.includes('surrender');
           });
           if (!hist.length) {
-            const origVal = has(d.original_holder) ? d.original_holder : d.current_holder;
-            const currVal = has(d.current_holder) ? d.current_holder : d.original_holder;
-            return dRow('Original Holder', origVal) + dRow('Current Holder', currVal);
+            return '';
           }
           // Shorten a transaction type to its instrument label (R of O, C of O,
           // Assignment, Mortgage, …) for the compact ownership list.
@@ -1591,15 +1608,17 @@ async function searchFile() {
             return String(t).replace(/^deed of\s+/i, '').trim();
           };
 
-          // Render a single holder node: recipient name + role (Original/Current
-          // Holder) and the instrument in brackets. `last` controls the rail.
+          // Render a single holder node: recipient name, the instrument in
+          // brackets and the dealing's date. Nodes are NOT labelled Original or
+          // Current Holder any more — position in the chain does not decide
+          // either role (spec §12); the Title block above carries the answer.
           const buildNode = (h, isFirst, isLast) => {
             const dot = isFirst ? '#059669' : (isLast ? 'var(--primary)' : 'var(--surface-3)');
             const dotIcon = (isFirst || isLast) ? '#fff' : 'var(--muted)';
             const line = !isLast ? `<span style="position:absolute;left:6px;top:17px;bottom:-2px;width:2px;background:var(--border);"></span>` : '';
             const name = h.to || h.holder;
-            const roleLabel = isFirst ? 'Original Holder' : (isLast ? 'Current Holder' : 'Holder');
-            const roleColor = isFirst ? '#059669' : (isLast ? 'var(--primary)' : 'var(--muted)');
+            const roleLabel = h.date || '';
+            const roleColor = 'var(--muted)';
             const type = abbrevType(h.transaction_type);
             return `
               <div style="position:relative;padding-left:24px;padding-bottom:${isLast ? '0' : '7px'};">
@@ -1608,25 +1627,24 @@ async function searchFile() {
                   <i class="fas fa-user" style="font-size:7px;color:${dotIcon};"></i>
                 </span>
                 <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.3;">${esc(name)}</div>
-                <div style="font-size:11px;font-weight:600;color:${roleColor};margin-top:2px;">${roleLabel}${type ? ` <span style="color:var(--muted);font-weight:500;">(${esc(type)})</span>` : ''}</div>
+                <div style="font-size:11px;font-weight:600;color:${roleColor};margin-top:2px;">${esc(roleLabel)}${type ? ` <span style="color:var(--muted);font-weight:500;">(${esc(type)})</span>` : ''}</div>
               </div>`;
           };
 
-          // A single transaction (e.g. only a CofO grant with no later transfer)
-          // means the same person is both the original AND the current holder.
-          // Render that holder twice — as Original and as Current — mirroring the
-          // flat two-row fallback above, so a Current Holder always shows.
-          const nodes = hist.length === 1
-            ? buildNode(hist[0], true, false) + buildNode(hist[0], false, true)
-            : hist.map((h, i) => buildNode(h, i === 0, i === hist.length - 1)).join('');
+          // One node per dealing. A single-transaction file used to be drawn twice
+          // (once as Original, once as Current) so both roles appeared; the Title
+          // block above now states both, so the duplicate node would only read as
+          // a phantom second dealing.
+          const nodes = hist.map((h, i) => buildNode(h, i === 0, i === hist.length - 1)).join('');
           return `
-            <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:2px 0 10px;">Ownership</div>
+            <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:10px 0;">Dealings</div>
             <div style="padding:0 2px 2px;">${nodes}</div>`;
         })();
         holderBill = `
           <details style="margin-bottom:12px;border:1px solid var(--border);border-radius:10px;">
             <summary style="cursor:pointer;list-style:none;padding:9px 12px;font-size:12px;font-weight:700;color:var(--text);"><i class="fas fa-user-tag" style="margin-right:6px;color:var(--primary);"></i>Holders &amp; Bill Balance Details</summary>
             <div style="padding:2px 12px 10px;">
+              ${titleHoldersHtml}
               ${holderHistoryHtml}
               ${billHtml}
             </div>

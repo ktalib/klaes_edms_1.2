@@ -8,6 +8,7 @@ use App\Models\ScanReassignmentLog;
 use App\Models\Scanning;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Auth;
+use App\Http\Controllers\FilearchiveController;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -316,6 +317,12 @@ class EdmsDocumentRelocationService
             $this->cleanupIfEmpty($folder);
         }
 
+        // The registry archive pages list the disk through a five-minute cached
+        // folder index, so without this the file it just moved is missing from
+        // the destination — and still listed in the source — until the cache
+        // ages out. Both ends, since a move empties one and fills the other.
+        $this->bustArchiveListingCache($preview['from_registry'], $preview['to_registry']);
+
         Log::channel('daily')->info('EDMS document relocation completed', [
             'file_indexing_id' => $file->id,
             'file_number' => $file->file_number,
@@ -453,6 +460,32 @@ class EdmsDocumentRelocationService
     /**
      * Move one file on the public disk, remembering its folder for cleanup.
      */
+    /**
+     * Drop the cached folder listing for the registries a move touched.
+     *
+     * FilearchiveController keys its cache by the archive page's module name
+     * ("dciv", "kangis", …) while a move deals in registry names ("DCIV
+     * Registry"), so the registry is matched back to its module. A registry
+     * with no archive page of its own simply matches nothing.
+     */
+    private function bustArchiveListingCache(?string ...$registries): void
+    {
+        $modules = ['kangis', 'sltr', 'dciv', 'cadastral'];
+
+        foreach ($registries as $registry) {
+            $slug = strtolower((string) $registry);
+            if ($slug === '') {
+                continue;
+            }
+
+            foreach ($modules as $module) {
+                if (str_contains($slug, $module)) {
+                    FilearchiveController::bustFolderIndexCache($module);
+                }
+            }
+        }
+    }
+
     private function moveFile(string $sourceRelative, string $targetRelative, array &$sourceFolders, array &$journal): bool
     {
         if ($sourceRelative === $targetRelative) {

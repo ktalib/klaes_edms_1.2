@@ -18,7 +18,7 @@
         @if ($duplex->isSingleStage())
             a single parcel update,
         @else
-            <strong>one instruction carrying {{ $duplex->stages->count() }} parcel updates</strong>,
+            <strong>one instruction carrying {{ $duplex->stageRows->count() }} parcel updates</strong>,
             to be executed in the order listed,
         @endif
         with all resulting file numbers to be commissioned in a single operation.
@@ -33,7 +33,7 @@
             </tr>
         </thead>
         <tbody>
-            @foreach ($duplex->stages as $stage)
+            @foreach ($duplex->stageRows as $stage)
             <tr>
                 <td class="mono">{{ $stage->rank }}</td>
                 <td>{{ $stage->label() }}</td>

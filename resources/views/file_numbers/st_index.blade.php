@@ -1126,9 +1126,12 @@
                         // The CON mother file: a primary carries it in mls_fileno, a unit
                         // (PuA/SuA) inherits its primary's via parent_mls_fileno. Only a
                         // conversion has one, and only it has a Confirmation Sheet.
-                        const conversionMotherNo = [mlsFileNo, file.mls_fileno, file.parent_mls_fileno]
-                            .map(v => String(v || '').trim())
-                            .find(v => /^CON-/i.test(v)) || '';
+                        // resolveConversionMother() reads the row's own three fields;
+                        // mlsFileNo is the number shown in the table, which for a unit
+                        // is its np_fileno and so is already covered.
+                        const conversionMotherNo = /^CON-/i.test(String(mlsFileNo).trim())
+                            ? mlsFileNo
+                            : resolveConversionMother(file);
                         // Sub-label under the type badge. Files commissioned before the
                         // DAP / CON-P split carry an application_type that was only ever a
                         // form default, so they stay unlabelled — see resolveAllocationLabel().
@@ -1144,6 +1147,11 @@
                         // file's own number — a SuA is filed under st_file_no.
                         const lcsFileNo = conversionMotherNo
                             || String(file.fileno || file.mls_fileno || file.np_fileno || '').trim();
+
+                        // The SuA card only applies when the sheet is printed off the
+                        // SuA's own file number. A SuA under a converted scheme prints
+                        // its mother's sheet, which is the LGA/Conversion one.
+                        const csVariant = (isSua && !conversionMotherNo) ? 'sua' : 'default';
 
                         return `
                             <tr class="hover:bg-gray-50 transition-colors">
@@ -1240,7 +1248,7 @@
                                                 ST Commissioning Sheet (FCS)
                                             </button>
                                             ${canPrintLcs ? `
-                                            <button type="button" onclick="generateConversionApplication(${file.id}, '${lcsFileNo}')"
+                                            <button type="button" onclick="generateConversionApplication(${file.id}, '${lcsFileNo}', { variant: '${csVariant}' })"
                                                     class="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
                                                 <i data-lucide="refresh-cw" class="h-4 w-4 mr-2 text-indigo-600"></i>
                                                 Confirmation Sheet (CS)
@@ -1671,8 +1679,11 @@
                     const stFileNo = file.file_no_type === 'PRIMARY'
                         ? (file.np_fileno || file.fileno)
                         : (file.fileno || file.np_fileno);
-                    const mlsFileNo = file.mls_fileno || '';
-                    const sheetFileNo = /^CON-/i.test(String(mlsFileNo).trim()) ? mlsFileNo : stFileNo;
+                    // A unit carries no CON number of its own — its scheme's lives on
+                    // the primary. Resolving across all three fields is what makes the
+                    // parent/old file number print alongside the new one.
+                    const conversionMotherNo = resolveConversionMother(file);
+                    const sheetFileNo = conversionMotherNo || stFileNo;
 
                     const applicantName = file.corporate_name ||
                         `${file.first_name || ''} ${file.middle_name || ''} ${file.surname || ''}`.trim() ||

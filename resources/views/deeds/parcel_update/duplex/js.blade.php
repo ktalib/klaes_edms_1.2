@@ -52,7 +52,7 @@
         state.carry = [];
 
         document.getElementById('dx-applicant').value = '';
-        document.getElementById('dx-file-title').value = '';
+        document.getElementById('dx-duplex-badge').classList.add('hidden');
         document.querySelectorAll('.dx-type').forEach(cb => { cb.checked = false; });
         renderRanks();
         renderSources();
@@ -81,6 +81,14 @@
                     return toast('info', 'Already added', fileNumber + ' is already on this duplex.');
                 }
                 state.sources.push({ fileNumber, title: picked.file_title || '' });
+
+                // The first file picked names the applicant, so the officer rarely has
+                // to type it. Anything already typed is left alone.
+                const applicantBox = document.getElementById('dx-applicant');
+                if (!applicantBox.value.trim() && picked.file_title) {
+                    applicantBox.value = picked.file_title;
+                }
+
                 renderSources();
             }
         });
@@ -88,15 +96,34 @@
 
     function renderSources() {
         const box = document.getElementById('dx-sources');
+
+        // Empty state is itself the picker button — an empty dashed box with no
+        // affordance was the least useful thing on the card.
         if (!state.sources.length) {
-            box.innerHTML = '<span class="text-xs text-slate-400">No file selected yet.</span>';
+            box.innerHTML = `
+                <button type="button" onclick="pickSourceFile()"
+                        class="w-full flex flex-col items-center justify-center gap-1.5 py-2 text-slate-400 hover:text-blue-600 transition">
+                    <i data-lucide="file-search" class="w-5 h-5"></i>
+                    <span class="text-xs font-semibold">Choose a file from the registry</span>
+                </button>`;
+            if (window.lucide) lucide.createIcons();
             return;
         }
+
         box.innerHTML = state.sources.map((s, i) => `
-            <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700">
-                <span class="holding-no">${s.fileNumber}</span>
-                <button type="button" onclick="removeSource(${i})" class="text-slate-400 hover:text-red-600">&times;</button>
+            <span class="inline-flex items-center gap-2.5 pl-3 pr-2 py-2 rounded-xl bg-white border border-slate-200 shadow-sm">
+                <span class="w-6 h-6 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center text-[10px] font-black">${i + 1}</span>
+                <span class="min-w-0">
+                    <span class="block holding-no text-xs font-black text-slate-700 leading-tight">${s.fileNumber}</span>
+                    ${s.title ? `<span class="block text-[10px] text-slate-400 truncate max-w-[180px]">${s.title}</span>` : ''}
+                </span>
+                <button type="button" onclick="removeSource(${i})" title="Remove"
+                        class="w-6 h-6 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-600 hover:bg-red-50 transition">
+                    <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                </button>
             </span>`).join('');
+
+        if (window.lucide) lucide.createIcons();
     }
 
     window.removeSource = function (i) {
@@ -127,7 +154,9 @@
             const badge = row.querySelector('.rank-badge');
 
             row.classList.toggle('picked', !!entry);
-            badge.className = 'rank-badge text-center px-2 py-0.5 rounded-lg border text-xs font-black';
+            // Rebuilt from scratch each pass so a stale rank-N colour cannot linger;
+            // keep these classes in step with the badge markup in wizard.blade.php.
+            badge.className = 'rank-badge text-center px-2.5 py-1 rounded-lg border text-xs font-black';
             if (entry) {
                 badge.classList.add('rank-' + Math.min(entry.rank, 5));
                 badge.textContent = entry.rank;
@@ -138,6 +167,30 @@
         });
 
         document.getElementById('dx-single-note').classList.toggle('hidden', state.plan.length !== 1);
+        document.getElementById('dx-picked-count').textContent = state.plan.length + ' selected';
+
+        renderOrderRail();
+    }
+
+    /**
+     * Live read-back of the plan in execution order. The order IS the instruction —
+     * it drives the memo and the commit — so it gets shown as a list rather than
+     * being left for the officer to reconstruct from scattered badges.
+     */
+    function renderOrderRail() {
+        const rail = document.getElementById('dx-order-rail');
+        if (!rail) return;
+
+        if (!state.plan.length) {
+            rail.innerHTML = '<p class="text-xs text-slate-400 italic">Nothing ticked yet.</p>';
+            return;
+        }
+
+        rail.innerHTML = state.plan.map(p => `
+            <div class="flex items-center gap-2.5">
+                <span class="rank-badge rank-${Math.min(p.rank, 5)} w-6 h-6 rounded-lg border flex items-center justify-center text-[11px] font-black shrink-0">${p.rank}</span>
+                <span class="text-xs font-bold text-slate-700">${TYPES[p.type]}</span>
+            </div>`).join('');
     }
 
     // ---------------------------------------------------------------- step 2
@@ -184,7 +237,14 @@
             const cls = i < state.stageIndex ? 'done' : (i === state.stageIndex ? 'current' : 'locked');
             const arrow = i < state.stages.length - 1
                 ? '<i data-lucide="chevron-right" class="w-4 h-4 text-slate-300"></i>' : '';
-            return `<span class="stage-pill ${cls} px-3 py-1.5 rounded-lg text-xs font-bold">(${s.rank}) ${TYPES[s.type]}</span>${arrow}`;
+            const tick = i < state.stageIndex
+                ? '<i data-lucide="check" class="w-3.5 h-3.5"></i>'
+                : `<span class="text-[10px] font-black">${s.rank}</span>`;
+            return `
+                <span class="stage-pill ${cls} inline-flex items-center gap-2 pl-2 pr-3.5 py-2 rounded-xl text-xs font-bold">
+                    <span class="w-5 h-5 rounded-lg bg-white/70 flex items-center justify-center shrink-0">${tick}</span>
+                    ${TYPES[s.type]}
+                </span>${arrow}`;
         }).join('');
 
         icons();
@@ -202,6 +262,13 @@
 
         const inputLabel = state.stageIndex === 0 ? 'source file(s)' : 'holding, from the previous stage';
         const count = stage.plot_count || 1;
+
+        // How many holding numbers this stage will mint. Needed before the template,
+        // because it decides whether the Tracking ID is optional.
+        const outputs = (stage.type === 'merger' || stage.type === 'extension') ? 1 : count;
+
+        // Batch commissioning mints tracking ids; the single-file path refuses to.
+        const needsTracking = outputs < 2 || stage.type === 'change_of_purpose';
 
         let body = '';
 
@@ -246,10 +313,12 @@
                 </p>
                 <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
                     ${(state.stageIndex === 0 ? state.sources.map(s => s.fileNumber) : state.carry).map((f, i) => `
-                        <div class="p-3 rounded-xl border border-slate-200">
-                            <p class="text-[11px] font-bold text-slate-500 holding-no mb-1.5">${f}</p>
-                            <input type="number" step="0.01" class="dx-plot-size w-full px-3 py-2 rounded-lg border border-slate-200 text-sm" placeholder="Size">
-                            <input type="text" class="dx-plot-holder w-full px-3 py-2 mt-2 rounded-lg border border-slate-200 text-sm" placeholder="Holder">
+                        <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50/50">
+                            <p class="text-[11px] font-black text-slate-600 holding-no mb-3 truncate" title="${f}">${f}</p>
+                            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Size (Ha)</label>
+                            <input type="number" step="0.01" class="dx-plot-size w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm" placeholder="0.00">
+                            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 mt-3">Holder</label>
+                            <input type="text" class="dx-plot-holder w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm" placeholder="Name">
                         </div>`).join('')}
                 </div>`;
         } else {
@@ -262,30 +331,58 @@
                 </p>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                     ${Array.from({ length: count }).map((_, i) => `
-                        <div class="p-3 rounded-xl border border-slate-200">
-                            <p class="text-[11px] font-bold text-slate-500 mb-1.5">${label} ${i + 1}</p>
-                            <input type="text" class="dx-plot-no w-full px-3 py-2 rounded-lg border border-slate-200 text-sm" placeholder="Plot no">
-                            <input type="number" step="0.01" class="dx-plot-size w-full px-3 py-2 mt-2 rounded-lg border border-slate-200 text-sm" placeholder="Size">
-                            <input type="text" class="dx-plot-holder w-full px-3 py-2 mt-2 rounded-lg border border-slate-200 text-sm"
-                                placeholder="Holder" value="${document.getElementById('dx-applicant').value || ''}">
+                        <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50/50">
+                            <p class="text-[11px] font-black text-slate-600 mb-3">${label} ${i + 1}</p>
+                            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Plot no</label>
+                            <input type="text" class="dx-plot-no w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm" placeholder="—">
+                            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 mt-3">Size (Ha)</label>
+                            <input type="number" step="0.01" class="dx-plot-size w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm" placeholder="0.00">
+                            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 mt-3">Holder</label>
+                            <input type="text" class="dx-plot-holder w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm"
+                                placeholder="Name" value="${document.getElementById('dx-applicant').value || ''}">
                         </div>`).join('')}
                 </div>`;
         }
 
         panel.innerHTML = `
-            <div class="border border-slate-200 rounded-2xl p-5">
-                <div class="flex items-center justify-between mb-4">
-                    <div>
-                        <p class="text-xs font-black uppercase tracking-wider text-slate-500">
-                            Stage ${state.stageIndex + 1} of ${state.stages.length} — ${TYPES[stage.type]}
-                        </p>
-                        <p class="text-[11px] text-slate-400 mt-0.5">
-                            Input: <span class="holding-no font-bold text-slate-600">${inputLine || '—'}</span>
-                            <span class="text-slate-400">(${inputLabel})</span>
+            <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/60 flex flex-wrap items-center justify-between gap-4">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <span class="rank-badge rank-${Math.min(stage.rank, 5)} w-8 h-8 rounded-xl border flex items-center justify-center text-xs font-black shrink-0">${stage.rank}</span>
+                        <div class="min-w-0">
+                            <p class="text-sm font-black text-slate-800 leading-tight">${TYPES[stage.type]}</p>
+                            <p class="text-[11px] text-slate-400 mt-0.5">
+                                Stage ${state.stageIndex + 1} of ${state.stages.length}
+                            </p>
+                        </div>
+                    </div>
+                    <div class="text-right min-w-0">
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Input · ${inputLabel}</p>
+                        <p class="holding-no text-xs font-black text-slate-700 truncate max-w-xs">${inputLine || '—'}</p>
+                    </div>
+                </div>
+
+                <div class="p-6">
+                    ${body}
+
+                    <div class="mt-6 pt-5 border-t border-slate-100 max-w-sm">
+                        <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                            Tracking ID ${needsTracking ? '<span class="text-red-500">*</span>' : '<span class="font-normal normal-case tracking-normal text-slate-300">(optional)</span>'}
+                        </label>
+                        <input type="text" id="dx-tracking-id" placeholder="From the grouping record"
+                               class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm holding-no">
+                        <p class="text-[11px] text-slate-400 mt-1.5">
+                            ${needsTracking
+                                ? 'Required — this stage commissions one file at a time, and that path cannot generate one.'
+                                : 'Leave blank and one is generated for each file at commissioning.'}
                         </p>
                     </div>
                 </div>
-                ${body}
+
+                <div class="px-6 py-3 border-t border-slate-100 bg-slate-50/60 flex items-center gap-2 text-[11px] text-slate-500">
+                    <i data-lucide="corner-down-right" class="w-3.5 h-3.5 text-slate-400"></i>
+                    Produces <strong class="text-slate-700">${outputs}</strong> holding number${outputs === 1 ? '' : 's'} for the next stage.
+                </div>
             </div>`;
 
         icons();
@@ -315,7 +412,22 @@
         const payload = {
             plot_count: stage.plot_count || plots.length || 1,
             plots: plots,
+            tracking_id: document.getElementById('dx-tracking-id')?.value.trim() || null,
         };
+
+        // A stage that produces a single file is commissioned through the strict
+        // single-file path, which will not invent a tracking id. Catch it here rather
+        // than at the Land step, where the whole duplex would stall.
+        // Change of Purpose renames file by file, so it uses the single-file path too
+        // no matter how many files it covers.
+        const singleOutput = stage.type === 'merger' || stage.type === 'extension'
+            || stage.type === 'change_of_purpose'
+            || (stage.plot_count || 1) < 2;
+        if (singleOutput && !payload.tracking_id) {
+            toast('warning', 'Tracking ID required',
+                'This stage produces one file, and a single file cannot be commissioned without its grouping Tracking ID.');
+            return null;
+        }
 
         if (stage.type === 'change_of_purpose') {
             payload.new_land_use = document.getElementById('dx-new-landuse')?.value || '';
@@ -340,17 +452,25 @@
             el.classList.toggle('active', Number(el.dataset.step) === step);
         });
 
-        const next = document.getElementById('dx-next');
+        // The button label lives in its own span so the trailing arrow icon survives.
+        const next = document.getElementById('dx-next-text');
         const back = document.getElementById('dx-back');
         const label = document.getElementById('dx-step-label');
         const subtitle = document.getElementById('wizard-subtitle');
 
         back.style.visibility = step === 1 || step === 4 ? 'hidden' : 'visible';
 
+        // Stepper: everything before the current step reads as done.
+        document.querySelectorAll('.dx-step-tab').forEach(tab => {
+            const n = Number(tab.dataset.tab);
+            tab.classList.toggle('is-active', n === step);
+            tab.classList.toggle('is-done', n < step);
+        });
+
         if (step === 1) {
             next.textContent = 'Start Process';
             label.textContent = 'Step 1 of 3';
-            subtitle.textContent = 'Tick the updates in the order you want them carried out.';
+            subtitle.textContent = 'Pick the file, then tick the updates in the order you want them carried out.';
         } else if (step === 2) {
             next.textContent = 'Continue Process';
             label.textContent = 'Step 2 of 3';
@@ -384,9 +504,10 @@
 
     window.wizardNext = async function () {
         if (state.step === 1) {
+            // Checked in the order the fields now appear on the card.
+            if (!state.sources.length) return toast('warning', 'Pick at least one source file');
             const applicant = document.getElementById('dx-applicant').value.trim();
             if (!applicant) return toast('warning', 'Applicant required');
-            if (!state.sources.length) return toast('warning', 'Pick at least one source file');
             if (!state.plan.length) return toast('warning', 'Tick at least one update');
 
             const merger = state.plan.find(p => p.type === 'merger');
@@ -402,8 +523,9 @@
             collectQuantities();
 
             const res = await post('{{ route('duplex-parcel-update.store') }}', {
+                // One field feeds both columns - they are the same thing here.
                 applicant_name: document.getElementById('dx-applicant').value.trim(),
-                file_title: document.getElementById('dx-file-title').value.trim(),
+                file_title: document.getElementById('dx-applicant').value.trim(),
                 source_file_nos: state.sources.map(s => s.fileNumber),
                 stages: state.plan.map(p => ({ type: p.type, rank: p.rank, count: p.count })),
             });
@@ -414,11 +536,19 @@
 
             state.duplex = { id: res.id, duplex_id: res.duplex_id };
 
+            // From here on the officer is working inside a numbered duplex, so the
+            // reference belongs in the header where it stays visible.
+            const badge = document.getElementById('dx-duplex-badge');
+            badge.textContent = res.duplex_id;
+            badge.classList.remove('hidden');
+
             const detail = await fetch('{{ url('duplex-parcel-update') }}/' + res.id, {
                 headers: { 'Accept': 'application/json' }
             }).then(r => r.json());
 
-            state.stages = (detail.data?.stages || []).sort((a, b) => a.rank - b.rank);
+            // stage_rows, not stages: `stages` on the payload is the JSON plan column
+            // (type + rank + count). The rows are what carry the ids we post back to.
+            state.stages = (detail.data?.stage_rows || []).sort((a, b) => a.rank - b.rank);
             state.stageIndex = 0;
             state.carry = [];
 
@@ -464,10 +594,22 @@
             ? state.duplex.duplex_id + ' captured with a single update.'
             : state.duplex.duplex_id + ' captured with ' + state.stages.length + ' updates, in the order you ticked them.';
 
-        document.getElementById('dx-done-chain').innerHTML = state.stages.map(s => `
-            <div class="flex items-center gap-3 px-4 py-2.5 rounded-xl border border-slate-200">
-                <span class="rank-badge rank-${Math.min(s.rank, 5)} text-center px-2 py-0.5 rounded-lg border text-xs font-black">${s.rank}</span>
-                <span class="text-sm font-bold text-slate-700">${TYPES[s.type]}</span>
+        // The last stage's holding numbers are the only ones held in client state, so
+        // the chain shows them against that stage and names the rest by stage only.
+        const last = state.stages.length - 1;
+
+        document.getElementById('dx-done-chain').innerHTML = state.stages.map((s, i) => `
+            <div class="flex items-start gap-3 px-4 py-3 rounded-2xl border border-slate-200 bg-white">
+                <span class="rank-badge rank-${Math.min(s.rank, 5)} w-7 h-7 rounded-lg border flex items-center justify-center text-xs font-black shrink-0">${s.rank}</span>
+                <div class="min-w-0 flex-1">
+                    <p class="text-sm font-bold text-slate-700 leading-tight">${TYPES[s.type]}</p>
+                    ${i === last && state.carry.length ? `
+                        <div class="flex flex-wrap gap-1.5 mt-2">
+                            ${state.carry.map(h => `
+                                <span class="holding-no text-[10px] font-black px-2 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">${h}</span>
+                            `).join('')}
+                        </div>` : ''}
+                </div>
             </div>`).join('');
     }
 

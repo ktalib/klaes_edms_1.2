@@ -515,7 +515,7 @@
                                                     <!-- Batch Print Logic -->
                                                     @if($rec->status === \App\Models\LandRecommendation::STATUS_APPROVED)
                                                         <button type="button" 
-                                                                onclick="SmartPrintManager.open('{{ $rec->file_number }}', 'Recommendation For Grant', '{{ route('land-recommendations.print', $rec->id) }}')" 
+                                                                onclick="SmartPrintManager.open('{{ $rec->file_number }}', 'Recommendation For Grant', '{{ route('land-recommendations.print', $rec->id) }}', @js(['recordId' => (int) $rec->id, 'issueDate' => optional($rec->application_date)->format('Y-m-d') ?? '']))" 
                                                                 class="flex w-full items-center px-4 py-2.5 text-sm text-blue-700 hover:bg-blue-50 transition gap-2 font-bold">
                                                             <i data-lucide="printer" class="h-4 w-4"></i>  Print Manager
                                                         </button>
@@ -570,7 +570,7 @@
                                                     <div class="py-1">
                                                         <button type="button"
                                                                 @click="open = false"
-                                                                onclick="SmartPrintManager.open('{{ $rec->file_number }}', 'OSS Recommendation For Grant', '{{ route('land-recommendations.print', $rec->id) }}')"
+                                                                onclick="SmartPrintManager.open('{{ $rec->file_number }}', 'OSS Recommendation For Grant', '{{ route('land-recommendations.print', $rec->id) }}', @js(['recordId' => (int) $rec->id, 'issueDate' => optional($rec->application_date)->format('Y-m-d') ?? '']))"
                                                             class="flex w-full items-center px-4 py-2.5 text-sm text-blue-700 hover:bg-blue-50 transition gap-2 font-bold whitespace-nowrap">
                                                         <i data-lucide="printer" class="h-4 w-4 flex-shrink-0"></i>
                                                         OSS Print Recommendation

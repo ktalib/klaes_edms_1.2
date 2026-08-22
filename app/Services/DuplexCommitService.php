@@ -61,7 +61,7 @@ class DuplexCommitService
             );
         }
 
-        $stages = $duplex->stages()->get(); // the relation already orders by rank
+        $stages = $duplex->stageRows()->get(); // the relation already orders by rank
 
         if ($stages->isEmpty()) {
             throw new \RuntimeException('This duplex has no stages to commission.');
@@ -306,6 +306,16 @@ class DuplexCommitService
     ): array {
         $quantity = max(1, $quantity);
         $landUse  = $this->landUseFor($duplex, $stage, $inputs);
+
+        // The single-file path refuses to commission without a tracking id and will not
+        // invent one (unlike the batch path, which mints them). Say so here, naming the
+        // stage, instead of surfacing the engine's context-free message.
+        if ($quantity < 2 && empty($stage->tracking_id)) {
+            throw new \RuntimeException(
+                "Stage {$stage->rank} ({$stage->label()}) needs a Tracking ID before it can be "
+                . 'commissioned. Add it to the stage, or create the grouping record for this file.'
+            );
+        }
         $payload  = (array) ($stage->payload ?? []);
         $plots    = (array) ($payload['plots'] ?? []);
 
@@ -336,6 +346,7 @@ class DuplexCommitService
             $plot = $plots[0] ?? [];
 
             return $this->callSingle($base + [
+                'tracking_id'      => $stage->tracking_id,
                 'file_name'        => $plot['holder'] ?? $duplex->file_title ?: $duplex->applicant_name,
                 'plot_no'          => $plot['plot_no'] ?? $duplex->plot_no,
                 'location'         => $duplex->street_name,
@@ -359,6 +370,9 @@ class DuplexCommitService
                 'file_name' => $plot['holder'] ?? ($duplex->file_title ?: $duplex->applicant_name),
                 'phone_no'  => $duplex->phone,
                 'address'   => $duplex->address,
+                // Only the first child can claim the stage's tracking id; the batch path
+                // mints a fresh unique one for every entry that leaves this empty.
+                'tracking_id' => $i === 0 ? $stage->tracking_id : null,
             ];
         }
 
@@ -391,6 +405,16 @@ class DuplexCommitService
             throw new \RuntimeException("Stage {$stage->rank} (Change of Purpose) has no new land use.");
         }
 
+        // A Change of Purpose is a rename in place, so it always goes through the
+        // strict single-file path however many files it covers — and that path will
+        // not invent a tracking id.
+        if (empty($stage->tracking_id)) {
+            throw new \RuntimeException(
+                "Stage {$stage->rank} (Change of Purpose) needs a Tracking ID before it can be "
+                . 'commissioned. Add it to the stage, or create the grouping record for this file.'
+            );
+        }
+
         // Which of the incoming files this CoP applies to. The officer may have
         // subdivided into four and be changing the purpose of only two; the rest
         // pass through untouched and stay as they are.
@@ -419,6 +443,7 @@ class DuplexCommitService
                 'land_use'                  => $newLandUse,
                 'original_file_no'          => $fileNo,
                 'change_of_purpose_app_id'  => $appId,
+                'tracking_id'               => $stage->tracking_id,
                 'file_name'                 => $duplex->file_title ?: $duplex->applicant_name,
                 'plot_no'                   => $duplex->plot_no,
                 'location'                  => $duplex->street_name,

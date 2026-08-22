@@ -1570,31 +1570,67 @@ class InstrumentController extends Controller
         return response()->json($lgas);
     }
 
+    /**
+     * TP No lookup for the capture screen.
+     *
+     * A TP number is a slashed, multi-segment string (TP/RF4/DD4/3/333) and the
+     * operator rarely remembers it from the front. Matching on the prefix alone
+     * made the middle and tail segments unsearchable, so the search now runs in
+     * widening passes and returns them in that order - the closest match first:
+     *
+     *   1. the term anywhere in the number      "333"      -> TP/RF4/DD4/3/333
+     *   2. every token, in any segment          "rf4 333"  -> TP/RF4/DD4/3/333
+     *   3. the term with its separators dropped "rf4dd4"   -> TP/RF4/DD4/3/333
+     *   4. the letters in order, gaps allowed   "rfd"      -> TP/RF4/DD4/3/333
+     *
+     * Each pass only needs to fill what the passes before it left empty, so the
+     * loose ones never push a better match down the list.
+     */
     public function searchTpLookups(Request $request)
     {
         $term = trim((string) $request->input('q', ''));
-        $results = collect();
+        $limit = 20;
+        $ordered = [];   // upper-cased tp_no => original, preserving match order
 
         if ($term !== '') {
-            $results = DB::connection('sqlsrv')
-                ->table('tp_lookups')
-                ->select('tp_no')
-                ->whereNotNull('tp_no')
-                ->where('tp_no', 'like', $term . '%')
-                ->distinct()
-                ->orderBy('tp_no')
-                ->limit(20)
-                ->get()
-                ->map(function ($row) {
+            $patterns = $this->tpLookupSearchPatterns($term);
+
+            foreach ($patterns as $pattern) {
+                if (count($ordered) >= $limit) {
+                    break;
+                }
+
+                $rows = DB::connection('sqlsrv')
+                    ->table('tp_lookups')
+                    ->select('tp_no')
+                    ->whereNotNull('tp_no')
+                    ->whereRaw($pattern['sql'], $pattern['bindings'])
+                    ->distinct()
+                    ->orderBy('tp_no')
+                    // Ask for the full window each pass: rows already collected by an
+                    // earlier pass come back again and are dropped by the key check.
+                    ->limit($limit)
+                    ->get();
+
+                foreach ($rows as $row) {
                     $tpNo = trim((string) $row->tp_no);
-                    return [
-                        'id' => $tpNo,
-                        'text' => $tpNo,
-                    ];
-                })
-                ->filter(fn ($row) => $row['id'] !== '')
-                ->values();
+                    if ($tpNo === '') {
+                        continue;
+                    }
+                    $key = mb_strtoupper($tpNo);
+                    if (!array_key_exists($key, $ordered)) {
+                        $ordered[$key] = $tpNo;
+                    }
+                    if (count($ordered) >= $limit) {
+                        break;
+                    }
+                }
+            }
         }
+
+        $results = collect(array_values($ordered))
+            ->map(fn ($tpNo) => ['id' => $tpNo, 'text' => $tpNo])
+            ->values();
 
         $results->push([
             'id' => '__other__',
@@ -1605,6 +1641,64 @@ class InstrumentController extends Controller
             'results' => $results,
             'pagination' => ['more' => false],
         ]);
+    }
+
+    /**
+     * The widening LIKE passes described on searchTpLookups(), as raw predicates.
+     * Every pattern is escaped, so a term containing % _ [ is matched literally.
+     */
+    private function tpLookupSearchPatterns(string $term): array
+    {
+        $escape = static fn (string $value): string => str_replace(
+            ['\\', '%', '_', '['],
+            ['\\\\', '\\%', '\\_', '\\['],
+            $value
+        );
+
+        // The separators a TP number is built from; dropping them lets "rf4dd4"
+        // reach TP/RF4/DD4 and lets a pasted number match however it was typed.
+        $stripped = preg_replace('/[^A-Za-z0-9]+/', '', $term) ?? '';
+        $tokens = array_values(array_filter(preg_split('/[^A-Za-z0-9]+/', $term) ?: []));
+
+        // Same de-separating applied to the column, so both sides compare alike.
+        $compactColumn = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(tp_no, '/', ''), '-', ''), ' ', ''), '.', ''), '\\', '')";
+
+        $patterns = [];
+
+        // 1. Anywhere in the number.
+        $patterns[] = [
+            'sql' => "tp_no LIKE ? ESCAPE '\\'",
+            'bindings' => ['%' . $escape($term) . '%'],
+        ];
+
+        // 2. Every token present, in any segment and any order.
+        if (count($tokens) > 1) {
+            $patterns[] = [
+                'sql' => implode(' AND ', array_fill(0, count($tokens), "tp_no LIKE ? ESCAPE '\\'")),
+                'bindings' => array_map(fn ($t) => '%' . $escape($t) . '%', $tokens),
+            ];
+        }
+
+        // 3. Separators dropped on both sides.
+        if ($stripped !== '') {
+            $patterns[] = [
+                'sql' => $compactColumn . " LIKE ? ESCAPE '\\'",
+                'bindings' => ['%' . $escape($stripped) . '%'],
+            ];
+
+            // 4. Last resort: the characters in order with anything between them,
+            //    which is what turns "rfd" into a hit on TP/RF4/DD4/3/333. Kept off
+            //    very short terms only when they would match nearly everything.
+            $chars = preg_split('//u', $stripped, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+            if (count($chars) >= 2) {
+                $patterns[] = [
+                    'sql' => $compactColumn . " LIKE ? ESCAPE '\\'",
+                    'bindings' => ['%' . implode('%', array_map($escape, $chars)) . '%'],
+                ];
+            }
+        }
+
+        return $patterns;
     }
 
     public function storeTpLookup(Request $request)

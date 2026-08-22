@@ -290,14 +290,24 @@ class FileIndexViewController extends Controller
         $firstTransaction = $transactionsArray[0] ?? null;
         $lastTransaction = !empty($transactionsArray) ? $transactionsArray[array_key_last($transactionsArray)] : null;
 
+        // Root of Title / Original Holder / Current Holder — three distinct
+        // concepts (client spec 2026-08-20 §12). The old rule here ("party_1 of
+        // the first row is the Original Holder, party_2 of the last row is the
+        // Current Holder") is wrong on every file where a dealing predates the
+        // Ministry grant, and it could not express Root of Title at all.
+        $holders = app(\App\Services\TitleHolderResolver::class)
+            ->resolveForDisplay($fileNumber, $record->prop_id ?? null);
+
         $historyPayload = [
             'recordId' => $record->id,
             'fileNumber' => $fileNumber,
             'landuse' => $this->deriveLandUse($fileNumber, $record->land_use),
             'location' => $record->location ?? 'Not specified',
             'totalTransactions' => $transactionsData->count(),
-            'originalOwner' => $firstTransaction['originalHolder'] ?? null,
-            'currentOwner' => $lastTransaction['owner'] ?? null,
+            'applicationType' => $holders['application_type'],
+            'rootOfTitle' => $holders['root_of_title'],
+            'originalOwner' => $holders['original_holder'] ?? ($firstTransaction['originalHolder'] ?? null),
+            'currentOwner' => $holders['current_holder'] ?? ($lastTransaction['owner'] ?? null),
             'transactions' => $transactionsArray,
         ];
 

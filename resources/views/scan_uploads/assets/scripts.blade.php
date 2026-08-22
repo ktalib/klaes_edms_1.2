@@ -311,6 +311,13 @@
             confirmFileSelectBtn: document.getElementById('confirm-file-select-btn'),
             blindScanRegistry: document.getElementById('blind-scan-registry'),
             scanUploadFileType: document.getElementById('scan-upload-file-type'),
+            scanUploadFileTypeCategory: document.getElementById('scan-upload-file-type-category'),
+            scanUploadFileTypeType: document.getElementById('scan-upload-file-type-type'),
+            scanUploadFileTypeVariant: document.getElementById('scan-upload-file-type-variant'),
+            scanUploadFileTypeDetail: document.getElementById('scan-upload-file-type-detail'),
+            scanUploadFileTypeVariantWrap: document.getElementById('scan-upload-file-type-variant-wrap'),
+            scanUploadFileTypeVariantLabel: document.getElementById('scan-upload-file-type-variant-label'),
+            scanUploadFileTypeHint: document.getElementById('scan-upload-file-type-hint'),
             previewCoverBtn: document.getElementById('scan-upload-preview-cover'),
             coverPreview: document.getElementById('scan-upload-cover-preview'),
             coverPreviewBody: document.getElementById('scan-upload-cover-body'),
@@ -2721,9 +2728,8 @@
         state.selectedIndexedFile = null;
         state.selectedFileNumberForUpload = null;
 
-        if (elements.scanUploadFileType) {
-            elements.scanUploadFileType.value = '';
-        }
+        // Clears the hidden value AND resets the three dropdowns that feed it.
+        setFileTypeFromCode('');
         if (elements.previewCoverBtn) {
             elements.previewCoverBtn.disabled = true;
         }
@@ -6090,6 +6096,190 @@
         }
     }
 
+    /* ────────────────────── File Type cascade (3 dropdowns) ──────────────────────
+       Category -> Type -> Old/New, driven by the edms_file_types lookup table
+       rendered into #scan-upload-file-type-tree by the Blade partial.
+
+       Regular is a complete answer on its own, so it hides the other two
+       dropdowns. Everything else reveals Type, and Type reveals Old/New (or
+       Mother/Children, or Children/New File — the variant labels come from the
+       lookup table, not from here).
+
+       Whatever the three resolve to is written into the hidden
+       #scan-upload-file-type input; every other part of this page reads that one
+       value, exactly as it read the old single select.
+       ──────────────────────────────────────────────────────────────────────── */
+
+    let fileTypeTree = null;
+
+    /** The catalogue, parsed once. Empty when the partial is not on the page. */
+    function getFileTypeTree() {
+        if (fileTypeTree) return fileTypeTree;
+
+        const node = document.getElementById('scan-upload-file-type-tree');
+        if (!node) return (fileTypeTree = {});
+
+        try {
+            fileTypeTree = JSON.parse(node.textContent || '{}') || {};
+        } catch (error) {
+            console.error('File type catalogue could not be parsed', error);
+            fileTypeTree = {};
+        }
+
+        return fileTypeTree;
+    }
+
+    /** Find the catalogue row for a stored key, or null. */
+    function findFileTypeByCode(code) {
+        if (!code) return null;
+
+        const tree = getFileTypeTree();
+        for (const [categoryKey, category] of Object.entries(tree)) {
+            for (const [typeKey, type] of Object.entries(category.types || {})) {
+                for (const variant of type.variants || []) {
+                    if (variant.code === code) {
+                        return { categoryKey, typeKey, variantKey: variant.key || '', label: variant.label };
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /** Replace a select's options, keeping `selected` if it is still offered. */
+    function fillFileTypeSelect(select, options, placeholder, selected) {
+        if (!select) return;
+
+        select.innerHTML = '';
+        select.appendChild(new Option(placeholder, ''));
+        options.forEach(option => select.appendChild(new Option(option.label, option.value)));
+        select.value = options.some(o => o.value === selected) ? selected : '';
+    }
+
+    /**
+     * Repaint the Type and Old/New dropdowns for the chosen category, then
+     * resolve the three into the hidden input.
+     *
+     * `keep` preserves the current type/variant where they still exist — so
+     * re-entering a category does not silently drop a valid selection.
+     */
+    function refreshFileTypeCascade(keep = true) {
+        const tree = getFileTypeTree();
+        const categorySelect = elements.scanUploadFileTypeCategory;
+        if (!categorySelect) return;
+
+        const categoryKey = categorySelect.value || '';
+        const category = tree[categoryKey] || null;
+        const wantedType = keep ? (elements.scanUploadFileTypeType?.value || '') : '';
+        const wantedVariant = keep ? (elements.scanUploadFileTypeVariant?.value || '') : '';
+
+        // No category, or one that is its own answer (Regular): both extra
+        // dropdowns stay hidden and the hidden input takes the category's only
+        // code straight away.
+        if (!category || !category.has_children) {
+            elements.scanUploadFileTypeDetail?.classList.add('hidden');
+            elements.scanUploadFileTypeVariantWrap?.classList.add('hidden');
+            if (elements.scanUploadFileTypeType) elements.scanUploadFileTypeType.value = '';
+            if (elements.scanUploadFileTypeVariant) elements.scanUploadFileTypeVariant.value = '';
+            commitFileTypeSelection(category ? onlyCodeIn(category) : '');
+            return;
+        }
+
+        elements.scanUploadFileTypeDetail?.classList.remove('hidden');
+
+        const types = Object.entries(category.types || {})
+            .map(([value, type]) => ({ value, label: type.label }));
+        fillFileTypeSelect(elements.scanUploadFileTypeType, types, 'Select type…', wantedType);
+
+        const typeKey = elements.scanUploadFileTypeType?.value || '';
+        const type = typeKey ? (category.types || {})[typeKey] : null;
+        const variants = (type?.variants || []).filter(v => v.key !== '');
+
+        // A type with no real variants (none today, but the lookup table allows
+        // one) needs no third dropdown.
+        if (!type || variants.length === 0) {
+            elements.scanUploadFileTypeVariantWrap?.classList.add('hidden');
+            if (elements.scanUploadFileTypeVariant) elements.scanUploadFileTypeVariant.value = '';
+            commitFileTypeSelection(type ? (type.variants?.[0]?.code || '') : '');
+            return;
+        }
+
+        elements.scanUploadFileTypeVariantWrap?.classList.remove('hidden');
+        if (elements.scanUploadFileTypeVariantLabel) {
+            elements.scanUploadFileTypeVariantLabel.textContent = variants.map(v => v.label).join(' / ');
+        }
+        fillFileTypeSelect(
+            elements.scanUploadFileTypeVariant,
+            variants.map(v => ({ value: v.key, label: v.label })),
+            'Select…',
+            wantedVariant
+        );
+
+        const variantKey = elements.scanUploadFileTypeVariant?.value || '';
+        const chosen = variants.find(v => v.key === variantKey);
+        commitFileTypeSelection(chosen ? chosen.code : '');
+    }
+
+    /** The single code under a category that has no further choices. */
+    function onlyCodeIn(category) {
+        const type = Object.values(category.types || {})[0];
+
+        return type?.variants?.[0]?.code || '';
+    }
+
+    /** Write the resolved key into the hidden input and update the hint line. */
+    function commitFileTypeSelection(code) {
+        if (elements.scanUploadFileType) {
+            elements.scanUploadFileType.value = code || '';
+        }
+
+        const hint = elements.scanUploadFileTypeHint;
+        if (!hint) return;
+
+        if (!code) {
+            hint.textContent = elements.scanUploadFileTypeCategory?.value
+                ? 'Finish the selection to choose a master folder.'
+                : 'Leave as "Not specified" to keep the file directly under its registry.';
+            return;
+        }
+
+        const found = findFileTypeByCode(code);
+        const category = getFileTypeTree()[found?.categoryKey] || null;
+        const type = category?.types?.[found?.typeKey] || null;
+        const trail = [category?.label, type?.label, found?.variantKey ? found.label : null]
+            .filter(Boolean)
+            .join(' › ');
+        hint.textContent = trail ? 'Scans will be filed under ' + trail + '.' : '';
+    }
+
+    /** Drive the three dropdowns from a stored key (or clear them for a blank). */
+    function setFileTypeFromCode(code) {
+        const found = findFileTypeByCode(code);
+
+        if (elements.scanUploadFileTypeCategory) {
+            elements.scanUploadFileTypeCategory.value = found ? found.categoryKey : '';
+        }
+        if (elements.scanUploadFileTypeType) {
+            elements.scanUploadFileTypeType.value = found ? found.typeKey : '';
+        }
+        if (elements.scanUploadFileTypeVariant) {
+            elements.scanUploadFileTypeVariant.value = found ? found.variantKey : '';
+        }
+
+        refreshFileTypeCascade(true);
+    }
+
+    /** Bound once, when the dialog wiring runs. */
+    function bindFileTypeCascade() {
+        elements.scanUploadFileTypeCategory?.addEventListener('change', () => refreshFileTypeCascade(false));
+        elements.scanUploadFileTypeType?.addEventListener('change', () => {
+            if (elements.scanUploadFileTypeVariant) elements.scanUploadFileTypeVariant.value = '';
+            refreshFileTypeCascade(true);
+        });
+        elements.scanUploadFileTypeVariant?.addEventListener('change', () => refreshFileTypeCascade(true));
+    }
+
     /**
      * Keep the File Type controls in step with the selected file.
      *
@@ -6108,7 +6298,9 @@
 
         if (select) {
             const existing = selectedFile?.edmsFileType || selectedFile?.edms_file_type || '';
-            select.value = existing;
+            // `select` is the hidden input the cascade writes to now; driving the
+            // three dropdowns is what actually sets its value.
+            setFileTypeFromCode(existing);
         }
 
         if (button) {
@@ -6578,6 +6770,10 @@
             updateUI();
         });
         elements.confirmFileSelectBtn.addEventListener('click', selectIndexedFile);
+
+        // File Type: Category -> Type -> Old/New.
+        bindFileTypeCascade();
+        refreshFileTypeCascade(false);
 
         // Cover preview: the instruction that decides the file type is on the cover.
         elements.previewCoverBtn?.addEventListener('click', toggleCoverPreview);

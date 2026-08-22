@@ -571,37 +571,7 @@
                 </div>
               </div>
 
-              {{-- The EDMS master folder these scans go into. The registry folder
-                   holds one folder per file type, and the file number folder sits
-                   inside it, so this decides the upload path:
-                     EDMS/SCAN_UPLOAD/{Registry}/{File Type}/{FILE NUMBER}/
-                   Optional: leave it blank and the file stays directly under the
-                   registry, exactly as before, until someone classifies it. --}}
-              <div id="file-type-selection-container">
-                <label for="scan-upload-file-type" class="block text-sm font-semibold text-gray-700 mb-2">File Type</label>
-                {{-- Rendered from EdmsFileType so it cannot drift from the folders
-                     that actually exist on disk. Ungrouped types list first, then
-                     each group as an optgroup, matching the master-folder dialog. --}}
-                @php
-                  $edmsFileTypes = collect(\App\Services\Edms\EdmsFileType::options())->groupBy(fn ($t) => $t['group'] ?? '');
-                @endphp
-                <select id="scan-upload-file-type" class="input w-full text-sm">
-                  <option value="">Not specified — keep under the registry</option>
-                  @foreach($edmsFileTypes as $group => $types)
-                    @if($group === '')
-                      @foreach($types as $type)
-                        <option value="{{ $type['key'] }}">{{ $type['label'] }}</option>
-                      @endforeach
-                    @else
-                      <optgroup label="{{ $group }}">
-                        @foreach($types as $type)
-                          <option value="{{ $type['key'] }}">{{ $type['label'] }}</option>
-                        @endforeach
-                      </optgroup>
-                    @endif
-                  @endforeach
-                </select>
-              </div>
+              @include('scan_uploads.partials.file-type-cascade')
               </div>
               </div>
             </div>
@@ -694,6 +664,10 @@
         @include('scan_uploads.partials.reassign_modal')
         @include('components.edms.registry-transfer-modal')
         @include('components.edms.file-type-transfer-modal')
+        {{-- The file picker both EDMS cards (and the reassignment dialog) open. Its
+             plugin script is already loaded further down; without this markup
+             GlobalFileNoModal.open() finds no #global-fileno-modal and bails. --}}
+        @include('components.global-fileno-modal')
 
         <!-- Upload Progress Modal -->
         <div id="upload-progress-modal" class="dialog-backdrop hidden" aria-hidden="true">

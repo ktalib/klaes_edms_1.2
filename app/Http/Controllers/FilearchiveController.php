@@ -1667,10 +1667,11 @@ class FilearchiveController extends Controller
 
     private function buildStorageDemoPaginator(Request $request, string $module): LengthAwarePaginator
     {
-        $disk     = $this->getStorageDisk($module);
-        $basePath = $this->getStorageBasePath($module);
+        $disk      = $this->getStorageDisk($module);
+        $basePaths = $this->getStorageBasePaths($module);
+        $present   = array_values(array_filter($basePaths, fn($path) => $disk->exists($path)));
 
-        if (!$disk->exists($basePath)) {
+        if ($present === []) {
             return new LengthAwarePaginator([], 0, 12, (int) $request->get('page', 1), [
                 'path'  => $request->url(),
                 'query' => $request->query(),
@@ -1680,34 +1681,44 @@ class FilearchiveController extends Controller
         $allowedExtensions = ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff', 'tif'];
         $search             = trim((string) $request->get('search', ''));
 
+        // Master-folder segments, lower-cased for the prefix test in
+        // storageFileFolder(). From the edms_file_types lookup table, so a type
+        // added there is skipped here without a code change.
+        $masterFolders = [];
+        foreach (\App\Services\Edms\EdmsFileType::folderSkeleton() as $folder) {
+            $masterFolders[strtolower($folder)] = true;
+        }
+
         // ── Cached folder index ──────────────────────────────────────────────────
         // The filesystem scan + group-by is expensive when there are many files.
         // Cache it for 5 minutes; the cache is busted when a new file is uploaded
-        // (call Cache::forget("filearchive_folder_index_{$module}") after uploads).
+        // and after every registry / master-folder move
+        // (FilearchiveController::bustFolderIndexCache()).
         $cacheKey    = "filearchive_folder_index_{$module}";
-        $folderIndex = Cache::remember($cacheKey, 300, function () use ($disk, $basePath, $allowedExtensions) {
-            try {
-                $allFiles = collect($disk->allFiles($basePath));
-            } catch (\Throwable $e) {
-                $allFiles = collect();
+        $folderIndex = Cache::remember($cacheKey, 300, function () use ($disk, $present, $allowedExtensions, $masterFolders) {
+            $allFiles = collect();
+            foreach ($present as $root) {
+                try {
+                    $allFiles = $allFiles->merge($disk->allFiles($root));
+                } catch (\Throwable $e) {
+                    // A root that cannot be read contributes nothing; the others
+                    // still list.
+                }
             }
 
-            $normalizedBase = rtrim(str_replace('\\', '/', $basePath), '/');
-
-            // Group by top-level folder
+            // Group by the file-number folder, wherever it sits: directly under
+            // the registry (the old naked layout) or inside a master folder.
             $groups = $allFiles
                 ->filter(fn($p) => in_array(strtolower(pathinfo($p, PATHINFO_EXTENSION)), $allowedExtensions, true))
-                ->groupBy(function (string $path) use ($normalizedBase) {
-                    $normalized = ltrim(str_replace('\\', '/', $path), '/');
-                    if (str_starts_with($normalized, $normalizedBase . '/')) {
-                        $relative = substr($normalized, strlen($normalizedBase) + 1);
-                    } elseif (str_starts_with($normalized, $normalizedBase)) {
-                        $relative = ltrim(substr($normalized, strlen($normalizedBase)), '/');
-                    } else {
-                        $relative = $normalized;
+                ->groupBy(function (string $path) use ($present, $masterFolders) {
+                    foreach ($present as $root) {
+                        $folder = $this->storageFileFolder($path, $root, $masterFolders);
+                        if ($folder !== null) {
+                            return $folder;
+                        }
                     }
-                    $top = explode('/', $relative)[0] ?? $relative;
-                    return rtrim($normalizedBase . '/' . trim($top, '/'), '/');
+
+                    return ltrim(str_replace('\\', '/', $path), '/');
                 })
                 ->map(fn($files) => collect($files)->values());
 
@@ -1805,8 +1816,19 @@ class FilearchiveController extends Controller
         }
 
         $decoded = trim(str_replace('\\', '/', $decoded), '/');
-        $basePath = $this->getStorageBasePath($module);
-        if (!str_starts_with(strtolower($decoded), strtolower($basePath))) {
+
+        // The listing spans several roots, so the path only has to sit under
+        // one of them — the check is still what keeps this from resolving an
+        // arbitrary path off the disk.
+        $underARoot = false;
+        foreach ($this->getStorageBasePaths($module) as $basePath) {
+            if (str_starts_with(strtolower($decoded), strtolower($basePath))) {
+                $underARoot = true;
+                break;
+            }
+        }
+
+        if (!$underARoot) {
             return null;
         }
 
@@ -1840,16 +1862,18 @@ class FilearchiveController extends Controller
         }
 
         // Fallback: full scan (only when cache is cold)
-        $disk     = $this->getStorageDisk($module);
-        $basePath = $this->getStorageBasePath($module);
+        $disk = $this->getStorageDisk($module);
 
-        if (!$disk->exists($basePath)) {
-            return '0 B';
+        $totalBytes = 0;
+        foreach ($this->getStorageBasePaths($module) as $basePath) {
+            if (!$disk->exists($basePath)) {
+                continue;
+            }
+
+            $totalBytes += collect($disk->allFiles($basePath))->sum(function (string $path) use ($disk) {
+                try { return (int) $disk->size($path); } catch (\Throwable $e) { return 0; }
+            });
         }
-
-        $totalBytes = collect($disk->allFiles($basePath))->sum(function (string $path) use ($disk) {
-            try { return (int) $disk->size($path); } catch (\Throwable $e) { return 0; }
-        });
 
         return $this->formatBytes((int) $totalBytes);
     }
@@ -1877,26 +1901,99 @@ class FilearchiveController extends Controller
         return Storage::disk(env("{$registry}_STORAGE_DISK", env('KANGIS_STORAGE_DISK', 'public')));
     }
 
-    private function getStorageBasePath(string $module): string
+    /**
+     * Every tree this registry's archived documents can be sitting in.
+     *
+     * Two of them, because there are two:
+     *
+     *   EDMS/ARCHIVE_Doc_WARE/{Registry}/…  where the EDMS pipeline files the
+     *       Doc-WARE archive copy, and where "Move File to Another Registry"
+     *       and "File into a Master Folder" put it when a file is moved.
+     *   EDMS/UPLOAD/{Registry}/…            the older tree, which still holds
+     *       documents that predate the pipeline.
+     *
+     * Listing only the second is why a file moved into a registry did not turn
+     * up in that registry's archive: the move wrote it to the first.
+     *
+     * @return string[] deepest-owning root first, deduplicated
+     */
+    private function getStorageBasePaths(string $module): array
     {
         $registry = strtoupper(trim($module));
         $folderName = $this->getRegistryFolderName($module);
 
+        $roots = [];
+
+        // An explicitly configured path still wins, and still stands alone —
+        // a deployment that points a registry somewhere else means it.
         $configuredBasePath = trim(str_replace('\\', '/', (string) env("{$registry}_REGISTRY_BASE_PATH", env('KANGIS_REGISTRY_BASE_PATH', ''))), '/');
         if ($configuredBasePath !== '') {
-            return $configuredBasePath;
+            return [$configuredBasePath];
         }
+
+        $roots[] = \App\Services\Edms\EdmsDocumentPathResolver::ARCHIVE_ROOT . "/{$folderName}";
 
         $rootOverride = trim((string) env("{$registry}_STORAGE_ROOT", env('KANGIS_STORAGE_ROOT', '')));
         if ($rootOverride !== '') {
             $disk = $this->getStorageDisk($module);
-            $appPublicPath = "app/public/EDMS/UPLOAD/{$folderName}";
-            if ($disk->exists($appPublicPath)) {
-                return $appPublicPath;
+            foreach (['EDMS/ARCHIVE_Doc_WARE', 'EDMS/UPLOAD'] as $tree) {
+                $appPublicPath = "app/public/{$tree}/{$folderName}";
+                if ($disk->exists($appPublicPath)) {
+                    $roots[] = $appPublicPath;
+                }
             }
         }
 
-        return "EDMS/UPLOAD/{$folderName}";
+        $roots[] = "EDMS/UPLOAD/{$folderName}";
+
+        return array_values(array_unique($roots));
+    }
+
+    /**
+     * The primary root — the Doc-WARE archive tree. Kept for the callers that
+     * need one path; anything that scans should use getStorageBasePaths().
+     */
+    private function getStorageBasePath(string $module): string
+    {
+        return $this->getStorageBasePaths($module)[0];
+    }
+
+    /**
+     * The file-number folder a document sits in, relative to $root.
+     *
+     * A file number folder used to be the first thing under the registry, so
+     * grouping by the top-level segment was enough. Master folders now sit in
+     * between — EDMS/…/DCIV_Registry/Parcel_Update/Subdivision/RES-1/A4/x.jpg —
+     * and grouping by the top level would list "Parcel_Update" as though it
+     * were a file. Every master-folder segment is a known one, so they are
+     * consumed off the front and whatever follows is the file number.
+     */
+    private function storageFileFolder(string $path, string $root, array $masterFolders): ?string
+    {
+        $normalized = ltrim(str_replace('\\', '/', $path), '/');
+        $normalizedRoot = rtrim(str_replace('\\', '/', $root), '/');
+
+        if (strcasecmp(substr($normalized, 0, strlen($normalizedRoot) + 1), $normalizedRoot . '/') !== 0) {
+            return null;
+        }
+
+        $segments = array_values(array_filter(explode('/', substr($normalized, strlen($normalizedRoot) + 1)), 'strlen'));
+        if ($segments === []) {
+            return null;
+        }
+
+        // Walk past the master folders. The last segment is the file itself, so
+        // it can never be the folder we are looking for.
+        $depth = 0;
+        while ($depth < count($segments) - 1) {
+            $prefix = strtolower(implode('/', array_slice($segments, 0, $depth + 1)));
+            if (!isset($masterFolders[$prefix])) {
+                break;
+            }
+            $depth++;
+        }
+
+        return $normalizedRoot . '/' . implode('/', array_slice($segments, 0, $depth + 1));
     }
 
     private function getStorageUrl(string $relativePath, string $module): string

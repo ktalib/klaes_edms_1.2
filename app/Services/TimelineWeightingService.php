@@ -439,6 +439,17 @@ class TimelineWeightingService
         return 1.0;
     }
 
+    /**
+     * Public wrapper over the canonical instrument mapping below, so callers that
+     * need to reason about an instrument FAMILY (RofO vs CofO vs OP vs
+     * assignment) use the same word list this service weights with, instead of
+     * re-inventing their own. See TitleHolderResolver.
+     */
+    public function canonicalInstrumentType(?string $value): string
+    {
+        return $this->getCanonicalInstrumentType((string) $value);
+    }
+
     protected function getCanonicalInstrumentType(string $value): string
     {
         $raw = $this->normalizeString($value);

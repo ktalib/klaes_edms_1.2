@@ -1098,6 +1098,11 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/{id}/generate', [\App\Http\Controllers\LandRofoController::class, 'generate'])->name('generate');
         Route::post('/{id}/assign-security-paper', [\App\Http\Controllers\LandRofoController::class, 'assignSecurityPaperCode'])->name('assign-security-paper');
         Route::post('/{id}/reset-security-paper', [\App\Http\Controllers\LandRofoController::class, 'resetSecurityPaperCode'])->name('reset-security-paper');
+        // The application date the letter prints as DATE OF ISSUE: read so the print
+        // dialog knows whether to ask, written when it navigates instead of posting
+        // the print form.
+        Route::post('/issue-dates', [\App\Http\Controllers\LandRofoController::class, 'issueDates'])->name('issue-dates');
+        Route::post('/issue-date', [\App\Http\Controllers\LandRofoController::class, 'saveIssueDate'])->name('issue-date');
         Route::get('/{id}/print', [\App\Http\Controllers\LandRofoController::class, 'print'])->name('print');
         Route::post('/{id}/log-print', [\App\Http\Controllers\LandRofoController::class, 'logPrint'])->name('log-print');
     });

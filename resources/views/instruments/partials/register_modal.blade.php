@@ -160,6 +160,11 @@
                     <input type="radio" id="op_type_direct_allocation" name="op_type" value="OP Direct Allocation" class="hidden">
                 </div>
 
+                {{-- Rendered only on the dedicated capture page. The OSS Applications and
+                     Land/MLS pages include this same modal for a quick side capture and
+                     pass showCaptureBanner=false (the default), which also silences the
+                     matching popup in instruments-capture.js. --}}
+                @if ($showCaptureBanner ?? false)
                 <div id="op-type-summary" class="capture-banner hidden mb-6 px-4 py-3 rounded-lg">
                     <div class="flex items-start justify-between gap-3">
                         <div class="min-w-0">
@@ -176,10 +181,13 @@
                                 </span>
                             </p>
                             {{-- Read-only peek at the vault (instruments.nextRegistrationParticulars):
-                                 the number is only consumed when the instrument is registered. --}}
-                            <p class="capture-banner__meta">
-                                Next registration particulars:
-                                <strong id="op-type-reg-particulars" class="font-mono font-semibold">&mdash;</strong>
+                                 the number is only consumed when the instrument is registered.
+                                 showOpTypeNotice() in instruments-capture.js says the same thing
+                                 in a popup before the form opens; this card is the reminder that
+                                 stays on screen while the capture is filled in. --}}
+                            <p class="capture-banner__meta capture-banner__meta--volume">
+                                Volume:
+                                <strong id="op-type-reg-particulars" class="capture-banner__volume font-mono">&mdash;</strong>
                             </p>
                         </div>
                         <button type="button" id="op-type-change-btn" class="capture-banner__change">
@@ -187,6 +195,7 @@
                         </button>
                     </div>
                 </div>
+                @endif
 
                 {{--
                     Certificate of Occupancy variant + type.
@@ -220,6 +229,7 @@
                     DOM — permanently hidden — because setCofoVariant() drives it and #cofoType is
                     the field the form posts; #cofo-summary shows the answer with a "Change" link.
                 --}}
+                @if ($showCaptureBanner ?? false)
                 <div id="cofo-summary" class="capture-banner hidden mb-6 px-4 py-3 rounded-lg">
                     <div class="flex items-start justify-between gap-3">
                         <div class="min-w-0">
@@ -235,9 +245,9 @@
                                     <strong id="cofo-summary-value" class="font-semibold">Regular</strong>
                                 </span>
                             </p>
-                            <p class="capture-banner__meta">
-                                Next registration particulars:
-                                <strong id="cofo-reg-particulars" class="font-mono font-semibold">&mdash;</strong>
+                            <p class="capture-banner__meta capture-banner__meta--volume">
+                                Volume:
+                                <strong id="cofo-reg-particulars" class="capture-banner__volume font-mono">&mdash;</strong>
                             </p>
                         </div>
                         <button type="button" id="cofo-change-btn" class="capture-banner__change">
@@ -245,6 +255,7 @@
                         </button>
                     </div>
                 </div>
+                @endif
 
                 <div id="cofo-variant-container" class="hidden mb-6">
                     <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">

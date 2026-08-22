@@ -40,7 +40,7 @@ class CreateEdmsFileTypeFolders extends Command
                             {--tree=* : Limit to these trees: scan_upload, pagetyping, archive}
                             {--dry-run : List what would be created without touching the disk}';
 
-    protected $description = 'Create the Regular / Merger / Subdivision / Extension / Temporary / Change of Purpose master folders under each EDMS registry';
+    protected $description = 'Create the Regular / Parcel Update / Title Status master folders (from the edms_file_types lookup table) under each EDMS registry';
 
     /** tree option => root path */
     private const TREES = [

@@ -47,7 +47,7 @@ class DuplexParcelUpdateController extends Controller
 
         $records = DuplexParcelUpdate::query()
             ->visible()
-            ->with('stages')
+            ->with('stageRows')
             ->when($search, function ($q) use ($search) {
                 $q->where(function ($sub) use ($search) {
                     $sub->where('duplex_id', 'LIKE', "%{$search}%")
@@ -201,7 +201,7 @@ class DuplexParcelUpdateController extends Controller
 
     public function show(int $id): JsonResponse
     {
-        $duplex = DuplexParcelUpdate::with(['stages.files', 'files'])->findOrFail($id);
+        $duplex = DuplexParcelUpdate::with(['stageRows.files', 'files'])->findOrFail($id);
 
         return response()->json(['success' => true, 'data' => $duplex]);
     }
@@ -250,7 +250,7 @@ class DuplexParcelUpdateController extends Controller
         try {
             // reorder() first: the stages relation already sorts by rank ascending, and
             // SQL Server rejects a query naming the same column twice in ORDER BY.
-            $previous = $duplex->stages()
+            $previous = $duplex->stageRows()
                 ->where('rank', '<', $stage->rank)
                 ->reorder('rank', 'desc')
                 ->first();
@@ -311,7 +311,7 @@ class DuplexParcelUpdateController extends Controller
             }
 
             // All stages done -> the duplex is captured and ready for KNUPDA/approval.
-            $allDone = $duplex->stages()->where('status', '!=', DuplexParcelUpdateStage::STATUS_DONE)->count() === 0;
+            $allDone = $duplex->stageRows()->where('status', '!=', DuplexParcelUpdateStage::STATUS_DONE)->count() === 0;
             if ($allDone && $duplex->status === DuplexParcelUpdate::STATUS_DRAFT) {
                 $duplex->update([
                     'status'     => DuplexParcelUpdate::STATUS_CAPTURED,
@@ -395,7 +395,7 @@ class DuplexParcelUpdateController extends Controller
     {
         $duplex = DuplexParcelUpdate::findOrFail($id);
 
-        if ($duplex->stages()->where('status', '!=', DuplexParcelUpdateStage::STATUS_DONE)->exists()) {
+        if ($duplex->stageRows()->where('status', '!=', DuplexParcelUpdateStage::STATUS_DONE)->exists()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Every stage must be completed before the duplex can be approved.',
@@ -444,7 +444,7 @@ class DuplexParcelUpdateController extends Controller
 
     public function printApplication(int $id): View
     {
-        $duplex = DuplexParcelUpdate::with(['stages.files'])->findOrFail($id);
+        $duplex = DuplexParcelUpdate::with(['stageRows.files'])->findOrFail($id);
 
         return view('deeds.parcel_update.duplex.print.application', compact('duplex'));
     }
@@ -471,7 +471,7 @@ class DuplexParcelUpdateController extends Controller
 
     public function printRecommendation(int $id): View
     {
-        $duplex = DuplexParcelUpdate::with(['stages.files'])->findOrFail($id);
+        $duplex = DuplexParcelUpdate::with(['stageRows.files'])->findOrFail($id);
 
         return view('deeds.parcel_update.duplex.print.recommendation', compact('duplex'));
     }
@@ -486,7 +486,7 @@ class DuplexParcelUpdateController extends Controller
 
     public function printConveyance(int $id): View
     {
-        $duplex = DuplexParcelUpdate::with(['stages.files'])->findOrFail($id);
+        $duplex = DuplexParcelUpdate::with(['stageRows.files'])->findOrFail($id);
 
         return view('deeds.parcel_update.duplex.print.conveyance', compact('duplex'));
     }
@@ -526,7 +526,7 @@ class DuplexParcelUpdateController extends Controller
      */
     public function commissionView(int $id): View
     {
-        $duplex = DuplexParcelUpdate::with(['stages.files', 'files'])->findOrFail($id);
+        $duplex = DuplexParcelUpdate::with(['stageRows.files', 'files'])->findOrFail($id);
 
         return view('deeds.parcel_update.duplex.commission', compact('duplex'));
     }
@@ -534,7 +534,7 @@ class DuplexParcelUpdateController extends Controller
     /** One click, one pass: every file number for the whole duplex. */
     public function commit(Request $request, int $id): JsonResponse
     {
-        $duplex = DuplexParcelUpdate::with(['stages.files', 'files'])->findOrFail($id);
+        $duplex = DuplexParcelUpdate::with(['stageRows.files', 'files'])->findOrFail($id);
 
         try {
             $summary = $this->committer->commit($duplex, [

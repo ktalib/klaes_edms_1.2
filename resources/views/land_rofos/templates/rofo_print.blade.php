@@ -636,10 +636,17 @@
         $reissueSource  = strtolower(trim((string) request('reissue_source', '')));
         $originalOnly   = $isReissuance && $reissueSource !== 'legacy';
 
+        // The three passes the Print Manager offers, as one status each:
+        //   Batch  — the whole set, one run.
+        //   Office — the Duplicate and Triplicate alone (run 2 of a split print,
+        //            once the plain paper is in the tray).
+        //   <copy> — that copy on its own.
         $requestedStatus = request('status', 'Original');
         $printVersions = $originalOnly
             ? ['Original']
-            : (($requestedStatus === 'Batch') ? ['Original', 'Duplicate', 'Triplicate'] : [$requestedStatus]);
+            : (($requestedStatus === 'Batch')
+                ? ['Original', 'Duplicate', 'Triplicate']
+                : (($requestedStatus === 'Office') ? ['Duplicate', 'Triplicate'] : [$requestedStatus]));
 
         // A batch printed "by copy" needs all the Originals first, then all the
         // Duplicates, then all the Triplicates — so the caller renders each record
@@ -828,7 +835,7 @@
                             <span class="inline-data">{{ $printLocation }}</span>
 
                             <span class="ref-label">DATE OF ISSUE:</span>
-                            <span class="inline-data">{{ $recommendation->rofo_generated_at ? $recommendation->rofo_generated_at->format('Y-m-d') : now()->format('Y-m-d') }}</span>
+                            <span class="inline-data">{{ optional($recommendation->application_date)->format('Y-m-d') }}</span>
                         </div>
                     </div>
                 </div>

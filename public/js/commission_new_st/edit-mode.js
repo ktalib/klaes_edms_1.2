@@ -139,39 +139,55 @@
      * on the Standalone Unit Application form, so this edit screen is the one
      * place it can be corrected after the fact.
      */
+    /**
+     * The institution a file commissioned before the lookup lists existed belongs
+     * under. The JS twin of AllocationSourceResolver::resolve()'s legacy branch: a
+     * council allocation is LOCAL GOVERNMENT, and the three state entities were
+     * stored under short codes.
+     */
+    function legacyInstitutionName() {
+        if (record.allocation_source === 'Local Government') return 'LOCAL GOVERNMENT';
+
+        var LEGACY_ENTITIES = {
+            KUNPDA: 'KANO URBAN PLANNING DEVELOPMENT AGENCY',
+            KNUPDA: 'KANO URBAN PLANNING DEVELOPMENT AGENCY',
+            HOUSING: 'KANO STATE MINISTRY OF HOUSING',
+            KSIP: 'KSIP'
+        };
+
+        var entity = (record.allocation_entity || '').trim();
+
+        return LEGACY_ENTITIES[entity.toUpperCase()] || entity;
+    }
+
     function prefillSuaAllocation() {
         if (PREFIX !== 'sua') return;
 
+        // Handed over before the source is set: choosing the institution rebuilds
+        // the council list, and that is where this value lands.
+        var entity = $('sua_allocation_entity');
+        if (entity && record.allocation_entity) {
+            entity.dataset.pendingValue = record.allocation_entity;
+        }
+
         var source = $('sua_allocation_source');
         if (source) {
-            source.value = record.allocation_source || '';
-            // Populates the entity list for the chosen source.
+            var institution = record.institution_name || legacyInstitutionName() || '';
+
+            source.value = institution;
+
+            // The lists arrive over the wire, so the option may not exist yet -
+            // setupSuaAllocationDropdowns() re-applies this once they do.
+            if (!source.value && institution) {
+                source.dataset.pendingValue = institution;
+            }
+
+            // Reveals the council half, or the "specify" box.
             source.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
-        var entity = $('sua_allocation_entity');
-        if (entity && record.allocation_entity) {
-            entity.disabled = false;
-
-            // A stored name that is not one of the offered entities was typed under
-            // "Other" — restore it that way so the box shows on screen.
-            var known = Array.prototype.some.call(entity.options, function (o) {
-                return o.value === record.allocation_entity;
-            });
-
-            if (known) {
-                entity.value = record.allocation_entity;
-            } else {
-                entity.value = 'Other';
-                setValue('sua_allocation_entity_other', record.allocation_entity);
-            }
-
-            if (typeof window.handleSuaAllocationEntityChange === 'function') {
-                window.handleSuaAllocationEntityChange(entity);
-            }
-        }
-
         setValue('sua_allocation_ref_no', record.allocation_ref_no);
+        setValue('sua_allocation_reference_no', record.allocation_reference_no);
     }
 
     function prefillLocation() {
@@ -448,15 +464,29 @@
         };
 
         if (PREFIX === 'sua') {
-            // Blank means "left as it was" — an empty string would fail the
-            // allocation_source rule and block a save that never touched it.
-            ['allocation_source', 'allocation_entity', 'allocation_ref_no'].forEach(function (key) {
+            // Blank means "left as it was" — an empty string would blank a column
+            // this screen never touched.
+            ['allocation_entity', 'allocation_ref_no', 'allocation_reference_no'].forEach(function (key) {
                 var value = valueOf('sua_' + key);
                 if (key === 'allocation_entity' && value === 'Other') {
                     value = valueOf('sua_allocation_entity_other').trim();
                 }
                 if (value) payload[key] = value;
             });
+
+            // Allocation Source is the institution now; the server derives the
+            // legacy source/entity pair from it.
+            var institution = valueOf('sua_allocation_source');
+            if (institution === 'OTHERS (SPECIFY)') {
+                institution = valueOf('sua_allocation_source_other').trim();
+            }
+
+            if (institution) {
+                payload.institution_name = institution;
+                payload.institution_category = (typeof window.suaSelectedInstitutionCategory === 'function')
+                    ? window.suaSelectedInstitutionCategory()
+                    : 'GOVERNMENT';
+            }
         }
 
         if (applicantTypeKey === 'corporate') {

@@ -290,9 +290,48 @@ sources go with stage 1 and every intermediate file is retired by the stage that
 - Gates hold: memo blocked without KNUPDA, send-to-land blocked without the conveyance.
 - Test rows deleted by id afterwards.
 
+### Commissioning — verified end to end (2026-08-22)
+
+A full 3-stage duplex was committed against a throwaway `ZZT-`/`ZZC-` namespace and every
+row deleted afterwards:
+
+```
+(1) Merger            ZZT-2026-9001, ZZT-2026-9002  ->  ZZT-2026-9006
+(2) Subdivision       ZZT-2026-9006                 ->  ZZT-2026-9007/8/9
+(3) Change of Purpose ZZT-2026-9007/8/9             ->  ZZC-2026-3, ZZC-2026-4, ZZT-2026-9009
+```
+
+Confirmed: merger `parent_prop_id` is the CSV of both source prop_ids; each subdivision child
+points at the merged parcel; `related_fileno` correct at every hop; all five decommission rows
+written with successor pointers; a PRA row per stage output (`Merger`, `Subdivision` x3,
+`Change of Purpose` x2); `mls_file_no.source` correct per stage; the third child, left out of
+the CoP, passed through untouched and stayed active. The parcel-update tables were backfilled
+as intended and marked `commissioned` by the engine.
+
+This was **the first merger ever commissioned in this database** — no merger existed in live
+data before it.
+
+**Two defects found and fixed by this run:**
+
+1. Stages captured a Tracking ID and the commit discarded it. The single-file commissioning
+   path refuses to run without one (`Tracking ID not found in grouping table`) and will not
+   invent one, unlike the batch path — so every merger, extension, one-plot and Change of
+   Purpose stage would have failed at the Land step. The commit now passes it through, the
+   wizard collects it per stage, and both refuse early with a message naming the stage.
+2. Change of Purpose renames file by file, so it always uses the strict single-file path
+   however many files it covers. The UI gate had only asked for a Tracking ID when a stage
+   produced fewer than two files, so a 2-file CoP would have passed capture and stalled at
+   commissioning.
+
+### Observed, pre-existing (not caused by the duplex)
+
+`file_indexings.prop_id` is left NULL on batch-commissioned children while `pra.prop_id` is
+populated. Verified against real subdivision children commissioned through the existing UI
+(IND-2026-258..263) — same behaviour. Out of scope here; flagged for the module.
+
 ### Not yet verified
 
-The **commit** has not been run. Doing so would mint live file numbers and decommission real
-files in the shared dev database, so it needs a supervised run against files chosen for the
-purpose. Note also that no merger or separation has ever been commissioned in production, so a
-duplex containing either exercises that path for the first time.
+**Separation** and **Extension** stages have not been exercised end to end — the run above
+covered Merger, Subdivision and Change of Purpose. Both use the same code path as the stages
+that were tested (Extension is single-file like Merger; Separation is batch like Subdivision),
+so the risk is low, but neither has been proven.

@@ -4133,9 +4133,9 @@
     // page, and the Signatures block always travels with the final row on the last
     // page (so it is never stranded on a page of its own). Operates on the print
     // window DOM after the sheet HTML is written. No-op when history fits one page (<=5).
-    function paginateTrackingSheet(doc) {
+    function paginateTrackingSheet(doc, root = doc) {
         const ROWS_PER_PAGE = 5;
-        const section = doc.querySelector('.section.table-section');
+        const section = root.querySelector('.section.table-section');
         if (!section) return;
         const table = section.querySelector('table');
         const tbody = table ? table.querySelector('tbody') : null;
@@ -4143,7 +4143,10 @@
         if (!tbody) return;
 
         const rows = Array.from(tbody.children).filter(n => n.tagName === 'TR');
-        const footer = doc.querySelector('.footer');
+        const footer = root.querySelector('.footer');
+        // The copy watermark lives on the copy container, so continuation pages
+        // need their own clone or they print with no copy identity.
+        const watermark = root.querySelector('.copy-watermark');
         if (rows.length <= ROWS_PER_PAGE) return; // fits on one page — leave footer in place
 
         const parent = section.parentNode;
@@ -4161,6 +4164,10 @@
             const sec = doc.createElement('div');
             sec.className = 'section table-section';
             if (idx > 0) sec.style.pageBreakBefore = 'always';
+            if (idx > 0 && watermark) {
+                sec.style.position = 'relative';
+                sec.appendChild(watermark.cloneNode(true));
+            }
 
             const title = doc.createElement('div');
             title.className = 'section-title';
@@ -8137,6 +8144,11 @@
     // Print tracker details - routes to KANGIS landscape version for ?url=kangis and ?url=new_kangis, otherwise uses general portrait format
     function printFileTrackerDetails(tracker, options = {}) {
         const urlView = new URLSearchParams(window.location.search).get('url');
+        // Tracking Sheet 1 prints in two identities: the In-Transit copy travels
+        // with the file (full colour, red IN TRANSIT watermark) and the File Copy
+        // stays in the registry folder (black & white, FILE COPY watermark).
+        // 'both' (the default) prints the pair as one job.
+        const copyType = ['transit', 'file', 'both'].includes(options.copyType) ? options.copyType : 'both';
         if (urlView === 'kangis' || urlView === 'new_kangis') {
             // New KANGIS prints one row per log entry on screen, so "Print Log Sheet"
             // there prints only the entry whose action menu was used. The aggregated
@@ -8223,7 +8235,7 @@
             ? (tracker.deadline ? 'Returned' : '-')
             : timelineCellForPrint;
 
-        const printContent = `
+        const sheetHead = `
                 <!DOCTYPE html>
                 <html>
                 <head>
@@ -8281,6 +8293,27 @@
                         .signatories { margin-top: 2rem; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }
                         .signatory { text-align: center; }
                         .signatory .line { margin-top: 2.5rem; border-top: 1px solid #999; padding-top: 0.35rem; font-weight: 600; }
+                        /* Copy identity - In-Transit (colour) vs File Copy (black & white) */
+                        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        .sheet-copy { position: relative; }
+                        .copy-break { page-break-before: always; }
+                        .copy-watermark { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); font-size: 4.5rem; font-weight: 900; letter-spacing: 0.18em; white-space: nowrap; pointer-events: none; z-index: 0; }
+                        .copy-colour .copy-watermark { color: #dc2626; opacity: 0.15; }
+                        .copy-mono .copy-watermark { color: #000; opacity: 0.10; }
+                        .copy-ribbon { text-align: right; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; margin-bottom: 0.2rem; }
+                        .copy-ribbon span { border: 1px solid; border-radius: 3px; padding: 0.1rem 0.45rem; }
+                        .copy-colour .copy-ribbon span { color: #dc2626; border-color: #dc2626; }
+                        .copy-mono .copy-ribbon span { color: #000; border-color: #000; }
+                        .print-container > *:not(.copy-watermark) { position: relative; z-index: 1; }
+                        /* File Copy: strip every colour so it photocopies cleanly. */
+                        .copy-mono, .copy-mono * { color: #000 !important; border-color: #9ca3af !important; }
+                        .copy-mono [style*="background"] { background: #fff !important; }
+                        .copy-mono .section-title { background: #e5e7eb !important; border-left-color: #000 !important; }
+                        .copy-mono .header { border-bottom-color: #000 !important; }
+                        .copy-mono table th { background: #e5e7eb !important; }
+                        .copy-mono table tr:nth-child(even) { background: #f3f4f6 !important; }
+                        .copy-mono div[style*="linear-gradient"] { background: #9ca3af !important; }
+                        .copy-mono img { filter: grayscale(100%); -webkit-filter: grayscale(100%); }
                         @media print {
                             body { margin: 0; padding: 0; font-size: 10px; }
                             .print-container { max-width: 100%; margin: 0; padding: 0.1in; }
@@ -8298,8 +8331,13 @@
                         }
                     </style>
                 </head>
-                <body>
-                    <div class="print-container">
+                <body>`;
+
+        // One sheet body, rendered once per requested copy identity.
+        const buildSheetCopy = (copyKind) => `
+                    <div class="print-container sheet-copy ${copyKind === 'file' ? 'copy-mono' : 'copy-colour'}">
+                        <div class="copy-watermark">${copyKind === 'file' ? 'FILE COPY' : 'IN TRANSIT'}</div>
+                        <div class="copy-ribbon"><span>${copyKind === 'file' ? 'FILE COPY' : 'IN-TRANSIT COPY'}</span></div>
                         <div class="header">
                         <div class="header-top">
                             <div class="header-logo-wrap">
@@ -8575,6 +8613,15 @@
                             </div>
                         </div>
                     </div>
+                `;
+
+        // The In-Transit copy prints first, the File Copy on a fresh page after it.
+        const copyKinds = copyType === 'transit'
+            ? ['transit']
+            : (copyType === 'file' ? ['file'] : ['transit', 'file']);
+        const printContent = sheetHead
+            + copyKinds.map((kind, idx) => (idx > 0 ? '<div class="copy-break"></div>' : '') + buildSheetCopy(kind)).join('')
+            + `
                 </body>
                 </html>
             `;
@@ -8588,7 +8635,11 @@
         printWindow.document.close();
         // Split the movement history into pages of 5 rows and keep the signatures
         // with the final row on the last page.
-        try { paginateTrackingSheet(printWindow.document); } catch (e) { console.error('Pagination failed:', e); }
+        try {
+            printWindow.document.querySelectorAll('.print-container').forEach(copyRoot => {
+                paginateTrackingSheet(printWindow.document, copyRoot);
+            });
+        } catch (e) { console.error('Pagination failed:', e); }
         const invokePrint = () => { try { printWindow.focus(); printWindow.print(); } catch (e) { console.error('Print failed:', e); } };
         const waitForQrAndPrint = () => {
             const qrImg = printWindow.document.querySelector('.qr-wrapper img');
@@ -9394,6 +9445,14 @@
     });
     document.getElementById('close-details-btn')?.addEventListener('click', () => {
         document.getElementById('details-dialog')?.classList.remove('show');
+    });
+    // Single-copy shortcuts. The main Print Details button still prints both copies
+    // (and carries the mark-printed side effect); these only re-print one identity.
+    document.getElementById('print-transit-copy-btn')?.addEventListener('click', function() {
+        if (currentDetailsTracker) printFileTrackerDetails(currentDetailsTracker, { copyType: 'transit' });
+    });
+    document.getElementById('print-file-copy-btn')?.addEventListener('click', function() {
+        if (currentDetailsTracker) printFileTrackerDetails(currentDetailsTracker, { copyType: 'file' });
     });
     document.getElementById('print-details-btn')?.addEventListener('click', function() {
         if (currentDetailsTracker) {

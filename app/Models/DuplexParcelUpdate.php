@@ -80,7 +80,16 @@ class DuplexParcelUpdate extends Model
         'deleted_at'                  => 'datetime',
     ];
 
-    public function stages(): HasMany
+    /**
+     * The stage ROWS.
+     *
+     * Deliberately not called stages(): `stages` is also a JSON column on this table
+     * (the ordered plan captured at step 1), and an attribute always wins over a
+     * relation of the same name in Eloquent — so `$duplex->stages` would hand back
+     * the plan array while `$duplex->stages()` handed back rows. Two different
+     * shapes behind one name is a trap; the rows get their own name instead.
+     */
+    public function stageRows(): HasMany
     {
         return $this->hasMany(DuplexParcelUpdateStage::class, 'duplex_parcel_update_id')
             ->orderBy('rank');

@@ -2700,6 +2700,15 @@ HTML;
             'holder_history'   => $indexing
                 ? app(\App\Services\TimelineWeightingService::class)->holderHistory($result['file_number'])
                 : [],
+            // Root of Title / Original Holder / Current Holder — resolved from the
+            // transaction chain, NOT from the raw indexing columns (client spec
+            // 2026-08-20 §12). The resolver falls back to those columns itself
+            // when the file carries no transactions at all, so an unindexed or
+            // dealing-free file still shows what it always showed.
+            'title_holders'    => $indexing
+                ? app(\App\Services\TitleHolderResolver::class)
+                    ->resolveForDisplay($result['file_number'], null, $indexing)
+                : null,
             'original_holder'  => $indexing?->formattedHolder('original_holder'),
             'current_holder'   => $indexing?->formattedHolder('current_holder'),
             'bill_balance'     => \App\Models\BillBalance::summaryForFile($result['file_number']),

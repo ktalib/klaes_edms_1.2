@@ -198,7 +198,11 @@
 @php
     $requestedStatus = request('status', 'Original');
     $isCTCBatch = request('isCTC') == 1;
-    $printVersions = ($requestedStatus === 'Batch') ? ['Original', 'Duplicate', 'Triplicate'] : [$requestedStatus];
+    // 'Office' is the Duplicate and Triplicate alone — run 2 of a split print,
+    // once the plain paper has replaced the security stock in the tray.
+    $printVersions = ($requestedStatus === 'Batch')
+        ? ['Original', 'Duplicate', 'Triplicate']
+        : (($requestedStatus === 'Office') ? ['Duplicate', 'Triplicate'] : [$requestedStatus]);
     $versionColors = [
         'Original'   => '#ff0000',
         'Duplicate'  => '#0000ff',

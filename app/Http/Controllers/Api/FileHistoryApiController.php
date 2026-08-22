@@ -179,6 +179,15 @@ class FileHistoryApiController extends Controller
                 return response()->json([
                     'success' => true,
                     'data' => $data,
+                    // Root of Title / Original Holder / Current Holder for the file
+                    // this request targets (client spec 2026-08-20 §12). Only on the
+                    // specific-file path — the general browse path spans many files
+                    // and has no single title to resolve.
+                    'title_holders' => app(\App\Services\TitleHolderResolver::class)
+                        ->resolveForDisplay(
+                            $request->filled('mlsFNo') ? trim((string) $request->input('mlsFNo')) : null,
+                            $request->filled('prop_id') ? trim((string) $request->input('prop_id')) : null
+                        ),
                     'pagination' => [
                         'current_page' => $page,
                         'per_page' => $perPage,

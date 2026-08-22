@@ -69,6 +69,10 @@ class EdmsFileTypeTransferController extends Controller
                 'current_file_type_label' => $currentLabel,
                 'current_registry' => $registry,
                 'file_types' => $types,
+                // The same catalogue shaped for the Category -> Type -> Old/New
+                // cascade the dialog picks with. `file_types` stays for the flat
+                // lookups (labels, folders, is_current).
+                'file_type_tree' => EdmsFileType::tree(),
             ],
         ]);
     }

@@ -23,7 +23,11 @@
              x-transition:leave="ease-in duration-200" 
              x-transition:leave-start="opacity-100 translate-y-0 sm:scale-100" 
              x-transition:leave-end="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95" 
-             class="inline-block w-full max-w-lg overflow-hidden text-left align-middle transition-all transform bg-white shadow-3xl rounded-3xl sm:my-8 sm:align-middle border border-white/20">
+             {{-- Landscape where there are three passes to lay side by side, so the
+                  choice is one row rather than a tall column. A single-copy document
+                  has nothing to put in that width, so it keeps the narrow modal. --}}
+             :class="showPasses ? 'max-w-3xl' : 'max-w-lg'"
+             class="inline-block w-full overflow-hidden text-left align-middle transition-all transform bg-white shadow-3xl rounded-3xl sm:my-8 sm:align-middle border border-white/20">
             
             <!-- Modal Header -->
             <div class="px-6 py-4 bg-gradient-to-r from-slate-900 to-slate-800 flex justify-between items-center relative overflow-hidden">
@@ -51,8 +55,62 @@
 
             <div class="px-6 py-6 space-y-6">
                 <div x-show="!isOssMode" class="space-y-6">
-                    <!-- Batch Status Overview -->
-                    <div class="grid grid-cols-3 gap-3">
+                    {{-- ── Date Issued ────────────────────────────────────────────
+                         The application date, which the letter prints as DATE OF
+                         ISSUE. It is asked for here rather than in a dialog in front
+                         of the manager, because it belongs to the same decision as
+                         which copies to run — and asking twice for one print is what
+                         the separate prompt amounted to.
+
+                         A date already on record is what an issued letter out in the
+                         world carries, so the field stays locked until an edit is
+                         confirmed. Filling a blank one never needs confirming. --}}
+                    <div x-show="supportsIssueDate" x-cloak
+                         class="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-2">
+                        <div class="flex items-center justify-between gap-3">
+                            <label class="text-[11px] font-black uppercase tracking-widest text-slate-500">Date Issued</label>
+                            <span x-show="issueDateLocked && !issueDateUnlocked" x-cloak
+                                  class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">On record</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input type="date" x-model="issueDate" :max="today"
+                                   :disabled="issueDateLocked && !issueDateUnlocked"
+                                   class="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-500">
+                            <button type="button"
+                                    x-show="issueDateLocked && !issueDateUnlocked" x-cloak
+                                    @click="issueDateConfirming = true"
+                                    class="px-4 py-2 rounded-lg bg-slate-200 text-slate-700 text-xs font-black hover:bg-slate-300 transition">
+                                Edit
+                            </button>
+                        </div>
+
+                        <div x-show="issueDateConfirming" x-cloak
+                             class="p-3 rounded-lg bg-amber-50 border border-amber-300 text-[12px] text-amber-900 space-y-2">
+                            <p>
+                                Change the date of issue? This letter is dated
+                                <b x-text="issueDateOnRecord"></b>, and any copy already issued carries that date.
+                            </p>
+                            <div class="flex gap-2">
+                                <button type="button" @click="unlockIssueDate()"
+                                        class="px-3 py-1.5 rounded-md bg-amber-600 text-white text-[12px] font-bold">Yes, edit it</button>
+                                <button type="button" @click="issueDateConfirming = false"
+                                        class="px-3 py-1.5 rounded-md bg-slate-200 text-slate-700 text-[12px] font-bold">No</button>
+                            </div>
+                        </div>
+
+                        <p class="text-[11px] text-slate-500 leading-relaxed">
+                            Prints on the letter as <b>DATE OF ISSUE</b> and is saved to the record, so a reprint
+                            comes out carrying the same date.
+                        </p>
+                        <p x-show="issueDateError" x-cloak x-text="issueDateError"
+                           class="text-[11.5px] font-bold text-red-600"></p>
+                    </div>
+
+                    {{-- Only where there is no pass choice to make — a single-copy
+                         document, whose one tile is the whole of its print state.
+                         Where the three passes are on show they carry the printed
+                         ticks themselves, and this row said the same thing twice. --}}
+                    <div x-show="!showPasses" x-cloak class="grid grid-cols-3 gap-3">
                         <template x-for="(step, index) in sequence" :key="index">
                             {{-- Each tile prints the copy it names. The sequence is the
                                  order the copies are normally run off, not a lock: an
@@ -89,6 +147,63 @@
                         </template>
                     </div>
 
+                    {{-- ── The three passes ───────────────────────────────────────
+                         The whole of the print choice, on one surface. These used to
+                         be separate items in the row's action menu next to a "Print
+                         Manager" that did something else again; there is one way in
+                         now, and the choice is made here.
+
+                         They are three passes, not three buttons that do the same
+                         thing: the Original goes on the colour security stock and the
+                         office copies on plain paper, which is two trips through the
+                         printer with the tray changed in between. "Duplicate &
+                         Triplicate" on its own is how a run stopped after the
+                         Originals is picked up. --}}
+                    <div x-show="showPasses" x-cloak class="grid grid-cols-3 gap-3">
+                        <template x-for="pass in passOptions" :key="pass.key">
+                            <button type="button"
+                                    @click="runPass(pass.key)"
+                                    :disabled="isPrinting"
+                                    class="flex flex-col gap-2.5 p-3.5 rounded-xl border text-left transition-all disabled:opacity-50 disabled:cursor-wait"
+                                    :class="pass.tone">
+                                <span class="flex items-center justify-between gap-2">
+                                    <span class="flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center"
+                                          :class="pass.iconTone">
+                                        <i :data-lucide="pass.icon" class="w-4 h-4"></i>
+                                    </span>
+
+                                    {{-- A green tick means every copy this pass covers is
+                                         already out — the same print_logs state the copy
+                                         tiles used to show, put where the choice is made.
+                                         Pressing a ticked pass reprints it.
+
+                                         Wrapped, not a bare <i>: lucide swaps the <i> for
+                                         an <svg>, so an x-if rooted on the icon itself
+                                         leaves Alpine holding a node that is no longer in
+                                         the DOM when the state flips. --}}
+                                    <template x-if="passPrinted(pass)">
+                                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-[9px] font-black uppercase tracking-wide">
+                                            <i data-lucide="check" class="w-2.5 h-2.5"></i>
+                                            Printed
+                                        </span>
+                                    </template>
+                                </span>
+
+                                {{-- One line each. A pass whose name wraps reads as two
+                                     choices at a glance, which is the opposite of what
+                                     this panel is for — so the names are kept short
+                                     enough to survive the column, and the run they
+                                     belong to is spelled out underneath. --}}
+                                <span class="block">
+                                    <span class="block text-[13px] font-bold whitespace-nowrap" :class="pass.titleTone"
+                                          x-text="pass.label"></span>
+                                    <span class="block text-[10.5px] font-medium mt-0.5 whitespace-nowrap" :class="pass.hintTone"
+                                          x-text="pass.hint"></span>
+                                </span>
+                            </button>
+                        </template>
+                    </div>
+
                     <!-- Controls -->
                     <div x-show="!batchCompleted || isSingleStepType" class="space-y-6">
                         <div class="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-100 hidden">
@@ -115,18 +230,25 @@
                                     <span>"Print Original" generates the Original document. You can print multiple copies if needed. Status will be marked as Complete after the first print, enabling CTC generation.</span>
                                 </template>
                                 <template x-if="!isSingleStepType">
-                                    <span>"Print All 3 Copies" generates the full set — Original, Duplicate and Triplicate — at once. To run off just one of them, click that copy above. A green tick means that copy has already been printed. After the full set, you can generate "Certified True Copies" as needed.</span>
+                                    <span>Pick a pass above: the full set in one run, the Original alone (security paper), or the Duplicate &amp; Triplicate alone (plain paper) — which is also how a run stopped after the Originals is picked up. A green tick means that pass is already out; pressing it again reprints. Once the full set is out, "Certified True Copies" can be generated.</span>
                                 </template>
                             </p>
                         </div>
                     </div>
 
-                    <!-- Finished State -->
-                    <div x-show="batchCompleted && !isSingleStepType" class="py-10 text-center space-y-4 animate-in fade-in zoom-in duration-500">
-                        <div class="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
-                            <i data-lucide="check-circle" class="h-8 w-8"></i>
-                        </div>
-                        <h4 class="text-xl font-bold text-slate-900">Originals Printed</h4>
+                    {{-- A line, not a full-page celebration: the ticks on the passes
+                         already say what is out, so this only has to name what that
+                         means for the next step. It also said "Originals Printed"
+                         while standing for the whole set being out. --}}
+                    <div x-show="batchCompleted && !isSingleStepType" x-cloak
+                         class="flex items-center gap-3 p-3 rounded-xl bg-green-50 border border-green-200">
+                        <span class="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 text-green-700 flex items-center justify-center">
+                            <i data-lucide="check-circle" class="h-4 w-4"></i>
+                        </span>
+                        <p class="text-[12px] font-bold text-green-900">
+                            Full set printed
+                            <span class="block text-[11px] font-medium text-green-700">Certified True Copies can now be generated.</span>
+                        </p>
                     </div>
                 </div>
 
@@ -205,13 +327,18 @@
                         </div>
                     </template>
 
-                    <!-- Batch Print Button -->
-                    <button x-show="(!batchCompleted || isSingleStepType) && !isLegalSearchType"
+                    {{-- Only for the documents that have no pass choice to make —
+                         a single-copy type. Where the three passes are on show they
+                         are the print action, and a fourth button that runs one of
+                         them again is the duplication this redesign removed. --}}
+                    <button x-show="(!batchCompleted || isSingleStepType) && !isLegalSearchType && !showPasses"
                             @click="executeBatchPrint()"
                             :disabled="isPrinting"
                             class="px-6 py-3 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xl shadow-indigo-200 transition-all flex items-center gap-2 disabled:opacity-50 active:scale-95">
                         <template x-if="!isPrinting">
-                            <i data-lucide="printer" class="h-4 w-4"></i>
+                            <span class="flex items-center">
+                                <i data-lucide="printer" class="h-4 w-4"></i>
+                            </span>
                         </template>
                         <template x-if="isPrinting">
                             <span class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
@@ -228,12 +355,16 @@
                             :disabled="isPrinting"
                             class="px-6 py-3 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xl shadow-emerald-200 transition-all flex items-center gap-2 disabled:opacity-50 active:scale-95">
                         <template x-if="!isPrinting">
-                            <i data-lucide="award" class="h-4 w-4"></i>
+                            <span class="flex items-center">
+                                <i data-lucide="award" class="h-4 w-4"></i>
+                            </span>
                         </template>
                         <template x-if="isPrinting">
                             <span class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
                         </template>
-                        <span>Print</span>
+                        {{-- Named, because "Print" beside three passes that also
+                             print says nothing about which of them this is. --}}
+                        <span>Print CTC</span>
                     </button>
 
                     <button x-show="!batchCompleted" 
@@ -241,7 +372,9 @@
                             :disabled="isPrinting"
                             class="px-8 py-3 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-xl shadow-blue-200 transition-all flex items-center gap-2 disabled:opacity-50 active:scale-95 hidden">
                         <template x-if="!isPrinting">
-                            <i data-lucide="printer" class="h-4 w-4"></i>
+                            <span class="flex items-center">
+                                <i data-lucide="printer" class="h-4 w-4"></i>
+                            </span>
                         </template>
                         <template x-if="isPrinting">
                             <span class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
@@ -280,6 +413,18 @@ document.addEventListener('alpine:init', () => {
         copies: 1,
         currentStep: 0,
         batchCompleted: false,
+        // The row this print belongs to, and the date it is issued as of. Only the
+        // land_recommendations family carries a date the manager can write back
+        // (see supportsIssueDate) — everything else opens without the panel.
+        recordId: null,
+        reissuance: '',
+        passesAllowed: true,
+        issueDate: '',
+        issueDateOnRecord: '',
+        issueDateLocked: false,
+        issueDateUnlocked: false,
+        issueDateConfirming: false,
+        issueDateError: '',
         ossGeneratedState: {
             verification: false,
             acknowledgement: false,
@@ -306,6 +451,20 @@ document.addEventListener('alpine:init', () => {
             this.copies = 1;
             this.currentStep = 0;
             this.batchCompleted = false;
+
+            this.recordId = (data && data.recordId) ? data.recordId : null;
+            this.reissuance = (data && data.reissuance) ? String(data.reissuance) : '';
+            this.passesAllowed = !(data && data.passes === false);
+
+            // A date already on the record locks the field; a blank one is simply
+            // filled in, which is the ordinary case for letters captured before the
+            // application date was collected.
+            this.issueDateOnRecord = (data && data.issueDate) ? String(data.issueDate) : '';
+            this.issueDate = this.issueDateOnRecord || this.today;
+            this.issueDateLocked = !!this.issueDateOnRecord;
+            this.issueDateUnlocked = false;
+            this.issueDateConfirming = false;
+            this.issueDateError = '';
 
             if (this.isOssMode) {
                 this.resetOssStates();
@@ -334,6 +493,181 @@ document.addEventListener('alpine:init', () => {
 
         get isOssMode() {
             return this.moduleContext === 'oss';
+        },
+
+        get today() {
+            const d = new Date();
+            return d.getFullYear() + '-'
+                + String(d.getMonth() + 1).padStart(2, '0') + '-'
+                + String(d.getDate()).padStart(2, '0');
+        },
+
+        // The date is stored on land_recommendations.application_date, so the panel
+        // is offered for the documents that live in that table — every Land and OSS
+        // recommendation type, RofO and re-issuance included. SLTR keeps its own
+        // table and has no such column, so it opens without the panel rather than
+        // with one whose Save would go nowhere.
+        get supportsIssueDate() {
+            if (!this.recordId) return false;
+            if (String(this.docType).startsWith('SLTR')) return false;
+            return String(this.docType).includes('RofO')
+                || String(this.docType).includes('Recommendation');
+        },
+
+        // Three passes only where there are three copies to split.
+        get showPasses() {
+            return this.passesAllowed && !this.isSingleStepType && !this.isLegalSearchType;
+        },
+
+        get passOptions() {
+            return [
+                {
+                    key: 'Batch',
+                    label: 'All Copies',
+                    hint: 'Original, Duplicate & Triplicate',
+                    copies: ['Original', 'Duplicate', 'Triplicate'],
+                    icon: 'printer',
+                    tone: 'border-violet-200 bg-white hover:bg-violet-50 hover:border-violet-400 hover:shadow-sm',
+                    iconTone: 'bg-violet-600 text-white',
+                    titleTone: 'text-violet-900',
+                    hintTone: 'text-violet-600'
+                },
+                {
+                    key: 'Original',
+                    label: 'Original Only',
+                    hint: 'Run 1 — security paper',
+                    copies: ['Original'],
+                    icon: 'award',
+                    tone: 'border-emerald-200 bg-white hover:bg-emerald-50 hover:border-emerald-400 hover:shadow-sm',
+                    iconTone: 'bg-emerald-600 text-white',
+                    titleTone: 'text-emerald-900',
+                    hintTone: 'text-emerald-600'
+                },
+                {
+                    key: 'Office',
+                    label: 'Duplicate & Triplicate',
+                    hint: 'Run 2 — plain paper',
+                    copies: ['Duplicate', 'Triplicate'],
+                    icon: 'copy',
+                    tone: 'border-teal-200 bg-white hover:bg-teal-50 hover:border-teal-400 hover:shadow-sm',
+                    iconTone: 'bg-teal-600 text-white',
+                    titleTone: 'text-teal-900',
+                    hintTone: 'text-teal-600'
+                }
+            ];
+        },
+
+        // Ticked only when every copy the pass covers has been logged — a pass
+        // that is half done still reads as outstanding, which is the state an
+        // operator picking up an abandoned run needs to see.
+        passPrinted(pass) {
+            if (!this.printLogs || !pass || !pass.copies) return false;
+            return pass.copies.every(copy => this.isCompleted(copy));
+        },
+
+        unlockIssueDate() {
+            this.issueDateUnlocked = true;
+            this.issueDateConfirming = false;
+        },
+
+        // Written to the record before the letter is opened, not carried on the
+        // print URL: a reprint has to come out carrying the same date as the copy
+        // already in the file.
+        //
+        // Returns false when the operator has left the field empty — the print does
+        // not go ahead, because a letter with no date of issue is not a letter.
+        // 'all' is sent only for a confirmed edit, so a date already on record is
+        // never replaced by accident.
+        async persistIssueDate() {
+            this.issueDateError = '';
+            if (!this.supportsIssueDate) return true;
+
+            if (!this.issueDate) {
+                this.issueDateError = 'Enter the date of issue before printing.';
+                return false;
+            }
+
+            // Locked and untouched: the record already holds this date, nothing to write.
+            if (this.issueDateLocked && !this.issueDateUnlocked) return true;
+
+            try {
+                await fetch('{{ route('land-rofos.issue-date') }}', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                    },
+                    body: JSON.stringify({
+                        ids: [this.recordId],
+                        issue_date: this.issueDate,
+                        issue_date_apply: this.issueDateUnlocked ? 'all' : 'missing'
+                    })
+                });
+
+                this.issueDateOnRecord = this.issueDate;
+                this.issueDateLocked = true;
+                this.issueDateUnlocked = false;
+                return true;
+            } catch (error) {
+                // The date is the point of the panel, so a failed write stops the
+                // print rather than letting an undated letter out.
+                this.issueDateError = 'Could not save the date of issue. Check your connection and try again.';
+                return false;
+            }
+        },
+
+        // One pass onto paper. 'Batch' is the whole set, 'Original' and 'Office' the
+        // two halves of a split run; the template reads the same names off ?status=,
+        // and the log records exactly the copies that were sent.
+        async runPass(passKey) {
+            if (this.isPrinting) return;
+
+            if (!(await this.persistIssueDate())) return;
+
+            this.isPrinting = true;
+            const statuses = {
+                'Batch':    ['Original', 'Duplicate', 'Triplicate'],
+                'Original': ['Original'],
+                'Office':   ['Duplicate', 'Triplicate']
+            }[passKey];
+
+            try {
+                const sep = this.printUrl.includes('?') ? '&' : '?';
+                window.open(`${this.printUrl}${sep}status=${passKey}`, '_blank');
+
+                await fetch('{{ route('print-manager.batch-log') }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                    },
+                    body: JSON.stringify({
+                        reference_number: this.refNumber,
+                        document_type: this.docType,
+                        statuses: statuses,
+                        print_type: 'Batch'
+                    })
+                });
+
+                await this.checkStatus();
+
+                Swal.fire({
+                    title: 'Sent to Print',
+                    text: statuses.join(', ') + ' logged.',
+                    icon: 'success',
+                    toast: true,
+                    position: 'top-end',
+                    showConfirmButton: false,
+                    timer: 3000
+                });
+            } catch (error) {
+                Swal.fire('Error', 'Failed to log the print', 'error');
+            } finally {
+                this.isPrinting = false;
+                this.$nextTick(() => lucide.createIcons());
+            }
         },
 
         get isReissuanceType() {
@@ -596,6 +930,9 @@ document.addEventListener('alpine:init', () => {
         // got to, which is what the (hidden) stepped button relied on.
         async executePrint(explicitType = null) {
             if (this.isPrinting) return;
+            // A single copy run off the tiles is still a print of this letter, so it
+            // carries the same date of issue as the passes below it.
+            if (!(await this.persistIssueDate())) return;
             this.isPrinting = true;
 
             try {
@@ -654,6 +991,7 @@ document.addEventListener('alpine:init', () => {
 
         async executeBatchPrint() {
             if (this.isPrinting) return;
+            if (!(await this.persistIssueDate())) return;
             this.isPrinting = true;
             
             try {

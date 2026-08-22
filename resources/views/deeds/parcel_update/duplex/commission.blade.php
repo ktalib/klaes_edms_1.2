@@ -56,7 +56,7 @@
                 </div>
 
                 <div class="divide-y divide-slate-100">
-                    @foreach ($duplex->stages as $stage)
+                    @foreach ($duplex->stageRows as $stage)
                     <div class="px-6 py-5">
                         <div class="flex items-center gap-3 mb-3">
                             <span class="rank-{{ min($stage->rank, 5) }} text-center px-2 py-0.5 rounded-lg border text-xs font-black">
@@ -107,12 +107,12 @@
                             {{ implode(', ', (array) ($duplex->source_file_nos ?? [])) ?: '—' }}
                         </p>
                     </div>
-                    @if ($duplex->stages->count() > 1)
+                    @if ($duplex->stageRows->count() > 1)
                     <div>
                         <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Intermediate files</p>
                         <p class="text-xs text-slate-500">
                             Each stage retires the file it consumes, so the files produced by stages 1 to
-                            {{ $duplex->stages->count() - 1 }} are retired by the stage that follows them.
+                            {{ $duplex->stageRows->count() - 1 }} are retired by the stage that follows them.
                             Only the files from the last stage stay live.
                         </p>
                     </div>

@@ -30,6 +30,34 @@
         </div>
     </div>
 
+    {{--
+        Root of Title / Original Holder / Current Holder — three distinct concepts
+        (client spec 2026-08-20 §12), resolved server-side by TitleHolderResolver
+        and delivered on the /api/file-history response. Read-only: this states
+        what the transaction chain says, and does not touch the Original/Current
+        Holder INPUTS elsewhere on the form, which stay the indexer's own entry.
+    --}}
+    <div class="hidden mb-5 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3" id="file-history-title-holders">
+        <div class="flex items-center justify-between gap-2 mb-2">
+            <span class="text-[10px] font-extrabold uppercase tracking-wider text-gray-500">Title</span>
+            <span class="text-[10px] font-semibold text-gray-400" id="file-history-application-type"></span>
+        </div>
+        <dl class="space-y-1.5">
+            <div class="flex justify-between gap-4">
+                <dt class="text-xs font-medium text-gray-500">Root of Title</dt>
+                <dd class="text-sm text-gray-800 text-right" id="file-history-root-of-title">&mdash;</dd>
+            </div>
+            <div class="flex justify-between gap-4">
+                <dt class="text-xs font-medium text-gray-500">Original Holder</dt>
+                <dd class="text-sm text-gray-800 text-right" id="file-history-original-holder">&mdash;</dd>
+            </div>
+            <div class="flex justify-between gap-4">
+                <dt class="text-xs font-medium text-gray-500">Current Holder</dt>
+                <dd class="text-sm text-gray-800 text-right" id="file-history-current-holder">&mdash;</dd>
+            </div>
+        </dl>
+    </div>
+
     <div class="space-y-6" id="file-history-list" aria-live="polite" aria-busy="false"></div>
 </div>
 

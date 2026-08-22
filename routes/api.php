@@ -328,6 +328,8 @@ Route::prefix('reference')->controller(ReferenceDataController::class)->group(fu
     Route::get('/streets', 'streets')->name('api.reference.streets');
     Route::get('/land-uses', 'landUses')->name('api.reference.land-uses');
     Route::get('/purposes', 'purposes')->name('api.reference.purposes');
+    // Institution / addressee lists for the Allocation Source forms.
+    Route::get('/allocation-source-lookups', 'allocationSourceLookups')->name('api.reference.allocation-source-lookups');
 });
 
 // Serial Status API Route

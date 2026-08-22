@@ -2493,6 +2493,17 @@
                                     <span id="cs_file_type_badge" class="hidden mt-1 inline-block px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-800"></span>
                                 </div>
 
+                                <!-- Old File No — only a Re-Issuance has one (mls_file_no.old_fileno).
+                                     Hidden for every other file so the sheet does not print an empty rule. -->
+                                <div id="cs_old_file_number_wrap" class="md:col-span-1 hidden">
+                                    <label for="cs_old_file_number" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Old File No:
+                                    </label>
+                                    <input type="text" id="cs_old_file_number" name="old_file_number"
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                                           placeholder="Previous (duplicated) file number" readonly>
+                                </div>
+
                                 <!-- File Name -->
                                 <div class="md:col-span-1">
                                     <label for="cs_file_name" class="block text-sm font-medium text-gray-700 mb-2">

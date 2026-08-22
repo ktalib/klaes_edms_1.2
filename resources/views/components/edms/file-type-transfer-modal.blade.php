@@ -65,29 +65,25 @@
         {{-- RIGHT: pick the file, then pick the folder --}}
         <div class="space-y-4">
 
-          {{-- File picker: prefilled when opened from a file, but always changeable --}}
+          {{-- File picker. The file number is chosen in the shared Global File
+               Number selector — the same MLS / KANGIS / New KANGIS picker every
+               other module uses — rather than typed here, so a number that reaches
+               this card is always one that exists. Its file_indexings row is then
+               resolved by an exact lookup, since the transfer needs the row id and
+               the selector deals only in numbers. --}}
           <div>
-            <label for="file-type-transfer-search" class="block text-sm font-semibold text-gray-900 mb-2">File number</label>
-            <div class="relative">
-              <i data-lucide="search" class="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
-              <input type="text" id="file-type-transfer-search" autocomplete="off"
-                     class="input input-bordered w-full pl-9"
-                     placeholder="Search a file number or title…">
-              <button type="button" id="file-type-transfer-clear-file"
-                      class="hidden absolute right-2 top-1/2 -translate-y-1/2 btn btn-ghost btn-icon"
-                      title="Pick a different file" onclick="EdmsFileType.clearFile()">
-                <i data-lucide="x" class="h-4 w-4"></i>
-              </button>
-            </div>
+            <label class="block text-sm font-semibold text-gray-900 mb-2">File number</label>
 
-            <label class="flex items-center gap-2 mt-2 text-xs text-gray-600 cursor-pointer">
-              <input type="checkbox" id="file-type-unclassified-only" class="rounded border-gray-300">
-              Only show files not yet filed into a master folder
-            </label>
+            <button type="button" id="file-type-transfer-pick-file"
+                    class="input input-bordered w-full flex items-center gap-2 text-left text-gray-500 hover:border-indigo-400 transition-colors"
+                    onclick="EdmsFileType.pickFile()">
+              <i data-lucide="search" class="h-4 w-4 text-gray-400"></i>
+              <span id="file-type-transfer-pick-file-label">Choose a file number…</span>
+            </button>
 
-            {{-- Results --}}
-            <div id="file-type-transfer-results"
-                 class="hidden mt-1 border border-gray-200 rounded-lg max-h-56 overflow-y-auto divide-y divide-gray-100 shadow-sm"></div>
+            {{-- Resolving the chosen number to its indexing row, or saying why it
+                 could not be. --}}
+            <p id="file-type-transfer-lookup-status" class="hidden mt-2 text-xs"></p>
 
             {{-- The chosen file --}}
             <div id="file-type-transfer-selected"
@@ -97,10 +93,24 @@
                   <div class="font-semibold text-indigo-900" id="file-type-transfer-selected-number">—</div>
                   <div class="text-xs text-indigo-700 truncate" id="file-type-transfer-selected-title"></div>
                 </div>
-                <div class="text-xs text-indigo-700 whitespace-nowrap" id="file-type-transfer-selected-counts"></div>
+                <div class="flex items-center gap-2 whitespace-nowrap">
+                  <div class="text-xs text-indigo-700" id="file-type-transfer-selected-counts"></div>
+                  <button type="button" id="file-type-transfer-clear-file"
+                          class="btn btn-ghost btn-icon" title="Pick a different file"
+                          onclick="EdmsFileType.clearFile()">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
+
+          {{-- Registry, then the master folder, picked the same way as on the
+               Document Upload dialog: Category, then Type, then Old/New where
+               the type has one (only Regrant and Resettlement do). The three
+               resolve into the hidden #file-type-transfer-target input, which is
+               what selectedTarget() reads. --}}
+          <input type="hidden" id="file-type-transfer-target" value="">
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -109,18 +119,43 @@
                    id="file-type-transfer-current">—</div>
             </div>
             <div>
-              <label for="file-type-transfer-target" class="block text-sm font-semibold text-gray-900 mb-2">File type</label>
-              <select id="file-type-transfer-target" class="input input-bordered w-full">
+              <label for="file-type-transfer-category" class="block text-sm font-semibold text-gray-900 mb-2">File type</label>
+              <select id="file-type-transfer-category" class="input input-bordered w-full">
                 <option value="">Select a file first…</option>
               </select>
-              {{-- The folder it is in now. The select lists where it can go and
-                   drops the current one, so without this the operator loses sight
-                   of what the file is already classified as. --}}
-              <p class="text-xs text-gray-500 mt-1">
-                Currently: <span class="font-medium text-gray-700" id="file-type-transfer-current-type">—</span>
-              </p>
+            </div>
+
+            {{-- Revealed only for a category that has types under it. --}}
+            <div id="file-type-transfer-type-wrap" class="hidden">
+              <label for="file-type-transfer-type" class="block text-xs font-medium text-gray-600 mb-1">Type</label>
+              <select id="file-type-transfer-type" class="input input-bordered w-full">
+                <option value="">Select type…</option>
+              </select>
+            </div>
+
+            {{-- Only Regrant and Resettlement reach this. The heading is built
+                 from the type's own variant labels rather than hardcoded, so a
+                 type added to the lookup table that splits some other way labels
+                 itself correctly. --}}
+            <div id="file-type-transfer-variant-wrap" class="hidden">
+              <label for="file-type-transfer-variant" id="file-type-transfer-variant-label"
+                     class="block text-xs font-medium text-gray-600 mb-1">Variant</label>
+              <select id="file-type-transfer-variant" class="input input-bordered w-full">
+                <option value="">Select…</option>
+              </select>
             </div>
           </div>
+
+          {{-- Where it is now, and where the current selection would put it. The
+               cascade offers every folder including the one it is already in, so
+               this line is how the operator sees that — and picking it back is
+               caught as a blocker rather than filed as a no-op move. --}}
+          <p class="text-xs text-gray-500 -mt-2">
+            Currently: <span class="font-medium text-gray-700" id="file-type-transfer-current-type">—</span>
+            <span id="file-type-transfer-target-trail" class="hidden"> · Filing into
+              <span class="font-medium text-gray-700" id="file-type-transfer-target-trail-text"></span>
+            </span>
+          </p>
 
           <div>
             <label for="file-type-transfer-reason" class="block text-sm font-semibold text-gray-900 mb-2">
@@ -209,6 +244,10 @@
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
 
+  // The category-level choice that means "move it back out to the registry
+  // root". Not a real file type, so it needs a value no catalogue key can take.
+  const UNCLASSIFY = '__unclassify__';
+
   const EdmsFileType = {
     fileIndexingId: null,
     fileNumber: null,
@@ -217,10 +256,15 @@
     coverToken: 0,
     coverPages: [],
     coverPageIndex: 0,
+    // The master-folder catalogue and where this file sits in it, both from
+    // /edms/file-type/options.
+    fileTypeTree: null,
+    currentFileType: null,
 
     /**
      * Open the dialog. Both arguments are optional — called with no file, it
-     * opens as a standalone tool and the operator searches for one.
+     * opens as a standalone tool and the operator picks one with the Global File
+     * Number selector.
      */
     async open(fileIndexingId, fileNumber, onDone) {
       this.onDone = typeof onDone === 'function' ? onDone : null;
@@ -229,108 +273,94 @@
       el('file-type-transfer-reason').value = '';
       el('file-type-transfer-preview').classList.add('hidden');
       el('file-type-transfer-blockers').classList.add('hidden');
-      el('file-type-transfer-results').classList.add('hidden');
       el('file-type-transfer-confirm').disabled = true;
+      this.setLookupStatus('', false);
 
       const modal = el('file-type-transfer-modal');
       modal.classList.remove('hidden');
       modal.classList.add('flex');
 
-      this.bindSearch();
-
       if (fileIndexingId) {
         await this.selectFile({ id: fileIndexingId, file_number: fileNumber || '' });
       } else {
         this.clearFile();
-        setTimeout(() => el('file-type-transfer-search').focus(), 50);
       }
 
       if (window.lucide) lucide.createIcons();
     },
 
-    bindSearch() {
-      const input = el('file-type-transfer-search');
-      if (input.dataset.bound) return;
-      input.dataset.bound = '1';
+    /* ─────────────────── Choosing the file ───────────────────
+       The file number comes from the shared Global File Number selector, the
+       same MLS / KANGIS / New KANGIS picker the rest of the system uses, so a
+       number reaching this card always exists.
 
-      let timer = null;
-      input.addEventListener('input', () => {
-        clearTimeout(timer);
-        const term = input.value.trim();
-        timer = setTimeout(() => this.runSearch(term), 250);
-      });
+       That selector returns a NUMBER, but this transfer works on a
+       file_indexings row, so the number is resolved through the card's own
+       search endpoint and the exact match is taken. A number the selector knows
+       but that has never been indexed has nothing to move, and says so.
+       ──────────────────────────────────────────────────────── */
 
-      el('file-type-unclassified-only').addEventListener('change', () => {
-        this.runSearch(input.value.trim());
-      });
-
-      // Clicking away closes the result list
-      document.addEventListener('click', (e) => {
-        if (!el('file-type-transfer-modal').classList.contains('flex')) return;
-        if (e.target.closest('#file-type-transfer-results') || e.target.closest('#file-type-transfer-search')) return;
-        el('file-type-transfer-results').classList.add('hidden');
-      });
-    },
-
-    async runSearch(term) {
-      const box = el('file-type-transfer-results');
-      const unclassifiedOnly = el('file-type-unclassified-only').checked;
-
-      // With the backlog filter on, an empty box is a useful query: it lists the
-      // files still waiting to be classified.
-      if (term.length < 2 && !unclassifiedOnly) {
-        box.classList.add('hidden');
+    pickFile() {
+      if (typeof GlobalFileNoModal === 'undefined') {
+        this.setLookupStatus('The file number selector is not available on this page.', true);
         return;
       }
 
-      box.innerHTML = '<div class="px-3 py-2 text-sm text-gray-500">Searching…</div>';
-      box.classList.remove('hidden');
+      GlobalFileNoModal.open({
+        callback: (fileData) => {
+          const number = (fileData && fileData.fileNumber) ? String(fileData.fileNumber).trim() : '';
+          if (number) this.resolveFileNumber(number);
+        }
+      });
+    },
+
+    /** The line under the picker button: progress, or why nothing was found. */
+    setLookupStatus(message, isError) {
+      const status = el('file-type-transfer-lookup-status');
+
+      if (!message) {
+        status.classList.add('hidden');
+        status.textContent = '';
+        return;
+      }
+
+      status.textContent = message;
+      status.classList.remove('hidden');
+      status.classList.toggle('text-red-600', !!isError);
+      status.classList.toggle('text-gray-500', !isError);
+    },
+
+    /** Turn a chosen file number into the indexing row this card operates on. */
+    async resolveFileNumber(number) {
+      el('file-type-transfer-pick-file-label').textContent = number;
+      this.setLookupStatus('Looking up ' + number + '…', false);
 
       try {
-        const params = new URLSearchParams({ search: term });
-        if (unclassifiedOnly) params.set('unclassified_only', '1');
-
-        const res = await fetch(`/edms/file-type/search?${params.toString()}`, {
+        const res = await fetch(`/edms/file-type/search?search=${encodeURIComponent(number)}&limit=50`, {
           headers: { 'Accept': 'application/json' }
         });
         const json = await res.json();
         const files = json.data || [];
 
-        if (!files.length) {
-          box.innerHTML = '<div class="px-3 py-2 text-sm text-gray-500">No files match that search.</div>';
+        // The endpoint matches on a LIKE, so a number that is a prefix of others
+        // brings them along; only the exact one is this file.
+        const wanted = number.toLowerCase();
+        const match = files.find((f) => String(f.file_number || '').trim().toLowerCase() === wanted);
+
+        if (!match) {
+          this.clearFile();
+          el('file-type-transfer-pick-file-label').textContent = number;
+          this.setLookupStatus(
+            number + ' is not indexed, so it has no documents to move. Index it first.',
+            true
+          );
           return;
         }
 
-        // The file number is the identity, so it leads. A record without one used
-        // to render an empty first line, leaving its title sitting where the
-        // number belongs and reading as though it were the number.
-        box.innerHTML = files.map((f) => `
-          <button type="button" class="w-full text-left px-3 py-2 hover:bg-indigo-50 transition-colors"
-                  data-file='${escapeHtml(JSON.stringify(f))}'>
-            <div class="flex items-center justify-between gap-3">
-              <div class="min-w-0">
-                <div class="text-sm font-semibold text-gray-900">${
-                  (f.file_number || '').trim()
-                    ? escapeHtml(f.file_number)
-                    : '<span class="font-normal italic text-gray-400">No file number</span>'
-                }</div>
-                <div class="text-xs text-gray-500 truncate">${escapeHtml(f.file_title || '—')}</div>
-              </div>
-              <div class="text-xs text-gray-500 whitespace-nowrap text-right">
-                <div>${escapeHtml(f.registry)} &middot; ${escapeHtml(f.file_type_label)}</div>
-                <div>${f.scannings_count} scan(s), ${f.pagetypings_count} page(s)</div>
-              </div>
-            </div>
-          </button>`).join('');
-
-        box.querySelectorAll('[data-file]').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            box.classList.add('hidden');
-            this.selectFile(JSON.parse(btn.dataset.file));
-          });
-        });
+        this.setLookupStatus('', false);
+        await this.selectFile(match);
       } catch (err) {
-        box.innerHTML = `<div class="px-3 py-2 text-sm text-red-600">Search failed: ${escapeHtml(err.message)}</div>`;
+        this.setLookupStatus('Could not look up ' + number + ': ' + err.message, true);
       }
     },
 
@@ -347,8 +377,8 @@
           : '';
 
       el('file-type-transfer-selected').classList.remove('hidden');
-      el('file-type-transfer-clear-file').classList.remove('hidden');
-      el('file-type-transfer-search').value = this.fileNumber;
+      el('file-type-transfer-pick-file-label').textContent = this.fileNumber || `#${file.id}`;
+      this.setLookupStatus('', false);
 
       el('file-type-transfer-preview').classList.add('hidden');
       el('file-type-transfer-blockers').classList.add('hidden');
@@ -366,23 +396,21 @@
       this.coverPages = [];
       this.coverPageIndex = 0;
 
-      el('file-type-transfer-search').value = '';
+      el('file-type-transfer-pick-file-label').textContent = 'Choose a file number…';
       el('file-type-transfer-file-number').textContent = '—';
       el('file-type-transfer-current').textContent = '—';
       el('file-type-transfer-current-type').textContent = '—';
       el('file-type-transfer-selected').classList.add('hidden');
-      el('file-type-transfer-clear-file').classList.add('hidden');
-      el('file-type-transfer-results').classList.add('hidden');
       el('file-type-transfer-preview').classList.add('hidden');
       el('file-type-transfer-blockers').classList.add('hidden');
       el('file-type-transfer-confirm').disabled = true;
-      el('file-type-transfer-target').innerHTML = '<option value="">Select a file first…</option>';
+      this.resetCascade('Select a file first…');
+      this.setLookupStatus('', false);
       el('file-type-cover-caption').textContent = '';
       el('file-type-cover-previous').classList.add('hidden');
       el('file-type-cover-next').classList.add('hidden');
       el('file-type-cover-box').innerHTML =
         '<p class="text-sm text-gray-500 px-4 text-center">Select a file to see its cover.</p>';
-      el('file-type-transfer-search').focus();
     },
 
     close() {
@@ -471,15 +499,177 @@
       }
     },
 
-    async loadOptions() {
-      const select = el('file-type-transfer-target');
+    /* ─────────────────── The master-folder cascade ────────────────────
+       Category -> Type -> Old/New, from the edms_file_types lookup table the
+       options endpoint sends as `file_type_tree`. The same three-step pick as
+       the Document Upload dialog, so an operator learns it once.
 
-      if (!this.fileIndexingId) {
-        select.innerHTML = '<option value="">Select a file first…</option>';
+       Unlike that one, this cascade offers the folder the file is already in:
+       hiding it would leave the operator wondering where it went. Choosing it
+       is caught in loadPreview() as a blocker instead of filed as a no-op.
+
+       Whatever the three resolve to is written into the hidden
+       #file-type-transfer-target input, which selectedTarget() reads.
+       ──────────────────────────────────────────────────────────────── */
+
+    /** Find the catalogue row for a stored key, or null. */
+    findTypeByCode(code) {
+      if (!code) return null;
+
+      for (const [categoryKey, category] of Object.entries(this.fileTypeTree || {})) {
+        for (const [typeKey, type] of Object.entries(category.types || {})) {
+          for (const variant of type.variants || []) {
+            if (variant.code === code) {
+              return { categoryKey, typeKey, variantKey: variant.key || '', label: variant.label };
+            }
+          }
+        }
+      }
+
+      return null;
+    },
+
+    /** Replace a select's options, keeping `selected` if it is still offered. */
+    fillCascadeSelect(id, options, placeholder, selected) {
+      const select = el(id);
+      if (!select) return;
+
+      select.innerHTML = '';
+      select.appendChild(new Option(placeholder, ''));
+      options.forEach((option) => select.appendChild(new Option(option.label, option.value)));
+      select.value = options.some((o) => o.value === selected) ? selected : '';
+    },
+
+    /** The single code under a category that has no further choices. */
+    onlyCodeIn(category) {
+      const type = Object.values(category.types || {})[0];
+
+      return type?.variants?.[0]?.code || '';
+    },
+
+    /**
+     * Repaint the Type and Old/New dropdowns for the chosen category, resolve
+     * the three into the hidden input, then re-run the preview.
+     *
+     * `keep` preserves the current type/variant where they still exist, so
+     * re-entering a category does not silently drop a valid selection.
+     */
+    refreshCascade(keep = true) {
+      const categoryKey = el('file-type-transfer-category').value || '';
+
+      // "Unclassified — back to the registry root" is a category-level choice:
+      // it is the way to undo a mis-filing, and it has nothing below it.
+      if (categoryKey === UNCLASSIFY) {
+        el('file-type-transfer-type-wrap').classList.add('hidden');
+        el('file-type-transfer-variant-wrap').classList.add('hidden');
+        this.commitTarget(UNCLASSIFY);
         return;
       }
 
-      select.innerHTML = '<option value="">Loading…</option>';
+      const category = (this.fileTypeTree || {})[categoryKey] || null;
+      const wantedType = keep ? (el('file-type-transfer-type').value || '') : '';
+      const wantedVariant = keep ? (el('file-type-transfer-variant').value || '') : '';
+
+      // No category, or one that is its own answer (Regular): both extra
+      // dropdowns stay hidden and the hidden input takes the category's only
+      // code straight away.
+      if (!category || !category.has_children) {
+        el('file-type-transfer-type-wrap').classList.add('hidden');
+        el('file-type-transfer-variant-wrap').classList.add('hidden');
+        el('file-type-transfer-type').value = '';
+        el('file-type-transfer-variant').value = '';
+        this.commitTarget(category ? this.onlyCodeIn(category) : '');
+        return;
+      }
+
+      el('file-type-transfer-type-wrap').classList.remove('hidden');
+
+      const types = Object.entries(category.types || {})
+        .map(([value, type]) => ({ value, label: type.label }));
+      this.fillCascadeSelect('file-type-transfer-type', types, 'Select type…', wantedType);
+
+      const typeKey = el('file-type-transfer-type').value || '';
+      const type = typeKey ? (category.types || {})[typeKey] : null;
+      const variants = (type?.variants || []).filter((v) => v.key !== '');
+
+      if (!type || variants.length === 0) {
+        el('file-type-transfer-variant-wrap').classList.add('hidden');
+        el('file-type-transfer-variant').value = '';
+        this.commitTarget(type ? (type.variants?.[0]?.code || '') : '');
+        return;
+      }
+
+      el('file-type-transfer-variant-wrap').classList.remove('hidden');
+      el('file-type-transfer-variant-label').textContent = variants.map((v) => v.label).join(' / ');
+      this.fillCascadeSelect(
+        'file-type-transfer-variant',
+        variants.map((v) => ({ value: v.key, label: v.label })),
+        'Select…',
+        wantedVariant
+      );
+
+      const variantKey = el('file-type-transfer-variant').value || '';
+      const chosen = variants.find((v) => v.key === variantKey);
+      this.commitTarget(chosen ? chosen.code : '');
+    },
+
+    /** Write the resolved key into the hidden input, show the trail, re-preview. */
+    commitTarget(code) {
+      el('file-type-transfer-target').value = code || '';
+
+      const trail = el('file-type-transfer-target-trail');
+      const trailText = el('file-type-transfer-target-trail-text');
+
+      if (!code) {
+        trail.classList.add('hidden');
+      } else if (code === UNCLASSIFY) {
+        trailText.textContent = 'the registry root (unclassified)';
+        trail.classList.remove('hidden');
+      } else {
+        const found = this.findTypeByCode(code);
+        const category = (this.fileTypeTree || {})[found?.categoryKey] || null;
+        const type = category?.types?.[found?.typeKey] || null;
+        const parts = [category?.label, type?.label, found?.variantKey ? found.label : null].filter(Boolean);
+        trailText.textContent = parts.join(' › ');
+        trail.classList.toggle('hidden', parts.length === 0);
+      }
+
+      this.loadPreview();
+    },
+
+    /** Bound once — the three selects all funnel back through refreshCascade(). */
+    bindCascade() {
+      const category = el('file-type-transfer-category');
+      if (category.dataset.bound) return;
+      category.dataset.bound = '1';
+
+      category.addEventListener('change', () => this.refreshCascade(false));
+      el('file-type-transfer-type').addEventListener('change', () => {
+        el('file-type-transfer-variant').value = '';
+        this.refreshCascade(true);
+      });
+      el('file-type-transfer-variant').addEventListener('change', () => this.refreshCascade(true));
+    },
+
+    /** Put the cascade back to "nothing picked". */
+    resetCascade(placeholder) {
+      this.fileTypeTree = null;
+      this.currentFileType = null;
+
+      el('file-type-transfer-category').innerHTML = `<option value="">${escapeHtml(placeholder)}</option>`;
+      el('file-type-transfer-type-wrap').classList.add('hidden');
+      el('file-type-transfer-variant-wrap').classList.add('hidden');
+      el('file-type-transfer-target').value = '';
+      el('file-type-transfer-target-trail').classList.add('hidden');
+    },
+
+    async loadOptions() {
+      if (!this.fileIndexingId) {
+        this.resetCascade('Select a file first…');
+        return;
+      }
+
+      this.resetCascade('Loading…');
 
       try {
         const res = await fetch(`/edms/file-type/options?file_indexing_id=${encodeURIComponent(this.fileIndexingId)}`, {
@@ -491,64 +681,43 @@
         el('file-type-transfer-current').textContent = json.data.current_registry || 'Unknown registry';
         el('file-type-transfer-current-type').textContent = json.data.current_file_type_label || 'Unclassified';
 
-        select.innerHTML = '<option value="">Select a master folder…</option>';
+        this.fileTypeTree = json.data.file_type_tree || {};
+        this.currentFileType = json.data.current_file_type || null;
 
-        // Group the options the way the registry names them, so Merger's two
-        // folders read as one choice with two halves.
-        const groups = new Map();
-        json.data.file_types.forEach((t) => {
-          if (t.is_current) return; // no point offering the one it is already in
-          const key = t.group || '';
-          if (!groups.has(key)) groups.set(key, []);
-          groups.get(key).push(t);
-        });
+        const categories = Object.entries(this.fileTypeTree)
+          .map(([value, category]) => ({ value, label: category.label }));
 
-        groups.forEach((types, groupName) => {
-          const parent = groupName
-            ? Object.assign(document.createElement('optgroup'), { label: groupName })
-            : select;
-
-          types.forEach((t) => {
-            const opt = document.createElement('option');
-            opt.value = t.key;
-            opt.textContent = `${t.label}  (${t.folder}/)`;
-            parent.appendChild(opt);
-          });
-
-          if (groupName) select.appendChild(parent);
-        });
+        this.fillCascadeSelect('file-type-transfer-category', categories, 'Select a master folder…', '');
 
         // Moving a file back out to the registry root — the way to undo a
-        // mis-filing without leaving it in the wrong folder meanwhile.
-        if (json.data.current_file_type) {
-          const opt = document.createElement('option');
-          opt.value = '';
-          opt.dataset.unclassify = '1';
-          opt.textContent = 'Unclassified  (back to the registry root)';
-          select.appendChild(opt);
+        // mis-filing without leaving it in the wrong folder meanwhile. Offered
+        // only when there is something to undo.
+        if (this.currentFileType) {
+          el('file-type-transfer-category').appendChild(
+            new Option('Unclassified  (back to the registry root)', UNCLASSIFY)
+          );
         }
 
-        select.onchange = () => this.loadPreview();
+        this.bindCascade();
+        this.refreshCascade(false);
       } catch (err) {
-        select.innerHTML = '<option value="">Could not load the file types</option>';
+        this.resetCascade('Could not load the file types');
         this.showBlockers([err.message]);
       }
     },
 
     /**
-     * The chosen target, or null for "unclassified". The empty placeholder and
-     * the explicit Unclassified option share a value, so the dataset flag is what
-     * separates "nothing picked yet" from "move it back to the root".
+     * The chosen target, or null for "unclassified". `chosen` separates "nothing
+     * picked yet" (and half-finished cascades) from a real choice, so the
+     * preview does not fire on an incomplete selection.
      */
     selectedTarget() {
-      const select = el('file-type-transfer-target');
-      const option = select.options[select.selectedIndex];
+      const value = el('file-type-transfer-target').value || '';
 
-      if (!option) return { chosen: false, value: null };
-      if (option.dataset.unclassify === '1') return { chosen: true, value: null };
-      if (!option.value) return { chosen: false, value: null };
+      if (value === UNCLASSIFY) return { chosen: true, value: null };
+      if (!value) return { chosen: false, value: null };
 
-      return { chosen: true, value: option.value };
+      return { chosen: true, value };
     },
 
     async loadPreview() {
@@ -560,6 +729,13 @@
       confirmBtn.disabled = true;
 
       if (!target.chosen || !this.fileIndexingId) return;
+
+      // The cascade offers the current folder — hiding it would leave the
+      // operator wondering where it went — so the no-op is caught here.
+      if (target.value && target.value === this.currentFileType) {
+        this.showBlockers(['This file is already in that master folder.']);
+        return;
+      }
 
       try {
         const res = await fetch('/edms/file-type/preview', {

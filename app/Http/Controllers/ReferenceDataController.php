@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
    
+use App\Models\AllocationSourceLookup;
 use App\Models\District;
 use App\Models\Lga;
 use App\Models\LandUse;
@@ -146,6 +147,32 @@ class ReferenceDataController extends Controller
             'data' => $streets,
         ]);
 
-        
+
+    }
+
+    /**
+     * The four "Allocation Source" lists — which institution a request came
+     * from, and who its correspondence is addressed to.
+     *
+     * All four groups come back in one payload: the caller picks a category and
+     * filters client-side, so switching between Government and Other Institution
+     * never costs another round trip. The lists grow when somebody answers
+     * "Others (Specify)", so they are never hardcoded in the frontend.
+     */
+    public function allocationSourceLookups(): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'data' => [
+                AllocationSourceLookup::TYPE_INSTITUTION_GOVERNMENT
+                    => AllocationSourceLookup::options(AllocationSourceLookup::TYPE_INSTITUTION_GOVERNMENT),
+                AllocationSourceLookup::TYPE_INSTITUTION_OTHER
+                    => AllocationSourceLookup::options(AllocationSourceLookup::TYPE_INSTITUTION_OTHER),
+                AllocationSourceLookup::TYPE_ADDRESSED_TO_GOVERNMENT
+                    => AllocationSourceLookup::options(AllocationSourceLookup::TYPE_ADDRESSED_TO_GOVERNMENT),
+                AllocationSourceLookup::TYPE_ADDRESSED_TO_OTHER
+                    => AllocationSourceLookup::options(AllocationSourceLookup::TYPE_ADDRESSED_TO_OTHER),
+            ],
+        ]);
     }
 }

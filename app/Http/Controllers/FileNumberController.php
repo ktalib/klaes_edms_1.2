@@ -9,7 +9,9 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Yajra\DataTables\Facades\DataTables;
+use App\Models\AllocationSourceLookup;
 use App\Models\FileNumber;
+use App\Services\AllocationSourceResolver;
 use App\Support\OssOpCommissionFilter;
 use App\Models\LandUse;
 use App\Models\StreetName;
@@ -2729,6 +2731,30 @@ class FileNumberController extends Controller
             }
         }
 
+        // The SuA-only facts the Confirmation Sheet prints — which kind of ST file
+        // this is, its parcel number, allocation slip no and the institution it was
+        // allocated by. They live on st_file_numbers and nowhere else, and none of
+        // them are derivable from the location back-fills above.
+        if ($record && !empty($record->st_file_no) && !isset($record->file_no_type)) {
+            $stMeta = DB::connection('sqlsrv')
+                ->table('st_file_numbers')
+                ->where('fileno', trim((string) $record->st_file_no))
+                ->orderByDesc('id')
+                ->first([
+                    'file_no_type', 'parcel_no', 'allocation_ref_no',
+                    'allocation_source', 'allocation_entity',
+                    'institution_category', 'institution_name',
+                    // The primary this unit sits under — the sheet quotes both.
+                    'mls_fileno',
+                ]);
+
+            if ($stMeta) {
+                foreach ((array) $stMeta as $column => $value) {
+                    $record->{$column} = $value;
+                }
+            }
+        }
+
         // A SuA has no mls_file_no row to derive the LGA from — the unit keeps its own
         // in subapplications, and that is the Local Government the sheet is addressed to.
         if ($record && empty($record->lga_derived) && !empty($record->st_file_no)) {
@@ -2778,6 +2804,15 @@ class FileNumberController extends Controller
                     'tp_no'              => null,
                     'location'           => $stRow->property_district ?? null,
                     'lga'                => $stRow->property_lga ?? null,
+                    // SuA-only facts the Confirmation Sheet prints.
+                    'file_no_type'         => $stRow->file_no_type ?? null,
+                    'mls_fileno'           => $stRow->mls_fileno ?? null,
+                    'parcel_no'            => $stRow->parcel_no ?? null,
+                    'allocation_ref_no'    => $stRow->allocation_ref_no ?? null,
+                    'allocation_source'    => $stRow->allocation_source ?? null,
+                    'allocation_entity'    => $stRow->allocation_entity ?? null,
+                    'institution_category' => $stRow->institution_category ?? null,
+                    'institution_name'     => $stRow->institution_name ?? null,
                     'land_use_derived'   => $stRow->land_use ?? null,
                     'lga_derived'        => $stRow->property_lga ?? null,
                     'created_by_derived' => $stRow->created_by ?? null,
@@ -2886,7 +2921,12 @@ class FileNumberController extends Controller
      * not the printer's to change. A source merely inferred from the file's LGA is
      * a guess and stays editable.
      *
-     * @return array{source: string|null, entity: string|null, address: string|null, locked: bool}
+     * A SuA also carries the institution it was allocated by — captured on the
+     * commissioning form under the newer Institution Category / Institution
+     * lists — and the officer this particular letter is addressed to, which is
+     * chosen per sheet and so is never locked.
+     *
+     * @return array{source: string|null, entity: string|null, address: string|null, locked: bool, category: string|null, institution: string|null, addressed_to: string|null}
      */
     private function suggestedAllocationForSheet(object $record, ?object $existingApp): array
     {
@@ -2894,12 +2934,25 @@ class FileNumberController extends Controller
         $entity = trim((string) ($existingApp->allocation_entity ?? '')) ?: null;
         $address = trim((string) ($existingApp->allocation_address ?? '')) ?: null;
 
+        // The addressee is a per-letter choice: whatever this sheet was last
+        // printed with, offered back as the default.
+        $addressedTo = trim((string) ($existingApp->addressed_to ?? '')) ?: null;
+
+        // The institution: this sheet's own answer first, then the file's.
+        $institution = AllocationSourceResolver::resolve($existingApp);
+        if ($institution['institution'] === null) {
+            $institution = AllocationSourceResolver::resolve($record);
+        }
+
         if ($source !== null) {
             return [
                 'source' => $source,
                 'entity' => $entity,
                 'address' => $address ?: $this->lastKnownAllocationAddress($entity),
                 'locked' => true,
+                'category' => $institution['category'],
+                'institution' => $institution['institution'],
+                'addressed_to' => $addressedTo,
             ];
         }
 
@@ -2917,17 +2970,24 @@ class FileNumberController extends Controller
                     $q->whereIn('fileno', $stKeys)->orWhereIn('mls_fileno', $stKeys);
                 })
                 ->orderByDesc('id')
-                ->first(['allocation_source', 'allocation_entity']);
+                ->first([
+                    'allocation_source', 'allocation_entity',
+                    'institution_category', 'institution_name',
+                ]);
 
             $stSource = $this->normalizeAllocationSource($stFile->allocation_source ?? null);
             if ($stSource !== null) {
                 $stEntity = trim((string) ($stFile->allocation_entity ?? '')) ?: null;
+                $stInstitution = AllocationSourceResolver::resolve($stFile);
 
                 return [
                     'source' => $stSource,
                     'entity' => $stEntity,
                     'address' => $this->lastKnownAllocationAddress($stEntity),
                     'locked' => true,
+                    'category' => $stInstitution['category'] ?? $institution['category'],
+                    'institution' => $stInstitution['institution'] ?? $institution['institution'],
+                    'addressed_to' => $addressedTo,
                 ];
             }
         }
@@ -2939,6 +2999,9 @@ class FileNumberController extends Controller
             'entity' => $lga !== '' ? $lga : null,
             'address' => null,
             'locked' => false,
+            'category' => $institution['category'],
+            'institution' => $institution['institution'],
+            'addressed_to' => $addressedTo,
         ];
     }
 
@@ -2978,6 +3041,8 @@ class FileNumberController extends Controller
                     'success' => false, 'method' => null, 'other' => null,
                     'allocation_source' => null, 'allocation_entity' => null,
                     'allocation_address' => null, 'allocation_locked' => false,
+                    'institution_category' => null, 'institution_name' => null,
+                    'addressed_to' => null,
                 ]);
             }
 
@@ -2999,6 +3064,11 @@ class FileNumberController extends Controller
                 // true when the source was entered at commissioning (or already
                 // issued on this sheet) — the card then shows it read-only.
                 'allocation_locked' => $allocation['locked'],
+                // Pre-fills the SuA card: category + institution come from
+                // commissioning, the addressee is picked per letter.
+                'institution_category' => $allocation['category'],
+                'institution_name' => $allocation['institution'],
+                'addressed_to' => $allocation['addressed_to'],
             ]);
         } catch (\Exception $e) {
             \Log::error('Error reading saved acquisition method: ' . $e->getMessage());
@@ -3008,6 +3078,8 @@ class FileNumberController extends Controller
                 'success' => false, 'method' => null, 'other' => null,
                 'allocation_source' => null, 'allocation_entity' => null,
                 'allocation_address' => null, 'allocation_locked' => false,
+                'institution_category' => null, 'institution_name' => null,
+                'addressed_to' => null,
             ]);
         }
     }
@@ -3042,6 +3114,22 @@ class FileNumberController extends Controller
             // source wins is settled below — keep the request's answer until then.
             $allocationAddress = trim((string) $request->query('allocation_address')) ?: null;
 
+            // The SuA card's answers: who the letter is addressed to, at which
+            // institution. Both may be typed under "Others (Specify)", in which
+            // case they join the shared lookup lists for next time.
+            $isSuaSheet = strcasecmp(trim((string) ($record->file_no_type ?? '')), 'SUA') === 0;
+            $institutionCategory = AllocationSourceResolver::normalizeCategory(
+                $request->query('institution_category')
+            );
+            $institutionName = AllocationSourceLookup::remember(
+                AllocationSourceResolver::institutionType($institutionCategory),
+                $request->query('institution_name')
+            );
+            $addressedTo = AllocationSourceLookup::remember(
+                AllocationSourceResolver::addresseeType($institutionCategory),
+                $request->query('addressed_to')
+            );
+
             // Check for existing Serial Number.
             $existingApp = $this->conversionApplicationQuery($record, $keyedByFileNumber)->first();
 
@@ -3073,9 +3161,26 @@ class FileNumberController extends Controller
                 $allocationEntity = $allocationEntity ?: $fallback['entity'];
             }
 
-            $allocationAddress = $allocationSource === 'State Government'
+            // A SuA is always addressed to a named institution, so it always
+            // prints an address; the LGA/Conversion sheet only does so for a
+            // state entity, which is addressed by name and not by council.
+            $allocationAddress = ($isSuaSheet || $allocationSource === 'State Government')
                 ? ($allocationAddress ?: $fallback['address'])
                 : null;
+
+            // Institution and addressee fall back the same way the source does:
+            // this sheet's stored answer, then the file's own.
+            $savedInstitutionCategory = trim((string) ($existingApp->institution_category ?? '')) ?: null;
+            $savedInstitutionName = trim((string) ($existingApp->institution_name ?? '')) ?: null;
+            $savedAddressedTo = trim((string) ($existingApp->addressed_to ?? '')) ?: null;
+
+            if ($institutionName === null) {
+                $institutionName = $fallback['institution'];
+                $institutionCategory = $fallback['category'] ?: $institutionCategory;
+            }
+            if ($addressedTo === null) {
+                $addressedTo = $fallback['addressed_to'];
+            }
 
             if ($existingApp && $existingApp->serial_no) {
                 $serialNo = $existingApp->serial_no;
@@ -3096,6 +3201,17 @@ class FileNumberController extends Controller
                     $changes['allocation_source'] = $allocationSource;
                     $changes['allocation_entity'] = $allocationEntity;
                     $changes['allocation_address'] = $allocationAddress;
+                }
+
+                if ($institutionName !== null
+                    && ($institutionName !== $savedInstitutionName
+                        || $institutionCategory !== $savedInstitutionCategory)) {
+                    $changes['institution_category'] = $institutionCategory;
+                    $changes['institution_name'] = $institutionName;
+                }
+
+                if ($addressedTo !== null && $addressedTo !== $savedAddressedTo) {
+                    $changes['addressed_to'] = $addressedTo;
                 }
 
                 if ($changes !== []) {
@@ -3122,6 +3238,10 @@ class FileNumberController extends Controller
                         'allocation_source' => $allocationSource,
                         'allocation_entity' => $allocationEntity,
                         'allocation_address' => $allocationAddress,
+                        // Recipient of a SuA sheet; null on an LGA/Conversion one.
+                        'institution_category' => $institutionName !== null ? $institutionCategory : null,
+                        'institution_name' => $institutionName,
+                        'addressed_to' => $addressedTo,
                         'generated_by' => (Auth::user()->first_name . ' ' . Auth::user()->last_name) ?: Auth::user()->name ?: Auth::user()->email ?: 'System',
                         'created_at' => now(),
                         'updated_at' => now()
@@ -3130,17 +3250,25 @@ class FileNumberController extends Controller
 
             $record->serial_no = $serialNo;
 
-            // Determine watermark text based on print count
+            // Determine watermark text based on print count. A directly commissioned
+            // SuA has no mlsfNo of its own — without the fallback every reprint would
+            // count zero and stamp ORIGINAL.
             $printCount = DB::connection('sqlsrv')->table('print_logs')
-                ->where('reference_number', $record->mlsfNo) // Use full file number as reference
+                ->where('reference_number', $record->mlsfNo ?: ($record->st_file_no ?? null))
                 ->where('document_type', 'Application for Conversion')
                 ->count();
 
             $watermarkText = ($printCount > 1) ? 'CERTIFIED TRUE COPY' : 'ORIGINAL';
 
+            // The allocation slip the SuA sheet quotes. The number it prints for
+            // the property comes from the record's own plot_no, under whichever name
+            // the allocation calls it.
+            $allocationRefNo = trim((string) ($record->allocation_ref_no ?? '')) ?: null;
+
             return view('generate_fileno.application_for_conversion', compact(
                 'records', 'acquisitionMethod', 'specifyOther', 'watermarkText',
-                'allocationSource', 'allocationEntity', 'allocationAddress'
+                'allocationSource', 'allocationEntity', 'allocationAddress',
+                'isSuaSheet', 'institutionName', 'addressedTo', 'allocationRefNo'
             ));
 
         } catch (\Exception $e) {

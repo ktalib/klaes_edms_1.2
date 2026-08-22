@@ -192,43 +192,81 @@
                 <label for="sua_allocation_source" class="block text-sm font-medium text-gray-700 mb-2">
                     Allocation Source <span class="text-red-500">*</span>
                 </label>
+                {{-- The allocating institution itself, grouped Government / Other
+                     Institution. Which group the name came from is what decides the
+                     Addressee list on the Confirmation Sheet, so it is posted
+                     alongside the name rather than asked again there. --}}
                 <select id="sua_allocation_source" name="sua_allocation_source"
-                        class="w-full p-2 border border-gray-300 rounded-md">
-                    <option value="">Select Allocation Source</option>
-                    <option value="State Government">State Government</option>
-                    <option value="Local Government">Local Government (LGA)</option>
+                        class="w-full p-2 border border-gray-300 rounded-md"
+                        onchange="handleSuaAllocationSourceChange(this)">
+                    <option value="">Loading institutions…</option>
                 </select>
 
-                <div class="mt-4">
-                    <label for="sua_allocation_ref_no" class="block text-sm font-medium text-gray-700 mb-2">
-                        Allocation Reference No
+                {{-- Shown under "Others (Specify)": the typed name is stored, and
+                     added to the list so it is offered next time. --}}
+                <div id="sua_allocation_source_other_wrap" class="mt-3 hidden">
+                    <label for="sua_allocation_source_other" class="block text-sm font-medium text-gray-700 mb-2">
+                        Specify Institution <span class="text-red-500">*</span>
                     </label>
-                    <input type="text" id="sua_allocation_ref_no" name="sua_allocation_ref_no"
-                           class="w-full p-2 border border-gray-300 rounded-md uppercase"
-                           placeholder="enter allocation reference. eg: ALS/2025/001"
-                           oninput="this.value = this.value.toUpperCase();">
+                    <input type="text" id="sua_allocation_source_other" name="sua_allocation_source_other"
+                           class="w-full p-2 border border-gray-300 rounded-md"
+                           placeholder="enter the allocating institution">
+                </div>
+
+                {{-- The parcel and the plot are one and the same number, entered once
+                     under Location Details. The sheet quotes it from there and only
+                     varies what it calls it, so nothing is asked for here. --}}
+                <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label for="sua_allocation_ref_no" class="block text-sm font-medium text-gray-700 mb-2">
+                            Allocation Slip No <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" id="sua_allocation_ref_no" name="sua_allocation_ref_no"
+                               class="w-full p-2 border border-gray-300 rounded-md uppercase"
+                               placeholder="eg: ALS/2025/001"
+                               oninput="this.value = this.value.toUpperCase();">
+                        <p class="text-xs text-gray-500 mt-1">Printed on the SuA Confirmation Sheet.</p>
+                    </div>
+
+                    <div>
+                        {{-- Recorded against the file only: unlike the slip no, this
+                             is deliberately not printed on the Confirmation Sheet. --}}
+                        <label for="sua_allocation_reference_no" class="block text-sm font-medium text-gray-700 mb-2">
+                            Allocation Reference No
+                        </label>
+                        <input type="text" id="sua_allocation_reference_no" name="sua_allocation_reference_no"
+                               class="w-full p-2 border border-gray-300 rounded-md uppercase"
+                               placeholder="eg: ALS/2025/001"
+                               oninput="this.value = this.value.toUpperCase();">
+                    </div>
                 </div>
             </div>
 
-            <div>
+            {{-- Only LOCAL GOVERNMENT needs a second answer: which council. Every
+                 other institution names itself, so this half stays hidden. --}}
+            <div id="sua_allocation_entity_wrap" class="hidden">
                 <label for="sua_allocation_entity" class="block text-sm font-medium text-gray-700 mb-2">
-                    Allocation Entity <span class="text-red-500">*</span>
+                    LGA <span class="text-red-500">*</span>
                 </label>
                 <select id="sua_allocation_entity" name="sua_allocation_entity"
                         class="w-full p-2 border border-gray-300 rounded-md"
-                        onchange="handleSuaAllocationEntityChange(this)" disabled>
-                    <option value="">Select Entity</option>
+                        onchange="handleSuaAllocationEntityChange(this)">
+                    <option value="">Select LGA</option>
                 </select>
 
                 {{-- Shown when "Other" is picked: the typed name is what gets stored. --}}
                 <div id="sua_allocation_entity_other_wrap" class="mt-3 hidden">
                     <label for="sua_allocation_entity_other" class="block text-sm font-medium text-gray-700 mb-2">
-                        Specify Entity <span class="text-red-500">*</span>
+                        Specify LGA <span class="text-red-500">*</span>
                     </label>
                     <input type="text" id="sua_allocation_entity_other" name="sua_allocation_entity_other"
                            class="w-full p-2 border border-gray-300 rounded-md"
-                           placeholder="enter the allocating entity">
+                           placeholder="enter the LGA">
                 </div>
+
+                <p class="text-xs text-gray-500 mt-2">
+                    The Confirmation Sheet is addressed to this LGA.
+                </p>
             </div>
         </div>
 

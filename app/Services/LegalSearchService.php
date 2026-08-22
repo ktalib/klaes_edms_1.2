@@ -9523,7 +9523,38 @@ class LegalSearchService
                 $i++;
             }
         }
-        $transactions = array_merge($beforeRecert, $recertBlock);
+        // ...unless the KANGIS chapter closed BEFORE this file was commissioned. A land file
+        // commissioned in 2026 that carries a 2021 KANGIS recertification + C of O inherited
+        // that chapter from its predecessor: parking the pair at the foot of the band prints
+        // 2021 events under a 2026 commissioning line. When every dated row of the recert
+        // block predates the file's own commissioning row, the block is spliced in directly
+        // ABOVE that commissioning row instead (rows outranking commissioning — an OP, a
+        // Transfer of Title, the old KN line — keep their place above it).
+        $recertTs = null;
+        foreach ($recertBlock as $r) {
+            $t = $ts($r);
+            if ($t !== null && ($recertTs === null || $t < $recertTs)) {
+                $recertTs = $t;
+            }
+        }
+        $commIndex = null;
+        $commTs = null;
+        foreach ($beforeRecert as $i => $r) {
+            $evt = $this->classifyLifecycleEventType($r);
+            if ($evt !== 'File Commissioning' && $evt !== 'Temporary File') {
+                continue;
+            }
+            $commIndex = $i;
+            $commTs = $ts($r);
+            break;
+        }
+
+        if (!empty($recertBlock) && $recertTs !== null && $commTs !== null && $recertTs < $commTs) {
+            $transactions = $beforeRecert;
+            array_splice($transactions, $commIndex, 0, $recertBlock);
+        } else {
+            $transactions = array_merge($beforeRecert, $recertBlock);
+        }
 
         return array_merge($transactions, $decommissioning);
     }

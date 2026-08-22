@@ -409,8 +409,11 @@
                     </div>
                 </div>
                 @endif
+                {{-- An ST sheet names its two numbers on their own lines: the file's
+                     own above, the primary it sits under below. Everywhere else the
+                     one line carries the file type in brackets, as it always has. --}}
                 <div class="row">
-                    <div class="label">File No/(File Type):</div>
+                    <div class="label">{{ $isSt ? 'New ST FileNo:' : 'File No/(File Type):' }}</div>
                     <div class="value-line">
                         {{ $fileNumber }}
                         @if(!empty($fileType) && !$isSt)
@@ -418,6 +421,20 @@
                         @endif
                     </div>
                 </div>
+                @if($isSt && !empty($data['st_primary_file_number']))
+                <div class="row">
+                    <div class="label">MLS FileNo:</div>
+                    <div class="value-line">{{ $data['st_primary_file_number'] }}</div>
+                </div>
+                @endif
+                {{-- Only a Re-Issuance has one; every other file leaves the line out
+                     rather than printing an empty rule. --}}
+                @if(!empty($data['old_file_number']))
+                <div class="row">
+                    <div class="label">Old FileNo:</div>
+                    <div class="value-line">{{ $data['old_file_number'] }}</div>
+                </div>
+                @endif
                 @if(!$isSt && !empty($data['related_file_number']))
                 <div class="row">
                     <div class="label">Related File No:</div>
@@ -487,10 +504,10 @@
         </div>{{-- end .sheet-body --}}
 <br><br>
         <div class="sheet-footer">
-            {{-- One logo, on the right. Left_Logo.png was the same Land Admin
-                 Enterprise System mark as las.jpg, printed twice across the foot of
-                 the sheet — and squashed on the left, where it was forced to 16mm. --}}
-            <img src="http://app.klaes.ng/assets/logo/las.jpg" alt="Footer Logo" class="footer-logo-right" onerror="this.style.display='none'">
+            {{-- One logo, on the right. It was las.jpg until the Left_Logo mark was
+                 adopted for the foot of the sheet; the second, left-hand copy stays
+                 gone, since it only ever printed the same mark squashed to 16mm. --}}
+            <img src="http://app.klaes.ng/assets/logo/Left_Logo.png" alt="Footer Logo" class="footer-logo-right" onerror="this.style.display='none'">
         </div>
     </div>
 </body>

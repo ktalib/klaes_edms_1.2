@@ -516,7 +516,10 @@ class MlsFileNoController extends Controller
                     'mls_file_no.customer_type',
                     'mls_file_no.batch_no',
                     'mls_file_no.sit_reason',
-                    'mls_file_no.source as source'
+                    'mls_file_no.source as source',
+                    // Re-Issuance keeps the number it replaces; the commissioning
+                    // sheet prints it as "Old File No".
+                    'mls_file_no.old_fileno as old_fileno'
                 ])
                 ->first();
 
@@ -541,6 +544,7 @@ class MlsFileNoController extends Controller
                         'mls_file_no.batch_no as batch_no',
                         'mls_file_no.sit_reason as sit_reason',
                         'mls_file_no.source as source',
+                        'mls_file_no.old_fileno as old_fileno',
                         'mls_file_no.created_at as created_at',
                         'mls_file_no.updated_at as updated_at',
                         DB::raw("'MLS_Commissioned' as SOURCE"),

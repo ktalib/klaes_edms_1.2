@@ -29,7 +29,7 @@
             </tr>
         </thead>
         <tbody>
-            @foreach ($duplex->stages as $stage)
+            @foreach ($duplex->stageRows as $stage)
                 @forelse ($stage->files as $file)
                 <tr>
                     <td class="mono">{{ $loop->first ? $stage->rank : '' }}</td>

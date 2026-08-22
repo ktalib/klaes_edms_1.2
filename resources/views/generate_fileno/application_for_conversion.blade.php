@@ -4,8 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {{-- A directly commissioned SuA has no mlsfNo of its own; it is filed under
+         st_file_no, which is what the sheet is referenced by. --}}
     <title>Application for Conversion @if(isset($batchNo)) - Batch {{ $batchNo }} @else -
-    {{ $records->first()->mlsfNo ?? '' }} @endif
+    {{ $records->first()->mlsfNo ?: ($records->first()->st_file_no ?? '') }} @endif
     </title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
@@ -516,14 +518,28 @@
                 $ourRef = $isStRecord
                     ? ($record->st_file_no ?: ($record->mlsfNo ?? ''))
                     : ($record->mlsfNo ?? '');
+
+                // An ST sheet quotes both numbers: the unit's own, then the primary it
+                // sits under. Bracketed only when it is genuinely a second number —
+                // an ST primary is its own MLS file no and would otherwise print twice.
+                $ourRefMls = $isStRecord ? trim((string) ($record->mls_fileno ?? '')) : '';
+                if ($ourRefMls !== '' && strcasecmp($ourRefMls, trim((string) $ourRef)) === 0) {
+                    $ourRefMls = '';
+                }
             @endphp
             <div class="meta-line">
                 <div>
-                    {{-- Only a conversion label belongs on a conversion document: a SuA
-                         raised by direct allocation must not print "(Direct Allocation)". --}}
+                    {{-- An ST sheet brackets the primary file no. Everything else keeps
+                         the conversion label it has always shown — and only a conversion
+                         label belongs on a conversion document, so a SuA raised by
+                         direct allocation must not print "(Direct Allocation)". --}}
                     @php
-                        $refSuffix = trim((string) ($record->source_derived ?? ''));
-                        $refSuffix = stripos($refSuffix, 'conversion') !== false ? $refSuffix : '';
+                        if ($ourRefMls !== '') {
+                            $refSuffix = $ourRefMls;
+                        } else {
+                            $refSuffix = trim((string) ($record->source_derived ?? ''));
+                            $refSuffix = stripos($refSuffix, 'conversion') !== false ? $refSuffix : '';
+                        }
                     @endphp
                     Our Ref: <span class="underline-box" style="min-width: 320px;">{{ $ourRef }}@if($refSuffix !== '') ({{ $refSuffix }})@endif</span>
                 </div>
@@ -541,10 +557,28 @@
                 $sheetLga = trim((string) ($record->lga_derived ?? $record->lga ?? ''));
                 $isStateAllocation = $sheetSource === 'State Government';
 
+                // A SuA is addressed to a named officer at a named institution, both
+                // answered on the print card. Anything else keeps the two blocks the
+                // conversion sheet has always used.
+                $isSua = ($isSuaSheet ?? false)
+                    && trim((string) ($institutionName ?? '')) !== '';
+                $sheetAddressee = trim((string) ($addressedTo ?? ''));
+
+                // The parcel and the plot are one number, entered once under Location
+                // Details. Only the name for it changes: a council allocation calls it
+                // a plot, every other institution calls it a parcel.
+                $isLgaSua = $isSua && \App\Services\AllocationSourceResolver::isLocalGovernment(
+                    $institutionName ?? null
+                );
+                $sheetInstitution = \App\Services\AllocationSourceResolver::displayInstitution(
+                    $institutionName ?? null,
+                    $sheetEntity ?: null
+                );
+
                 // A state entity prints as a name over its address — the same shape
                 // as the Local Government block, which names the council first.
                 $sheetAddress = '';
-                if ($isStateAllocation) {
+                if ($isStateAllocation || $isSua) {
                     $parts = array_values(array_filter(array_map(
                         'trim',
                         preg_split('/\r\n|\r|\n|,/', (string) ($allocationAddress ?? ''))
@@ -565,7 +599,14 @@
                 }
             @endphp
             <div class="recipient-block">
-                @if($isStateAllocation)
+                @if($isSua)
+                    {{-- The officer first, then the institution, then where it is
+                         posted — the shape a SuA letter is written in. --}}
+                    The {{ $sheetAddressee ?: '............' }},<br>
+                    <span style="text-transform: uppercase;">{{ $sheetInstitution ?: '............' }}</span><br>
+                    <span class="underline-box"
+                        style="min-width: 420px; padding-left: 0; text-transform: uppercase;">{{ $sheetAddress ?: '............' }}</span>
+                @elseif($isStateAllocation)
                     {{-- One heading line — source then the entity it allocated through,
                          e.g. "State Government HOUSING" — with the address ruled beneath
                          it. padding-left is zeroed so both lines start flush with
@@ -597,13 +638,31 @@
             <!-- 6. Content -->
             <div class="letter-content" style="text-align: left;">
                 I am directed to inform you that Alhaji/Malam/Mr. <span class="data-field"
-                    style="min-width: 200px;">{{ $record->FileName ?? '................................' }}</span>
-                has applied to the Ministry for Statutory Right of Occupancy over Plot No.
-                <span class="data-field" style="min-width: 80px;">{{ $record->plot_no ?? '..............' }}</span>
-                at <span class="data-field"
-                    style="min-width: 250px;">{{ $sheetLga ?: '................................' }}</span>
-                You are accordingly requested to verify the genuineness of this customary claim and further confirms on how
-                the property was acquired:
+                    style="min-width: 200px;{{ $isSua ? ' text-transform: uppercase;' : '' }}">{{ $record->FileName ?? '................................' }}</span>
+                @if($isSua)
+                    {{-- A sectional unit is identified by the allocation slip it was
+                         raised under, plus the number entered under Location Details —
+                         called a plot on a council allocation and a parcel on every
+                         other. Nothing about it is a customary claim, so that wording
+                         is dropped. --}}
+                    has applied to the Ministry for Sectional titling Statutory Right of Occupancy over
+                    {{ $isLgaSua ? 'Plot No.' : 'Parcel No.' }}
+                    <span class="data-field"
+                        style="min-width: 120px;">{{ trim((string) ($record->plot_no ?? '')) ?: '..............' }}</span>
+                    at <span class="data-field"
+                        style="min-width: 200px;">{{ $sheetLga ?: '................................' }}</span>
+                    with allocation slip No <span class="data-field"
+                        style="min-width: 120px;">{{ trim((string) ($allocationRefNo ?? '')) ?: '..............' }}</span>
+                    You are please accordingly requested to verify the genuineness of this claim and further confirm on how
+                    the property was acquired:
+                @else
+                    has applied to the Ministry for Statutory Right of Occupancy over Plot No.
+                    <span class="data-field" style="min-width: 80px;">{{ $record->plot_no ?? '..............' }}</span>
+                    at <span class="data-field"
+                        style="min-width: 250px;">{{ $sheetLga ?: '................................' }}</span>
+                    You are accordingly requested to verify the genuineness of this customary claim and further confirms on how
+                    the property was acquired:
+                @endif
                 <ul class="checklist">
                     <li><span class="check-box">{!! $acquisitionMethod === 'a' ? '&check;' : '&nbsp;' !!}</span> a. By
                         Purchase
@@ -623,8 +682,16 @@
                             .......................................................................... @endif
                     </li>
                 </ul>
-                I attached herewith two copies of side plan of the area for your guidance and further necessary action. One
-                copy is to be returned (Stamped & Signed) along with reply, please.
+                @if($isSua)
+                    {{-- The allocation slip goes out with the site plan, and what comes
+                         back is a confirmation — not the "reply" the land sheet asks for. --}}
+                    I attached herewith two copies of site plan of the area and allocation slip for your guidance
+                    and further necessary action. One copy is to be returned (Stamped &amp; Signed) along with
+                    confirmation / clearance or otherwise
+                @else
+                    I attached herewith two copies of side plan of the area for your guidance and further necessary action. One
+                    copy is to be returned (Stamped & Signed) along with reply, please.
+                @endif
             </div>
 
             <!-- 7. Bottom Signature Box -->

@@ -251,6 +251,7 @@
         const key = String(fileNumber || '').trim();
         sourceInput.value = '';
         sourceInput.dataset.fileNo = key.toUpperCase();
+        setCommissioningOldFileNumber('');
         updateCommissioningFileType();
         if (!key) return;
 
@@ -260,13 +261,35 @@
             const record = (payload && payload.success && payload.data) ? payload.data : payload;
             const input = document.getElementById('cs_file_number');
             const stillSameFile = input && input.value.trim().toUpperCase() === sourceInput.dataset.fileNo;
-            if (record && record.source && stillSameFile) {
-                sourceInput.value = String(record.source).trim();
-                updateCommissioningFileType();
+            if (record && stillSameFile) {
+                if (record.source) {
+                    sourceInput.value = String(record.source).trim();
+                    updateCommissioningFileType();
+                }
+                // A Re-Issuance replaces an earlier (duplicated) number; the sheet
+                // names it under the new one. Every other file leaves the line out.
+                setCommissioningOldFileNumber(record.old_fileno || record.old_file_number || '', key);
             }
         } catch (e) {
             console.warn('Could not resolve file source for commissioning sheet', e);
         }
+    }
+
+    // Show/hide the Old File No line on the commissioning modal. An empty value keeps
+    // the row hidden so the printed sheet never carries a blank rule.
+    function setCommissioningOldFileNumber(value, fileNumber = '') {
+        const input = document.getElementById('cs_old_file_number');
+        const wrap = document.getElementById('cs_old_file_number_wrap');
+        if (!input) return;
+
+        let old = String(value || '').trim();
+        // An entry equal to the file's own number is not a previous number.
+        if (old && fileNumber && old.toUpperCase() === String(fileNumber).trim().toUpperCase()) {
+            old = '';
+        }
+
+        input.value = old;
+        if (wrap) wrap.classList.toggle('hidden', old === '');
     }
 
     // Reflect the detected File Type as a badge next to the File No input in the commissioning modal.
@@ -7478,6 +7501,8 @@
         document.getElementById('dataLoadStatus').classList.add('hidden');
         // Reset form
         document.getElementById('commissioningSheetForm').reset();
+        // Hide the Old File No line again (form.reset() clears the value, not the row)
+        setCommissioningOldFileNumber('');
         // Set today's date
         document.getElementById('cs_date_created').value = new Date().toISOString().split('T')[0];
     }
@@ -7746,8 +7771,11 @@
             // Append the record's source after the File No, e.g. "CON-COM-2026-429 (Conversion)".
             const fileTypeLabel = getCommissioningSourceLabel(formData.get('source'), fileNumberVal);
             const fileNoDisplay = fileTypeLabel ? `${fileNumberVal} (${fileTypeLabel})` : fileNumberVal;
+            // Only a Re-Issuance carries one; the row is dropped otherwise.
+            const oldFileNoVal = String(formData.get('old_file_number') || '').trim();
             const fields = [
                 ['File No/(File Type):', fileNoDisplay],
+                ...(oldFileNoVal ? [['Old File No:', oldFileNoVal]] : []),
                 ['File Name:', formData.get('file_name')],
                 ['Plot No:', formData.get('plot_number')],
                 ['TP No:', formData.get('tp_number')],
@@ -7875,8 +7903,11 @@
                 // Append the record's source after the File No, e.g. "CON-COM-2026-429 (Conversion)".
                 const rowFileTypeLabel = getCommissioningSourceLabel(row.source, rowFileNo);
                 const rowFileNoDisplay = rowFileTypeLabel ? `${rowFileNo} (${rowFileTypeLabel})` : rowFileNo;
+                const rowOldFileNo = String(row.old_fileno || row.old_file_number || '').trim();
+                const hasRowOldFileNo = rowOldFileNo !== '' && rowOldFileNo.toUpperCase() !== String(rowFileNo).trim().toUpperCase();
                 const fields = [
                     ['File No/(File Type):', rowFileNoDisplay],
+                    ...(hasRowOldFileNo ? [['Old File No:', rowOldFileNo]] : []),
                     ['File Name:', row.file_name || ''],
                     ['Plot No:', row.plot_no || 'N/A'],
                     ['TP No:', row.tp_no || 'N/A'],

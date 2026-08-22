@@ -165,6 +165,21 @@
         color: #6b7280;
     }
 
+    /* The volume line: it is the number the operator checks before committing, so
+       it is sized to be read at a glance - matching the notice popup. */
+    .capture-banner__meta--volume {
+        margin-top: 0.5rem;
+        font-size: 1.125rem;
+        font-weight: 700;
+        color: #374151;
+    }
+
+    .capture-banner__volume {
+        font-size: 1.375rem;
+        font-weight: 700;
+        color: var(--accent);
+    }
+
     .capture-banner__change {
         flex-shrink: 0;
         font-size: 0.75rem;

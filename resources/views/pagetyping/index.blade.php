@@ -475,6 +475,10 @@
     @include('components.edms.registry-transfer-modal')
     @include('components.edms.file-type-transfer-modal')
     @include('scan_uploads.partials.reassign_modal')
+    {{-- The file picker both EDMS cards (and the reassignment dialog) open. Its
+         plugin script is already loaded further down; without this markup
+         GlobalFileNoModal.open() finds no #global-fileno-modal and bails. --}}
+    @include('components.global-fileno-modal')
 
     <!-- Page Typing Dashboard JavaScript -->
     <script>
