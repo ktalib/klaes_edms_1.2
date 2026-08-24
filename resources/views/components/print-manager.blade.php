@@ -60,11 +60,18 @@
             <div class="px-6 py-6 space-y-6">
                 <div x-show="!isOssMode" class="space-y-6">
                     {{-- ── Date Issued ────────────────────────────────────────────
-                         The application date, which the letter prints as DATE OF
-                         ISSUE. It is asked for here rather than in a dialog in front
-                         of the manager, because it belongs to the same decision as
-                         which copies to run — and asking twice for one print is what
-                         the separate prompt amounted to.
+                         land_recommendations.date_issued, which the letter prints as
+                         DATE OF ISSUE. A column of its own: it used to be the
+                         recommendation's application_date, which is a different fact
+                         about a different thing and is not the printer's to edit.
+
+                         Nothing stands behind date_issued — no fallback, no backfill
+                         — so a letter that has never been issued has an empty date
+                         until someone keys one in here. That is why the panel is
+                         asked for here rather than in a dialog in front of the
+                         manager: it belongs to the same decision as which copies to
+                         run, and asking twice for one print is what the separate
+                         prompt amounted to.
 
                          A date already on record is what an issued letter out in the
                          world carries, so the field stays locked until an edit is
@@ -111,7 +118,7 @@
                              copy that went out. --}}
                         <p x-show="isBatchMode" x-cloak class="text-[11px] text-slate-500 leading-relaxed">
                             <b x-text="batchMissingDates"></b> of <b x-text="batchCount"></b> letters have no
-                            application date on record. This date is written to <b>those only</b> — the rest keep
+                            date of issue on record. This date is written to <b>those only</b> — the rest keep
                             the date they already carry.
                         </p>
                         <p x-show="issueDateError" x-cloak x-text="issueDateError"
@@ -504,8 +511,8 @@ document.addEventListener('alpine:init', () => {
             this.splitPasses = !!(data && data.splitPasses);
 
             // A date already on the record locks the field; a blank one is simply
-            // filled in, which is the ordinary case for letters captured before the
-            // application date was collected.
+            // filled in, which is the ordinary case — date_issued is empty until a
+            // letter is actually issued.
             this.issueDateOnRecord = (data && data.issueDate) ? String(data.issueDate) : '';
             this.issueDate = this.issueDateOnRecord || this.today;
             this.issueDateLocked = !!this.issueDateOnRecord;
@@ -572,8 +579,8 @@ document.addEventListener('alpine:init', () => {
                 + String(d.getDate()).padStart(2, '0');
         },
 
-        // The date is stored on land_recommendations.application_date, so the panel
-        // is offered for the documents that live in that table — every Land and OSS
+        // The date is stored on land_recommendations.date_issued, so the panel is
+        // offered for the documents that live in that table — every Land and OSS
         // recommendation type, RofO and re-issuance included. SLTR keeps its own
         // table and has no such column, so it opens without the panel rather than
         // with one whose Save would go nowhere.

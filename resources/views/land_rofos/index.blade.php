@@ -554,7 +554,7 @@
 
                                                     $pmOptions = [
                                                         'recordId'  => (int) $rec->id,
-                                                        'issueDate' => optional($rec->application_date)->format('Y-m-d') ?? '',
+                                                        'issueDate' => optional($rec->date_issued)->format('Y-m-d') ?? '',
                                                     ];
 
                                                     if ($reissue) {
@@ -1414,7 +1414,7 @@ function rofoOpenBatchManagerFor(ids, label, splitPasses) {
     ]).then(function (res) {
         var status  = (res[0] && res[0].success) ? res[0] : null;
         var rows    = (res[1] && res[1].data) ? res[1].data : [];
-        var missing = rows.filter(function (r) { return !r.application_date; }).length;
+        var missing = rows.filter(function (r) { return !r.date_issued; }).length;
 
         openRofoBatchManager(ids, label, status, missing, splitPasses);
     });
@@ -1449,8 +1449,10 @@ function rofoCsrf() {
 // that answer the only thing the dialog can offer is starting the whole batch
 // again, which is a second Original on security stock for every file in it.
 // -- DATE OF ISSUE -----------------------------------------------------------
-// The letter prints the APPLICATION DATE as its DATE OF ISSUE, so no letter goes to
-// paper without the operator seeing the date it will carry.
+// The letter prints land_recommendations.date_issued as its DATE OF ISSUE, a column
+// that holds nothing else. There is no fallback behind it: a record that has never
+// been issued prints an empty date, which is why this dialog stands in front of
+// every print.
 //
 //   one record  - always shown. A date already on the record is shown LOCKED, with
 //                 an Edit that asks for confirmation first: it is normally keyed in
@@ -1475,7 +1477,7 @@ function rofoAskIssueDate(ids, onReady) {
     .then(function (res) { return res.json(); })
     .then(function (data) {
         var rows    = (data && data.data) || [];
-        var missing = rows.filter(function (r) { return !r.application_date; });
+        var missing = rows.filter(function (r) { return !r.date_issued; });
         var single  = ids.length === 1;
 
         // A bulk run where every letter already carries its date has nothing to ask.
@@ -1484,7 +1486,7 @@ function rofoAskIssueDate(ids, onReady) {
             return;
         }
 
-        var existing = single && rows.length ? (rows[0].application_date || '') : '';
+        var existing = single && rows.length ? (rows[0].date_issued || '') : '';
 
         rofoIssueDateDialog(ids, rows, missing, existing, single, onReady);
     })
@@ -1509,12 +1511,12 @@ function rofoIssueDateDialog(ids, rows, missing, existing, single, onReady) {
     var body = single
         ? (locked
             ? 'This letter is dated <b>' + rofoEscHtml(existing) + '</b> and prints with that date.'
-            : 'No application date is on record for <b>' + subject + '</b>, so the letter has nothing to print as its date of issue.')
-        : subject + ' have no application date on record. The date entered here is written to those only &mdash; the rest keep the date they already carry.';
+            : 'No date of issue is on record for <b>' + subject + '</b>, so the letter has nothing to print there.')
+        : subject + ' have no date of issue on record. The date entered here is written to those only &mdash; the rest keep the date they already carry.';
 
     if (typeof Swal === 'undefined') {
         if (locked) { onReady(null); return; }
-        var typed = window.prompt('Application date (YYYY-MM-DD) - prints on the letter as DATE OF ISSUE', rofoToday());
+        var typed = window.prompt('Date of issue (YYYY-MM-DD) - prints on the letter as DATE OF ISSUE', rofoToday());
         if (typed) onReady({ issue_date: typed, issue_date_apply: 'missing' });
         return;
     }
@@ -1524,8 +1526,8 @@ function rofoIssueDateDialog(ids, rows, missing, existing, single, onReady) {
     // that option can express, and a disabled Swal input is not returned at all.
     var html = '<div style="text-align:left;font-size:13px;line-height:1.5">' + body
         + '<div style="margin-top:10px;color:#475569;font-size:12px">'
-        +   'This is the <b>application date</b>. It prints on the letter as <b>DATE OF ISSUE</b> '
-        +   'and is saved to the record, so a reprint comes out carrying the same date.'
+        +   'This prints on the letter as <b>DATE OF ISSUE</b> and is saved to the '
+        +   'record, so a reprint comes out carrying the same date.'
         + '</div>'
         + '<div style="display:flex;gap:8px;align-items:center;margin-top:14px">'
         +   '<input type="date" id="rofoIssueDateInput" value="' + rofoEscHtml(existing || rofoToday()) + '"'
@@ -1556,7 +1558,7 @@ function rofoIssueDateDialog(ids, rows, missing, existing, single, onReady) {
 
     Swal.fire({
         icon: 'question',
-        title: 'Application Date',
+        title: 'Date of Issue',
         html: html,
         showCancelButton: true,
         confirmButtonText: 'Continue to print',
@@ -1594,7 +1596,7 @@ function rofoIssueDateDialog(ids, rows, missing, existing, single, onReady) {
             if (locked && !unlocked) return { keep: true };
 
             if (!value) {
-                error.textContent = 'Enter the application date before printing.';
+                error.textContent = 'Enter the date of issue before printing.';
                 error.style.display = 'block';
                 return false;
             }
@@ -1938,7 +1940,7 @@ function submitBatchPrint(ids, csrf, printWindow, copies, windowName, reload, ex
     form.appendChild(which);
 
     // What the letter prints as DATE OF ISSUE, and what the server writes to the
-    // record's application_date as it renders — on the rows that have none.
+    // record's date_issued as it renders — on the rows that have none.
     if (extras && extras.issue_date) {
         [['issue_date', extras.issue_date], ['issue_date_apply', extras.issue_date_apply || 'missing']].forEach(function (pair) {
             var inp = document.createElement('input');
