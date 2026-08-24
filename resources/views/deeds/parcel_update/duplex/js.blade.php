@@ -344,6 +344,142 @@
     }
 
     // ---------------------------------------------------------------- step 2
+    /**
+     * How many parcels a stage records a size for.
+     *
+     * A merger sizes what goes IN (each source file has its own area); everything else
+     * sizes what comes OUT. A Change of Purpose sizes only the files it renames.
+     */
+    function sizeSlots(p, incoming) {
+        if (p.type === 'merger') return incoming;
+        if (p.type === 'extension') return 1;
+        return p.count || 2;
+    }
+
+    /** The size inputs under one stage row, preserving anything already typed. */
+    function sizeGrid(p, slots) {
+        p.sizes = p.sizes || [];
+
+        const cells = Array.from({ length: slots }).map((_, i) => `
+            <div>
+                <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1.5">
+                    ${p.type === 'merger' ? 'File' : 'Plot'} ${i + 1}</label>
+                <input type="number" step="0.01" min="0" placeholder="0.00"
+                       value="${p.sizes[i] ?? ''}"
+                       data-type="${p.type}" data-slot="${i}"
+                       oninput="onSizeInput(this)"
+                       class="dx-size w-full px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-sm text-center">
+            </div>`).join('');
+
+        {{-- Where the running-area line sits depends on which way the arithmetic runs.
+             A subdivision ALLOCATES out of a parcel whose size is already known, so the
+             figure has to be above the boxes being filled in. A merger DERIVES its total
+             from the sizes typed in, so its line can only follow them. --}}
+        const allocating = p.type === 'subdivision' || p.type === 'separation';
+        const noteEl = '<p class="dx-size-note text-xs"></p>';
+
+        return `
+            <div class="dx-size-grid mt-3 pt-3 border-t border-slate-100">
+                ${allocating ? '<div class="mb-2.5">' + noteEl + '</div>' : ''}
+                <p class="text-[11px] font-black uppercase tracking-wider text-slate-500 mb-2">
+                    Plot size${slots === 1 ? '' : 's'} (Ha)</p>
+                <div class="grid grid-cols-3 md:grid-cols-6 gap-2">${cells}</div>
+                ${allocating ? '' : '<div class="mt-2.5">' + noteEl + '</div>'}
+            </div>`;
+    }
+
+    window.onSizeInput = function (input) {
+        const entry = state.plan.find(p => p.type === input.dataset.type);
+        if (!entry) return;
+        entry.sizes = entry.sizes || [];
+        entry.sizes[Number(input.dataset.slot)] = input.value;
+        refreshSizeNotes();
+    };
+
+    const sumSizes = p => (p.sizes || []).reduce((t, v) => t + (parseFloat(v) || 0), 0);
+    const ha = n => (Math.round(n * 100) / 100) + ' Ha';
+
+    /**
+     * The parcel area walked through the chain.
+     *
+     * A merger's four files add up to the parcel the subdivision then divides — that
+     * total was nowhere on screen, so there was no way to tell whether the plot sizes
+     * entered below actually accounted for the land. Each stage now states what it
+     * receives and what it passes on, and a subdivision says when the two disagree.
+     */
+    function refreshSizeNotes() {
+        let carried = null;   // area of the parcel entering the next stage, or null if unknown
+
+        document.querySelectorAll('#dx-quantities > div').forEach((row, i) => {
+            const p = state.plan[i];
+            const note = row.querySelector('.dx-size-note');
+            if (!p || !note) return;
+
+            const entered = sumSizes(p);
+
+            // The line carries a state, so it is coloured as one rather than sitting grey
+            // with a coloured word buried in it: blue while it is simply reporting an
+            // area, green when a subdivision accounts for its parent, amber when it does
+            // not. `strong` keeps the figures a shade darker than the sentence.
+            let text = '', tone = 'text-slate-400', strong = 'text-slate-700';
+
+            const b = v => '<b class="' + strong + '">' + v + '</b>';
+
+            if (p.type === 'merger') {
+                carried = entered || null;
+                if (entered) {
+                    tone = 'text-blue-600';
+                    strong = 'text-blue-800';
+                    text = 'Merged parcel: ' + b(ha(entered));
+                }
+            } else if (p.type === 'subdivision' || p.type === 'separation') {
+                const balanced = carried && entered
+                    && Math.abs(Math.round((carried - entered) * 100) / 100) <= 0.009;
+
+                if (carried && entered) {
+                    tone = balanced ? 'text-emerald-600' : 'text-amber-600';
+                    strong = balanced ? 'text-emerald-800' : 'text-amber-800';
+                } else if (carried || entered) {
+                    tone = 'text-blue-600';
+                    strong = 'text-blue-800';
+                }
+
+                const parts = [];
+                if (carried) parts.push('Parcel being divided: ' + b(ha(carried)));
+                if (entered) parts.push('plots entered: ' + b(ha(entered)));
+
+                if (carried && entered) {
+                    const diff = Math.round((carried - entered) * 100) / 100;
+                    if (balanced) {
+                        parts.push(b('accounted for'));
+                    } else {
+                        parts.push(b(diff > 0 ? ha(diff) + ' remaining' : ha(-diff) + ' over'));
+                    }
+                }
+
+                text = parts.join(' &middot; ');
+                carried = entered || carried;
+            } else if (p.type === 'extension') {
+                if (carried || entered) { tone = 'text-blue-600'; strong = 'text-blue-800'; }
+                if (carried) text = 'Parcel before extension: ' + b(ha(carried));
+                if (entered) {
+                    text += (text ? ' &middot; ' : '') + 'after: ' + b(ha(entered));
+                    carried = entered;
+                }
+            } else if (p.type === 'change_of_purpose') {
+                // A rename does not change any area; it just renames some of the parcels.
+                if (entered) {
+                    tone = 'text-blue-600';
+                    strong = 'text-blue-800';
+                    text = 'Parcels changing purpose: ' + b(ha(entered));
+                }
+            }
+
+            note.className = 'dx-size-note text-xs font-semibold ' + tone;
+            note.innerHTML = text;
+        });
+    }
+
     function renderQuantities() {
         const box = document.getElementById('dx-quantities');
 
@@ -378,8 +514,11 @@
                     <span class="dx-flow-out ${outputs === incoming ? 'text-slate-500' : 'text-blue-600'}">${outputs}</span>
                 </span>`;
 
+            const slots = sizeSlots(p, incoming);
+
             const row = `
-                <div class="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border border-slate-200">
+                <div class="px-4 py-3 rounded-xl border border-slate-200">
+                  <div class="flex items-center justify-between gap-4">
                     <div class="flex items-center gap-3 min-w-0">
                         <span class="rank-badge rank-${Math.min(p.rank, 5)} text-center px-2 py-0.5 rounded-lg border text-xs font-black">${p.rank}</span>
                         <div class="min-w-0">
@@ -395,6 +534,8 @@
                             oninput="renderQuantities()"
                             class="dx-qty w-24 px-3 py-2 rounded-xl border border-slate-200 text-sm text-center ${fixed ? 'bg-slate-50 text-slate-400' : ''}">
                     </div>
+                  </div>
+                  ${sizeGrid(p, slots)}
                 </div>`;
 
             // A Change of Purpose renames some of what it receives and passes the rest
@@ -404,7 +545,30 @@
             return row;
         }).join('');
 
+        refreshSizeNotes();
         if (window.lucide) lucide.createIcons();
+    }
+
+    /**
+     * Carry revised quantities from the plan onto the stage rows already on screen, so
+     * a corrected count re-renders the right number of plot cards. The new value is
+     * persisted when that stage is saved — saveStage takes plot_count with the payload.
+     */
+    function applyPlanCountsToStages() {
+        state.stages.forEach(stage => {
+            const entry = state.plan.find(p => p.type === stage.type);
+            if (!entry || !entry.count) return;
+
+            if (Number(stage.plot_count) !== Number(entry.count)) {
+                stage.plot_count = entry.count;
+
+                // The stage's saved plots no longer match the new count; drop the stale
+                // ones so the panel rebuilds from the sizes just entered.
+                if (stage.payload && stage.payload.plots) {
+                    stage.payload.plots = stage.payload.plots.slice(0, entry.count);
+                }
+            }
+        });
     }
 
     function collectQuantities() {
@@ -448,6 +612,30 @@
                 outEl.classList.toggle('text-slate-500', outputs === incoming);
             }
 
+            // Grow or shrink the size boxes with the count, without disturbing the
+            // quantity field the officer is typing in.
+            const grid = row.querySelector('.dx-size-grid .grid');
+            if (grid) {
+                const want = sizeSlots(p, incoming);
+                p.sizes = p.sizes || [];
+
+                while (grid.children.length > want) grid.lastElementChild.remove();
+
+                for (let i = grid.children.length; i < want; i++) {
+                    const cell = document.createElement('div');
+                    cell.innerHTML =
+                        '<label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1.5">'
+                        + (p.type === 'merger' ? 'File ' : 'Plot ') + (i + 1) + '</label>'
+                        + '<input type="number" step="0.01" min="0" placeholder="0.00" value="' + (p.sizes[i] ?? '')
+                        + '" data-type="' + p.type + '" data-slot="' + i + '" oninput="onSizeInput(this)"'
+                        + ' class="dx-size w-full px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-sm text-center">';
+                    grid.appendChild(cell);
+                }
+
+                const label = row.querySelector('.dx-size-grid p');
+                if (label) label.textContent = 'Plot size' + (want === 1 ? '' : 's') + ' (Ha)';
+            }
+
             const hint = row.querySelector('.dx-qty-hint');
             if (hint && p.type === 'merger') {
                 hint.innerHTML = '<b class="text-slate-600">' + incoming + '</b> file'
@@ -456,6 +644,8 @@
 
             incoming = (p.type === 'change_of_purpose') ? incoming : outputs;
         });
+
+        refreshSizeNotes();
     }
 
     // ---------------------------------------------------------------- step 3
@@ -549,9 +739,23 @@
         // Whatever this stage was saved with, so going back to edit shows the real
         // entries instead of an empty form.
         const saved = stage.payload || {};
-        const savedPlots = saved.plots || [];
+
+        // Sizes captured on step 2 seed the stage panel, so the officer is not asked
+        // for the same number twice. Anything saved on the stage itself wins.
+        const planned = (state.plan.find(p => p.type === stage.type) || {}).sizes || [];
+        const savedPlots = (saved.plots && saved.plots.length)
+            ? saved.plots
+            : planned.map(size => ({ size }));
         const savedApplies = saved.applies_to || [];
         const esc = v => (v === null || v === undefined) ? '' : String(v).replace(/"/g, '&quot;');
+
+        // A file's registered holder, taken from the record picked on step 1. Falls back
+        // to the applicant for a holding number, which has no registry row of its own.
+        const applicantName = document.getElementById('dx-applicant')?.value || '';
+        const holderOf = fileNo => {
+            const src = state.sources.find(x => x.fileNumber === fileNo);
+            return (src && src.title) ? src.title : applicantName;
+        };
 
 
         // How many holding numbers this stage will mint. Needed before the template,
@@ -582,6 +786,10 @@
                          ("files you leave unticked pass through untouched") meant nothing to
                          anyone who had not written it. --}}
                     <p id="dx-applies-explain" class="text-[11px] text-slate-500 mt-2 leading-relaxed"></p>
+
+                    {{-- Size and holder for the files being changed. Every other stage
+                         records these, and a renamed parcel has a size like any other. --}}
+                    <div id="dx-cop-plots" class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4"></div>
                 </div>
                 <div class="grid md:grid-cols-2 gap-5">
                     <div>
@@ -616,7 +824,7 @@
                                    placeholder="0.00" value="${esc(savedPlots[i]?.size)}">
                             <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 mt-3">Holder</label>
                             <input type="text" class="dx-plot-holder w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm"
-                                   placeholder="Name" value="${esc(savedPlots[i]?.holder)}">
+                                   placeholder="Name" value="${esc(savedPlots[i]?.holder ?? holderOf(f))}">
                         </div>`).join('')}
                 </div>`;
         } else {
@@ -631,9 +839,6 @@
                     ${Array.from({ length: count }).map((_, i) => `
                         <div class="p-4 rounded-2xl border border-slate-200 bg-slate-50/50">
                             <p class="text-[11px] font-black text-slate-600 mb-3">${label} ${i + 1}</p>
-                            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Plot no</label>
-                            <input type="text" class="dx-plot-no w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm"
-                                   placeholder="—" value="${esc(savedPlots[i]?.plot_no)}">
                             <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 mt-3">Size (Ha)</label>
                             <input type="number" step="0.01" class="dx-plot-size w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm"
                                    placeholder="0.00" value="${esc(savedPlots[i]?.size)}">
@@ -778,6 +983,8 @@
         text += ' All ' + boxes.length + ' still get real file numbers at the Land step.';
         out.innerHTML = text;
 
+        renderCopPlots(on);
+
         // A Change of Purpose hands on EVERY file it received, not just the ones it
         // changed - the untouched files still have to reach the Land step. Saying
         // "produces 2" when 5 leave the stage is what made the Done step unreadable.
@@ -790,18 +997,59 @@
         }
     };
 
+    /**
+     * Size and holder for each file a Change of Purpose renames.
+     *
+     * Rebuilt from the ticked chips so it always matches the selection, and existing
+     * values are carried across a re-tick rather than being wiped.
+     */
+    function renderCopPlots(selected) {
+        const box = document.getElementById('dx-cop-plots');
+        if (!box) return;
+
+        // Keep whatever has already been typed, keyed by the file it belongs to.
+        const kept = {};
+        box.querySelectorAll('[data-holding]').forEach(card => {
+            kept[card.dataset.holding] = {
+                size: card.querySelector('.dx-plot-size')?.value || '',
+                holder: card.querySelector('.dx-plot-holder')?.value || '',
+            };
+        });
+
+        const stage = state.stages[state.stageIndex];
+        const saved = (stage?.payload?.plots) || [];
+        const applicant = document.getElementById('dx-applicant')?.value || '';
+
+        box.innerHTML = selected.map((h, i) => {
+            const prior = kept[h] || {};
+            const size = prior.size !== undefined && prior.size !== ''
+                ? prior.size
+                : (saved[i]?.size ?? '');
+            const holder = prior.holder || saved[i]?.holder || applicant;
+
+            return `
+                <div data-holding="${h}" class="p-4 rounded-2xl border border-slate-200 bg-slate-50/50">
+                    <p class="text-[11px] font-black text-slate-600 holding-no mb-3 truncate" title="${h}">${h}</p>
+                    <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Size (Ha)</label>
+                    <input type="number" step="0.01" class="dx-plot-size w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm"
+                           placeholder="0.00" value="${String(size).replace(/"/g, '&quot;')}">
+                    <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 mt-3">Holder</label>
+                    <input type="text" class="dx-plot-holder w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm"
+                           placeholder="Name" value="${String(holder).replace(/"/g, '&quot;')}">
+                </div>`;
+        }).join('');
+    }
+
     function collectStagePayload() {
         const stage = state.stages[state.stageIndex];
         const panel = document.getElementById('dx-stage-panel');
 
         const sizes = [...panel.querySelectorAll('.dx-plot-size')].map(e => e.value);
         const holders = [...panel.querySelectorAll('.dx-plot-holder')].map(e => e.value);
-        const plotNos = [...panel.querySelectorAll('.dx-plot-no')].map(e => e.value);
 
         const plots = sizes.map((size, i) => ({
             size: size === '' ? null : parseFloat(size),
             holder: holders[i] || null,
-            plot_no: plotNos[i] || null,
         }));
 
         const payload = {
@@ -890,7 +1138,11 @@
         const locked = !!state.duplex;
         document.getElementById('dx-plan-locked').classList.toggle('hidden', !locked);
         document.getElementById('dx-applicant').disabled = locked;
-        document.querySelectorAll('#dx-quantities input').forEach(el => { el.disabled = locked; });
+        // Quantities and plot sizes stay editable. What is fixed once the duplex row
+        // exists is the PLAN — which updates, in what order, on which files — because
+        // the stage rows and holding numbers were built from it. How many plots a stage
+        // makes, and how big they are, is ordinary data the officer must be able to
+        // correct without deleting the duplex and starting again.
         ['dx-plot-no-main', 'dx-district', 'dx-lga'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.disabled = locked;
@@ -934,9 +1186,16 @@
     };
 
     window.wizardNext = async function () {
-        // Stepping forward from a read-only step 1/2 just returns to the stages; the
-        // duplex already exists and must not be created twice.
-        if (state.duplex && state.step < 3) return goToWizardStep(3);
+        // The duplex already exists, so step 1/2 must not create it again — but an edit
+        // made on the way back through still has to reach the stages. Without this the
+        // corrected quantity was silently thrown away.
+        if (state.duplex && state.step < 3) {
+            if (state.step === 2) {
+                collectQuantities();
+                applyPlanCountsToStages();
+            }
+            return goToWizardStep(3);
+        }
 
         if (state.step === 1) {
             // Checked in the order the fields now appear on the card.

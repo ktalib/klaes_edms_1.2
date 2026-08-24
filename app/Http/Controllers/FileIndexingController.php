@@ -6333,7 +6333,12 @@ class FileIndexingController extends Controller
         try {
             // Limit to 100 records per batch
             $rows = DB::connection('sqlsrv')->table('file_indexings as f')
-                ->leftJoin('users as u', 'u.id', '=', 'f.created_by')
+                ->leftJoin('users as u', function ($join) {
+                    // file_indexings.created_by holds a NAME for indexing-created rows,
+                    // so a direct id join makes SQL Server fail the whole query with
+                    // "Error converting data type nvarchar to bigint".
+                    $join->on('u.id', '=', DB::raw('TRY_CONVERT(INT, f.created_by)'));
+                })
                 ->whereRaw('LTRIM(RTRIM(CONVERT(NVARCHAR(50), f.batch_no))) = ?', [$batch])
                 ->orderBy('f.id')
                 ->limit(100)
@@ -6349,7 +6354,7 @@ class FileIndexingController extends Controller
                     DB::raw("COALESCE(f.land_use_type, '') as land_use"),
                     DB::raw("COALESCE(f.district, '') as district"),
                     DB::raw("CONVERT(varchar(19), f.created_at, 120) as indexed_date"),
-                    DB::raw("COALESCE(u.first_name + ' ' + u.last_name, '') as indexed_by")
+                    DB::raw("COALESCE(u.first_name + ' ' + u.last_name, f.created_by, '') as indexed_by")
                 ]);
 
             // Debug: Log first few records to see actual data
@@ -6379,7 +6384,12 @@ class FileIndexingController extends Controller
 
         // Reuse signinReport query
         $rows = DB::connection('sqlsrv')->table('file_indexings as f')
-            ->leftJoin('users as u', 'u.id', '=', 'f.created_by')
+            ->leftJoin('users as u', function ($join) {
+                    // file_indexings.created_by holds a NAME for indexing-created rows,
+                    // so a direct id join makes SQL Server fail the whole query with
+                    // "Error converting data type nvarchar to bigint".
+                    $join->on('u.id', '=', DB::raw('TRY_CONVERT(INT, f.created_by)'));
+                })
             ->whereRaw('LTRIM(RTRIM(CONVERT(NVARCHAR(50), f.batch_no))) = ?', [$batch])
             ->orderBy('f.id')
             ->limit(100)
@@ -6395,7 +6405,7 @@ class FileIndexingController extends Controller
                 DB::raw("COALESCE(f.land_use_type, '') as land_use"),
                 DB::raw("COALESCE(f.district, '') as district"),
                 DB::raw("CONVERT(varchar(19), f.created_at, 120) as indexed_date"),
-                DB::raw("COALESCE(u.first_name + ' ' + u.last_name, '') as indexed_by")
+                DB::raw("COALESCE(u.first_name + ' ' + u.last_name, f.created_by, '') as indexed_by")
             ]);
 
         if (strtolower($format) === 'excel') {

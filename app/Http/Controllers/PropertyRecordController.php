@@ -412,7 +412,16 @@ class PropertyRecordController extends Controller
 
     /**
      * Enrich a collection of CofO/PRA rows with a `captured_by_name` attribute by
-     * resolving the `captured_by` (falling back to `created_by`) user id to a name.
+     * resolving `captured_by` (falling back to `created_by`) to a display name.
+     *
+     * These columns are not uniformly typed across the app: pra and this
+     * controller's own writes store a user id, while the File Indexing module
+     * writes the capturing user's NAME into created_by. Passing a name into a
+     * `where id in (...)` on users makes SQL Server abort the whole request with
+     * "Error converting data type nvarchar to bigint" — which is what surfaced as
+     * a failed save on Add Property History, since the save path runs the CofO
+     * duplicate check. So split the two shapes: look up the numeric ids, and take
+     * the non-numeric values as the name they already are.
      */
     private function attachCapturedByName($rows): void
     {
@@ -422,7 +431,11 @@ class PropertyRecordController extends Controller
 
         $ids = $rows->map(function ($r) {
             return $r->captured_by ?? $r->created_by ?? null;
-        })->filter()->unique()->values();
+        })->filter(function ($v) {
+            return $v !== null && trim((string) $v) !== '' && is_numeric($v);
+        })->map(function ($v) {
+            return (int) $v;
+        })->unique()->values();
 
         $names = [];
         if ($ids->isNotEmpty()) {
@@ -437,8 +450,17 @@ class PropertyRecordController extends Controller
         }
 
         $rows->transform(function ($r) use ($names) {
-            $id = $r->captured_by ?? $r->created_by ?? null;
-            $r->captured_by_name = ($id !== null && isset($names[$id])) ? $names[$id] : null;
+            $value = $r->captured_by ?? $r->created_by ?? null;
+
+            if ($value === null || trim((string) $value) === '') {
+                $r->captured_by_name = null;
+            } elseif (is_numeric($value)) {
+                $r->captured_by_name = $names[(int) $value] ?? null;
+            } else {
+                // Already a name — File Indexing writes created_by as text.
+                $r->captured_by_name = trim((string) $value);
+            }
+
             return $r;
         });
     }

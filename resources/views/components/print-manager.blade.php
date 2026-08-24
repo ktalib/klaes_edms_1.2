@@ -79,14 +79,20 @@
                     <div x-show="supportsIssueDate" x-cloak
                          class="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-2">
                         <div class="flex items-center justify-between gap-3">
-                            <label class="text-[11px] font-black uppercase tracking-widest text-slate-500">Date Issued</label>
+                            <label class="text-[11px] font-black uppercase tracking-widest text-slate-500">
+                                Date Issued
+                                <span x-show="!issueDate" x-cloak class="text-red-500">*</span>
+                            </label>
                             <span x-show="issueDateLocked && !issueDateUnlocked" x-cloak
                                   class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">On record</span>
+                            <span x-show="!issueDate" x-cloak
+                                  class="text-[10px] font-black text-red-500 uppercase tracking-wider">Required</span>
                         </div>
                         <div class="flex items-center gap-2">
-                            <input type="date" x-model="issueDate" :max="today"
+                            <input type="date" x-model="issueDate" :max="today" required
                                    :disabled="issueDateLocked && !issueDateUnlocked"
-                                   class="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-500">
+                                   class="flex-1 px-3 py-2 bg-white rounded-lg text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-500 border"
+                                   :class="issueDate ? 'border-slate-300' : 'border-red-400 bg-red-50/40'">
                             <button type="button"
                                     x-show="issueDateLocked && !issueDateUnlocked" x-cloak
                                     @click="issueDateConfirming = true"
@@ -514,7 +520,13 @@ document.addEventListener('alpine:init', () => {
             // filled in, which is the ordinary case — date_issued is empty until a
             // letter is actually issued.
             this.issueDateOnRecord = (data && data.issueDate) ? String(data.issueDate) : '';
-            this.issueDate = this.issueDateOnRecord || this.today;
+            // Empty when the record has none. It used to default to today, which
+            // is why an undated letter came out carrying a date nobody chose: the
+            // field was never blank, so the "enter a date" check never fired and the
+            // print silently wrote today. date_issued has no fallback anywhere, and
+            // this panel is not allowed to invent one either — the operator types it
+            // or the print does not go ahead.
+            this.issueDate = this.issueDateOnRecord || '';
             this.issueDateLocked = !!this.issueDateOnRecord;
             this.issueDateUnlocked = false;
             this.issueDateConfirming = false;
@@ -598,10 +610,15 @@ document.addEventListener('alpine:init', () => {
         },
 
         passEnabled(pass) {
+            if (this.issueDateOutstanding) return false;
             return pass.key === 'Batch' || this.splitPassesAllowed;
         },
 
         passDisabledReason(pass) {
+            if (this.issueDateOutstanding) {
+                return 'Enter the date issued first — it prints on the letter as '
+                     + 'DATE OF ISSUE and nothing else supplies it.';
+            }
             if (this.passEnabled(pass)) return '';
             return 'Splitting the run into Originals and office copies is available '
                  + 'on the Batches tab, where a whole batch goes through the printer '
@@ -696,6 +713,15 @@ document.addEventListener('alpine:init', () => {
             this.issueDateConfirming = false;
         },
 
+        // A pass cannot be pressed while the date is outstanding. The tiles are the
+        // only way to print from here, so this is the gate — the checks in
+        // persistIssueDate() and runBatchPass() stay as the backstop.
+        get issueDateOutstanding() {
+            if (!this.supportsIssueDate) return false;
+            if (this.isBatchMode) return this.batchMissingDates > 0 && !this.issueDate;
+            return !this.issueDate;
+        },
+
         // Written to the record before the letter is opened, not carried on the
         // print URL: a reprint has to come out carrying the same date as the copy
         // already in the file.
@@ -751,8 +777,17 @@ document.addEventListener('alpine:init', () => {
             const copies = { 'Batch': 'all', 'Original': 'original', 'Office': 'office' }[passKey];
             if (!copies || !this.batch || typeof this.batch.onPass !== 'function') return;
 
+            // Same rule as a single letter: if any letter in this batch has no
+            // date of issue, one has to be entered before the run goes ahead. It
+            // fills those blanks only — a letter already carrying a date keeps it.
+            if (this.batchMissingDates > 0 && !this.issueDate) {
+                this.issueDateError = 'Enter the date of issue before printing — '
+                    + this.batchMissingDates + ' of these letters have none.';
+                return;
+            }
+
             const extras = {};
-            if (this.batchMissingDates > 0 && this.issueDate) {
+            if (this.batchMissingDates > 0) {
                 extras.issue_date = this.issueDate;
                 extras.issue_date_apply = 'missing';
             }

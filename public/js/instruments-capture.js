@@ -1401,7 +1401,10 @@ document.addEventListener('DOMContentLoaded', function () {
             'secondPartyDistrict', 'coMortgagorDistrict', 'solicitorState',
             'solicitorDistrict', 'propertyState', 'transactionDate', 'duration',
             'startDate', 'endDate', 'annualRent', 'considerationAmount', 'bankName',
-            'rootRegNo', 'cofoType', 'op_serial_number', 'serial_no', 'volume_no',
+            // 'cofoType' is deliberately NOT cleared: it is the answer given at the
+            // prompt before the form opened (SLTR/ST "New C of O" / "Old C of O"),
+            // not something typed into the form. Picking a file number must not wipe it.
+            'rootRegNo', 'op_serial_number', 'serial_no', 'volume_no',
             'registration_number', 'reg_page_no', 'registrationDate', 'registrationTime',
             'lpkn_no', 'propertyDescription'
         ];
@@ -1439,10 +1442,12 @@ document.addEventListener('DOMContentLoaded', function () {
             allowDupInput.value = '';
         }
 
-        // A reset returns a CofO capture to the default Regular variant.
-        if (currentInstrumentType === 'certificate-of-occupancy') {
-            setCofoVariant('regular');
-        }
+        // The CofO variant is NOT reset here. It is chosen in the prompt before the
+        // form opens, and this runs when a file number is selected - mid-capture.
+        // Resetting it there sent an SLTR/ST capture back to Regular silently: the
+        // notice popup had already shown the SLTR volume, but submit posted
+        // "Certificate of Occupancy" and burned a number out of the regular CofO
+        // vault. openRegistrationDialog() still starts fresh opens on Regular.
 
         // Reset toggles (checkboxes) if they are checked
         ['hasCoMortgagor', 'hasThirdParty', 'hasFourthParty', 'includeSolicitorSidebar', 'includeSolicitor', 'coo_recertification', 'coo_conversion'].forEach(id => {

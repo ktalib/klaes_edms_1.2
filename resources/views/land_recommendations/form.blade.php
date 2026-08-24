@@ -1599,6 +1599,30 @@
                         <div class="flex items-center gap-2 mb-2">
                             <i data-lucide="zap" class="h-4 w-4 text-green-600"></i>
                             <h3 class="text-sm font-bold text-green-900 uppercase tracking-tight">RofO Generation Data</h3>
+
+                            {{-- Per-file stepper, the same one the cards above carry:
+                                 one position in the batch, shared by every card. --}}
+                            <div class="per-file-step-nav hidden ml-auto flex items-center gap-2">
+                                <span class="per-file-step-file font-mono text-[11px] font-bold text-slate-700 truncate max-w-[200px]"></span>
+                                <span class="per-file-step-untick hidden px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 text-slate-600 uppercase tracking-wide"
+                                      title="This file is unticked in the table, so these values will not be saved">Not in batch</span>
+                                <button type="button" id="rofo-card-apply-all"
+                                        data-card-fields="rofo_survey_method"
+                                        class="px-2.5 py-1.5 text-[11px] font-bold bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed transition inline-flex items-center gap-1.5"
+                                        title="Copy this card onto every file in the batch">
+                                    <i data-lucide="copy" class="h-3.5 w-3.5"></i>
+                                    Apply to all
+                                </button>
+                                <div class="flex items-center gap-1 rounded-lg border border-green-200 bg-white p-0.5">
+                                    <button type="button" class="per-file-step-prev p-1.5 rounded-md text-green-700 hover:bg-green-50 disabled:opacity-30 disabled:cursor-not-allowed transition" title="Previous file">
+                                        <i data-lucide="chevron-left" class="h-4 w-4"></i>
+                                    </button>
+                                    <span class="per-file-step-label px-2 text-[11px] font-bold text-slate-700 tabular-nums whitespace-nowrap">1 of 1</span>
+                                    <button type="button" class="per-file-step-next p-1.5 rounded-md text-green-700 hover:bg-green-50 disabled:opacity-30 disabled:cursor-not-allowed transition" title="Next file">
+                                        <i data-lucide="chevron-right" class="h-4 w-4"></i>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                         <div class="space-y-4">
                             <div class="p-4 bg-white rounded-xl border border-green-100">
@@ -1656,6 +1680,30 @@
                         <div class="flex items-center gap-2 mb-2">
                             <i data-lucide="check-circle" class="h-4 w-4 text-blue-600"></i>
                             <h3 class="text-sm font-bold text-slate-900 uppercase tracking-tight">Recommendation & Reasons</h3>
+
+                            {{-- Per-file stepper, the same one the cards above carry:
+                                 one position in the batch, shared by every card. --}}
+                            <div class="per-file-step-nav hidden ml-auto flex items-center gap-2">
+                                <span class="per-file-step-file font-mono text-[11px] font-bold text-slate-700 truncate max-w-[200px]"></span>
+                                <span class="per-file-step-untick hidden px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 text-slate-600 uppercase tracking-wide"
+                                      title="This file is unticked in the table, so these values will not be saved">Not in batch</span>
+                                <button type="button" id="reasons-card-apply-all"
+                                        data-card-fields="recommendation"
+                                        class="px-2.5 py-1.5 text-[11px] font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition inline-flex items-center gap-1.5"
+                                        title="Copy this card onto every file in the batch">
+                                    <i data-lucide="copy" class="h-3.5 w-3.5"></i>
+                                    Apply to all
+                                </button>
+                                <div class="flex items-center gap-1 rounded-lg border border-blue-200 bg-white p-0.5">
+                                    <button type="button" class="per-file-step-prev p-1.5 rounded-md text-blue-700 hover:bg-blue-50 disabled:opacity-30 disabled:cursor-not-allowed transition" title="Previous file">
+                                        <i data-lucide="chevron-left" class="h-4 w-4"></i>
+                                    </button>
+                                    <span class="per-file-step-label px-2 text-[11px] font-bold text-slate-700 tabular-nums whitespace-nowrap">1 of 1</span>
+                                    <button type="button" class="per-file-step-next p-1.5 rounded-md text-blue-700 hover:bg-blue-50 disabled:opacity-30 disabled:cursor-not-allowed transition" title="Next file">
+                                        <i data-lucide="chevron-right" class="h-4 w-4"></i>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                         <div>
                             <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">The Director of Land recommends/does not recommend for the following reasons:</label>
@@ -2217,7 +2265,11 @@ document.addEventListener('DOMContentLoaded', function () {
         // batch table already captures those per child in its Pg / Memo boxes, so
         // a second source would post two children[i][page] inputs for one value.
         'page_survey_report', 'survey_report', 'physical_planning_comment',
-        'improvement', 'revision_period', 'time_of_erection'
+        'improvement', 'revision_period', 'time_of_erection',
+        // RofO Generation Data — a radio group, not an input. See grantEls().
+        'rofo_survey_method',
+        // Recommendation & Reasons.
+        'recommendation'
     ];
     var grantStore  = [];
     var grantIndex  = 0;
@@ -3092,16 +3144,40 @@ document.addEventListener('DOMContentLoaded', function () {
     // PER_FILE_FIELDS / grantStore / grantIndex are declared with the other batch
     // state above, out of reach of the initialisation-order trap noted there.
 
+    // One entry per per-file field. A radio group is several elements sharing a
+    // name, so it carries its whole group and is read and written through the
+    // checked one — querySelector alone would hand back the first radio, whose
+    // .value is its own value whether or not it is the one selected.
     function grantEls() {
         return PER_FILE_FIELDS.map(function (f) {
-            return { name: f, el: recForm.querySelector('[name="' + f + '"]') };
+            var el = recForm.querySelector('[name="' + f + '"]');
+            if (!el) return { name: f, el: null };
+
+            if (el.type === 'radio') {
+                return {
+                    name: f,
+                    el: el,
+                    radios: Array.prototype.slice.call(
+                        recForm.querySelectorAll('[name="' + f + '"]')
+                    )
+                };
+            }
+
+            return { name: f, el: el };
         }).filter(function (p) { return p.el; });
     }
 
     // What the card currently shows, as a plain object.
     function readGrantCard() {
         var out = {};
-        grantEls().forEach(function (p) { out[p.name] = p.el.value; });
+        grantEls().forEach(function (p) {
+            if (p.radios) {
+                var picked = p.radios.filter(function (r) { return r.checked; })[0];
+                out[p.name] = picked ? picked.value : '';
+                return;
+            }
+            out[p.name] = p.el.value;
+        });
         return out;
     }
 
@@ -3109,6 +3185,20 @@ document.addEventListener('DOMContentLoaded', function () {
         grantEls().forEach(function (p) {
             var next = (values && values[p.name] !== undefined) ? values[p.name] : '';
             var el = p.el;
+
+            // A radio group: check the one that matches, clear the rest. A file with
+            // no answer yet leaves every radio unchecked rather than inheriting the
+            // previous file's method by default.
+            if (p.radios) {
+                p.radios.forEach(function (r) {
+                    var want = (r.value === next);
+                    if (r.checked !== want) {
+                        r.checked = want;
+                        r.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+                return;
+            }
 
             // TP No. is a Select2. Its value only sticks if an <option> for it
             // exists, and the rendered text only refreshes on change.select2 —
@@ -3359,6 +3449,8 @@ document.addEventListener('DOMContentLoaded', function () {
     bindCardApplyAll('applicant-card-apply-all', 'Applicant & Property');
     bindCardApplyAll('grant-card-apply-all', 'Grant Conditions');
     bindCardApplyAll('page-card-apply-all', 'Page Number details');
+    bindCardApplyAll('rofo-card-apply-all', 'RofO Generation Data');
+    bindCardApplyAll('reasons-card-apply-all', 'Recommendation & Reasons');
 
     /* ═══════════════════════════════════════════════════════════════════
        Recommendation Type from the picked files — regular batch only

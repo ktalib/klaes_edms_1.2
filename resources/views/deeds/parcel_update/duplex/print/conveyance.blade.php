@@ -23,21 +23,41 @@
 
     $currentUse = $landUseName[strtoupper((string) $duplex->land_use)] ?? strtolower((string) $duplex->land_use);
 
+    /** Sizes as the letter reads them: "1.5 + 2 + 3 Ha", blanks skipped. */
+    $num = fn ($v) => rtrim(rtrim(number_format((float) $v, 2, '.', ''), '0'), '.');
+
+    $sizesOf = function ($stage) use ($num) {
+        $list = collect((array) data_get($stage->payload, 'plots', []))
+            ->pluck('size')
+            ->filter(fn ($v) => $v !== null && $v !== '' && (float) $v > 0)
+            ->map(fn ($v) => (float) $v)
+            ->values();
+
+        return $list->isEmpty()
+            ? ['list' => '', 'total' => '', 'has' => false]
+            : ['list' => $list->map($num)->implode(' + '), 'total' => $num($list->sum()), 'has' => true];
+    };
+
     // One clause per stage, in the order the duplex runs them. These read as prose in
-    // the RE line and again in the body, so they are phrased as noun phrases.
+    // the RE line and again in the body, so they are phrased as noun phrases — with the
+    // parcel sizes named, which is what makes the letter checkable against the plan.
     $clauses = [];
     foreach ($duplex->stageRows as $stage) {
-        $plots = count(array_filter((array) data_get($stage->payload, 'plots', [])));
+        $plots = $stage->plot_count ?: count(array_filter((array) data_get($stage->payload, 'plots', [])));
+        $size  = $sizesOf($stage);
+        $of    = $size['has'] ? ' of ' . $size['list'] . ' Ha' : '';
 
         $clauses[] = match ($stage->type) {
-            'merger' => 'merger of ' . count($sources) . ' titles into one',
-            'subdivision' => 'subdivision into ' . ($stage->plot_count ?: $plots) . ' plots',
-            'separation' => 'separation into ' . ($stage->plot_count ?: $plots) . ' plots',
-            'extension' => 'extension of the plot boundary',
-            'change_of_purpose' => 'change of purpose from ' . $currentUse . ' to '
+            'merger' => 'merger of ' . count($sources) . ' titles'
+                . ($size['has'] ? ' measuring ' . $size['list'] . ' Ha' : '')
+                . ' into one',
+            'subdivision' => 'subdivision into ' . $plots . ' plots' . $of,
+            'separation'  => 'separation into ' . $plots . ' plots' . $of,
+            'extension'   => 'extension of the plot boundary' . $of,
+            'change_of_purpose' => 'change of purpose' . $of . ' from ' . $currentUse . ' to '
                 . ($landUseName[strtoupper((string) data_get($stage->payload, 'new_land_use'))]
                     ?? strtolower((string) data_get($stage->payload, 'new_land_use'))) . ' use',
-            default => $stage->label(),
+            default => $stage->label() . $of,
         };
     }
 

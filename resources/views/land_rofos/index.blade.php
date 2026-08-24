@@ -1516,7 +1516,7 @@ function rofoIssueDateDialog(ids, rows, missing, existing, single, onReady) {
 
     if (typeof Swal === 'undefined') {
         if (locked) { onReady(null); return; }
-        var typed = window.prompt('Date of issue (YYYY-MM-DD) - prints on the letter as DATE OF ISSUE', rofoToday());
+        var typed = window.prompt('Date of issue (YYYY-MM-DD) - prints on the letter as DATE OF ISSUE', '');
         if (typed) onReady({ issue_date: typed, issue_date_apply: 'missing' });
         return;
     }
@@ -1530,7 +1530,7 @@ function rofoIssueDateDialog(ids, rows, missing, existing, single, onReady) {
         +   'record, so a reprint comes out carrying the same date.'
         + '</div>'
         + '<div style="display:flex;gap:8px;align-items:center;margin-top:14px">'
-        +   '<input type="date" id="rofoIssueDateInput" value="' + rofoEscHtml(existing || rofoToday()) + '"'
+        +   '<input type="date" id="rofoIssueDateInput" required value="' + rofoEscHtml(existing) + '"'
         +     ' max="' + rofoToday() + '"' + (locked ? ' disabled' : '')
         +     ' style="flex:1;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px'
         +     (locked ? ';background:#f1f5f9;color:#64748b' : '') + '">'

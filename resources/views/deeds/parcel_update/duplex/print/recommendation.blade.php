@@ -20,6 +20,31 @@
     ];
     $currentUse = $landUseName[Str::upper((string) $duplex->land_use)] ?? Str::lower((string) $duplex->land_use);
 
+    /**
+     * The parcel sizes a stage records, as the sheet reads them: "1.5 + 2 + 3" with a
+     * total. A blank size is skipped rather than printed as 0, so a partly-filled stage
+     * still produces a sensible line.
+     */
+    $num = fn ($v) => rtrim(rtrim(number_format((float) $v, 2, '.', ''), '0'), '.');
+
+    $sizesOf = function ($stage) use ($num) {
+        $list = collect((array) data_get($stage->payload, 'plots', []))
+            ->pluck('size')
+            ->filter(fn ($v) => $v !== null && $v !== '' && (float) $v > 0)
+            ->map(fn ($v) => (float) $v)
+            ->values();
+
+        if ($list->isEmpty()) {
+            return ['list' => '', 'total' => '', 'has' => false];
+        }
+
+        return [
+            'list'  => $list->map($num)->implode(' + '),
+            'total' => $num($list->sum()),
+            'has'   => true,
+        ];
+    };
+
     // How many parcels each stage RECEIVES, walked forward through the chain. A merger
     // at rank 3 consumes what rank 2 produced, not the duplex's original source files —
     // reading the source count there would misstate the memo.
@@ -31,6 +56,10 @@
         $newUse  = Str::upper((string) data_get($stage->payload, 'new_land_use'));
         $newName = $landUseName[$newUse] ?? Str::lower($newUse);
         $applies = count((array) data_get($stage->payload, 'applies_to', [])) ?: $plots;
+        $size    = $sizesOf($stage);
+
+        // "of 1.5 + 2 + 3 Ha (total 6.5 Ha)" — appended wherever a parcel is named.
+        $sizePhrase = $size['has'] ? ' of ' . $size['list'] . ' Ha' : '';
 
         // What this stage acts on, named where it is known.
         $actsOn = $stage->rank === 1
@@ -48,16 +77,21 @@
                 default       => $plots . ' ' . $stage->label(),
             },
             'point' => match ($stage->type) {
-                'merger'      => 'Merger of ' . $actsOn . ' into a single parcel in favour of ' . $applicant . '.',
+                'merger'      => 'Merger of ' . $actsOn
+                                 . ($size['has'] ? ' measuring ' . $size['list'] . ' Ha' : '')
+                                 . ' into a single parcel in favour of ' . $applicant . '.',
                 'subdivision' => 'Subdivision of plot no. ' . Str::upper((string) ($duplex->plot_no ?: $title))
-                                 . ' into ' . $plots . ' parcels as per the attached plan in favour of ' . $applicant . '.',
-                'separation'  => 'Separation of plot no. ' . Str::upper((string) ($duplex->plot_no ?: $title))
-                                 . ' into ' . $plots . ' parcels as per the attached plan in favour of ' . $applicant . '.',
-                'extension'   => 'Extension of the boundary of plot no. ' . Str::upper((string) ($duplex->plot_no ?: $title))
+                                 . ' into ' . $plots . ' parcels' . $sizePhrase
                                  . ' as per the attached plan in favour of ' . $applicant . '.',
+                'separation'  => 'Separation of plot no. ' . Str::upper((string) ($duplex->plot_no ?: $title))
+                                 . ' into ' . $plots . ' parcels' . $sizePhrase
+                                 . ' as per the attached plan in favour of ' . $applicant . '.',
+                'extension'   => 'Extension of the boundary of plot no. ' . Str::upper((string) ($duplex->plot_no ?: $title))
+                                 . $sizePhrase . ' as per the attached plan in favour of ' . $applicant . '.',
                 'change_of_purpose' => 'Change of purpose of ' . $applies . ' parcel' . ($applies === 1 ? '' : 's')
-                                 . ' from ' . $currentUse . ' to ' . $newName . ' use in favour of ' . $applicant . '.',
-                default => $stage->label() . ' in favour of ' . $applicant . '.',
+                                 . $sizePhrase . ' from ' . $currentUse . ' to ' . $newName
+                                 . ' use in favour of ' . $applicant . '.',
+                default => $stage->label() . $sizePhrase . ' in favour of ' . $applicant . '.',
             },
         ];
 

@@ -5904,7 +5904,12 @@ class FileIndexController extends Controller
 
             // Get files from the specified batch
             $files = DB::connection('sqlsrv')->table('file_indexings as f')
-                ->leftJoin('users as u', 'u.id', '=', 'f.created_by')
+                ->leftJoin('users as u', function ($join) {
+                    // file_indexings.created_by holds a NAME for indexing-created rows,
+                    // so a direct id join makes SQL Server fail the whole query with
+                    // "Error converting data type nvarchar to bigint".
+                    $join->on('u.id', '=', DB::raw('TRY_CONVERT(INT, f.created_by)'));
+                })
                 ->where('f.batch_no', $batchNo)
                 ->orderBy('f.id')
                 ->get([
@@ -5920,7 +5925,7 @@ class FileIndexController extends Controller
                     'f.lga',
                     'f.shelf_location',
                     DB::raw("CONVERT(varchar(19), f.created_at, 120) as indexed_date"),
-                    DB::raw("COALESCE(u.first_name + ' ' + u.last_name, '') as indexed_by")
+                    DB::raw("COALESCE(u.first_name + ' ' + u.last_name, f.created_by, '') as indexed_by")
                 ]);
 
             if ($files->isEmpty()) {
@@ -5970,7 +5975,12 @@ class FileIndexController extends Controller
 
             // Get files within the specified date range
             $files = DB::connection('sqlsrv')->table('file_indexings as f')
-                ->leftJoin('users as u', 'u.id', '=', 'f.created_by')
+                ->leftJoin('users as u', function ($join) {
+                    // file_indexings.created_by holds a NAME for indexing-created rows,
+                    // so a direct id join makes SQL Server fail the whole query with
+                    // "Error converting data type nvarchar to bigint".
+                    $join->on('u.id', '=', DB::raw('TRY_CONVERT(INT, f.created_by)'));
+                })
                 ->whereDate('f.created_at', '>=', $fromDate)
                 ->whereDate('f.created_at', '<=', $toDate)
                 ->orderBy('f.created_at')
@@ -5987,7 +5997,7 @@ class FileIndexController extends Controller
                     'f.lga',
                     'f.shelf_location',
                     DB::raw("CONVERT(varchar(19), f.created_at, 120) as indexed_date"),
-                    DB::raw("COALESCE(u.first_name + ' ' + u.last_name, '') as indexed_by")
+                    DB::raw("COALESCE(u.first_name + ' ' + u.last_name, f.created_by, '') as indexed_by")
                 ]);
 
             if ($files->isEmpty()) {

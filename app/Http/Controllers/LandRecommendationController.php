@@ -34,6 +34,10 @@ class LandRecommendationController extends Controller
         // own columns and are written from $child directly, further down.
         'page_survey_report', 'survey_report', 'physical_planning_comment',
         'improvement', 'revision_period', 'time_of_erection',
+        // Recommendation & Reasons. The reasons differ file by file in a hand-picked
+        // batch — one set of reasons across ten unrelated plots is the exception,
+        // not the rule — so the card steps like the others.
+        'recommendation',
     ];
 
     public function index(Request $request)
@@ -1723,6 +1727,13 @@ class LandRecommendationController extends Controller
             'children.*.revision_period'           => 'nullable|string',
             'children.*.time_of_erection'          => 'nullable|string',
 
+            // Recommendation & Reasons, and RofO Generation Data. The survey method
+            // is not a column: it is written to the rofo_director_survey /
+            // rofo_licensed_surveyor pair per child, the same way the batch-wide one
+            // is written to $common.
+            'children.*.recommendation'      => 'nullable|string',
+            'children.*.rofo_survey_method'  => 'nullable|string|in:DIRECTOR,LICENSED',
+
             // Common fields — captured once and copied onto every child.
             // applicant_address is NOT here: it is captured per child in the table,
             // because subdivided plots routinely go to different owners.
@@ -1878,6 +1889,15 @@ class LandRecommendationController extends Controller
                     if (array_key_exists($field, $child)) {
                         $row[$field] = ($child[$field] === '' ? null : $child[$field]);
                     }
+                }
+
+                // Survey method is one choice stored as two columns, so it cannot go
+                // through the loop above. A child that sends one overrides the
+                // batch-wide answer already in $common; a child that sends nothing
+                // keeps it.
+                if (filled($child['rofo_survey_method'] ?? null)) {
+                    $row['rofo_director_survey']   = $child['rofo_survey_method'] === 'DIRECTOR' ? 'YES' : 'NO';
+                    $row['rofo_licensed_surveyor'] = $child['rofo_survey_method'] === 'LICENSED' ? 'YES' : 'NO';
                 }
 
                 $purposeId = $child['purpose_id'] ?? null;
@@ -2117,6 +2137,15 @@ class LandRecommendationController extends Controller
                     if (array_key_exists($field, $child)) {
                         $row[$field] = ($child[$field] === '' ? null : $child[$field]);
                     }
+                }
+
+                // Survey method is one choice stored as two columns, so it cannot go
+                // through the loop above. A child that sends one overrides the
+                // batch-wide answer already in $common; a child that sends nothing
+                // keeps it.
+                if (filled($child['rofo_survey_method'] ?? null)) {
+                    $row['rofo_director_survey']   = $child['rofo_survey_method'] === 'DIRECTOR' ? 'YES' : 'NO';
+                    $row['rofo_licensed_surveyor'] = $child['rofo_survey_method'] === 'LICENSED' ? 'YES' : 'NO';
                 }
 
                 // Purpose is per child and has no common fallback, so a blank one
