@@ -857,9 +857,16 @@
                 <!-- CONDITIONS SECTION -->
                 <div class="conditions-list-fixed">
                     <p class="condition-item">
+                        {{-- The applicant's own application date, and nothing else.
+                             This used to print created_at — the day the record was
+                             captured in KLAES — so a recommendation with no
+                             application date on it still told the applicant their
+                             application was dated the day somebody typed it in.
+                             Blank when there is none: an empty line on the letter is
+                             the truth, a made-up date is not. --}}
                         With reference to your application dated
-                        <span class="inline-data" style="min-width: 80px">{{ $recommendation->created_at->format('jS F') }}</span>
-                        <span class="inline-data" style="min-width: 30px">{{ $recommendation->created_at->format('Y') }}</span>, I am directed to inform you that the Governor of Kano State has
+                        <span class="inline-data" style="min-width: 80px">{{ optional($recommendation->application_date)->format('jS F') }}</span>
+                        <span class="inline-data" style="min-width: 30px">{{ optional($recommendation->application_date)->format('Y') }}</span>, I am directed to inform you that the Governor of Kano State has
                         approved the grant of a Right of Occupancy to you over
                         @if(!empty($recommendation->plot_number))
                             plot No <span class="inline-data" style="min-width: 40px">{{ $recommendation->plot_number }}</span>

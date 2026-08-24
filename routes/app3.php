@@ -1136,6 +1136,10 @@ Route::middleware(['auth'])->group(function () {
         // the print form.
         Route::post('/issue-dates', [\App\Http\Controllers\LandRofoController::class, 'issueDates'])->name('issue-dates');
         Route::post('/issue-date', [\App\Http\Controllers\LandRofoController::class, 'saveIssueDate'])->name('issue-date');
+        // Put a letter's print state back so it can be printed again. Super Admin
+        // only; the check is in the controller, and the menu that calls it is only
+        // rendered for them.
+        Route::post('/{id}/reset-print', [\App\Http\Controllers\LandRofoController::class, 'resetPrint'])->name('reset-print');
         Route::get('/{id}/print', [\App\Http\Controllers\LandRofoController::class, 'print'])->name('print');
         Route::post('/{id}/log-print', [\App\Http\Controllers\LandRofoController::class, 'logPrint'])->name('log-print');
     });

@@ -268,9 +268,14 @@
             <div class="title-center">TERMS OF OFFER OF GRANT/CONVEYANCE OF APPROVAL</div>
             <div class="conditions-list-fixed">
                 <p class="condition-item">
+                    {{-- The applicant's own application date, and nothing else —
+                         it used to print created_at, the day the record was captured.
+                         Blank when there is none. The year is 'Y' to match the single
+                         print, which this letter has to read identically to; it was
+                         'y' here and came out as "26". --}}
                     With reference to your application dated
-                    <span class="inline-data" style="min-width:80px">{{ $recommendation->created_at ? $recommendation->created_at->format('jS F') : '' }}</span>
-                    <span class="inline-data" style="min-width:30px">{{ $recommendation->created_at ? $recommendation->created_at->format('y') : '' }}</span>,
+                    <span class="inline-data" style="min-width:80px">{{ optional($recommendation->application_date)->format('jS F') }}</span>
+                    <span class="inline-data" style="min-width:30px">{{ optional($recommendation->application_date)->format('Y') }}</span>,
                     I am directed to inform you that the Governor of Kano State has approved the grant of a Right of Occupancy to you over piece of land/plot No
                     <span class="inline-data" style="min-width:40px">{{ $recommendation->plot_number }}</span>
                     situated at <span class="inline-data" style="min-width:150px">{{ $printLocation }}</span>

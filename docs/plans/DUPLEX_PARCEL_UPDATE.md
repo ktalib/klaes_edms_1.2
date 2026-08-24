@@ -357,16 +357,20 @@ Everything below is verified against the dev database, not asserted.
 
 1. **Deeds** → *Duplex Parcel Update* (`?mode=deeds`) → **New Duplex**.
 2. **Step 1** — pick the source file(s), then add updates from a **dropdown**. Each pick
-   appends to the plan and drops out of the dropdown; the list below shows only what has
-   been added, in order, each row locked with an × to remove. Picking **more than one
-   source file auto-adds Merger as leg 1**, locked, with its count set to the number of
-   files. Location (plot, district, LGA) is captured here and composed into one
-   `DISTRICT, LGA, KANO` string.
-3. **Step 2** — quantities, with an `N → M` badge per stage so a Merger's "1" cannot be
-   misread as "one file".
-4. **Step 3** — one panel per stage in rank order, running on holding numbers.
+   appends to the plan and drops out of the dropdown; the list below shows **only what has
+   been added**, in order, each row locked with an × to remove. Picking **more than one
+   source file auto-adds Merger as leg 1**, locked (it cannot be removed while several
+   files are selected), with its count set to the number of files. Location (plot,
+   district, LGA) is captured here and composed into one `DISTRICT, LGA, KANO` string.
+3. **Step 2** — quantities **and plot sizes**, with an `N → M` badge per stage so a
+   Merger's "1" cannot be misread as "one file". See §9.8 for the running-area line.
+4. **Step 3** — one panel per stage in rank order, running on holding numbers. Sizes seed
+   from step 2; holders default to the applicant, except a **Merger, where each row
+   defaults to that source file's own registered holder** (merged files usually come from
+   different owners).
 5. **Submit** opens the summary sheet, then the register.
-6. KNUPDA → Approve → Memo → Conveyance → Send to Land.
+6. KNUPDA → Approve → Memo → Conveyance. The row menu **gates itself**: everything is
+   disabled until Approve, and each step unlocks the next and closes behind itself.
 7. **Land** commissions from the **MLS Commission New File Number** modal: File Type →
    **Duplex** → pick it → the whole plan renders inline → Confirm & Generate.
 
@@ -452,3 +456,61 @@ intact.
   blank rule, the parcel location, and the capture date respectively.
 - `?mode=land` is a UI gate, not a permission — `?mode=deeds` typed by hand still gives
   the full page, exactly as the other parcel-update pages behave.
+
+### 9.8 The wizard's arithmetic aids (added 2026-08-24)
+
+Step 2 carries the **parcel area through the chain**, because a merger's parts add up to
+the parcel the next stage divides and that figure was nowhere on screen:
+
+```
+Merger        [0.5] [0.5] [0.2] [0.8]      Merged parcel: 2 Ha        (line BELOW)
+
+Subdivision   Parcel being divided: 2 Ha · plots entered: 0.8 Ha ·
+              1.2 Ha remaining                                        (line ABOVE)
+              [0.2] [0.2] [0.4]
+```
+
+The line sits **below** a merger (its total is *derived* from the boxes) and **above** a
+subdivision or separation (it is *allocated* out of a parcel already known). It is coloured
+as a whole: blue while reporting an area, green when a subdivision balances
+("accounted for"), amber when it does not ("1.2 Ha remaining", or "… over"). Nothing is
+blocked either way — a survey plan can legitimately differ.
+
+A **Change of Purpose does not change any area**; it renames parcels, so it reports its
+own figure but does not alter the carried one.
+
+### 9.9 Row-menu gating (added 2026-08-24)
+
+The menu walks the pipeline so the officer is never offered a step the server would refuse:
+
+| Action | Unlocked by |
+|---|---|
+| Approve | every stage captured |
+| KNUPDA | Approve |
+| Generate Application | KNUPDA = Approved |
+| Print Application | the application existing |
+| Generate Memo | the application existing |
+| Generate Conveyance | the memo existing |
+
+Each *Generate* **closes behind itself**, so nothing can be run twice. **Rejected** and
+**committed** duplexes are read-only apart from viewing and printing. Disabled rows grey
+out rather than disappearing, each with a tooltip saying why. Approve and Reject both
+confirm first, and neither dialog closes on an outside click.
+
+**Send to Land and Commission (Land) were removed** from the menu — Land picks the duplex
+up from the commissioning modal. `DuplexCommitService` therefore accepts **`approved`** as
+well as `in_land`; requiring `in_land` after removing the only action that set it would
+have refused every duplex. Note this also removed the gate that demanded a memo *and*
+conveyance before hand-off.
+
+### 9.10 What the sheets print
+
+Both are composed from the stages in execution order, and both carry KLAES bottom-left and
+LAnd ADmin bottom-right, pinned to the foot of the page.
+
+- **Memo** — the application line lists **counts and names only**: "5 Subdivision, 3 Change
+  of Purpose and 5 Merger". One lettered point per stage carries the detail, each naming
+  its **plot sizes** as a list: "into 3 parcels of 2.5 + 2.6 + 3 Ha". **No totals** — a
+  computed sum on a legal instrument only invites an argument with the survey plan.
+- **Conveyance** — the official letter, file numbers with slashes (`IND/1990/63`), sizes
+  listed the same way.

@@ -9,6 +9,13 @@
 @endpush
 
 @section('content')
+@php
+    // Resetting a print is a Super Admin action: it takes a letter that the system
+    // says is on paper and declares it unprinted, which is a correction to the
+    // record and not part of anyone's daily run. Read once here rather than per
+    // row — assignedRoleNames() parses the assign_role list on every call.
+    $canResetPrint = auth()->check() && auth()->user()->isSuperAdmin();
+@endphp
 <div class="flex-1 overflow-auto bg-slate-50/60">
     @include('admin.header')
     <div class="py-12 bg-slate-50 min-h-screen">
@@ -521,6 +528,32 @@
                                                 </button>
                                                 <div class="border-t border-slate-100 my-1"></div>
                                                 @endif
+                                                {{-- Reset print — Super Admin only, and only where there is
+                                                     something to reset. Scoped the same way the passes are, so a
+                                                     spoilt run can be reopened without throwing away the half
+                                                     that came out correctly: reprinting an Original costs a sheet
+                                                     of security paper, so "office copies only" exists precisely
+                                                     to avoid spending one.
+
+                                                     The print history is not touched by any of them — see
+                                                     resetPrint(). --}}
+                                                @if($canResetPrint && ($rec->rofo_print_count > 0 || isset($printDates[$rec->id])))
+                                                    {{-- One entry, not three. The scope is picked in the card
+                                                         it opens: three near-identical lines in a row menu read
+                                                         as three separate actions, and the one that costs a
+                                                         sheet of security paper looks exactly like the two that
+                                                         do not. The card can show what the letter's state
+                                                         actually is and what each choice would do to it. --}}
+                                                    <button type="button"
+                                                            onclick="openResetPrintModal({{ $rec->id }}, @js($rec->file_number), @js($rec->rofo_print_stage))"
+                                                            class="flex w-full items-center px-4 py-2.5 text-sm text-rose-700 hover:bg-rose-50 transition gap-2 font-bold">
+                                                        <i data-lucide="rotate-ccw" class="h-4 w-4"></i> Reset print…
+                                                        <span class="ml-auto text-[9px] font-black uppercase tracking-widest text-rose-400">Super Admin</span>
+                                                    </button>
+
+                                                    <div class="border-t border-slate-100 my-1"></div>
+                                                @endif
+
                                                 {{-- One way in. The three passes — all copies, the Originals
                                                      alone, the Duplicate and Triplicate alone — used to sit here
                                                      as separate menu items beside a "Print Manager" that walked
@@ -612,6 +645,76 @@
 </div>
 
 <!-- ═══════════════════════ Batch Print Modal ═══════════════════════ -->
+{{-- ── Reset print ────────────────────────────────────────────────────────
+     Super Admin only, and the row menu only renders the entry that opens it — but
+     the endpoint checks the role again, because a modal in the page is not a
+     permission. --}}
+<div id="resetPrintModal" class="fixed inset-0 z-[1000095] hidden bg-slate-900/70 p-4 overflow-y-auto">
+    <div class="min-h-full flex items-center justify-center">
+        <div class="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden">
+            <div class="px-6 py-4 bg-gradient-to-r from-rose-700 to-rose-600 flex items-center gap-3">
+                <i data-lucide="rotate-ccw" class="h-5 w-5 text-rose-100"></i>
+                <div class="min-w-0">
+                    <h3 class="text-white font-bold text-lg leading-tight">Reset Print</h3>
+                    <p class="text-rose-100 text-[11px] font-semibold uppercase tracking-widest truncate">
+                        <span id="resetPrintFile" class="font-mono"></span>
+                        <span class="text-rose-200/80"> · currently <span id="resetPrintStage" class="font-bold"></span></span>
+                    </p>
+                </div>
+                <button type="button" onclick="closeResetPrintModal()"
+                        class="ml-auto p-2 text-rose-100 hover:text-white hover:bg-white/10 rounded-full transition">
+                    <i data-lucide="x" class="h-5 w-5"></i>
+                </button>
+            </div>
+
+            <div class="p-6 space-y-4">
+                <p class="text-[12.5px] text-slate-500 font-medium">
+                    Pick what to reopen. Nothing is deleted — the print history keeps every run and who made it;
+                    a reset only means the letter counts as unprinted from here on.
+                </p>
+
+                <div class="grid sm:grid-cols-3 gap-3" id="resetPrintScopes">
+                    @foreach([
+                        ['all',      'rotate-ccw', 'All copies',             'Back to not printed',      'The full set prints again — a fresh sheet of security paper for the Original.'],
+                        ['original', 'award',      'Original only',          'Run 1 outstanding again',  'Reprinting the Original spends a sheet of security paper. The office copies keep their record.'],
+                        ['office',   'copy',       'Duplicate & Triplicate', 'Run 2 outstanding again',  'They reprint on plain paper — no security paper is spent. The Original stays printed.'],
+                    ] as [$scopeKey, $scopeIcon, $scopeTitle, $scopeHint, $scopeWarning])
+                        <button type="button"
+                                data-scope="{{ $scopeKey }}"
+                                data-warning="{{ $scopeWarning }}"
+                                onclick="pickResetScope('{{ $scopeKey }}')"
+                                class="reset-scope-tile flex flex-col gap-2 p-3.5 rounded-xl border-2 border-slate-200 bg-white text-left transition hover:border-rose-300 hover:bg-rose-50/40">
+                            <span class="w-9 h-9 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center">
+                                <i data-lucide="{{ $scopeIcon }}" class="w-4 h-4"></i>
+                            </span>
+                            <span class="block">
+                                <span class="block text-[13px] font-bold text-slate-800">{{ $scopeTitle }}</span>
+                                <span class="block text-[10.5px] font-medium text-slate-500 mt-0.5">{{ $scopeHint }}</span>
+                            </span>
+                        </button>
+                    @endforeach
+                </div>
+
+                {{-- What the chosen scope actually costs, in the same place every time. --}}
+                <div id="resetPrintWarning" class="hidden flex gap-2.5 p-3.5 rounded-xl bg-amber-50 border border-amber-200">
+                    <i data-lucide="alert-triangle" class="h-4 w-4 text-amber-600 shrink-0 mt-0.5"></i>
+                    <p class="text-[12px] text-amber-900 font-semibold leading-relaxed" id="resetPrintWarningText"></p>
+                </div>
+            </div>
+
+            <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center gap-3">
+                <button type="button" onclick="closeResetPrintModal()"
+                        class="px-4 py-2 text-sm font-bold text-slate-600 hover:text-slate-900 transition">Cancel</button>
+                <button type="button" id="resetPrintConfirm" disabled onclick="confirmResetPrint()"
+                        class="ml-auto px-5 py-2.5 rounded-xl bg-rose-600 text-white text-sm font-bold hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed transition inline-flex items-center gap-2">
+                    <i data-lucide="rotate-ccw" class="h-4 w-4"></i>
+                    <span id="resetPrintConfirmLabel">Reset print</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div id="batchPrintModal" class="fixed inset-0 z-[1000090] hidden bg-slate-900/60 p-4 overflow-y-auto">
     <div class="mx-auto mt-10 w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <!-- Header -->
@@ -1187,6 +1290,110 @@ function bpmDoPrint() {
     // for a choice that now has one home, and one that could not show how far a
     // half-finished run had already got.
     rofoOpenBatchManagerFor(ids, ids.length + ' selected RofO' + (ids.length === 1 ? '' : 's'));
+}
+
+// ── Reset print ─────────────────────────────────────────────────────────────
+// Super Admin only: the row menu does not render the entry for anyone else and the
+// endpoint refuses anyone else, so neither half stands alone.
+//
+// One entry opens the card and the scope is chosen there. Three lines in a row
+// menu read as three separate actions and give no way to say what each one costs —
+// reprinting an Original spends a sheet of security paper, reprinting the office
+// copies spends none, and that difference is the whole reason the scopes exist.
+var _resetPrintId    = null;
+var _resetPrintFile  = '';
+var _resetPrintScope = '';
+
+function openResetPrintModal(id, fileNumber, stage) {
+    _resetPrintId    = id;
+    _resetPrintFile  = fileNumber || '';
+    _resetPrintScope = '';
+
+    document.getElementById('resetPrintFile').textContent = _resetPrintFile;
+    document.getElementById('resetPrintStage').textContent = {
+        complete:  'fully printed',
+        originals: 'Originals printed, office copies owed',
+        none:      'not printed'
+    }[stage] || (stage || 'unknown');
+
+    // Cleared every time: a scope left selected from the last file is a reset
+    // nobody chose.
+    document.querySelectorAll('#resetPrintScopes .reset-scope-tile').forEach(function (tile) {
+        tile.classList.remove('border-rose-500', 'bg-rose-50');
+        tile.classList.add('border-slate-200', 'bg-white');
+    });
+    document.getElementById('resetPrintWarning').classList.add('hidden');
+    document.getElementById('resetPrintConfirm').disabled = true;
+    document.getElementById('resetPrintConfirmLabel').textContent = 'Reset print';
+
+    document.getElementById('resetPrintModal').classList.remove('hidden');
+    if (window.lucide) window.lucide.createIcons();
+}
+
+function closeResetPrintModal() {
+    document.getElementById('resetPrintModal').classList.add('hidden');
+    _resetPrintId    = null;
+    _resetPrintScope = '';
+}
+
+function pickResetScope(scope) {
+    _resetPrintScope = scope;
+
+    var chosen = null;
+    document.querySelectorAll('#resetPrintScopes .reset-scope-tile').forEach(function (tile) {
+        var on = tile.dataset.scope === scope;
+        tile.classList.toggle('border-rose-500', on);
+        tile.classList.toggle('bg-rose-50', on);
+        tile.classList.toggle('border-slate-200', !on);
+        tile.classList.toggle('bg-white', !on);
+        if (on) chosen = tile;
+    });
+
+    if (chosen) {
+        document.getElementById('resetPrintWarningText').textContent = chosen.dataset.warning || '';
+        document.getElementById('resetPrintWarning').classList.remove('hidden');
+        document.getElementById('resetPrintConfirmLabel').textContent =
+            'Reset ' + (chosen.querySelector('span span') ? chosen.querySelector('span span').textContent : scope);
+    }
+
+    document.getElementById('resetPrintConfirm').disabled = false;
+}
+
+function confirmResetPrint() {
+    if (!_resetPrintId || !_resetPrintScope) return;
+
+    var btn = document.getElementById('resetPrintConfirm');
+    btn.disabled = true;
+
+    fetch('{{ url('land-rofos') }}/' + _resetPrintId + '/reset-print', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': rofoCsrf(), 'Accept': 'application/json' },
+        body: JSON.stringify({ scope: _resetPrintScope })
+    })
+    .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+    .then(function (res) {
+        if (!res.ok || !res.data.success) {
+            throw new Error((res.data && res.data.message) || 'The print could not be reset.');
+        }
+
+        var file = _resetPrintFile;
+        closeResetPrintModal();
+
+        Swal.fire({
+            icon: 'success',
+            title: 'Print reset',
+            html: '<b>' + rofoEscHtml(file) + '</b> is now <b>' + rofoEscHtml(res.data.stage_to) + '</b>.'
+                + '<div style="margin-top:8px;font-size:12px;color:#475569">The print history is unchanged — '
+                + 'every run that was made is still on record.</div>',
+            timer: 2600,
+            showConfirmButton: false
+        }).then(function () { window.location.reload(); });
+    })
+    .catch(function (err) {
+        btn.disabled = false;
+        Swal.fire({ icon: 'error', title: 'Not reset', text: err.message || 'Network error.' });
+    });
 }
 
 // ── Subdivision batch rows ─────────────────────────────────────────────────

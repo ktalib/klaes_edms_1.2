@@ -830,6 +830,94 @@ class LandRofoController extends Controller
         return response()->json(['success' => true, 'count' => $records->count()]);
     }
 
+    /**
+     * Put a letter's print state back, so it can be printed again.
+     *
+     * Super Admin only. Everything about a RofO's print state is derived from three
+     * columns — there is no status table — so a spoilt run, a jam, or a batch
+     * printed with the wrong paper can otherwise only be corrected by hand in SQL,
+     * which is how this ended up being asked for.
+     *
+     *   all       every trace cleared: the letter leaves the Printed tab and the
+     *             next run prints the full set again.
+     *   original  the Originals alone are reopened. The office copies keep their
+     *             stamp, so only run 1 is outstanding.
+     *   office    the Duplicate & Triplicate are reopened, the Originals stay
+     *             printed, and run 2 reprints on plain paper — no security paper
+     *             is spent.
+     *
+     * No print_logs row is ever deleted or altered: that is the record of what was
+     * physically put on paper and by whom, and a status correction must not rewrite
+     * it. Instead the reset writes a MARKER row of its own — print_type
+     * PrintLog::TYPE_RESET, status = the scope — and every "has this been printed"
+     * question counts only the runs that happened AFTER the last marker covering
+     * that copy. The history stays whole and the letter still reads as unprinted,
+     * which is what the columns alone could not achieve: the single-file Print
+     * Manager derives its ticks from print_logs, not from these columns.
+     *
+     * rofo_print_count is what the Printed tab reads, so an 'all' reset is the only
+     * one that touches it.
+     */
+    public function resetPrint(Request $request, $id)
+    {
+        if (!Auth::user() || !Auth::user()->isSuperAdmin()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Not authorized — resetting a print is a Super Admin action.',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'scope' => ['required', 'string', Rule::in(['all', 'original', 'office'])],
+        ]);
+
+        $recommendation = LandRecommendation::findOrFail($id);
+        $scope          = $validated['scope'];
+        $before         = $recommendation->rofo_print_stage;
+
+        $stamps = match ($scope) {
+            'all' => [
+                'rofo_print_count'              => 0,
+                'rofo_originals_printed_at'     => null,
+                'rofo_office_copies_printed_at' => null,
+                'rofo_print_run_mode'           => null,
+            ],
+            'original' => [
+                'rofo_originals_printed_at' => null,
+            ],
+            // Reopening run 2 alone. A row whose originals stamp is empty still
+            // counts as complete while rofo_print_count > 0 (the legacy single-pass
+            // rule), so it is stamped here — otherwise clearing the office stamp
+            // would leave the letter reading as fully printed.
+            'office' => [
+                'rofo_office_copies_printed_at' => null,
+                'rofo_originals_printed_at'     => $recommendation->rofo_originals_printed_at
+                    ?: ((int) ($recommendation->rofo_print_count ?? 0) > 0 ? now() : null),
+                'rofo_print_run_mode'           => 'split',
+            ],
+        };
+
+        $recommendation->forceFill($stamps + ['updated_by' => Auth::id()])->save();
+
+        // The marker. Written after the columns so a failure here cannot leave a
+        // letter reading as reset when it is not.
+        PrintLog::create([
+            'reference_number' => $recommendation->file_number,
+            'document_type'    => 'Land ROFO',
+            'print_type'       => PrintLog::TYPE_RESET,
+            'status'           => $scope,
+            'user_id'          => Auth::id(),
+        ]);
+
+        return response()->json([
+            'success'     => true,
+            'scope'       => $scope,
+            'file_number' => $recommendation->file_number,
+            'stage_from'  => $before,
+            'stage_to'    => $recommendation->fresh()->rofo_print_stage,
+        ]);
+    }
+
     public function print(Request $request, $id)
     {
         $recommendation = LandRecommendation::findOrFail($id);
@@ -950,14 +1038,11 @@ class LandRofoController extends Controller
 
     public function unprintedJson()
     {
-        // File numbers already batch-printed
-        $printed = DB::connection('sqlsrv')->table('print_logs')
-            ->where('document_type', 'Land ROFO')
-            ->where('print_type', 'LandRofoBatch')
-            ->pluck('reference_number')
-            ->map(fn($r) => strtoupper(trim((string) $r)))
-            ->unique()
-            ->all();
+        // File numbers already batch-printed — counting only runs since the last
+        // reset. A letter whose print was reset has to come back into this queue,
+        // and its old LandRofoBatch rows are still there (they are history, not
+        // state), so the marker is what tells the two apart.
+        $printed = PrintLog::printedSinceReset('Land ROFO', 'LandRofoBatch');
 
         $records = LandRecommendation::select([
                 'id', 'file_number', 'applicant_name', 'location', 'plot_number',

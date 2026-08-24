@@ -59,13 +59,22 @@ class PrintManagerController extends Controller
 
         $isSingleStep = in_array($request->document_type, ['Recommendation For Grant', 'ST CofO', 'Legal Search Pay-Per-Search', 'Legal Search Online', 'Legal Search Official']);
 
+        // Counted from the last reset, not from the beginning of time. A reset
+        // writes a marker row (PrintLog::TYPE_RESET) rather than deleting anything,
+        // so a document whose print was put back reads as unprinted here while its
+        // history stays intact. Documents that have never been reset have no marker
+        // and count exactly as they always did.
+        $original   = PrintLog::countSinceReset($logs, 'Original');
+        $duplicate  = PrintLog::countSinceReset($logs, 'Duplicate');
+        $triplicate = PrintLog::countSinceReset($logs, 'Triplicate');
+
         $status = [
-            'original' => $logs->where('status', 'Original')->count(),
-            'duplicate' => $logs->where('status', 'Duplicate')->count(),
-            'triplicate' => $logs->where('status', 'Triplicate')->count(),
-            'completed' => $isSingleStep
-                ? $logs->where('status', 'Original')->count() > 0
-                : $logs->whereIn('status', ['Original', 'Duplicate', 'Triplicate'])->groupBy('status')->count() >= 3
+            'original'   => $original,
+            'duplicate'  => $duplicate,
+            'triplicate' => $triplicate,
+            'completed'  => $isSingleStep
+                ? $original > 0
+                : ($original > 0 && $duplicate > 0 && $triplicate > 0),
         ];
 
         return response()->json([
