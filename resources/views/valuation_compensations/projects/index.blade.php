@@ -75,6 +75,10 @@
                                 <i data-lucide="layers" class="h-4 w-4 text-slate-400"></i>
                                 <span class="text-xs font-bold text-slate-500 uppercase">Sub-Projects ({{ $project->subProjects->count() }})</span>
                             </div>
+                            <div class="flex items-center gap-2 border-l border-slate-200 pl-4">
+                                <i data-lucide="clipboard-list" class="h-4 w-4 text-slate-400"></i>
+                                <span class="text-xs font-bold text-slate-500 uppercase">Valuations ({{ $project->valuations_count }})</span>
+                            </div>
                         </div>
                         <button type="button" 
                             data-project-id="{{ $project->id }}"
@@ -160,6 +164,14 @@
                             </a>
                             <button class="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition" title="View Report">
                                 <i data-lucide="bar-chart-3" class="h-5 w-5"></i>
+                            </button>
+                            <button type="button"
+                                data-project-id="{{ $project->id }}"
+                                data-project-name="{{ $project->project_name }}"
+                                data-project-code="{{ $project->project_code }}"
+                                onclick="deleteProject(this.getAttribute('data-project-id'), this.getAttribute('data-project-name'), this.getAttribute('data-project-code'))"
+                                class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title="Delete Project">
+                                <i data-lucide="trash-2" class="h-5 w-5"></i>
                             </button>
                         </div>
                     </div>
@@ -856,6 +868,95 @@ Planning, Kano State</textarea>
                 });
             }
         });
+    }
+
+    /**
+     * Deleting a project also deletes every valuation captured against it, so
+     * the confirmation pulls the live count first and — when there is anything
+     * to lose — makes the user type DELETE before it will go through.
+     */
+    function deleteProject(projectId, projectName, projectCode) {
+        Swal.fire({
+            title: 'Checking project...',
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); }
+        });
+
+        $.get(`{{ url('valuation-compensations/projects') }}/${projectId}/delete-summary`)
+            .done(function(summary) {
+                const valuations = summary.valuations_count || 0;
+                const workers = summary.workers_count || 0;
+                const subProjects = summary.sub_projects_count || 0;
+
+                const lines = `
+                    <div style="text-align:left;font-size:13px;line-height:1.6">
+                        <p style="margin-bottom:10px">You are about to delete
+                           <strong>${projectName}</strong> (${projectCode}).</p>
+                        <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:12px">
+                            <p style="font-weight:700;color:#b91c1c;margin-bottom:6px">This will also delete:</p>
+                            <ul style="margin:0;padding-left:18px;color:#7f1d1d">
+                                <li><strong>${valuations}</strong> valuation record(s)</li>
+                                <li><strong>${subProjects}</strong> sub-project(s)</li>
+                                <li><strong>${workers}</strong> worker assignment(s)</li>
+                            </ul>
+                        </div>
+                        <p style="margin-top:10px;color:#64748b">The valuations will no longer appear in the VFC
+                           register, reports or the mobile app.</p>
+                    </div>`;
+
+                const confirmOptions = {
+                    title: 'Delete this project?',
+                    html: lines,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#ef4444',
+                    cancelButtonColor: '#64748b',
+                    confirmButtonText: 'Yes, delete project',
+                    reverseButtons: true
+                };
+
+                // Anything with captured valuations demands a typed confirmation.
+                if (valuations > 0) {
+                    confirmOptions.input = 'text';
+                    confirmOptions.inputPlaceholder = 'Type DELETE to confirm';
+                    confirmOptions.inputValidator = (value) => {
+                        if ((value || '').trim().toUpperCase() !== 'DELETE') {
+                            return 'Type DELETE to confirm this project and its valuations.';
+                        }
+                    };
+                }
+
+                Swal.fire(confirmOptions).then((result) => {
+                    if (!result.isConfirmed) return;
+
+                    Swal.fire({
+                        title: 'Deleting...',
+                        allowOutsideClick: false,
+                        didOpen: () => { Swal.showLoading(); }
+                    });
+
+                    $.ajax({
+                        url: `{{ url('valuation-compensations/projects') }}/${projectId}`,
+                        type: 'DELETE',
+                        headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+                        success: function(response) {
+                            if (response.success) {
+                                Swal.fire('Deleted!', response.message, 'success').then(() => {
+                                    window.location.reload();
+                                });
+                            } else {
+                                Swal.fire('Error!', response.message || 'Could not delete project.', 'error');
+                            }
+                        },
+                        error: function(xhr) {
+                            Swal.fire('Error!', xhr.responseJSON?.message || 'Could not delete project.', 'error');
+                        }
+                    });
+                });
+            })
+            .fail(function() {
+                Swal.fire('Error!', 'Could not load the project details.', 'error');
+            });
     }
 
     function saveProject() {

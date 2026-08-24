@@ -1,5 +1,14 @@
 @extends('layouts.app')
 
+@php
+    /**
+     * Land opens this register to LOOK, not to work: a duplex is captured and approved
+     * on the Deeds side, and Land acts on it from the MLS Commission New File Number
+     * modal instead. So ?mode=land is the register with no actions on it.
+     */
+    $readOnly = request()->query('mode') === 'land';
+@endphp
+
 @section('styles')
 <style>
     .swal2-container { z-index: 20000 !important; }
@@ -27,13 +36,32 @@
     .dx-step-tab .dx-step-text { color:#94a3b8; }
     .dx-step-tab.is-done .dx-step-dot  { background:#dcfce7; color:#15803d; }
     .dx-step-tab.is-done .dx-step-text { color:#475569; }
-    .dx-step-tab.is-active > div       { border-bottom-color:#2563eb; }
+    /* The tab is a <button> now (steps are clickable), so this must not target > div. */
+    .dx-step-tab.is-active > button      { border-bottom-color:#2563eb; }
     .dx-step-tab.is-active .dx-step-dot  { background:#2563eb; color:#fff; }
     .dx-step-tab.is-active .dx-step-text { color:#1e293b; }
 
+    /* Reachable steps read as controls; a step you cannot get to yet must not. */
+    .dx-step-tab > button { cursor:pointer; background:none; transition:background .12s ease; }
+    .dx-step-tab > button:hover:not(:disabled) { background:#f8fafc; }
+    .dx-step-tab > button:focus-visible { outline:2px solid #2563eb; outline-offset:-2px; }
+    .dx-step-tab.is-locked > button { cursor:not-allowed; opacity:.55; }
+
     .stage-pill.done { background:#dcfce7; color:#15803d; }
     .stage-pill.current { background:#dbeafe; color:#1d4ed8; }
-    .stage-pill.locked { background:#f1f5f9; color:#94a3b8; }
+    .stage-pill.locked { background:#f1f5f9; color:#94a3b8; cursor:default; }
+
+    /* A stage you can return to reads as a control; a locked one must not. */
+    .stage-pill.clickable { cursor:pointer; border:0; font:inherit; transition:transform .12s ease, box-shadow .12s ease; }
+    .stage-pill.clickable:hover { transform:translateY(-1px); box-shadow:0 4px 12px rgb(15 23 42 / .10); }
+    .stage-pill.clickable:focus-visible { outline:2px solid #2563eb; outline-offset:2px; }
+
+    /* Apply-to chips: ticked reads as active, unticked greys back so the selection
+       is obvious without reading each checkbox. */
+    .applies-chip { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; transition:all .12s ease; }
+    .applies-chip.is-off { background:#f8fafc; border-color:#e2e8f0; color:#94a3b8; }
+    .applies-chip.is-off .holding-no { text-decoration:line-through; text-decoration-color:#cbd5e1; }
+    .applies-chip:hover { border-color:#93c5fd; }
 
     .holding-no { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing:-.01em; }
 </style>
@@ -66,11 +94,18 @@
                             </p>
                         </div>
                     </div>
+                    @unless ($readOnly)
                     <button onclick="openDuplexWizard()"
                         class="shrink-0 inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl text-sm font-bold shadow-sm shadow-blue-600/20 hover:bg-blue-700 transition">
                         <i data-lucide="plus" class="w-4 h-4"></i>
                         New Duplex
                     </button>
+                    @else
+                    <span class="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 text-slate-500 text-xs font-bold">
+                        <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                        View only — commission from the MLS file number modal
+                    </span>
+                    @endunless
                 </div>
 
                 {{-- The pipeline, spelled out. New officers cannot infer these steps from
@@ -133,7 +168,7 @@
                                 <th class="px-4 py-3 text-left">Stages (execution order)</th>
                                 <th class="px-4 py-3 text-left">Date</th>
                                 <th class="px-4 py-3 text-left">Status</th>
-                                <th class="px-4 py-3 text-center">Actions</th>
+                                @unless ($readOnly)<th class="px-4 py-3 text-center">Actions</th>@endunless
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
@@ -177,48 +212,131 @@
                                         {{ str_replace('_', ' ', $record->status) }}
                                     </span>
                                 </td>
+                                @unless ($readOnly)
                                 <td class="px-4 py-3 text-center">
-                                    <div class="relative inline-block text-left">
-                                        <button onclick="toggleRowMenu({{ $record->id }})"
-                                            class="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50">
-                                            Actions
+                                    {{-- The menu is positioned FIXED and moved to <body> on open: the
+                                         table scrolls horizontally, so an absolutely-positioned menu is
+                                         clipped by the scroll container and drops inside the table. --}}
+                                    <div class="inline-block text-left">
+                                        <button onclick="toggleRowMenu({{ $record->id }}, this)" title="Actions"
+                                            class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition">
+                                            <i data-lucide="more-vertical" class="w-4 h-4"></i>
                                         </button>
+                                        @php
+                                            /**
+                                             * The menu walks the duplex through its pipeline: each action
+                                             * unlocks the next and closes behind itself, so the officer is
+                                             * never offered a step that would be refused by the server or
+                                             * one that has already been done.
+                                             *
+                                             * Rejected and committed duplexes are read-only — there is
+                                             * nothing left to do to either.
+                                             */
+                                            $isRejected  = $record->status === 'rejected';
+                                            $isCommitted = $record->status === 'committed';
+                                            $frozen      = $isRejected || $isCommitted;
+
+                                            $isApproved  = in_array($record->status, ['approved', 'in_land', 'committed'], true);
+                                            $knupdaOk    = strcasecmp((string) $record->knupda_status, 'Approved') === 0;
+                                            $allCaptured = $record->stageRows->every(fn ($st) => $st->status === 'done');
+
+                                            $canApprove    = !$frozen && !$isApproved && $allCaptured;
+                                            $canReject     = !$frozen;
+                                            $canKnupda     = !$frozen && $isApproved;
+                                            $canGenApp     = !$frozen && $knupdaOk && !$record->application_generated_at;
+                                            $canPrintApp   = (bool) $record->application_generated_at;
+                                            $canGenMemo    = !$frozen && $record->application_generated_at && !$record->recommendation_generated_at;
+                                            $canPrintMemo  = (bool) $record->recommendation_generated_at;
+                                            $canGenConv    = !$frozen && $record->recommendation_generated_at && !$record->conveyance_generated_at;
+                                            $canPrintConv  = (bool) $record->conveyance_generated_at;
+                                            $canDelete     = !$isCommitted;
+
+                                            // Why an action is unavailable, so a greyed row is not a mystery.
+                                            $why = function ($enabled, $reason) use ($isRejected, $isCommitted) {
+                                                if ($enabled) return '';
+                                                if ($isRejected)  return 'This duplex was rejected';
+                                                if ($isCommitted) return 'This duplex has been commissioned';
+                                                return $reason;
+                                            };
+                                        @endphp
+
                                         <div id="row-menu-{{ $record->id }}"
-                                            class="hidden absolute right-0 z-50 mt-2 w-60 rounded-xl bg-white shadow-xl ring-1 ring-black/5 divide-y divide-slate-100 text-left">
+                                            class="hidden fixed z-[999] w-60 rounded-xl bg-white shadow-xl ring-1 ring-black/5 divide-y divide-slate-100 text-left">
+                                            {{-- Reading is always allowed, whatever state the duplex is in. --}}
                                             <div class="py-1">
+                                                @if ($record->status === 'draft')
+                                                    <button onclick="resumeDuplex({{ $record->id }})" class="menu-item font-bold text-blue-700">Continue capture</button>
+                                                @endif
+                                                <button onclick="openDuplexSummary({{ $record->id }})" class="menu-item font-bold">Summary sheet</button>
                                                 <button onclick="viewDuplex({{ $record->id }})" class="menu-item">View stages</button>
-                                                <button onclick="openKnupda({{ $record->id }})" class="menu-item">KNUPDA</button>
                                             </div>
+
                                             <div class="py-1">
-                                                <button onclick="generateDoc({{ $record->id }}, 'application')" class="menu-item">Generate Application</button>
-                                                <a href="{{ route('duplex-parcel-update.print-application', $record->id) }}" target="_blank" class="menu-item block">Print Application</a>
-                                                <button onclick="generateDoc({{ $record->id }}, 'recommendation')" class="menu-item">Generate Memo</button>
-                                                <a href="{{ route('duplex-parcel-update.print-recommendation', $record->id) }}" target="_blank" class="menu-item block">Print Memo</a>
-                                                <button onclick="generateDoc({{ $record->id }}, 'conveyance')" class="menu-item">Generate Conveyance</button>
-                                                <a href="{{ route('duplex-parcel-update.print-conveyance', $record->id) }}" target="_blank" class="menu-item block">Print Conveyance</a>
+                                                <button onclick="approveDuplex({{ $record->id }})" @disabled(!$canApprove)
+                                                    title="{{ $why($canApprove, $isApproved ? 'Already approved' : 'Capture every stage first') }}"
+                                                    class="menu-item text-emerald-700 font-bold">Approve</button>
+                                                <button onclick="rejectDuplex({{ $record->id }})" @disabled(!$canReject)
+                                                    title="{{ $why($canReject, '') }}"
+                                                    class="menu-item text-red-600">Reject</button>
                                             </div>
+
                                             <div class="py-1">
-                                                <button onclick="approveDuplex({{ $record->id }})" class="menu-item text-emerald-700">Approve</button>
-                                                <button onclick="rejectDuplex({{ $record->id }})" class="menu-item text-red-600">Reject</button>
-                                                <button onclick="sendToLand({{ $record->id }})" class="menu-item">Send to Land</button>
-                                                <a href="{{ route('duplex-parcel-update.commission', $record->id) }}" class="menu-item block font-bold text-indigo-700">Commission (Land)</a>
+                                                <button onclick="openKnupda({{ $record->id }})" @disabled(!$canKnupda)
+                                                    title="{{ $why($canKnupda, 'Approve the duplex first') }}"
+                                                    class="menu-item">KNUPDA</button>
                                             </div>
+
                                             <div class="py-1">
-                                                <button onclick="deleteDuplex({{ $record->id }})" class="menu-item text-red-600">Delete</button>
+                                                <button onclick="generateDoc({{ $record->id }}, 'application')" @disabled(!$canGenApp)
+                                                    title="{{ $why($canGenApp, $record->application_generated_at ? 'Already generated' : 'KNUPDA approval required') }}"
+                                                    class="menu-item">Generate Application</button>
+                                                <a href="{{ route('duplex-parcel-update.print-application', $record->id) }}" target="_blank"
+                                                    title="{{ $canPrintApp ? '' : 'Generate the application first' }}"
+                                                    class="menu-item block {{ $canPrintApp ? '' : 'is-disabled' }}">Print Application</a>
+
+                                                <button onclick="generateDoc({{ $record->id }}, 'recommendation')" @disabled(!$canGenMemo)
+                                                    title="{{ $why($canGenMemo, $record->recommendation_generated_at ? 'Already generated' : 'Generate the application first') }}"
+                                                    class="menu-item">Generate Memo</button>
+                                                <a href="{{ route('duplex-parcel-update.print-recommendation', $record->id) }}" target="_blank"
+                                                    title="{{ $canPrintMemo ? '' : 'Generate the memo first' }}"
+                                                    class="menu-item block {{ $canPrintMemo ? '' : 'is-disabled' }}">Print Memo</a>
+
+                                                <button onclick="generateDoc({{ $record->id }}, 'conveyance')" @disabled(!$canGenConv)
+                                                    title="{{ $why($canGenConv, $record->conveyance_generated_at ? 'Already generated' : 'Generate the memo first') }}"
+                                                    class="menu-item">Generate Conveyance</button>
+                                                <a href="{{ route('duplex-parcel-update.print-conveyance', $record->id) }}" target="_blank"
+                                                    title="{{ $canPrintConv ? '' : 'Generate the conveyance first' }}"
+                                                    class="menu-item block {{ $canPrintConv ? '' : 'is-disabled' }}">Print Conveyance</a>
+                                            </div>
+
+                                            <div class="py-1">
+                                                <button onclick="deleteDuplex({{ $record->id }})" @disabled(!$canDelete)
+                                                    title="{{ $canDelete ? '' : 'A commissioned duplex cannot be deleted' }}"
+                                                    class="menu-item text-red-600">Delete</button>
                                             </div>
                                         </div>
                                     </div>
                                 </td>
+                                @else
+                                <td class="px-4 py-3 text-center">
+                                    {{-- Reading the account of a duplex is not acting on it, so the
+                                         summary sheet stays available to Land. --}}
+                                    <button onclick="openDuplexSummary({{ $record->id }})" title="Summary sheet"
+                                        class="w-8 h-8 rounded-lg inline-flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition">
+                                        <i data-lucide="receipt-text" class="w-4 h-4"></i>
+                                    </button>
+                                </td>
+                                @endunless
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="7" class="px-4 py-16 text-center">
+                                <td colspan="{{ $readOnly ? 7 : 7 }}" class="px-4 py-16 text-center">
                                     <i data-lucide="layers" class="w-8 h-8 text-slate-300 mx-auto"></i>
                                     <p class="text-sm font-bold text-slate-500 mt-3">No duplex records yet</p>
                                     <p class="text-xs text-slate-400 mt-1">Start one to carry several parcel updates as a single instruction.</p>
-                                    <button onclick="openDuplexWizard()" class="mt-4 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition">
+                                    @unless ($readOnly)<button onclick="openDuplexWizard()" class="mt-4 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition">
                                         New Duplex
-                                    </button>
+                                    </button>@endunless
                                 </td>
                             </tr>
                             @endforelse
@@ -233,7 +351,9 @@
         </div>
     </div>
 
-    @include('deeds.parcel_update.duplex.partials.wizard')
+    <script src="{{ asset('js/shared/record-summary-card.js') }}?v={{ @filemtime(public_path('js/shared/record-summary-card.js')) }}"></script>
+<script src="{{ asset('js/duplex-summary-card.js') }}?v={{ @filemtime(public_path('js/duplex-summary-card.js')) }}"></script>
+@include('deeds.parcel_update.duplex.partials.wizard')
     @include('deeds.parcel_update.duplex.partials.knupda_modal')
     @include('deeds.parcel_update.duplex.partials.view_modal')
 </div>
@@ -251,6 +371,11 @@
 ])
 <style>
     .menu-item { display:block; width:100%; text-align:left; padding:.55rem 1rem; font-size:.8rem; color:#334155; }
-    .menu-item:hover { background:#f8fafc; }
+    .menu-item:hover:not(:disabled):not(.is-disabled) { background:#f8fafc; }
+
+    /* A step that is not yet reachable, or already done, greys out rather than
+       disappearing — the officer can still see where they are in the sequence. */
+    .menu-item:disabled,
+    .menu-item.is-disabled { color:#cbd5e1; cursor:not-allowed; pointer-events:none; }
 </style>
 @endsection

@@ -170,6 +170,14 @@
             </div>
             @endif
 
+            <div class="flex justify-end">
+                <button type="button" onclick="showDuplexSummary('{{ url('duplex-parcel-update') }}', {{ $duplex->id }})"
+                    class="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition">
+                    <i data-lucide="receipt-text" class="w-3.5 h-3.5"></i>
+                    Summary sheet
+                </button>
+            </div>
+
             <div id="cm-summary" class="hidden bg-white rounded-3xl border border-emerald-100 shadow-sm p-6"></div>
         </div>
     </div>
@@ -177,6 +185,8 @@
 @endsection
 
 @section('footer-scripts')
+<script src="{{ asset('js/shared/record-summary-card.js') }}?v={{ @filemtime(public_path('js/shared/record-summary-card.js')) }}"></script>
+<script src="{{ asset('js/duplex-summary-card.js') }}?v={{ @filemtime(public_path('js/duplex-summary-card.js')) }}"></script>
 <script>
 (function () {
     const CSRF = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
@@ -229,8 +239,16 @@
                     <p class="text-xs text-slate-400">Retired: <span class="holding-no">${(s.decommissioned || []).join(', ')}</span></p>
                 </div>`).join('');
 
-        if (window.Swal) Swal.fire({ icon: 'success', title: 'Duplex commissioned', text: res.message });
-        setTimeout(() => window.location.reload(), 2500);
+        // The card is the point of the commissioning, not a footnote to it: it is the
+        // only place the officer sees the whole chain - what was issued, what was
+        // retired - in one view. Reload only once it has been dismissed.
+        if (typeof window.showDuplexSummary === 'function') {
+            await window.showDuplexSummary('{{ url('duplex-parcel-update') }}', ID);
+        } else if (window.Swal) {
+            await Swal.fire({ icon: 'success', title: 'Duplex commissioned', text: res.message });
+        }
+
+        window.location.reload();
     };
 
     window.rejectFromLand = async function () {

@@ -326,7 +326,7 @@
 
         <div class="flex justify-between items-start mb-2 relative z-10">
             <div class="w-20">
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=KanoLandSurvey12" alt="QR Code" class="w-16 h-16">
+                <img src="{{ qr_data_uri('KanoLandSurvey12', 100) }}" alt="QR Code" class="w-16 h-16">
             </div>
             <div class="text-center flex-1 pt-2">
                 <img src="https://upload.wikimedia.org/wikipedia/commons/b/bc/Coat_of_arms_of_Nigeria.svg" class="w-14 mx-auto mb-2" alt="Nigeria Coat of Arms">

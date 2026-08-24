@@ -12,6 +12,7 @@ use App\Models\PlotExtensionApplication;
 use App\Models\PlotMergerApplication;
 use App\Models\PlotSeparationApplication;
 use App\Models\PlotSubdivisionApplication;
+use App\Support\FileNumberLandUse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -55,9 +56,16 @@ class DuplexCommitService
      */
     public function commit(DuplexParcelUpdate $duplex, array $meta = []): array
     {
-        if ($duplex->status !== DuplexParcelUpdate::STATUS_IN_LAND) {
+        // Approved is enough. The separate "Send to Land" hand-off was removed from the
+        // register — Land picks the duplex up from the MLS commissioning modal, which
+        // lists approved duplexes — so requiring in_land here would refuse every one of
+        // them. in_land is still accepted for duplexes handed over before the change.
+        if (!in_array($duplex->status, [
+            DuplexParcelUpdate::STATUS_APPROVED,
+            DuplexParcelUpdate::STATUS_IN_LAND,
+        ], true)) {
             throw new \RuntimeException(
-                'Only a duplex sitting with Land can be commissioned. Current status: ' . $duplex->status
+                'A duplex must be approved before it can be commissioned. Current status: ' . $duplex->status
             );
         }
 
@@ -78,6 +86,12 @@ class DuplexCommitService
 
         $summary = [];
 
+        // Per-file overrides typed on the commissioning modal are indexed across the
+        // WHOLE run (file 1..N), while stages consume them a slice at a time — so a
+        // cursor walks them forward rather than each stage starting at zero.
+        $meta['_entries'] = array_values((array) ($meta['location_entries'] ?? []));
+        $meta['_cursor']  = 0;
+
         // Stage 1's input is the real source file(s) the officer picked.
         $carry = array_values(array_filter((array) ($duplex->source_file_nos ?? [])));
 
@@ -88,7 +102,7 @@ class DuplexCommitService
                 );
             }
 
-            $result = $this->commitStage($duplex, $stage, $carry, $meta);
+            $result = $this->commitStage($duplex, $stage, $meta, $carry);
 
             $summary[] = [
                 'rank'           => $stage->rank,
@@ -125,8 +139,8 @@ class DuplexCommitService
     protected function commitStage(
         DuplexParcelUpdate $duplex,
         DuplexParcelUpdateStage $stage,
-        array $inputs,
-        array $meta
+        array &$meta,
+        array $inputs
     ): array {
         $appId = $this->materialiseApplication($duplex, $stage, $inputs);
 
@@ -136,21 +150,30 @@ class DuplexCommitService
             ->where('role', DuplexParcelUpdateFile::ROLE_HOLDING)
             ->get();
 
+
         $files = match ($stage->type) {
             'change_of_purpose' => $this->commissionChangeOfPurpose($duplex, $stage, $inputs, $appId, $meta),
             default             => $this->commissionStandard($duplex, $stage, $inputs, $appId, $holdings->count(), $meta),
         };
 
-        // Stamp each holding row with the real number it became. A holding row that
-        // now carries final_file_no is what the Land screen renders as
-        // "holding -> new file", and it is the audit trail afterwards.
-        foreach ($holdings->values() as $i => $row) {
-            if (isset($files[$i])) {
-                $row->update([
-                    'final_file_no' => $files[$i],
-                    'role'          => DuplexParcelUpdateFile::ROLE_RESULT,
-                ]);
+        // Stamp each row with the real number it became. Results come back in the same
+        // order as the stage's rows, so a carried file is stamped with the number it
+        // kept and a changed one with its new number.
+        $all = $stage->files()->get()->values();
+
+        foreach ($all as $i => $row) {
+            if (!isset($files[$i])) {
+                continue;
             }
+
+            $row->update([
+                'final_file_no' => $files[$i],
+                // A carried file keeps its role: it was never a holding number of this
+                // stage's own making, and the Land screen shows it as unchanged.
+                'role' => $row->role === DuplexParcelUpdateFile::ROLE_CARRIED
+                    ? DuplexParcelUpdateFile::ROLE_CARRIED
+                    : DuplexParcelUpdateFile::ROLE_RESULT,
+            ]);
         }
 
         $stage->update([
@@ -158,6 +181,10 @@ class DuplexCommitService
             'completed_at' => now(),
             'updated_by'   => Auth::id(),
         ]);
+
+        // Move the override cursor past the files this stage minted, so the next stage
+        // reads the entries that belong to it rather than starting over at the first.
+        $meta['_cursor'] = ($meta['_cursor'] ?? 0) + $holdings->count();
 
         return ['files' => $files];
     }
@@ -189,7 +216,7 @@ class DuplexCommitService
             'district'       => $duplex->district,
             'lga'            => $duplex->lga,
             'state'          => $duplex->state,
-            'land_use'       => explode('-', (string) $primary)[0],
+            'land_use'       => FileNumberLandUse::codeFor((string) $primary),
             'remarks'        => $tag,
             'knupda_status'  => $duplex->knupda_status,
             'knupda_fee'     => $duplex->knupda_fee,
@@ -243,7 +270,7 @@ class DuplexCommitService
                 $app = PlotExtensionApplication::create([
                     'file_no'        => $primary,
                     'applicant_name' => $duplex->applicant_name,
-                    'land_use'       => explode('-', (string) $primary)[0],
+                    'land_use'       => FileNumberLandUse::codeFor((string) $primary),
                     'plot_no'        => $duplex->plot_no,
                     'district'       => $duplex->district,
                     'lga'            => $duplex->lga,
@@ -259,7 +286,7 @@ class DuplexCommitService
                     'applicant_name' => $duplex->applicant_name,
                     'file_no'        => $primary,
                     'purpose'        => strtoupper((string) ($payload['new_land_use'] ?? '')),
-                    'land_use'       => explode('-', (string) $primary)[0],
+                    'land_use'       => FileNumberLandUse::codeFor((string) $primary),
                     'district'       => $duplex->district,
                     'lga'            => $duplex->lga,
                     'plot_no'        => $duplex->plot_no,
@@ -307,15 +334,6 @@ class DuplexCommitService
         $quantity = max(1, $quantity);
         $landUse  = $this->landUseFor($duplex, $stage, $inputs);
 
-        // The single-file path refuses to commission without a tracking id and will not
-        // invent one (unlike the batch path, which mints them). Say so here, naming the
-        // stage, instead of surfacing the engine's context-free message.
-        if ($quantity < 2 && empty($stage->tracking_id)) {
-            throw new \RuntimeException(
-                "Stage {$stage->rank} ({$stage->label()}) needs a Tracking ID before it can be "
-                . 'commissioned. Add it to the stage, or create the grouping record for this file.'
-            );
-        }
         $payload  = (array) ($stage->payload ?? []);
         $plots    = (array) ($payload['plots'] ?? []);
 
@@ -343,15 +361,19 @@ class DuplexCommitService
         }
 
         if ($quantity < 2) {
-            $plot = $plots[0] ?? [];
+            $plot  = $plots[0] ?? [];
+            $entry = $this->entryFor($meta, 0);
 
             return $this->callSingle($base + [
-                'tracking_id'      => $stage->tracking_id,
-                'file_name'        => $plot['holder'] ?? $duplex->file_title ?: $duplex->applicant_name,
-                'plot_no'          => $plot['plot_no'] ?? $duplex->plot_no,
-                'location'         => $duplex->street_name,
-                'lga'              => $duplex->lga,
-                'district'         => $duplex->district,
+                'tracking_id'      => $this->pick($entry, 'tracking_id', $this->trackingIdFor($stage)),
+                'file_name'        => $this->pick($entry, 'file_name', $plot['holder'] ?? ($duplex->file_title ?: $duplex->applicant_name)),
+                'plot_no'          => $this->pick($entry, 'plotNo', $plot['plot_no'] ?? $duplex->plot_no),
+                'tp_no'            => $this->pick($entry, 'tpNo', null),
+                'location'         => $this->pick($entry, 'location', $this->locationFor($duplex)),
+                'lga'              => $this->pick($entry, 'lga', $duplex->lga),
+                'district'         => $this->pick($entry, 'district', $duplex->district),
+                'phone_no'         => $this->pick($entry, 'phone_no', $duplex->phone),
+                'address'          => $this->pick($entry, 'address', $duplex->address),
                 'gender'           => $meta['gender'] ?? 'Male',
                 'original_file_no' => $inputs[0],
             ]);
@@ -359,20 +381,25 @@ class DuplexCommitService
 
         $entries = [];
         for ($i = 0; $i < $quantity; $i++) {
-            $plot = $plots[$i] ?? [];
+            $plot  = $plots[$i] ?? [];
+            // Anything typed for this file on the commissioning modal wins; anything
+            // left blank falls back to what the duplex captured for it.
+            $entry = $this->entryFor($meta, $i);
+
             $entries[] = [
-                'plotNo'    => $plot['plot_no'] ?? $duplex->plot_no,
-                'location'  => $duplex->street_name,
-                'lga'       => $duplex->lga,
-                'district'  => $duplex->district,
+                'plotNo'    => $this->pick($entry, 'plotNo', $plot['plot_no'] ?? $duplex->plot_no),
+                'tpNo'      => $this->pick($entry, 'tpNo', null),
+                'location'  => $this->pick($entry, 'location', $this->locationFor($duplex)),
+                'lga'       => $this->pick($entry, 'lga', $duplex->lga),
+                'district'  => $this->pick($entry, 'district', $duplex->district),
                 // The holder may differ per plot — subdivided plots usually go to
                 // different people, so the stage captured a name per child.
-                'file_name' => $plot['holder'] ?? ($duplex->file_title ?: $duplex->applicant_name),
-                'phone_no'  => $duplex->phone,
-                'address'   => $duplex->address,
-                // Only the first child can claim the stage's tracking id; the batch path
-                // mints a fresh unique one for every entry that leaves this empty.
-                'tracking_id' => $i === 0 ? $stage->tracking_id : null,
+                'file_name' => $this->pick($entry, 'file_name', $plot['holder'] ?? ($duplex->file_title ?: $duplex->applicant_name)),
+                'phone_no'  => $this->pick($entry, 'phone_no', $duplex->phone),
+                'address'   => $this->pick($entry, 'address', $duplex->address),
+                // Left empty on purpose: the batch path mints a fresh unique tracking id
+                // for every entry, and reuses the grouping record's where one exists.
+                'tracking_id' => $this->pick($entry, 'tracking_id', null),
             ];
         }
 
@@ -405,15 +432,11 @@ class DuplexCommitService
             throw new \RuntimeException("Stage {$stage->rank} (Change of Purpose) has no new land use.");
         }
 
-        // A Change of Purpose is a rename in place, so it always goes through the
-        // strict single-file path however many files it covers — and that path will
-        // not invent a tracking id.
-        if (empty($stage->tracking_id)) {
-            throw new \RuntimeException(
-                "Stage {$stage->rank} (Change of Purpose) needs a Tracking ID before it can be "
-                . 'commissioned. Add it to the stage, or create the grouping record for this file.'
-            );
-        }
+        // A container prefix belongs to the parcel, not to the purpose: a Change of
+        // Purpose on CON-AG-1995-15 produces CON-COM-..., never COM-....
+        $prefix = FileNumberLandUse::prefixFor((string) ($inputs[0] ?? ''));
+        $targetLandUse = $prefix !== '' ? $prefix . '-' . $newLandUse : $newLandUse;
+
 
         // Which of the incoming files this CoP applies to. The officer may have
         // subdivided into four and be changing the purpose of only two; the rest
@@ -433,33 +456,41 @@ class DuplexCommitService
             $targets = $inputs;
         }
 
-        $results   = [];
-        $untouched = array_values(array_diff($inputs, $targets));
+        // Results must come back in INPUT order, not changed-then-untouched: the stage's
+        // file rows are stored in input order, and a later stage lines its inputs up
+        // against them positionally.
+        $renamed = [];
 
-        foreach ($targets as $fileNo) {
-            $results = array_merge($results, $this->callSingle([
+        foreach (array_values($targets) as $idx => $fileNo) {
+            $entry = $this->entryFor($meta, $idx);
+
+            $renamed[$fileNo] = $this->callSingle([
                 'application_type'          => 'change_of_purpose',
                 'file_option'               => 'normal',
-                'land_use'                  => $newLandUse,
+                'land_use'                  => $targetLandUse,
                 'original_file_no'          => $fileNo,
                 'change_of_purpose_app_id'  => $appId,
-                'tracking_id'               => $stage->tracking_id,
-                'file_name'                 => $duplex->file_title ?: $duplex->applicant_name,
-                'plot_no'                   => $duplex->plot_no,
-                'location'                  => $duplex->street_name,
-                'lga'                       => $duplex->lga,
-                'district'                  => $duplex->district,
+                'tracking_id'               => $this->trackingIdFor($stage),
+                'file_name'                 => $this->pick($entry, 'file_name', $duplex->file_title ?: $duplex->applicant_name),
+                'plot_no'                   => $this->pick($entry, 'plotNo', $duplex->plot_no),
+                'tp_no'                     => $this->pick($entry, 'tpNo', null),
+                'location'                  => $this->pick($entry, 'location', $this->locationFor($duplex)),
+                'lga'                       => $this->pick($entry, 'lga', $duplex->lga),
+                'district'                  => $this->pick($entry, 'district', $duplex->district),
+                'phone_no'                  => $this->pick($entry, 'phone_no', $duplex->phone),
+                'address'                   => $this->pick($entry, 'address', $duplex->address),
                 'customer_type'             => $meta['customer_type'] ?? 'Individual',
                 'gender'                    => $meta['gender'] ?? 'Male',
                 'commissioned_by'           => $meta['commissioned_by'] ?? null,
                 'commission_date'           => $meta['commission_date'] ?? now()->toDateString(),
                 'commission_time'           => $meta['commission_time'] ?? now()->format('H:i'),
-            ]));
+            ])[0] ?? $fileNo;
         }
 
         // Files this stage did not touch still belong to the duplex and must carry
-        // forward, or a later stage would silently lose them.
-        return array_merge($results, $untouched);
+        // forward, or a later stage would silently lose them — each one keeping the
+        // number it arrived with.
+        return array_map(fn ($fileNo) => $renamed[$fileNo] ?? $fileNo, $inputs);
     }
 
     protected function callBatch(array $payload): array
@@ -495,6 +526,119 @@ class DuplexCommitService
         $request->setUserResolver(fn () => Auth::user());
 
         return $request;
+    }
+
+    /**
+     * A tracking id for a single-file stage.
+     *
+     * The batch path mints one per file when the grouping record has none; the
+     * single-file path refuses to commission without one and will not invent it. That
+     * asymmetry is the engine's, not the officer's - so the duplex resolves it here
+     * rather than making every merger, extension and Change of Purpose stage ask for
+     * a number the system can work out for itself.
+     *
+     * Order: whatever the stage already carries, then the grouping record, then a
+     * fresh unique TRK- id in the same format the batch path uses.
+     */
+    protected function trackingIdFor(DuplexParcelUpdateStage $stage): string
+    {
+        if (!empty($stage->tracking_id)) {
+            return $stage->tracking_id;
+        }
+
+        $inputFile = (string) ($stage->input_holding_no ?? '');
+
+        if ($inputFile !== '') {
+            try {
+                $grouping = app(\App\Services\GroupingFileNumberService::class)->findGroupingRecord(
+                    DB::connection('sqlsrv'),
+                    $inputFile,
+                    strtoupper(preg_replace('/[^A-Z0-9]/i', '', $inputFile))
+                );
+
+                if (!empty($grouping['record']->tracking_id)) {
+                    return $grouping['record']->tracking_id;
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Duplex: grouping tracking-id lookup failed', [
+                    'file'  => $inputFile,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $this->mintTrackingId();
+    }
+
+    /** TRK-YYMMDDHHMMSS-RAND, checked for collisions - the batch path's format. */
+    protected function mintTrackingId(): string
+    {
+        $characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+
+        for ($attempt = 0; $attempt < 10; $attempt++) {
+            $random = '';
+            for ($i = 0; $i < 6; $i++) {
+                $random .= $characters[random_int(0, strlen($characters) - 1)];
+            }
+
+            $candidate = 'TRK-' . now()->format('ymdHis') . '-' . $random;
+
+            $taken = DB::connection('sqlsrv')->table('fileNumber')
+                ->where('tracking_id', $candidate)->exists();
+
+            if (!$taken) {
+                return $candidate;
+            }
+        }
+
+        throw new \RuntimeException('Could not allocate a unique tracking ID for this stage.');
+    }
+
+    /**
+     * One file's overrides from the commissioning modal, if the officer typed any.
+     *
+     * `$offset` is that file's position within the current stage; the run-wide cursor
+     * is added to it, so stage 2's first file reads entry 6 when stage 1 produced five.
+     */
+    protected function entryFor(array $meta, int $offset): array
+    {
+        $i = ($meta['_cursor'] ?? 0) + $offset;
+
+        return (array) ($meta['_entries'][$i] ?? []);
+    }
+
+    /** Blank overrides must not beat a real captured value. */
+    protected function pick(array $entry, string $key, $fallback)
+    {
+        $v = $entry[$key] ?? null;
+
+        return (is_string($v) ? trim($v) : $v) ?: $fallback;
+    }
+
+    /**
+     * The location written onto every file the duplex commissions.
+     *
+     * Prefers the value composed at capture (district, LGA, state) and otherwise
+     * assembles one from the parts, so a duplex captured before that field existed
+     * still lands a usable location rather than a blank.
+     *
+     * The plot number is deliberately excluded: each file carries its own plot_no, and
+     * a subdivision gives every child a different one.
+     */
+    protected function locationFor(DuplexParcelUpdate $duplex): ?string
+    {
+        if (!empty($duplex->address)) {
+            return $duplex->address;
+        }
+
+        $parts = array_filter([
+            $duplex->street_name,
+            $duplex->district,
+            $duplex->lga,
+            $duplex->state,
+        ]);
+
+        return $parts ? strtoupper(implode(', ', $parts)) : null;
     }
 
     /**

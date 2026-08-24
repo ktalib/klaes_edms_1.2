@@ -9,14 +9,17 @@ use Illuminate\Support\Facades\DB;
  * Resolves the THREE distinct ownership concepts a file carries, per the client
  * spec of 2026-08-20 (item 12, "Major update on Transaction History"):
  *
- *   Root of Title   — where the title comes from. For SLTR/Conversion that is the
- *                     dealing that happened BEFORE the Ministry ever issued a
- *                     title; for a Direct Allocation it is the OP / Allocation
- *                     List the plot was allocated under.
- *   Original Holder — the person named on the FIRST Ministry grant (RofO, else
- *                     CofO). NOT simply the earliest party on record.
+ *   Root of Title   — who the title came FROM. For SLTR/Conversion that is the
+ *                     transferor of the dealing before the boundary (commissioning
+ *                     where known, else the first Ministry title); for a Direct
+ *                     Allocation it is the allottee of the OP / Allocation List.
+ *   Original Holder — the person named on the FIRST Ministry title, whichever of
+ *                     RofO or CofO came first. NOT the earliest party on record.
  *   Current Holder  — the grantee of the latest ownership-CHANGING dealing after
- *                     that grant; equal to the Original Holder when none exists.
+ *                     that title; equal to the Original Holder when none exists.
+ *
+ * All three lines print for every Application Type ("let's apply it to
+ * everything"), a line with no answer showing a dash.
  *
  * The rule this replaces — "the earliest party in the transaction history is the
  * Original Holder" — is wrong whenever a sale predates the Ministry title, which
@@ -37,6 +40,56 @@ class TitleHolderResolver
     public const TYPE_CONVERSION        = 'Conversion';
     public const TYPE_DIRECT_ALLOCATION = 'Direct Allocation';
     public const TYPE_UNKNOWN           = 'Unknown';
+
+    /**
+     * The client's §12 table, transcribed. Each entry IS one row of the spec, so
+     * a change to the paper table is a change to exactly one entry here.
+     *
+     *   anchor — which Ministry instrument names the Original Holder.
+     *            'cofo'  : the CofO (rows i and ii say "Transactions before CofO"
+     *                      and "the name on the CofO will ... be the Original
+     *                      Holder"); falls back to a RofO when the file has no
+     *                      CofO yet, so the line is not left blank.
+     *            'grant' : earliest grant of either kind — row iii is the only
+     *                      row that admits a RofO, as a root source.
+     *   root   — how the Root of Title is derived.
+     *            'pre_grant'  : the dealing predating the anchor.
+     *            'allocation' : the OP, else the Allocation List (row iii).
+     *   lines  — WHICH lines the interface prints, in order. Row iii ends
+     *            "Original Holder / Current Holder" — two lines, no Root: on a
+     *            direct allocation the allottee and the first grantee are the
+     *            same person, so a Root line would print the same name twice
+     *            (measured: 59% of sampled Direct Allocation files).
+     *
+     * Unknown is NOT a row of the table — 71% of indexed files with dealings are
+     * none of the three types. It gets the two-line shape, plus the Root line
+     * only when a pre-grant dealing is actually found, so a file whose route we
+     * cannot determine never shows an empty Root of Title. See the class docblock.
+     */
+    private const SPEC_TABLE = [
+        self::TYPE_SLTR              => ['root' => 'pre_grant'],
+        self::TYPE_CONVERSION        => ['root' => 'pre_grant'],
+        self::TYPE_DIRECT_ALLOCATION => ['root' => 'allocation'],
+        self::TYPE_UNKNOWN           => ['root' => 'pre_grant'],
+    ];
+
+    /**
+     * Every type prints all three lines — "I think let's apply it to everything"
+     * (recording), and the rules doc extends the structure to "Direct Allocation
+     * and other applicable file types". A line with no answer prints a dash.
+     */
+    private const LINES = ['root_of_title', 'original_holder', 'current_holder'];
+
+    /**
+     * Label and colour tone per line. The three must be visually distinct (client
+     * request 2026-08-23); tone travels in the payload so all four interfaces
+     * colour them identically instead of each picking its own.
+     */
+    private const LINE_META = [
+        'root_of_title'   => ['label' => 'Root of Title',   'tone' => 'amber'],
+        'original_holder' => ['label' => 'Original Holder', 'tone' => 'emerald'],
+        'current_holder'  => ['label' => 'Current Holder',  'tone' => 'indigo'],
+    ];
 
     /**
      * Dealings that MOVE the title to somebody else. Only these can promote a
@@ -90,18 +143,25 @@ class TitleHolderResolver
         }
 
         $indexing ??= $this->findIndexing($fileNumber);
-        $source     = $this->commissioningSource($fileNumber);
-        $chain      = $this->chain($fileNumber ?: null, $propId);
-        $type       = $this->classify($fileNumber, $source, $indexing, $chain);
+        $commissioning = $this->commissioningInfo($fileNumber);
+        $chain         = $this->chain($fileNumber ?: null, $propId);
+        $type          = $this->classify($fileNumber, $commissioning['source'], $indexing, $chain);
+        $spec          = self::SPEC_TABLE[$type] ?? self::SPEC_TABLE[self::TYPE_UNKNOWN];
 
-        // The first Ministry grant splits the chain: everything before it is Root
-        // of Title territory, everything after it can move the Current Holder.
-        $anchorIndex = $this->findGrantIndex($chain);
+        // COMMISSIONING is the boundary — "anything that happened before that file
+        // was commissioned is the root of title" (recording). The first Ministry
+        // title at or after it names the Original Holder.
+        $anchorIndex = $this->findGrantIndex($chain, $commissioning['date']);
         $anchor      = $anchorIndex === null ? null : $chain[$anchorIndex];
+        $anchorDate  = $anchorIndex === null ? null : ($chain[$anchorIndex]['_holder_date'] ?? null);
 
-        $root = $type === self::TYPE_DIRECT_ALLOCATION
-            ? $this->directAllocationRoot($chain, $source, $anchor)
-            : $this->preGrantRoot($chain, $anchorIndex);
+        // Files with no commissioning date AND no year in their number fall back
+        // to the first Ministry title as the boundary.
+        $boundary = $commissioning['date'] ?? $anchorDate;
+
+        $root = $spec['root'] === 'allocation'
+            ? $this->allocationRoot($chain, $commissioning['source'], $anchor, $anchorDate)
+            : $this->preGrantRoot($chain, $boundary, $anchorIndex);
 
         $original = $this->originalHolder($anchor, $type, $root, $indexing);
         $current  = $this->currentHolder($chain, $anchorIndex, $original, $indexing);
@@ -111,26 +171,40 @@ class TitleHolderResolver
             'root_of_title'    => $root,
             'original_holder'  => $original,
             'current_holder'   => $current,
+            'lines'            => self::LINES,
         ];
     }
 
     /**
-     * Flat, display-ready strings ("NAME (Instrument)") for the blade/JS layers
-     * that only want three lines. Missing holders come back as null so a caller
-     * can hide the row rather than print an empty label.
+     * Display-ready strings ("NAME (Instrument)") for the blade/JS layers.
      *
-     * @return array{application_type:string,root_of_title:?string,original_holder:?string,current_holder:?string}
+     * `lines` is the authoritative render list — an ordered [label, value] pair
+     * per line the table says this Application Type prints. Interfaces should
+     * loop over it rather than hard-coding three rows, so the table stays the
+     * single place that decides the shape. The flat keys are kept alongside for
+     * callers that want one specific holder.
      */
     public function resolveForDisplay(?string $fileNumber, ?string $propId = null, ?FileIndexing $indexing = null): array
     {
         $r = $this->resolve($fileNumber, $propId, $indexing);
 
-        return [
-            'application_type' => $r['application_type'],
-            'root_of_title'    => self::label($r['root_of_title']),
-            'original_holder'  => self::label($r['original_holder']),
-            'current_holder'   => self::label($r['current_holder']),
+        $flat = [
+            'root_of_title'   => self::label($r['root_of_title']),
+            'original_holder' => self::label($r['original_holder']),
+            'current_holder'  => self::label($r['current_holder']),
         ];
+
+        $lines = [];
+        foreach ($r['lines'] as $key) {
+            $lines[] = [
+                'key'   => $key,
+                'label' => self::LINE_META[$key]['label'] ?? $key,
+                'tone'  => self::LINE_META[$key]['tone'] ?? 'gray',
+                'value' => $flat[$key] ?? null,
+            ];
+        }
+
+        return ['application_type' => $r['application_type'], 'lines' => $lines] + $flat;
     }
 
     /** "MUSA IBRAHIM (Sale Agreement)" — or just the name when no instrument is known. */
@@ -259,22 +333,49 @@ class TitleHolderResolver
     }
 
     /**
-     * Index of the EARLIEST Ministry grant in the chain — the line that defines
-     * the Original Holder.
+     * Index of the Ministry grant that names the Original Holder.
      *
-     * It is the earliest grant of either kind, not "the first RofO, else a CofO":
-     * plenty of files carry a CofO dated years before the RofO row that was
-     * captured for them, and anchoring on the later RofO left that earlier CofO
-     * sitting in the pre-grant window, where it was read as the Root of Title.
-     * (Seen on RES-1982-144, RES-RC-1981-234, RES-1981-684.) On the same date a
-     * RofO wins, since the certificate follows the right.
+     * It is the earliest grant of EITHER kind ("the first paper would be either
+     * R of O or C of O ... the name on that R of O or C of O will be the original
+     * holder") that falls AT OR AFTER commissioning. A grant older than
+     * commissioning is the title the file was converted FROM, so it belongs to
+     * the Root of Title — CON-RES-RC-1981-106 was commissioned in 1981 and its
+     * 1980 RofO is the root, while the 1982 CofO names the Original Holder.
+     *
+     * Falls back to the earliest grant of any date when nothing sits after the
+     * boundary, so the Original Holder line is not left blank.
+     *
+     * Earliest, not "first found": plenty of files carry a CofO dated years before
+     * the RofO captured for them, and anchoring on the later one left the earlier
+     * grant sitting in the pre-grant window (seen on RES-1982-144,
+     * RES-RC-1981-234, RES-1981-684). On an equal date a RofO wins, since the
+     * certificate follows the right.
      */
-    private function findGrantIndex(array $chain): ?int
+    private function findGrantIndex(array $chain, ?string $boundary): ?int
+    {
+        if ($boundary !== null) {
+            $afterCommissioning = $this->earliestGrantIndex($chain, $boundary);
+            if ($afterCommissioning !== null) {
+                return $afterCommissioning;
+            }
+        }
+
+        return $this->earliestGrantIndex($chain, null);
+    }
+
+    /** Earliest Ministry grant, optionally ignoring any dated before `$notBefore`. */
+    private function earliestGrantIndex(array $chain, ?string $notBefore): ?int
     {
         $best = null;
 
         foreach ($chain as $i => $row) {
             if (! $this->isMinistryGrant($row)) {
+                continue;
+            }
+            // An undated grant cannot be shown to fall after commissioning, so it
+            // only qualifies on the unrestricted fallback pass.
+            if ($notBefore !== null
+                && (($row['_holder_date'] ?? null) === null || $row['_holder_date'] < $notBefore)) {
                 continue;
             }
             if ($best === null) {
@@ -306,23 +407,26 @@ class TitleHolderResolver
     // ------------------------------------------------------- root of title --
 
     /**
-     * SLTR / Conversion: the earliest real dealing that predates the Ministry
-     * grant. Returns null when nothing predates it — a blank Root of Title is
+     * SLTR / Conversion / Unknown: the earliest real dealing that predates the
+     * boundary — commissioning where we know it, otherwise the first Ministry
+     * title. Returns null when nothing predates it; a blank Root of Title is
      * correct, and far better than falling back to the earliest party, which is
      * exactly the assumption the spec removes.
+     *
+     * The root holder is the TRANSFEROR, not the recipient. Scenario A of the
+     * rules doc — "A sells to B via Sale Agreement, CofO issued to B" — expects
+     * `Root of Title: A`, and the recording puts it plainly: "you are not the
+     * original holder, you are just the root of title. I'm the original holder
+     * because I now have a C of O carrying my name." The person the title came
+     * FROM is the root; the person it landed on becomes the Original Holder.
      */
-    private function preGrantRoot(array $chain, ?int $anchorIndex): ?array
+    private function preGrantRoot(array $chain, ?string $boundary, ?int $anchorIndex): ?array
     {
-        if ($anchorIndex === null) {
-            return null;
-        }
-
-        // "Before the Ministry title" is only answerable when the grant itself is
-        // dated. An undated grant sorts to the END of the chain, so falling back
-        // to position would read every later dealing as pre-grant and hand the
-        // Root of Title to the wrong party. Blank is the honest answer.
-        $anchorDate = $chain[$anchorIndex]['_holder_date'] ?? null;
-        if ($anchorDate === null) {
+        // "Before the boundary" is unanswerable without a dated boundary. An
+        // undated grant sorts to the END of the chain, so falling back to
+        // position would read every later dealing as pre-grant and hand the Root
+        // of Title to the wrong party. Blank is the honest answer.
+        if ($boundary === null) {
             return null;
         }
 
@@ -331,28 +435,34 @@ class TitleHolderResolver
                 continue;
             }
             $rowDate = $row['_holder_date'] ?? null;
-            if ($rowDate === null || $rowDate >= $anchorDate) {
+            if ($rowDate === null || $rowDate >= $boundary) {
                 continue;
             }
 
             $canonical = $this->canonical($row);
 
-            // A second Ministry grant is a re-issue of the title, never the root
-            // it springs from — skip it even though it predates the anchor.
-            if ($this->isMinistryGrant($row)) {
-                continue;
-            }
-
-            // A pre-grant OP is the allocation itself, not a private dealing, but
-            // it is still the root the title springs from.
-            if ($canonical !== 'occupancy permit' && $this->isNeverOwnershipChanging($row)) {
+            // A Ministry grant older than commissioning is NOT skipped: on a
+            // conversion it is the very title being converted, which is exactly
+            // what the root of title means here (CON-RES-RC-1981-106).
+            //
+            // An OP is the allocation itself rather than a private dealing, but it
+            // is still the root the title springs from.
+            $isAllocationOrGrant = $canonical === 'occupancy permit' || $this->isMinistryGrant($row);
+            if (! $isAllocationOrGrant && $this->isNeverOwnershipChanging($row)) {
                 continue;
             }
             if ($this->rawType($row) === '') {
                 continue;
             }
 
-            $name = $this->receivingParty($row);
+            // An allocation or grant hands the plot TO its holder, so there the
+            // recipient is the root; a private sale hands it FROM the root.
+            // (transferringParty already skips the State, so a grant would land
+            // on the same name either way — this just says so explicitly.)
+            $name = $isAllocationOrGrant
+                ? $this->receivingParty($row)
+                : $this->transferringParty($row);
+
             if ($name === null) {
                 continue;
             }
@@ -364,34 +474,52 @@ class TitleHolderResolver
     }
 
     /**
-     * Direct Allocation: the root is the allocation instrument — the OP if one is
-     * on the chain, otherwise the Allocation List recorded as the commissioning
-     * source. The allottee's name goes on the line; the instrument sits in
-     * brackets ("MUSA ABDULLAHI (OP)").
+     * Direct Allocation: the root is the allocation the plot came through — the
+     * OP if one is on the chain, otherwise the Allocation List recorded as the
+     * commissioning source. The ALLOTTEE's name goes on the line, with the
+     * instrument in brackets ("MUSA ABDULLAHI (Occupancy Permit)"): here the plot
+     * was handed TO the root holder, the opposite direction from a private sale.
+     *
+     * Root and Original Holder are usually the same person on these files, and
+     * that is expected — Scenario D of the rules doc prints exactly that.
      */
-    private function directAllocationRoot(array $chain, ?string $source, ?array $anchor): ?array
+    private function allocationRoot(array $chain, ?string $source, ?array $anchor, ?string $boundary): ?array
     {
         foreach ($chain as $row) {
             if ($this->canonical($row) !== 'occupancy permit') {
                 continue;
             }
+
+            // The allocation a title springs FROM cannot postdate that title. An
+            // OP dated after the grant is a later dealing wearing an OP label
+            // (RES-2001-5301 carries a 2008 "Occupancy Permit" transferring away
+            // from the 2003 RofO holder), so it is not this file's root.
+            $rowDate = $row['_holder_date'] ?? null;
+            if ($boundary !== null && $rowDate !== null && $rowDate > $boundary) {
+                continue;
+            }
+
             $name = $this->receivingParty($row);
             if ($name !== null) {
-                return $this->holder($name, 'OP', $row);
+                // The row's own instrument label, never a hard-coded "OP" — the
+                // rules doc asks for the actual instrument on the record.
+                return $this->holder($name, $this->instrumentLabel($row), $row);
             }
         }
 
-        $src = strtolower(trim((string) $source));
-        $isOpSource = str_contains($src, 'op direct allocation') || str_contains($src, 'resettlement');
-        $instrument = $isOpSource ? 'OP' : 'Allocation List';
-
         // No OP row on record: the allottee is whoever the Ministry granted to,
         // because on a direct allocation the allottee and the first grantee are
-        // the same person.
+        // the same person. The instrument is then the commissioning source that
+        // put the plot in their hands.
         $name = $anchor ? $this->receivingParty($anchor) : null;
         if ($name === null) {
             return null;
         }
+
+        $src = strtolower(trim((string) $source));
+        $instrument = (str_contains($src, 'op direct allocation') || str_contains($src, 'resettlement'))
+            ? 'Occupancy Permit'
+            : 'Allocation List';
 
         return $this->holder($name, $instrument, $anchor);
     }
@@ -500,6 +628,26 @@ class TitleHolderResolver
     }
 
     /**
+     * Who the dealing moved the property FROM — the assignor/vendor. This is the
+     * Root of Title on a private pre-Ministry dealing (see preGrantRoot). Falls
+     * back to the recipient on a one-sided legacy row that records only one name.
+     */
+    private function transferringParty(array $row): ?string
+    {
+        $party1 = trim((string) ($row['party_1'] ?? ''));
+        if ($party1 !== '' && ! $this->isGovernmentParty($party1)) {
+            return $party1;
+        }
+
+        $party2 = trim((string) ($row['party_2'] ?? ''));
+        if ($party2 !== '' && ! $this->isGovernmentParty($party2)) {
+            return $party2;
+        }
+
+        return ($party1 ?: $party2) ?: null;
+    }
+
+    /**
      * The State grants land; it never "holds" it in the sense this display means.
      * On a RofO/CofO row the Grantor is the Kano State Government, so it must not
      * be picked up as a holder.
@@ -594,23 +742,78 @@ class TitleHolderResolver
         return rescue(fn () => \Carbon\Carbon::parse($raw)->format('M j, Y'), is_string($raw) ? $raw : null, false);
     }
 
-    /** How the file was commissioned, when KLAES commissioned it (mls_file_no). */
-    private function commissioningSource(string $fileNumber): ?string
+    /**
+     * How and when the file was commissioned — only files KLAES commissioned are
+     * in mls_file_no (roughly 4.5%), so both come back null for legacy files and
+     * the callers fall back to the first Ministry title.
+     *
+     * Variants: a temporary file may be commissioned under its "(T)" number while
+     * the search number is the base, or vice versa.
+     *
+     * @return array{date:?string,source:?string}
+     */
+    private function commissioningInfo(string $fileNumber): array
     {
         if ($fileNumber === '') {
-            return null;
+            return ['date' => null, 'source' => null];
         }
 
         $base = preg_replace('/\s*\(\s*T\s*\)\s*$/i', '', $fileNumber);
         $candidates = array_values(array_unique(array_filter([$fileNumber, $base, $base . '(T)'])));
 
-        $source = DB::connection('sqlsrv')->table('mls_file_no')
+        $record = DB::connection('sqlsrv')->table('mls_file_no')
             ->whereIn('full_file_number', $candidates)
             ->where(fn ($q) => $q->whereNull('is_deleted')->orWhere('is_deleted', 0))
             ->orderByDesc('id')
-            ->value('source');
+            ->first(['commissioning_date', 'source']);
 
-        return trim((string) $source) ?: null;
+        $date = null;
+        if ($record && ! empty($record->commissioning_date)) {
+            $date = rescue(
+                fn () => \Carbon\Carbon::parse($record->commissioning_date)->toDateString(),
+                null,
+                false
+            );
+            // Same sentinel guard the chain uses — a placeholder commissioning
+            // date would move the boundary to 1900 and blank every Root of Title.
+            if ($date !== null && $date <= '1900-01-01') {
+                $date = null;
+            }
+        }
+
+        // Fallback: the commissioning YEAR is embedded in the file number itself
+        // (CON-RES-RC-1981-106 was commissioned in 1981), which is the only
+        // boundary available for the ~95% of files absent from mls_file_no. Jan 1
+        // is deliberately conservative — a dealing dated within the commissioning
+        // year counts as at/after commissioning, not before it.
+        $date ??= $this->commissioningYearFromFileNumber($fileNumber);
+
+        return ['date' => $date, 'source' => trim((string) ($record->source ?? '')) ?: null];
+    }
+
+    /**
+     * The commissioning year encoded in a file number, as a Jan-1 date string.
+     *
+     * Matches a hyphen/space separated token that is a plausible year, so
+     * "CON-RES-RC-1981-106" gives 1981 while "SLTR-10577", "13586" and "KN 7928"
+     * give nothing (5 digits, or outside the plausible range). The FIRST such
+     * token wins — the trailing group is a serial, not a year.
+     */
+    private function commissioningYearFromFileNumber(string $fileNumber): ?string
+    {
+        $maxYear = (int) date('Y') + 1;
+
+        foreach (preg_split('/[^0-9]+/', $fileNumber) as $token) {
+            if (strlen($token) !== 4) {
+                continue;
+            }
+            $year = (int) $token;
+            if ($year >= 1900 && $year <= $maxYear) {
+                return sprintf('%04d-01-01', $year);
+            }
+        }
+
+        return null;
     }
 
     private function findIndexing(string $fileNumber): ?FileIndexing
@@ -629,6 +832,7 @@ class TitleHolderResolver
             'root_of_title'    => null,
             'original_holder'  => null,
             'current_holder'   => null,
+            'lines'            => self::SPEC_TABLE[$type]['lines'] ?? self::SPEC_TABLE[self::TYPE_UNKNOWN]['lines'],
         ];
     }
 }

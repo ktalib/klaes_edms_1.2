@@ -262,7 +262,7 @@
         @endphp
         <div class="header-top">
             <div class="qr-placeholder">
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=85x85&data={{ urlencode($qrPayload) }}"
+                <img src="{{ qr_data_uri($qrPayload, 85) }}"
                      alt="QR Code" onerror="this.parentNode.innerHTML='QR CODE';">
             </div>
             <div class="center-logo">

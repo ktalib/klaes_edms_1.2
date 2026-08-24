@@ -121,7 +121,7 @@
                          ($selectedFile->fileIndexing->file_number ?? 'N/A') . '|' . 
                          ($selectedFile->current_location ?? 'Not Set') . '|' . 
                          ($selectedFile->rfid_tag ?? 'No RFID');
-                $qrApiUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=96x96&data=' . urlencode($qrData);
+                $qrApiUrl = qr_data_uri($qrData, 96);
               @endphp
               <img src="{{ $qrApiUrl }}" 
                    alt="QR Code for {{ $selectedFile->fileIndexing->file_number ?? 'N/A' }}" 

@@ -77,7 +77,7 @@
             </div>
 
             <div class="pt-2 ml-64">
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data={{ urlencode($record->file_number ?? 'KanoLand16') }}" alt="QR Code" class="w-14 h-14 grayscale">
+                <img src="{{ qr_data_uri($record->file_number ?? 'KanoLand16', 100) }}" alt="QR Code" class="w-14 h-14 grayscale">
             </div>
 
             <div class="flex flex-col items-end text-[11px] space-y-1">

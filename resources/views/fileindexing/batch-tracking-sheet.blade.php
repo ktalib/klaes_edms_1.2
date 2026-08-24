@@ -186,8 +186,12 @@
                 <!-- Right QR Code -->
                 <div class="w-32 border-t border-r border-b border-gray-300 flex flex-col items-center justify-center p-2 print-compact">
                     <div class="mb-1">
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data={{ urlencode(url('/verify-file/'.$fileIndexing->file_number.'/'.$tracker->tracking_id)) }}" 
-                             alt="QR Code" 
+                        {{-- Was a /verify-file/{file_number}/{tracking_id} URL. That route has
+                             never existed, so every batch sheet printed to date carried a QR
+                             that 404s. Encode the tracking ID instead, matching the other
+                             tracking sheets, until Q1 tokens are issued here. --}}
+                        <img src="{{ qr_data_uri($tracker->tracking_id, 100) }}"
+                             alt="QR Code"
                              class="w-20 h-20 object-contain" />
                     </div>
                     <p class="text-xs text-blue-600 font-semibold text-center print-smaller">SCAN TO VERIFY</p>

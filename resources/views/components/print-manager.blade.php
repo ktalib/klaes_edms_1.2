@@ -46,6 +46,10 @@
                         Ref: <span class="text-blue-300 font-mono" x-text="refNumber"></span>
                         <span x-show="isReissuanceType" x-cloak class="text-amber-300"
                               x-text="isLegacyReissuanceType ? '— Re-issued RofO (Pre-KLAES · all 3 copies)' : '— Re-issued RofO (Original only)'"></span>
+                        {{-- A batch run puts many letters on paper at once, so the
+                             count is part of knowing what the pass will do. --}}
+                        <span x-show="isBatchMode" x-cloak class="text-violet-300"
+                              x-text="'— batch of ' + batchCount + ' RofO' + (batchCount === 1 ? '' : 's')"></span>
                     </p>
                 </div>
                 <button @click="closeModal()" class="relative z-10 p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-full transition-all">
@@ -98,9 +102,17 @@
                             </div>
                         </div>
 
-                        <p class="text-[11px] text-slate-500 leading-relaxed">
+                        <p x-show="!isBatchMode" class="text-[11px] text-slate-500 leading-relaxed">
                             Prints on the letter as <b>DATE OF ISSUE</b> and is saved to the record, so a reprint
                             comes out carrying the same date.
+                        </p>
+                        {{-- In a batch this fills the blanks only. A letter already
+                             carrying a date keeps it, because that is the date on the
+                             copy that went out. --}}
+                        <p x-show="isBatchMode" x-cloak class="text-[11px] text-slate-500 leading-relaxed">
+                            <b x-text="batchMissingDates"></b> of <b x-text="batchCount"></b> letters have no
+                            application date on record. This date is written to <b>those only</b> — the rest keep
+                            the date they already carry.
                         </p>
                         <p x-show="issueDateError" x-cloak x-text="issueDateError"
                            class="text-[11.5px] font-bold text-red-600"></p>
@@ -163,9 +175,12 @@
                         <template x-for="pass in passOptions" :key="pass.key">
                             <button type="button"
                                     @click="runPass(pass.key)"
-                                    :disabled="isPrinting"
-                                    class="flex flex-col gap-2.5 p-3.5 rounded-xl border text-left transition-all disabled:opacity-50 disabled:cursor-wait"
-                                    :class="pass.tone">
+                                    :disabled="isPrinting || !passEnabled(pass)"
+                                    :title="passDisabledReason(pass)"
+                                    class="flex flex-col gap-2.5 p-3.5 rounded-xl border text-left transition-all"
+                                    :class="passEnabled(pass)
+                                        ? pass.tone + ' disabled:opacity-50 disabled:cursor-wait'
+                                        : 'border-slate-200 bg-slate-50 opacity-60 cursor-not-allowed grayscale'">
                                 <span class="flex items-center justify-between gap-2">
                                     <span class="flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center"
                                           :class="pass.iconTone">
@@ -229,11 +244,25 @@
                                 <template x-if="isSingleStepType && !isLegalSearchType">
                                     <span>"Print Original" generates the Original document. You can print multiple copies if needed. Status will be marked as Complete after the first print, enabling CTC generation.</span>
                                 </template>
-                                <template x-if="!isSingleStepType">
+                                <template x-if="isBatchMode">
+                                    <span>Pick a pass for the whole batch. Every letter in it goes through the printer in that pass — the Originals on security paper, the office copies on plain. A tick means every letter in the batch is past that pass; run 2 prints only the letters that still owe it.</span>
+                                </template>
+                                <template x-if="!isSingleStepType && !isBatchMode && !splitPassesAllowed">
+                                    <span>"All Copies" prints this letter's Original, Duplicate and Triplicate in one run. The two split passes are greyed out on purpose: they exist to send a whole <b>batch</b> through the printer twice — every Original on security paper, then every office copy on plain — so they are chosen from the <b>Batches</b> tab, not for one letter. A green tick means that pass is already out; pressing it again reprints. Once the full set is out, "Certified True Copies" can be generated.</span>
+                                </template>
+                                <template x-if="!isSingleStepType && !isBatchMode && splitPassesAllowed">
                                     <span>Pick a pass above: the full set in one run, the Original alone (security paper), or the Duplicate &amp; Triplicate alone (plain paper) — which is also how a run stopped after the Originals is picked up. A green tick means that pass is already out; pressing it again reprints. Once the full set is out, "Certified True Copies" can be generated.</span>
                                 </template>
                             </p>
                         </div>
+                    </div>
+
+                    {{-- Where the batch stands, in a sentence. The ticks say which
+                         passes are done; this says how many letters that covers. --}}
+                    <div x-show="isBatchMode && batchStatusLine" x-cloak
+                         class="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                        <i data-lucide="layers" class="h-4 w-4 text-slate-400 shrink-0"></i>
+                        <p class="text-[11.5px] font-semibold text-slate-600" x-text="batchStatusLine"></p>
                     </div>
 
                     {{-- A line, not a full-page celebration: the ticks on the passes
@@ -331,7 +360,7 @@
                          a single-copy type. Where the three passes are on show they
                          are the print action, and a fourth button that runs one of
                          them again is the duplication this redesign removed. --}}
-                    <button x-show="(!batchCompleted || isSingleStepType) && !isLegalSearchType && !showPasses"
+                    <button x-show="(!batchCompleted || isSingleStepType) && !isLegalSearchType && !showPasses && !isBatchMode"
                             @click="executeBatchPrint()"
                             :disabled="isPrinting"
                             class="px-6 py-3 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xl shadow-indigo-200 transition-all flex items-center gap-2 disabled:opacity-50 active:scale-95">
@@ -419,6 +448,13 @@ document.addEventListener('alpine:init', () => {
         recordId: null,
         reissuance: '',
         passesAllowed: true,
+        // Whether the Original-only / office-copies passes may be pressed. Asked for
+        // by the caller, and only the Batches tab asks: see openModal().
+        splitPasses: false,
+        // Set when the manager is opened for a whole batch rather than one row.
+        // Carries the ids, how the batch stands, and the page's own runner — the
+        // batch pipeline stays where it is and this only chooses which pass.
+        batch: null,
         issueDate: '',
         issueDateOnRecord: '',
         issueDateLocked: false,
@@ -455,6 +491,17 @@ document.addEventListener('alpine:init', () => {
             this.recordId = (data && data.recordId) ? data.recordId : null;
             this.reissuance = (data && data.reissuance) ? String(data.reissuance) : '';
             this.passesAllowed = !(data && data.passes === false);
+            this.batch = (data && data.batch) ? data.batch : null;
+
+            // Splitting a print into two runs is a BATCH operation: run 1 puts every
+            // Original on security paper, the tray is reloaded, run 2 puts every
+            // office copy on plain paper. One letter has nothing to reload between —
+            // splitting it just means two trips for three sheets, and it is how a
+            // file ends up with its Original out and its office copies forgotten.
+            // So the caller has to ask for the split passes, and only the Batches
+            // tab does. Everywhere else the three are shown, to say what a letter
+            // consists of, but only "All Copies" can be pressed.
+            this.splitPasses = !!(data && data.splitPasses);
 
             // A date already on the record locks the field; a blank one is simply
             // filled in, which is the ordinary case for letters captured before the
@@ -485,10 +532,33 @@ document.addEventListener('alpine:init', () => {
                 ];
             }
             
+            // A batch's state is the batch-print status the caller already read, not
+            // this reference's print_logs — one log line per letter, not per batch.
+            if (this.isBatchMode) {
+                this.printLogs = [];
+                this.isOpen = true;
+                this.$nextTick(() => lucide.createIcons());
+                return;
+            }
+
             await this.checkStatus();
             
             this.isOpen = true;
             this.$nextTick(() => lucide.createIcons());
+        },
+
+        get isBatchMode() {
+            return !!this.batch;
+        },
+
+        get batchCount() {
+            return (this.batch && this.batch.count) || 0;
+        },
+
+        // Only the letters with no date on record are asked about. The rest keep the
+        // date they carry — nothing in a bulk run overwrites a date already issued.
+        get batchMissingDates() {
+            return (this.batch && this.batch.missingDates) || 0;
         },
 
         get isOssMode() {
@@ -508,14 +578,32 @@ document.addEventListener('alpine:init', () => {
         // table and has no such column, so it opens without the panel rather than
         // with one whose Save would go nowhere.
         get supportsIssueDate() {
+            if (this.isBatchMode) return this.batchMissingDates > 0;
             if (!this.recordId) return false;
             if (String(this.docType).startsWith('SLTR')) return false;
             return String(this.docType).includes('RofO')
                 || String(this.docType).includes('Recommendation');
         },
 
+        // Whether the Original-only / office-copies passes can be chosen at all.
+        get splitPassesAllowed() {
+            return this.splitPasses;
+        },
+
+        passEnabled(pass) {
+            return pass.key === 'Batch' || this.splitPassesAllowed;
+        },
+
+        passDisabledReason(pass) {
+            if (this.passEnabled(pass)) return '';
+            return 'Splitting the run into Originals and office copies is available '
+                 + 'on the Batches tab, where a whole batch goes through the printer '
+                 + 'in one pass. For a single letter, print all three copies.';
+        },
+
         // Three passes only where there are three copies to split.
         get showPasses() {
+            if (this.isBatchMode) return true;
             return this.passesAllowed && !this.isSingleStepType && !this.isLegalSearchType;
         },
 
@@ -561,8 +649,39 @@ document.addEventListener('alpine:init', () => {
         // that is half done still reads as outstanding, which is the state an
         // operator picking up an abandoned run needs to see.
         passPrinted(pass) {
+            if (this.isBatchMode) return this.batchPassPrinted(pass);
             if (!this.printLogs || !pass || !pass.copies) return false;
             return pass.copies.every(copy => this.isCompleted(copy));
+        },
+
+        // A batch is only ticked when EVERY letter in it is past that pass — one
+        // file still owing its office copies keeps run 2 outstanding, which is the
+        // whole reason the batch can be resumed.
+        batchPassPrinted(pass) {
+            const st = this.batch && this.batch.status;
+            if (!st || !st.total) return false;
+
+            if (pass.key === 'Original') {
+                // Originals are out for every letter once none is still not-started.
+                return Number(st.not_started || 0) === 0;
+            }
+            // 'Batch' and 'Office' both mean the full set is on paper.
+            return Number(st.complete || 0) === Number(st.total || 0);
+        },
+
+        // What the batch still owes, said plainly under the passes.
+        get batchStatusLine() {
+            const st = this.batch && this.batch.status;
+            if (!st || !st.total) return '';
+            const total = Number(st.total || 0);
+            const awaiting = Number(st.awaiting_office || 0);
+            const complete = Number(st.complete || 0);
+
+            if (complete === total) return 'All ' + total + ' letters fully printed.';
+            if (awaiting > 0) {
+                return awaiting + ' of ' + total + ' had Originals printed and still owe their Duplicate & Triplicate.';
+            }
+            return total + ' letters ready — nothing printed yet.';
         },
 
         unlockIssueDate() {
@@ -618,11 +737,38 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        // Hands the chosen pass back to the page that opened the manager. The date
+        // is not written here: it travels with the print and the server writes it to
+        // the letters that have none as it renders them.
+        runBatchPass(passKey) {
+            const copies = { 'Batch': 'all', 'Original': 'original', 'Office': 'office' }[passKey];
+            if (!copies || !this.batch || typeof this.batch.onPass !== 'function') return;
+
+            const extras = {};
+            if (this.batchMissingDates > 0 && this.issueDate) {
+                extras.issue_date = this.issueDate;
+                extras.issue_date_apply = 'missing';
+            }
+
+            const run = this.batch.onPass;
+            this.closeModal();
+            run(copies, extras);
+        },
+
         // One pass onto paper. 'Batch' is the whole set, 'Original' and 'Office' the
         // two halves of a split run; the template reads the same names off ?status=,
         // and the log records exactly the copies that were sent.
         async runPass(passKey) {
             if (this.isPrinting) return;
+
+            // A batch keeps its own pipeline — this only names the pass. Nothing is
+            // awaited before it runs, because that pipeline claims the print tab
+            // synchronously inside the click and a pop-up blocker stops a tab
+            // opened after an await.
+            if (this.isBatchMode) {
+                this.runBatchPass(passKey);
+                return;
+            }
 
             if (!(await this.persistIssueDate())) return;
 

@@ -236,11 +236,25 @@ class FileIndexViewController extends Controller
             });
         }
 
+        // The SQL sort is only a STABLE arrival order — the displayed order is the
+        // Legal Search one, applied below. Date-ascending alone put a 1982 C of O
+        // above the file's own commissioning line and buried the grant (OP/RofO)
+        // among ordinary dealings, so the same file read differently here and in
+        // Legal Search.
         $transactions = $transactionsQuery
             ->orderByRaw("TRY_CONVERT(DATE, transaction_date, 105) ASC")
             ->orderByRaw("TRY_CONVERT(DATE, reg_date, 105) ASC")
             ->orderBy('id')
             ->get();
+
+        // Timeline Weighting Method (spec §3) — the same ordering Legal Search
+        // uses, via the shared LegalSearchTimelineWeights map. See
+        // App\Services\TimelineChronologyOrderer.
+        $orderer = app(\App\Services\TimelineChronologyOrderer::class);
+        $orderedRows = $orderer->sort(
+            $transactions->map(fn($row) => (array) $row)->all()
+        );
+        $transactions = collect($orderedRows)->map(fn(array $row) => (object) $row);
 
         $self = $this;
 
@@ -287,8 +301,28 @@ class FileIndexViewController extends Controller
 
         $transactionsArray = $transactionsData->toArray();
 
-        $firstTransaction = $transactionsArray[0] ?? null;
-        $lastTransaction = !empty($transactionsArray) ? $transactionsArray[array_key_last($transactionsArray)] : null;
+        // Row 0 is no longer the earliest event and the last row is no longer the
+        // latest — under the Legal Search ordering the top of the list is the
+        // file's OPENING event (the grant / commissioning line), whatever its
+        // date. So the date span and the holder fallbacks are taken from the
+        // rows' timestamps rather than from their positions.
+        $datedRows = [];
+        foreach ($orderedRows as $position => $row) {
+            $ts = $orderer->timestamp($row);
+            if ($ts !== null) {
+                $datedRows[$position] = $ts;
+            }
+        }
+        asort($datedRows);
+        $earliestPosition = array_key_first($datedRows);
+        $latestPosition = array_key_last($datedRows);
+
+        $firstTransaction = $earliestPosition !== null
+            ? ($transactionsArray[$earliestPosition] ?? null)
+            : ($transactionsArray[0] ?? null);
+        $lastTransaction = $latestPosition !== null
+            ? ($transactionsArray[$latestPosition] ?? null)
+            : (!empty($transactionsArray) ? $transactionsArray[array_key_last($transactionsArray)] : null);
 
         // Root of Title / Original Holder / Current Holder — three distinct
         // concepts (client spec 2026-08-20 §12). The old rule here ("party_1 of
@@ -305,9 +339,19 @@ class FileIndexViewController extends Controller
             'location' => $record->location ?? 'Not specified',
             'totalTransactions' => $transactionsData->count(),
             'applicationType' => $holders['application_type'],
+            // The spec table's render list — which holder lines this Application
+            // Type prints, and in what order.
+            'titleLines' => $holders['lines'],
             'rootOfTitle' => $holders['root_of_title'],
             'originalOwner' => $holders['original_holder'] ?? ($firstTransaction['originalHolder'] ?? null),
             'currentOwner' => $holders['current_holder'] ?? ($lastTransaction['owner'] ?? null),
+            // Chronological extremes, which the row ORDER no longer expresses.
+            'dateSpan' => [
+                'earliest' => $firstTransaction['date'] ?? null,
+                'earliest_display' => $firstTransaction['date_display'] ?? null,
+                'latest' => $lastTransaction['date'] ?? null,
+                'latest_display' => $lastTransaction['date_display'] ?? null,
+            ],
             'transactions' => $transactionsArray,
         ];
 

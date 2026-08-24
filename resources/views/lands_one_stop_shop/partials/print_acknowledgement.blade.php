@@ -217,7 +217,7 @@
     <div class="form-container">
         <div class="header-top">
             <div class="qr-placeholder">
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data={{ urlencode('OP Ack | ' . ($record->applicant_name ?? '') . ' | Plot: ' . ($record->plot_no ?? '') . ' | Plan: ' . ($record->plan_no ?? '') . ' | ' . ($record->date_captured ?? '')) }}" alt="QR">
+                <img src="{{ qr_data_uri('OP Ack | ' . ($record->applicant_name ?? '') . ' | Plot: ' . ($record->plot_no ?? '') . ' | Plan: ' . ($record->plan_no ?? '') . ' | ' . ($record->date_captured ?? ''), 100) }}" alt="QR">
             </div>
             <div class="center-logo">
                 <img src="{{ asset('images/coat_of_arms.png') }}" alt="Coat of Arms"

@@ -42,20 +42,12 @@
             <span class="text-[10px] font-extrabold uppercase tracking-wider text-gray-500">Title</span>
             <span class="text-[10px] font-semibold text-gray-400" id="file-history-application-type"></span>
         </div>
-        <dl class="space-y-1.5">
-            <div class="flex justify-between gap-4">
-                <dt class="text-xs font-medium text-gray-500">Root of Title</dt>
-                <dd class="text-sm text-gray-800 text-right" id="file-history-root-of-title">&mdash;</dd>
-            </div>
-            <div class="flex justify-between gap-4">
-                <dt class="text-xs font-medium text-gray-500">Original Holder</dt>
-                <dd class="text-sm text-gray-800 text-right" id="file-history-original-holder">&mdash;</dd>
-            </div>
-            <div class="flex justify-between gap-4">
-                <dt class="text-xs font-medium text-gray-500">Current Holder</dt>
-                <dd class="text-sm text-gray-800 text-right" id="file-history-current-holder">&mdash;</dd>
-            </div>
-        </dl>
+        {{--
+            Rows are built from the resolver's `lines` list, because WHICH lines
+            print depends on the Application Type: a Direct Allocation shows only
+            Original Holder and Current Holder (spec table row iii).
+        --}}
+        <dl class="space-y-1.5" id="file-history-title-lines"></dl>
     </div>
 
     <div class="space-y-6" id="file-history-list" aria-live="polite" aria-busy="false"></div>

@@ -25,6 +25,13 @@ class DuplexParcelUpdateFile extends Model
     public const ROLE_HOLDING = 'holding';
     public const ROLE_RESULT  = 'result';
 
+    /**
+     * A file this stage received and did NOT change — it keeps the number the
+     * previous stage gave it and simply travels on. No new holding number is minted
+     * for it, because no new file number will be either.
+     */
+    public const ROLE_CARRIED = 'carried';
+
     protected $fillable = [
         'duplex_parcel_update_id',
         'duplex_parcel_update_stage_id',

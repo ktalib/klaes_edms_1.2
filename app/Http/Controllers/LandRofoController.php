@@ -50,6 +50,9 @@ class LandRofoController extends Controller
                 'id', 'batch_seq', 'file_number', 'applicant_name', 'plot_number', 'location',
                 'purpose_of_clause', 'land_use', 'status', 'rofo_status', 'land_rofo_serial_no',
                 'rofo_print_count', 'rofo_originals_printed_at', 'rofo_office_copies_printed_at',
+                // The child rows open the Print Manager themselves, and its Date
+                // Issued panel has nothing to show without this.
+                'application_date', 'is_reissuance', 'reissuance_source',
             ]);
 
         if ($children->isEmpty()) {
@@ -71,6 +74,10 @@ class LandRofoController extends Controller
                 'status'         => $c->status,
                 'rofo_status'    => $c->rofo_status,
                 'serial_no'      => $c->land_rofo_serial_no,
+                'issue_date'     => optional($c->application_date)->format('Y-m-d') ?? '',
+                'reissuance'     => $c->is_reissuance
+                    ? (strtolower(trim((string) $c->reissuance_source)) === 'legacy' ? 'legacy' : 'klaes')
+                    : '',
                 'print_count'    => (int) ($c->rofo_print_count ?? 0),
                 // 'none' | 'originals' | 'complete' -- the batch table shows which
                 // half of a split print this child is still owed.
@@ -1218,6 +1225,11 @@ class LandRofoController extends Controller
                 if ($startsTheBatch) {
                     $rec->increment('rofo_print_count');
                 }
+
+                // Every pass through the printer is its own row, even when the
+                // batch counter does not move: an office-copy run that reuses an
+                // open batch still puts paper in someone's hands.
+                $this->recordDocumentQrPrint($rec, 'Batch print — ' . $copies . ' copies');
             }
             DB::connection('sqlsrv')->commit();
             return response()->json([
@@ -1228,6 +1240,32 @@ class LandRofoController extends Controller
         } catch (\Exception $e) {
             DB::connection('sqlsrv')->rollBack();
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+
+    /**
+     * Record a RofO print against the global document QR register.
+     *
+     * Issues the QR identity if this document has never had one (a RofO printed
+     * before QR signing existed), then logs the printing event. Deliberately
+     * non-fatal: a failure here must never stop a document reaching the counter,
+     * so it is reported and swallowed.
+     */
+    private function recordDocumentQrPrint(LandRecommendation $recommendation, string $reason): void
+    {
+        try {
+            $service = app(\App\Services\DocumentQr\DocumentQrService::class);
+
+            $qr = $service->issue(\App\Enums\DocumentType::ROFO, (int) $recommendation->id, [
+                'source_table' => 'land_recommendations',
+                'file_number'  => $recommendation->file_number,
+                'tracking_id'  => $recommendation->tracking_id,
+            ]);
+
+            $service->recordPrint($qr, $reason);
+        } catch (\Throwable $e) {
+            report($e);
         }
     }
 
@@ -1261,6 +1299,22 @@ class LandRofoController extends Controller
             if (!$isCTC && !$isReissuance) {
                 $recommendation->increment('rofo_print_count');
             }
+
+            // Document QR print audit.
+            //
+            // Hooked here rather than in the print template: rendering the
+            // template is also how a RofO is previewed, so counting renders
+            // would inflate the audit trail this table exists to keep honest.
+            // logPrint() is only reached once a sheet has actually gone through
+            // the printer.
+            //
+            // Unlike rofo_print_count, a CTC IS recorded here — a certified copy
+            // is a physical copy in circulation, which is exactly what the print
+            // register is for. The reason column keeps the two distinguishable.
+            $this->recordDocumentQrPrint(
+                $recommendation,
+                $isCTC ? 'Certified True Copy' : ($isReissuance ? 'Re-issuance' : 'Print — ' . $status)
+            );
 
             DB::commit();
 

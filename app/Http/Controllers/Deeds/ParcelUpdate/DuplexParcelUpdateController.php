@@ -7,7 +7,9 @@ use App\Models\DuplexParcelUpdate;
 use App\Models\DuplexParcelUpdateFile;
 use App\Models\DuplexParcelUpdateStage;
 use App\Models\StreetName;
+use App\Support\FileNumberLandUse;
 use App\Services\DuplexCommitService;
+use App\Services\DuplexSummaryService;
 use App\Services\DuplexHoldingNumberService;
 use App\Services\ParcelUpdateNotificationService;
 use Illuminate\Contracts\View\View;
@@ -140,7 +142,7 @@ class DuplexParcelUpdateController extends Controller
                 'source_file_nos' => $data['source_file_nos'],
                 'stages'          => $stages->all(),
                 'status'          => DuplexParcelUpdate::STATUS_DRAFT,
-                'land_use'        => explode('-', $primary)[0],
+                'land_use'        => FileNumberLandUse::codeFor($primary),
                 'plot_no'         => $data['plot_no'] ?? null,
                 'house_no'        => $data['house_no'] ?? null,
                 'street_name'     => $data['street_name'] ?? null,
@@ -281,33 +283,56 @@ class DuplexParcelUpdateController extends Controller
 
             // Re-running a stage replaces its holding numbers rather than adding to
             // them, so a corrected stage does not leave orphans behind.
-            $stage->files()->where('role', DuplexParcelUpdateFile::ROLE_HOLDING)->delete();
+            $stage->files()->delete();
 
-            $outputs = $stage->fresh()->outputCount();
-
-            // A Change of Purpose only renames the files it was applied to; the rest
-            // carry forward untouched and still need a holding row, or a later stage
-            // would silently lose them.
             if ($stage->type === 'change_of_purpose' && $previous) {
-                $outputs = count($inputHoldings);
-            }
+                // A Change of Purpose renames ONLY the files it was applied to. Each of
+                // those gets a new number and its old one is decommissioned; the rest
+                // keep the number the previous stage gave them and simply travel on.
+                //
+                // Minting a number for every incoming file was wrong: a 5-plot
+                // subdivision followed by a 2-file CoP uses 7 numbers, not 10.
+                $selected = array_values($payload['applies_to'] ?? []);
+                $numbers  = $this->holding->allocateHoldingNumbers($duplex, max(1, count($selected)));
+                $minted   = 0;
 
-            $numbers = $this->holding->allocateHoldingNumbers($duplex, max(1, $outputs));
+                foreach ($inputHoldings as $i => $incoming) {
+                    $changing = in_array($incoming, $selected, true);
 
-            foreach ($numbers as $i => $holdingNo) {
-                $plot = $payload['plots'][$i] ?? [];
-                DuplexParcelUpdateFile::create([
-                    'duplex_parcel_update_id'       => $duplex->id,
-                    'duplex_parcel_update_stage_id' => $stage->id,
-                    'duplex_id'         => $duplex->duplex_id,
-                    'role'              => DuplexParcelUpdateFile::ROLE_HOLDING,
-                    'holding_no'        => $holdingNo,
-                    'file_title'        => $plot['holder'] ?? $duplex->file_title,
-                    'plot_size'         => $plot['size'] ?? null,
-                    'holder_name'       => $plot['holder'] ?? $duplex->applicant_name,
-                    'will_decommission' => 1,
-                    'sequence'          => $i,
-                ]);
+                    DuplexParcelUpdateFile::create([
+                        'duplex_parcel_update_id'       => $duplex->id,
+                        'duplex_parcel_update_stage_id' => $stage->id,
+                        'duplex_id'   => $duplex->duplex_id,
+                        'role'        => $changing
+                            ? DuplexParcelUpdateFile::ROLE_HOLDING
+                            : DuplexParcelUpdateFile::ROLE_CARRIED,
+                        'holding_no'  => $changing ? $numbers[$minted++] : $incoming,
+                        'file_title'  => $duplex->file_title,
+                        'holder_name' => $duplex->applicant_name,
+                        // Only a file being renamed has an old number to retire.
+                        'will_decommission' => $changing ? 1 : 0,
+                        'sequence'    => $i,
+                    ]);
+                }
+            } else {
+                $outputs = $stage->fresh()->outputCount();
+                $numbers = $this->holding->allocateHoldingNumbers($duplex, max(1, $outputs));
+
+                foreach ($numbers as $i => $holdingNo) {
+                    $plot = $payload['plots'][$i] ?? [];
+                    DuplexParcelUpdateFile::create([
+                        'duplex_parcel_update_id'       => $duplex->id,
+                        'duplex_parcel_update_stage_id' => $stage->id,
+                        'duplex_id'         => $duplex->duplex_id,
+                        'role'              => DuplexParcelUpdateFile::ROLE_HOLDING,
+                        'holding_no'        => $holdingNo,
+                        'file_title'        => $plot['holder'] ?? $duplex->file_title,
+                        'plot_size'         => $plot['size'] ?? null,
+                        'holder_name'       => $plot['holder'] ?? $duplex->applicant_name,
+                        'will_decommission' => 1,
+                        'sequence'          => $i,
+                    ]);
+                }
             }
 
             // All stages done -> the duplex is captured and ready for KNUPDA/approval.
@@ -332,7 +357,9 @@ class DuplexParcelUpdateController extends Controller
             return response()->json([
                 'success'          => true,
                 'message'          => $stage->label() . ' stage saved.',
-                'holding_numbers'  => $numbers,
+                // What leaves this stage, in order — new numbers for the files that
+                // changed, existing ones for the files that did not.
+                'holding_numbers'  => $stage->files()->pluck('holding_no')->all(),
                 'all_stages_done'  => $allDone,
             ]);
         } catch (\Exception $e) {
@@ -531,6 +558,77 @@ class DuplexParcelUpdateController extends Controller
         return view('deeds.parcel_update.duplex.commission', compact('duplex'));
     }
 
+    /**
+     * Approved duplexes, for the Duplex picker on the MLS commissioning modal.
+     *
+     * A duplex is commissioned from that modal like every other parcel update, so it
+     * needs the same "pick an approved application" list the Subdivision, Merger and
+     * Separation selectors use.
+     */
+    public function approvedList(Request $request): JsonResponse
+    {
+        $search = trim((string) $request->input('search'));
+
+        $records = DuplexParcelUpdate::query()
+            ->visible()
+            ->with('stageRows')
+            ->whereIn('status', [
+                DuplexParcelUpdate::STATUS_APPROVED,
+                DuplexParcelUpdate::STATUS_IN_LAND,
+            ])
+            ->when($search, function ($q) use ($search) {
+                $q->where(function ($sub) use ($search) {
+                    $sub->where('duplex_id', 'LIKE', "%{$search}%")
+                        ->orWhere('applicant_name', 'LIKE', "%{$search}%")
+                        ->orWhere('file_title', 'LIKE', "%{$search}%");
+                });
+            })
+            ->orderByDesc('created_at')
+            ->limit(50)
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $records->map(fn ($d) => [
+                'id'          => $d->id,
+                'duplex_id'   => $d->duplex_id,
+                'applicant'   => $d->applicant_name,
+                'file_title'  => $d->file_title,
+                'sources'     => implode(', ', (array) ($d->source_file_nos ?? [])),
+                'status'      => $d->status,
+                'stages'      => $d->stageSummary(),
+                // NEW file numbers only. Counting every file row double-counts the files
+                // a stage carried through unchanged — they already have a number, and
+                // commissioning does not mint another for them.
+                'file_count'  => $d->files()
+                    ->whereNotNull('holding_no')
+                    ->where('role', '!=', DuplexParcelUpdateFile::ROLE_CARRIED)
+                    ->count(),
+            ])->values(),
+        ]);
+    }
+
+    /**
+     * The whole account of a duplex: source parcels, every stage in execution order,
+     * the numbers it issued, and everything it retired.
+     *
+     * Available at any status — before commissioning it reports holding numbers and
+     * what is planned, afterwards the real file numbers — because an officer asks
+     * "what is this duplex going to do" as often as "what did it do".
+     */
+    public function summary(int $id): JsonResponse
+    {
+        $duplex  = DuplexParcelUpdate::with(['stageRows.files', 'files'])->findOrFail($id);
+        $service = app(DuplexSummaryService::class);
+
+        return response()->json([
+            'success' => true,
+            'data'    => $service->build($duplex) + [
+                'storage_summary' => $service->storageSummary($duplex),
+            ],
+        ]);
+    }
+
     /** One click, one pass: every file number for the whole duplex. */
     public function commit(Request $request, int $id): JsonResponse
     {
@@ -543,6 +641,9 @@ class DuplexParcelUpdateController extends Controller
                 'commission_time' => $request->input('commission_time'),
                 'customer_type'   => $request->input('customer_type', 'Individual'),
                 'gender'          => $request->input('gender', 'Male'),
+                // Per-file overrides typed on the commissioning modal, in generation
+                // order. Anything left blank falls back to the duplex's own capture.
+                'location_entries' => (array) $request->input('location_entries', []),
             ]);
 
             return response()->json([

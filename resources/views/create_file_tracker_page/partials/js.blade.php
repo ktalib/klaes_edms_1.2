@@ -7798,7 +7798,7 @@
         const originRegistryValue = escapeHtml(originOfficeName);
         const createdValue = tracker.createdAt ? escapeHtml(new Date(tracker.createdAt).toLocaleString()) : '-';
         const rackShelfValue = escapeHtml(tracker.rackShelfLocation || tracker.rackShelf || tracker.shelf_location || '-');
-        const trackingQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(tracker.trackingId || '')}`;
+        const trackingQrUrl = `/qr/svg?size=120&data=${encodeURIComponent(tracker.trackingId || '')}`;
         const baseUrl = (document.querySelector('meta[name="app-base-url"]')?.content || '').replace(/\/$/, '');
 
         // Workflow step info
@@ -8168,7 +8168,7 @@
         const originOffice = tracker.originOffice || {};
         const originOfficeName = originOffice.name || tracker.originOfficeName || tracker.originRegistry || '-';
         const originOfficeDepartment = originOffice.department || tracker.originOfficeDepartment || tracker.originRegistryDepartment || '-';
-        const trackingQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(tracker.trackingId || '')}`;
+        const trackingQrUrl = `/qr/svg?size=120&data=${encodeURIComponent(tracker.trackingId || '')}`;
         const fileNameValue = escapeHtml(tracker.fileName || '-');
         const fileNoValue = escapeHtml(tracker.fileNo || '-');
         const priorityValue = escapeHtml(tracker.priority || '-');
@@ -8673,7 +8673,7 @@
         const originOffice = tracker.originOffice || {};
         const originOfficeName = originOffice.name || tracker.originOfficeName || tracker.originRegistry || '-';
         const originOfficeDepartment = originOffice.department || tracker.originOfficeDepartment || tracker.originRegistryDepartment || '-';
-        const trackingQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(tracker.trackingId || '')}`;
+        const trackingQrUrl = `/qr/svg?size=120&data=${encodeURIComponent(tracker.trackingId || '')}`;
         const fileNameValue = escapeHtml(tracker.fileName || '-');
         const fileNoValue = escapeHtml(tracker.fileNo || '-');
         const priorityValue = escapeHtml(tracker.priority || '-');

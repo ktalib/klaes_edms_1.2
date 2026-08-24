@@ -931,20 +931,33 @@
             // removes.
             const titleHoldersHtml = (() => {
                 const th = d.title_holders;
-                const forceRow = (l, v) => `<div class="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
-                    <span class="text-xs font-medium text-gray-500">${esc(l)}</span>
-                    <span class="text-sm text-gray-800 text-right">${v ? esc(v) : '—'}</span></div>`;
+                // The three lines must read as three different things, so each
+                // carries its own colour from the resolver's `tone`.
+                const TONES = {
+                    amber:   { label: 'text-amber-700',   value: 'text-amber-800' },
+                    emerald: { label: 'text-emerald-700', value: 'text-emerald-800' },
+                    indigo:  { label: 'text-indigo-700',  value: 'text-indigo-800' },
+                    gray:    { label: 'text-gray-500',    value: 'text-gray-800' },
+                };
+                const forceRow = (l, v, tone) => {
+                    const t = TONES[tone] || TONES.gray;
+                    return `<div class="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
+                    <span class="text-xs font-semibold ${t.label}">${esc(l)}</span>
+                    <span class="text-sm font-medium text-right ${v ? t.value : 'text-gray-400'}">${v ? esc(v) : '—'}</span></div>`;
+                };
                 if (!th) {
                     // Not indexed — no chain to interpret; keep the legacy two rows.
                     const origVal = d.original_holder || d.current_holder;
                     const currVal = d.current_holder || d.original_holder;
-                    return row('Original Holder', origVal) + row('Current Holder', currVal);
+                    return forceRow('Original Holder', origVal, 'emerald')
+                         + forceRow('Current Holder', currVal, 'indigo');
                 }
+                // `lines` carries the label, value and colour tone for each line,
+                // resolved server-side so every interface renders them alike.
+                const lines = Array.isArray(th.lines) ? th.lines : [];
                 return `
                     <div class="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 mb-1">Title</div>
-                    ${forceRow('Root of Title', th.root_of_title)}
-                    ${forceRow('Original Holder', th.original_holder)}
-                    ${forceRow('Current Holder', th.current_holder)}`;
+                    ${lines.map(l => forceRow(l.label, l.value, l.tone)).join('')}`;
             })();
 
             // Ownership timeline — chronological holder chain from the cross-table

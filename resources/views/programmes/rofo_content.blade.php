@@ -566,7 +566,7 @@
                         ->where('file_number', $qrData)
                         ->value('tracking_id');
                     $qrData = $trackingId ?? $qrData;
-                    $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' . urlencode($qrData);
+                    $qrUrl = qr_data_uri($qrData, 150);
                 @endphp
                 <div style="position: relative; margin-bottom: 4px; margin-top: 0; min-height: 90px;">
                     <div style="text-align: center;">

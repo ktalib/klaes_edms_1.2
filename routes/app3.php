@@ -402,6 +402,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/{id}/generate-conveyance', [DuplexParcelUpdateController::class, 'generateConveyance'])->name('generate-conveyance')->where('id', '[0-9]+');
         Route::get('/{id}/print-conveyance', [DuplexParcelUpdateController::class, 'printConveyance'])->name('print-conveyance')->where('id', '[0-9]+');
         Route::post('/{id}/send-to-land', [DuplexParcelUpdateController::class, 'sendToLand'])->name('send-to-land')->where('id', '[0-9]+');
+        Route::get('/approved-list', [DuplexParcelUpdateController::class, 'approvedList'])->name('approved-list');
+        Route::get('/{id}/summary', [DuplexParcelUpdateController::class, 'summary'])->name('summary')->where('id', '[0-9]+');
         Route::get('/{id}/commission', [DuplexParcelUpdateController::class, 'commissionView'])->name('commission')->where('id', '[0-9]+');
         Route::post('/{id}/commit', [DuplexParcelUpdateController::class, 'commit'])->name('commit')->where('id', '[0-9]+');
         Route::delete('/{id}', [DuplexParcelUpdateController::class, 'destroy'])->name('destroy')->where('id', '[0-9]+');
@@ -415,11 +417,39 @@ Route::middleware(['auth'])->group(function () {
         Route::delete('/{id}', [LossOfDocumentController::class, 'destroy'])->name('destroy')->where('id', '[0-9]+');
     });
 
-    // Information Products Verification — front-end only for now; the verify /
-    // flag / export endpoints get added here once the backend design is settled.
+    // Document Verification console + its verify endpoint.
     Route::get('/information-products/verification', function () {
         return view('information_products.verification');
     })->name('information-products.verification');
+
+    // Throttled: this endpoint answers "does this reference exist" and would
+    // otherwise let anyone walk the register by brute force. Legacy QR codes
+    // carry bare sequential numbers, so guessing neighbours is trivial without
+    // a limit. 30/minute is far above counter use and far below enumeration.
+    Route::post('/information-products/verify', [\App\Http\Controllers\DocumentVerificationController::class, 'verify'])
+        ->middleware('throttle:30,1')
+        ->name('information-products.verify');
+
+    // Local QR renderer for client-side call sites.
+    //
+    // Server-rendered templates use the qr_data_uri() helper directly; this
+    // exists for the handful of places that build the <img src> in JavaScript
+    // and so cannot call a PHP helper. Same-origin and behind auth — it
+    // replaces api.qrserver.com, which received the payload as a query string
+    // on a third-party host and failed outright without outbound internet.
+    Route::get('/qr/svg', function (\Illuminate\Http\Request $request) {
+        $svg = app(\App\Services\DocumentQr\QrRenderer::class)->svg(
+            (string) $request->query('data', ''),
+            (int) $request->query('size', 140)
+        );
+
+        abort_if($svg === null, 404);
+
+        return response($svg, 200, [
+            'Content-Type'  => 'image/svg+xml',
+            'Cache-Control' => 'private, max-age=3600',
+        ]);
+    })->name('qr.svg');
 
     // Title Status
     Route::prefix('title-status')->name('title-status.')->group(function () {
@@ -1001,6 +1031,7 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/', [App\Http\Controllers\VfcWorkerController::class, 'index'])->name('index');
             Route::get('/next-id', [App\Http\Controllers\VfcWorkerController::class, 'getNextId'])->name('next-id');
             Route::post('/', [App\Http\Controllers\VfcWorkerController::class, 'store'])->name('store');
+            Route::put('/{id}', [App\Http\Controllers\VfcWorkerController::class, 'update'])->name('update');
             Route::delete('/{id}', [App\Http\Controllers\VfcWorkerController::class, 'destroy'])->name('destroy');
         });
 
@@ -1015,6 +1046,8 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/{id}/workers', [App\Http\Controllers\ProjectController::class, 'addWorkerToProject'])->name('add-worker');
             Route::delete('/{id}/workers/{workerId}', [App\Http\Controllers\ProjectController::class, 'removeWorkerFromProject'])->name('remove-worker');
             Route::get('/{id}/templates', [App\Http\Controllers\ProjectController::class, 'generateWorkerTemplates'])->name('templates');
+            Route::get('/{id}/delete-summary', [App\Http\Controllers\ProjectController::class, 'deleteSummary'])->name('delete-summary');
+            Route::delete('/{id}', [App\Http\Controllers\ProjectController::class, 'destroy'])->name('destroy');
         });
 
         Route::get('/{id}/edit', [App\Http\Controllers\ValuationCompensationController::class, 'edit'])->name('edit')->where('id', '[0-9]+');

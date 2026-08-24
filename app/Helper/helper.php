@@ -2338,3 +2338,63 @@ if (!function_exists('check_duplicate')) {
         return app(DuplicateCheckService::class)->check($type, $params);
     }
 }
+
+if (! function_exists('qr_data_uri')) {
+    /**
+     * Render a QR code locally and return it as an SVG data URI for an <img src>.
+     *
+     * Replaces the api.qrserver.com calls that used to sit in every print
+     * template. Those sent the payload — file title, plot, district and LGA on
+     * the tracking-sheet variant — to a third party on every print, and left a
+     * broken-image box on any server without outbound internet access.
+     *
+     * Returns an empty string on failure so a template degrades to a blank box
+     * rather than dying mid-page.
+     */
+    function qr_data_uri(?string $content, int $size = 140): string
+    {
+        $content = trim((string) $content);
+
+        if ($content === '') {
+            return '';
+        }
+
+        return app(\App\Services\DocumentQr\QrRenderer::class)->dataUri($content, $size) ?? '';
+    }
+}
+
+if (! function_exists('document_qr_token')) {
+    /**
+     * Issue (or fetch) the QR identity for a printable document and return the
+     * KLAES-Q1 token string to encode into its QR image.
+     *
+     * Idempotent per (type, sourceId) — a reprint gets the SAME token, which is
+     * what Approach A requires: the QR identifies the document, the print log
+     * identifies each printing event.
+     *
+     * Returns null if QR signing is not configured on this server, so a print
+     * template can fall back to the legacy payload rather than failing. Run
+     * `php artisan qr:doctor` if that happens unexpectedly.
+     *
+     * @param  string  $type      DocumentType case name, e.g. 'ROFO'
+     * @param  array   $identity  file_number / tracking_id / file_indexing_id / source_table
+     */
+    function document_qr_token(string $type, ?int $sourceId, array $identity = []): ?string
+    {
+        $case = \App\Enums\DocumentType::tryFrom($type);
+
+        if ($case === null || $sourceId === null) {
+            return null;
+        }
+
+        try {
+            $service = app(\App\Services\DocumentQr\DocumentQrService::class);
+
+            return $service->tokenFor($service->issue($case, $sourceId, $identity));
+        } catch (\Throwable $e) {
+            report($e);
+
+            return null;
+        }
+    }
+}

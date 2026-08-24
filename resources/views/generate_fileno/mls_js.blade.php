@@ -154,9 +154,23 @@
     const GROUPING_LOOKUP_TIMEOUT_MS = 4500;
     const GENERATE_REQUEST_TIMEOUT_MS = 60000;
 
+    /** Is a duplex currently driving the modal? */
+    function duplexIsDriving() {
+        const el = document.querySelector('[x-data^="fileNumberGenerator"]');
+        return !!(el && el._x_dataStack && el._x_dataStack[0] && el._x_dataStack[0].duplexRecordId);
+    }
+
     function setActionButtonsDisabled(isDisabled) {
         const overrideBtn = document.getElementById('overrideButton');
         const generateBtn = document.getElementById('generateButton');
+
+        // The gate below exists to stop a file being commissioned before its grouping
+        // record has a Tracking ID. A duplex has no single awaiting file number to look
+        // up — each stage resolves or mints its own tracking id at commit — so the
+        // lookup can never succeed and would leave Generate disabled forever.
+        if (isDisabled && duplexIsDriving()) {
+            isDisabled = false;
+        }
 
         [overrideBtn, generateBtn].forEach((button) => {
             if (!button) {
@@ -2135,6 +2149,13 @@
         let alpineData = null;
         if (modalContainer && modalContainer._x_dataStack) {
             alpineData = modalContainer._x_dataStack[0];
+
+            // A duplex is several commissionings in a declared order, so it runs
+            // through its own committer rather than this form's single/batch paths.
+            if (alpineData.fileOption === 'duplex') {
+                window.commissionDuplexFromModal(alpineData);
+                return;
+            }
 
             // If batch mode is active, show summary modal instead
             if (alpineData.batchMode) {
@@ -6461,8 +6482,51 @@
              * the picked type while fileOption never changes, and the file gets committed with
              * the wrong Source. A plain method call has no such failure mode.
              */
+            // --- Duplex: several parcel updates commissioned as one instruction ---
+            duplexRecordId: '',
+            duplexRef: '',
+            duplexFileCount: 0,
+            duplexSources: '',
+
+            openDuplexFileModal() {
+                window._duplexCallback = (item) => {
+                    this.duplexRecordId = item.id;
+                    this.duplexRef = item.duplex_id;
+                    this.duplexFileCount = item.file_count || 0;
+                    this.duplexSources = item.sources || '';
+
+                    // The applicant carries through to the commissioning fields so the
+                    // rest of the modal reads like any other file type.
+                    if (item.applicant) this.fileName = item.applicant;
+
+                    // A duplex NEVER commissions as a single file: even one stage is a
+                    // run of its own, and most carry several. Batch mode is therefore
+                    // forced on and the quantity comes from the duplex, not the officer.
+                    this.batchMode = true;
+                    this.batchQuantity = item.file_count || 0;
+
+                    window.renderDuplexPlan(item.id);
+                };
+
+                document.getElementById('duplexFileModal').classList.remove('hidden');
+                window.searchDuplexFiles('');
+            },
+
             applyFileTypeWorkflow(val) {
                 this.fileTypeWorkflow = val;
+
+                // Leaving the Duplex file type releases the batch controls it locked.
+                if (val !== 'duplex' && this.duplexRecordId) {
+                    this.duplexRecordId = '';
+                    this.duplexRef = '';
+                    this.duplexFileCount = 0;
+                    this.duplexSources = '';
+                    this.batchMode = false;
+                    const box = document.getElementById('duplexPlanReview');
+                    if (box) { box.classList.add('hidden'); box.innerHTML = ''; }
+                    const bd = document.getElementById('duplexBatchBreakdown');
+                    if (bd) bd.innerHTML = '';
+                }
 
                 if (val === 'change_of_purpose') {
                     this.applicationType = 'change_of_purpose';
@@ -7670,6 +7734,29 @@
         }
     }
 
+    // The old (duplicated) number a Re-Issuance replaces. Reprint paths build their
+    // FormData from an API row and may not carry it, so it is looked up here rather
+    // than left off the sheet.
+    async function fetchCommissioningOldFileNumber(fileNumber) {
+        const number = String(fileNumber || '').trim();
+        if (!number) return '';
+
+        try {
+            const res = await fetch(`{{ route("mls-fileno.show", ":id") }}`.replace(':id', encodeURIComponent(number)), {
+                headers: { 'Accept': 'application/json' }
+            });
+            if (!res.ok) return '';
+            const payload = await res.json();
+            const record = (payload && payload.success && payload.data) ? payload.data : payload;
+            const old = String((record && (record.old_fileno || record.old_file_number)) || '').trim();
+            // An entry equal to the file's own number is not a previous number.
+            return old.toUpperCase() === number.toUpperCase() ? '' : old;
+        } catch (e) {
+            console.warn('Old file number lookup failed', e);
+            return '';
+        }
+    }
+
     // Prints the photograph in the right margin beside the QR code. Files commissioned
     // without a passport simply leave the space blank.
     function drawCommissioningPassport(doc, image) {
@@ -7771,11 +7858,15 @@
             // Append the record's source after the File No, e.g. "CON-COM-2026-429 (Conversion)".
             const fileTypeLabel = getCommissioningSourceLabel(formData.get('source'), fileNumberVal);
             const fileNoDisplay = fileTypeLabel ? `${fileNumberVal} (${fileTypeLabel})` : fileNumberVal;
-            // Only a Re-Issuance carries one; the row is dropped otherwise.
-            const oldFileNoVal = String(formData.get('old_file_number') || '').trim();
+            // Only a Re-Issuance carries one; the row is dropped otherwise. Reprints
+            // build their FormData from an API row, so fall back to a lookup.
+            let oldFileNoVal = String(formData.get('old_file_number') || '').trim();
+            if (!oldFileNoVal) {
+                oldFileNoVal = await fetchCommissioningOldFileNumber(fileNumberVal);
+            }
             const fields = [
                 ['File No/(File Type):', fileNoDisplay],
-                ...(oldFileNoVal ? [['Old File No:', oldFileNoVal]] : []),
+                ...(oldFileNoVal ? [['Old FileNo:', oldFileNoVal]] : []),
                 ['File Name:', formData.get('file_name')],
                 ['Plot No:', formData.get('plot_number')],
                 ['TP No:', formData.get('tp_number')],
@@ -7818,8 +7909,9 @@
             doc.text("Created by Signature", 50, y + 6, { align: "center" });
             doc.text("Approved by Signature", 150, y + 6, { align: "center" });
 
-            // Footer logo (centered at the bottom of the sheet)
-            if (footerLogoBase64) doc.addImage(footerLogoBase64, 'PNG', 96, 272, 18, 18);
+            // Footer logo, flush right under the body rules (which end at x=185),
+            // in line with the header's right-hand logo column.
+            if (footerLogoBase64) doc.addImage(footerLogoBase64, 'PNG', 140, 272, 45, 18);
 
             hideGlobalLoading();
             doc.save(`commissioning-sheet-${formData.get('file_number')}.pdf`);
@@ -7907,7 +7999,7 @@
                 const hasRowOldFileNo = rowOldFileNo !== '' && rowOldFileNo.toUpperCase() !== String(rowFileNo).trim().toUpperCase();
                 const fields = [
                     ['File No/(File Type):', rowFileNoDisplay],
-                    ...(hasRowOldFileNo ? [['Old File No:', rowOldFileNo]] : []),
+                    ...(hasRowOldFileNo ? [['Old FileNo:', rowOldFileNo]] : []),
                     ['File Name:', row.file_name || ''],
                     ['Plot No:', row.plot_no || 'N/A'],
                     ['TP No:', row.tp_no || 'N/A'],
@@ -7954,7 +8046,7 @@
                 // Footer
                 doc.setFontSize(8);
                 doc.text(`Generated on ${new Date().toLocaleString()} | Batch: ${batchNo || 'N/A'} | Page ${i + 1} of ${totalPages}`, 105, 270, { align: 'center' });
-                if (footerLogoBase64) doc.addImage(footerLogoBase64, 'PNG', 96, 272, 18, 18);
+                if (footerLogoBase64) doc.addImage(footerLogoBase64, 'PNG', 140, 272, 45, 18);
             }
 
             hideGlobalLoading();
@@ -8156,6 +8248,7 @@
                     formData.append('tp_number', responseData.tp_number || '');
                     formData.append('location', responseData.location || '');
                     formData.append('sit_reason', responseData.sit_reason || '');
+                    formData.append('old_file_number', responseData.old_fileno || responseData.old_file_number || '');
                     formData.append('date_created', responseData.date_created || responseData.created_at || '');
                     formData.append('created_by', responseData.created_by || '');
 
@@ -9264,6 +9357,7 @@
                     formData.append('tracking_id', record.tracking_id || '');
                     formData.append('sit_reason', record.sit_reason || '');
                     formData.append('source', record.source || '');
+                    formData.append('old_file_number', record.old_fileno || record.old_file_number || '');
 
                     // Add current time/date/user
                     const now = new Date();
@@ -10127,6 +10221,289 @@
             console.error('Excel export error:', error);
             Swal.fire({ icon: 'error', title: 'Export Error', text: 'Failed to export: ' + error.message });
         }
+    };
+
+    // --- Duplex Selection Modal Functions ---
+    window.closeDuplexFileModal = function () {
+        document.getElementById('duplexFileModal').classList.add('hidden');
+    };
+
+    window.searchDuplexFiles = function (query) {
+        const tableBody = document.getElementById('duplexResultsTable');
+        if (!tableBody) return;
+
+        fetch(`{{ route('duplex-parcel-update.approved-list') }}?search=${encodeURIComponent(query || '')}`)
+            .then(res => res.json())
+            .then(res => {
+                if (!res.success) return;
+
+                tableBody.innerHTML = res.data.length
+                    ? ''
+                    : '<tr><td colspan="4" class="px-4 py-8 text-center text-gray-500">No approved duplexes found.</td></tr>';
+
+                res.data.forEach(item => {
+                    const row = document.createElement('tr');
+                    row.className = 'hover:bg-gray-50 cursor-pointer transition-colors border-b last:border-0';
+                    row.innerHTML = `
+                        <td class="px-4 py-3 whitespace-nowrap text-sm font-bold text-gray-900 font-mono">${item.duplex_id}</td>
+                        <td class="px-4 py-3 text-sm text-gray-600">
+                            <div class="font-semibold uppercase">${item.applicant || 'N/A'}</div>
+                            <div class="text-[10px] text-gray-400 font-mono truncate max-w-xs">${item.sources || ''}</div>
+                        </td>
+                        <td class="px-4 py-3 text-xs text-gray-600">${item.stages || ''}</td>
+                        <td class="px-4 py-3 text-right">
+                            <button type="button" class="px-3 py-1 bg-blue-600 text-white text-xs font-bold rounded hover:bg-blue-700 transition-colors">Select</button>
+                        </td>`;
+                    row.onclick = () => selectDuplexFile(item);
+                    tableBody.appendChild(row);
+                });
+
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            })
+            .catch(() => {
+                tableBody.innerHTML = '<tr><td colspan="4" class="px-4 py-8 text-center text-red-500">Error loading duplexes.</td></tr>';
+            });
+    };
+
+    window.selectDuplexFile = function (item) {
+        if (window._duplexCallback) window._duplexCallback(item);
+        closeDuplexFileModal();
+    };
+
+    /**
+     * The whole duplex plan, inline in the commissioning modal.
+     *
+     * A duplex commissions several files across several stages, so the officer has to
+     * see the complete chain — and what will be retired — before confirming, not a
+     * source file and a plot count.
+     */
+    window.renderDuplexPlan = function (id) {
+        const box = document.getElementById('duplexPlanReview');
+        if (!box) return;
+
+        box.classList.remove('hidden');
+        box.innerHTML = '<p class="text-xs text-gray-400">Loading the duplex plan…</p>';
+
+        fetch(`{{ url('duplex-parcel-update') }}/${id}/summary`, { headers: { 'Accept': 'application/json' } })
+            .then(r => r.json())
+            .then(res => {
+                if (!res.success) { box.innerHTML = '<p class="text-xs text-red-500">Could not load the plan.</p>'; return; }
+
+                const d = res.data;
+                window._duplexPlan = d;
+
+                const alp = document.querySelector('[x-data="fileNumberGenerator()"]');
+                if (alp && alp._x_dataStack && (d.sources || []).length) {
+                    alp._x_dataStack[0].duplexSources = d.sources.join(', ');
+                }
+
+                // A duplex does NOT start a series of its own — it continues the land
+                // use's existing one. Without this the preview read "…-1" while the
+                // registry was at 265, which is simply a different file number from the
+                // one commissioning would actually issue.
+                const landUse = d.duplex && d.duplex.land_use ? d.duplex.land_use : '';
+                if (alp && alp._x_dataStack && landUse) {
+                    const a = alp._x_dataStack[0];
+                    a.landUse = landUse;
+                    if (!a.prefix) a.prefix = landUse;
+
+                    const next = typeof getNextSerialForLandUse === 'function'
+                        ? getNextSerialForLandUse(landUse)
+                        : null;
+
+                    if (next) {
+                        const total = (d.stages || []).reduce((sum, st) => sum + (st.files || []).filter(f => !f.carried).length, 0);
+                        a.serialNo = next;
+                        a.serialRangePreview = total > 1 ? `${next} to ${next + total - 1}` : String(next);
+                    }
+                }
+
+                // The real batches: one run per stage. Shown so "10 files" is not a
+                // number the officer has to take on trust.
+                const bd = document.getElementById('duplexBatchBreakdown');
+                if (bd) {
+                    bd.innerHTML = (d.stages || []).map(st => {
+                        const n = (st.files || []).filter(f => !f.carried).length;
+                        const how = n > 1 ? `batch of ${n}` : `${n} file`;
+                        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-blue-200 text-[11px] font-semibold text-blue-800">
+                                    <span class="w-4 h-4 rounded bg-blue-100 text-blue-700 text-[9px] font-black flex items-center justify-center">${st.rank}</span>
+                                    ${st.label} — ${how}
+                                </span>`;
+                    }).join('');
+                }
+
+                // The quantity the panel shows is what the stages actually add up to.
+                const container = document.querySelector('[x-data="fileNumberGenerator()"]');
+                if (container && container._x_dataStack) {
+                    const total = (d.stages || []).reduce((sum, st) => sum + (st.files || []).filter(f => !f.carried).length, 0);
+                    container._x_dataStack[0].duplexFileCount = total;
+                    container._x_dataStack[0].batchQuantity = total;
+
+                    // The Tracking ID box is fed by the grouping lookup, which a duplex does
+                    // not use. Say where the ids come from instead of leaving a bare "--".
+                    const tid = document.getElementById('trackingIdDisplay');
+                    if (tid) {
+                        tid.textContent = 'Assigned per stage at commissioning';
+                        tid.classList.remove('text-red-600');
+                        tid.classList.add('text-blue-700');
+                    }
+                    setActionButtonsDisabled(false);
+
+                    // Build the per-file entry rows so "Applicant 1 of N" and "Entry 1 of N"
+                    // step through the real files, and seed each with what the duplex
+                    // already knows: the officer edits from there rather than from blank.
+                    const a = container._x_dataStack[0];
+                    if (typeof a.updateBatchPreview === 'function') a.updateBatchPreview();
+
+                    const seeds = (d.stages || []).flatMap(st =>
+                        (st.files || []).filter(f => !f.carried).map(f => f));
+
+                    seeds.forEach((f, i) => {
+                        const e = a.locationEntries[i];
+                        if (!e) return;
+                        if (!e.plotNo && f.plot_no) e.plotNo = f.plot_no;
+                        if (!e.file_name && f.holder) e.file_name = f.holder;
+                        if (!e.lga && d.duplex && d.duplex.lga) e.lga = d.duplex.lga;
+                        if (!e.location && d.duplex && d.duplex.location) e.location = d.duplex.location;
+                    });
+                }
+
+                // Stage-by-stage accounting. A single "X retired, Y issued" line was wrong
+                // as well as unclear: a Change of Purpose retires files the SUBDIVISION
+                // just created, so the retirements are not all sources.
+                let totalMinted = 0, totalRetired = 0, prevOut = (d.sources || []).length;
+                const ledgerRows = (d.stages || []).map(st => {
+                    const mints = (st.files || []).filter(f => !f.carried).length;
+                    const retires = Number(st.rank) === 1 ? (d.sources || []).length : mints;
+                    totalMinted += mints;
+                    totalRetired += retires;
+
+                    const what = Number(st.rank) === 1
+                        ? `${(d.sources || []).join(', ')} retired`
+                        : `${retires} of the previous stage's file(s) retired`;
+
+                    return `<p class="text-[11px] text-amber-800 leading-relaxed">
+                                <b>${st.label}:</b> ${what} &rarr; <b>${mints}</b> new file number(s).
+                            </p>`;
+                });
+                const ledger = ledgerRows.join('');
+                const activeAtEnd = ((d.stages || []).slice(-1)[0]?.files || []).length;
+
+                const stages = (d.stages || []).map(st => {
+                    const rows = (st.files || []).map(f => `
+                        <div class="flex items-center gap-2 text-[11px] py-0.5">
+                            <span class="font-mono text-gray-500 min-w-[150px]">${f.holding}</span>
+                            <span class="text-gray-300">&rarr;</span>
+                            <span class="font-mono font-bold ${f.carried ? 'text-gray-400' : 'text-emerald-700'}">
+                                ${f.final || 'to be generated'}</span>
+                            ${f.carried ? '<span class="text-[9px] font-bold text-gray-400">UNCHANGED</span>' : ''}
+                        </div>`).join('');
+
+                    return `
+                        <div class="bg-white border border-gray-200 rounded-lg p-3 mb-2">
+                            <div class="flex items-center justify-between mb-1">
+                                <p class="text-xs font-bold text-gray-800">${st.label}
+                                    ${st.new_land_use ? `<span class="font-normal text-gray-500">&rarr; ${st.new_land_use}</span>` : ''}</p>
+                                <span class="text-[10px] font-bold text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">#${st.rank}</span>
+                            </div>
+                            ${rows}
+                        </div>`;
+                }).join('');
+
+                box.innerHTML = `
+                    <div class="border-t border-blue-200 pt-3">
+                        <p class="text-[10px] font-black uppercase tracking-wider text-gray-500 mb-2">
+                            Stages — in execution order</p>
+                        ${stages}
+
+                        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mt-2">
+                            <p class="text-[10px] font-black uppercase tracking-wider text-amber-700 mb-1.5">What confirming does</p>
+                            ${ledger}
+                            <p class="text-[11px] text-amber-900 mt-2 pt-2 border-t border-amber-200">
+                                <b>${totalMinted}</b> file number(s) issued in all,
+                                <b>${totalRetired}</b> decommissioned,
+                                <b>${activeAtEnd}</b> file(s) active at the end.
+                            </p>
+                        </div>
+                    </div>`;
+            });
+    };
+
+    /**
+     * Commission a duplex from this modal.
+     *
+     * It does NOT go through generate/generate-batch: a duplex is several
+     * commissionings in a declared order, and DuplexCommitService already runs them
+     * against the same engine. Two cards follow — the duplex account, then the usual
+     * commissioning summary — because the officer needs both.
+     */
+    window.commissionDuplexFromModal = async function (alpineData) {
+        const id = alpineData.duplexRecordId;
+        if (!id) {
+            Swal.fire({ icon: 'warning', title: 'No duplex selected', text: 'Pick the duplex to commission first.' });
+            return;
+        }
+
+        const plan = window._duplexPlan || {};
+        const confirmed = await Swal.fire({
+            icon: 'warning',
+            title: 'Commission this duplex?',
+            html: `<b>${plan.duplex ? plan.duplex.duplex_id : ''}</b> — `
+                + `${(plan.planned || []).length} file number(s) will be generated and `
+                + `${plan.totals ? plan.totals.retired || (plan.sources || []).length : '?'} retired. This cannot be undone.`,
+            showCancelButton: true,
+            confirmButtonText: 'Yes, commission',
+            confirmButtonColor: '#059669',
+        });
+        if (!confirmed.isConfirmed) return;
+
+        showGlobalLoading('Commissioning duplex…');
+
+        const res = await fetch(`{{ url('duplex-parcel-update') }}/${id}/commit`, {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify({
+                commissioned_by: document.getElementById('commissionedBy')?.value || '',
+                commission_date: document.getElementById('commissionDate')?.value || '',
+                commission_time: document.getElementById('commissionTime')?.value || '',
+                customer_type: alpineData.customerType || 'Individual',
+                gender: alpineData.gender || 'Male',
+                // Per-file applicant and location details, in the order the files are
+                // generated. Left blank they fall back to what the duplex captured.
+                location_entries: alpineData.locationEntries || [],
+            }),
+        }).then(r => r.json()).catch(e => ({ success: false, message: e.message }));
+
+        hideGlobalLoading();
+
+        if (!res.success) {
+            Swal.fire({ icon: 'error', title: 'Commissioning failed', text: res.message });
+            return;
+        }
+
+        // 1. The duplex account: every stage, holding -> real file, and the retirements.
+        if (typeof window.showDuplexSummary === 'function') {
+            await window.showDuplexSummary('{{ url('duplex-parcel-update') }}', id);
+        }
+
+        // 2. The commissioning summary the officer expects after any file is created.
+        const files = (res.summary || []).flatMap(x => x.files || []);
+        await Swal.fire({
+            icon: 'success',
+            title: 'Duplex commissioned',
+            html: '<p class="text-sm text-gray-600 mb-2">File numbers generated:</p>'
+                + '<p class="font-mono text-sm font-bold text-emerald-700">' + files.join('<br>') + '</p>',
+            confirmButtonColor: '#059669',
+            // The page reloads after this, so a stray click must not skip past the list
+            // of numbers that were just issued.
+            allowOutsideClick: false,
+        });
+
+        window.location.reload();
     };
 
     // --- Merger Selection Modal Functions ---

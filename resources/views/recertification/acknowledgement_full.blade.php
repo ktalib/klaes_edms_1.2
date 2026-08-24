@@ -90,7 +90,7 @@
         'file_number' => $application->file_number ?? null,
         'reference' => $application->application_reference ?? null,
     ]);
-    $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=' . urlencode($qrPayload);
+    $qrUrl = qr_data_uri($qrPayload, 120);
 @endphp
 
     <div class="header-container">

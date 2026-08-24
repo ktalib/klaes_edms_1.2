@@ -243,7 +243,7 @@
             <!-- Coat of Arms -->
             <div class="logo-container" style="position: relative; min-height: 110px;">
                 <img src="https://upload.wikimedia.org/wikipedia/commons/b/bc/Coat_of_arms_of_Nigeria.svg" alt="Coat of Arms" style="margin-bottom: 5px; height: 100px;" />
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={{ $qrData }}" alt="QR" style="position: absolute; left: 40px; top: 50%; transform: translateY(-50%); width: 55px; height: 55px; padding: 2px;" crossorigin="anonymous">
+                <img src="{{ qr_data_uri($qrData, 200) }}" alt="QR" style="position: absolute; left: 40px; top: 50%; transform: translateY(-50%); width: 55px; height: 55px; padding: 2px;" crossorigin="anonymous">
             </div>
 
             <!-- Green Header Banner -->

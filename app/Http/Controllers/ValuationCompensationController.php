@@ -132,12 +132,12 @@ class ValuationCompensationController extends Controller
 
         // Auto-generate file number if not provided
         if (empty($data['our_ref'])) {
-            $project = \App\Models\Project::findOrFail($data['project_id']);
+            $project = \App\Models\Project::active()->findOrFail($data['project_id']);
             $data['our_ref'] = $project->project_fileno;
             $data['apply_percentage'] = $project->apply_percentage; // Capture current project percentage
         } else {
             // Even if ref exists, ensure we capture the project percentage for new records
-            $project = \App\Models\Project::find($data['project_id']);
+            $project = \App\Models\Project::active()->find($data['project_id']);
             if ($project)
                 $data['apply_percentage'] = $project->apply_percentage;
         }
@@ -176,7 +176,7 @@ class ValuationCompensationController extends Controller
             foreach ($request->records as $data) {
                 $data['user_id'] = Auth::id();
 
-                $project = \App\Models\Project::find($data['project_id']);
+                $project = \App\Models\Project::active()->find($data['project_id']);
                 if ($project) {
                     $data['apply_percentage'] = $project->apply_percentage;
                     if (empty($data['our_ref'])) {

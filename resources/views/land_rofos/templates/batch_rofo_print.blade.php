@@ -190,7 +190,16 @@
                 <div style="text-align:center;">
                     <img src="https://upload.wikimedia.org/wikipedia/commons/b/bc/Coat_of_arms_of_Nigeria.svg" alt="Nigeria Seal" style="width:100px;height:auto;display:inline-block;" />
                 </div>
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={{ urlencode($recommendation->tracking_id ?? $recommendation->file_number) }}" alt="QR" style="position:absolute;left:40px;top:50%;transform:translateY(-50%);width:55px;height:55px;" />
+                {{-- Signed KLAES-Q1 token, matching the single-RofO template; falls back
+                     to the legacy payload when QR signing is not configured. --}}
+                @php
+                    $qrData = document_qr_token('ROFO', $recommendation->id ?? null, [
+                        'source_table' => 'land_recommendations',
+                        'file_number'  => $recommendation->file_number ?? null,
+                        'tracking_id'  => $recommendation->tracking_id ?? null,
+                    ]) ?: trim((string) ($recommendation->tracking_id ?? $recommendation->file_number));
+                @endphp
+                <img src="{{ qr_data_uri($qrData, 150) }}" alt="QR" style="position:absolute;left:40px;top:50%;transform:translateY(-50%);width:55px;height:55px;" />
             </div>
             <div style="text-align:center;margin-bottom:8px;">
                 <div style="display:inline-block;border:2px solid #000;border-radius:8px;padding:3px;background:#fff;">

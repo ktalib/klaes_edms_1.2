@@ -369,7 +369,7 @@
             ? 'KANGIS FILE REGISTRY CHECKOUT ACKNOWLEDGEMENT'
             : `${registryLabel.toUpperCase()} FILE REGISTRY CHECKOUT ACKNOWLEDGEMENT`;
         const trackingId = record.request_no || record.acknowledgement_no || '';
-        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(trackingId)}`;
+        const qrUrl = `/qr/svg?size=120&data=${encodeURIComponent(trackingId)}`;
         const baseUrl = (document.querySelector('meta[name="app-base-url"]')?.content || '').replace(/\/$/, '');
         const approverDesignation = record.approved_by_designation
             || record.approved_by_role

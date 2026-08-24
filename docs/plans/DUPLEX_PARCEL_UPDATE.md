@@ -5,8 +5,9 @@ follow-up client conversation. Captured 2026-08-19. Supersedes the one-line
 placeholder "Master Folder for Duplex Parcel Update" (item 13 of
 `Update August 18 2026.md`).
 
-**Status:** built 2026-08-19. Capture pipeline verified end to end; the final commit
-step is code-complete but not yet run against live files (see §8).
+**Status:** built and in use on the dev database. Capture, commissioning, the Land
+step, the summary sheet and all three printed sheets are working and verified — see
+§9 for the current state, which supersedes the older notes in §8.
 
 ---
 
@@ -329,9 +330,125 @@ data before it.
 populated. Verified against real subdivision children commissioned through the existing UI
 (IND-2026-258..263) — same behaviour. Out of scope here; flagged for the module.
 
-### Not yet verified
+---
 
-**Separation** and **Extension** stages have not been exercised end to end — the run above
-covered Merger, Subdivision and Change of Purpose. Both use the same code path as the stages
-that were tested (Extension is single-file like Merger; Separation is batch like Subdivision),
-so the risk is low, but neither has been proven.
+## 9. Current state (2026-08-24)
+
+Everything below is verified against the dev database, not asserted.
+
+### 9.1 Where it lives
+
+| Piece | Path |
+|---|---|
+| Register + wizard | `resources/views/deeds/parcel_update/duplex/` |
+| Summary sheet | `public/js/duplex-summary-card.js` |
+| Controller | `app/Http/Controllers/Deeds/ParcelUpdate/DuplexParcelUpdateController.php` |
+| Commit engine | `app/Services/DuplexCommitService.php` |
+| Summary payload | `app/Services/DuplexSummaryService.php` |
+| Holding numbers | `app/Services/DuplexHoldingNumberService.php` |
+| Land-use parsing | `app/Support/FileNumberLandUse.php` |
+| Rollback | `app/Console/Commands/DuplexRollback.php` |
+| Commissioning modal | `resources/views/generate_fileno/mlsfno.blade.php` + `mls_js.blade.php` |
+| Sidebar | `lands.blade.php` and `deeds.blade.php`, first entry under Parcel/Title Management |
+
+20 routes under `duplex-parcel-update.*`.
+
+### 9.2 The officer's path
+
+1. **Deeds** → *Duplex Parcel Update* (`?mode=deeds`) → **New Duplex**.
+2. **Step 1** — pick the source file(s), then add updates from a **dropdown**. Each pick
+   appends to the plan and drops out of the dropdown; the list below shows only what has
+   been added, in order, each row locked with an × to remove. Picking **more than one
+   source file auto-adds Merger as leg 1**, locked, with its count set to the number of
+   files. Location (plot, district, LGA) is captured here and composed into one
+   `DISTRICT, LGA, KANO` string.
+3. **Step 2** — quantities, with an `N → M` badge per stage so a Merger's "1" cannot be
+   misread as "one file".
+4. **Step 3** — one panel per stage in rank order, running on holding numbers.
+5. **Submit** opens the summary sheet, then the register.
+6. KNUPDA → Approve → Memo → Conveyance → Send to Land.
+7. **Land** commissions from the **MLS Commission New File Number** modal: File Type →
+   **Duplex** → pick it → the whole plan renders inline → Confirm & Generate.
+
+`?mode=land` opens the register **read-only** (no New Duplex, no action menu) — Land acts
+from the commissioning modal, not from here. The summary sheet stays available.
+
+### 9.3 Numbers: the arithmetic that matters
+
+A 1-file duplex, subdivided into 5, then a Change of Purpose on 2:
+
+```
+issued 7 · decommissioned 3 · active 5
+```
+
+Seven numbers, because the CoP mints 2 new ones and retires the 2 children it renames —
+plus the original mother. **Only files that get a NEW number count**; the three carried
+through keep theirs (`role = carried`) and are never re-minted. Getting this wrong is the
+single easiest mistake here: counting file *rows* gives 10, which is what the batch
+quantity and the summary sheet both showed before it was fixed.
+
+Serials **continue the existing series per land use** — a duplex never starts its own.
+Each stage reads the live max for its land use at the moment it runs.
+
+### 9.4 Verified
+
+- 20 routes registered; every duplex PHP file and the summary card lint clean.
+- Three tables present on **sqlsrv**; register (both modes), commission page, summary
+  endpoint, picker endpoint and all three print sheets render.
+- Commissioning modal carries the Duplex file type, selection panel, picker, plan review,
+  batch breakdown, commit branch and the summary card script.
+- On the committed DPX-2026-0007: **every file has its own unique tracking id**;
+  `parent_prop_id` and `related_fileno` set on all; **7 PRA rows**; sources decommissioned.
+- Legal Search resolves each chain — `COM-2026-292 + IND-2026-266`, sibling units excluded.
+
+### 9.5 Traps worth remembering
+
+- **`rank` comes back from sqlsrv as a string.** `st.rank === 1` silently never matched,
+  and the whole "what does confirming do" ledger was wrong as a result. Cast it.
+- **The Generate button is gated on a grouping Tracking ID** for a typed file number. A
+  duplex has none, so `setActionButtonsDisabled()` short-circuits while one is driving the
+  modal, and tracking ids are minted per stage at commit instead.
+- **The single-file commissioning path refuses to invent a tracking id** (the batch path
+  mints them freely). Merger, Extension, one-plot and every Change of Purpose file goes
+  through it, so `DuplexCommitService::trackingIdFor()` resolves or mints one.
+- **`CON` and `ST` are prefixes, not land uses.** `CON-AG-1995-15` is **AG**. A Change of
+  Purpose on it must produce `CON-COM-…`, keeping the prefix. See `FileNumberLandUse`.
+- **A Change of Purpose does not shrink the file count** — it renames some and passes the
+  rest on, so all of them reach the next stage.
+- **`file_indexings.prop_id` is NULL on batch-commissioned children.** Pre-existing and
+  module-wide (confirmed against IND-2026-258..263 commissioned through the normal UI),
+  not caused by the duplex. `pra.prop_id` and `parent_prop_id` are correct, which is what
+  Legal Search reads.
+
+### 9.6 Re-running a test
+
+```
+php artisan duplex:rollback DPX-2026-0007      # one duplex
+php artisan duplex:rollback --all              # every committed duplex
+php artisan duplex:rollback --all --dry-run    # report only
+```
+
+Deletes only rows keyed to the file numbers that duplex created, restores the source file,
+frees the serials and returns the duplex to `in_land` with its plan and holding numbers
+intact.
+
+### 9.7 Printed sheets
+
+- **Conveyance** — the official Ministry letter: title number centred, date right,
+  addressee, bold-underlined RE line, justified prose. File numbers print with slashes
+  (`IND/1990/63`). The RE line and body are composed from the stages.
+- **Memo** — the same sheet as the single-workflow recommendations (PS / Honourable
+  Commissioner blocks, signature lines, Approved/Not Approved). The application line lists
+  **counts and names only** — "5 Subdivision, 3 Change of Purpose and 5 Merger" — with one
+  lettered point per stage below.
+- Both carry KLAES bottom-left and LAnd ADmin bottom-right, pinned to the foot of the page.
+
+### 9.8 Still open
+
+- **Separation** and **Extension** stages have never been run end to end. They share code
+  paths with what has been tested (Extension is single-file like Merger, Separation is
+  batch like Subdivision), but neither is proven.
+- The conveyance has no signatory, postal-address or application-date field; it prints a
+  blank rule, the parcel location, and the capture date respectively.
+- `?mode=land` is a UI gate, not a permission — `?mode=deeds` typed by hand still gives
+  the full page, exactly as the other parcel-update pages behave.

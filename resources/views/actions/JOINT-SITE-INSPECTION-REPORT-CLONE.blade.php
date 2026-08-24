@@ -296,7 +296,7 @@
             <div style="display:flex; flex-direction:row; align-items:flex-start; gap:8px;">
                 <div class="qr-code">
                     @if($_encryptionKey)
-                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={{ urlencode($_encryptionKey) }}" alt="QR Code">
+                    <img src="{{ qr_data_uri($_encryptionKey, 150) }}" alt="QR Code">
                     @endif
                 </div>
                 <div class="logo-wrap">

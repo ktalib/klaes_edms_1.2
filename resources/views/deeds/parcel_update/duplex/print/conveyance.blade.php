@@ -1,62 +1,183 @@
-@extends('deeds.parcel_update.duplex.print._layout')
+{{--
+    Conveyance letter — the official Ministry format.
 
-@section('doc-title', 'Deed of Conveyance — Duplex Parcel Update')
+    Deliberately NOT the tabular sheet the application and memo use: this is the letter
+    that goes out to the applicant, so it follows the house layout exactly — title number
+    centred at the top, date right, addressee block, an underlined RE line, then prose.
 
-@section('doc-body')
-    <table class="meta">
-        <tr><td>Applicant / Holder</td><td>{{ $duplex->applicant_name ?: '—' }}</td></tr>
-        <tr><td>Source File Number(s)</td>
-            <td class="mono">{{ implode(', ', (array) ($duplex->source_file_nos ?? [])) ?: '—' }}</td></tr>
-        <tr><td>Location</td>
-            <td>{{ collect([$duplex->plot_no, $duplex->street_name, $duplex->district, $duplex->lga, $duplex->state])->filter()->implode(', ') ?: '—' }}</td></tr>
-    </table>
+    A duplex can carry several updates, so the RE line and the body are composed from the
+    stages in execution order rather than hard-coded to one workflow.
+--}}
+@php
+    /** The registry writes CON-AG-2021-171; the letter reads CON/AG/2021/171. */
+    $slash = fn ($no) => str_replace('-', '/', (string) $no);
 
-    <p class="body-paragraph">
-        This conveyance covers the parcel{{ count((array) $duplex->source_file_nos) > 1 ? 's' : '' }} named
-        above and the {{ $duplex->isSingleStage() ? 'update' : 'series of updates' }} carried out under
-        duplex reference <span class="mono">{{ $duplex->duplex_id }}</span>. The parcels resulting from the
-        final stage are the parcels conveyed; every earlier record in the chain is decommissioned and
-        ceases to have effect.
-    </p>
+    $sources = array_values(array_filter((array) ($duplex->source_file_nos ?? [])));
+    $title   = $slash($sources[0] ?? '');
 
-    <table class="stage-table">
-        <thead>
-            <tr>
-                <th style="width:12%">Order</th>
-                <th style="width:30%">Update</th>
-                <th style="width:29%">Holding</th>
-                <th style="width:29%">File number assigned</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach ($duplex->stageRows as $stage)
-                @forelse ($stage->files as $file)
-                <tr>
-                    <td class="mono">{{ $loop->first ? $stage->rank : '' }}</td>
-                    <td>{{ $loop->first ? $stage->label() : '' }}</td>
-                    <td class="mono">{{ $file->holding_no ?: $file->source_file_no ?: '—' }}</td>
-                    <td class="mono">{{ $file->final_file_no ?: '— pending commissioning —' }}</td>
-                </tr>
-                @empty
-                <tr>
-                    <td class="mono">{{ $stage->rank }}</td>
-                    <td>{{ $stage->label() }}</td>
-                    <td colspan="2">No holding numbers recorded.</td>
-                </tr>
-                @endforelse
-            @endforeach
-        </tbody>
-    </table>
+    $landUseName = [
+        'RES' => 'residential', 'COM' => 'commercial', 'IND' => 'industrial',
+        'AGR' => 'agricultural', 'AG' => 'agricultural', 'AGRIC' => 'agricultural',
+        'MIX' => 'mixed use',
+    ];
 
-    @php $holders = $duplex->files->pluck('holder_name')->filter()->unique(); @endphp
-    @if ($holders->count() > 1)
-    <p class="body-paragraph">
-        <strong>Holders:</strong> {{ $holders->implode('; ') }}. Where a resulting parcel is held by a
-        person other than the applicant, the holder named against that parcel takes the conveyance for it.
-    </p>
+    $currentUse = $landUseName[strtoupper((string) $duplex->land_use)] ?? strtolower((string) $duplex->land_use);
+
+    // One clause per stage, in the order the duplex runs them. These read as prose in
+    // the RE line and again in the body, so they are phrased as noun phrases.
+    $clauses = [];
+    foreach ($duplex->stageRows as $stage) {
+        $plots = count(array_filter((array) data_get($stage->payload, 'plots', [])));
+
+        $clauses[] = match ($stage->type) {
+            'merger' => 'merger of ' . count($sources) . ' titles into one',
+            'subdivision' => 'subdivision into ' . ($stage->plot_count ?: $plots) . ' plots',
+            'separation' => 'separation into ' . ($stage->plot_count ?: $plots) . ' plots',
+            'extension' => 'extension of the plot boundary',
+            'change_of_purpose' => 'change of purpose from ' . $currentUse . ' to '
+                . ($landUseName[strtoupper((string) data_get($stage->payload, 'new_land_use'))]
+                    ?? strtolower((string) data_get($stage->payload, 'new_land_use'))) . ' use',
+            default => $stage->label(),
+        };
+    }
+
+    $reLine = strtoupper(implode(', ', $clauses));
+
+    $applied = $duplex->created_at ? $duplex->created_at->format('jS F, Y') : '';
+    $issued  = ($duplex->conveyance_generated_at ?: now())->format('jS F, Y');
+@endphp
+
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Conveyance — {{ $duplex->duplex_id }}</title>
+    <style>
+        @page { size: A4; margin: 25mm 22mm; }
+
+        body {
+            font-family: "Times New Roman", Times, serif;
+            font-size: 12.5pt;
+            line-height: 1.55;
+            color: #000;
+            margin: 0;
+            /* Reserve the strip the fixed footer occupies. */
+            padding-bottom: 96px;
+        }
+
+        .title-no   { text-align: center; font-weight: bold; margin-bottom: 26px; }
+        .date       { text-align: right; margin-bottom: 30px; }
+
+        .addressee  { margin-bottom: 26px; }
+        .addressee div { line-height: 1.35; }
+
+        /* The RE line is the one thing a reader scans for, hence bold + underlined,
+           and justified so it fills the measure like the printed original. */
+        .re {
+            font-weight: bold;
+            text-decoration: underline;
+            text-align: justify;
+            text-justify: inter-word;
+            margin-bottom: 22px;
+        }
+
+        p { text-align: justify; text-justify: inter-word; margin: 0 0 18px; }
+
+        .sign-off  { margin-top: 34px; }
+        .signature { margin-top: 46px; font-style: italic; font-weight: bold; line-height: 1.4; }
+
+        /*
+         * The marks belong at the FOOT OF THE PAGE, not after the last line of text —
+         * a short letter left them floating halfway up the sheet. `position: fixed`
+         * pins them to the bottom of the page box (inside the @page margins) and
+         * repeats them if the letter ever runs to a second page.
+         *
+         * body gets matching bottom padding so a long letter cannot run underneath it.
+         */
+        .page-footer {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+
+        .footer-logo {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+        }
+        .footer-logo img { height: 58px; width: auto; }
+
+        /* Ask the browser to print it — background images and colour are stripped by
+           default, and a logo that vanishes on paper is worse than none. */
+        @media print {
+            .footer-logo img {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+        }
+
+        @media print { .no-print { display: none; } }
+        .no-print { text-align: center; margin-bottom: 18px; }
+        .no-print button {
+            padding: 8px 18px; font-family: system-ui, sans-serif; font-size: 13px;
+            font-weight: 600; border: 1px solid #cbd5e1; border-radius: 8px;
+            background: #2563eb; color: #fff; cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+<div class="no-print">
+    <button onclick="window.print()">Print this conveyance</button>
+</div>
+
+<div class="title-no">{{ $title ?: '—' }}</div>
+
+<div class="date">{{ $issued }}</div>
+
+<div class="addressee">
+    <div>{{ strtoupper($duplex->applicant_name ?: $duplex->file_title) }}</div>
+    @if ($duplex->address)
+        <div>{{ strtoupper($duplex->address) }}</div>
+    @else
+        {{-- The postal address is not captured on the duplex; the parcel's location is
+             printed instead so the letter is not left blank. --}}
+        <div>{{ strtoupper(collect([$duplex->plot_no ? 'PLOT ' . $duplex->plot_no : null, $duplex->street_name, $duplex->district, $duplex->lga])->filter()->implode(', ')) }}</div>
     @endif
+    <div>{{ strtoupper($duplex->state ?: 'KANO') }} STATE.</div>
+</div>
 
-    <p class="note">
-        File numbers shown as pending are assigned when the Lands department commissions this duplex.
-    </p>
-@endsection
+<div class="re">
+    RE: APPLICATION FOR {{ $reLine }} OVER TITLE NO {{ $title }}.
+</div>
+
+<p>
+    Reference to your application{{ $applied ? ' dated ' . $applied : '' }} in connection with the above
+    captioned, I am directed to inform you that, your application for
+    {{ implode(', ', $clauses) }} has been recommended by Kano State Urban Planning and
+    Development Authority (KNUPDA) in view of the fact that, the site is adequate in size
+    requirement, accessible and conforms with the existing land use in the area.
+</p>
+
+<p>Above is for your kind acceptance or otherwise, please.</p>
+
+<div class="sign-off">Yours Faithfully</div>
+
+<div class="signature">
+    <div>{{ $duplex->approvedBy->name ?? '__________________________' }}</div>
+    <div>Senior Land Officer</div>
+    <div>For: Honourable Commission.</div>
+</div>
+
+<div class="page-footer">
+    <div class="footer-logo">
+        {{-- Absolute URL on purpose: this sheet is printed and shared from environments
+             that are not always the app host. --}}
+        <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES">
+        <img src="http://app.klaes.ng/assets/logo/Left_Logo.png" alt="LAnd ADmin Enterprise System">
+    </div>
+</div>
+
+</body>
+</html>

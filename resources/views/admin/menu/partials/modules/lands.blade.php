@@ -333,53 +333,6 @@
             </div>
           @endif
 
-          <!-- iv. Digital Archive -->
-          <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
-            data-section="digitalArchive-lands">
-            <div class="flex items-center gap-2">
-              <i data-lucide="archive" class="h-3.5 w-3.5 text-orange-400"></i>
-              <span>Digital Archive</span>
-            </div>
-            <i data-lucide="chevron-right" class="h-3.5 w-3.5 transition-transform duration-200"
-              data-chevron="digitalArchive-lands"></i>
-          </div>
-
-          <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="digitalArchive-lands">
-            <!-- 1. File Tracker Dashboard -->
-            <a href="{{ route('file-tracker.dashboard', ['url' => 'land']) }}"
-              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-tracker.dashboard') && request('url') === 'land' ? 'active' : '' }}">
-              <i data-lucide="bar-chart-2" class="h-3.5 w-3.5 text-orange-400"></i>
-              <span>File Tracker Dashboard</span>
-            </a>
-
-            <!-- 2. File Tracker (Archive) -->
-            <a href="{{ route('track-file-archive.index', ['url' => 'land']) }}"
-              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('track-file-archive.index') && request('url') === 'land' ? 'active' : '' }}">
-              <i data-lucide="archive" class="h-3.5 w-3.5 text-orange-400"></i>
-              <span>File Tracker (Archive)</span>
-            </a>
-
-            <!-- 3. Quick Search -->
-            <a href="{{ route('create-file-tracker.quick-search', ['url' => 'land']) }}"
-              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('create-file-tracker.quick-search') && request('url') === 'land' ? 'active' : '' }}">
-              <i data-lucide="search" class="h-3.5 w-3.5 text-orange-400"></i>
-              <span>Quick Search</span>
-            </a>
-
-            <!-- 4. Log a File -->
-            <a href="{{ route('create-file-tracker.index', ['url' => 'land']) }}"
-              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('create-file-tracker.index') && request('url') === 'land' ? 'active' : '' }}">
-              <i data-lucide="file-plus" class="h-3.5 w-3.5 text-orange-400"></i>
-              <span>Log a File</span>
-            </a>
-
-            <!-- 5. File Digital Library – Doc-WARE -->
-            <a href="{{ route('filearchive.index', ['url' => 'land']) }}"
-              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('filearchive.index') && request('url') === 'land' ? 'active' : '' }}">
-              <i data-lucide="library" class="h-3.5 w-3.5 text-orange-400"></i>
-              <span>File Digital Library – Doc-WARE</span>
-            </a>
-          </div>
         </div>
       @endif
 
@@ -405,6 +358,16 @@
         </div>
 
         <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="otherApplications-lands">
+          {{-- Duplex leads the module: it is the whole instruction, and every entry
+               below it — Change of Purpose included — is one part of what a duplex can
+               carry. Land opens it read-only; commissioning runs from the MLS
+               Commission New File Number modal. --}}
+          <a href="{{ route('duplex-parcel-update.index') }}?mode=land"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('duplex-parcel-update.*') ? 'active' : '' }}">
+            <i data-lucide="layers" class="h-3.5 w-3.5 text-orange-400"></i>
+            <span>Duplex Parcel Update</span>
+          </a>
+
           <!-- i. Change of Purpose -->
           <a href="{{ route('change-of-purpose.index') }}?mode=land"
             class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ (request()->routeIs('change-of-purpose.*') && request()->query('mode') === 'land') ? 'active' : '' }}">
@@ -473,12 +436,6 @@
               <span>Parcel Update-Legacy</span>
             </a>
 
-            <!-- 6. Duplex Parcel Update - several updates as one instruction, on its own page -->
-            {{-- <a href="{{ route('duplex-parcel-update.index') }}?mode=land"
-              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('duplex-parcel-update.*') ? 'active' : '' }}">
-              <i data-lucide="layers" class="h-3.5 w-3.5 text-orange-400"></i>
-              <span>Duplex Parcel Update</span>
-            </a> --}}
           </div>
           @endif
 
@@ -498,7 +455,57 @@
         </div>
       @endif
 
-      <!-- g. EDMS Update -->
+      <!-- g. Digital Archive (standalone) -->
+      @if($hasRole('File History View') || $hasRole('File Search'))
+        <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
+          data-section="digitalArchive-lands">
+          <div class="flex items-center gap-2">
+            <i data-lucide="archive" class="h-4 w-4 text-orange-500"></i>
+            <span>Digital Archive</span>
+          </div>
+          <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200"
+            data-chevron="digitalArchive-lands"></i>
+        </div>
+
+        <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="digitalArchive-lands">
+          <!-- i. File Tracker Dashboard -->
+          <a href="{{ route('file-tracker.dashboard', ['url' => 'land']) }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-tracker.dashboard') && request('url') === 'land' ? 'active' : '' }}">
+            <i data-lucide="bar-chart-2" class="h-3.5 w-3.5 text-orange-400"></i>
+            <span>File Tracker Dashboard</span>
+          </a>
+
+          <!-- ii. File Tracker (Archive) -->
+          <a href="{{ route('track-file-archive.index', ['url' => 'land']) }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('track-file-archive.index') && request('url') === 'land' ? 'active' : '' }}">
+            <i data-lucide="archive" class="h-3.5 w-3.5 text-orange-400"></i>
+            <span>File Tracker (Archive)</span>
+          </a>
+
+          <!-- iii. Quick Search -->
+          <a href="{{ route('create-file-tracker.quick-search', ['url' => 'land']) }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('create-file-tracker.quick-search') && request('url') === 'land' ? 'active' : '' }}">
+            <i data-lucide="search" class="h-3.5 w-3.5 text-orange-400"></i>
+            <span>Quick Search</span>
+          </a>
+
+          <!-- iv. Log a File -->
+          <a href="{{ route('create-file-tracker.index', ['url' => 'land']) }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('create-file-tracker.index') && request('url') === 'land' ? 'active' : '' }}">
+            <i data-lucide="file-plus" class="h-3.5 w-3.5 text-orange-400"></i>
+            <span>Log a File</span>
+          </a>
+
+          <!-- v. File Digital Library – Doc-WARE -->
+          <a href="{{ route('filearchive.index', ['url' => 'land']) }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('filearchive.index') && request('url') === 'land' ? 'active' : '' }}">
+            <i data-lucide="library" class="h-3.5 w-3.5 text-orange-400"></i>
+            <span>File Digital Library – Doc-WARE</span>
+          </a>
+        </div>
+      @endif
+
+      <!-- h. EDMS Update -->
       @if($hasRole('EDMS Update'))
         <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
           data-section="edmsUpdate-lands">

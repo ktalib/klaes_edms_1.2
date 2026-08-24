@@ -30,7 +30,8 @@ class ValuationMobileController extends Controller
     public function getLookupData()
     {
         return Cache::remember('vfc_mobile_lookup_data_v2', 60 * 60 * 24, function () {
-            $projects = Project::select('id', 'project_name', 'project_code', 'project_fileno', 'number_of_items', 'our_reference', 'your_reference')
+            $projects = Project::active()
+                ->select('id', 'project_name', 'project_code', 'project_fileno', 'number_of_items', 'our_reference', 'your_reference')
                 ->with([
                     'subProjects' => function ($q) {
                         $q->select('id', 'project_id', 'name', 'code');
@@ -149,7 +150,7 @@ class ValuationMobileController extends Controller
         try {
             DB::connection('sqlsrv')->beginTransaction();
 
-            $project = \App\Models\Project::findOrFail($request->project_id);
+            $project = \App\Models\Project::active()->findOrFail($request->project_id);
             $fileNumber = $project->project_fileno;
 
             // Handle 'Other' building type - now comma separated

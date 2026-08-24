@@ -262,8 +262,7 @@
                             'status' => 'Active',
                             'url' => route('fileindexing.show', $fileIndexing->id)
                             ]);
-                            $qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=' .
-                            urlencode($qrData);
+                            $qrCodeUrl = qr_data_uri($qrData, 100);
                             @endphp
                             <img src="{{ $qrCodeUrl }}" alt="QR Code" class="w-20 h-20 rounded" />
                         </div>

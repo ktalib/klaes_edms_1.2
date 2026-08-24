@@ -280,27 +280,45 @@
             }
             this.toggleEmptyState('summaryEmpty', false);
 
-            const first = transactions[0];
-            const last = transactions[transactions.length - 1];
+            // Rows arrive in the Legal Search timeline order (weight first, dates
+            // second), so the first and last ROWS are not the first and last
+            // DATES. The span comes from the payload, which reads the timestamps.
+            const span = this.data.dateSpan || {};
+            const first = {
+                date: span.earliest ?? transactions[0]?.date,
+                date_display: span.earliest_display ?? transactions[0]?.date_display,
+            };
+            const last = {
+                date: span.latest ?? transactions[transactions.length - 1]?.date,
+                date_display: span.latest_display ?? transactions[transactions.length - 1]?.date_display,
+            };
             const years = this.calculateYearsBetween(first.date, last.date);
 
             // Root of Title / Original Holder / Current Holder are three DIFFERENT
-            // things (client spec 2026-08-20 §12) and are resolved server-side by
-            // TitleHolderResolver. Root of Title is blank on files where nothing
-            // predates the Ministry grant — show the dash, never a guess.
+            // things (client spec 2026-08-20 §12), resolved server-side by
+            // TitleHolderResolver. WHICH of them print is the spec table's call —
+            // a Direct Allocation shows only two (row iii) — so the tiles come
+            // from `titleLines` rather than being hard-coded.
+            // The three lines must read as three different things, so each takes
+            // its colour from the resolver's `tone`.
+            const TONES = {
+                amber: ['text-amber-700', 'text-amber-800'],
+                emerald: ['text-emerald-700', 'text-emerald-800'],
+                indigo: ['text-indigo-700', 'text-indigo-800'],
+                gray: ['text-gray-600', 'text-gray-900'],
+            };
+            const titleLines = Array.isArray(this.data.titleLines) ? this.data.titleLines : [];
+            const titleTiles = titleLines.map((line) => {
+                const tone = TONES[line.tone] || TONES.gray;
+                return `
+                <div>
+                    <p class="text-xs uppercase font-semibold ${tone[0]}">${line.label ?? ''}</p>
+                    <p class="font-bold text-lg ${line.value ? tone[1] : 'text-gray-400'}">${line.value ?? '—'}</p>
+                </div>`;
+            }).join('');
+
             grid.innerHTML = `
-                <div>
-                    <p class="text-xs text-gray-600 uppercase">Root of Title</p>
-                    <p class="font-bold text-lg text-gray-900">${this.data.rootOfTitle ?? '—'}</p>
-                </div>
-                <div>
-                    <p class="text-xs text-gray-600 uppercase">Original Holder</p>
-                    <p class="font-bold text-lg text-gray-900">${this.data.originalOwner ?? 'Unknown'}</p>
-                </div>
-                <div>
-                    <p class="text-xs text-gray-600 uppercase">Current Holder</p>
-                    <p class="font-bold text-lg text-gray-900">${this.data.currentOwner ?? 'Unknown'}</p>
-                </div>
+                ${titleTiles}
                 <div>
                     <p class="text-xs text-gray-600 uppercase">Total Transactions</p>
                     <p class="font-bold text-lg text-gray-900">${this.data.totalTransactions ?? 0}</p>

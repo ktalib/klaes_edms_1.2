@@ -381,7 +381,7 @@
         <div class="footer-barcode-area">
             <div></div>
             <div class="qr-code-group">
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={{ urlencode($recommendation->tracking_id ?: $recommendation->file_number) }}" class="qr-img" alt="QR Code" />
+                <img src="{{ qr_data_uri($recommendation->tracking_id ?: $recommendation->file_number, 150) }}" class="qr-img" alt="QR Code" />
                 <span style="font-size: 8px; font-weight: bold; margin-top: 2px">VERIFY DOCUMENT</span>
             </div>
         </div>

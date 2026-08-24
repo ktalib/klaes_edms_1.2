@@ -523,6 +523,7 @@
                             <input type="hidden" name="original_file_no" x-model="originalFileNo">
                             <input type="hidden" name="new_purpose" x-model="newPurpose">
                             <input type="hidden" name="subdivision_app_id" x-model="subdivisionAppId">
+                            <input type="hidden" name="duplex_id" x-model="duplexRecordId">
                             <input type="hidden" name="merger_app_id" x-model="mergerAppId">
                             <input type="hidden" name="separation_app_id" x-model="separationAppId">
 
@@ -589,6 +590,7 @@
                                             <option value="subdivision">Subdivision</option>
                                             <option value="merger">Merger</option>
                                             <option value="separation">Separation</option>
+                                            <option value="duplex">Duplex</option>
                                         </select>
                                     </div>
                                 </div>
@@ -657,8 +659,10 @@
                                     </div>
                                     
                                     <!-- Hide default batch switch when in Change of purpose mode -->
-                                    <label class="relative inline-flex items-center cursor-pointer" x-show="applicationType !== 'change_of_purpose'">
-                                        <input type="checkbox" x-model="batchMode" @change="toggleBatchMode()" class="sr-only peer">
+                                    <label class="relative inline-flex items-center" x-show="applicationType !== 'change_of_purpose'"
+                                           :class="duplexRecordId ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'"
+                                           :title="duplexRecordId ? 'A duplex always commissions in batch — the quantity comes from its stages.' : ''">
+                                        <input type="checkbox" x-model="batchMode" @change="toggleBatchMode()" :disabled="!!duplexRecordId" class="sr-only peer">
                                         <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                                     </label>
                                 </div>
@@ -678,8 +682,25 @@
                                     </button>
                                 </div>
 
+                                {{-- A duplex is a batch of batches: each stage commissions its own
+                                     run (a 5-plot subdivision is one batch of 5; a 2-file Change of
+                                     Purpose is 2 renames). The officer cannot type a quantity here —
+                                     it is whatever the duplex's stages add up to. --}}
+                                <div x-show="batchMode && duplexRecordId" x-transition class="mt-3">
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">
+                                        Files To Be Generated (set by the duplex)
+                                    </label>
+                                    <div class="flex items-center gap-3">
+                                        <input type="text" readonly :value="duplexFileCount"
+                                               class="w-24 px-3 py-2 border border-blue-300 rounded-md bg-white font-bold text-blue-700">
+                                        <span class="text-sm text-gray-600">file(s), commissioned stage by stage</span>
+                                    </div>
+                                    <div id="duplexBatchBreakdown" class="mt-2 flex flex-wrap gap-2"></div>
+
+                                </div>
+
                                 <!-- Batch Quantity Input (shown when batch mode is active) -->
-                                <div x-show="batchMode" x-transition class="mt-3">
+                                <div x-show="batchMode && !duplexRecordId" x-transition class="mt-3">
                                     <label for="batchQuantity" class="block text-xs font-medium text-gray-600 mb-1">
                                         Number of Files to Generate
                                     </label>
@@ -1434,6 +1455,54 @@
                                                         <div class="px-3 py-2 border border-gray-200 rounded-md bg-white text-blue-700 font-bold" x-text="relatedFileNo"></div>
                                                     </div>
                                                 </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Duplex Related Section. A duplex carries several parcel
+                                             updates at once, so the panel shows the whole plan rather
+                                             than a single source file and a plot count. -->
+                                        <div x-show="fileOption === 'duplex'" x-transition class="mb-4">
+                                            <div class="bg-blue-50 p-4 rounded-lg border border-blue-200 shadow-sm">
+                                                <div class="flex items-center justify-between mb-3">
+                                                    <label class="block text-sm font-semibold text-gray-700">
+                                                        <i data-lucide="layers" class="w-4 h-4 inline mr-1 text-blue-600"></i>
+                                                        Duplex Selection
+                                                    </label>
+                                                    <button type="button" @click="openDuplexFileModal()"
+                                                            class="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-md hover:bg-blue-700 transition-colors flex items-center gap-1.5">
+                                                        <i data-lucide="search" class="w-3.5 h-3.5"></i>
+                                                        Select Duplex
+                                                    </button>
+                                                </div>
+                                                {{-- Source files lead: they are the parcels being acted on,
+                                                     and the officer checks those first. The duplex reference is
+                                                     an internal handle for the instruction, so it sits under them. --}}
+                                                <div class="mb-3">
+                                                    <label class="block text-xs font-medium text-gray-600 mb-1">Source File Number(s)</label>
+                                                    <input type="text" readonly x-model="duplexSources"
+                                                        class="w-full px-3 py-2 border border-gray-200 rounded-md bg-white text-blue-800 font-mono font-bold"
+                                                        placeholder="No duplex selected">
+                                                </div>
+
+                                                <div class="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label class="block text-xs font-medium text-gray-600 mb-1">Duplex ID</label>
+                                                        <input type="text" readonly x-model="duplexRef"
+                                                            class="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 font-mono"
+                                                            placeholder="No duplex selected">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-xs font-medium text-gray-600 mb-1">Files To Be Generated</label>
+                                                        <input type="text" readonly :value="duplexRecordId ? duplexFileCount : '--'"
+                                                            class="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 font-bold"
+                                                            placeholder="--">
+                                                    </div>
+                                                </div>
+
+                                                {{-- The whole plan, rendered once a duplex is picked: every
+                                                     stage, every file, and everything that will be retired.
+                                                     Reviewed here BEFORE Confirm & Generate. --}}
+                                                <div id="duplexPlanReview" class="mt-4 hidden"></div>
                                             </div>
                                         </div>
 
@@ -2649,6 +2718,58 @@
                 </div>
             </div>
 
+            <!-- Duplex Selection Modal -->
+            <div id="duplexFileModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-[100]">
+                <div class="relative top-20 mx-auto p-5 border w-full max-w-3xl shadow-lg rounded-md bg-white">
+                    <div class="mt-3">
+                        <div class="flex items-center justify-between mb-4 border-b pb-3">
+                            <h3 class="text-xl font-bold text-gray-900 flex items-center gap-2">
+                                <i data-lucide="layers" class="w-6 h-6 text-blue-600"></i>
+                                Select Approved Duplex
+                            </h3>
+                            <button onclick="closeDuplexFileModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                                <i data-lucide="x" class="w-6 h-6"></i>
+                            </button>
+                        </div>
+
+                        <div class="mb-4">
+                            <div class="relative">
+                                <input type="text" id="duplexSearchInput"
+                                       class="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                       placeholder="Search by Duplex ID, applicant or source file..."
+                                       onkeyup="searchDuplexFiles(this.value)">
+                                <div class="absolute left-3 top-3 text-gray-400">
+                                    <i data-lucide="search" class="w-5 h-5"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="overflow-hidden border border-gray-200 rounded-lg">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Duplex ID</th>
+                                        <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Applicant</th>
+                                        <th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Stages</th>
+                                        <th class="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="duplexResultsTable" class="bg-white divide-y divide-gray-200">
+                                    <tr>
+                                        <td colspan="4" class="px-4 py-8 text-center text-gray-500">
+                                            <div class="flex flex-col items-center gap-2">
+                                                <i data-lucide="loader" class="w-8 h-8 animate-spin text-blue-500"></i>
+                                                <span>Loading approved duplexes...</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Merger Selection Modal -->
             <div id="mergerFileModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-[100]">
                 <div class="relative top-20 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
@@ -3126,6 +3247,7 @@
              and ST commissioning. Must load before mls_js, whose Commission Summary
              card calls renderRecordSummaryGroups(). --}}
         <script src="{{ asset('js/shared/record-summary-card.js') }}?v={{ @filemtime(public_path('js/shared/record-summary-card.js')) }}"></script>
+        <script src="{{ asset('js/duplex-summary-card.js') }}?v={{ @filemtime(public_path('js/duplex-summary-card.js')) }}"></script>
         {{-- window.generateConversionApplication — shared with the ST File Commissioning table. --}}
         <script src="{{ asset('js/shared/conversion-application-print.js') }}?v={{ @filemtime(public_path('js/shared/conversion-application-print.js')) }}"></script>
         @include('generate_fileno.mls_js')

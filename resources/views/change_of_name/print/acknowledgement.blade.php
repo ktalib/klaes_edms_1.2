@@ -39,7 +39,7 @@
             </div>
             <div class="flex items-start gap-2 flex-shrink-0">
                 <div class="w-16 h-16">
-                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=110x110&data={{ urlencode('CON-' . $record->id) }}" alt="QR Code" class="w-full h-full object-contain">
+                    <img src="{{ qr_data_uri('CON-' . $record->id, 110) }}" alt="QR Code" class="w-full h-full object-contain">
                 </div>
                 <div class="w-16 h-16">
                     <img src="{{ asset('assets/logo/logo3.jpeg') }}" alt="Seal" class="w-full h-full object-contain">

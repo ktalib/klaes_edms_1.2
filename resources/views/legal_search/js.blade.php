@@ -3304,7 +3304,7 @@ const executeSearchAjax = (filters, searchData) => {
     const qrCodeImg = document.getElementById('report-qr-code');
     if (qrCodeImg) {
       const fileInfo = `File Number: MLSF: ${fileNumbers.mls} | KANGIS: ${fileNumbers.kangis} | New KANGIS: ${fileNumbers.new_kangis}`;
-      qrCodeImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(fileInfo)}`;
+      qrCodeImg.src = `/qr/svg?size=150&data=${encodeURIComponent(fileInfo)}`;
     }
   };
 

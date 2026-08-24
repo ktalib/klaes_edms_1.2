@@ -147,7 +147,7 @@
         <!-- Header -->
         <div class="flex justify-between items-start mb-1 px-2">
           <div class="w-14 h-14 border border-[#1a4731] flex items-center justify-center bg-white p-1">
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data={{ $recommendation->file_number }}" alt="QR" class="w-full h-full grayscale">
+            <img src="{{ qr_data_uri($recommendation->file_number, 100) }}" alt="QR" class="w-full h-full grayscale">
           </div>
           <div class="text-right flex flex-col items-end gap-1">
          

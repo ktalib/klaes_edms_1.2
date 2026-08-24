@@ -14,6 +14,14 @@
  *   record      object  the row itself, used by the OSS board
  *   reissuance  string  'klaes' | 'legacy' — a re-issued letter
  *   passes      bool    false hides the three-pass footer (single-copy documents)
+ *   batch       object  opens the manager for a whole batch instead of one row:
+ *                         ids           array   the record ids in the batch
+ *                         count         number   how many letters that is
+ *                         missingDates  number   how many carry no application date
+ *                         status        object   the batch-print status, for the ticks
+ *                         onPass        fn       called with ('all'|'original'|'office',
+ *                                                extras) — the caller keeps its own
+ *                                                print pipeline, this only names the pass
  *
  * Example:
  * window.SmartPrintManager.open(fileNo, 'Land RofO', url, {

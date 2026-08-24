@@ -15,7 +15,14 @@ class VfcWorker extends Model
     protected $fillable = [
         'user_id',
         'vfc_worker_id',
-        'is_active'
+        'is_active',
+        'deactivated_at',
+        'deactivation_reason'
+    ];
+
+    protected $casts = [
+        'is_active' => 'boolean',
+        'deactivated_at' => 'datetime',
     ];
 
     public function user()

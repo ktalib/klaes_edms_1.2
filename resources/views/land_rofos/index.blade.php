@@ -274,77 +274,20 @@
                                         {{-- Only generated RofOs can be printed; the count says how many
                                              this would actually put on paper.
 
-                                             The three ways to run a batch are here as menu items rather
-                                             than as questions asked after the click. They are not a
-                                             sequence of preferences — they are the two passes a split
-                                             print is made of, plus the single pass that does both at
-                                             once. Naming them means the second pass can be started on
-                                             its own, which is what picking up an abandoned run is. --}}
-                                        <div x-data="{
-                                            open: false,
-                                            menuStyle: {},
-                                            toggleMenu($event) {
-                                                if (!this.open) {
-                                                    const rect = $event.currentTarget.getBoundingClientRect();
-                                                    this.menuStyle = {
-                                                        position: 'fixed',
-                                                        top: (rect.bottom + 4) + 'px',
-                                                        left: Math.max(8, rect.right - 288) + 'px',
-                                                        zIndex: 9999
-                                                    };
-                                                    const spaceBelow = window.innerHeight - rect.bottom;
-                                                    if (spaceBelow < 240) {
-                                                        this.menuStyle.top = 'auto';
-                                                        this.menuStyle.bottom = (window.innerHeight - rect.top + 4) + 'px';
-                                                    }
-                                                }
-                                                this.open = !this.open;
-                                            }
-                                        }" class="relative inline-block text-left">
-                                            <button type="button" @click="toggleMenu($event)" @click.away="open = false"
-                                                class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-[11px] font-bold rounded-lg hover:bg-violet-700 transition">
-                                                <i data-lucide="printer" class="h-3.5 w-3.5"></i> Print batch ({{ $generated }})
-                                                <i data-lucide="chevron-down" class="h-3.5 w-3.5"></i>
-                                            </button>
-
-                                            <div x-show="open" x-cloak
-                                                 x-transition:enter="transition ease-out duration-100"
-                                                 x-transition:enter-start="opacity-0 scale-95"
-                                                 x-transition:enter-end="opacity-100 scale-100"
-                                                 x-transition:leave="transition ease-in duration-75"
-                                                 x-transition:leave-start="opacity-100 scale-100"
-                                                 x-transition:leave-end="opacity-0 scale-95"
-                                                 :style="menuStyle"
-                                                 class="w-72 rounded-xl shadow-2xl bg-white ring-1 ring-black ring-opacity-5 overflow-hidden text-left"
-                                                 style="display: none;">
-                                                <div class="py-1">
-                                                    <button type="button" @click="open = false; printBatchGroupCopies(@json($b->rofo_batch_id), 'all')"
-                                                        class="flex w-full items-start px-4 py-2.5 text-sm text-slate-700 hover:bg-violet-50 transition gap-2 text-left">
-                                                        <i data-lucide="printer" class="h-4 w-4 mt-0.5 shrink-0 text-violet-600"></i>
-                                                        <span>
-                                                            <span class="font-bold block">Print all</span>
-                                                            <span class="text-[11px] text-slate-500">One run — Original, Duplicate and Triplicate of each.</span>
-                                                        </span>
-                                                    </button>
-                                                    <button type="button" @click="open = false; printBatchGroupCopies(@json($b->rofo_batch_id), 'original')"
-                                                        class="flex w-full items-start px-4 py-2.5 text-sm text-slate-700 hover:bg-violet-50 transition gap-2 text-left">
-                                                        <i data-lucide="award" class="h-4 w-4 mt-0.5 shrink-0 text-emerald-600"></i>
-                                                        <span>
-                                                            <span class="font-bold block">Print Originals only</span>
-                                                            <span class="text-[11px] text-slate-500">Run 1 — colour / security paper in the tray.</span>
-                                                        </span>
-                                                    </button>
-                                                    <button type="button" @click="open = false; printBatchGroupCopies(@json($b->rofo_batch_id), 'office')"
-                                                        class="flex w-full items-start px-4 py-2.5 text-sm text-slate-700 hover:bg-teal-50 transition gap-2 text-left">
-                                                        <i data-lucide="copy" class="h-4 w-4 mt-0.5 shrink-0 text-teal-600"></i>
-                                                        <span>
-                                                            <span class="font-bold block">Print Duplicate &amp; Triplicate</span>
-                                                            <span class="text-[11px] text-slate-500">Run 2 — plain paper. Picks up a batch stopped after the Originals.</span>
-                                                        </span>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
+                                             One way in, the same as every other row on this page. The
+                                             three passes this used to list in a dropdown are the Print
+                                             Manager's own, so the menu was a second copy of a choice
+                                             that lives inside it — and one that could not show how far
+                                             the batch had already got. --}}
+                                        <button type="button"
+                                            {{-- @js, not @json: @json emits its own double quotes, which close this
+                                                 double-quoted attribute at the first one and leave the browser with
+                                                 `openBatchPrintManager(` — a parse error, and a dead button. @js
+                                                 escapes them to &quot; so the handler survives the attribute. --}}
+                                            onclick="openBatchPrintManager(@js($b->rofo_batch_id))"
+                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-[11px] font-bold rounded-lg hover:bg-violet-700 transition">
+                                            <i data-lucide="printer" class="h-3.5 w-3.5"></i> Print batch ({{ $generated }})
+                                        </button>
                                     @else
                                         <span class="text-[10px] text-slate-400 font-semibold">No RofO generated yet</span>
                                     @endif
@@ -1045,10 +988,16 @@ function reissuancePickLegacyFileNo() {
     });
 }
 
-// The row's Print Manager entry opens the manager directly now — it carries the
-// record id and the date already on the record, and asks for the date inside itself
-// instead of behind a dialog. printRofoBatch() below stays: it drives runs of many
-// files, which the manager cannot, being keyed to one reference number.
+// Every print on this page now starts in the Print Manager — a single row, a batch,
+// or a hand-picked selection alike. It carries the record ids and the dates already
+// on record, and asks for a missing date inside itself rather than behind a dialog.
+//
+// The manager never prints a batch itself: it names the pass and hands back to
+// runRofoPrintPipeline() below, which is still the one path to paper.
+//
+// Left unreachable by that change, and kept only so the pipeline has a fallback if
+// it is ever called without a named pass: printRofoBatch(), askResumeOrRestart()
+// and askHowToPrintBatch(). Nothing calls them now.
 
 function reissuanceNext() {
     if (_reiSource === 'klaes') {
@@ -1232,7 +1181,12 @@ function bpmDoPrint() {
     // because a confirmation cancelled after the paper was already out left the
     // two out of step. One pipeline, one answer.
     closeBatchPrintModal();
-    printRofoBatch(ids);
+
+    // The same manager the rest of the page uses. It used to hand straight to the
+    // pipeline, which asked how to print in a dialog of its own — a second surface
+    // for a choice that now has one home, and one that could not show how far a
+    // half-finished run had already got.
+    rofoOpenBatchManagerFor(ids, ids.length + ' selected RofO' + (ids.length === 1 ? '' : 's'));
 }
 
 // ── Subdivision batch rows ─────────────────────────────────────────────────
@@ -1264,101 +1218,38 @@ function rofoPill(ok, okLabel, pendingLabel) {
 // third state between printed and not: the Original is on the applicant's paper
 // while the office copies are still owed, and that is the state the resume prompt
 // acts on — so it has to be visible here too, not folded into "Printed".
-// The three ways to run one file's copies, as a menu anchored to whatever button
-// asked for it. One definition for every individual print on this page, so the
-// wording and the passes cannot drift apart between the places it opens from.
+// Opens the Print Manager for one child of a batch. The row's own details are kept
+// from the fetch that drew the table, so the manager comes up with its date and its
+// re-issuance state without going back to the server for a row already on screen.
 //
-// Positioned fixed and parented to <body>: both tables it opens over scroll
-// horizontally, and a menu inside one is clipped by it.
-//
-// opts.reissuance — 'klaes' or 'legacy' when this is a re-issued letter. A KLAES
-// re-issuance replaces an already-issued set, so it is the Original alone and the
-// menu is one item; a pre-KLAES one was never issued from here and prints the full
-// set like any other letter.
-var _rofoPrintMenuEl = null;
+// This replaced a hand-built dropdown of the same three passes. One definition of
+// that choice now, inside the manager, so the wording and the passes cannot drift
+// apart between the places it opens from.
+var _rofoChildById = {};
 
-function rofoClosePrintMenu() {
-    if (!_rofoPrintMenuEl) return;
-    _rofoPrintMenuEl.remove();
-    _rofoPrintMenuEl = null;
-    document.removeEventListener('click', rofoClosePrintMenuOnOutside, true);
-    window.removeEventListener('resize', rofoClosePrintMenu);
-    window.removeEventListener('scroll', rofoClosePrintMenu, true);
-}
+function rofoOpenChildPrintManager(id) {
+    var c = _rofoChildById[String(id)];
+    if (!c) return;
 
-function rofoClosePrintMenuOnOutside(e) {
-    if (_rofoPrintMenuEl && !_rofoPrintMenuEl.contains(e.target)) rofoClosePrintMenu();
-}
+    var reissue = c.reissuance || '';
+    var type = reissue
+        ? (reissue === 'legacy' ? 'Land RofO Re-issuance (Legacy)' : 'Land RofO Re-issuance')
+        : 'Land RofO';
 
-function rofoOpenPrintMenu(btn, id, opts) {
-    opts = opts || {};
-
-    // A second click on the same button closes it.
-    var wasOpen = _rofoPrintMenuEl && _rofoPrintMenuEl.dataset.forId === String(id);
-    rofoClosePrintMenu();
-    if (wasOpen) return;
-
-    var reissue = opts.reissuance || '';
-    var suffix  = reissue ? ' The RE-ISSUANCE watermark and the superseding notice print on it.' : '';
-
-    var items = [
-        ['all',      'printer', 'text-violet-600',  'Print all',
-         'One run — Original, Duplicate and Triplicate.' + suffix],
-        ['original', 'award',   'text-emerald-600', 'Print Original only',
-         'Colour / security paper in the tray.' + suffix],
-        ['office',   'copy',    'text-teal-600',    'Print Duplicate &amp; Triplicate',
-         'Plain paper. Finishes a letter stopped after the Original.']
-    ];
-
-    // The Original is the whole of a KLAES re-issuance, so the other two would be
-    // offering paper that has no letter behind it.
-    if (reissue === 'klaes') {
-        items = [['original', 'award', 'text-amber-600', 'Print the re-issued Original',
-                  'The re-issuance is the Original copy alone — the set was already issued.']];
+    var url = c.print_url;
+    if (reissue) {
+        url += (url.indexOf('?') === -1 ? '?' : '&') + 'supersede=1&reissue_source=' + encodeURIComponent(reissue);
     }
 
-    var menu = document.createElement('div');
-    menu.dataset.forId = String(id);
-    menu.className = 'w-72 rounded-xl shadow-2xl bg-white ring-1 ring-black ring-opacity-5 overflow-hidden text-left';
-    menu.style.position = 'fixed';
-    menu.style.zIndex = '9999';
-    menu.innerHTML = '<div class="py-1">' + items.map(function (it) {
-        return '<button type="button" data-copies="' + it[0] + '" '
-            + 'class="flex w-full items-start px-4 py-2.5 text-sm text-slate-700 hover:bg-violet-50 transition gap-2 text-left">'
-            + '<i data-lucide="' + it[1] + '" class="h-4 w-4 mt-0.5 shrink-0 ' + it[2] + '"></i>'
-            + '<span><span class="font-bold block">' + it[3] + '</span>'
-            + '<span class="text-[11px] text-slate-500">' + it[4] + '</span></span>'
-            + '</button>';
-    }).join('') + '</div>';
-
-    document.body.appendChild(menu);
-
-    var rect = btn.getBoundingClientRect();
-    menu.style.left = Math.max(8, Math.min(rect.right - 288, window.innerWidth - 296)) + 'px';
-    if (window.innerHeight - rect.bottom < 240) {
-        menu.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
-    } else {
-        menu.style.top = (rect.bottom + 4) + 'px';
+    var options = { recordId: c.id, issueDate: c.issue_date || '' };
+    if (reissue) {
+        // A KLAES re-issuance is the Original alone — the set was already issued —
+        // so it opens with no pass choice. A pre-KLAES one prints the full set.
+        options.reissuance = reissue;
+        options.passes = (reissue === 'legacy');
     }
 
-    menu.querySelectorAll('button[data-copies]').forEach(function (b) {
-        b.addEventListener('click', function () {
-            var copies = b.dataset.copies;
-            rofoClosePrintMenu();
-            printRofoBatch([id], copies, reissue ? { reissuance: reissue } : null);
-        });
-    });
-
-    _rofoPrintMenuEl = menu;
-    if (window.lucide) window.lucide.createIcons();
-
-    // Bound on the capture phase, and only once this click has finished — bound
-    // now, the click that opened the menu would close it on its way back up.
-    setTimeout(function () {
-        document.addEventListener('click', rofoClosePrintMenuOnOutside, true);
-        window.addEventListener('resize', rofoClosePrintMenu);
-        window.addEventListener('scroll', rofoClosePrintMenu, true);
-    }, 0);
+    window.SmartPrintManager.open(c.file_number, type, url, options);
 }
 
 function rofoPrintStagePill(c) {
@@ -1409,6 +1300,10 @@ document.addEventListener('click', function (e) {
             holder.dataset.loaded = '1';
 
             var rows = data.children.map(function (c) {
+                // Kept so the row's Print button can open the manager without a
+                // second trip for a record already drawn on screen.
+                _rofoChildById[String(c.id)] = c;
+
                 var generated = String(c.rofo_status || '').toLowerCase() === 'generated';
                 return '<tr class="border-b border-violet-100/70 hover:bg-white/70">'
                     + '<td class="px-4 py-2.5 text-center text-[11px] font-bold text-slate-400">' + c.seq + '</td>'
@@ -1421,17 +1316,19 @@ document.addEventListener('click', function (e) {
                     + '<td class="px-4 py-2.5 text-center">' + rofoPrintStagePill(c) + '</td>'
                     + '<td class="px-4 py-2.5 text-right whitespace-nowrap">'
                     +   (generated
-                            // One child on its own is an individual print, so it goes to
-                            // the Print Manager like any other single letter — it steps
-                            // through Original / Duplicate / Triplicate and reads its own
-                            // position from the print log, so it resumes by itself. The
-                            // batch dialog stays on Print batch, above.
-                            // The arguments ride on data- attributes rather than inside
-                            // the onclick: a file number like RES-1993-2644(T) and a URL
-                            // both carry characters that end an HTML attribute early, and
-                            // a handler cut in half never runs at all.
-                            ? '<button type="button" onclick="rofoOpenPrintMenu(this, ' + c.id + ')"'
-                              + ' class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-50 rounded">Print &#9662;</button>'
+                            // One child on its own is an individual print, so it opens the
+                            // Print Manager like any other single letter — the same three
+                            // passes, the same ticks read from its own print log. It used
+                            // to raise a dropdown of its own, which was a third copy of
+                            // that choice on one page.
+                            //
+                            // The id rides in the handler and everything else is looked up
+                            // from the row: a file number like RES-1993-2644(T) carries
+                            // characters that end an HTML attribute early, and a handler
+                            // cut in half never runs at all.
+                            ? '<button type="button" onclick="rofoOpenChildPrintManager(' + c.id + ')"'
+                              + ' class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-50 rounded">'
+                              + '<i data-lucide="printer" class="h-3 w-3"></i> Print</button>'
                             : '<span class="text-[10px] text-slate-400">—</span>')
                     + '</td>'
                     + '</tr>';
@@ -1467,7 +1364,13 @@ document.addEventListener('click', function (e) {
 //
 // A batch printed the way the menu item names, with no question in between: the
 // operator has already said which pass this is.
-function printBatchGroupCopies(batchId, copies) {
+// Opens the global Print Manager for a whole batch. Everything the manager needs
+// to be honest about the batch is read first — which letters are generated, how far
+// the batch has already got, and which of them still have no date — so the passes
+// come up already ticked and the date panel only appears when there is something to
+// fill in. The printing itself stays on the batch pipeline below; the manager only
+// names the pass.
+function openBatchPrintManager(batchId) {
     loadRofoBatchChildren(batchId)
         .then(function (data) {
             var ids = data.children
@@ -1478,11 +1381,62 @@ function printBatchGroupCopies(batchId, copies) {
                 Swal.fire({ icon: 'info', title: 'Nothing to print', text: 'No RofO in this batch has been generated yet.' });
                 return;
             }
-            printRofoBatch(ids, copies);
+
+            // The Batches tab: a real batch, so the two-run split is on offer.
+            rofoOpenBatchManagerFor(ids, batchId, true);
         })
         .catch(function (err) {
             Swal.fire({ icon: 'error', title: 'Error', text: err.message || 'Network error.' });
         });
+}
+
+// Reads how the run stands and what dates are missing, then hands both to the
+// manager. Used by the Batches tab and by a hand-picked selection alike — the two
+// differ only in where the ids came from.
+function rofoOpenBatchManagerFor(ids, label, splitPasses) {
+    if (!ids || !ids.length) return;
+
+    var csrf = rofoCsrf();
+    var post = function (url) {
+        return fetch(url, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' },
+            body: JSON.stringify({ ids: ids })
+        }).then(function (r) { return r.json(); });
+    };
+
+    // Neither lookup is a gate: if one fails the manager still opens, just without
+    // a tick or without knowing which dates are missing.
+    Promise.all([
+        post('{{ route('land-rofos.batch-print-status') }}').catch(function () { return null; }),
+        post('{{ route('land-rofos.issue-dates') }}').catch(function () { return null; })
+    ]).then(function (res) {
+        var status  = (res[0] && res[0].success) ? res[0] : null;
+        var rows    = (res[1] && res[1].data) ? res[1].data : [];
+        var missing = rows.filter(function (r) { return !r.application_date; }).length;
+
+        openRofoBatchManager(ids, label, status, missing, splitPasses);
+    });
+}
+
+function openRofoBatchManager(ids, label, status, missing, splitPasses) {
+    window.SmartPrintManager.open(label, 'Land RofO', null, {
+        // Originals-first is a two-run operation over a whole batch, so it is
+        // offered where batches are — the Batches tab. A hand-picked selection or a
+        // single row gets "All Copies" only.
+        splitPasses: !!splitPasses,
+        batch: {
+            ids: ids,
+            count: ids.length,
+            missingDates: missing,
+            status: status,
+            // The batch pipeline stays where it is; the manager only names the pass.
+            onPass: function (copies, extras) {
+                runRofoPrintPipeline(ids, copies, extras);
+            }
+        }
+    });
 }
 
 function rofoCsrf() {

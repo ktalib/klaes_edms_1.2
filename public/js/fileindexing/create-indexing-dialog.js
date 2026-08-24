@@ -2766,16 +2766,40 @@
             return;
         }
 
-        const set = (id, value) => {
-            const el = document.getElementById(id);
-            if (el) {
-                el.textContent = value || '—';
-            }
-        };
+        // WHICH lines print is decided by the spec table server-side and arrives
+        // as `lines` — a Direct Allocation shows only two (row iii). Build the
+        // rows from that list rather than assuming three fixed elements.
+        const list = document.getElementById('file-history-title-lines');
+        if (list) {
+            const lines = Array.isArray(holders.lines) ? holders.lines : [];
+            list.innerHTML = '';
+            // The three lines must read as three different things, so each takes
+            // its colour from the resolver's `tone`.
+            const TONES = {
+                amber: ['text-amber-700', 'text-amber-800'],
+                emerald: ['text-emerald-700', 'text-emerald-800'],
+                indigo: ['text-indigo-700', 'text-indigo-800'],
+                gray: ['text-gray-500', 'text-gray-800'],
+            };
 
-        set('file-history-root-of-title', holders.root_of_title);
-        set('file-history-original-holder', holders.original_holder);
-        set('file-history-current-holder', holders.current_holder);
+            lines.forEach((line) => {
+                const tone = TONES[line.tone] || TONES.gray;
+                const wrap = document.createElement('div');
+                wrap.className = 'flex justify-between gap-4';
+
+                const dt = document.createElement('dt');
+                dt.className = `text-xs font-semibold ${tone[0]}`;
+                dt.textContent = line.label || '';
+
+                const dd = document.createElement('dd');
+                dd.className = `text-sm font-medium text-right ${line.value ? tone[1] : 'text-gray-400'}`;
+                dd.textContent = line.value || '—';
+
+                wrap.appendChild(dt);
+                wrap.appendChild(dd);
+                list.appendChild(wrap);
+            });
+        }
 
         const typeEl = document.getElementById('file-history-application-type');
         if (typeEl) {

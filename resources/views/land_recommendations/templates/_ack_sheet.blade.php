@@ -279,7 +279,7 @@
       'tracking_id' => $ackTrackingId,
       'file_number' => $ackFileNumber,
   ]));
-  $ackQrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' . urlencode($ackQrPayload);
+  $ackQrUrl = qr_data_uri($ackQrPayload, 200);
 @endphp
 
 @foreach (['File Copy' => 'file-copy', 'Original' => ''] as $ackCopyLabel => $ackCopyClass)

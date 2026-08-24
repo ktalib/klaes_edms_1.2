@@ -1572,17 +1572,33 @@ async function searchFile() {
         // the same `title_holders` payload and must stay in step.
         const titleHoldersHtml = (() => {
           const th = d.title_holders;
+          // The three lines must read as three different things, so each carries
+          // its own colour from the resolver's `tone`. Hex values rather than
+          // CSS vars: these must stay distinct in both mobile themes.
+          const TONES = {
+            amber:   { label: '#b45309', value: '#92400e' },
+            emerald: { label: '#047857', value: '#065f46' },
+            indigo:  { label: '#4338ca', value: '#3730a3' },
+            gray:    { label: 'var(--muted)', value: 'var(--text)' },
+          };
+          const tRow = (l, v, tone) => {
+            const t = TONES[tone] || TONES.gray;
+            return `<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--border);">`
+              + `<span style="font-size:11px;font-weight:700;color:${t.label};">${esc(l)}</span>`
+              + `<span style="font-size:12px;font-weight:600;text-align:right;color:${has(v) ? t.value : 'var(--muted)'};">${has(v) ? esc(v) : DASH}</span></div>`;
+          };
           if (!th) {
             // Not indexed — no chain to interpret; keep the legacy two rows.
             const origVal = has(d.original_holder) ? d.original_holder : d.current_holder;
             const currVal = has(d.current_holder) ? d.current_holder : d.original_holder;
-            return dRow('Original Holder', origVal) + dRow('Current Holder', currVal);
+            return tRow('Original Holder', origVal, 'emerald') + tRow('Current Holder', currVal, 'indigo');
           }
+          // `lines` carries the label, value and colour tone for each line,
+          // resolved server-side so every interface renders them alike.
+          const lines = Array.isArray(th.lines) ? th.lines : [];
           return `
             <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:2px 0 6px;">Title</div>
-            ${dRow('Root of Title', th.root_of_title)}
-            ${dRow('Original Holder', th.original_holder)}
-            ${dRow('Current Holder', th.current_holder)}`;
+            ${lines.map(l => tRow(l.label, l.value, l.tone)).join('')}`;
         })();
 
         // Ownership history — a vertical timeline of the dealings on the file.

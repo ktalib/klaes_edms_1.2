@@ -331,7 +331,7 @@
   <div class="top-header">
     @php
         $qrData = json_encode([ 'tracking_id' => $recommendation->tracking_id]);
-        $qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=65x65&data=" . urlencode($qrData);
+        $qrUrl = qr_data_uri($qrData, 65);
     @endphp
     <img src="{{ $qrUrl }}" alt="QR Code" class="qr">
 

@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\AuditService;
 use App\Services\ValuationCompensationFileNumberService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 
@@ -24,7 +25,8 @@ class ProjectController extends Controller
 
     public function index()
     {
-        $projects = Project::with(['workers.user', 'subProjects'])->orderBy('created_at', 'desc')->get();
+        $projects = Project::active()->with(['workers.user', 'subProjects'])->withCount(['valuations' => fn ($q) => $q->where('is_deleted', 0)])
+            ->orderBy('created_at', 'desc')->get();
         
         // Fetch all workers from the VFC pool
         $workers = \App\Models\VfcWorker::with('user')
@@ -120,6 +122,8 @@ class ProjectController extends Controller
 
             DB::connection('sqlsrv')->commit();
 
+            $this->forgetMobileLookupCache();
+
             $this->auditService->logAction('CREATED', 'Project', $project->id, null, $project->toArray(), "Created project {$project->project_name}");
 
             return response()->json(['success' => true, 'message' => 'Project created successfully.']);
@@ -131,7 +135,7 @@ class ProjectController extends Controller
 
     public function update(Request $request, $id)
     {
-        $project = Project::findOrFail($id);
+        $project = Project::active()->findOrFail($id);
         $oldData = $project->toArray();
 
         $request->validate([
@@ -188,6 +192,8 @@ class ProjectController extends Controller
             }
         }
 
+        $this->forgetMobileLookupCache();
+
         $this->auditService->logAction('UPDATED', 'Project', $project->id, $oldData, $project->toArray(), "Updated project {$project->project_name}");
 
         return response()->json(['success' => true, 'message' => 'Project updated successfully.']);
@@ -195,7 +201,7 @@ class ProjectController extends Controller
 
     public function getProjectsForSelection()
     {
-        $projects = Project::withCount(['valuations', 'workers'])->get()->map(function($p) {
+        $projects = Project::active()->withCount(['valuations', 'workers'])->get()->map(function($p) {
             return [
                 'id' => $p->id,
                 'name' => $p->project_name,
@@ -248,7 +254,7 @@ class ProjectController extends Controller
             'user_id' => 'required|exists:sqlsrv.users,id',
         ]);
 
-        $project = Project::findOrFail($projectId);
+        $project = Project::active()->findOrFail($projectId);
         
         // Check if already assigned
         $exists = ProjectWorker::where('project_id', $projectId)->where('user_id', $request->user_id)->exists();
@@ -285,6 +291,100 @@ class ProjectController extends Controller
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * What a delete would take with it — drives the confirmation warning so the
+     * user sees the valuation count BEFORE they confirm.
+     */
+    public function deleteSummary($id)
+    {
+        $project = Project::active()->withCount(['workers'])->findOrFail($id);
+
+        $valuations = \App\Models\ValuationCompensation::where('project_id', $project->id)
+            ->where('is_deleted', 0)
+            ->count();
+
+        return response()->json([
+            'success' => true,
+            'project' => [
+                'id' => $project->id,
+                'name' => $project->project_name,
+                'code' => $project->project_code,
+                'fileno' => $project->project_fileno,
+            ],
+            'valuations_count' => $valuations,
+            'workers_count' => $project->workers_count,
+            'sub_projects_count' => $project->subProjects()->count(),
+        ]);
+    }
+
+    /**
+     * Delete an unwanted project.
+     *
+     * This is a soft delete on both levels: the project is flagged
+     * `is_deleted` and every valuation captured against it is flagged the same
+     * way, so the whole set disappears from the VFC console and the mobile app
+     * together but stays recoverable. Worker assignments and sub-projects are
+     * left in place — they are meaningless without the project and are needed
+     * if it is ever restored.
+     */
+    public function destroy(Request $request, $id)
+    {
+        $project = Project::active()->findOrFail($id);
+        $oldData = $project->toArray();
+
+        DB::connection('sqlsrv')->beginTransaction();
+        try {
+            $valuationIds = \App\Models\ValuationCompensation::where('project_id', $project->id)
+                ->where('is_deleted', 0)
+                ->pluck('id');
+
+            if ($valuationIds->isNotEmpty()) {
+                \App\Models\ValuationCompensation::whereIn('id', $valuationIds)
+                    ->update(['is_deleted' => 1]);
+            }
+
+            $project->update([
+                'is_deleted' => 1,
+                'deleted_at' => now(),
+                'deleted_by' => Auth::id(),
+            ]);
+
+            DB::connection('sqlsrv')->commit();
+        } catch (\Exception $e) {
+            DB::connection('sqlsrv')->rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+
+        $this->forgetMobileLookupCache();
+
+        $this->auditService->logAction(
+            'DELETED',
+            'Project',
+            $project->id,
+            $oldData,
+            ['is_deleted' => 1],
+            "Deleted project {$project->project_name} ({$project->project_code}) and {$valuationIds->count()} valuation(s) captured against it"
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => $valuationIds->count() > 0
+                ? "Project deleted along with {$valuationIds->count()} valuation record(s)."
+                : 'Project deleted successfully.',
+            'valuations_deleted' => $valuationIds->count(),
+        ]);
+    }
+
+    /**
+     * The mobile app reads its project list from a 24h cache; anything that
+     * adds, renames or deletes a project has to drop it or the handsets keep
+     * capturing against stale projects for a day.
+     */
+    private function forgetMobileLookupCache(): void
+    {
+        Cache::forget('vfc_mobile_lookup_data_v2');
     }
 
     private function generateNextProjectCode()

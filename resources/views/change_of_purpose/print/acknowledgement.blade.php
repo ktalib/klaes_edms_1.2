@@ -84,7 +84,7 @@
         <div class="left-sidebar"></div>
         <div class="main-container">
             <div class="header-block">
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=110x110&data={{ urlencode('COP-' . $record->id) }}"
+                <img src="{{ qr_data_uri('COP-' . $record->id, 110) }}"
                      alt="QR Code" style="width: 70px; height: 70px; object-fit: contain;">
             </div>
 

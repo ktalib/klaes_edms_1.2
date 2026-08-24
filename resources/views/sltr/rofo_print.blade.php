@@ -269,7 +269,7 @@
         $securityDigitsTop = '17';
         $securityDigitsEnd = '384595';
 
-        $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' . urlencode($sltrNo);
+        $qrUrl = qr_data_uri($sltrNo, 200);
     @endphp
 
     <!-- ==================== PAGE 1 ==================== -->

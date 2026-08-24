@@ -203,6 +203,15 @@
         </div>
 
         <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="otherApplications-deeds">
+          {{-- Duplex leads the module: the full workflow (capture, KNUPDA, approval,
+               memo, conveyance) lives on the Deeds side, and everything below is one
+               part of what a duplex can carry. --}}
+          <a href="{{ route('duplex-parcel-update.index') }}?mode=deeds"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ (request()->routeIs('duplex-parcel-update.*') && request()->query('mode') !== 'land') ? 'active' : '' }}">
+            <i data-lucide="layers" class="h-3.5 w-3.5 text-teal-400"></i>
+            <span>Duplex Parcel Update</span>
+          </a>
+
           <!-- i. Change of Purpose -->
           <a href="{{ route('change-of-purpose.index') }}?mode=deeds"
             class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ (request()->routeIs('change-of-purpose.*') && request()->query('mode') === 'deeds') ? 'active' : '' }}">

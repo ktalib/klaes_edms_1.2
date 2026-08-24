@@ -756,13 +756,23 @@
                     <div style="text-align: center;">
                         <img src="https://upload.wikimedia.org/wikipedia/commons/b/bc/Coat_of_arms_of_Nigeria.svg" alt="Nigeria Seal" style="width: 100px; height: auto; display: inline-block;" />
                     </div>
-                    {{-- Not every recommendation has a tracking_id (a legacy re-issuance is
-                         captured straight onto the RofO table), and an empty ?data= makes the
-                         QR service return "malformed request" instead of an image — so fall
-                         back to the file number, as the batch template does. --}}
-                    @php $qrData = trim((string) ($recommendation->tracking_id ?: $recommendation->file_number)); @endphp
+                    {{-- Prefer the signed KLAES-Q1 token. The legacy payload was
+                         $recommendation->tracking_id, which for most rows is a bare
+                         sequential number (e.g. 179239) — enumerable by counting and
+                         trivially forged, since there is nothing in it to check.
+
+                         Falls back to the old payload when QR signing is not configured
+                         (see `php artisan qr:doctor`), so a misconfigured server prints a
+                         legacy QR rather than no QR at all. --}}
+                    @php
+                        $qrData = document_qr_token('ROFO', $recommendation->id ?? null, [
+                            'source_table' => 'land_recommendations',
+                            'file_number'  => $recommendation->file_number ?? null,
+                            'tracking_id'  => $recommendation->tracking_id ?? null,
+                        ]) ?: trim((string) ($recommendation->tracking_id ?: $recommendation->file_number));
+                    @endphp
                     @if($qrData !== '')
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={{ urlencode($qrData) }}" alt="QR" style="position: absolute; left: 40px; top: 50%; transform: translateY(-50%); width: 55px; height: 55px;" />
+                        <img src="{{ qr_data_uri($qrData, 150) }}" alt="QR" style="position: absolute; left: 40px; top: 50%; transform: translateY(-50%); width: 55px; height: 55px;" />
                     @endif
                 </div>
                 <!-- Centered Blue Banner -->

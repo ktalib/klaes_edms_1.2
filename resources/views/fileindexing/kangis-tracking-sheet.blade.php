@@ -95,9 +95,15 @@
                         <p class="text-xs font-bold text-green-800 mt-0.5">New File — Tracking Sheet</p>
                     </div>
                     {{-- add qr code here for the file number --}}
+                    {{-- Previously fell back to the literal string 'N/A', which printed a
+                         perfectly scannable QR whose content was "N/A". Print no QR at all
+                         when there is no tracking ID — a missing code is honest, a code that
+                         says N/A gets read back as a document that fails verification. --}}
                     <div class="flex items-center justify-center mr-8" style="width:56px;height:56px;">
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={{ urlencode($fileIndexing->tracking_id ?? 'N/A') }}"
-                             alt="QR Code" class="w-14 h-14 object-contain">
+                        @if(!empty($fileIndexing->tracking_id))
+                            <img src="{{ qr_data_uri($fileIndexing->tracking_id, 150) }}"
+                                 alt="QR Code" class="w-14 h-14 object-contain">
+                        @endif
                     </div>
 
                     <!-- Right logo -->

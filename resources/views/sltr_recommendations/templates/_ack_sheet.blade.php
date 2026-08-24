@@ -240,7 +240,7 @@
       'tracking_id' => $ackTrackingId,
       'file_number' => $ackFileNumber,
   ]));
-  $ackQrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' . urlencode($ackQrPayload);
+  $ackQrUrl = qr_data_uri($ackQrPayload, 200);
 
   // Defaults to the registry copy + the applicant's copy. Callers that only need
   // one sheet pass e.g. ['ackCopies' => ['Original' => '']].

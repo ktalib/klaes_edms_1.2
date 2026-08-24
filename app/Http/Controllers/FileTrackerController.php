@@ -1198,6 +1198,52 @@ class FileTrackerController extends Controller
             $lookupType = Str::lower($request->query('by', 'tracking_id'));
             $normalizedIdentifier = trim($trackingId);
 
+            // Q1 token guard.
+            //
+            // The QR scanner passes whatever it read straight through as a
+            // tracking ID. Once a document prints a KLAES-Q1 token that lookup
+            // finds nothing and the "Log to Next Department" workflow stops
+            // working at the counter — so decode first and continue with the
+            // tracking ID the token resolves to.
+            //
+            // A token that fails authentication is NOT treated as a miss: it
+            // means the paper was altered or forged, and the officer needs to
+            // be told that rather than "file not found".
+            $tokens = app(\App\Services\DocumentQr\QrTokenService::class);
+
+            if ($tokens->looksLikeQ1($normalizedIdentifier)) {
+                try {
+                    $claim = $tokens->verify($normalizedIdentifier);
+                    $qr    = \App\Models\DocumentQrCode::find($claim['document_qr_id'] ?? 0);
+
+                    if (!$qr) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'This QR code is valid but its document record no longer exists.',
+                        ], 404);
+                    }
+
+                    $resolved = $qr->tracking_id ?: $qr->file_number;
+
+                    if (!$resolved) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'This QR code resolves to a document with no tracking ID or file number recorded.',
+                        ], 404);
+                    }
+
+                    $normalizedIdentifier = trim($resolved);
+                    $lookupType = $qr->tracking_id ? 'tracking_id' : 'file_number';
+                } catch (\App\Services\DocumentQr\InvalidQrToken $e) {
+                    return response()->json([
+                        'success' => false,
+                        'tampered' => true,
+                        'message' => 'This QR code failed authentication and may be forged or altered. '
+                            . 'Retain the document and report it to the registry.',
+                    ], 422);
+                }
+            }
+
             // First, try to find in file_tracker table (the main tracking system)
             $fileTrackerQuery = FileTracker::query();
 

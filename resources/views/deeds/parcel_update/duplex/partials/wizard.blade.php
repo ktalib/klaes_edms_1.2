@@ -36,7 +36,7 @@
                         <div>
                             <h3 class="text-lg font-black text-slate-800 leading-tight">New Duplex Parcel Update</h3>
                             <p class="text-xs text-slate-500 mt-0.5" id="wizard-subtitle">
-                                Pick the file, then tick the updates in the order you want them carried out.
+                                Pick the file, then add the updates in the order you want them carried out.
                             </p>
                         </div>
                     </div>
@@ -62,10 +62,11 @@
                     4 => ['Done', 'check'],
                 ] as $n => [$label, $icon])
                 <li class="dx-step-tab flex-1" data-tab="{{ $n }}">
-                    <div class="flex items-center gap-2 px-3 py-2.5 border-b-2 border-transparent">
+                    <button type="button" onclick="goToWizardStep({{ $n }})"
+                        class="w-full flex items-center gap-2 px-3 py-2.5 border-b-2 border-transparent">
                         <span class="dx-step-dot w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black shrink-0">{{ $n }}</span>
                         <span class="dx-step-text text-xs font-bold truncate">{{ $label }}</span>
-                    </div>
+                    </button>
                 </li>
                 @endforeach
             </ol>
@@ -76,6 +77,18 @@
 
             {{-- ============ STEP 1 — select and rank ============ --}}
             <div class="wizard-step active" data-step="1">
+
+                {{-- Shown once the duplex row exists: the plan is fixed from that point,
+                     because the stage rows and their holding numbers are built from it. --}}
+                <div id="dx-plan-locked" class="hidden mb-5 flex items-start gap-3 p-4 rounded-2xl bg-amber-50 border border-amber-200">
+                    <i data-lucide="lock" class="w-4 h-4 text-amber-600 mt-0.5 shrink-0"></i>
+                    <p class="text-xs text-amber-800 leading-relaxed">
+                        <span class="font-black">This plan is locked.</span>
+                        The duplex has been created and its stages are being captured, so the
+                        file, the applicant and the order cannot be changed here. Delete the
+                        duplex and start again if the plan itself is wrong.
+                    </p>
+                </div>
                 <div class="grid lg:grid-cols-5 gap-0 lg:divide-x divide-slate-100">
 
                     {{-- LEFT: what the duplex acts on --}}
@@ -113,6 +126,57 @@
                             </p>
                         </div>
 
+                        {{-- Where the parcel is. Carried onto every file the duplex
+                             commissions and onto the parcel-update rows it writes, so it is
+                             captured once here rather than per stage. --}}
+                        <div class="pt-5 border-t border-slate-100">
+                            <p class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-3">Parcel location</p>
+
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="col-span-2">
+                                    <label class="block text-[11px] font-bold text-slate-600 mb-1.5">Plot No</label>
+                                    <input type="text" id="dx-plot-no-main" placeholder="e.g. 12"
+                                        oninput="updateAddressPreview()"
+                                        class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
+                                </div>
+
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-600 mb-1.5">District</label>
+                                    <select id="dx-district" onchange="updateAddressPreview()"
+                                        class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
+                                        <option value="">-- Select --</option>
+                                        @foreach ($districts as $d)
+                                            <option value="{{ $d->name }}">{{ $d->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-600 mb-1.5">LGA</label>
+                                    <select id="dx-lga" onchange="updateAddressPreview()"
+                                        class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
+                                        <option value="">-- Select --</option>
+                                        @foreach ($lgas as $l)
+                                            <option value="{{ $l->name }}">{{ $l->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
+
+                            {{-- Built from district + LGA + state, never typed: one location,
+                                 assembled the same way every time, is what the printed sheets
+                                 read. The plot number is deliberately left out - it belongs to
+                                 the parcel, and each subdivided plot carries its own. --}}
+                            <div class="mt-3">
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1.5">Location</label>
+                                <div id="dx-address-preview"
+                                     class="px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-600 min-h-[38px] flex items-center">
+                                    <span class="text-slate-400 font-normal italic">Fills in from the fields above.</span>
+                                </div>
+                                <input type="hidden" id="dx-address">
+                            </div>
+                        </div>
+
                         {{-- Live read-back of the plan. The order is the whole point of this
                              screen, so it gets its own panel rather than living only in badges. --}}
                         <div class="pt-5 border-t border-slate-100">
@@ -134,32 +198,33 @@
                             the order you tick, not the order they are listed.
                         </p>
 
-                        <div id="dx-type-list" class="space-y-2.5">
-                            @foreach ($types as $key => $label)
-                            @php [$icon, $hint] = $typeMeta[$key] ?? ['circle', '']; @endphp
-                            <label class="type-row group flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border border-slate-200 cursor-pointer hover:border-slate-300 hover:shadow-sm"
-                                   data-type="{{ $key }}">
-                                <input type="checkbox" class="dx-type w-4 h-4 rounded accent-blue-600 shrink-0"
-                                       value="{{ $key }}" onchange="onTypeToggle(this)">
-
-                                <span class="type-icon w-9 h-9 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center shrink-0 transition">
-                                    <i data-lucide="{{ $icon }}" class="w-4 h-4"></i>
-                                </span>
-
-                                <span class="flex-1 min-w-0">
-                                    <span class="block text-sm font-bold text-slate-700 leading-tight">{{ $label }}</span>
-                                    <span class="block text-[11px] text-slate-400 mt-0.5">{{ $hint }}</span>
-                                </span>
-
-                                <span class="rank-badge hidden text-center px-2.5 py-1 rounded-lg border text-xs font-black shrink-0"></span>
-                            </label>
-                            @endforeach
+                        {{-- Adding by DROPDOWN, not by ticking down a static list.
+                             Ticking left the order badges scattered out of sequence — 3 above
+                             2 above 1 — so the list contradicted the order it was recording.
+                             The dropdown makes each pick an append, and the rail on the left
+                             shows the sequence. --}}
+                        <div class="mb-4">
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1.5">Add an update</label>
+                            <select id="dx-type-picker" onchange="addTypeFromPicker(this)"
+                                class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
+                                <option value="">— Select an update to add —</option>
+                            </select>
+                            <p class="text-[11px] text-slate-400 mt-1.5">
+                                Each one you add is carried out in the order you added it. An update
+                                already chosen drops out of this list.
+                            </p>
                         </div>
+
+                        {{-- Only what has been ADDED, in the order it was added. Listing all
+                             five and marking three of them "not selected" made the order
+                             unreadable: the ranks landed in whatever order the types happened
+                             to be listed in. What is not chosen lives in the dropdown, not here. --}}
+                        <div id="dx-type-list" class="space-y-2.5"></div>
 
                         <div id="dx-single-note" class="hidden mt-4 flex gap-2.5 text-[11px] text-slate-600 bg-blue-50/70 border border-blue-100 rounded-xl px-3.5 py-3">
                             <i data-lucide="info" class="w-4 h-4 text-blue-500 shrink-0 mt-px"></i>
                             <span>
-                                Only one update ticked — that is fine. It still runs through the duplex
+                                Only one update added — that is fine. It still runs through the duplex
                                 pipeline: holding number, one approval, one memo, one commissioning.
                             </span>
                         </div>
@@ -201,14 +266,6 @@
                     </div>
 
                     <div id="dx-done-chain" class="mt-7 max-w-2xl mx-auto space-y-3 text-left"></div>
-
-                    <div class="max-w-2xl mx-auto mt-7 flex gap-2.5 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-                        <i data-lucide="alert-circle" class="w-4 h-4 shrink-0 mt-px"></i>
-                        <span>
-                            Nothing has been commissioned yet — these are holding numbers. Run KNUPDA,
-                            approve, generate the memo and the conveyance, then send it to Land.
-                        </span>
-                    </div>
                 </div>
             </div>
         </div>
