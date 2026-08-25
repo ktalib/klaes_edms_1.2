@@ -250,7 +250,10 @@
                                             $canKnupda     = !$frozen && $allCaptured;
                                             $canGenApp     = !$frozen && $knupdaOk && !$record->application_generated_at;
                                             $canPrintApp   = (bool) $record->application_generated_at;
-                                            $canGenConv    = !$frozen && $record->application_generated_at && !$record->conveyance_generated_at;
+                                            // The application sheet is off the menu for now (see below), so the
+                                            // conveyance opens straight off the KNUPDA approval instead of waiting
+                                            // for a document nobody can generate.
+                                            $canGenConv    = !$frozen && $knupdaOk && !$record->conveyance_generated_at;
                                             $canPrintConv  = (bool) $record->conveyance_generated_at;
                                             $canGenMemo    = !$frozen && $record->conveyance_generated_at && !$record->recommendation_generated_at;
                                             $canPrintMemo  = (bool) $record->recommendation_generated_at;
@@ -283,15 +286,23 @@
                                             </div>
 
                                             <div class="py-1">
+                                                {{-- Generate / Print Application are OFF THE MENU for now — not
+                                                     needed at this stage. Nothing else was removed: the routes,
+                                                     the controller actions and print/application.blade.php all
+                                                     still work, and $canGenApp / $canPrintApp are still computed
+                                                     above. Delete this comment wrapper to bring them back, and
+                                                     restore $canGenConv to require application_generated_at.
+
                                                 <button onclick="generateDoc({{ $record->id }}, 'application')" @disabled(!$canGenApp)
                                                     title="{{ $why($canGenApp, $record->application_generated_at ? 'Already generated' : 'KNUPDA approval required') }}"
                                                     class="menu-item">Generate Application</button>
                                                 <a href="{{ route('duplex-parcel-update.print-application', $record->id) }}" target="_blank"
                                                     title="{{ $canPrintApp ? '' : 'Generate the application first' }}"
                                                     class="menu-item block {{ $canPrintApp ? '' : 'is-disabled' }}">Print Application</a>
+                                                --}}
 
                                                 <button onclick="generateDoc({{ $record->id }}, 'conveyance')" @disabled(!$canGenConv)
-                                                    title="{{ $why($canGenConv, $record->conveyance_generated_at ? 'Already generated' : 'Generate the application first') }}"
+                                                    title="{{ $why($canGenConv, $record->conveyance_generated_at ? 'Already generated' : 'KNUPDA approval required') }}"
                                                     class="menu-item">Generate Conveyance</button>
                                                 <a href="{{ route('duplex-parcel-update.print-conveyance', $record->id) }}" target="_blank"
                                                     title="{{ $canPrintConv ? '' : 'Generate the conveyance first' }}"

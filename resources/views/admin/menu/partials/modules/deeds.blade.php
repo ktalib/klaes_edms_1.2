@@ -191,7 +191,7 @@
       </a>
 @endif
       <!-- h. Other Applications -->
-      @if($hasRole('Parcel/Title Management-Deeds') || $hasRole('Supper Admin'))
+      @if($hasRole('Other Applications') || $hasRole('Supper Admin'))
         <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
           data-section="otherApplications-deeds">
           <div class="flex items-center gap-2">

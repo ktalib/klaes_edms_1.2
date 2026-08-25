@@ -346,7 +346,7 @@
       @endif
 
       <!-- f. Other Applications -->
-      @if($hasRole('Parcel/Title Management-Land'))
+      @if($hasRole('Other Applications-Land'))
         <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
           data-section="otherApplications-lands">
           <div class="flex items-center gap-2">

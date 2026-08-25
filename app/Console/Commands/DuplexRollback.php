@@ -31,6 +31,12 @@ class DuplexRollback extends Command
 
     protected $description = 'Undo a duplex commissioning so it can be commissioned again';
 
+    /**
+     * The tables a Change of Purpose RENAMES rather than adds to. A file that only
+     * exists in them under a new name must be renamed back, never deleted.
+     */
+    private const RENAME_TABLES = ['fileNumber', 'file_indexings', 'mls_file_no'];
+
     /** Table => the column holding a file number, in deletion order. */
     private const TABLES = [
         'pra'               => 'fileno',
@@ -82,6 +88,35 @@ class DuplexRollback extends Command
         // Belt and braces: a source file is never something this run created.
         $created = array_values(array_diff($created, $sources));
 
+        /*
+         * A Change of Purpose does NOT mint a row — the commissioning engine renames
+         * the existing one in place (fileNumber.mlsfNo, file_indexings.file_number,
+         * mls_file_no.full_file_number) and records the old number only in
+         * decommissioned_files. The "new" file therefore IS the old file's row.
+         *
+         * Deleting it would destroy the original registry record, which is how
+         * COM-RC-1982-420 was lost. Those files are renamed back instead.
+         *
+         * Detected from the audit row the engine leaves behind: it names the old
+         * number and points at the new one as its successor.
+         */
+        $renamedBack = [];
+
+        foreach ($created as $no) {
+            $audit = $conn->table('decommissioned_files')
+                ->where('successor_file_no', $no)
+                ->where('decommissioning_reason', 'LIKE', 'Change of Purpose%')
+                ->orderByDesc('id')
+                ->first();
+
+            if ($audit && $audit->file_no) {
+                $renamedBack[$no] = $audit->file_no;
+            }
+        }
+
+        // Everything else was genuinely minted and can go.
+        $deletable = array_values(array_diff($created, array_keys($renamedBack)));
+
         $this->line('');
         $this->info($duplex->duplex_id . '  (' . $duplex->status . ')');
 
@@ -93,9 +128,14 @@ class DuplexRollback extends Command
         $this->line('  created : ' . implode(', ', $created));
         $this->line('  sources : ' . implode(', ', $sources));
 
+        foreach ($renamedBack as $new => $old) {
+            $this->line("  renamed  : {$new} is {$old} under a new name — it will be renamed back, not deleted");
+        }
+
         if ($dry) {
             foreach (self::TABLES as $table => $col) {
-                $n = $conn->table($table)->whereIn($col, $created)->count();
+                $list = in_array($table, self::RENAME_TABLES, true) ? $deletable : $created;
+                $n = $conn->table($table)->whereIn($col, $list)->count();
                 if ($n) $this->line(sprintf('    would delete %-22s %d', $table, $n));
             }
             return;
@@ -106,7 +146,27 @@ class DuplexRollback extends Command
             $deleted = [];
 
             foreach (self::TABLES as $table => $col) {
-                $deleted[$table] = $conn->table($table)->whereIn($col, $created)->delete();
+                // The three tables a Change of Purpose renames in place must never be
+                // deleted for a renamed file — that row is the original.
+                $list = in_array($table, self::RENAME_TABLES, true) ? $deletable : $created;
+                $deleted[$table] = $conn->table($table)->whereIn($col, $list)->delete();
+            }
+
+            foreach ($renamedBack as $new => $old) {
+                $conn->table('fileNumber')->where('mlsfNo', $new)
+                    ->update(['mlsfNo' => $old, 'updated_at' => now()]);
+
+                $landUse = \App\Support\FileNumberLandUse::codeFor($old);
+                $back = ['file_number' => $old, 'related_fileno' => null, 'updated_at' => now()];
+                if ($landUse !== '') {
+                    $back['land_use_type'] = $landUse;
+                }
+
+                $conn->table('file_indexings')->where('file_number', $new)->update($back);
+                $conn->table('mls_file_no')->where('full_file_number', $new)
+                    ->update(['full_file_number' => $old, 'updated_at' => now()]);
+
+                $deleted['renamed back'] = ($deleted['renamed back'] ?? 0) + 1;
             }
 
             foreach (['primary_file_number', 'mlsFNo'] as $col) {
