@@ -295,6 +295,18 @@
                                             class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-[11px] font-bold rounded-lg hover:bg-violet-700 transition">
                                             <i data-lucide="printer" class="h-3.5 w-3.5"></i> Print batch ({{ $generated }})
                                         </button>
+
+                                        {{-- The proofing stage for a whole batch, beside the run that spends
+                                             the paper rather than inside it. A batch is where a mistake is
+                                             most expensive — one wrong field repeated across every letter in
+                                             it — so reading the set through once before any of it goes onto
+                                             security stock is worth a button of its own. --}}
+                                        <button type="button"
+                                            onclick="openBatchWhiteCopy(@js($b->rofo_batch_id))"
+                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-700 border border-slate-300 text-[11px] font-bold rounded-lg hover:bg-slate-100 transition"
+                                            title="Black &amp; white proofs of every RofO in this batch. Nothing is marked printed and no serial is spent.">
+                                            <i data-lucide="file-search" class="h-3.5 w-3.5"></i> White copy
+                                        </button>
                                     @else
                                         <span class="text-[10px] text-slate-400 font-semibold">No RofO generated yet</span>
                                     @endif
@@ -585,9 +597,26 @@
                                                         ? route('land-rofos.print', $rec->id) . '?supersede=1&reissue_source=' . $reissue
                                                         : route('land-rofos.print', $rec->id);
 
+                                                    // The proof copy carries the same switches as the letter
+                                                    // it is a proof of — a re-issuance is proofread with its
+                                                    // superseding notice on, or the officer is reading a
+                                                    // different document from the one that will print.
+                                                    $wcUrl = $reissue
+                                                        ? route('land-rofos.white-copy', $rec->id) . '?supersede=1&reissue_source=' . $reissue
+                                                        : route('land-rofos.white-copy', $rec->id);
+
+                                                    $wcIssueDate = optional($rec->date_issued)->format('Y-m-d') ?? '';
+
                                                     $pmOptions = [
                                                         'recordId'  => (int) $rec->id,
-                                                        'issueDate' => optional($rec->date_issued)->format('Y-m-d') ?? '',
+                                                        'issueDate' => $wcIssueDate,
+                                                        // Tells the manager the date of issue is not its to
+                                                        // edit, and gives it somewhere to send an operator
+                                                        // whose letter has none yet. The RofO is one of the
+                                                        // documents that actually prints a DATE OF ISSUE, so
+                                                        // the White Copy card owns that field.
+                                                        'whiteCopyUrl'      => $wcUrl,
+                                                        'whiteCopyOwnsDate' => true,
                                                     ];
 
                                                     if ($reissue) {
@@ -596,8 +625,23 @@
                                                     }
                                                 @endphp
 
+                                                {{-- The proofing stage, and an action of its own rather than a
+                                                     fourth tile inside the Print Manager. The Print Manager is
+                                                     where official copies are committed to paper; the White Copy
+                                                     is what happens before anyone is ready to commit anything,
+                                                     and it can be run as many times as the record needs
+                                                     correcting. Putting it inside the manager would have made
+                                                     "print a draft" and "spend a sheet of security paper" two
+                                                     buttons in one dialog. --}}
                                                 <button type="button"
-                                                        onclick="SmartPrintManager.open(@js($rec->file_number), @js($pmType), @js($pmUrl), @js($pmOptions))"
+                                                        onclick="openWhiteCopyModal(@js((int) $rec->id), @js($rec->file_number), @js($wcIssueDate), @js($wcUrl), { ownsDate: true })"
+                                                        class="flex w-full items-center px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-100 transition gap-2 font-bold">
+                                                    <i data-lucide="file-search" class="h-4 w-4"></i>
+                                                    Print White Copy
+                                                </button>
+
+                                                <button type="button"
+                                                        onclick="WhiteCopy.openPrintManager(@js($rec->file_number), @js($pmType), @js($pmUrl), @js($pmOptions))"
                                                         class="flex w-full items-center px-4 py-2.5 text-sm {{ $reissue ? 'text-amber-700 hover:bg-amber-50' : 'text-blue-700 hover:bg-blue-50' }} transition gap-2 font-bold">
                                                     <i data-lucide="printer" class="h-4 w-4"></i>
                                                     {{ $reissue ? 'Print Manager — Re-issuance' : 'Print Manager' }}
@@ -1448,7 +1492,18 @@ function rofoOpenChildPrintManager(id) {
         url += (url.indexOf('?') === -1 ? '?' : '&') + 'supersede=1&reissue_source=' + encodeURIComponent(reissue);
     }
 
-    var options = { recordId: c.id, issueDate: c.issue_date || '' };
+    var whiteCopyUrl = c.white_copy_url || '';
+    if (reissue && whiteCopyUrl) {
+        whiteCopyUrl += (whiteCopyUrl.indexOf('?') === -1 ? '?' : '&')
+            + 'supersede=1&reissue_source=' + encodeURIComponent(reissue);
+    }
+
+    var options = {
+        recordId: c.id,
+        issueDate: c.issue_date || '',
+        whiteCopyUrl: whiteCopyUrl,
+        whiteCopyOwnsDate: true
+    };
     if (reissue) {
         // A KLAES re-issuance is the Original alone — the set was already issued —
         // so it opens with no pass choice. A pre-KLAES one prints the full set.
@@ -1456,7 +1511,23 @@ function rofoOpenChildPrintManager(id) {
         options.passes = (reissue === 'legacy');
     }
 
-    window.SmartPrintManager.open(c.file_number, type, url, options);
+    // Through the proofread gate, exactly as the main list is: a child of a batch
+    // printed on its own is an individual print and spends the same security paper.
+    WhiteCopy.openPrintManager(c.file_number, type, url, options);
+}
+
+// The proofing stage for one child of a batch.
+function rofoOpenChildWhiteCopy(id) {
+    var c = _rofoChildById[String(id)];
+    if (!c || !c.white_copy_url) return;
+
+    var url = c.white_copy_url;
+    if (c.reissuance) {
+        url += (url.indexOf('?') === -1 ? '?' : '&')
+            + 'supersede=1&reissue_source=' + encodeURIComponent(c.reissuance);
+    }
+
+    openWhiteCopyModal(c.id, c.file_number, c.issue_date || '', url, { ownsDate: true });
 }
 
 function rofoPrintStagePill(c) {
@@ -1533,7 +1604,10 @@ document.addEventListener('click', function (e) {
                             // from the row: a file number like RES-1993-2644(T) carries
                             // characters that end an HTML attribute early, and a handler
                             // cut in half never runs at all.
-                            ? '<button type="button" onclick="rofoOpenChildPrintManager(' + c.id + ')"'
+                            ? '<button type="button" onclick="rofoOpenChildWhiteCopy(' + c.id + ')"'
+                              + ' class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-slate-600 hover:bg-slate-100 rounded" title="Black & white proof for vetting — does not count as a print">'
+                              + '<i data-lucide="file-search" class="h-3 w-3"></i> White copy</button>'
+                              + '<button type="button" onclick="rofoOpenChildPrintManager(' + c.id + ')"'
                               + ' class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-50 rounded">'
                               + '<i data-lucide="printer" class="h-3 w-3"></i> Print</button>'
                             : '<span class="text-[10px] text-slate-400">—</span>')
@@ -1627,7 +1701,22 @@ function rofoOpenBatchManagerFor(ids, label, splitPasses) {
     });
 }
 
+// Every batch print on this page funnels through here, so this is where the
+// proofread question belongs — a batch is the run that puts the most paper through
+// the printer at once, and the most security stock. Answering "no" prints white
+// copies of the whole batch instead, which is the thing that was actually needed.
 function openRofoBatchManager(ids, label, status, missing, splitPasses) {
+    WhiteCopy.confirmProofread({
+        subject: ids.length + ' RofO' + (ids.length === 1 ? '' : 's') + ' in ' + label,
+        onYes: function () { openRofoBatchManagerConfirmed(ids, label, status, missing, splitPasses); },
+        // No window is opened here: submitBatchWhiteCopy posts a form with
+        // target=_blank, which a pop-up blocker leaves alone — unlike a
+        // window.open() this far from the original click.
+        onWhiteCopy: function () { submitBatchWhiteCopy(ids, rofoCsrf(), null); }
+    });
+}
+
+function openRofoBatchManagerConfirmed(ids, label, status, missing, splitPasses) {
     window.SmartPrintManager.open(label, 'Land RofO', null, {
         // Originals-first is a two-run operation over a whole batch, so it is
         // offered where batches are — the Batches tab. A hand-picked selection or a
@@ -2130,6 +2219,75 @@ function rofoWithExtras(body, extras) {
         body.reissuance = extras.reissuance;
     }
     return body;
+}
+
+// ── White copies of a whole batch ──────────────────────────────────────────
+// The proofing stage for the Batches tab. A batch is where an error is most
+// expensive — one wrong field repeated across every letter in it — so reading the
+// whole set through on ordinary paper before any of it reaches security stock is
+// the point of this button.
+//
+// Deliberately simple next to the batch print beside it. That one has to ask which
+// pass, record the run before the tab opens, and know how far a split print got;
+// none of that applies here, because a proof puts nothing on record. It fetches the
+// batch's ids and posts them, and that is the whole of it.
+//
+// The tab is claimed synchronously inside the click — a window opened after an
+// await is what pop-up blockers stop.
+function openBatchWhiteCopy(batchId) {
+    var proofWindow = window.open('', 'rofoBatchWhiteCopy');
+
+    loadRofoBatchChildren(batchId)
+        .then(function (data) {
+            // Only a generated RofO has a letter behind it; the rest would render as
+            // empty frames, which is not a proof of anything.
+            var ids = (data.children || [])
+                .filter(function (c) { return String(c.rofo_status || '').toLowerCase() === 'generated'; })
+                .map(function (c) { return c.id; });
+
+            if (!ids.length) {
+                if (proofWindow) { try { proofWindow.close(); } catch (e) {} }
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Nothing to proofread yet',
+                    text: 'No RofO in this batch has been generated, so there is no letter to print a white copy of.'
+                });
+                return;
+            }
+
+            submitBatchWhiteCopy(ids, rofoCsrf(), proofWindow);
+        })
+        .catch(function (err) {
+            if (proofWindow) { try { proofWindow.close(); } catch (e) {} }
+            Swal.fire({ icon: 'error', title: 'Error', text: err.message || 'Network error.' });
+        });
+}
+
+// Posted rather than linked, for the same reason the batch print is: the ids are a
+// list, and a list of a hundred of them does not belong in a URL.
+//
+// Nothing is logged before or after, and the page behind is NOT reloaded — no row
+// has changed state, and reloading would only throw away the expanded batch the
+// operator is working through.
+function submitBatchWhiteCopy(ids, csrf, proofWindow) {
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '{{ route('land-rofos.batch-white-copy') }}';
+    form.target = proofWindow ? 'rofoBatchWhiteCopy' : '_blank';
+
+    var token = document.createElement('input');
+    token.type = 'hidden'; token.name = '_token'; token.value = csrf;
+    form.appendChild(token);
+
+    ids.forEach(function (id) {
+        var inp = document.createElement('input');
+        inp.type = 'hidden'; inp.name = 'ids[]'; inp.value = id;
+        form.appendChild(inp);
+    });
+
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
 }
 
 function submitBatchPrint(ids, csrf, printWindow, copies, windowName, reload, extras) {

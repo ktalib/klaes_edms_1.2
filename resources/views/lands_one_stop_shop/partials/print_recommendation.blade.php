@@ -247,6 +247,54 @@
         margin-bottom: 15px;
       }
 
+      /* ── White Copy: the proof sheet ───────────────────────────
+         Centred across the head of the page, large enough to be the first thing
+         read off the sheet, plain black so it survives a monochrome printer. The
+         block keeps the height the arms and serial occupied so the form below
+         begins where it begins on the official print. */
+      /* Black and white throughout. This document is already almost entirely black
+         on white; the OSS label is the one thing carrying colour, and a proof goes
+         through whatever printer is nearest on ordinary paper. */
+      .form-container.white-copy .oss-label,
+      .form-container.white-copy .status-options {
+        color: #000 !important;
+      }
+
+      .white-copy-head {
+        text-align: center;
+        min-height: 70px;
+        padding-top: 6px;
+      }
+
+      .white-copy-mark {
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 24pt;
+        font-weight: 900;
+        line-height: 1.1;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: #000;
+      }
+
+      .white-copy-note {
+        margin-top: 2px;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 6.5pt;
+        font-weight: bold;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #333;
+      }
+
+      .white-copy-sig-gap {
+        display: block;
+        text-align: center;
+        font-size: 7pt;
+        font-style: italic;
+        color: #6b7280;
+        padding-top: 14px;
+      }
+
       .signature-row {
         display: flex;
         justify-content: space-between;
@@ -319,7 +367,7 @@
     </style>
   </head>
   <body>
-    <div class="form-container">
+    <div class="form-container{{ !empty($isWhiteCopy) ? ' white-copy' : '' }}">
       @php
           // Extract middle part of location: "PLOT 3004, BEHIND AIRPORT, UNGOGO, KANO" → "BEHIND AIRPORT"
           $cleanLocation = function($loc) {
@@ -341,13 +389,33 @@
           // that render this template all resolve to the same row. This is NOT
           // $record->rofo_serial_no — that column holds the RofO's security paper
           // code, which a recommendation never carries.
-          $securityCode = app(\App\Services\SecurityCodeService::class)->getOrGenerateForDocument(
-              (string) ($record->file_ref ?? ''),
-              0,
-              'OSS Recomm'
-          );
-          $sc = app(\App\Services\SecurityCodeService::class)->formatForDisplay($securityCode->code);
+          // The proof sheet — shared by
+          // LandRecommendationController::printWhiteCopy(). Never minted for one:
+          // the serial is the document's official number and this template mints it
+          // as it renders, so merely opening a proof would otherwise spend a real
+          // one.
+          $isWhiteCopy = !empty($isWhiteCopy);
+
+          $securityCode = null;
+          $sc = null;
+          if (!$isWhiteCopy) {
+              $securityCode = app(\App\Services\SecurityCodeService::class)->getOrGenerateForDocument(
+                  (string) ($record->file_ref ?? ''),
+                  0,
+                  'OSS Recomm'
+              );
+              $sc = app(\App\Services\SecurityCodeService::class)->formatForDisplay($securityCode->code);
+          }
       @endphp
+      {{-- The QR resolves to a verifiable record, the serial is the document's
+           official number and the arms are the State's, so a proof carries none of
+           them. It says what the sheet is instead. --}}
+      @if($isWhiteCopy)
+      <div class="white-copy-head">
+        <div class="white-copy-mark">White Copy</div>
+        <div class="white-copy-note">Proof for vetting — not an official document</div>
+      </div>
+      @else
       @if(!empty($record->tracking_id))
       <div class="qr-block">
         <div id="qr-code"></div>
@@ -371,6 +439,7 @@
           alt="Coat of Arms"
         />
       </div>
+      @endif
 
       <div class="main-heading">
             <h1>KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING</h1>
@@ -453,6 +522,15 @@
           <div class="reason-text">
             {{ $record->director_reasons }}
           </div>
+          {{-- Signature lines come off the proof: a blank rule over an office
+               name is what can be signed and passed off as the document itself.
+               The room they took is left behind so the page still breaks where it
+               breaks on the official print. --}}
+          @if($isWhiteCopy)
+          <div class="signature-row white-copy-sig-gap">
+            Signature block omitted — white copy for proofreading only
+          </div>
+          @else
           <div class="signature-row">
             <div class="sig-line-container">
               <div style="margin-top: 10px; text-align: left">
@@ -466,6 +544,7 @@
               </div>
             </div>
           </div>
+          @endif
         </div>
 
         <div class="section-block">
@@ -476,6 +555,11 @@
             I recommend/do not recommend the Application for a Grant of Right of
             Occupancy over Plot No: {{ $record->ps_plot ?: $record->plot_no }} Location: {{ $cleanLocation($record->ps_location ?: $record->location) }}
           </div>
+          @if($isWhiteCopy)
+          <div class="signature-row white-copy-sig-gap">
+            Signature block omitted — white copy for proofreading only
+          </div>
+          @else
           <div class="signature-row">
             <div class="sig-line-container">
               <div style="margin-top: 10px; text-align: left">
@@ -489,12 +573,16 @@
               </div>
             </div>
           </div>
+          @endif
         </div>
 
         <div class="section-block">
           <div class="section-title">
             11. APPROVAL BY THE HONOURABLE COMMISSIONER
           </div>
+          {{-- Off the proof, with the signature block it belongs to: it is the line
+               the Commissioner's signature acts on. --}}
+          @unless($isWhiteCopy)
           <p class="status-options">
             The Grant of Right of Occupancy is hereby
             @if($record->approval_status === 'approved')
@@ -505,9 +593,15 @@
               APPROVED/NOT APPROVED
             @endif
           </p>
+          @endunless
 <br>
           {{-- Same shape as the Permanent Secretary row in section 10: signature
                line with the office name under it, Date alongside on the right. --}}
+          @if($isWhiteCopy)
+          <div class="signature-row white-copy-sig-gap">
+            Signature block omitted — white copy for proofreading only
+          </div>
+          @else
           <div class="signature-row">
             <div class="sig-line-container">
               <div style="margin-top: 10px; text-align: left">
@@ -526,6 +620,7 @@
               </div>
             </div>
           </div>
+          @endif
         </div>
       </div>
 
@@ -544,7 +639,9 @@
     {{-- Page 2: "Right of Occupancy — Collection of Letter of Grant", the same
          acknowledgement sheet the Land Recommendation print carries. The partial
          is fully static (no view variables) and scopes its CSS under .ack-page. --}}
+    @unless($isWhiteCopy)
     @include('land_recommendations.templates._ack_sheet')
+    @endunless
 
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>

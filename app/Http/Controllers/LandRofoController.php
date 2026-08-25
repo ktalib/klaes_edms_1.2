@@ -83,6 +83,9 @@ class LandRofoController extends Controller
                 // half of a split print this child is still owed.
                 'print_stage'    => $c->rofo_print_stage,
                 'print_url'      => route('land-rofos.print', $c->id),
+                // The proof copy, so a child of a batch can be vetted the same way
+                // a row on the main list is.
+                'white_copy_url' => route('land-rofos.white-copy', $c->id),
             ])->values(),
         ]);
     }
@@ -918,11 +921,43 @@ class LandRofoController extends Controller
         ]);
     }
 
-    public function print(Request $request, $id)
+    /**
+     * The White Copy: a black & white proof of the letter, for vetting and
+     * proofreading before anything is put on security paper.
+     *
+     * It renders the same record through the same template, so what an officer
+     * reads here is what the official letter will say — but the template takes off
+     * everything that makes a sheet look issued: the coat of arms, the QR, the
+     * security serial, the ORIGINAL / DUPLICATE / TRIPLICATE designation and the
+     * Commissioner's signature block. In their place the copy is marked WHITE COPY.
+     *
+     * Nothing about official print state is touched on this path, and that is the
+     * whole point of it being a path of its own:
+     *   - no security code is minted (so no serial can appear on a proof),
+     *   - rofo_print_count is not incremented — the template omits the afterprint
+     *     call to log-print entirely,
+     *   - no print_logs row is written, so the Printed tab and the resume logic
+     *     see nothing,
+     *   - the LAAS "RofO signed" stage is not advanced.
+     *
+     * Generating a White Copy therefore says nothing about whether it has been
+     * proofread or approved. That is asked for explicitly at the Print Manager,
+     * because printing a proof and approving it are two different things and only
+     * a person can do the second.
+     */
+    public function printWhiteCopy(Request $request, $id)
+    {
+        return $this->print($request, $id, true);
+    }
+
+    public function print(Request $request, $id, bool $whiteCopy = false)
     {
         $recommendation = LandRecommendation::findOrFail($id);
 
-        // Keyed in on the print dialog: see applyIssueDate().
+        // Keyed in on the print dialog: see applyIssueDate(). On the White Copy path
+        // the date is written by the White Copy card before it opens this page, so
+        // this is a no-op there — but it stays, because a date carried on the URL
+        // must still land on the record whichever page renders it.
         $this->applyIssueDate($request, [$recommendation]);
 
         // Resolve land_use text from land_use_id if the text column is empty
@@ -939,13 +974,21 @@ class LandRofoController extends Controller
 
         // Bypass limit check for Certified True Copy
         $isCTC = $request->query('status') === 'CTC' || $request->query('isCTC') == 1;
-        // Generate security code for this print
-        $securityCodeService = app(\App\Services\SecurityCodeService::class);
-        $securityCode = $securityCodeService->getOrGenerateForDocument(
-            $recommendation->file_number,
-            $recommendation->id,
-            'Land ROFO'
-        );
+
+        // Generate security code for this print — but never for a White Copy. The
+        // code is the document's official serial: minting one for a proof would put
+        // a real serial on a sheet that is not an issued copy, and would consume it
+        // from the record's point of view. The template is told to leave the whole
+        // block off as well.
+        $securityCode = null;
+        if (!$whiteCopy) {
+            $securityCodeService = app(\App\Services\SecurityCodeService::class);
+            $securityCode = $securityCodeService->getOrGenerateForDocument(
+                $recommendation->file_number,
+                $recommendation->id,
+                'Land ROFO'
+            );
+        }
 
         // ?supersede=1 switches the single RofO template into re-issuance mode: the
         // same letter plus the "supersedes the previous one issued on ..." notice,
@@ -969,10 +1012,13 @@ class LandRofoController extends Controller
         // rofo_print_count is still incremented and still drives the Printed tab
         // and the print history, but it no longer blocks a print.
 
-        // One template for both: it reads ?supersede=1 itself to switch modes.
+        // One template for all of them: it reads ?supersede=1 itself to switch into
+        // re-issuance mode, and $isWhiteCopy to switch into proof mode.
+        $isWhiteCopy = $whiteCopy;
+
         return view(
             'land_rofos.templates.rofo_print',
-            compact('recommendation', 'securityCode', 'supersededDate')
+            compact('recommendation', 'securityCode', 'supersededDate', 'isWhiteCopy')
         );
     }
 
@@ -1068,7 +1114,26 @@ class LandRofoController extends Controller
         return response()->json(['success' => true, 'data' => $records, 'count' => $records->count()]);
     }
 
-    public function batchPrint(Request $request)
+    /**
+     * White copies of every RofO in a selection, as one document.
+     *
+     * The batch equivalent of printWhiteCopy(): the same letters, run through the
+     * same template, with everything that makes a sheet look issued taken off and
+     * marked WHITE COPY. One copy of each letter rather than the Original /
+     * Duplicate / Triplicate set — a proof is read once.
+     *
+     * Nothing about official print state is touched. No security serial is minted
+     * for any letter, no print_logs row is written, no rofo_print_count moves and
+     * the page carries no log URLs to fire on afterprint. A whole batch can
+     * therefore be proofread, corrected and proofread again before a single sheet
+     * of security paper is spent on it.
+     */
+    public function batchWhiteCopy(Request $request)
+    {
+        return $this->batchPrint($request, true);
+    }
+
+    public function batchPrint(Request $request, bool $whiteCopy = false)
     {
         $ids = array_filter((array) $request->input('ids', []), 'is_numeric');
 
@@ -1137,18 +1202,23 @@ class LandRofoController extends Controller
             }
         });
 
-        $letterFor = function ($rec, ?array $onlyVersions = null) use ($securityCodeService) {
+        $letterFor = function ($rec, ?array $onlyVersions = null) use ($securityCodeService, $whiteCopy) {
             return view('land_rofos.templates.rofo_print', [
                 'recommendation' => $rec,
-                'securityCode'   => $securityCodeService->getOrGenerateForDocument(
+                // Never minted for a proof: a serial on a sheet that is not an
+                // issued copy is the thing this whole stage exists to prevent, and
+                // it would be spent from the record's point of view either way.
+                'securityCode'   => $whiteCopy ? null : $securityCodeService->getOrGenerateForDocument(
                     $rec->file_number,
                     $rec->id,
                     'Land ROFO'
                 ),
                 'supersededDate' => '',
                 // Null lets the template emit the whole Original/Duplicate/Triplicate
-                // set for this record — the 'all' run.
+                // set for this record — the 'all' run. A white copy overrides it to
+                // the single proof copy regardless.
                 'printVersionsOnly' => $onlyVersions,
+                'isWhiteCopy'       => $whiteCopy,
             ]);
         };
 
@@ -1168,10 +1238,16 @@ class LandRofoController extends Controller
         return view('print.stitched_batch', [
             'head'     => $stitched['head'],
             'bodies'   => $stitched['bodies'],
-            'title'    => 'Batch RofO Print (' . $records->count() . ' records)'
-                . ($copies === 'all' ? '' : ' — ' . ucfirst($copies)),
-            'subtitle' => $records->count() . ' ' . \Illuminate\Support\Str::plural('RofO', $records->count())
-                . $runLabel,
+            'title'    => $whiteCopy
+                ? 'Batch RofO White Copy (' . $records->count() . ' records)'
+                : 'Batch RofO Print (' . $records->count() . ' records)'
+                    . ($copies === 'all' ? '' : ' — ' . ucfirst($copies)),
+            'subtitle' => $whiteCopy
+                ? $records->count() . ' ' . \Illuminate\Support\Str::plural('RofO', $records->count())
+                    . ' — WHITE COPY · proofs for vetting, black & white on ordinary paper. '
+                    . 'Nothing here counts as printed.'
+                : $records->count() . ' ' . \Illuminate\Support\Str::plural('RofO', $records->count())
+                    . $runLabel,
             // Empty on purpose: the RofO list records the batch through
             // batch-print-log before this page is opened, so logging here again
             // would double-count every print.

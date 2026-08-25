@@ -125,4 +125,112 @@ class DuplexParcelUpdate extends Model
     {
         return count($this->stages ?? []) === 1;
     }
+
+    /**
+     * Per-file values are stored as a JSON ARRAY, not as comma-separated text.
+     *
+     * A duplex can act on several files, and they need not share an applicant, a title
+     * or a location — so each of those columns holds one value per file. An array keeps
+     * the values separate, which comma-joined text cannot: "MUSA, ADAM & SONS" is two
+     * names or one depending on nothing the string itself can tell you.
+     *
+     * A single-file duplex still stores a plain string, so everything captured before
+     * this reads back unchanged.
+     */
+    public static function encodeList($value): ?string
+    {
+        $list = array_values(array_filter(
+            array_map(fn ($v) => trim((string) $v), (array) $value),
+            fn ($v) => $v !== ''
+        ));
+
+        if (empty($list)) {
+            return null;
+        }
+
+        return count($list) === 1 ? $list[0] : json_encode($list, JSON_UNESCAPED_UNICODE);
+    }
+
+    /** One stored column back as the list of values it holds. */
+    public static function decodeList($value): array
+    {
+        $raw = trim((string) $value);
+
+        if ($raw === '') {
+            return [];
+        }
+
+        if (str_starts_with($raw, '[')) {
+            $parsed = json_decode($raw, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($parsed)) {
+                return array_values(array_filter(array_map(
+                    fn ($v) => trim((string) $v),
+                    $parsed
+                ), fn ($v) => $v !== ''));
+            }
+        }
+
+        return [$raw];
+    }
+
+    /**
+     * "Musa, Adam, Ibrahim, Sani and Usman" — the reading form.
+     *
+     * Ands the last pair rather than listing commas throughout, because these strings
+     * are read aloud in an office and printed on instruments.
+     */
+    public static function readableList($value): string
+    {
+        $list = static::decodeList($value);
+
+        if (count($list) < 2) {
+            return $list[0] ?? '';
+        }
+
+        $last = array_pop($list);
+
+        return implode(', ', $list) . ' and ' . $last;
+    }
+
+    /** The applicants, one per source file. */
+    public function applicantNames(): array
+    {
+        return static::decodeList($this->getRawOriginal('applicant_name'));
+    }
+
+    /** The file titles, one per source file. */
+    public function fileTitles(): array
+    {
+        return static::decodeList($this->getRawOriginal('file_title'));
+    }
+
+    /*
+     * Everything that reads these columns — the register, the memo, the conveyance, the
+     * summary card — gets the readable list without knowing an array was stored. Use
+     * getRawOriginal() or the *Names()/Titles() helpers when the values are needed apart.
+     */
+    public function getApplicantNameAttribute($value): string
+    {
+        return static::readableList($value);
+    }
+
+    public function getFileTitleAttribute($value): string
+    {
+        return static::readableList($value);
+    }
+
+    public function getPlotNoAttribute($value): string
+    {
+        return static::readableList($value);
+    }
+
+    public function getDistrictAttribute($value): string
+    {
+        return static::readableList($value);
+    }
+
+    public function getLgaAttribute($value): string
+    {
+        return static::readableList($value);
+    }
 }

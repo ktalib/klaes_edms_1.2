@@ -95,8 +95,18 @@ class DuplexParcelUpdateController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'applicant_name'   => 'required|string|max:255',
-            'file_title'       => 'nullable|string|max:500',
+            'applicant_name'   => 'required',
+            'applicant_name.*' => 'nullable|string|max:255',
+            // One value per file, or a single value for a one-file duplex.
+            'file_title'       => 'nullable',
+            'file_title.*'     => 'nullable|string|max:500',
+            'source_entries'               => 'nullable|array|max:50',
+            'source_entries.*.file_no'     => 'required_with:source_entries|string|max:100',
+            'source_entries.*.file_title'  => 'nullable|string|max:500',
+            'source_entries.*.applicant'   => 'nullable|string|max:500',
+            'source_entries.*.plot_no'     => 'nullable|string|max:100',
+            'source_entries.*.district'    => 'nullable|string|max:255',
+            'source_entries.*.lga'         => 'nullable|string|max:255',
             'source_file_nos'  => 'required|array|min:1',
             'source_file_nos.*' => 'required|string|max:100',
             'stages'           => 'required|array|min:1',
@@ -114,11 +124,14 @@ class DuplexParcelUpdateController extends Controller
             // previous stage's plots — so it carries a count and the purpose they take.
             'stages.*.new_land_use'                => 'nullable|string|max:50',
             'stages.*.current_land_use'            => 'nullable|string|max:50',
-            'plot_no'          => 'nullable|string|max:100',
+            'plot_no'          => 'nullable',
+            'plot_no.*'        => 'nullable|string|max:100',
             'house_no'         => 'nullable|string|max:100',
             'street_name'      => 'nullable|string|max:255',
-            'district'         => 'nullable|string|max:255',
-            'lga'              => 'nullable|string|max:255',
+            'district'         => 'nullable',
+            'district.*'       => 'nullable|string|max:255',
+            'lga'              => 'nullable',
+            'lga.*'            => 'nullable|string|max:255',
             'state'            => 'nullable|string|max:100',
             'phone'            => 'nullable|string|max:50',
             'address'          => 'nullable|string|max:500',
@@ -157,17 +170,21 @@ class DuplexParcelUpdateController extends Controller
 
             $duplex = DuplexParcelUpdate::create([
                 'duplex_id'       => $duplexId,
-                'applicant_name'  => $data['applicant_name'],
-                'file_title'      => $data['file_title'] ?? $data['applicant_name'],
+                // One value per source file, stored as a JSON array when there is
+                // more than one. A single-file duplex still stores a plain string.
+                'applicant_name'  => DuplexParcelUpdate::encodeList($data['applicant_name']),
+                'file_title'      => DuplexParcelUpdate::encodeList(
+                    $data['file_title'] ?? null
+                ) ?: DuplexParcelUpdate::encodeList($data['applicant_name']),
                 'source_file_nos' => $data['source_file_nos'],
                 'stages'          => $stages->all(),
                 'status'          => DuplexParcelUpdate::STATUS_DRAFT,
                 'land_use'        => $landUse,
-                'plot_no'         => $data['plot_no'] ?? null,
+                'plot_no'         => DuplexParcelUpdate::encodeList($data['plot_no'] ?? null),
                 'house_no'        => $data['house_no'] ?? null,
                 'street_name'     => $data['street_name'] ?? null,
-                'district'        => $data['district'] ?? null,
-                'lga'             => $data['lga'] ?? null,
+                'district'        => DuplexParcelUpdate::encodeList($data['district'] ?? null),
+                'lga'             => DuplexParcelUpdate::encodeList($data['lga'] ?? null),
                 'state'           => $data['state'] ?? null,
                 'phone'           => $data['phone'] ?? null,
                 'address'         => $data['address'] ?? null,
@@ -199,12 +216,22 @@ class DuplexParcelUpdateController extends Controller
 
             // The real files this duplex consumes. They are retired at commit by the
             // stage that reads them, not here.
+            // Each source file's own title and applicant, kept beside the file rather
+            // than only in the duplex's lists — this is what a later screen reads when
+            // it needs to say who a PARTICULAR file belongs to.
+            $entries = collect($data['source_entries'] ?? [])
+                ->keyBy(fn ($e) => trim((string) ($e['file_no'] ?? '')));
+
             foreach (array_values($data['source_file_nos']) as $i => $fileNo) {
+                $entry = (array) ($entries[$fileNo] ?? []);
+
                 DuplexParcelUpdateFile::create([
                     'duplex_parcel_update_id' => $duplex->id,
                     'duplex_id'         => $duplexId,
                     'role'              => DuplexParcelUpdateFile::ROLE_SOURCE,
                     'source_file_no'    => $fileNo,
+                    'file_title'        => trim((string) ($entry['file_title'] ?? '')) ?: null,
+                    'holder_name'       => trim((string) ($entry['applicant'] ?? '')) ?: null,
                     'will_decommission' => 1,
                     'sequence'          => $i,
                 ]);

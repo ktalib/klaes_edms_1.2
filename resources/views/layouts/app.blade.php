@@ -136,6 +136,9 @@
   <script src="{{ asset('js/print-manager.js') }}"></script>
   <script src="{{ asset('js/tailwind-modal.js') }}?v={{ time() }}"></script>
   <x-print-manager />
+  {{-- The proofing stage in front of it: the White Copy card and the
+       "has this been proofread" gate. Global for the same reason the manager is. --}}
+  <x-white-copy />
   <x-assign-security-paper-modal />
   <x-reset-security-paper-modal />
   @livewireScripts

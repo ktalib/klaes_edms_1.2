@@ -120,63 +120,120 @@
                             </p>
                         </div>
 
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 mb-2">Applicant Name <span class="text-red-500">*</span></label>
-                            <input type="text" id="dx-applicant" placeholder="Name as it appears on the file"
-                                class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
-                            <p class="text-[11px] text-slate-400 mt-2">
-                                Fills from the first file you pick, and is used as the file title.
-                            </p>
-                        </div>
-
-                        {{-- Where the parcel is. Carried onto every file the duplex
-                             commissions and onto the parcel-update rows it writes, so it is
-                             captured once here rather than per stage. --}}
-                        <div class="pt-5 border-t border-slate-100">
-                            <p class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-3">Parcel location</p>
-
-                            <div class="grid grid-cols-2 gap-3">
-                                <div class="col-span-2">
-                                    <label class="block text-[11px] font-bold text-slate-600 mb-1.5">Plot No</label>
-                                    <input type="text" id="dx-plot-no-main" placeholder="e.g. 12"
-                                        oninput="updateAddressPreview()"
-                                        class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
+                        {{-- ONE CARD PER SOURCE FILE.
+                             A duplex can act on several files, and they do not share a
+                             holder, a title or even a location — so each gets its own entry
+                             rather than one set of fields standing in for all of them. The
+                             inputs below are the same elements throughout; the stepper swaps
+                             the current file's values through them, which is how the
+                             commissioning modal's Location Details behaves. --}}
+                        <div id="dx-entry-card" class="pt-5 border-t border-slate-100 hidden">
+                            <div class="flex items-center justify-between mb-3 gap-2">
+                                <div class="min-w-0">
+                                    <p class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Details per file</p>
+                                    <p id="dx-entry-file" class="text-xs font-black text-slate-700 truncate mt-0.5">—</p>
                                 </div>
 
-                                <div>
-                                    <label class="block text-[11px] font-bold text-slate-600 mb-1.5">District</label>
-                                    <select id="dx-district" onchange="updateAddressPreview()"
-                                        class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
-                                        <option value="">-- Select --</option>
-                                        @foreach ($districts as $d)
-                                            <option value="{{ $d->name }}">{{ $d->name }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-
-                                <div>
-                                    <label class="block text-[11px] font-bold text-slate-600 mb-1.5">LGA</label>
-                                    <select id="dx-lga" onchange="updateAddressPreview()"
-                                        class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
-                                        <option value="">-- Select --</option>
-                                        @foreach ($lgas as $l)
-                                            <option value="{{ $l->name }}">{{ $l->name }}</option>
-                                        @endforeach
-                                    </select>
+                                <div class="flex items-center gap-1 shrink-0">
+                                    <span id="dx-entry-count"
+                                          class="text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-2 py-1">1 of 1</span>
+                                    <button type="button" onclick="dxEntryStep(-1)" title="Previous file"
+                                        class="w-7 h-7 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-blue-600 transition flex items-center justify-center">
+                                        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                                    </button>
+                                    <button type="button" onclick="dxEntryStep(1)" title="Next file"
+                                        class="w-7 h-7 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-blue-600 transition flex items-center justify-center">
+                                        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                                    </button>
                                 </div>
                             </div>
 
-                            {{-- Built from district + LGA + state, never typed: one location,
-                                 assembled the same way every time, is what the printed sheets
-                                 read. The plot number is deliberately left out - it belongs to
-                                 the parcel, and each subdivided plot carries its own. --}}
-                            <div class="mt-3">
-                                <label class="block text-[11px] font-bold text-slate-600 mb-1.5">Location</label>
-                                <div id="dx-address-preview"
-                                     class="px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-600 min-h-[38px] flex items-center">
-                                    <span class="text-slate-400 font-normal italic">Fills in from the fields above.</span>
+                            {{-- File title and applicant are TWO different things: the title is
+                                 whose name the file stands in, the applicant is who brought the
+                                 instruction. They often differ — a company applying over a file
+                                 still held in a founder's name — so neither may stand in for the
+                                 other. The title backfills from the file that was picked; the
+                                 applicant is always typed. --}}
+                            <div class="mb-4">
+                                <div class="flex items-center justify-between mb-2">
+                                    <label class="text-xs font-bold text-slate-600">File Title</label>
+                                    <button type="button" onclick="dxApplyToAll('file_title')"
+                                        class="text-[10px] font-bold text-blue-600 hover:text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-50 transition">Apply to all</button>
                                 </div>
-                                <input type="hidden" id="dx-address">
+                                <input type="text" id="dx-file-title" placeholder="Name the file stands in"
+                                    oninput="dxEntryTouched()"
+                                    class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
+                                <p class="text-[11px] text-slate-400 mt-2">
+                                    Fills from the register when the file is picked.
+                                </p>
+                            </div>
+
+                            <div class="mb-4">
+                                <div class="flex items-center justify-between mb-2">
+                                    <label class="text-xs font-bold text-slate-600">Applicant Name <span class="text-red-500">*</span></label>
+                                    <button type="button" onclick="dxApplyToAll('applicant')"
+                                        class="text-[10px] font-bold text-blue-600 hover:text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-50 transition">Apply to all</button>
+                                </div>
+                                <input type="text" id="dx-applicant" placeholder="Who is applying"
+                                    oninput="dxEntryTouched()"
+                                    class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
+                                <p class="text-[11px] text-slate-400 mt-2">
+                                    Who brought the instruction — not necessarily the file title.
+                                </p>
+                            </div>
+
+                            {{-- Where this parcel is. Carried onto the files this duplex
+                                 commissions and onto the parcel-update rows it writes. --}}
+                            <div class="pt-4 border-t border-slate-100">
+                                <div class="flex items-center justify-between mb-3 gap-2">
+                                    <p class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Parcel location</p>
+                                    <button type="button" onclick="dxApplyToAll('location')"
+                                        class="text-[10px] font-bold text-blue-600 hover:text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-50 transition">Apply location to all</button>
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div class="col-span-2">
+                                        <label class="block text-[11px] font-bold text-slate-600 mb-1.5">Plot No</label>
+                                        <input type="text" id="dx-plot-no-main" placeholder="e.g. 12"
+                                            oninput="dxEntryTouched(); updateAddressPreview()"
+                                            class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-600 mb-1.5">District</label>
+                                        <select id="dx-district" onchange="dxEntryTouched(); updateAddressPreview()"
+                                            class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
+                                            <option value="">-- Select --</option>
+                                            @foreach ($districts as $d)
+                                                <option value="{{ $d->name }}">{{ $d->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-600 mb-1.5">LGA</label>
+                                        <select id="dx-lga" onchange="dxEntryTouched(); updateAddressPreview()"
+                                            class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
+                                            <option value="">-- Select --</option>
+                                            @foreach ($lgas as $l)
+                                                <option value="{{ $l->name }}">{{ $l->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {{-- Built from district + LGA + state, never typed: one location,
+                                     assembled the same way every time, is what the printed sheets
+                                     read. The plot number is deliberately left out - it belongs to
+                                     the parcel, and each subdivided plot carries its own. --}}
+                                <div class="mt-3">
+                                    <label class="block text-[11px] font-bold text-slate-600 mb-1.5">Location</label>
+                                    <div id="dx-address-preview"
+                                         class="px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-600 min-h-[38px] flex items-center">
+                                        <span class="text-slate-400 font-normal italic">Fills in from the fields above.</span>
+                                    </div>
+                                    <input type="hidden" id="dx-address">
+                                </div>
                             </div>
                         </div>
 

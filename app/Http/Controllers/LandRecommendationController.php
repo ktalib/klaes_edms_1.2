@@ -2437,6 +2437,38 @@ class LandRecommendationController extends Controller
         return $generated;
     }
 
+    /**
+     * The White Copy: a black & white proof of the recommendation, for vetting and
+     * proofreading before an official copy is run off.
+     *
+     * The same record through the same templates, so what an officer reads here is
+     * what the official document will say — but every mark of an issued document is
+     * taken off it: the coat of arms, the QR, the security serial, the copy
+     * designation and the signature blocks. In their place it is marked WHITE COPY,
+     * and the acknowledgement sheet is left off — a proof is read, not collected
+     * against.
+     *
+     * Nothing about official print state is touched on this path:
+     *   - no security code is minted. This one matters more here than on the RofO,
+     *     because these templates mint the serial themselves as they render, so a
+     *     preview of a proof would otherwise burn a real serial;
+     *   - no print_logs row is written, so the Printed tab and its counters see
+     *     nothing (the templates omit the afterprint call entirely).
+     *
+     * Generating a White Copy therefore says nothing about whether it has been
+     * proofread or approved — that is asked explicitly at the Print Manager.
+     */
+    public function printWhiteCopy(Request $request, $id)
+    {
+        // Shared rather than passed: the print for one recommendation resolves to
+        // one of a dozen templates, several of which include others, and a proof
+        // that silently rendered as an official copy because a variable did not
+        // reach a partial is the one failure this flag cannot afford.
+        view()->share('isWhiteCopy', true);
+
+        return $this->print($request, $id);
+    }
+
     public function print(Request $request, $id)
     {
         $recommendation = LandRecommendation::findOrFail($id);
@@ -2552,7 +2584,26 @@ class LandRecommendationController extends Controller
      * resolve to the same template and its <head> can be reused for the whole
      * document.
      */
-    public function printBatch(Request $request, string $batchId)
+    /**
+     * White copies of a whole batch of recommendations, as one document.
+     *
+     * The batch equivalent of printWhiteCopy(): the same records through the same
+     * templates, with the arms, the QR, the serial, the signature blocks and the
+     * acknowledgement sheets taken off and each marked WHITE COPY. No serial is
+     * minted for any of them and the page carries no log URLs, so proofreading a
+     * batch leaves every record exactly where it was.
+     */
+    public function printBatchWhiteCopy(Request $request, string $batchId)
+    {
+        // Shared rather than passed, for the same reason as the single print: a
+        // batch resolves to whichever template its application type uses, and
+        // several of those include others.
+        view()->share('isWhiteCopy', true);
+
+        return $this->printBatch($request, $batchId, true);
+    }
+
+    public function printBatch(Request $request, string $batchId, bool $whiteCopy = false)
     {
         $records = LandRecommendation::where('rofo_batch_id', $batchId)
             ->orderBy('batch_seq')
@@ -2579,10 +2630,19 @@ class LandRecommendationController extends Controller
         return view('print.stitched_batch', [
             'head'     => $stitched['head'],
             'bodies'   => $stitched['bodies'],
-            'title'    => 'Batch Recommendation Print — ' . $mother . ' (' . $records->count() . ')',
+            'title'    => ($whiteCopy ? 'Batch Recommendation White Copy — ' : 'Batch Recommendation Print — ')
+                . $mother . ' (' . $records->count() . ')',
             'subtitle' => 'Batch ' . $mother . ' — ' . $records->count() . ' '
-                . \Illuminate\Support\Str::plural('recommendation', $records->count()),
-            'logUrls'  => $records->map(fn ($r) => route('land-recommendations.log-print', $r->id))->all(),
+                . \Illuminate\Support\Str::plural('recommendation', $records->count())
+                . ($whiteCopy
+                    ? ' — WHITE COPY · proofs for vetting, black & white on ordinary paper. '
+                      . 'Nothing here counts as printed.'
+                    : ''),
+            // Empty for a proof: these fire on afterprint and would mark every
+            // record in the batch as printed.
+            'logUrls'  => $whiteCopy
+                ? []
+                : $records->map(fn ($r) => route('land-recommendations.log-print', $r->id))->all(),
         ]);
     }
 

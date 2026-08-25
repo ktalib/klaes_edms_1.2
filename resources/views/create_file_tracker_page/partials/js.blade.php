@@ -7798,7 +7798,9 @@
         const originRegistryValue = escapeHtml(originOfficeName);
         const createdValue = tracker.createdAt ? escapeHtml(new Date(tracker.createdAt).toLocaleString()) : '-';
         const rackShelfValue = escapeHtml(tracker.rackShelfLocation || tracker.rackShelf || tracker.shelf_location || '-');
-        const trackingQrUrl = `/qr/svg?size=120&data=${encodeURIComponent(tracker.trackingId || '')}`;
+        // QR is served by quickchart.io for now (hardcoded). The same-origin
+        // renderer is `${baseUrl}/qr/svg?size=120&data=...` when we switch back.
+        const trackingQrUrl = `https://quickchart.io/qr?text=${encodeURIComponent(tracker.trackingId || '')}`;
         const baseUrl = (document.querySelector('meta[name="app-base-url"]')?.content || '').replace(/\/$/, '');
 
         // Workflow step info
@@ -8168,7 +8170,9 @@
         const originOffice = tracker.originOffice || {};
         const originOfficeName = originOffice.name || tracker.originOfficeName || tracker.originRegistry || '-';
         const originOfficeDepartment = originOffice.department || tracker.originOfficeDepartment || tracker.originRegistryDepartment || '-';
-        const trackingQrUrl = `/qr/svg?size=120&data=${encodeURIComponent(tracker.trackingId || '')}`;
+        // QR is served by quickchart.io for now (hardcoded). The same-origin
+        // renderer is `${baseUrl}/qr/svg?size=120&data=...` when we switch back.
+        const trackingQrUrl = `https://quickchart.io/qr?text=${encodeURIComponent(tracker.trackingId || '')}`;
         const fileNameValue = escapeHtml(tracker.fileName || '-');
         const fileNoValue = escapeHtml(tracker.fileNo || '-');
         const priorityValue = escapeHtml(tracker.priority || '-');
@@ -8673,7 +8677,9 @@
         const originOffice = tracker.originOffice || {};
         const originOfficeName = originOffice.name || tracker.originOfficeName || tracker.originRegistry || '-';
         const originOfficeDepartment = originOffice.department || tracker.originOfficeDepartment || tracker.originRegistryDepartment || '-';
-        const trackingQrUrl = `/qr/svg?size=120&data=${encodeURIComponent(tracker.trackingId || '')}`;
+        // QR is served by quickchart.io for now (hardcoded). The same-origin
+        // renderer is `${baseUrl}/qr/svg?size=120&data=...` when we switch back.
+        const trackingQrUrl = `https://quickchart.io/qr?text=${encodeURIComponent(tracker.trackingId || '')}`;
         const fileNameValue = escapeHtml(tracker.fileName || '-');
         const fileNoValue = escapeHtml(tracker.fileNo || '-');
         const priorityValue = escapeHtml(tracker.priority || '-');
@@ -8738,7 +8744,7 @@
             })())
             : '-';
 
-        const printContent = `
+        const sheetHead = `
                 <!DOCTYPE html>
                 <html>
                 <head>
@@ -8760,6 +8766,11 @@
                         .header-center h2 { font-size: 0.65rem; color: #374151; text-transform: uppercase; letter-spacing: 0.9px; font-weight: 700; margin-bottom: 0.2rem; }
                         .header-center h3 { font-size: 0.85rem; color: #111827; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 800; }
                         .header-right { display: flex; align-items: flex-start; gap: 8px; }
+                        /* Equal flanks so the centre titles sit on the true page centre.
+                           The right flank (QR + registry logo) is ~121px wide against a
+                           58px logo on the left, which otherwise drags the titles left. */
+                        .header > .logo-wrap:first-child { flex: 0 0 130px; justify-content: flex-start; }
+                        .header > .header-right { flex: 0 0 130px; justify-content: flex-end; }
                         .qr-wrap img { width: 55px; height: 55px; display: block; }
 
                         /* Meta bar */
@@ -8796,19 +8807,56 @@
 
                         /* Footer */
                         .footer { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding-top: 0.5rem; border-top: 1px solid #e5e7eb; font-size: 0.68rem; color: #9ca3af; margin-top: auto; }
+                        /* Pin the flanking logos to the outer edges. Without these the
+                           images sit wherever their 1fr track leaves them, which drifts
+                           towards the middle as the centre column grows. */
+                        .footer > :first-child { justify-self: start; }
+                        .footer > :last-child { justify-self: end; }
                         .footer-logo { width: 80px; height: 80px; object-fit: contain; }
                         .footer-logo-las { width: 110px; height: 110px; object-fit: contain; }
                         .footer-center { text-align: center; }
                         .footer-right { text-align: right; }
 
+                        /* Copy identity — In-Transit (colour) vs File Copy (black & white).
+                           Mirrors the portrait sheet in printFileTrackerDetails, adapted to this
+                           landscape .paper; the dark on-screen preview body stays untouched. */
+                        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        .paper { position: relative; }
+                        /* Screen-only gap between the two stacked copies. It must NOT
+                           survive into print: .paper is exactly one page tall there, so
+                           any margin spills the second copy onto a third sheet. */
+                        @media screen { .paper + .paper { margin-top: 12px; } }
+                        .copy-break { page-break-before: always; }
+                        /* Drawn over the whole page at low opacity so it reads as one even
+                           diagonal tint instead of fragments chopped up by the cards. */
+                        .copy-watermark { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); font-size: 5rem; font-weight: 900; letter-spacing: 0.18em; white-space: nowrap; pointer-events: none; z-index: 999; }
+                        .copy-colour .copy-watermark { color: #dc2626; opacity: 0.10; }
+                        .copy-mono .copy-watermark { color: #000; opacity: 0.08; }
+                        /* File Copy: strip every colour so it photocopies cleanly. */
+                        .copy-mono, .copy-mono * { color: #000 !important; border-color: #9ca3af !important; }
+                        .copy-mono [style*="background"] { background: #fff !important; }
+                        .copy-mono .section-title { background: #e5e7eb !important; border-left-color: #000 !important; }
+                        .copy-mono .header { border-bottom-color: #000 !important; }
+                        .copy-mono table th { background: #e5e7eb !important; }
+                        .copy-mono table tr:nth-child(even) td { background: #f3f4f6 !important; }
+                        .copy-mono .priority-HIGH,
+                        .copy-mono .priority-MEDIUM,
+                        .copy-mono .priority-LOW { background: #f3f4f6 !important; }
+                        .copy-mono img { filter: grayscale(100%); -webkit-filter: grayscale(100%); }
+
                         @media print {
                             body { background: none; padding: 0; }
                             .paper { box-shadow: none; margin: 0; width: 100%; height: 210mm; min-height: auto; padding: 8mm 12mm; }
+                            .paper + .paper { margin-top: 0; }
                         }
                     </style>
                 </head>
-                <body>
-                    <div class="paper">
+                <body>`;
+
+        // One sheet body, rendered once per requested copy identity.
+        const buildKangisSheetCopy = (copyKind, idx) => `
+                    <div class="paper sheet-copy ${copyKind === 'file' ? 'copy-mono' : 'copy-colour'}${idx > 0 ? ' copy-break' : ''}">
+                        <div class="copy-watermark">${copyKind === 'file' ? 'FILE COPY' : 'IN TRANSIT'}</div>
                         <!-- Header -->
                         <div class="header">
                             <div class="logo-wrap">
@@ -9024,11 +9072,20 @@
 
                         <!-- Footer -->
                         <div class="footer">
-                            <img class="footer-logo" src="${baseUrl}/assets/logo/klaes.png" alt="KLAES" onerror="this.style.display='none'">
-                            <span class="footer-center">KLAES — Kano Land Administration Enterprise System<br><span style="font-size:0.62rem;">Generated on ${generatedDateSafe} by ${generatedBySafe}</span><br><img src="http://app.klaes.ng/storage/upload/logo/Klase.png" alt="Logo" style="height: 43px; margin-top: 0.2rem;" onerror="this.style.display='none'"></span>
-                            <img class="footer-logo footer-logo-las" src="${baseUrl}/assets/logo/las.jpg" alt="LAS" style="margin-left:auto;" onerror="this.style.display='none'">
+                            <img class="footer-logo" src="${baseUrl}/assets/logo/klaes1.png" alt="KLAES" onerror="this.style.display='none'">
+                            <span class="footer-center">KLAES — Kano Land Administration Enterprise System<br><span style="font-size:0.62rem;">Generated on ${generatedDateSafe} by ${generatedBySafe}</span></span>
+                            <img class="footer-logo footer-logo-las" src="${baseUrl}/assets/logo/las.jpg" alt="LAS" onerror="this.style.display='none'">
                         </div>
                     </div>
+                `;
+
+        // Every print of the KANGIS sheet yields both copies: the In-Transit copy
+        // (full colour, red IN TRANSIT watermark) travels with the file, and the
+        // File Copy (black & white) follows on a fresh page for the registry folder.
+        const copyKinds = ['transit', 'file'];
+        const printContent = sheetHead
+            + copyKinds.map((kind, idx) => buildKangisSheetCopy(kind, idx)).join('')
+            + `
                 </body>
                 </html>
             `;

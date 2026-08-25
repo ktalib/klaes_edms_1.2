@@ -618,6 +618,97 @@
         }
         /* No .version-label or [data-rofo-badge] override any more: the copy
            label prints in the header red and the badge stays red on all copies. */
+
+        /* ── White Copy: the proof sheet ──────────────────────────────────────
+           A draft run off on ordinary white paper, in black and white, for an
+           officer to read against the record before a sheet of security stock is
+           spent. It is NOT an issued copy, and the rules below exist to keep it
+           from being mistaken for one: no coat of arms, no QR, no serial, no copy
+           designation, no signature block (all removed in the markup), and the
+           word WHITE COPY where the designation would be.
+
+           What is deliberately NOT changed is the geometry. The frame keeps its
+           border-image width, the header keeps its height with the arms taken out
+           of it, and the signature block leaves its space behind — so the proof
+           breaks across pages exactly where the official letter will. A proof that
+           reflows is a proof of a different document.
+
+           Colour is taken out element by element rather than with one grayscale
+           filter on the wrapper, for the same reason the office copies stopped
+           using one: a filter applies to the whole subtree and a child cannot opt
+           back out of it. The frame is the one exception — it is a border-image,
+           which nothing but a filter can reach. */
+        .white-copy .version-label,
+        .white-copy .title-center,
+        .white-copy .supersede-notice {
+            color: #000 !important;
+        }
+        /* No decorative frame on a proof. It is the printed border of the security
+           stock, and a sheet of plain paper carrying it reads as the real thing —
+           the one impression this copy must never give.
+
+           Only the border-image is dropped: .ornate-border's border is already
+           24px of transparent, so the box keeps exactly the width it has on the
+           official letter and the text below breaks in the same places. */
+        .white-copy .ornate-border {
+            border-image-source: none !important;
+        }
+        .white-copy [data-rofo-badge] {
+            background: #fff !important;
+            border: 1.5px solid #000;
+        }
+        .white-copy [data-rofo-badge] p {
+            color: #000 !important;
+        }
+        .white-copy .reissuance-watermark {
+            color: rgba(0, 0, 0, 0.13) !important;
+        }
+        /* The mark itself: centred across the head of the page, big enough to be
+           the first thing read off the sheet, and plain black so it survives a
+           black & white printer at full weight.
+
+           Absolute so it occupies no space in the flow — the letter beneath it
+           begins exactly where it begins on the official print, which is the whole
+           reason to proofread from this sheet at all. */
+        .white-copy-mark-block {
+            position: absolute;
+            top: 8px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            z-index: 2;
+        }
+        .white-copy-mark {
+            color: #000;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 30px;
+            font-weight: 900;
+            line-height: 1.1;
+            letter-spacing: 0.28em;
+            text-transform: uppercase;
+        }
+        .white-copy-note {
+            margin-top: 3px;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.14em;
+            color: #333;
+            text-transform: uppercase;
+        }
+        /* The space the Commissioner's signature block occupied. Kept empty so the
+           letter above it sits exactly where it will on the official print. */
+        .white-copy-signature-gap {
+            padding: 0 40px 14px 40px;
+            text-align: center;
+            font-size: 9px;
+            font-style: italic;
+            font-weight: 600;
+            color: #6b7280;
+            margin-top: auto;
+        }
+        .white-copy-signature-gap .gap-space {
+            height: 62px;
+        }
     </style>
 </head>
 <body spellcheck="false">
@@ -632,6 +723,11 @@
         //            re-issuance is the ORIGINAL copy only.
         //   legacy — pre-KLAES original, so the full Original/Duplicate/Triplicate
         //            set is issued as normal.
+        // The proof sheet. Set by LandRofoController::printWhiteCopy(); no query
+        // string switches it on, so an official print URL cannot become a proof and
+        // a proof URL cannot become an official print.
+        $isWhiteCopy    = !empty($isWhiteCopy);
+
         $isReissuance   = request()->boolean('supersede');
         $reissueSource  = strtolower(trim((string) request('reissue_source', '')));
         $originalOnly   = $isReissuance && $reissueSource !== 'legacy';
@@ -656,6 +752,14 @@
         // batch is being ordered.
         if (!empty($printVersionsOnly)) {
             $printVersions = array_values(array_intersect($printVersions, (array) $printVersionsOnly));
+        }
+
+        // A White Copy is one copy — front and back — whatever the URL asks for. It
+        // is not an Original, a Duplicate or a Triplicate, and running it off three
+        // times would only mean three proofs of the same thing. Set last so nothing
+        // above can widen it back out.
+        if ($isWhiteCopy) {
+            $printVersions = ['White Copy'];
         }
 
         // Date the PREVIOUS letter was issued. Passed in via ?superseded_date=..., else:
@@ -694,12 +798,15 @@
         // Only the ORIGINAL copy prints in colour — on every print, not just a
         // re-issuance. The Duplicate and Triplicate are office copies and go out
         // black & white. (A CTC is its own document and keeps its colour.)
-        $isBwCopy = in_array($version, ['Duplicate', 'Triplicate'], true);
+        // The White Copy is black & white by definition — it prints on ordinary
+        // paper on whatever printer is nearest.
+        $isBwCopy = $isWhiteCopy || in_array($version, ['Duplicate', 'Triplicate'], true);
+        $pageClass = ($isBwCopy ? ' copy-bw' : '') . ($isWhiteCopy ? ' white-copy' : '');
     @endphp
     <!-- PAGE 1 – Signature line uses exact CSS technique, no double lines -->
         {{-- <div class="page-container" id="page1-{{ $index }}" style="{{ $index > 0 ? 'page-break-before: always;' : '' }} background-image: url('/assets/images/pages/backgrand.jpg'); background-size: cover; background-position: center; background-repeat: no-repeat;">     --}}
 
-                 <div class="page-container{{ $isBwCopy ? ' copy-bw' : '' }}" id="page1-{{ $index }}">
+                 <div class="page-container{{ $pageClass }}" id="page1-{{ $index }}">
 
 
         <div class="security-bg"></div>
@@ -718,10 +825,24 @@
         <div class="content-wrapper ornate-border">
             <div class="inner-content" style="position: relative;">
                 <!-- Version & Security Code (absolutely positioned top-right) -->
+                {{-- Where the official letter names the copy in its top corner —
+                     ORIGINAL, DUPLICATE, TRIPLICATE, over the security serial — the
+                     proof says WHITE COPY across the head of the page instead. Not
+                     in the corner: a corner is where a note goes, and this is not a
+                     note about the sheet, it is what the sheet is. Absolutely
+                     positioned so it takes no space of its own and the letter below
+                     starts where it starts on the official print. --}}
+                @if($isWhiteCopy)
+                    <div class="white-copy-mark-block">
+                        <div class="white-copy-mark">White Copy</div>
+                        <div class="white-copy-note">Proof for vetting — not an official document</div>
+                    </div>
+                @endif
+
                 <div style="position: absolute; top: 10px; right: 10px; text-align: right; font-weight: bold; font-size: 16px; letter-spacing: 0.35em; z-index: 2;">
-                    @if($version !== 'CTC')<span class="version-label" style="color: {{ $versionColors[$version] ?? '#ff0000' }}; text-transform: uppercase;">{{ $version }}</span>@endif
-                    
-                    @if(isset($securityCode))
+                    @if(!$isWhiteCopy && $version !== 'CTC')<span class="version-label" style="color: {{ $versionColors[$version] ?? '#ff0000' }}; text-transform: uppercase;">{{ $version }}</span>@endif
+
+                    @if(!$isWhiteCopy && isset($securityCode))
                         @php
                             $sc = app(\App\Services\SecurityCodeService::class)->formatForDisplay($securityCode->code);
                         @endphp
@@ -752,7 +873,13 @@
                 @endif
 
                 <!-- Header: Coat of Arms centered, QR on the left -->
+                {{-- The block keeps its height on a White Copy with the arms and the
+                     QR taken out of it, so the letter below starts on the same line
+                     of the page as it will on the official print. Both are marks of
+                     an issued document — the arms are the State's, the QR resolves
+                     to a verifiable record — and a proof carries neither. --}}
                 <div style="position: relative; margin-bottom: 4px; margin-top: 10px; min-height: 110px;">
+                    @unless($isWhiteCopy)
                     <div style="text-align: center;">
                         <img src="https://upload.wikimedia.org/wikipedia/commons/b/bc/Coat_of_arms_of_Nigeria.svg" alt="Nigeria Seal" style="width: 100px; height: auto; display: inline-block;" />
                     </div>
@@ -774,6 +901,7 @@
                     @if($qrData !== '')
                         <img src="{{ qr_data_uri($qrData, 150) }}" alt="QR" style="position: absolute; left: 40px; top: 50%; transform: translateY(-50%); width: 55px; height: 55px;" />
                     @endif
+                    @endunless
                 </div>
                 <!-- Centered Blue Banner -->
                 <div style="text-align: center; margin-bottom: 8px;">
@@ -953,6 +1081,17 @@
                 </div>
 
                 <!-- SIGNATURE BLOCK -->
+                {{-- Off the White Copy entirely. A signature line is what makes a
+                     sheet look executed, and a proof that carries one can be signed
+                     and passed off as the letter itself — the one misuse this whole
+                     stage exists to prevent. The space it occupied is left behind so
+                     the page still breaks where the official letter breaks. --}}
+                @if($isWhiteCopy)
+                <div class="white-copy-signature-gap" spellcheck="false">
+                    <div class="gap-space"></div>
+                    Signature block omitted — this is a white copy for proofreading only
+                </div>
+                @else
                 <div class="signature-block" style="margin-top: auto;" spellcheck="false">
                     <div>
                         <div style="height: 45px;"></div>
@@ -965,6 +1104,7 @@
                         <div style="margin-top:5px;" spellcheck="false">DATE</div>
                     </div>
                 </div>
+                @endif
 
             </div>
         </div>
@@ -982,7 +1122,7 @@
     </div>
 
     <!-- PAGE 2 – Acceptance Letter -->
-    <div class="page-container{{ $isBwCopy ? ' copy-bw' : '' }}" id="page2-{{ $index }}" style="page-break-before: always;">
+    <div class="page-container{{ $pageClass }}" id="page2-{{ $index }}" style="page-break-before: always;">
         <div class="security-bg"></div>
 
         @if($isReissuance)
@@ -1136,6 +1276,14 @@
     @endforeach
 
     <script>
+        {{-- A White Copy is never logged. log-print writes a print_logs row,
+             increments rofo_print_count — which is what the Printed tab and the
+             "has this been printed" predicate read — and advances the LAAS "RofO
+             signed" stage on the applicant's portal. A proof has done none of
+             those things, so the handler is simply not attached: printing one
+             leaves the record exactly as it was, which is what makes it safe to
+             correct the record and print another. --}}
+        @unless($isWhiteCopy)
         window.addEventListener('afterprint', function() {
             fetch('{{ route('land-rofos.log-print', $recommendation->id) }}', {
                 method: 'POST',
@@ -1154,6 +1302,7 @@
                 }
             });
         });
+        @endunless
 
         // Trigger print 1s after load
         setTimeout(() => {
@@ -1166,14 +1315,21 @@
     <style id="scheme-override"></style>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            {{-- Skipped on a White Copy: these rules carry !important and would
+                 put the frame and the red banner back on a proof, which prints
+                 with neither. --}}
+            @unless($isWhiteCopy)
             var frameUrl = '{{ asset('assets/images/pages/1779539656370(1).png') }}';
             var css = '.ornate-border { border-image-source: url("' + frameUrl + '") !important; }\n';
             document.getElementById('scheme-override').textContent = css;
+
             // The red ministry banner is carried by every copy — Original,
-            // Duplicate and Triplicate alike.
+            // Duplicate and Triplicate alike. Not the White Copy: it prints black
+            // on white, and an inline style set here would beat the stylesheet.
             document.querySelectorAll('[data-rofo-badge]').forEach(function(badge) {
                 badge.style.background = '#c90202';
             });
+            @endunless
         });
 
 

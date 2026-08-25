@@ -1,10 +1,20 @@
 @php
-    $securityCode = app(\App\Services\SecurityCodeService::class)->getOrGenerateForDocument(
-        (string) ($recommendation->file_number ?? ($recommendation->id ?? '')),
-        (int) $recommendation->id,
-        'Land Conversion'
-    );
-    $sc = app(\App\Services\SecurityCodeService::class)->formatForDisplay($securityCode->code);
+    // The proof sheet — shared by LandRecommendationController::printWhiteCopy().
+    $isWhiteCopy = !empty($isWhiteCopy);
+
+    // Never minted for a proof: the serial is the document's official number, and
+    // this template mints it as it renders, so merely opening a proof would
+    // otherwise have spent a real one.
+    $securityCode = null;
+    $sc = null;
+    if (!$isWhiteCopy) {
+        $securityCode = app(\App\Services\SecurityCodeService::class)->getOrGenerateForDocument(
+            (string) ($recommendation->file_number ?? ($recommendation->id ?? '')),
+            (int) $recommendation->id,
+            'Land Conversion'
+        );
+        $sc = app(\App\Services\SecurityCodeService::class)->formatForDisplay($securityCode->code);
+    }
 @endphp
 <!doctype html>
 <html lang="en">
@@ -17,6 +27,65 @@
       * {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
+      }
+
+      /* ── White Copy: the proof sheet ────────────────────────────────────
+         Centred across the head of the page, large enough to be the first thing
+         read off the sheet, plain black so it survives a monochrome printer. */
+      /* Black and white throughout. The document is drawn in the ministry green on
+         cream; a proof goes through whatever printer is nearest, on ordinary paper,
+         and green reproduced in grey reads as a smudge where the real thing reads
+         as a heading.
+
+         Declared element by element rather than as one grayscale filter on the
+         page: a filter applies to the whole subtree with no way for a descendant to
+         opt out, and it would leave the greens as mid-greys rather than as black.
+         The banners keep their shape — same padding, same block — so nothing below
+         them moves; only the ink changes. */
+      .a4-page.white-copy {
+        background-color: #fff !important;
+        color: #000 !important;
+      }
+
+      .a4-page.white-copy [class*="bg-[#1a4731]"],
+      .a4-page.white-copy .full-width-green {
+        background-color: #fff !important;
+        color: #000 !important;
+        border: 1px solid #000;
+      }
+
+      /* The hairline under each banner is part of the green rule above it. */
+      .a4-page.white-copy .h-0\.5 {
+        background-color: #000 !important;
+      }
+
+      .a4-page.white-copy [class*="text-[#1a4731]"],
+      .a4-page.white-copy [class*="text-red"] {
+        color: #000 !important;
+      }
+
+      .a4-page.white-copy [class*="border-[#1a4731]"] {
+        border-color: #000 !important;
+      }
+
+      .white-copy-mark {
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 24pt;
+        font-weight: 900;
+        line-height: 1.1;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: #000;
+      }
+
+      .white-copy-note {
+        margin-top: 2px;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 6.5pt;
+        font-weight: bold;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #333;
       }
 
       @media print {
@@ -142,9 +211,19 @@
         </a>
     </div>
 
-    <div class="a4-page bg-[#fdfcf0] w-[210mm] h-[297mm] p-8 border border-gray-400 shadow-2xl relative text-[#1a4731] flex flex-col box-border overflow-hidden">
+    <div class="a4-page{{ $isWhiteCopy ? ' white-copy' : '' }} bg-[#fdfcf0] w-[210mm] h-[297mm] p-8 border border-gray-400 shadow-2xl relative text-[#1a4731] flex flex-col box-border overflow-hidden">
       <div class="h-full flex flex-col">
         <!-- Header -->
+        {{-- The QR resolves to a verifiable record and the serial is the document's
+             official number, so a proof carries neither. The mark takes their place,
+             centred across the head of the sheet; the block keeps its height so the
+             form below begins where it begins on the official print. --}}
+        @if($isWhiteCopy)
+        <div class="flex flex-col items-center justify-center mb-1 px-2" style="min-height: 3.5rem;">
+          <div class="white-copy-mark">White Copy</div>
+          <div class="white-copy-note">Proof for vetting — not an official document</div>
+        </div>
+        @else
         <div class="flex justify-between items-start mb-1 px-2">
           <div class="w-14 h-14 border border-[#1a4731] flex items-center justify-center bg-white p-1">
             <img src="{{ qr_data_uri($recommendation->file_number, 100) }}" alt="QR" class="w-full h-full grayscale">
@@ -163,12 +242,18 @@
             </div>
           </div>
         </div>
+        @endif
 
         <div class="border-2 border-[#1a4731] pt-4 pb-3 px-5 flex flex-col flex-grow box-border relative overflow-hidden">
           <!-- Main Banner -->
           <div class="flex items-center gap-4 mb-1 shrink-0">
+            {{-- The ministry crest is a mark of an issued document, so it comes off
+                 the proof with the arms, the QR and the serial. The column keeps its
+                 width so the banner beside it stays where it is. --}}
             <div class="w-16">
+              @unless($isWhiteCopy)
               <img src="http://app.klaes.ng/assets/logo/ministry1.jpg" class="w-14 mx-auto" alt="Logo" onerror="this.src='http://app.klaes.ng/assets/logo/ministry1.jpg'">
+              @endunless
             </div>
             <div class="bg-[#1a4731] text-white text-center py-1.5 px-4 flex-1 relative" style="border-top-left-radius: 25px">
               <h1 class="font-bold text-[16px] uppercase tracking-tighter leading-tight">
@@ -305,10 +390,20 @@
             <span class="inline-block w-16 border-b border-black text-center font-bold">{{ $recommendation->page_2 }}</span>.
           </p>
 
+          {{-- Signature lines come off the proof: a blank rule over a name is what
+               can be signed and passed off as the document itself. The room they
+               took is left behind so the page still breaks where it breaks on the
+               official print. --}}
+          @if($isWhiteCopy)
+          <div class="mt-11 mb-1 shrink-0 text-center text-[9px] italic text-slate-500">
+            Signature block omitted — white copy for proofreading only
+          </div>
+          @else
           <div class="flex justify-between text-center text-[13px] mt-11 mb-1 px-4 text-black shrink-0">
             <div class="w-40 border-t border-black pt-1 font-bold">Rank</div>
             <div class="w-40 border-t border-black pt-1 font-bold">Director Land</div>
           </div>
+          @endif
 
           <!-- Approval Banner -->
           <div class="full-width-green text-white text-center py-1.5 mb-1 shrink-0">
@@ -341,6 +436,11 @@
           </div>
 
           <!-- Permanent Secretary Signature -->
+          @if($isWhiteCopy)
+          <div class="mt-10 shrink-0 text-center text-[9px] italic text-slate-500">
+            Signature block omitted — white copy for proofreading only
+          </div>
+          @else
           <div class="mt-10 shrink-0">
             <div class="flex justify-between text-[13px] text-black">
               <div class="w-56 border-t border-black text-center pt-1 font-bold uppercase">
@@ -351,13 +451,24 @@
               </div>
             </div>
           </div>
+          @endif
 
           <!-- Status / Approval Text -->
+          {{-- Off the proof, with the signature blocks it belongs to: it is the line
+               the Commissioner's signature acts on, and there is nothing in it to
+               proofread — it is the same fixed text on every document. --}}
+          @unless($isWhiteCopy)
           <p class="text-red-600 font-bold text-[13px] text-left tracking-tighter mt-10 mb-0 shrink-0">
             The Grant of Occupancy is hereby APPROVED/NOT APPROVED
           </p>
+          @endunless
 
           <!-- Honourable Commissioner Signature -->
+          @if($isWhiteCopy)
+          <div class="mt-10 shrink-0 text-center text-[9px] italic text-slate-500">
+            Signature block omitted — white copy for proofreading only
+          </div>
+          @else
           <div class="mt-10 shrink-0">
             <div class="flex justify-between text-[13px] text-black">
               <div class="w-56 border-t border-black text-center pt-1 font-bold uppercase">
@@ -368,6 +479,19 @@
               </div>
             </div>
           </div>
+          @endif
+
+          {{-- The KLAES logo. On an official run it arrives on the acknowledgement
+               sheet behind this page; the proof leaves that sheet off, so it sits at
+               the foot of the proof itself — the same system mark the RofO's back
+               page carries. It is not an official mark: it says which system
+               produced the sheet, which is worth knowing on a draft. --}}
+          @if($isWhiteCopy)
+          <div class="mt-auto pt-2 flex items-center justify-end border-t border-black/20 shrink-0">
+            <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES Logo"
+                 style="height: 26px; width: auto; object-fit: contain;">
+          </div>
+          @endif
         </div>
       </div>
     </div>
@@ -393,9 +517,14 @@
         .ack-print-wrap { background-color: #fdfcf0 !important; }
       }
     </style>
+    {{-- Not on a proof: the acknowledgement sheet is the half the applicant signs
+         and returns on collection, and there is nothing on it to proofread that is
+         not already on page 1. A white copy is one sheet. --}}
+    @unless($isWhiteCopy)
     <div class="ack-print-wrap">
       @include('land_recommendations.templates._ack_sheet')
     </div>
+    @endunless
 
     <script>
       // Auto-open the print dialog once the page (and images) have loaded.
@@ -403,7 +532,9 @@
         setTimeout(function () { window.print(); }, 300);
       });
 
-      // Log the print after the dialog closes.
+      // Log the print after the dialog closes — never for a proof, which has not
+      // been printed in the sense print_logs records.
+      @unless($isWhiteCopy)
       window.onafterprint = function () {
         fetch('{{ route("land-recommendations.log-print", $recommendation->id) }}', {
           method: 'POST',
@@ -417,6 +548,7 @@
         .then(data => console.log('Print logged:', data))
         .catch(error => console.error('Error logging print:', error));
       };
+      @endunless
     </script>
   </body>
 </html>

@@ -298,10 +298,22 @@
                                                             <i data-lucide="printer" class="h-4 w-4 text-slate-200"></i> Print all (locked)
                                                         </span>
                                                     @else
-                                                        <a href="{{ route('land-recommendations.batch-print', $b->rofo_batch_id) }}" target="_blank"
-                                                            class="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-violet-700 hover:bg-violet-50 transition">
-                                                            <i data-lucide="printer" class="h-4 w-4"></i> Print all ({{ $total }})
+                                                        {{-- Proofs of the whole batch, in front of the official run.
+                                                             A plain link, not the White Copy card: these documents
+                                                             print no DATE OF ISSUE, so the card would have nothing
+                                                             to ask for. --}}
+                                                        <a href="{{ route('land-recommendations.batch-white-copy', $b->rofo_batch_id) }}" target="_blank"
+                                                            class="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100 transition">
+                                                            <i data-lucide="file-search" class="h-4 w-4"></i> White copy all ({{ $total }})
                                                         </a>
+                                                        {{-- A button, not the link it used to be: the official run
+                                                             stands behind the same proofread question a single
+                                                             record does, and a plain href cannot ask one. --}}
+                                                        <button type="button" @click="open = false"
+                                                            onclick="recBatchPrintGate(@js(route('land-recommendations.batch-print', $b->rofo_batch_id)), @js(route('land-recommendations.batch-white-copy', $b->rofo_batch_id)), @js(($b->mother_file_no ?: $b->rofo_batch_id)), {{ (int) $total }})"
+                                                            class="flex w-full items-center gap-2 px-4 py-2.5 text-sm font-bold text-violet-700 hover:bg-violet-50 transition">
+                                                            <i data-lucide="printer" class="h-4 w-4"></i> Print all ({{ $total }})
+                                                        </button>
                                                     @endif
                                                 </div>
                                             </div>
@@ -514,8 +526,28 @@
 
                                                     <!-- Batch Print Logic -->
                                                     @if($rec->status === \App\Models\LandRecommendation::STATUS_APPROVED)
-                                                        <button type="button" 
-                                                                onclick="SmartPrintManager.open('{{ $rec->file_number }}', 'Recommendation For Grant', '{{ route('land-recommendations.print', $rec->id) }}', @js(['recordId' => (int) $rec->id, 'issueDate' => optional($rec->application_date)->format('Y-m-d') ?? '']))" 
+                                                        @php
+                                                            // The proofing stage in front of the official print.
+                                                            // whiteCopyOwnsDate is deliberately NOT set: this
+                                                            // document prints no DATE OF ISSUE — only blank
+                                                            // hand-signed date lines — so there is no date for
+                                                            // the proof to own, and the Print Manager keeps the
+                                                            // date panel it has always had.
+                                                            $pmOptions = [
+                                                                'recordId'     => (int) $rec->id,
+                                                                'issueDate'    => optional($rec->application_date)->format('Y-m-d') ?? '',
+                                                                'whiteCopyUrl' => route('land-recommendations.white-copy', $rec->id),
+                                                            ];
+                                                        @endphp
+
+                                                        <button type="button"
+                                                                onclick="openWhiteCopyModal(@js((int) $rec->id), @js($rec->file_number), '', @js(route('land-recommendations.white-copy', $rec->id)))"
+                                                                class="flex w-full items-center px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-100 transition gap-2 font-bold">
+                                                            <i data-lucide="file-search" class="h-4 w-4"></i> Print White Copy
+                                                        </button>
+
+                                                        <button type="button"
+                                                                onclick="WhiteCopy.openPrintManager(@js($rec->file_number), 'Recommendation For Grant', @js(route('land-recommendations.print', $rec->id)), @js($pmOptions))"
                                                                 class="flex w-full items-center px-4 py-2.5 text-sm text-blue-700 hover:bg-blue-50 transition gap-2 font-bold">
                                                             <i data-lucide="printer" class="h-4 w-4"></i>  Print Manager
                                                         </button>
@@ -568,9 +600,25 @@
                                                      class="w-auto rounded-xl shadow-2xl bg-white ring-1 ring-black ring-opacity-5 overflow-hidden"
                                                      style="display: none;">
                                                     <div class="py-1">
+                                                        @php
+                                                            $ossPmOptions = [
+                                                                'recordId'     => (int) $rec->id,
+                                                                'issueDate'    => optional($rec->application_date)->format('Y-m-d') ?? '',
+                                                                'whiteCopyUrl' => route('land-recommendations.white-copy', $rec->id),
+                                                            ];
+                                                        @endphp
+
                                                         <button type="button"
                                                                 @click="open = false"
-                                                                onclick="SmartPrintManager.open('{{ $rec->file_number }}', 'OSS Recommendation For Grant', '{{ route('land-recommendations.print', $rec->id) }}', @js(['recordId' => (int) $rec->id, 'issueDate' => optional($rec->application_date)->format('Y-m-d') ?? '']))"
+                                                                onclick="openWhiteCopyModal(@js((int) $rec->id), @js($rec->file_number), '', @js(route('land-recommendations.white-copy', $rec->id)))"
+                                                            class="flex w-full items-center px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-100 transition gap-2 font-bold whitespace-nowrap">
+                                                        <i data-lucide="file-search" class="h-4 w-4 flex-shrink-0"></i>
+                                                        Print White Copy
+                                                    </button>
+
+                                                        <button type="button"
+                                                                @click="open = false"
+                                                                onclick="WhiteCopy.openPrintManager(@js($rec->file_number), 'OSS Recommendation For Grant', @js(route('land-recommendations.print', $rec->id)), @js($ossPmOptions))"
                                                             class="flex w-full items-center px-4 py-2.5 text-sm text-blue-700 hover:bg-blue-50 transition gap-2 font-bold whitespace-nowrap">
                                                         <i data-lucide="printer" class="h-4 w-4 flex-shrink-0"></i>
                                                         OSS Print Recommendation
@@ -618,6 +666,35 @@
     // than revealing the rows that happen to share this page — which is the whole
     // reason this tab exists, since on the main list a 100-child batch expands to
     // show only the 20 the pagination left behind.
+    // ── The proofread gate in front of a batch run ─────────────────────────
+    // A batch is where a mistake is most expensive — one wrong field repeated
+    // across every record in it — so the whole set is read on ordinary paper before
+    // any of it is printed officially. Answering "no" opens white copies of the
+    // batch, which is the thing that was actually needed.
+    //
+    // Both tabs open in a new tab rather than through window.open() after the
+    // dialog: a plain assignment to a form-less link this far from the click is
+    // what a pop-up blocker stops, so each is a real navigation on its own anchor.
+    function recBatchPrintGate(printUrl, whiteCopyUrl, label, count) {
+        WhiteCopy.confirmProofread({
+            subject: count + ' ' + (count === 1 ? 'recommendation' : 'recommendations') + ' in ' + label,
+            onYes:       function () { recOpenTab(printUrl); },
+            onWhiteCopy: function () { recOpenTab(whiteCopyUrl); }
+        });
+    }
+
+    // An anchor click rather than window.open(): browsers treat a synthesised link
+    // click as navigation, where a window.open() after an await reads as a pop-up.
+    function recOpenTab(url) {
+        var a = document.createElement('a');
+        a.href = url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+
     var CHILDREN_URL = @json(url('land-recommendations/batch'));
 
     function statusPill(value, okValue, okLabel, pendingLabel) {

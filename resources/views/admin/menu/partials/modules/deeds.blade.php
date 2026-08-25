@@ -3,7 +3,7 @@
     $hasRole('PRA') || $hasRole('Bill Balance') || $hasRole('Valuation') ||
     $hasRole('Deeds - Consent') || $hasRole('Deeds Registration') ||
     $hasRole('Deeds - Encumbrance') || $hasRole('Deeds - Surrender') ||
-    $hasRole('Surrender & Release') || $hasRole('Other Applications') ||
+    $hasRole('Surrender & Release') || $hasRole('Parcel/Title Management') ||
     $hasRole('Activity Monitoring') || $hasRole('Supper Admin')
   ) 
   <div class="py-1 px-3 mb-0.5 border-t border-slate-100">
@@ -190,8 +190,8 @@
         <span>OP Verification</span>
       </a>
 @endif
-      <!-- h. Other Applications -->
-      @if($hasRole('Other Applications') || $hasRole('Supper Admin'))
+      <!-- h. Parcel/Title Management -->
+      @if($hasRole('Parcel/Title Management') || $hasRole('Supper Admin'))
         <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
           data-section="otherApplications-deeds">
           <div class="flex items-center gap-2">

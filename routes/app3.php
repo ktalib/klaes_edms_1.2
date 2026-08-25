@@ -1123,6 +1123,9 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/reissuance-search', [\App\Http\Controllers\LandRofoController::class, 'reissuanceSearch'])->name('reissuance-search');
         Route::post('/{id}/reissue', [\App\Http\Controllers\LandRofoController::class, 'reissue'])->name('reissue');
         Route::post('/batch-print', [\App\Http\Controllers\LandRofoController::class, 'batchPrint'])->name('batch-print');
+        // Proofs of a whole batch — the same letters, marked WHITE COPY, minting no
+        // serials and logging no prints. See batchWhiteCopy().
+        Route::post('/batch-white-copy', [\App\Http\Controllers\LandRofoController::class, 'batchWhiteCopy'])->name('batch-white-copy');
         // Every RofO in a batch, for the Batches tab — unpaginated on purpose.
         Route::get('/batch/{batchId}/children', [\App\Http\Controllers\LandRofoController::class, 'batchChildren'])->name('batch-children');
         Route::post('/batch-print-log', [\App\Http\Controllers\LandRofoController::class, 'batchPrintLog'])->name('batch-print-log');
@@ -1141,6 +1144,12 @@ Route::middleware(['auth'])->group(function () {
         // only; the check is in the controller, and the menu that calls it is only
         // rendered for them.
         Route::post('/{id}/reset-print', [\App\Http\Controllers\LandRofoController::class, 'resetPrint'])->name('reset-print');
+        // The White Copy: the same letter as a black & white proof for vetting,
+        // with the coat of arms, QR, security serial, copy designation and the
+        // signature block taken off it. It is not an issued copy, so it never
+        // touches rofo_print_count, the security codes or the print log — see
+        // printWhiteCopy().
+        Route::get('/{id}/white-copy', [\App\Http\Controllers\LandRofoController::class, 'printWhiteCopy'])->name('white-copy');
         Route::get('/{id}/print', [\App\Http\Controllers\LandRofoController::class, 'print'])->name('print');
         Route::post('/{id}/log-print', [\App\Http\Controllers\LandRofoController::class, 'logPrint'])->name('log-print');
     });
@@ -1186,6 +1195,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('land-recommendations/batch-drafts/{draftKey}', [\App\Http\Controllers\LandRecommendationBatchDraftController::class, 'show'])->name('land-recommendations.batch-drafts.show');
     Route::delete('land-recommendations/batch-drafts/{draftKey}', [\App\Http\Controllers\LandRecommendationBatchDraftController::class, 'destroy'])->name('land-recommendations.batch-drafts.destroy');
     Route::get('land-recommendations/batch/{batchId}/print', [\App\Http\Controllers\LandRecommendationController::class, 'printBatch'])->name('land-recommendations.batch-print');
+    // Proofs of a whole batch. See printBatchWhiteCopy().
+    Route::get('land-recommendations/batch/{batchId}/white-copy', [\App\Http\Controllers\LandRecommendationController::class, 'printBatchWhiteCopy'])->name('land-recommendations.batch-white-copy');
     // Every child of a batch, for the Batches tab — unpaginated on purpose.
     Route::get('land-recommendations/batch/{batchId}/children', [\App\Http\Controllers\LandRecommendationController::class, 'batchChildren'])->name('land-recommendations.batch-children');
     // Read-only register of everything captured in one batch.
@@ -1197,6 +1208,11 @@ Route::middleware(['auth'])->group(function () {
     Route::resource('land-recommendations', \App\Http\Controllers\LandRecommendationController::class);
     Route::post('land-recommendations/{id}/log-print', [\App\Http\Controllers\LandRecommendationController::class, 'logPrint'])->name('land-recommendations.log-print');
     Route::post('land-recommendations/{id}/approve', [\App\Http\Controllers\LandRecommendationController::class, 'approve'])->name('land-recommendations.approve');
+    // The proofing copy: the same recommendation as a black & white draft, with the
+    // coat of arms, QR, security serial and signature blocks off it and no
+    // acknowledgement sheet behind it. It mints no serial and logs no print — see
+    // printWhiteCopy().
+    Route::get('land-recommendations/{id}/white-copy', [\App\Http\Controllers\LandRecommendationController::class, 'printWhiteCopy'])->name('land-recommendations.white-copy');
     Route::get('land-recommendations/{id}/print', [\App\Http\Controllers\LandRecommendationController::class, 'print'])->name('land-recommendations.print');
 
     Route::prefix('print-manager')->name('print-manager.')->group(function () {

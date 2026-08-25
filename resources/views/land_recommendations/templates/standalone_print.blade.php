@@ -15,6 +15,12 @@
     @include('land_recommendations.templates.print_layout', ['recommendation' => $recommendation])
 
     <script>
+        {{-- A White Copy is never logged. log-print writes a print_logs row, which
+             is what the Printed tab and its counters read — and a proof has not been
+             printed in that sense. The handler is simply not attached, so printing
+             one leaves the record exactly as it was and another can be run off after
+             every correction. --}}
+        @unless(!empty($isWhiteCopy))
         // Log the print after the dialog is closed
         window.onafterprint = function() {
             fetch('{{ route("land-recommendations.log-print", $recommendation->id) }}', {
@@ -31,6 +37,7 @@
               })
               .catch(error => console.error('Error logging print:', error));
         };
+        @endunless
     </script>
 </body>
 </html>

@@ -59,24 +59,73 @@
 
             <div class="px-6 py-6 space-y-6">
                 <div x-show="!isOssMode" class="space-y-6">
-                    {{-- ── Date Issued ────────────────────────────────────────────
+                    {{-- ── Where the White Copy stage is in use ───────────────────
+                         The date of issue is keyed in on the White Copy, not here.
+                         It is part of what the officer proofreads — the letter
+                         prints it as DATE OF ISSUE — so asking for it at the
+                         printer would mean the proof was read without the one
+                         field the printer was still free to change afterwards.
+
+                         What is left here is the answer, read-only, so the operator
+                         can see what will print; and, when the record has none, a
+                         stop. There is no fallback behind date_issued, so an
+                         undated letter is not a letter — the passes stay disabled
+                         and the way forward is back to the White Copy. --}}
+                    <div x-show="dateOnWhiteCopy" x-cloak
+                         class="p-4 rounded-2xl border space-y-2"
+                         :class="issueDate ? 'border-slate-200 bg-slate-50' : 'border-red-300 bg-red-50/50'">
+                        <div class="flex items-center justify-between gap-3">
+                            <label class="text-[11px] font-black uppercase tracking-widest text-slate-500">
+                                Date Issued
+                            </label>
+                            <span x-show="issueDate" x-cloak
+                                  class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Set on the White Copy</span>
+                            <span x-show="!issueDate" x-cloak
+                                  class="text-[10px] font-black text-red-500 uppercase tracking-wider">Missing</span>
+                        </div>
+
+                        <p x-show="issueDate" x-cloak class="text-[15px] font-black text-slate-800 font-mono"
+                           x-text="issueDate"></p>
+                        <p x-show="issueDate" x-cloak class="text-[11px] text-slate-500 leading-relaxed">
+                            Prints on the letter as <b>DATE OF ISSUE</b>. To change it, go back to
+                            <b>Print White Copy</b> — a change to the letter is a change to proofread.
+                        </p>
+
+                        <template x-if="!issueDate">
+                            <div class="space-y-2">
+                                <p class="text-[12px] text-red-700 font-semibold leading-relaxed">
+                                    This letter has no date of issue, and nothing else supplies one. It is entered
+                                    on the White Copy, where it can be read back before anything is printed.
+                                </p>
+                                <button type="button" @click="goToWhiteCopy()"
+                                        class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-white text-xs font-black hover:bg-slate-900 transition">
+                                    <i data-lucide="file-search" class="h-3.5 w-3.5"></i>
+                                    Print White Copy
+                                </button>
+                            </div>
+                        </template>
+                    </div>
+
+                    {{-- ── Date Issued ──────────────────────────────
                          land_recommendations.date_issued, which the letter prints as
                          DATE OF ISSUE. A column of its own: it used to be the
                          recommendation's application_date, which is a different fact
                          about a different thing and is not the printer's to edit.
 
+                         Asked for here only where there is no White Copy stage in
+                         front of this dialog — a batch run, and the documents that
+                         have no proof copy of their own. Where there is one, the date
+                         is keyed in there and this panel is replaced by the read-only
+                         one above: see dateOnWhiteCopy.
+
                          Nothing stands behind date_issued — no fallback, no backfill
                          — so a letter that has never been issued has an empty date
-                         until someone keys one in here. That is why the panel is
-                         asked for here rather than in a dialog in front of the
-                         manager: it belongs to the same decision as which copies to
-                         run, and asking twice for one print is what the separate
-                         prompt amounted to.
+                         until someone keys one in.
 
                          A date already on record is what an issued letter out in the
                          world carries, so the field stays locked until an edit is
                          confirmed. Filling a blank one never needs confirming. --}}
-                    <div x-show="supportsIssueDate" x-cloak
+                    <div x-show="supportsIssueDate && !dateOnWhiteCopy" x-cloak
                          class="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-2">
                         <div class="flex items-center justify-between gap-3">
                             <label class="text-[11px] font-black uppercase tracking-widest text-slate-500">
@@ -468,6 +517,17 @@ document.addEventListener('alpine:init', () => {
         // Carries the ids, how the batch stands, and the page's own runner — the
         // batch pipeline stays where it is and this only chooses which pass.
         batch: null,
+        // Set by a caller whose document has a White Copy stage in front of the
+        // official print. Two things follow from it: the date of issue is shown
+        // read-only here instead of being editable (it is keyed in on the White
+        // Copy), and this is where the manager sends the operator when the record
+        // has no date yet.
+        whiteCopyUrl: '',
+        // Whether the date of issue belongs to the White Copy card. True for the
+        // documents that actually print one — the RofO does, the recommendation
+        // form has only blank hand-signed date lines — so a proofing stage on its
+        // own is not enough to take the field off this dialog.
+        whiteCopyOwnsDate: false,
         issueDate: '',
         issueDateOnRecord: '',
         issueDateLocked: false,
@@ -503,6 +563,8 @@ document.addEventListener('alpine:init', () => {
 
             this.recordId = (data && data.recordId) ? data.recordId : null;
             this.reissuance = (data && data.reissuance) ? String(data.reissuance) : '';
+            this.whiteCopyUrl = (data && data.whiteCopyUrl) ? String(data.whiteCopyUrl) : '';
+            this.whiteCopyOwnsDate = !!(data && data.whiteCopyOwnsDate);
             this.passesAllowed = !(data && data.passes === false);
             this.batch = (data && data.batch) ? data.batch : null;
 
@@ -570,6 +632,18 @@ document.addEventListener('alpine:init', () => {
             return !!this.batch;
         },
 
+        // A batch is never in the White Copy flow: a proof is read one letter at a
+        // time, and the date panel a batch shows fills the blanks across many rows
+        // at once — a different question from "what date does this letter carry".
+        get usesWhiteCopy() {
+            return !!this.whiteCopyUrl && !this.isBatchMode;
+        },
+
+        // Only then is the editable panel replaced by the read-only one.
+        get dateOnWhiteCopy() {
+            return this.usesWhiteCopy && this.whiteCopyOwnsDate;
+        },
+
         get batchCount() {
             return (this.batch && this.batch.count) || 0;
         },
@@ -616,8 +690,11 @@ document.addEventListener('alpine:init', () => {
 
         passDisabledReason(pass) {
             if (this.issueDateOutstanding) {
-                return 'Enter the date issued first — it prints on the letter as '
-                     + 'DATE OF ISSUE and nothing else supplies it.';
+                return this.dateOnWhiteCopy
+                    ? 'This letter has no date of issue. It is entered on the White '
+                      + 'Copy, so it is read back before anything is printed.'
+                    : 'Enter the date issued first — it prints on the letter as '
+                      + 'DATE OF ISSUE and nothing else supplies it.';
             }
             if (this.passEnabled(pass)) return '';
             return 'Splitting the run into Originals and office copies is available '
@@ -708,6 +785,21 @@ document.addEventListener('alpine:init', () => {
             return total + ' letters ready — nothing printed yet.';
         },
 
+        // Closes the manager and hands the record back to the White Copy card, which
+        // is where the date is entered. Dispatched rather than called directly so
+        // the manager stays a component that knows nothing about the page it was
+        // opened from.
+        goToWhiteCopy() {
+            const detail = {
+                recordId: this.recordId,
+                ref: this.refNumber,
+                url: this.whiteCopyUrl,
+                issueDate: this.issueDate || ''
+            };
+            this.closeModal();
+            window.dispatchEvent(new CustomEvent('open-white-copy', { detail }));
+        },
+
         unlockIssueDate() {
             this.issueDateUnlocked = true;
             this.issueDateConfirming = false;
@@ -735,9 +827,16 @@ document.addEventListener('alpine:init', () => {
             if (!this.supportsIssueDate) return true;
 
             if (!this.issueDate) {
-                this.issueDateError = 'Enter the date of issue before printing.';
+                this.issueDateError = this.dateOnWhiteCopy
+                    ? 'This letter has no date of issue — set it on the White Copy first.'
+                    : 'Enter the date of issue before printing.';
                 return false;
             }
+
+            // In the White Copy flow the date reaching here came off the record and
+            // was written by the White Copy card. There is nothing to save, and
+            // saving anyway would let the printer rewrite a date nobody proofread.
+            if (this.dateOnWhiteCopy) return true;
 
             // Locked and untouched: the record already holds this date, nothing to write.
             if (this.issueDateLocked && !this.issueDateUnlocked) return true;

@@ -30,7 +30,22 @@
         stages: [],        // server stage rows
         stageIndex: 0,
         carry: [],         // holding numbers produced by the stage just saved
+        // One record per SOURCE FILE: its title, its applicant, its location. Files on
+        // one duplex are not required to share any of them.
+        entries: [],       // [{file_title, applicant, plot_no, district, lga}]
+        entryIndex: 0,
     };
+
+    /** The fields one entry carries, and the element each is edited in. */
+    const ENTRY_FIELDS = {
+        file_title: 'dx-file-title',
+        applicant:  'dx-applicant',
+        plot_no:    'dx-plot-no-main',
+        district:   'dx-district',
+        lga:        'dx-lga',
+    };
+
+    const blankEntry = () => ({ file_title: '', applicant: '', plot_no: '', district: '', lga: '' });
 
     // ---------------------------------------------------------------- helpers
     function post(url, body) {
@@ -63,7 +78,11 @@
         state.carry = [];
         state.mergerDismissed = false;
 
+        state.entries = [];
+        state.entryIndex = 0;
+
         document.getElementById('dx-applicant').value = '';
+        document.getElementById('dx-file-title').value = '';
         document.getElementById('dx-plot-no-main').value = '';
         document.getElementById('dx-district').value = '';
         document.getElementById('dx-lga').value = '';
@@ -72,6 +91,7 @@
 
         renderRanks();
         renderSources();
+        renderEntry();
         updateAddressPreview();
 
         const modal = document.getElementById('duplex-wizard');
@@ -132,12 +152,19 @@
                 }
                 state.sources.push({ fileNumber, title: picked.file_title || '' });
 
-                // The first file picked names the applicant, so the officer rarely has
-                // to type it. Anything already typed is left alone.
-                const applicantBox = document.getElementById('dx-applicant');
-                if (!applicantBox.value.trim() && picked.file_title) {
-                    applicantBox.value = picked.file_title;
+                // The first file picked names the FILE TITLE — the name the file stands
+                // in. It used to fill the applicant, which quietly asserted the two were
+                // the same person; they often are not. The applicant is typed.
+                syncEntriesToSources();
+
+                // The register's own title for THIS file, on THIS file's card.
+                const mine = state.entries[state.sources.length - 1];
+                if (mine && !mine.file_title.trim() && picked.file_title) {
+                    mine.file_title = picked.file_title;
                 }
+
+                // Land on the file just added — it is the one that needs filling in.
+                state.entryIndex = state.sources.length - 1;
 
                 fillLocationFromFile(picked.record);
 
@@ -177,10 +204,13 @@
         // location line such as "10, BARGERY ROAD, NASARAWA". Reading the name out of
         // it is a guess, so it is only allowed when exactly ONE district (or LGA) in
         // the list appears there; two candidates means the officer decides.
-        setIfBlank('dx-district', district || soleMatchIn('dx-district', where));
-        setIfBlank('dx-lga', lga || soleMatchIn('dx-lga', where));
+        const entry = state.entries[state.entries.length - 1];
+        if (!entry) return;
 
-        updateAddressPreview();
+        if (!entry.district.trim()) entry.district = district || soleMatchIn('dx-district', where);
+        if (!entry.lga.trim())      entry.lga      = lga || soleMatchIn('dx-lga', where);
+
+        renderEntry();
     }
 
     /** The one option named in a free-text location line, or nothing. */
@@ -217,6 +247,121 @@
             el.value = value;
         }
     }
+
+    /**
+     * Read the visible inputs back into the entry being edited.
+     *
+     * Called on every keystroke so a value is never lost to a click on the arrows —
+     * the alternative, reading only when stepping, drops whatever was typed if the
+     * officer moves on by any other route.
+     */
+    window.dxEntryTouched = function () {
+        const entry = state.entries[state.entryIndex];
+        if (!entry) return;
+
+        Object.keys(ENTRY_FIELDS).forEach(field => {
+            const el = document.getElementById(ENTRY_FIELDS[field]);
+            if (el) entry[field] = el.value;
+        });
+    };
+
+    /** Paint the entry at state.entryIndex into the shared inputs. */
+    function renderEntry() {
+        const card  = document.getElementById('dx-entry-card');
+        const total = state.entries.length;
+
+        card.classList.toggle('hidden', total === 0);
+        if (!total) return;
+
+        if (state.entryIndex >= total) state.entryIndex = total - 1;
+        if (state.entryIndex < 0) state.entryIndex = 0;
+
+        const entry  = state.entries[state.entryIndex];
+        const source = state.sources[state.entryIndex];
+
+        Object.keys(ENTRY_FIELDS).forEach(field => {
+            const el = document.getElementById(ENTRY_FIELDS[field]);
+            if (!el) return;
+
+            // A select can only hold a value it has an option for; anything else would
+            // silently blank the box.
+            if (el.tagName === 'SELECT' && entry[field]
+                && ![...el.options].some(o => o.value === entry[field])) {
+                el.value = '';
+                return;
+            }
+
+            el.value = entry[field] || '';
+        });
+
+        document.getElementById('dx-entry-file').textContent =
+            source ? source.fileNumber : '—';
+        document.getElementById('dx-entry-count').textContent =
+            (state.entryIndex + 1) + ' of ' + total;
+
+        updateAddressPreview();
+        icons();
+    }
+
+    /** Move between files. Wraps, so N+1 is 1 — the list is a ring, not a dead end. */
+    window.dxEntryStep = function (by) {
+        const total = state.entries.length;
+        if (total < 2) return;
+
+        dxEntryTouched();
+        state.entryIndex = (state.entryIndex + by + total) % total;
+        renderEntry();
+    };
+
+    /**
+     * Copy the current entry's value onto every other file.
+     *
+     * A convenience, not a lock: the entries stay independently editable afterwards,
+     * so an officer can apply to all and then correct the one that differs.
+     */
+    window.dxApplyToAll = function (what) {
+        dxEntryTouched();
+
+        const total = state.entries.length;
+        if (total < 2) return toast('info', 'Only one file', 'There is nothing else to copy it to.');
+
+        const from   = state.entries[state.entryIndex];
+        const fields = what === 'location' ? ['plot_no', 'district', 'lga'] : [what];
+
+        state.entries.forEach((entry, i) => {
+            if (i === state.entryIndex) return;
+            fields.forEach(f => { entry[f] = from[f]; });
+        });
+
+        renderEntry();
+        toast('success', 'Applied to all ' + total + ' files');
+    };
+
+    /**
+     * Keep one entry per source file, in the same order.
+     *
+     * Entries are matched to files by NUMBER, not position, so removing the first file
+     * does not shift everyone else's details up onto the wrong file.
+     */
+    function syncEntriesToSources() {
+        const byFile = {};
+        state.sources.forEach((src, i) => {
+            byFile[src.fileNumber] = state.entries[i] || blankEntry();
+        });
+
+        state.entries = state.sources.map(src => byFile[src.fileNumber] || blankEntry());
+
+        if (state.entryIndex >= state.entries.length) {
+            state.entryIndex = Math.max(0, state.entries.length - 1);
+        }
+
+        renderEntry();
+    }
+
+    /** The values of one field across every file, blanks dropped. */
+    const entryValues = field => state.entries
+        .map(e => String(e[field] || '').trim())
+        .filter(Boolean);
 
     /** Kano is the only state this registry serves, so it is a constant, not a field. */
     const STATE_NAME = 'KANO';
@@ -279,7 +424,9 @@
     window.removeSource = function (i) {
         if (state.duplex) return;
         state.sources.splice(i, 1);
+        state.entries.splice(i, 1);
         renderSources();
+        syncEntriesToSources();
         syncMergerFromSources();
     };
 
@@ -2236,6 +2383,10 @@
         const locked = !!state.duplex;
         document.getElementById('dx-plan-locked').classList.toggle('hidden', !locked);
         document.getElementById('dx-applicant').disabled = locked;
+        document.getElementById('dx-file-title').disabled = locked;
+        // The arrows still work when locked — reading the other files is not editing.
+        document.querySelectorAll('#dx-entry-card button[onclick^="dxApplyToAll"]')
+            .forEach(b => { b.disabled = locked; b.classList.toggle('hidden', locked); });
         // Quantities and plot sizes stay editable. What is fixed once the duplex row
         // exists is the PLAN — which updates, in what order, on which files — because
         // the stage rows and holding numbers were built from it. How many plots a stage
@@ -2298,8 +2449,20 @@
         if (state.step === 1) {
             // Checked in the order the fields now appear on the card.
             if (!state.sources.length) return toast('warning', 'Pick at least one source file');
-            const applicant = document.getElementById('dx-applicant').value.trim();
-            if (!applicant) return toast('warning', 'Applicant required');
+
+            // Every file needs an applicant, not just the one on screen — the others
+            // are one click away and easy to leave empty.
+            dxEntryTouched();
+            const missing = state.entries
+                .map((e, i) => (String(e.applicant || '').trim() ? null : state.sources[i]?.fileNumber))
+                .filter(Boolean);
+
+            if (missing.length) {
+                const where = state.entries.findIndex(e => !String(e.applicant || '').trim());
+                if (where > -1) { state.entryIndex = where; renderEntry(); }
+                return toast('warning', 'Applicant required',
+                    'No applicant on ' + missing.join(', ') + '.');
+            }
             if (!state.plan.length) return toast('warning', 'Add at least one update');
 
             const merger = state.plan.find(p => p.type === 'merger');
@@ -2347,11 +2510,23 @@
 
             const res = await post('{{ route('duplex-parcel-update.store') }}', {
                 // One field feeds both columns - they are the same thing here.
-                applicant_name: document.getElementById('dx-applicant').value.trim(),
-                file_title: document.getElementById('dx-applicant').value.trim(),
-                plot_no: document.getElementById('dx-plot-no-main').value.trim() || null,
-                district: document.getElementById('dx-district').value || null,
-                lga: document.getElementById('dx-lga').value || null,
+                // One value per file, in file order. The server stores a JSON array
+                // when there is more than one and a plain string when there is only one,
+                // so a single-file duplex reads exactly as it always did.
+                applicant_name: entryValues('applicant'),
+                file_title: entryValues('file_title'),
+                plot_no: entryValues('plot_no'),
+                district: entryValues('district'),
+                lga: entryValues('lga'),
+                // Kept alongside so each source row can be stamped with its own details.
+                source_entries: state.sources.map((src, i) => ({
+                    file_no:    src.fileNumber,
+                    file_title: state.entries[i]?.file_title || '',
+                    applicant:  state.entries[i]?.applicant || '',
+                    plot_no:    state.entries[i]?.plot_no || '',
+                    district:   state.entries[i]?.district || '',
+                    lga:        state.entries[i]?.lga || '',
+                })),
                 state: STATE_NAME,
                 address: document.getElementById('dx-address').value || null,
                 source_file_nos: state.sources.map(s => s.fileNumber),
@@ -2591,11 +2766,37 @@
         state.stageIndex = next === -1 ? state.stages.length - 1 : next;
         state.carry = [];
 
-        document.getElementById('dx-applicant').value = d.applicant_name || '';
-        document.getElementById('dx-plot-no-main').value = d.plot_no || '';
-        document.getElementById('dx-district').value = d.district || '';
-        document.getElementById('dx-lga').value = d.lga || '';
-        updateAddressPreview();
+        // Stored as a JSON array when the duplex has several files, as a plain string
+        // when it has one. Either way it comes back as one value per file.
+        const asList = v => {
+            if (Array.isArray(v)) return v;
+            const raw = String(v ?? '').trim();
+            if (raw.startsWith('[')) {
+                try { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) return parsed; }
+                catch (e) { /* not JSON after all — treat it as one value */ }
+            }
+            return raw === '' ? [] : [raw];
+        };
+
+        const titles     = asList(d.file_title);
+        const applicants = asList(d.applicant_name);
+        const plots      = asList(d.plot_no);
+        const districts  = asList(d.district);
+        const lgas       = asList(d.lga);
+
+        // A duplex captured before per-file details has ONE value for every file; it is
+        // read onto each entry rather than left on the first.
+        const at = (list, i) => list[i] ?? (list.length === 1 ? list[0] : '') ?? '';
+
+        state.entries = state.sources.map((src, i) => ({
+            file_title: at(titles, i),
+            applicant:  at(applicants, i),
+            plot_no:    at(plots, i),
+            district:   at(districts, i),
+            lga:        at(lgas, i),
+        }));
+        state.entryIndex = 0;
+        renderEntry();
 
         const badge = document.getElementById('dx-duplex-badge');
         badge.textContent = d.duplex_id;
