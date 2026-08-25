@@ -35,7 +35,13 @@ class DuplexSummaryService
         // Before commissioning there are no file numbers to report, so the sheet would
         // simply drop that section — the one an officer opens it to read. Report the
         // holding numbers that WILL become files instead.
-        $planned = collect($stages)->last()['holdings'] ?? [];
+        //
+        // Every stage's NEW numbers, not the last stage's files. Reading only the last
+        // stage undercounts any duplex that issues numbers earlier in the chain and
+        // carries files through afterwards: a plan of CoP -> Merger -> Subdivision(39)
+        // -> CoP(3) issues 44 numbers but ends with 39 files, and the sheet said 39
+        // under a caption promising what would be issued.
+        $planned = collect($stages)->flatMap(fn ($s) => $s['new_holdings'])->all();
 
         return [
             'duplex' => [
@@ -67,6 +73,33 @@ class DuplexSummaryService
     }
 
     /** One stage: what it consumed, what it renumbered, what it left alone. */
+    /**
+     * What the stage card prints after the arrow: "Change of Purpose -> RES".
+     *
+     * Each file may change to its own purpose, so a stage no longer has one answer.
+     * Where they all agree the card says so; where they differ it lists them rather
+     * than picking one file's purpose and presenting it as the stage's.
+     */
+    protected function newLandUseLabel($stage): ?string
+    {
+        $rows = (array) data_get($stage->payload, 'cop_rows', []);
+
+        if (empty($rows)) {
+            return data_get($stage->payload, 'new_land_use');
+        }
+
+        $uses = array_values(array_unique(array_filter(array_map(
+            fn ($r) => strtoupper(trim((string) ($r['new_land_use'] ?? ''))),
+            $rows
+        ))));
+
+        if (empty($uses)) {
+            return null;
+        }
+
+        return count($uses) === 1 ? $uses[0] : implode(' / ', $uses);
+    }
+
     protected function stage($stage): array
     {
         $rows = $stage->files->sortBy('sequence')->values();
@@ -82,7 +115,7 @@ class DuplexSummaryService
             'label'       => $stage->label(),
             'status'      => $stage->status,
             'tracking_id' => $stage->tracking_id,
-            'new_land_use' => data_get($stage->payload, 'new_land_use'),
+            'new_land_use' => $this->newLandUseLabel($stage),
             'input'       => array_values(array_filter((array) data_get($stage->payload, 'input_holdings', []))),
             'sources'     => array_values(array_filter((array) data_get($stage->payload, 'sources', []))),
 
@@ -103,6 +136,10 @@ class DuplexSummaryService
             'mints'       => $new->count(),
             'retires'     => ((int) $stage->rank) === 1 ? null : $new->count(),
             'new_numbers' => $new->pluck('final_file_no')->filter()->values()->all(),
+            // The pre-commissioning counterpart: the holding numbers that WILL become
+            // new file numbers. final_file_no is null until the Land step, so
+            // new_numbers cannot answer "what is about to be issued".
+            'new_holdings' => $new->pluck('holding_no')->filter()->values()->all(),
             'kept_numbers' => $kept->pluck('final_file_no')->filter()->values()->all(),
             'produced'    => $rows->pluck('final_file_no')->filter()->values()->all(),
             'holdings'    => $rows->pluck('holding_no')->filter()->values()->all(),

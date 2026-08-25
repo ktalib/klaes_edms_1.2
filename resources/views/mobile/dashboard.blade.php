@@ -1398,10 +1398,16 @@ async function searchFile() {
       // FileLocationResolver::actionMetaFor()) instead of re-deriving the rule here.
       const isDciv = /DCIV Director/.test(d.next_action || '');
 
+      // A duplicate_fileno flag only diverts the file to the Director Land when the
+      // category carries a duplication to resolve (Duplicate / CofO / W-C-R). Temporary
+      // files are flagged for the badge only and still use the normal SCB workflow.
+      // Mirrors directsToLand() in the web Quick Search.
+      const directsToLand = !!(d.duplicate_flag && d.duplicate_flag.directs_to_land);
+
       // OFS send block is split into two parts so the File Digital Library can sit
       // between the Registry (Origin) selector and the Send button.
       let ofsRegistry = '', ofsButton = '';
-      if (IS_OFS && d.can_send_fr && !isDciv) {
+      if (IS_OFS && d.can_send_fr && !isDciv && !directsToLand) {
         const isMissing = d.is_missing_file;
         const label = isMissing
           ? (d.is_blind ? 'Send Blind Request to the Original Registry' : 'Send File Search Request to the Original Registry')
@@ -1504,6 +1510,15 @@ async function searchFile() {
       if (IS_OFS && d.can_send_fr && isDciv) {
         const grad = 'linear-gradient(to right, #0b3d2e, #065f46, #0b3d2e)';
         dcivRedirectSend = `<button class="btn" style="width:100%;margin-top:12px;padding:12px;font-size:13px;box-shadow:none;background:${grad};" onclick="redirectDcivFromSearch(this)"><i class="fas fa-shield-halved"></i> Re-direct To DCIV Director (Land Department)</button>`;
+      }
+
+      // Duplicate / CofO / W-C-R files must NOT be blind-searched by the SCB — they are
+      // re-directed to the Director Land (Land Department) to resolve the duplication.
+      // Temporary files carry the badge only and keep the normal SCB workflow above.
+      let landRedirectSend = '';
+      if (IS_OFS && d.can_send_fr && directsToLand) {
+        const grad = 'linear-gradient(135deg,#9333ea,#7e22ce)';
+        landRedirectSend = `<button class="btn" style="width:100%;margin-top:12px;padding:12px;font-size:13px;box-shadow:none;background:${grad};" onclick="redirectLandFromSearch(this)"><i class="fas fa-user-check"></i> Re-direct To Director Land (Land Department)</button>`;
       }
 
       const inTransitLookupId = String(d.file_number || d.file_title || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -1746,6 +1761,7 @@ async function searchFile() {
             ${ofsButton}
             ${redirectSend}
             ${dcivRedirectSend}
+            ${landRedirectSend}
             ${physicalNote}
             ${frShortcut}
             
@@ -2614,6 +2630,33 @@ async function redirectDcivFromSearch(btn) {
       if (IS_OFS && document.getElementById('myReqContainer')) loadMyRequests();
     } else {
       toast(res.message || 'Could not re-direct to DCIV Director', 'error');
+      btn.disabled = false; btn.innerHTML = original;
+    }
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+    btn.disabled = false; btn.innerHTML = original;
+  }
+}
+
+// Re-direct a flagged file (duplicate_fileno: Duplicate / CofO / W-C-R) to the
+// Director Land (Land Department) instead of raising a File Search Request to the
+// SCB. Mirrors sendRedirectToDirectorLand() in the web Quick Search.
+async function redirectLandFromSearch(btn) {
+  const d = lastFileSearch;
+  if (!d) return;
+  const original = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Re-directing…';
+  try {
+    const res = await api(`{{ route('create-file-tracker.quick-search.redirect-director-land') }}`, {
+      method: 'POST',
+      body: JSON.stringify({ file_number: d.file_number, file_title: d.file_title || null }),
+    });
+    if (res.success) {
+      toast(res.message || `Request ${res.request_no || ''} re-directed to Director Land`);
+      btn.outerHTML = `<div style="margin-top:12px;text-align:center;font-size:12px;font-weight:700;color:#10b981;"><i class="fas fa-check-circle"></i> Request ${esc(res.request_no || '')} re-directed to Director Land</div>`;
+      if (IS_OFS && document.getElementById('myReqContainer')) loadMyRequests();
+    } else {
+      toast(res.message || 'Could not re-direct to Director Land', 'error');
       btn.disabled = false; btn.innerHTML = original;
     }
   } catch(e) {

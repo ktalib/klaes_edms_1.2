@@ -152,6 +152,24 @@
             ? box('Where The Records Went', window.renderRecordSummaryGroups(d.storage_summary), 'tint')
             : '';
 
+        // A stage still to capture is the single most useful thing this sheet can say,
+        // and "Nothing captured yet" three panels up is easy to scroll past. The duplex
+        // sits as a draft until every stage is done, and the register only says "draft"
+        // — so the sheet names the stage and the action that finishes it.
+        var outstanding = (d.stages || []).filter(function (st) { return st.status !== 'done'; });
+
+        var todo = (!committed && outstanding.length)
+            ? '<div style="margin-top:12px;border:1px solid #fecaca;background:#fef2f2;border-radius:10px;'
+              + 'padding:10px 12px;text-align:left;font-size:11px;color:#b91c1c">'
+              + '<b>' + esc(outstanding.length) + ' stage'
+              + (outstanding.length === 1 ? '' : 's') + ' still to capture:</b> '
+              + outstanding.map(function (st) {
+                    return esc(st.label) + ' (runs ' + esc(st.rank) + ')';
+                }).join(', ')
+              + '. Until then this duplex stays a draft and cannot be approved — reopen it '
+              + 'from the register with <b>Continue capture</b>.</div>'
+            : '';
+
         // Closing strip: green once done, amber while it is still only a plan.
         var strip = committed
             ? '<div style="margin-top:12px;border:1px solid #bbf7d0;background:#f0fdf4;border-radius:10px;'
@@ -163,7 +181,7 @@
               + '<b>Nothing commissioned yet.</b> The numbers above are holding numbers; real file '
               + 'numbers are issued at the Land step.</div>';
 
-        return header + sources + stages + generated + retired + location + where + strip;
+        return header + sources + stages + generated + retired + location + where + todo + strip;
     }
 
     /** Fetch and show. `base` is the duplex-parcel-update URL prefix. */

@@ -70,14 +70,43 @@ class DuplexHoldingNumberService
     /** Allocate several at once, in order. */
     public function allocateHoldingNumbers(DuplexParcelUpdate $duplex, int $count): array
     {
+        // saveStage() deletes the stage's own rows before calling this, so nothing
+        // needs excluding here — the same computation serves both.
+        return $this->previewHoldingNumbers($duplex, $count);
+    }
+
+    /**
+     * What the NEXT $count holding numbers would be, without issuing them.
+     *
+     * The officer needs to see a stage's holding numbers while filling it in, not only
+     * after saving — the Change of Purpose especially, since the rest of the plan hangs
+     * off them. This shares its implementation with allocateHoldingNumbers() rather
+     * than restating the rule, so a preview can never drift from what is actually
+     * issued.
+     *
+     * $excludeStageId drops a stage's own rows from the count, which is what makes a
+     * re-save preview correctly: saveStage() clears them before allocating, so a stage
+     * being filled in again reclaims the numbers it already holds.
+     */
+    public function previewHoldingNumbers(
+        DuplexParcelUpdate $duplex,
+        int $count,
+        ?int $excludeStageId = null
+    ): array {
         $numbers = [];
         $max = 0;
 
-        $existing = DuplexParcelUpdateFile::where('duplex_parcel_update_id', $duplex->id)
-            ->whereNotNull('holding_no')
-            ->pluck('holding_no');
+        $query = DuplexParcelUpdateFile::where('duplex_parcel_update_id', $duplex->id)
+            ->whereNotNull('holding_no');
 
-        foreach ($existing as $no) {
+        if ($excludeStageId !== null) {
+            $query->where(function ($q) use ($excludeStageId) {
+                $q->whereNull('duplex_parcel_update_stage_id')
+                    ->orWhere('duplex_parcel_update_stage_id', '!=', $excludeStageId);
+            });
+        }
+
+        foreach ($query->pluck('holding_no') as $no) {
             if (preg_match('/-H(\d+)$/i', (string) $no, $m)) {
                 $max = max($max, (int) $m[1]);
             }

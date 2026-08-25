@@ -346,7 +346,7 @@
       @endif
 
       <!-- f. Other Applications -->
-      @if($hasRole('Other Applications-Land'))
+      @if($hasRole('Parcel/Title Management-Land'))
         <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
           data-section="otherApplications-lands">
           <div class="flex items-center gap-2">
@@ -362,11 +362,13 @@
                below it — Change of Purpose included — is one part of what a duplex can
                carry. Land opens it read-only; commissioning runs from the MLS
                Commission New File Number modal. --}}
-          <a href="{{ route('duplex-parcel-update.index') }}?mode=land"
-            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('duplex-parcel-update.*') ? 'active' : '' }}">
-            <i data-lucide="layers" class="h-3.5 w-3.5 text-orange-400"></i>
-            <span>Duplex Parcel Update</span>
-          </a>
+          @if($hasRole('Duplex Parcel Update-Land'))
+            <a href="{{ route('duplex-parcel-update.index') }}?mode=land"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ (request()->routeIs('duplex-parcel-update.*') && request()->query('mode') === 'land') ? 'active' : '' }}">
+              <i data-lucide="layers" class="h-3.5 w-3.5 text-orange-400"></i>
+              <span>Duplex Parcel Update</span>
+            </a>
+          @endif
 
           <!-- i. Change of Purpose -->
           <a href="{{ route('change-of-purpose.index') }}?mode=land"

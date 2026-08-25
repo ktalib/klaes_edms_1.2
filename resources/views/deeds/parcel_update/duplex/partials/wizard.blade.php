@@ -21,7 +21,10 @@
 @endphp
 
 <div id="duplex-wizard" class="fixed inset-0 z-[9999] hidden items-center justify-center p-4">
-    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="closeDuplexWizard()"></div>
+    {{-- No click-to-close. This card carries the whole plan and every plot size, and
+         a stray click on the backdrop discarded the lot. It closes by the X or Cancel,
+         and the X asks first once anything has been entered. --}}
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"></div>
 
     <div class="relative bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[94vh] flex flex-col overflow-hidden border border-slate-200">
 
@@ -220,6 +223,61 @@
                              unreadable: the ranks landed in whatever order the types happened
                              to be listed in. What is not chosen lives in the dropdown, not here. --}}
                         <div id="dx-type-list" class="space-y-2.5"></div>
+
+                        {{-- ===== Change of Purpose, answered here rather than at step 3 =====
+
+                             A CoP over several source files decides how many holding
+                             numbers the stage mints, so it cannot wait until the stage
+                             panel. The officer is also looking at the source files right
+                             now, which is when naming them costs nothing.
+
+                             Three columns, because that is the question: which file, what
+                             it is today, what it becomes. The middle one is never typed. --}}
+                        <div id="dx-cop-card" class="hidden mt-5 rounded-2xl border border-blue-200 bg-blue-50/40 p-4">
+                            <div class="flex items-start justify-between gap-3 mb-3">
+                                <div class="min-w-0">
+                                    <p id="dx-cop-heading" class="text-[11px] font-black uppercase tracking-[0.15em] text-blue-700">
+                                        Which files change purpose?
+                                    </p>
+                                    <p class="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                                        Pick a file and the purpose it is changing to. Files you leave
+                                        out keep their number and carry on to the next update.
+                                    </p>
+                                </div>
+                                <button type="button" onclick="askChangeOfPurposeScope()"
+                                    class="shrink-0 text-[11px] font-bold text-blue-600 hover:text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-100/70 transition">
+                                    Start over
+                                </button>
+                            </div>
+
+                            <div class="grid grid-cols-12 gap-2 mb-1.5 px-1">
+                                <span class="col-span-5 text-[10px] font-black uppercase tracking-wider text-slate-400">File Number</span>
+                                <span class="col-span-3 text-[10px] font-black uppercase tracking-wider text-slate-400">Current Purpose</span>
+                                <span class="col-span-3 text-[10px] font-black uppercase tracking-wider text-slate-400">New Purpose</span>
+                                <span class="col-span-1"></span>
+                            </div>
+
+                            <div id="dx-cop-rows" class="space-y-2"></div>
+
+                            <button type="button" onclick="addCopRow()"
+                                class="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 px-2.5 py-1.5 rounded-lg hover:bg-blue-100/70 transition">
+                                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Add More
+                            </button>
+
+                            <p id="dx-cop-untouched" class="text-[11px] text-slate-500 mt-3 leading-relaxed"></p>
+
+                            {{-- Officers ask where the Change of Purpose holding numbers
+                                 are. They cannot exist yet — the duplex has no reference
+                                 until this plan is submitted — so the screen says when
+                                 they appear rather than leaving a blank column. --}}
+                            <p class="text-[11px] text-slate-400 mt-2 leading-relaxed flex items-start gap-1.5">
+                                <i data-lucide="hash" class="w-3.5 h-3.5 mt-px shrink-0"></i>
+                                <span>Each file listed here is issued its own
+                                    <b class="text-slate-500">holding number</b> when the stage is
+                                    captured on step 3 — they are shown against each file there,
+                                    and on the summary sheet.</span>
+                            </p>
+                        </div>
 
                         <div id="dx-single-note" class="hidden mt-4 flex gap-2.5 text-[11px] text-slate-600 bg-blue-50/70 border border-blue-100 rounded-xl px-3.5 py-3">
                             <i data-lucide="info" class="w-4 h-4 text-blue-500 shrink-0 mt-px"></i>

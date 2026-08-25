@@ -23,8 +23,15 @@
 
     $currentUse = $landUseName[strtoupper((string) $duplex->land_use)] ?? strtolower((string) $duplex->land_use);
 
-    /** Sizes as the letter reads them: "1.5 + 2 + 3 Ha", blanks skipped. */
-    $num = fn ($v) => rtrim(rtrim(number_format((float) $v, 2, '.', ''), '0'), '.');
+    /** Sizes as the letter reads them: "1,500 + 2,000 + 3,000 m²", blanks skipped. */
+    // Square metres run to five figures, so they carry a thousands separator: a plot
+    // reads "1,410" not "1410". Fractional metres are kept where a survey gives them.
+    $num = function ($v) {
+        $f = (float) $v;
+        return $f == floor($f)
+            ? number_format($f, 0, '.', ',')
+            : rtrim(rtrim(number_format($f, 2, '.', ','), '0'), '.');
+    };
 
     $sizesOf = function ($stage) use ($num) {
         $list = collect((array) data_get($stage->payload, 'plots', []))
@@ -38,6 +45,89 @@
             : ['list' => $list->map($num)->implode(' + '), 'total' => $num($list->sum()), 'has' => true];
     };
 
+    /**
+     * The new purpose, in words, for the conveyance.
+     *
+     * Where every file in the stage changes to the same purpose this is one word.
+     * Where they differ the letter must name each file and what it becomes — "RES /
+     * COM" is legible on a screen but says nothing on an instrument, and picking one
+     * of them would misstate the others.
+     */
+    $words = fn ($code) => $landUseName[strtoupper((string) $code)] ?? strtolower((string) $code);
+
+    /**
+     * The purpose being changed FROM, for one stage.
+     *
+     * It is the CHANGING file's own land use, not the duplex's. The duplex takes its
+     * land use from the first source file, which is very often not the file being
+     * changed — this letter's own case is a COM file changing inside a duplex whose
+     * first source is RES, and reading it from the duplex printed "from residential
+     * to residential".
+     *
+     * Null when the files disagree, which is the caller's signal to name them one by one.
+     */
+    $copCurrentUse = function ($stage) {
+        $codes = array_values(array_unique(array_filter(array_map(
+            fn ($r) => strtoupper(trim((string) ($r['current_land_use'] ?? ''))),
+            $stage->copRows()
+        ))));
+
+        if (count($codes) === 1) {
+            return $codes[0];
+        }
+
+        // A LATER Change of Purpose has no file rows — its parcels do not exist yet
+        // when it is planned. The stage answers for them: the purpose recorded on it,
+        // or failing that the one the previous Change of Purpose left them with.
+        return $stage->currentLandUseLabel();
+    };
+
+    /**
+     * The whole change-of-purpose clause. Three shapes, in order of preference:
+     *
+     *   no per-file rows      "from residential to commercial use"   (as captured before
+     *                                                                 per-file purposes)
+     *   one from, one to      "from commercial to residential use"
+     *   anything else         "(COM/RC/82/420 from commercial to residential, ...)"
+     */
+    $copClause = function ($stage, $of) use ($words, $currentUse, &$copCurrentUse, &$newUseWords) {
+        if (empty($stage->copRows())) {
+            $from = $copCurrentUse($stage);
+
+            return 'change of purpose' . $of . ' from ' . ($from ? $words($from) : $currentUse)
+                . ' to ' . $words($stage->newLandUseLabel()) . ' use';
+        }
+
+        $from = $copCurrentUse($stage);
+
+        if ($from && !$stage->hasMixedNewLandUses()) {
+            return 'change of purpose' . $of . ' from ' . $words($from)
+                . ' to ' . $words($stage->newLandUseLabel()) . ' use';
+        }
+
+        return 'change of purpose' . $of . ' (' . $newUseWords($stage) . ')';
+    };
+
+    $newUseWords = function ($stage) use ($words) {
+        $parts = [];
+
+        foreach ($stage->copRows() as $row) {
+            $file = trim((string) ($row['file_no'] ?? ''));
+            $to   = $words($row['new_land_use'] ?? '');
+            $from = trim((string) ($row['current_land_use'] ?? ''));
+
+            if ($file === '' || $to === '') {
+                continue;
+            }
+
+            $parts[] = str_replace('-', '/', $file)
+                . ($from !== '' ? ' from ' . $words($from) : '')
+                . ' to ' . $to;
+        }
+
+        return $parts ? implode(', ', $parts) : $words($stage->newLandUseLabel());
+    };
+
     // One clause per stage, in the order the duplex runs them. These read as prose in
     // the RE line and again in the body, so they are phrased as noun phrases — with the
     // parcel sizes named, which is what makes the letter checkable against the plan.
@@ -45,18 +135,16 @@
     foreach ($duplex->stageRows as $stage) {
         $plots = $stage->plot_count ?: count(array_filter((array) data_get($stage->payload, 'plots', [])));
         $size  = $sizesOf($stage);
-        $of    = $size['has'] ? ' of ' . $size['list'] . ' Ha' : '';
+        $of    = $size['has'] ? ' of ' . $size['list'] . ' m²' : '';
 
         $clauses[] = match ($stage->type) {
             'merger' => 'merger of ' . count($sources) . ' titles'
-                . ($size['has'] ? ' measuring ' . $size['list'] . ' Ha' : '')
+                . ($size['has'] ? ' measuring ' . $size['list'] . ' m²' : '')
                 . ' into one',
             'subdivision' => 'subdivision into ' . $plots . ' plots' . $of,
             'separation'  => 'separation into ' . $plots . ' plots' . $of,
             'extension'   => 'extension of the plot boundary' . $of,
-            'change_of_purpose' => 'change of purpose' . $of . ' from ' . $currentUse . ' to '
-                . ($landUseName[strtoupper((string) data_get($stage->payload, 'new_land_use'))]
-                    ?? strtolower((string) data_get($stage->payload, 'new_land_use'))) . ' use',
+            'change_of_purpose' => $copClause($stage, $of),
             default => $stage->label() . $of,
         };
     }

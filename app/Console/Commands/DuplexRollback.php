@@ -68,11 +68,19 @@ class DuplexRollback extends Command
         $conn = DB::connection('sqlsrv');
         $plan = $summaries->build($duplex);
 
+        $sources = array_values(array_filter($plan['sources']));
+
+        // A CARRIED file was not created by this duplex — a stage let it travel on
+        // under its own registry number, which is why that number is what it reports.
+        // Deleting those would delete live registry files the duplex merely read.
         $created = collect($plan['stages'])
-            ->flatMap(fn ($s) => collect($s['files'])->pluck('final'))
+            ->flatMap(fn ($s) => collect($s['files'])
+                ->reject(fn ($f) => !empty($f['carried']))
+                ->pluck('final'))
             ->filter()->unique()->values()->all();
 
-        $sources = array_values(array_filter($plan['sources']));
+        // Belt and braces: a source file is never something this run created.
+        $created = array_values(array_diff($created, $sources));
 
         $this->line('');
         $this->info($duplex->duplex_id . '  (' . $duplex->status . ')');
@@ -123,10 +131,15 @@ class DuplexRollback extends Command
             }
 
             // Bring the source file back to life.
+            // fileNumber carries TWO decommissioning stamps — the legacy
+            // decommissioning_* trio and the decommissioned_at/by pair the current
+            // engine writes. Clearing only the first left the file looking retired.
             $conn->table('fileNumber')->whereIn('mlsfNo', $sources)->update([
                 'is_decommissioned'      => 0,
                 'decommissioning_date'   => null,
                 'decommissioning_reason' => null,
+                'decommissioned_at'      => null,
+                'decommissioned_by'      => null,
                 'successor_file_no'      => null,
                 'updated_at'             => now(),
             ]);

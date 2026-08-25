@@ -103,6 +103,17 @@ class DuplexParcelUpdateController extends Controller
             'stages.*.type'    => 'required|string|in:' . implode(',', array_keys(DuplexParcelUpdate::TYPES)),
             'stages.*.rank'    => 'required|integer|min:1',
             'stages.*.count'   => 'nullable|integer|min:1|max:200',
+            // A first-leg Change of Purpose is answered on step 1, while the officer
+            // is still looking at the source files, because its holding numbers are
+            // minted from the answer.
+            'stages.*.cop_rows'                    => 'nullable|array|max:200',
+            'stages.*.cop_rows.*.file_no'          => 'required_with:stages.*.cop_rows|string|max:100',
+            'stages.*.cop_rows.*.current_land_use' => 'nullable|string|max:50',
+            'stages.*.cop_rows.*.new_land_use'     => 'required_with:stages.*.cop_rows|string|max:50',
+            // A LATER Change of Purpose cannot name its files at step 1 — they are the
+            // previous stage's plots — so it carries a count and the purpose they take.
+            'stages.*.new_land_use'                => 'nullable|string|max:50',
+            'stages.*.current_land_use'            => 'nullable|string|max:50',
             'plot_no'          => 'nullable|string|max:100',
             'house_no'         => 'nullable|string|max:100',
             'street_name'      => 'nullable|string|max:255',
@@ -133,7 +144,16 @@ class DuplexParcelUpdateController extends Controller
         DB::connection('sqlsrv')->beginTransaction();
         try {
             $duplexId = $this->holding->allocateDuplexId();
-            $primary  = $data['source_file_nos'][0];
+            // A KANGIS number carries no land use, so the first source file cannot
+            // always answer for the duplex — this application's first two files are
+            // KANGIS-numbered. Take the first source that actually has one.
+            $landUse = '';
+            foreach ($data['source_file_nos'] as $candidate) {
+                $landUse = FileNumberLandUse::codeFor($candidate);
+                if ($landUse !== '') {
+                    break;
+                }
+            }
 
             $duplex = DuplexParcelUpdate::create([
                 'duplex_id'       => $duplexId,
@@ -142,7 +162,7 @@ class DuplexParcelUpdateController extends Controller
                 'source_file_nos' => $data['source_file_nos'],
                 'stages'          => $stages->all(),
                 'status'          => DuplexParcelUpdate::STATUS_DRAFT,
-                'land_use'        => FileNumberLandUse::codeFor($primary),
+                'land_use'        => $landUse,
                 'plot_no'         => $data['plot_no'] ?? null,
                 'house_no'        => $data['house_no'] ?? null,
                 'street_name'     => $data['street_name'] ?? null,
@@ -155,13 +175,24 @@ class DuplexParcelUpdateController extends Controller
             ]);
 
             foreach ($stages as $stage) {
+                $copRows = array_values($stage['cop_rows'] ?? []);
+
                 DuplexParcelUpdateStage::create([
                     'duplex_parcel_update_id' => $duplex->id,
                     'duplex_id'   => $duplexId,
                     'type'        => $stage['type'],
                     'rank'        => (int) $stage['rank'],
                     'status'      => DuplexParcelUpdateStage::STATUS_PENDING,
-                    'plot_count'  => isset($stage['count']) ? (int) $stage['count'] : null,
+                    // A Change of Purpose answered on step 1 already knows how many
+                    // files it changes; that IS its count.
+                    'plot_count'  => $copRows
+                        ? count($copRows)
+                        : (isset($stage['count']) ? (int) $stage['count'] : null),
+                    // Seeded, not saved: the stage is still PENDING and step 3 will
+                    // write the real payload. This is here so step 3 opens with the
+                    // officer's own answer rather than an empty form — the per-file rows
+                    // for a first leg, the chosen purpose for a later one.
+                    'payload'     => $this->seedStagePayload($stage, $copRows),
                     'captured_by' => Auth::id(),
                 ]);
             }
@@ -209,6 +240,60 @@ class DuplexParcelUpdateController extends Controller
     }
 
     /**
+     * What a stage opens with on step 3, before it has been captured.
+     *
+     * A first-leg Change of Purpose brings its per-file rows from step 1. A later one
+     * cannot name files there — they do not exist yet — so it brings the purpose those
+     * plots take, and step 3 asks only which of them.
+     */
+    protected function seedStagePayload(array $stage, array $copRows): ?array
+    {
+        $payload = [];
+
+        if ($copRows) {
+            $payload['cop_rows'] = $copRows;
+        }
+
+        $newLandUse = strtoupper(trim((string) ($stage['new_land_use'] ?? '')));
+        if ($newLandUse !== '') {
+            $payload['new_land_use'] = $newLandUse;
+        }
+
+        $current = strtoupper(trim((string) ($stage['current_land_use'] ?? '')));
+        if ($current !== '') {
+            $payload['current_land_use'] = $current;
+        }
+
+        return $payload ?: null;
+    }
+
+    /**
+     * The holding numbers a stage WOULD receive, without issuing them.
+     *
+     * Lets the wizard show them while the stage is being filled in — the Change of
+     * Purpose in particular, whose holding numbers the rest of the plan hangs off.
+     * Read-only: it writes nothing, and the real numbers are still minted by saveStage.
+     */
+    public function holdingPreview(Request $request, int $id, int $stageId): JsonResponse
+    {
+        $duplex = DuplexParcelUpdate::findOrFail($id);
+        $stage  = DuplexParcelUpdateStage::where('duplex_parcel_update_id', $duplex->id)
+            ->findOrFail($stageId);
+
+        $count = (int) $request->query('count', 1);
+        $count = max(0, min($count, 200));
+
+        return response()->json([
+            'success' => true,
+            'numbers' => $count === 0
+                ? []
+                // The stage's own rows are excluded because saveStage clears them
+                // before allocating: a stage being re-filled reclaims its numbers.
+                : $this->holding->previewHoldingNumbers($duplex, $count, $stage->id),
+        ]);
+    }
+
+    /**
      * Save one stage and mint its holding numbers.
      *
      * Registry-free by construction: the only writes are to duplex_* tables.
@@ -225,8 +310,18 @@ class DuplexParcelUpdateController extends Controller
         $validator = Validator::make($request->all(), [
             'plot_count'        => 'nullable|integer|min:1|max:200',
             'new_land_use'      => 'nullable|string|max:50',
+            // The purpose the stage's parcels are changing FROM. A later Change of
+            // Purpose has no file rows to read it off, and it is not the duplex's own
+            // land use either — the parcels have already been through earlier stages.
+            'current_land_use'  => 'nullable|string|max:50',
             'applies_to'        => 'nullable|array',
             'applies_to.*'      => 'nullable|string|max:100',
+            // One row per file being changed: each file names its OWN new purpose,
+            // because a duplex may bring several land uses to a common one.
+            'cop_rows'                  => 'nullable|array|max:200',
+            'cop_rows.*.file_no'        => 'required_with:cop_rows|string|max:100',
+            'cop_rows.*.current_land_use' => 'nullable|string|max:50',
+            'cop_rows.*.new_land_use'   => 'required_with:cop_rows|string|max:50',
             'plots'             => 'nullable|array',
             'plots.*.size'      => 'nullable|numeric|min:0',
             'plots.*.plot_no'   => 'nullable|string|max:100',
@@ -241,10 +336,15 @@ class DuplexParcelUpdateController extends Controller
 
         $data = $validator->validated();
 
-        if ($stage->type === 'change_of_purpose' && empty($data['new_land_use'])) {
+        // Either shape is acceptable: a row per file (the current capture), or one
+        // land use for the whole stage (how duplexes were captured before per-file
+        // purposes existed). What is not acceptable is neither.
+        if ($stage->type === 'change_of_purpose'
+            && empty($data['cop_rows'])
+            && empty($data['new_land_use'])) {
             return response()->json([
                 'success' => false,
-                'message' => 'Select the new land use for the Change of Purpose stage.',
+                'message' => 'Say which files are changing purpose, and what each one is changing to.',
             ], 422);
         }
 
@@ -263,12 +363,31 @@ class DuplexParcelUpdateController extends Controller
                 ? $previous->files()->whereNotNull('holding_no')->pluck('holding_no')->all()
                 : [];
 
+            $sources = $previous ? [] : array_values((array) ($duplex->source_file_nos ?? []));
+            $copRows = array_values($data['cop_rows'] ?? []);
+
+            // A row per file is the authority on which files change; `applies_to` is
+            // kept in step with it so everything reading the older field still agrees.
+            $appliesTo = $copRows
+                ? array_values(array_filter(array_map(
+                    fn ($r) => trim((string) ($r['file_no'] ?? '')),
+                    $copRows
+                )))
+                : array_values($data['applies_to'] ?? []);
+
+            // Seeded by store() from the plan, so an unchanged re-save must not drop
+            // it: the memo and the conveyance read this to say what the parcels were.
+            $currentLandUse = strtoupper(trim((string) ($data['current_land_use'] ?? '')))
+                ?: (string) data_get($stage->payload, 'current_land_use', '');
+
             $payload = [
-                'plots'          => array_values($data['plots'] ?? []),
-                'new_land_use'   => $data['new_land_use'] ?? null,
-                'applies_to'     => array_values($data['applies_to'] ?? []),
+                'plots'            => array_values($data['plots'] ?? []),
+                'new_land_use'     => $data['new_land_use'] ?? null,
+                'current_land_use' => $currentLandUse ?: null,
+                'cop_rows'       => $copRows,
+                'applies_to'     => $appliesTo,
                 'input_holdings' => $inputHoldings,
-                'sources'        => $previous ? [] : ($duplex->source_file_nos ?? []),
+                'sources'        => $sources,
             ];
 
             $stage->update([
@@ -285,18 +404,26 @@ class DuplexParcelUpdateController extends Controller
             // them, so a corrected stage does not leave orphans behind.
             $stage->files()->delete();
 
-            if ($stage->type === 'change_of_purpose' && $previous) {
+            if ($stage->type === 'change_of_purpose') {
                 // A Change of Purpose renames ONLY the files it was applied to. Each of
                 // those gets a new number and its old one is decommissioned; the rest
                 // keep the number the previous stage gave them and simply travel on.
                 //
                 // Minting a number for every incoming file was wrong: a 5-plot
                 // subdivision followed by a 2-file CoP uses 7 numbers, not 10.
+                //
+                // A FIRST-leg Change of Purpose consumes the real source files rather
+                // than holding numbers from a previous stage. It used to fall through
+                // to the generic branch, which mints a number for every file and
+                // retires all of them — so the files the officer deliberately left
+                // alone were counted as changed.
+                $incomingFiles = $previous ? $inputHoldings : $sources;
+
                 $selected = array_values($payload['applies_to'] ?? []);
                 $numbers  = $this->holding->allocateHoldingNumbers($duplex, max(1, count($selected)));
                 $minted   = 0;
 
-                foreach ($inputHoldings as $i => $incoming) {
+                foreach ($incomingFiles as $i => $incoming) {
                     $changing = in_array($incoming, $selected, true);
 
                     DuplexParcelUpdateFile::create([

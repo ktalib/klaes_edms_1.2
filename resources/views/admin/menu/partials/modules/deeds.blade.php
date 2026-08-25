@@ -191,7 +191,7 @@
       </a>
 @endif
       <!-- h. Other Applications -->
-      @if($hasRole('Other Applications') || $hasRole('Supper Admin'))
+      @if($hasRole('Parcel/Title Management-Deeds') || $hasRole('Supper Admin'))
         <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
           data-section="otherApplications-deeds">
           <div class="flex items-center gap-2">
@@ -206,11 +206,13 @@
           {{-- Duplex leads the module: the full workflow (capture, KNUPDA, approval,
                memo, conveyance) lives on the Deeds side, and everything below is one
                part of what a duplex can carry. --}}
-          <a href="{{ route('duplex-parcel-update.index') }}?mode=deeds"
-            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ (request()->routeIs('duplex-parcel-update.*') && request()->query('mode') !== 'land') ? 'active' : '' }}">
-            <i data-lucide="layers" class="h-3.5 w-3.5 text-teal-400"></i>
-            <span>Duplex Parcel Update</span>
-          </a>
+          @if($hasRole('Duplex Parcel Update-Deeds'))
+            <a href="{{ route('duplex-parcel-update.index') }}?mode=deeds"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ (request()->routeIs('duplex-parcel-update.*') && request()->query('mode') !== 'land') ? 'active' : '' }}">
+              <i data-lucide="layers" class="h-3.5 w-3.5 text-teal-400"></i>
+              <span>Duplex Parcel Update</span>
+            </a>
+          @endif
 
           <!-- i. Change of Purpose -->
           <a href="{{ route('change-of-purpose.index') }}?mode=deeds"

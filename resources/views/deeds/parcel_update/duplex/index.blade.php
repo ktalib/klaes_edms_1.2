@@ -242,13 +242,18 @@
 
                                             $canApprove    = !$frozen && !$isApproved && $allCaptured;
                                             $canReject     = !$frozen;
-                                            $canKnupda     = !$frozen && $isApproved;
+                                            // The order of business: KNUPDA recommends, the papers are
+                                            // drawn — application, conveyance, then the memo that carries
+                                            // them up — and the approval comes last, on the strength of
+                                            // that memo. KNUPDA therefore cannot wait on the approval;
+                                            // it opens as soon as every stage is captured.
+                                            $canKnupda     = !$frozen && $allCaptured;
                                             $canGenApp     = !$frozen && $knupdaOk && !$record->application_generated_at;
                                             $canPrintApp   = (bool) $record->application_generated_at;
-                                            $canGenMemo    = !$frozen && $record->application_generated_at && !$record->recommendation_generated_at;
-                                            $canPrintMemo  = (bool) $record->recommendation_generated_at;
-                                            $canGenConv    = !$frozen && $record->recommendation_generated_at && !$record->conveyance_generated_at;
+                                            $canGenConv    = !$frozen && $record->application_generated_at && !$record->conveyance_generated_at;
                                             $canPrintConv  = (bool) $record->conveyance_generated_at;
+                                            $canGenMemo    = !$frozen && $record->conveyance_generated_at && !$record->recommendation_generated_at;
+                                            $canPrintMemo  = (bool) $record->recommendation_generated_at;
                                             $canDelete     = !$isCommitted;
 
                                             // Why an action is unavailable, so a greyed row is not a mystery.
@@ -272,17 +277,8 @@
                                             </div>
 
                                             <div class="py-1">
-                                                <button onclick="approveDuplex({{ $record->id }})" @disabled(!$canApprove)
-                                                    title="{{ $why($canApprove, $isApproved ? 'Already approved' : 'Capture every stage first') }}"
-                                                    class="menu-item text-emerald-700 font-bold">Approve</button>
-                                                <button onclick="rejectDuplex({{ $record->id }})" @disabled(!$canReject)
-                                                    title="{{ $why($canReject, '') }}"
-                                                    class="menu-item text-red-600">Reject</button>
-                                            </div>
-
-                                            <div class="py-1">
                                                 <button onclick="openKnupda({{ $record->id }})" @disabled(!$canKnupda)
-                                                    title="{{ $why($canKnupda, 'Approve the duplex first') }}"
+                                                    title="{{ $why($canKnupda, 'Capture every stage first') }}"
                                                     class="menu-item">KNUPDA</button>
                                             </div>
 
@@ -294,19 +290,28 @@
                                                     title="{{ $canPrintApp ? '' : 'Generate the application first' }}"
                                                     class="menu-item block {{ $canPrintApp ? '' : 'is-disabled' }}">Print Application</a>
 
-                                                <button onclick="generateDoc({{ $record->id }}, 'recommendation')" @disabled(!$canGenMemo)
-                                                    title="{{ $why($canGenMemo, $record->recommendation_generated_at ? 'Already generated' : 'Generate the application first') }}"
-                                                    class="menu-item">Generate Memo</button>
-                                                <a href="{{ route('duplex-parcel-update.print-recommendation', $record->id) }}" target="_blank"
-                                                    title="{{ $canPrintMemo ? '' : 'Generate the memo first' }}"
-                                                    class="menu-item block {{ $canPrintMemo ? '' : 'is-disabled' }}">Print Memo</a>
-
                                                 <button onclick="generateDoc({{ $record->id }}, 'conveyance')" @disabled(!$canGenConv)
-                                                    title="{{ $why($canGenConv, $record->conveyance_generated_at ? 'Already generated' : 'Generate the memo first') }}"
+                                                    title="{{ $why($canGenConv, $record->conveyance_generated_at ? 'Already generated' : 'Generate the application first') }}"
                                                     class="menu-item">Generate Conveyance</button>
                                                 <a href="{{ route('duplex-parcel-update.print-conveyance', $record->id) }}" target="_blank"
                                                     title="{{ $canPrintConv ? '' : 'Generate the conveyance first' }}"
                                                     class="menu-item block {{ $canPrintConv ? '' : 'is-disabled' }}">Print Conveyance</a>
+
+                                                <button onclick="generateDoc({{ $record->id }}, 'recommendation')" @disabled(!$canGenMemo)
+                                                    title="{{ $why($canGenMemo, $record->recommendation_generated_at ? 'Already generated' : 'Generate the conveyance first') }}"
+                                                    class="menu-item">Generate Memo</button>
+                                                <a href="{{ route('duplex-parcel-update.print-recommendation', $record->id) }}" target="_blank"
+                                                    title="{{ $canPrintMemo ? '' : 'Generate the memo first' }}"
+                                                    class="menu-item block {{ $canPrintMemo ? '' : 'is-disabled' }}">Print Memo</a>
+                                            </div>
+
+                                            <div class="py-1">
+                                                <button onclick="approveDuplex({{ $record->id }})" @disabled(!$canApprove)
+                                                    title="{{ $why($canApprove, $isApproved ? 'Already approved' : 'Capture every stage first') }}"
+                                                    class="menu-item text-emerald-700 font-bold">Approve</button>
+                                                <button onclick="rejectDuplex({{ $record->id }})" @disabled(!$canReject)
+                                                    title="{{ $why($canReject, '') }}"
+                                                    class="menu-item text-red-600">Reject</button>
                                             </div>
 
                                             <div class="py-1">

@@ -1,6 +1,7 @@
 {{-- KNUPDA clearance for the whole duplex — one evaluation, not one per stage. --}}
 <div id="dx-knupda-modal" class="fixed inset-0 z-[9999] hidden items-center justify-center p-4">
-    <div class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onclick="closeKnupda()"></div>
+    {{-- Typed fields: closes by Cancel or the X, never by clicking the backdrop. --}}
+    <div class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"></div>
     <div class="relative bg-white rounded-3xl shadow-2xl w-full max-w-lg border border-slate-100">
         <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
             <h3 class="text-base font-black text-slate-800">KNUPDA Evaluation</h3>

@@ -63,9 +63,9 @@
                                 {{ $stage->rank }}
                             </span>
                             <p class="text-sm font-black text-slate-700">{{ $stage->label() }}</p>
-                            @if ($stage->type === 'change_of_purpose' && !empty($stage->payload['new_land_use']))
+                            @if ($stage->type === 'change_of_purpose' && $stage->newLandUseLabel())
                             <span class="text-[11px] font-bold text-slate-400">
-                                → {{ $stage->payload['new_land_use'] }}
+                                → {{ $stage->newLandUseLabel() }}
                             </span>
                             @endif
                         </div>

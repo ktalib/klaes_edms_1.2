@@ -19,6 +19,44 @@ class FileNumberLandUse
     /** Segments that sit BEFORE the land use rather than being one. */
     public const PREFIXES = ['CON', 'ST', 'SLTR', 'KN'];
 
+    /**
+     * KANGIS registry prefixes. A KANGIS number carries no land use at all —
+     * "MLKN 3235" is an identity, not a purpose — and it does not split on "-",
+     * so the generic parser would hand the whole number back as the land-use code
+     * and a new file number would be built from it.
+     */
+    public const KANGIS_PREFIXES = ['KNML', 'MLKN', 'KNGP', 'MLKNGP'];
+
+    /** True for a KANGIS number in any of its written forms: "MLKN 3235", "MLKN3235". */
+    public static function isKangisNumber(?string $fileNo): bool
+    {
+        $first = strtoupper(trim(explode(',', (string) $fileNo)[0]));
+
+        if ($first === '') {
+            return false;
+        }
+
+        // Longest prefix first, so MLKNGP is not swallowed by MLKN.
+        $prefixes = self::KANGIS_PREFIXES;
+        usort($prefixes, fn ($a, $b) => strlen($b) <=> strlen($a));
+
+        foreach ($prefixes as $prefix) {
+            if (!str_starts_with($first, $prefix)) {
+                continue;
+            }
+
+            // What follows the prefix must be the serial and nothing else, or
+            // "KNMLX-RES-2020-1" would be read as a KANGIS number.
+            $rest = trim(substr($first, strlen($prefix)));
+
+            if ($rest !== '' && ctype_digit($rest)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /** Codes as they appear in file numbers, mapped to what officers call them. */
     public const LABELS = [
         'RES'   => 'Residential',
@@ -39,7 +77,10 @@ class FileNumberLandUse
     {
         $first = strtoupper(trim(explode(',', (string) $fileNo)[0]));
 
-        if ($first === '' || str_starts_with($first, 'DPX-')) {
+        // A duplex holding number is not a file number, and a KANGIS number is an
+        // identity rather than a purpose — neither carries a land use. Both must
+        // report '' rather than handing back their own text as a code.
+        if ($first === '' || str_starts_with($first, 'DPX-') || self::isKangisNumber($first)) {
             return '';
         }
 

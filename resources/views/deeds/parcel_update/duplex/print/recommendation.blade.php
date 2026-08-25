@@ -25,7 +25,14 @@
      * total. A blank size is skipped rather than printed as 0, so a partly-filled stage
      * still produces a sensible line.
      */
-    $num = fn ($v) => rtrim(rtrim(number_format((float) $v, 2, '.', ''), '0'), '.');
+    // Square metres run to five figures, so they carry a thousands separator: a plot
+    // reads "1,410" not "1410". Fractional metres are kept where a survey gives them.
+    $num = function ($v) {
+        $f = (float) $v;
+        return $f == floor($f)
+            ? number_format($f, 0, '.', ',')
+            : rtrim(rtrim(number_format($f, 2, '.', ','), '0'), '.');
+    };
 
     $sizesOf = function ($stage) use ($num) {
         $list = collect((array) data_get($stage->payload, 'plots', []))
@@ -53,13 +60,42 @@
     $stages = [];
     foreach ($duplex->stageRows as $stage) {
         $plots   = $stage->plot_count ?: count(array_filter((array) data_get($stage->payload, 'plots', [])));
-        $newUse  = Str::upper((string) data_get($stage->payload, 'new_land_use'));
+        $newUse  = Str::upper((string) $stage->newLandUseLabel());
         $newName = $landUseName[$newUse] ?? Str::lower($newUse);
+
+        // The purpose being changed FROM is the CHANGING file's own, not the duplex's.
+        // The duplex takes its land use from the first source file, which is often not
+        // the file being changed — reading it from there printed "from residential to
+        // residential" on a duplex whose first source happened to be residential.
+        $fromCodes = array_values(array_unique(array_filter(array_map(
+            fn ($r) => Str::upper(trim((string) ($r['current_land_use'] ?? ''))),
+            $stage->copRows()
+        ))));
+        // A later Change of Purpose has no file rows: its parcels are minted by an
+        // earlier stage, so the stage answers for them — from what was recorded on it,
+        // or from what the previous Change of Purpose left those parcels as.
+        $stageFrom = Str::upper((string) $stage->currentLandUseLabel());
+
+        $fromName = count($fromCodes) === 1
+            ? ($landUseName[$fromCodes[0]] ?? Str::lower($fromCodes[0]))
+            : ($stageFrom !== '' ? ($landUseName[$stageFrom] ?? Str::lower($stageFrom)) : $currentUse);
+
+        // Where the files do not share one answer, the point names them one by one
+        // rather than stating a single purpose on behalf of all of them.
+        $copDetail = $stage->hasMixedNewLandUses() || count($fromCodes) > 1
+            ? collect($stage->copRows())->map(function ($r) use ($landUseName) {
+                $to   = Str::upper(trim((string) ($r['new_land_use'] ?? '')));
+                $from = Str::upper(trim((string) ($r['current_land_use'] ?? '')));
+                return str_replace('-', '/', (string) ($r['file_no'] ?? ''))
+                    . ($from !== '' ? ' from ' . ($landUseName[$from] ?? Str::lower($from)) : '')
+                    . ' to ' . ($landUseName[$to] ?? Str::lower($to));
+            })->filter()->implode(', ')
+            : null;
         $applies = count((array) data_get($stage->payload, 'applies_to', [])) ?: $plots;
         $size    = $sizesOf($stage);
 
-        // "of 1.5 + 2 + 3 Ha (total 6.5 Ha)" — appended wherever a parcel is named.
-        $sizePhrase = $size['has'] ? ' of ' . $size['list'] . ' Ha' : '';
+        // "of 1,500 + 2,000 + 3,000 m² (total 6,500 m²)" — appended wherever a parcel is named.
+        $sizePhrase = $size['has'] ? ' of ' . $size['list'] . ' m²' : '';
 
         // What this stage acts on, named where it is known.
         $actsOn = $stage->rank === 1
@@ -78,7 +114,7 @@
             },
             'point' => match ($stage->type) {
                 'merger'      => 'Merger of ' . $actsOn
-                                 . ($size['has'] ? ' measuring ' . $size['list'] . ' Ha' : '')
+                                 . ($size['has'] ? ' measuring ' . $size['list'] . ' m²' : '')
                                  . ' into a single parcel in favour of ' . $applicant . '.',
                 'subdivision' => 'Subdivision of plot no. ' . Str::upper((string) ($duplex->plot_no ?: $title))
                                  . ' into ' . $plots . ' parcels' . $sizePhrase
@@ -89,8 +125,11 @@
                 'extension'   => 'Extension of the boundary of plot no. ' . Str::upper((string) ($duplex->plot_no ?: $title))
                                  . $sizePhrase . ' as per the attached plan in favour of ' . $applicant . '.',
                 'change_of_purpose' => 'Change of purpose of ' . $applies . ' parcel' . ($applies === 1 ? '' : 's')
-                                 . $sizePhrase . ' from ' . $currentUse . ' to ' . $newName
-                                 . ' use in favour of ' . $applicant . '.',
+                                 . $sizePhrase
+                                 . ($copDetail
+                                     ? ' — ' . $copDetail
+                                     : ' from ' . $fromName . ' to ' . $newName . ' use')
+                                 . ' in favour of ' . $applicant . '.',
                 default => $stage->label() . $sizePhrase . ' in favour of ' . $applicant . '.',
             },
         ];
@@ -104,7 +143,11 @@
         };
     }
 
-    $headline = implode(', ', array_column($stages, 'name'));
+    // The subject names WHAT is applied for, so a type that runs twice is named once —
+    // "CHANGE OF PURPOSE, MERGER, SUBDIVISION", the way the applicant's own letter reads,
+    // not "…, CHANGE OF PURPOSE" again at the end. First-occurrence order is kept, and
+    // the counts line below still reports both legs separately.
+    $headline = implode(', ', array_unique(array_column($stages, 'name')));
 
     // "5 Subdivision, 3 Change of Purpose and 1 Merger"
     $parts = array_column($stages, 'seeks');

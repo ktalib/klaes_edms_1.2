@@ -78,8 +78,12 @@ class DuplexCommitService
         // Guard the namespace before anything is written: a holding number that has
         // leaked into the registry means a coding slip, and it must surface as a
         // refusal rather than as a poisoned index.
+        // Only a real holding number is checked. A file the stage CARRIED through
+        // unchanged keeps its own registry number in this column — that is the point of
+        // a carried row — so testing every value refused the commissioning of any
+        // duplex whose Change of Purpose left a source file alone.
         foreach ($duplex->files as $file) {
-            if ($file->holding_no) {
+            if ($this->holding->isHoldingNumber($file->holding_no)) {
                 $this->holding->assertNotInRegistry($file->holding_no);
             }
         }
@@ -216,7 +220,7 @@ class DuplexCommitService
             'district'       => $duplex->district,
             'lga'            => $duplex->lga,
             'state'          => $duplex->state,
-            'land_use'       => FileNumberLandUse::codeFor((string) $primary),
+            'land_use'       => FileNumberLandUse::codeFor((string) $primary) ?: (string) $duplex->land_use,
             'remarks'        => $tag,
             'knupda_status'  => $duplex->knupda_status,
             'knupda_fee'     => $duplex->knupda_fee,
@@ -270,7 +274,7 @@ class DuplexCommitService
                 $app = PlotExtensionApplication::create([
                     'file_no'        => $primary,
                     'applicant_name' => $duplex->applicant_name,
-                    'land_use'       => FileNumberLandUse::codeFor((string) $primary),
+                    'land_use'       => FileNumberLandUse::codeFor((string) $primary) ?: (string) $duplex->land_use,
                     'plot_no'        => $duplex->plot_no,
                     'district'       => $duplex->district,
                     'lga'            => $duplex->lga,
@@ -286,7 +290,7 @@ class DuplexCommitService
                     'applicant_name' => $duplex->applicant_name,
                     'file_no'        => $primary,
                     'purpose'        => strtoupper((string) ($payload['new_land_use'] ?? '')),
-                    'land_use'       => FileNumberLandUse::codeFor((string) $primary),
+                    'land_use'       => FileNumberLandUse::codeFor((string) $primary) ?: (string) $duplex->land_use,
                     'district'       => $duplex->district,
                     'lga'            => $duplex->lga,
                     'plot_no'        => $duplex->plot_no,
@@ -425,44 +429,33 @@ class DuplexCommitService
         ?int $appId,
         array $meta
     ): array {
-        $payload    = (array) ($stage->payload ?? []);
-        $newLandUse = strtoupper((string) ($payload['new_land_use'] ?? ''));
+        $payload = (array) ($stage->payload ?? []);
 
-        if ($newLandUse === '') {
-            throw new \RuntimeException("Stage {$stage->rank} (Change of Purpose) has no new land use.");
-        }
-
-        // A container prefix belongs to the parcel, not to the purpose: a Change of
-        // Purpose on CON-AG-1995-15 produces CON-COM-..., never COM-....
-        $prefix = FileNumberLandUse::prefixFor((string) ($inputs[0] ?? ''));
-        $targetLandUse = $prefix !== '' ? $prefix . '-' . $newLandUse : $newLandUse;
-
-
-        // Which of the incoming files this CoP applies to. The officer may have
-        // subdivided into four and be changing the purpose of only two; the rest
-        // pass through untouched and stay as they are.
-        $selected = (array) ($payload['applies_to'] ?? []);
-        $targets  = [];
-
-        foreach ($inputs as $i => $fileNo) {
-            $holdingForIndex = $payload['input_holdings'][$i] ?? null;
-            if (empty($selected) || in_array($fileNo, $selected, true)
-                || ($holdingForIndex && in_array($holdingForIndex, $selected, true))) {
-                $targets[] = $fileNo;
-            }
-        }
+        // Each file changes to its OWN new purpose. A duplex may bring several files
+        // of different land uses to a common one before a merger, so a single value
+        // for the whole stage cannot express what the officer captured.
+        //
+        // $targets is fileNo => new land use, in input order.
+        $targets = $this->changeOfPurposeTargets($stage, $payload, $inputs);
 
         if (empty($targets)) {
-            $targets = $inputs;
+            throw new \RuntimeException("Stage {$stage->rank} (Change of Purpose) has no new land use.");
         }
 
         // Results must come back in INPUT order, not changed-then-untouched: the stage's
         // file rows are stored in input order, and a later stage lines its inputs up
         // against them positionally.
         $renamed = [];
+        $idx     = 0;
 
-        foreach (array_values($targets) as $idx => $fileNo) {
-            $entry = $this->entryFor($meta, $idx);
+        foreach ($targets as $fileNo => $newLandUse) {
+            $entry = $this->entryFor($meta, $idx++);
+
+            // A container prefix belongs to the parcel, not to the purpose: a Change
+            // of Purpose on CON-AG-1995-15 produces CON-COM-..., never COM-.... It is
+            // read per file, because one stage can carry files of different shapes.
+            $prefix        = FileNumberLandUse::prefixFor((string) $fileNo);
+            $targetLandUse = $prefix !== '' ? $prefix . '-' . $newLandUse : $newLandUse;
 
             $renamed[$fileNo] = $this->callSingle([
                 'application_type'          => 'change_of_purpose',
@@ -491,6 +484,81 @@ class DuplexCommitService
         // forward, or a later stage would silently lose them — each one keeping the
         // number it arrived with.
         return array_map(fn ($fileNo) => $renamed[$fileNo] ?? $fileNo, $inputs);
+    }
+
+    /**
+     * Which incoming files a Change of Purpose renames, and what each one becomes.
+     *
+     * Returns fileNo => new land use, in input order. A file the officer left out is
+     * absent from the map: it keeps its number and travels on.
+     *
+     * The officer captured this against holding numbers (or, for a first-leg CoP,
+     * against the real source files), but by commit time the inputs are the REAL
+     * numbers the previous stage produced — so each row is matched by the file it
+     * named OR by the holding number sitting at the same position.
+     */
+    protected function changeOfPurposeTargets(
+        DuplexParcelUpdateStage $stage,
+        array $payload,
+        array $inputs
+    ): array {
+        $rows = array_values((array) ($payload['cop_rows'] ?? []));
+
+        // Captured before per-file purposes existed: one land use for every file the
+        // stage applied to. Still commissioned exactly as it was captured.
+        if (empty($rows)) {
+            $legacy = strtoupper((string) ($payload['new_land_use'] ?? ''));
+
+            if ($legacy === '') {
+                return [];
+            }
+
+            $selected = (array) ($payload['applies_to'] ?? []);
+            $targets  = [];
+
+            foreach ($inputs as $i => $fileNo) {
+                $holding = $payload['input_holdings'][$i] ?? null;
+
+                if (empty($selected)
+                    || in_array($fileNo, $selected, true)
+                    || ($holding && in_array($holding, $selected, true))) {
+                    $targets[$fileNo] = $legacy;
+                }
+            }
+
+            return $targets ?: array_fill_keys($inputs, $legacy);
+        }
+
+        // Index the captured rows by every name they might be known under, so a row
+        // matches whether it was written against a source file or a holding number.
+        $byName = [];
+
+        foreach ($rows as $row) {
+            $landUse = strtoupper(trim((string) ($row['new_land_use'] ?? '')));
+            $name    = trim((string) ($row['file_no'] ?? ''));
+
+            if ($landUse === '' || $name === '') {
+                continue;
+            }
+
+            $byName[$name] = $landUse;
+        }
+
+        $targets = [];
+
+        foreach ($inputs as $i => $fileNo) {
+            $holding = $payload['input_holdings'][$i] ?? null;
+            $source  = $payload['sources'][$i] ?? null;
+
+            foreach ([$fileNo, $holding, $source] as $candidate) {
+                if ($candidate !== null && isset($byName[$candidate])) {
+                    $targets[$fileNo] = $byName[$candidate];
+                    break;
+                }
+            }
+        }
+
+        return $targets;
     }
 
     protected function callBatch(array $payload): array
@@ -653,14 +721,21 @@ class DuplexCommitService
             return strtoupper((string) $payload['new_land_use']);
         }
 
-        $parts = explode('-', (string) ($inputs[0] ?? ''));
+        // Parsed through the shared rule rather than by splitting on "-" here. Taking
+        // the first two segments blindly read RES-RC-2004-6 as land use "RES-RC" and
+        // would have allocated a merger into a series that does not exist — RC is a
+        // middle segment, not a prefix, and 4,498 files carry it.
+        $first   = (string) ($inputs[0] ?? '');
+        $code    = FileNumberLandUse::codeFor($first);
+        $prefix  = FileNumberLandUse::prefixFor($first);
 
-        // CON-RES-1984-248 keeps its two-part prefix; RES-1994-762 keeps one.
-        if (count($parts) >= 3 && !is_numeric($parts[1])) {
-            return $parts[0] . '-' . $parts[1];
+        if ($code === '') {
+            // A KANGIS number, or anything else carrying no land use of its own.
+            return (string) $duplex->land_use;
         }
 
-        return $parts[0] ?: (string) $duplex->land_use;
+        // CON-RES-1984-248 keeps its two-part prefix; RES-1994-762 keeps one.
+        return $prefix !== '' ? $prefix . '-' . $code : $code;
     }
 
     /**

@@ -42,7 +42,7 @@
                 <td>{{ $stage->outputCount() }}</td>
                 <td>
                     @if ($stage->type === 'change_of_purpose')
-                        New land use: <strong>{{ $stage->payload['new_land_use'] ?? '—' }}</strong>
+                        New land use: <strong>{{ $stage->newLandUseLabel() ?? '—' }}</strong>
                     @elseif ($stage->type === 'merger')
                         Sources merged into one parcel
                     @elseif ($stage->type === 'extension')

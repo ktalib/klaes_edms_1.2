@@ -392,6 +392,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/{id}', [DuplexParcelUpdateController::class, 'show'])->name('show')->where('id', '[0-9]+');
         Route::post('/{id}/stages/{stageId}', [DuplexParcelUpdateController::class, 'saveStage'])->name('save-stage')->where(['id' => '[0-9]+', 'stageId' => '[0-9]+']);
         Route::post('/{id}/stages/{stageId}/reject', [DuplexParcelUpdateController::class, 'rejectStage'])->name('reject-stage')->where(['id' => '[0-9]+', 'stageId' => '[0-9]+']);
+        Route::get('/{id}/stages/{stageId}/holding-preview', [DuplexParcelUpdateController::class, 'holdingPreview'])->name('holding-preview')->where(['id' => '[0-9]+', 'stageId' => '[0-9]+']);
         Route::post('/{id}/knupda', [DuplexParcelUpdateController::class, 'updateKnupda'])->name('knupda')->where('id', '[0-9]+');
         Route::post('/{id}/approve', [DuplexParcelUpdateController::class, 'approve'])->name('approve')->where('id', '[0-9]+');
         Route::post('/{id}/reject', [DuplexParcelUpdateController::class, 'reject'])->name('reject')->where('id', '[0-9]+');
