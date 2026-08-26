@@ -72,6 +72,7 @@ class BuyerListController extends Controller
                 )
                 ->distinct()
                 ->orderBy('bl.created_at', 'desc')
+                ->orderBy('bl.id', 'desc')
                 ->get()
                 ->toArray();
 
@@ -879,6 +880,7 @@ class BuyerListController extends Controller
             )
             ->distinct()
             ->orderBy('bl.created_at', 'desc')
+            ->orderBy('bl.id', 'desc')
             ->get()
             ->toArray();
     }

@@ -677,6 +677,10 @@ class PlanningRecommendationController extends Controller
         // Inspection table, which is buyer-driven. Same LEFT JOIN on buyer_id the
         // JSI table uses: joining on unit_no fans rows out, because ST unit numbers
         // repeat (U2, U MD).
+        // The buyer rows carry their own section number, so nothing may be looked
+        // up (and overwritten) afterwards - see $sectionsAreAuthoritative below.
+        $sectionsAreAuthoritative = true;
+
         $dimensionCollection = DB::connection('sqlsrv')
             ->table('buyer_list as bl')
             ->leftJoin('st_unit_measurements as sum', function ($join) {
@@ -684,8 +688,14 @@ class PlanningRecommendationController extends Controller
                     ->on('bl.application_id', '=', 'sum.application_id');
             })
             ->where('bl.application_id', $applicationId)
-            ->select('bl.unit_no', 'bl.section_number', 'sum.measurement')
-            ->orderBy('bl.unit_no')
+            ->select('bl.id', 'bl.unit_no', 'bl.section_number', 'sum.measurement')
+            // Same ORDER BY as BuyerListController::getBuyersList(), so Table A
+            // reads in the exact order officers see on the Buyers List tab. Ordering
+            // by unit_no instead sorted as text (U1, U10, U11 ... U19, U2, U20) and
+            // by bl.id reversed the list wherever the sections were captured in
+            // descending order.
+            ->orderBy('bl.created_at', 'desc')
+            ->orderBy('bl.id', 'desc')
             ->get()
             ->map(function ($record, $index) {
                 $measurement = $record->measurement ?? null;
@@ -708,6 +718,8 @@ class PlanningRecommendationController extends Controller
         // Older applications indexed before buyers were captured still rely on the
         // raw measurement rows.
         if ($dimensionCollection->isEmpty()) {
+            $sectionsAreAuthoritative = false;
+
             $dimensionCollection = DB::connection('sqlsrv')
             ->table('st_unit_measurements')
             ->where('application_id', $applicationId)
@@ -734,6 +746,8 @@ class PlanningRecommendationController extends Controller
 
         // If no ST unit measurements, try site_plan_dimensions
         if ($dimensionCollection->isEmpty()) {
+            $sectionsAreAuthoritative = false;
+
             $dimensionCollection = DB::connection('sqlsrv')
                 ->table('site_plan_dimensions')
                 ->where('application_id', $applicationId)
@@ -764,6 +778,8 @@ class PlanningRecommendationController extends Controller
 
         // If still empty, try JSI report measurements
         if ($dimensionCollection->isEmpty()) {
+            $sectionsAreAuthoritative = false;
+
             $report = JointSiteInspectionReport::where('application_id', $applicationId)->first();
 
             if ($report) {
@@ -795,7 +811,12 @@ class PlanningRecommendationController extends Controller
             }
         }
 
-        $sectionMap = $this->getSectionNumberMapping($applicationId);
+        // Only the legacy sources (which carry no section of their own) may be
+        // back-filled from the buyer list. Buyer-driven rows already hold the right
+        // section, and looking it up by unit_no would clobber it: ST unit numbers
+        // repeat across sections (U1 exists once per section), so a unit-keyed map
+        // resolves every copy to whichever buyer row happened to be read last.
+        $sectionMap = $sectionsAreAuthoritative ? [] : $this->getSectionNumberMapping($applicationId);
 
         return $this->applySectionNumbersToDimensions($dimensionCollection, $sectionMap)
             ->map(function ($item, $index) {
@@ -2545,16 +2566,30 @@ class PlanningRecommendationController extends Controller
             ->select('unit_no', 'section_number')
             ->get();
 
-        $map = [];
+        // A unit number is only a safe key when every buyer row that uses it sits in
+        // the same section. ST unit numbers repeat across sections (U1 once per
+        // section), and an ambiguous key used to resolve to whichever row was read
+        // last, stamping one arbitrary section onto every copy of that unit.
+        $candidates = [];
 
         foreach ($records as $record) {
-            $variants = $this->generateUnitKeyVariants($record->unit_no);
-            foreach ($variants as $variant) {
-                $map[$variant] = $record->section_number;
+            $section = $record->section_number;
+
+            foreach ($this->generateUnitKeyVariants($record->unit_no) as $variant) {
+                if (!array_key_exists($variant, $candidates)) {
+                    $candidates[$variant] = $section;
+                    continue;
+                }
+
+                if ($candidates[$variant] !== $section) {
+                    $candidates[$variant] = null; // ambiguous - never map this key
+                }
             }
         }
 
-        return $map;
+        return array_filter($candidates, function ($section) {
+            return $section !== null && $section !== '';
+        });
     }
 
     private function normalizeAddressComponents($value): array

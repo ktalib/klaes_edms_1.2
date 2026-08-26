@@ -67,18 +67,15 @@
 
                     axios.get(`{{ url('planning-tables/dimensions') }}/${this.applicationId}`)
                         .then(response => {
-                            const uniqueDimensions = [];
-                            const seenKeys = new Set();
-
-                            response.data.forEach(dim => {
-                                const key = `${dim.description || ''}-${dim.dimension || ''}`;
-                                if (!seenKeys.has(key)) {
-                                    uniqueDimensions.push(dim);
-                                    seenKeys.add(key);
-                                }
-                            });
-
-                            this.dimensions = uniqueDimensions.map(dim => {
+                            // No de-duplication here. Table A lists one row per
+                            // fragmented unit, and the endpoint already returns
+                            // exactly that (one row per buyer). Collapsing on
+                            // description + dimension dropped every unit that
+                            // repeats in another section - 70 of 97 rows on
+                            // MLKN 3003 - because ST unit numbers restart at U1
+                            // in each section, so the printed and on-screen
+                            // copies disagreed with the Buyers List.
+                            this.dimensions = response.data.map(dim => {
                                 const sectionValue = dim.section
                                     ?? dim.section_no
                                     ?? dim.section_number
