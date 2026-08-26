@@ -78,11 +78,32 @@
                         <span id="whiteCopyDateOnRecord"
                               class="hidden text-[10px] font-bold text-slate-400 uppercase tracking-wider">On record</span>
                     </div>
+                    {{-- Entered here only when the record has none. Once a date is on
+                         record it is shown but not edited: changing it belongs to the
+                         Print Manager, which is the last thing looked at before paper
+                         is spent. Two places to change one field is how a date gets
+                         corrected on the proof and quietly changed back afterwards. --}}
                     <input type="date" id="whiteCopyDate"
                            class="w-full px-3 py-2 bg-white rounded-lg text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-slate-500 border border-slate-300">
-                    <p class="text-[11px] text-slate-500 leading-relaxed">
+                    <div id="whiteCopyDateFixed" class="hidden">
+                        <p id="whiteCopyDateFixedValue" class="text-[15px] font-black text-slate-800 font-mono"></p>
+                    </div>
+                    <p id="whiteCopyDateHelp" class="text-[11px] text-slate-500 leading-relaxed">
                         Saved to the record and printed on the white copy as <b>DATE OF ISSUE</b>. The official
-                        print then carries the same date — it is not asked for again at the Print Manager.
+                        print then carries the same date.
+                    </p>
+                    <p id="whiteCopyDateFixedHelp" class="hidden text-[11px] text-slate-500 leading-relaxed">
+                        Already on record, and printed on the white copy as <b>DATE OF ISSUE</b>. To change it,
+                        use <b>Edit</b> on the Print Manager.
+                    </p>
+                    {{-- A batch fills the blanks only. A letter already carrying a date
+                         keeps it: that is the date on the copy that went out, and one
+                         answer given for many files must never overwrite it. --}}
+                    <p id="whiteCopyDateBatchHelp" class="hidden text-[11px] text-slate-500 leading-relaxed">
+                        <b><span id="whiteCopyMissingCount"></span></b> of
+                        <b><span id="whiteCopyBatchCount"></span></b> letters have no date of issue on record.
+                        This date is written to <b>those only</b> — the rest keep the date they already carry —
+                        and prints on each white copy as <b>DATE OF ISSUE</b>.
                     </p>
                 </div>
 
@@ -113,7 +134,18 @@
 
 <script>
 (function () {
-    var state = { id: null, url: '', ownsDate: false };
+    // `onGenerate` is what makes this card work for a batch as well as a row. A
+    // batch keeps its own print pipeline — a form post carrying a list of ids — so
+    // the card only collects the date and hands it back; it does not learn how to
+    // print anything.
+    // `issueDateUrl` is which module's records the date is written to. It defaults
+    // to the Land RofO endpoint because that is where this card started, but the
+    // card is shared and the endpoint is not: SLTR keeps its own table, so a date
+    // entered on an SLTR proof and posted to the land route would be written to a
+    // land record — silently, and to whichever ids happened to match.
+    var state = { id: null, url: '', ownsDate: false, onGenerate: null, count: 0,
+                  missing: 0, dateFixed: false, issueDateUrl: '' };
+    var DEFAULT_ISSUE_DATE_URL = '{{ route('land-rofos.issue-date') }}';
 
     function csrf() {
         var el = document.querySelector('meta[name="csrf-token"]');
@@ -130,17 +162,41 @@
     // "generate the proof", which is all a document with no printed date needs.
     function open(opts) {
         opts = opts || {};
-        state.id       = opts.recordId || null;
-        state.url      = opts.url || '';
-        state.ownsDate = !!opts.ownsDate;
+        state.id         = opts.recordId || null;
+        state.url        = opts.url || '';
+        state.ownsDate   = !!opts.ownsDate;
+        state.onGenerate = (typeof opts.onGenerate === 'function') ? opts.onGenerate : null;
+        state.issueDateUrl = opts.issueDateUrl || DEFAULT_ISSUE_DATE_URL;
+        state.count      = opts.count || 0;
+        state.missing    = opts.missingDates || 0;
+
+        var isBatch = state.count > 0;
 
         document.getElementById('whiteCopyFile').textContent = opts.ref || '';
         document.getElementById('whiteCopyError').classList.add('hidden');
-        document.getElementById('whiteCopyGenerate').disabled = false;
         document.getElementById('whiteCopyDateSection').classList.toggle('hidden', !state.ownsDate);
 
         var issueDate = opts.issueDate || '';
-        var onRecord  = !!issueDate;
+
+        // Whether there is still a date to ask for. A row that already carries one,
+        // or a batch whose letters all do, has nothing to enter here — the date is
+        // shown and the Print Manager's Edit is where it changes.
+        var onRecord = isBatch ? (state.missing === 0) : !!issueDate;
+        state.dateFixed = state.ownsDate && onRecord;
+
+        document.getElementById('whiteCopyDate').classList.toggle('hidden', state.dateFixed);
+        document.getElementById('whiteCopyDateFixed').classList.toggle('hidden', !state.dateFixed);
+        document.getElementById('whiteCopyDateFixedValue').textContent =
+            isBatch ? ('All ' + state.count + ' letters are dated.') : issueDate;
+
+        document.getElementById('whiteCopyDateHelp').classList.toggle('hidden', isBatch || state.dateFixed);
+        document.getElementById('whiteCopyDateBatchHelp').classList.toggle('hidden', !isBatch || state.dateFixed);
+        document.getElementById('whiteCopyDateFixedHelp').classList.toggle('hidden', !state.dateFixed);
+        if (isBatch) {
+            document.getElementById('whiteCopyBatchCount').textContent = state.count;
+            document.getElementById('whiteCopyMissingCount').textContent = state.missing;
+        }
+
         document.getElementById('whiteCopyDateOnRecord').classList.toggle('hidden', !onRecord);
         document.getElementById('whiteCopyDateRequired').classList.toggle('hidden', onRecord);
 
@@ -155,9 +211,71 @@
             field.value = issueDate;
         }
 
+        // After the value is in the field, so an existing date enables the button and
+        // a blank one leaves it dead. Late enough to catch flatpickr's own input,
+        // which is created on the first open of a page.
+        syncGenerateEnabled();
+        var field2 = document.getElementById('whiteCopyDate');
+        if (field2 && field2._flatpickr && field2._flatpickr.config
+            && field2._flatpickr.config.onChange.indexOf(syncGenerateEnabled) === -1) {
+            field2._flatpickr.config.onChange.push(syncGenerateEnabled);
+        }
+
         document.getElementById('whiteCopyModal').classList.remove('hidden');
         if (window.lucide) window.lucide.createIcons();
     }
+
+    // A synthesised anchor click rather than window.open(). Browsers treat this as
+    // navigation; a window.open() fired from a promise callback — after a dialog has
+    // been answered — is far enough from the original click to read as a pop-up and
+    // be blocked. Every "open the proof" path that runs after a dialog uses this.
+    function openTab(url) {
+        if (!url) return;
+        var a = document.createElement('a');
+        a.href = url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+
+    // Whether there is anything to generate yet. A document that prints a DATE OF
+    // ISSUE cannot be proofread without one — the date is part of what is being
+    // read — so the button is dead until the field is filled rather than letting an
+    // undated proof out and failing on the far side of a click.
+    //
+    // A batch whose letters all carry a date has nothing left to ask for, so it is
+    // ready with the field empty; a batch still missing some is not.
+    function dateReady() {
+        if (!state.ownsDate) return true;
+        if (state.dateFixed) return true;
+        if (state.count > 0 && state.missing === 0) return true;
+
+        var field = document.getElementById('whiteCopyDate');
+        return !!(field && (field.value || '').trim());
+    }
+
+    function syncGenerateEnabled() {
+        var btn = document.getElementById('whiteCopyGenerate');
+        if (btn) btn.disabled = !dateReady();
+    }
+
+    // The field is wrapped by flatpickr, which draws its own visible input in front
+    // of the real one. Picking a date there fires `change` on the original, but not
+    // `input` — so both are listened for, and flatpickr's own hook is registered as
+    // well where the picker exists. Any one of the three is enough; together they
+    // cover a typed date, a picked date and a cleared one.
+    (function watchDateField() {
+        var field = document.getElementById('whiteCopyDate');
+        if (!field) return;
+        ['change', 'input', 'blur'].forEach(function (evt) {
+            field.addEventListener(evt, syncGenerateEnabled);
+        });
+        if (field._flatpickr && field._flatpickr.config) {
+            field._flatpickr.config.onChange.push(syncGenerateEnabled);
+        }
+    })();
 
     function close() {
         document.getElementById('whiteCopyModal').classList.add('hidden');
@@ -175,22 +293,44 @@
     // opens if it succeeded: a white copy printed with a date the record does not
     // hold is a proof of a document that will not print that way.
     function generate() {
-        if (!state.url) return;
+        if (!state.url && !state.onGenerate) return;
 
         var btn = document.getElementById('whiteCopyGenerate');
         document.getElementById('whiteCopyError').classList.add('hidden');
 
-        if (!state.ownsDate) {
-            var url = state.url;
+        var isBatch = state.count > 0;
+        // Nothing is read off the field when the date is fixed: the record already
+        // holds it, and this card is not the place it changes.
+        var date = (state.ownsDate && !state.dateFixed)
+            ? (document.getElementById('whiteCopyDate').value || '').trim()
+            : '';
+
+        if (state.ownsDate && !state.dateFixed && !date) {
+            // A batch whose letters all carry a date has nothing to ask for, so an
+            // empty field there is not an omission — it is the ordinary case.
+            if (!isBatch || state.missing > 0) {
+                fail('Enter the date of issue — it prints on the document as DATE OF ISSUE '
+                    + 'and nothing else supplies it.');
+                return;
+            }
+        }
+
+        // A batch hands the date back to its own pipeline, which carries it on the
+        // print request; the server writes it to the letters that have none as it
+        // renders them. Nothing is posted from here.
+        if (state.onGenerate) {
+            var run = state.onGenerate;
             close();
-            window.open(url, '_blank');
+            run(date);
             return;
         }
 
-        var date = (document.getElementById('whiteCopyDate').value || '').trim();
-        if (!date) {
-            fail('Enter the date of issue — it prints on the document as DATE OF ISSUE '
-                + 'and nothing else supplies it.');
+        // Nothing to save — either the document carries no date of issue at all, or
+        // the record already holds the one it will print.
+        if (!state.ownsDate || state.dateFixed) {
+            var url = state.url;
+            close();
+            window.open(url, '_blank');
             return;
         }
 
@@ -199,7 +339,7 @@
         // 'all' on purpose: this card IS the place the date is decided, so an
         // operator correcting a date between two proofs has to be able to change one
         // already on record. Nothing has been issued yet — that is what a proof is for.
-        fetch('{{ route('land-rofos.issue-date') }}', {
+        fetch(state.issueDateUrl, {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf(), 'Accept': 'application/json' },
@@ -215,7 +355,7 @@
             window.open(url, '_blank');
         })
         .catch(function (e) {
-            btn.disabled = false;
+            syncGenerateEnabled();
             fail(e.message || 'Could not save the date of issue. Check your connection and try again.');
         });
     }
@@ -306,7 +446,8 @@
                     ref:       ref,
                     url:       opts.whiteCopyUrl,
                     issueDate: opts.issueDate || '',
-                    ownsDate:  !!opts.whiteCopyOwnsDate
+                    ownsDate:  !!opts.whiteCopyOwnsDate,
+                    issueDateUrl: opts.issueDateUrl || ''
                 });
             }
         });
@@ -316,13 +457,18 @@
     // of issue cannot be printed, and that is where the date is entered.
     window.addEventListener('open-white-copy', function (e) {
         var d = e.detail || {};
-        open({ recordId: d.recordId, ref: d.ref, url: d.url || '', issueDate: d.issueDate || '', ownsDate: true });
+        open({
+            recordId: d.recordId, ref: d.ref, url: d.url || '',
+            issueDate: d.issueDate || '', ownsDate: true,
+            issueDateUrl: d.issueDateUrl || ''
+        });
     });
 
     window.WhiteCopy = {
         open: open,
         close: close,
         openPrintManager: openPrintManager,
+        openTab: openTab,
         // Exposed so a batch run — which has its own pipeline and its own proof
         // route — can stand behind the same question a single row does.
         confirmProofread: confirmProofread
@@ -331,7 +477,11 @@
     // The inline handlers in the markup above, and the shorthand the row menus use.
     window.openWhiteCopyModal  = function (id, ref, issueDate, url, opts) {
         opts = opts || {};
-        open({ recordId: id, ref: ref, issueDate: issueDate, url: url, ownsDate: !!opts.ownsDate });
+        open({
+            recordId: id, ref: ref, issueDate: issueDate, url: url,
+            ownsDate: !!opts.ownsDate,
+            issueDateUrl: opts.issueDateUrl || ''
+        });
     };
     window.closeWhiteCopyModal = close;
     window.generateWhiteCopy   = generate;

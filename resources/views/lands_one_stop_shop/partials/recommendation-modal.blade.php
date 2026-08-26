@@ -284,9 +284,16 @@
                             class="inline-flex items-center gap-1.5 px-5 py-2 text-sm font-semibold text-white bg-slate-700 rounded-lg hover:bg-slate-800 shadow-sm transition">
                         <i data-lucide="save" class="w-4 h-4"></i> Save
                     </button>
+                    {{-- What this prints is whatever is in the fields right now —
+                         typed, possibly unsaved, and not yet read by anyone. So it
+                         prints a white copy: a proof to read against the file before
+                         the official recommendation is run off from the Print
+                         Manager. Named for what it does, or an officer presses
+                         "Print" expecting the document and gets a draft. --}}
                     <button type="button" id="recPrintBtn" onclick="printRecommendation()" disabled
+                            title="Black &amp; white proof of this form for vetting — not an official copy"
                             class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white">
-                        <i data-lucide="printer" class="w-4 h-4"></i> Print
+                        <i data-lucide="file-search" class="w-4 h-4"></i> Print White Copy
                     </button>
                 </div>
             </div>

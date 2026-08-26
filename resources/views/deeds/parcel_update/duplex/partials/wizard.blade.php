@@ -120,6 +120,18 @@
                             </p>
                         </div>
 
+                        {{-- ONE applicant for the whole duplex. The files it acts on may
+                             stand in different names, but a duplex is a single instruction
+                             brought by a single person, so this is asked once. --}}
+                        <div class="pt-5 border-t border-slate-100">
+                            <label class="block text-xs font-bold text-slate-600 mb-2">Applicant Name <span class="text-red-500">*</span></label>
+                            <input type="text" id="dx-applicant" placeholder="Who is applying"
+                                class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
+                            <p class="text-[11px] text-slate-400 mt-2">
+                                Who brought the instruction — the same across every file below.
+                            </p>
+                        </div>
+
                         {{-- ONE CARD PER SOURCE FILE.
                              A duplex can act on several files, and they do not share a
                              holder, a title or even a location — so each gets its own entry
@@ -155,11 +167,7 @@
                                  other. The title backfills from the file that was picked; the
                                  applicant is always typed. --}}
                             <div class="mb-4">
-                                <div class="flex items-center justify-between mb-2">
-                                    <label class="text-xs font-bold text-slate-600">File Title</label>
-                                    <button type="button" onclick="dxApplyToAll('file_title')"
-                                        class="text-[10px] font-bold text-blue-600 hover:text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-50 transition">Apply to all</button>
-                                </div>
+                                <label class="block text-xs font-bold text-slate-600 mb-2">File Title</label>
                                 <input type="text" id="dx-file-title" placeholder="Name the file stands in"
                                     oninput="dxEntryTouched()"
                                     class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
@@ -168,28 +176,10 @@
                                 </p>
                             </div>
 
-                            <div class="mb-4">
-                                <div class="flex items-center justify-between mb-2">
-                                    <label class="text-xs font-bold text-slate-600">Applicant Name <span class="text-red-500">*</span></label>
-                                    <button type="button" onclick="dxApplyToAll('applicant')"
-                                        class="text-[10px] font-bold text-blue-600 hover:text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-50 transition">Apply to all</button>
-                                </div>
-                                <input type="text" id="dx-applicant" placeholder="Who is applying"
-                                    oninput="dxEntryTouched()"
-                                    class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
-                                <p class="text-[11px] text-slate-400 mt-2">
-                                    Who brought the instruction — not necessarily the file title.
-                                </p>
-                            </div>
-
                             {{-- Where this parcel is. Carried onto the files this duplex
                                  commissions and onto the parcel-update rows it writes. --}}
                             <div class="pt-4 border-t border-slate-100">
-                                <div class="flex items-center justify-between mb-3 gap-2">
-                                    <p class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Parcel location</p>
-                                    <button type="button" onclick="dxApplyToAll('location')"
-                                        class="text-[10px] font-bold text-blue-600 hover:text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-50 transition">Apply location to all</button>
-                                </div>
+                                <p class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-3">Parcel location</p>
 
                                 <div class="grid grid-cols-2 gap-3">
                                     <div class="col-span-2">

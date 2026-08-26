@@ -3,6 +3,11 @@
     $autoPrint = $autoPrint ?? false;
     $bodyClasses = trim('bg-gray-100 p-4 md:p-8 ' . ($isPrintRoute ? 'print-mode' : ''));
 
+    // The proof sheet. Set by RofoController::printWhiteCopy(); no query string
+    // switches it on, so an official print URL cannot become a proof and a proof URL
+    // cannot become an official print.
+    $isWhiteCopy = !empty($isWhiteCopy);
+
     $currentWatermark = strtoupper($currentWatermark ?? 'ORIGINAL');
     $watermarkPalette = [
         'ORIGINAL'           => '#ff0000',   // Red
@@ -78,6 +83,58 @@
 
         .terms-offer-box .signature-grid {
             margin-top: 1.25rem;
+        }
+
+        /* ── White Copy: the proof sheet ────────────────────────────────────
+           A draft on ordinary white paper, in black and white, read against the
+           record before a sheet of security stock is spent. The arms, the QR, the
+           serial, the copy designation and the signature blocks come off in the
+           markup; what is left is marked WHITE COPY, centred across the head of the
+           page and large enough to be the first thing read off it.
+
+           Geometry untouched — the frame keeps its width, the header keeps its
+           height, the signature blocks leave their space — so the proof breaks
+           across pages exactly where the official letter will. */
+        .white-copy .st-rofo-green-frame { border-color: #000 !important; }
+        .white-copy .original-placeholder { color: #000 !important; }
+
+        .white-copy-mark-block {
+            position: absolute;
+            top: 8px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            z-index: 5;
+        }
+
+        .white-copy-mark {
+            color: #000;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 26px;
+            font-weight: 900;
+            line-height: 1.1;
+            letter-spacing: 0.26em;
+            text-transform: uppercase;
+        }
+
+        .white-copy-note {
+            margin-top: 3px;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 0.14em;
+            color: #333;
+            text-transform: uppercase;
+        }
+
+        /* The room the signature blocks occupied. */
+        .white-copy-signature-gap {
+            text-align: center;
+            font-size: 8px;
+            font-style: italic;
+            font-weight: 600;
+            color: #6b7280;
+            padding: 40px 30px 10px 30px;
         }
 
         .acceptance-letter-container {
@@ -531,10 +588,20 @@
             }
         @endphp
 
-        <div id="rofo-print-root" class="max-w-4xl mx-auto bg-white shadow-md rofo-wrapper">
+        <div id="rofo-print-root" class="max-w-4xl mx-auto bg-white shadow-md rofo-wrapper{{ $isWhiteCopy ? ' white-copy' : '' }}">
             <!-- First Page -->
             <div id="first-page">
               <div class="st-rofo-green-frame">
+                {{-- Where the official letter names the copy — ORIGINAL, DUPLICATE,
+                     TRIPLICATE, over the security serial — the proof says WHITE COPY
+                     across the head of the page instead, and carries no serial: a
+                     proof has none to carry. --}}
+                @if($isWhiteCopy)
+                <div class="white-copy-mark-block">
+                    <div class="white-copy-mark">White Copy</div>
+                    <div class="white-copy-note">Proof for vetting — not an official document</div>
+                </div>
+                @else
                 <div class="original-placeholder" style="color: {{ $entryWatermarkColor }};">
                     {{ $entryWatermark }}
                     @if(isset($context['securityCode']))
@@ -558,6 +625,7 @@
                         </div>
                     @endif
                 </div>
+                @endif
                 <!-- Nigerian Coat of Arms + QR Code -->
                 @php
                     $qrData = ($rofoData->fileno ?? $rofo->fileno ?? 'N/A');
@@ -568,11 +636,17 @@
                     $qrData = $trackingId ?? $qrData;
                     $qrUrl = qr_data_uri($qrData, 150);
                 @endphp
+                {{-- The arms are the State's and the QR resolves to a verifiable
+                     record, so a proof carries neither. The block keeps its height
+                     with them taken out, so the letter below begins on the same line
+                     of the page as it will on the official print. --}}
                 <div style="position: relative; margin-bottom: 4px; margin-top: 0; min-height: 90px;">
+                    @unless($isWhiteCopy)
                     <div style="text-align: center;">
                         <img src="{{ asset('assets/logo/Nigerian-Coat-of-Arms.png') }}" alt="Nigerian Coat of Arms" style="width: 90px; height: auto; display: inline-block;" />
                     </div>
                     <img src="{{ $qrUrl }}" alt="QR Code" style="position: absolute; left: 40px; top: 50%; transform: translateY(-50%); width: 55px; height: 55px;" />
+                    @endunless
                 </div>
 
                 <div style="text-align: center; margin-bottom: 8px;">
@@ -739,6 +813,17 @@
                     </ol>
                     <div style="height: 0.5rem;"></div>
                     <!-- SIGNATURE BLOCK - Inspired by Land ROFO with security microtext lines -->
+                    {{-- Off the proof entirely, microtext security lines and all. A
+                         signature line is what makes a sheet look executed, and a
+                         proof carrying one can be signed and passed off as the letter
+                         itself — the one misuse this stage exists to prevent. The
+                         space is left behind so the page still breaks where the
+                         official letter breaks. --}}
+                    @if($isWhiteCopy)
+                    <div class="white-copy-signature-gap" style="margin-top: auto;">
+                        Signature block omitted — white copy for proofreading only
+                    </div>
+                    @else
                     <div style="margin-top: auto; display: flex; justify-content: space-between; padding: 0 30px 10px 30px; text-align: center; font-weight: bold; align-items: flex-end;">
                         <div style="display: flex; flex-direction: column; align-items: center;">
                             <div style="position: relative; width: 280px; height: 40px; margin-bottom: 1px; overflow: hidden; background: transparent;">
@@ -753,6 +838,7 @@
                             <div style="margin-top: 5px; font-size: 12px;">DATE</div>
                         </div>
                     </div>
+                    @endif
 
                 </div>
               </div>
@@ -971,7 +1057,16 @@
                         </p>
                         <p style="margin-top: 6px;">THIS R OF O IS SUBJECT TO VERIFICATION BEFORE ANY STATUTORY PAYMENTS TO REVENUE DEPARTMENT.</p>
                     </div>
+                    {{-- The applicant's own line goes with the Commissioner's: a proof
+                         carrying any signature line is a sheet that can be signed, and
+                         a signed white copy read at a counter looks like an accepted
+                         grant. --}}
                     <div class="w-3/10 p-3 border-l-2 border-black flex flex-col justify-between" style="width: 30%;">
+                        @if($isWhiteCopy)
+                        <div class="white-copy-signature-gap px-2" style="padding-top: 28px;">
+                            Signature block omitted — white copy for proofreading only
+                        </div>
+                        @else
                         <div class="px-2">
                             <br>
                             <br>
@@ -983,6 +1078,7 @@
                             <span class="font-bold mr-1 text-xs">DATE:</span>
                             <div class="border-b-2 border-black flex-grow"></div>
                         </div>
+                        @endif
                     </div>
                 </div>
 

@@ -158,6 +158,45 @@
 
         .note-box { border: 1px solid #000; padding: 10px; margin-top: 20px; font-weight: bold; font-size: 11px; }
 
+        /* ── White Copy: the proof sheet ────────────────────────────────────
+           A draft on ordinary white paper, in black and white, read against the
+           record before a sheet of security stock is spent. The arms, the QR, the
+           serial, the copy designation and the signature lines come off in the
+           markup; what is left is marked WHITE COPY, centred across the head of the
+           page and large enough to be the first thing read off it.
+
+           The geometry is deliberately untouched — the frame keeps its width, the
+           header keeps its height, the signature blocks leave their space — so the
+           proof breaks across pages exactly where the official letter will. A proof
+           that reflows is a proof of a different document. */
+        .white-copy .ornate-border { border-image-source: none !important; }
+        .white-copy .green-header,
+        .white-copy .green-header-outer { background: #fff !important; border: 1px solid #000; }
+        .white-copy .green-header h1,
+        .white-copy .green-header p { color: #000 !important; }
+        .white-copy .sltr-title,
+        .white-copy .original-placeholder { color: #000 !important; }
+
+        .white-copy-mark-block {
+            position: absolute; top: 8px; left: 0; right: 0;
+            text-align: center; z-index: 2;
+        }
+        .white-copy-mark {
+            color: #000; font-family: Arial, Helvetica, sans-serif;
+            font-size: 30px; font-weight: 900; line-height: 1.1;
+            letter-spacing: 0.28em; text-transform: uppercase;
+        }
+        .white-copy-note {
+            margin-top: 3px; font-family: Arial, Helvetica, sans-serif;
+            font-size: 9px; font-weight: 700; letter-spacing: 0.14em;
+            color: #333; text-transform: uppercase;
+        }
+        /* The room the signature blocks occupied. */
+        .white-copy-signature-gap {
+            text-align: center; font-size: 9px; font-style: italic;
+            font-weight: 600; color: #6b7280; padding-top: 62px;
+        }
+
         .signature-row { display: flex; justify-content: space-between; margin-top: 60px; }
         .signature-item { border-top: 1px solid #000; width: 45%; text-align: center; padding-top: 5px; font-weight: bold; font-size: 11px; }
         .signature-item-date { border-top: 1px solid #000; width: 30%; text-align: center; padding-top: 5px; font-weight: bold; font-size: 11px; }
@@ -196,6 +235,11 @@
 </div>
 
 @php
+    // The proof sheet. Set by SltrRofoController::printWhiteCopy(); no query string
+    // switches it on, so an official print URL cannot become a proof and a proof URL
+    // cannot become an official print.
+    $isWhiteCopy = !empty($isWhiteCopy);
+
     $requestedStatus = request('status', 'Original');
     $isCTCBatch = request('isCTC') == 1;
     // 'Office' is the Duplicate and Triplicate alone — run 2 of a split print,
@@ -213,19 +257,47 @@
     $rofoDate = $recommendation->rofo_date_generated
         ? $recommendation->rofo_date_generated->format('jS F, Y')
         : now()->format('jS F, Y');
+
+    // DATE OF ISSUE, and nothing else. It used to print rofo_date_generated, falling
+    // back to today — so a letter that had never been issued came out carrying a
+    // date nobody chose, and one generated months ago printed the generation date as
+    // its issue date. Blank when there is none: an empty line on the letter is the
+    // truth, an invented date is not, and the White Copy will not print without one.
+    $issueDate = $recommendation->date_issued
+        ? $recommendation->date_issued->format('jS F, Y')
+        : '';
     $appDate = $recommendation->application_date
         ? $recommendation->application_date->format('jS F, Y')
         : '';
     // Security code: generated once per ROFO from its stable identifier only.
     // Same across Original/Duplicate/Triplicate and consistent on reprint.
     $securityCode = str_pad(substr(abs(crc32($recommendation->sltr_number ?? (string) $recommendation->id)), 0, 6), 6, '0', STR_PAD_LEFT);
+
+    // A White Copy is one copy — front and back — whatever the URL asks for. It is
+    // not an Original, a Duplicate or a Triplicate. Set last so nothing above can
+    // widen it back out.
+    if ($isWhiteCopy) {
+        $printVersions = ['White Copy'];
+    }
 @endphp
 
 @foreach($printVersions as $index => $version)
 {{-- ========== PAGE 1 ========== --}}
-<div class="page-container" style="{{ $index > 0 ? 'page-break-before: always;' : '' }}">
+<div class="page-container{{ $isWhiteCopy ? ' white-copy' : '' }}" style="{{ $index > 0 ? 'page-break-before: always;' : '' }}">
     <div class="ornate-border">
         <div class="inner-content">
+            {{-- Where the official letter names the copy — ORIGINAL, DUPLICATE,
+                 TRIPLICATE, over the security serial — the proof says WHITE COPY
+                 across the head of the page instead, and carries no serial: a proof
+                 has none to carry. Absolutely positioned so it takes no space of its
+                 own and the letter below starts where it starts on the official
+                 print. --}}
+            @if($isWhiteCopy)
+                <div class="white-copy-mark-block">
+                    <div class="white-copy-mark">White Copy</div>
+                    <div class="white-copy-note">Proof for vetting — not an official document</div>
+                </div>
+            @else
             <!-- Version + Security Code -->
             <div class="original-placeholder" style="color: {{ $versionColors[$version] ?? '#ff0000' }};">
                 {{ $version }}
@@ -239,11 +311,16 @@
                     </div>
                 </div>
             </div>
+            @endif
 
-            <!-- Coat of Arms -->
+            {{-- The arms are the State's and the QR resolves to a verifiable record,
+                 so a proof carries neither. The block keeps its height with them taken
+                 out, so the letter below begins on the same line of the page. --}}
             <div class="logo-container" style="position: relative; min-height: 110px;">
+                @unless($isWhiteCopy)
                 <img src="https://upload.wikimedia.org/wikipedia/commons/b/bc/Coat_of_arms_of_Nigeria.svg" alt="Coat of Arms" style="margin-bottom: 5px; height: 100px;" />
                 <img src="{{ qr_data_uri($qrData, 200) }}" alt="QR" style="position: absolute; left: 40px; top: 50%; transform: translateY(-50%); width: 55px; height: 55px; padding: 2px;" crossorigin="anonymous">
+                @endunless
             </div>
 
             <!-- Green Header Banner -->
@@ -266,7 +343,11 @@
                         </div>
                         <div class="row" style="margin-bottom: 10px; align-items: flex-end;">
                             <span style="width: 32px; display: inline-block;"></span>
-                            <span class="inline-data" style="flex: 1; text-align: left; border-bottom: 1.5px dotted #000; font-size: 16px; padding-bottom: 2px; min-height: 20px; line-height: 1;">{{ $recommendation->applicant_address }}</span>
+                            {{-- Upper-cased on the letter, not in the record: the address is
+                                 captured however the officer typed it, and a formal letter
+                                 addresses in caps. mb_ so a non-ASCII character is not
+                                 mangled on the way. --}}
+                            <span class="inline-data" style="flex: 1; text-align: left; border-bottom: 1.5px dotted #000; font-size: 16px; padding-bottom: 2px; min-height: 20px; line-height: 1;">{{ mb_strtoupper((string) $recommendation->applicant_address, 'UTF-8') }}</span>
                         </div>
                     </div>
                 </div>
@@ -286,7 +367,7 @@
                         </div>
                         <div class="row" style="margin-bottom: 0; align-items: flex-end;">
                             <span style="white-space: nowrap; margin-right: 8px;">DATE OF ISSUE:</span>
-                            <span class="inline-data" style="flex: 1;">{{ $rofoDate }}</span>
+                            <span class="inline-data" style="flex: 1;">{{ $issueDate }}</span>
                         </div>
                     </div>
                 </div>
@@ -354,6 +435,16 @@
             </div>
 
             <!-- Signature -->
+            {{-- Off the proof entirely. A signature line is what makes a sheet look
+                 executed, and a proof carrying one can be signed and passed off as the
+                 letter itself — the one misuse this stage exists to prevent. The space
+                 is left behind so the page still breaks where the official letter
+                 breaks. --}}
+            @if($isWhiteCopy)
+            <div class="white-copy-signature-gap">
+                Signature block omitted — white copy for proofreading only
+            </div>
+            @else
             <div class="signature-block">
                 <div style="width: 45%;">
                     <div class="security-line-container"></div>
@@ -364,6 +455,7 @@
                     <div style="margin-top: 0;"><span class="bold">DATE</span></div>
                 </div>
             </div>
+            @endif
         </div>
     </div>
 
@@ -372,7 +464,7 @@
 </div>
 
 {{-- ========== PAGE 2 ========== --}}
-<div class="page-container">
+<div class="page-container{{ $isWhiteCopy ? ' white-copy' : '' }}">
     <div class="simple-margin">
         <!-- Address block -->
         <div class="applicant-address-block">
@@ -383,7 +475,7 @@
             </div>
             <div class="right-address">
                 <p style="font-size: 11px; margin-bottom: 5px;"><strong>Applicant's Address:</strong></p>
-                <div class="address-line-box">{{ \Illuminate\Support\Str::title(\Illuminate\Support\Str::lower($recommendation->applicant_address)) }}</div>
+                <div class="address-line-box">{{ mb_strtoupper((string) $recommendation->applicant_address, 'UTF-8') }}</div>
                 <div style="margin-top: 10px; font-size: 11px;">
                     <strong>Date:</strong>
                     <span class="inline-data" style="width: 150px;">{{ $rofoDate }}</span>
@@ -450,10 +542,19 @@
             THIS R OF O IS SUBJECT TO VERIFICATION BEFORE ANY STATUTORY PAYMENTS TO REVENUE DEPARTMENT.
         </div>
 
+        {{-- The applicant's own line goes with the Commissioner's: a proof carrying
+             any signature line is a sheet that can be signed, and a signed white copy
+             read at a counter looks like an accepted offer. --}}
+        @if($isWhiteCopy)
+        <div class="white-copy-signature-gap" style="margin-top: 60px;">
+            Signature block omitted — white copy for proofreading only
+        </div>
+        @else
         <div class="signature-row">
             <div class="signature-item">APPLICANT'S SIGNATURE</div>
             <div class="signature-item-date">DATE</div>
         </div>
+        @endif
 <br><BR>
                <!-- Footer Logos -->
            <div style="display: flex; align-items: center; justify-content: flex-end; margin-top: 16px; padding-top: 6px; border-top: 1px solid #ccc;">
@@ -468,6 +569,11 @@
 </script>
 
 <script>
+    {{-- A White Copy is never logged: log-print writes a print_logs row and moves
+         this RofO onto the Printed side, and a proof has done neither. The handler
+         is simply not attached, so printing one leaves the record exactly as it was
+         and another can be run after every correction. --}}
+    @unless($isWhiteCopy)
     // Log print after load
     window.addEventListener('afterprint', function() {
         fetch('{{ route('sltr-rofos.log-print', $recommendation->id) }}?status={{ request('status', 'Original') }}', {
@@ -475,18 +581,24 @@
             headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' }
         });
     });
+    @endunless
 </script>
 
 <div id="scheme-toolbar" style="display: none;"></div>
 <style id="scheme-override"></style>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        {{-- Skipped on a proof: these rules carry !important and would put the
+             decorative frame and the green banner back on a sheet the stylesheet has
+             just taken them off. --}}
+        @unless($isWhiteCopy)
         var frameUrl = 'http://app.klaes.ng/storage/template_frames/sltr.jpeg';
         var css = '.ornate-border { border-image-source: url("' + frameUrl + '") !important; }\n'
                 + '.green-header { background-color: #4ebf97 !important; }\n'
                 + '.sltr-title { color: #4ebf97 !important; }\n'
                 + '@media print { .ornate-border { border-image-source: url("' + frameUrl + '") !important; } }';
         document.getElementById('scheme-override').textContent = css;
+        @endunless
     });
 </script>
 </body>

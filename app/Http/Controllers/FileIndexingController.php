@@ -1504,6 +1504,21 @@ class FileIndexingController extends Controller
                         $explicitRelatedSubmission
                     );
                     $this->syncMasterDcivLinks($fileIndexingModel, $relatedFileNos, $relatedDetails);
+
+                    // Keep the related_file_number register in step with the edit. Pruning is
+                    // allowed only on an explicit submission (same rule as the links above),
+                    // and only ever removes the untyped rows this form owns.
+                    app(\App\Services\RelatedFileNumberRegistrar::class)->sync(
+                        $fileIndexingModel->id,
+                        $fileIndexingModel->file_number,
+                        $fileIndexingModel->file_title,
+                        $fileIndexingModel->prop_id ?? null,
+                        $relatedFileNos,
+                        [
+                            'prune'    => $explicitRelatedSubmission,
+                            'location' => $fileIndexingModel->location ?? null,
+                        ]
+                    );
                 }
             });
 
@@ -4405,6 +4420,18 @@ class FileIndexingController extends Controller
             // indexed file is itself a DCIV (its related files become links) or an
             // ordinary file whose related number points at a DCIV.
             $this->syncMasterDcivLinks($fileIndexing, $relatedFileNos, $relatedDetails);
+
+            // Register the same numbers in related_file_number. file_indexings.related_fileno
+            // is the row's own JSON list; the register is what Legal Search and the Related
+            // File Numbers page read, and indexing never wrote to it before.
+            app(\App\Services\RelatedFileNumberRegistrar::class)->sync(
+                $fileIndexing->id ?? null,
+                $fileIndexing->file_number ?? null,
+                $fileIndexing->file_title ?? null,
+                $fileIndexing->prop_id ?? null,
+                $relatedFileNos,
+                ['location' => $fileIndexing->location ?? null]
+            );
 
             // KANGIS three-file linkage (guide-faithful "Option A"): give this file
             // its own prop_id and, when it is a child (e.g. a Land file quoting an

@@ -1483,6 +1483,35 @@ class RofoController extends Controller
         }
     }
 
+    /**
+     * The White Copy of an ST RofO: a black & white proof, read against the record
+     * before a sheet of security stock is spent.
+     *
+     * The same units through the same template, with every mark of an issued
+     * document taken off — arms, QR, serial, copy designation, signature blocks —
+     * and marked WHITE COPY instead. One copy per unit rather than the
+     * Original/Duplicate/Triplicate set: a proof is read once.
+     *
+     * ST's other documents have no proofing stage; this is the RofO only.
+     */
+    public function printRofoWhiteCopy($id)
+    {
+        // Shared rather than passed: printRofO() builds its view data through a long
+        // batch loop and hands it to the template in one array, and a proof that
+        // silently rendered as an official copy because a flag missed that array is
+        // the one failure this cannot afford.
+        view()->share('isWhiteCopy', true);
+
+        $response = $this->printRofO($id);
+
+        // Recorded under its own document type, so the proofing stage can be seen to
+        // be done without any "is this printed?" query mistaking it for a real run.
+        $fileNo = DB::connection('sqlsrv')->table('subapplications')->where('id', $id)->value('fileno');
+        \App\Models\PrintLog::logWhiteCopy('ST RofO', $fileNo, Auth::id());
+
+        return $response;
+    }
+
     public function printRofO($id)
     {
         $PageTitle = 'RofO (Letter of Grant)';
@@ -1651,7 +1680,13 @@ class RofoController extends Controller
 
                 // Create an entry for EACH watermark in the sequence
                 // Security code remains the same across all copies (Original, Duplicate, Triplicate)
-                foreach ($watermarkSequence as $watermark) {
+                //
+                // A White Copy is ONE copy per unit: it is not an Original, a
+                // Duplicate or a Triplicate, and three proofs of one letter are three
+                // copies of the same reading.
+                $sequenceForPrint = view()->shared('isWhiteCopy') ? ['White Copy'] : $watermarkSequence;
+
+                foreach ($sequenceForPrint as $watermark) {
                     $batchRofos[] = [
                         'subApp' => $subApp,
                         'unitRofoData' => $unitRofoData,

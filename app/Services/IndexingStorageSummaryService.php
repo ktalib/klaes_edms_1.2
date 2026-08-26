@@ -308,6 +308,34 @@ class IndexingStorageSummaryService
             };
         }
 
+        // The counterpart folios: the same file number's folders in the registries
+        // the file also physically sits in. Named individually rather than summed,
+        // because the operator walking to the Cadastral registry needs that one
+        // path — "2 folios created" tells them nothing they can act on.
+        $folios = is_array($scanFolder) ? ($scanFolder['folios'] ?? []) : [];
+        foreach ($folios as $folioRegistry => $folio) {
+            if (!is_array($folio) || empty($folio['path'])) {
+                continue;
+            }
+
+            $notes[] = match ($folio['reason']) {
+                'created' => [
+                    'tone' => 'info',
+                    'text' => $folioRegistry . ' folio created at ' . $folio['path']
+                        . ' — the file\'s copy in that registry scans into here.',
+                ],
+                'already_exists' => [
+                    'tone' => 'muted',
+                    'text' => $folioRegistry . ' folio already existed at ' . $folio['path'] . '.',
+                ],
+                default => [
+                    'tone' => 'muted',
+                    'text' => 'The ' . $folioRegistry . ' folio ' . $folio['path'] . ' could not be created — '
+                        . 'it will be made on the first upload.',
+                ],
+            };
+        }
+
         $parentPropId = $context['parent_prop_id'] ?? null;
         if ($propId !== null && $parentPropId !== null && (int) $parentPropId !== $propId) {
             $notes[] = [

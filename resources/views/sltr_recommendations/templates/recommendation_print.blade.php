@@ -5,12 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SLTR Recommendation - {{ $recommendation->sltr_number ?? 'N/A' }}</title>
     @php
-        $securityCode = app(\App\Services\SecurityCodeService::class)->getOrGenerateForDocument(
-            (string) ($recommendation->sltr_number ?? ($recommendation->id ?? '')),
-            (int) $recommendation->id,
-            'SLTR Recomm'
-        );
-        $sc = app(\App\Services\SecurityCodeService::class)->formatForDisplay($securityCode->code);
+        // The proof sheet — set by SltrRecommendationController::printWhiteCopy().
+        $isWhiteCopy = !empty($isWhiteCopy);
+
+        // Never minted for a proof: the serial is the document's official number and
+        // this template mints it as it renders, so merely opening a proof would
+        // otherwise spend a real one.
+        $securityCode = null;
+        $sc = null;
+        if (!$isWhiteCopy) {
+            $securityCode = app(\App\Services\SecurityCodeService::class)->getOrGenerateForDocument(
+                (string) ($recommendation->sltr_number ?? ($recommendation->id ?? '')),
+                (int) $recommendation->id,
+                'SLTR Recomm'
+            );
+            $sc = app(\App\Services\SecurityCodeService::class)->formatForDisplay($securityCode->code);
+        }
     @endphp
     <style>
         :root {
@@ -105,6 +115,49 @@
             margin: 10px 0;
         }
         .terms li { margin-bottom: 3px; }
+
+        /* ── White Copy: the proof sheet ────────────────────────────────────
+           Black on white, on ordinary paper. The crest, the serial and the
+           signature lines come off in the markup; the mark below says what the
+           sheet is, centred across the head of the page. Geometry untouched, so
+           the proof breaks where the official document breaks. */
+        /* Black on white, the whole sheet. Named selectors were not enough — the
+           letterhead brings its own green and red, and the body carries a handful
+           of accent colours of its own — so the proof paints EVERYTHING black and
+           then puts back only what has to stay drawn: the rules and borders.
+
+           A grayscale filter would have been shorter and wrong: it turns the reds
+           into a mid-grey that prints faint, and this sheet has to be read. */
+        .white-copy,
+        .white-copy * { color: #000 !important; }
+
+        /* The letterhead's coloured rules become plain black ones rather than
+           vanishing — they are the frame of the page, not decoration. */
+        .white-copy .lh-rule-top,
+        .white-copy .lh-rule-v { border-color: #000 !important; background: #000 !important; }
+
+        /* The crest is the State's mark. Off the proof, with its space kept so the
+           titles beside it stay where they are on the official sheet. */
+        .white-copy .lh-crest { visibility: hidden; }
+
+        .white-copy-mark-block {
+            position: absolute; top: 8px; left: 0; right: 0;
+            text-align: center; z-index: 5;
+        }
+        .white-copy-mark {
+            color: #000; font-family: Arial, Helvetica, sans-serif;
+            font-size: 24pt; font-weight: 900; line-height: 1.1;
+            letter-spacing: 0.24em; text-transform: uppercase;
+        }
+        .white-copy-note {
+            margin-top: 2px; font-family: Arial, Helvetica, sans-serif;
+            font-size: 6.5pt; font-weight: bold; letter-spacing: 0.14em;
+            color: #333; text-transform: uppercase;
+        }
+        .white-copy-sig-gap {
+            display: block; text-align: center; font-size: 7pt;
+            font-style: italic; color: #6b7280;
+        }
 
         /* Signature Blocks */
         .sig-row {
@@ -256,9 +309,18 @@
 </head>
 <body>
 
-<div class="a4-page">
+<div class="a4-page{{ $isWhiteCopy ? ' white-copy' : '' }}">
     @include('partials.ministry_letterhead', ['lhShowSpine' => false])
 
+    {{-- The serial is the document's official number, so a proof carries none. In
+         its place, WHITE COPY across the head of the sheet — the first thing read
+         off it, and the reason nothing on it can be mistaken for an issued copy. --}}
+    @if($isWhiteCopy)
+    <div class="white-copy-mark-block">
+        <div class="white-copy-mark">White Copy</div>
+        <div class="white-copy-note">Proof for vetting — not an official document</div>
+    </div>
+    @else
     <div class="serial-box">
         <div class="serial-label">Serial No:</div>
         <div class="serial-code-wrap">
@@ -269,6 +331,7 @@
             <span class="serial-digits">{{ $sc['digits_end'] }}</span>
         </div>
     </div>
+    @endif
     <div class="main-container">
         <div class="title-block">
             Recommendation for the Conversion of<br>
@@ -323,28 +386,50 @@
             You may wish to approve this application on the terms set above and subject to Survey Report and recommendation of the Urban Board/Physical Planning Department at page <span class="red-bold">{{ $pageSurvey }} and {{ $pagePlanning }} refer</span>
         </p>
 
+        {{-- Signature lines come off the proof: a blank rule over an office name is
+             what can be signed and passed off as the document itself. The room they
+             took is left behind so the page still breaks where it breaks on the
+             official print. --}}
+        @if($isWhiteCopy)
+        <div class="sig-row white-copy-sig-gap" style="margin-top: 55px;">
+            Signature block omitted — white copy for proofreading only
+        </div>
+        @else
         <div class="sig-row" style="margin-top: 55px;">
             <div class="sig-col"><div class="line">Rank</div></div>
             <div class="sig-col"><div class="line">Director SLTR</div></div>
         </div>
+        @endif
 
         <div class="approval-footer">
             <div class="section-center" style="margin-top: 10px;">Approval for the Conversion of Customary<br>Title to SLTR Statutory Right of Occupancy</div>
             <p style="margin: 4px 0 65px;">I recommend/do not recommend the application for a Grant over Plot No.: <span class="red-bold">{{ $recommendation->plot_number ?? '___________' }}</span> Plan No. Location <span class="red-bold">{{ normalizeLocationText($recommendation->location) ?: 'N/A' }}</span></p>
 
+            @if($isWhiteCopy)
+            <div class="sig-row white-copy-sig-gap">
+                Signature block omitted — white copy for proofreading only
+            </div>
+            @else
             <div class="sig-row" style="margin-top: 0;">
                 <div class="sig-col"><div class="line">Permanent Secretary</div></div>
                 <div class="sig-col"><div class="line">Date</div></div>
             </div>
+            @endif
 
             <div class="status-stamp" style="margin: 12px 0 65px;">
                 The Grant of Occupancy is hereby APPROVED/NOT APPROVED
             </div>
 
+            @if($isWhiteCopy)
+            <div class="sig-row white-copy-sig-gap">
+                Signature block omitted — white copy for proofreading only
+            </div>
+            @else
             <div class="sig-row" style="margin-top: 0; margin-bottom: 10px;">
                 <div class="sig-col"><div class="line">Honourable Commissioner</div></div>
                 <div class="sig-col"><div class="line">Date</div></div>
             </div>
+            @endif
         </div>
 
         <div class="doc-footer-logos" style="padding-top: 2px; padding-bottom: 10px; margin-top: 4px;">
@@ -360,9 +445,14 @@
      of which suits the ack sheet, so each gets its own sheet wrapper. @page
      margin is 0 here, so the wrapper supplies the print margins the sheet's own
      CSS assumes. --}}
+{{-- Not on a proof: the acknowledgement sheet is the half the applicant signs and
+     returns on collection, and there is nothing on it to proofread that is not
+     already on the letter. A white copy is one sheet. --}}
+@unless($isWhiteCopy)
 <div class="ack-sheet-wrap">
     @include('sltr_recommendations.templates._ack_sheet')
 </div>
+@endunless
 
 {{-- Wait for the letterhead crest, the footer logos and the remote QR image
      before opening the dialog, otherwise they print blank. --}}

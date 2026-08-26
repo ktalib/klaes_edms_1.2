@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\SltrRecommendation;
 use App\Services\Pra\RofoPraSyncer;
 use App\Services\SecurityPaperCodeService;
+use App\Models\PrintLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -40,7 +41,15 @@ class SltrRofoController extends Controller
 
         $canApprove = $this->userCanApprove();
 
-        return view('sltr_rofos.index', compact('recommendations', 'stats', 'PageTitle', 'canApprove'));
+        // Which rows have had their proof run off: the Print Manager opens on the
+        // strength of it, and the White Copy closes with it. Keyed by sltr_number,
+        // which is what the proof is logged against.
+        $whiteCopyDone = array_flip(PrintLog::whiteCopyPrinted(
+            'SLTR RofO',
+            $recommendations->getCollection()->pluck('sltr_number')->filter()->all()
+        ));
+
+        return view('sltr_rofos.index', compact('recommendations', 'stats', 'PageTitle', 'canApprove', 'whiteCopyDone'));
     }
 
     /**
@@ -95,7 +104,68 @@ class SltrRofoController extends Controller
         return response()->json(['success' => true, 'message' => 'SLTR RofO generated successfully.']);
     }
 
-    public function print(Request $request, $id)
+    /**
+     * The White Copy: a black & white proof of the SLTR letter, for vetting before
+     * anything is put on security paper.
+     *
+     * The same record through the same template, with every mark of an issued
+     * document taken off it — arms, QR, serial, copy designation, signature blocks —
+     * and marked WHITE COPY instead. Nothing about official print state is touched:
+     * the template omits the afterprint call to log-print, so no print_logs row is
+     * written and the RofO does not move onto the Printed side.
+     *
+     * Recorded under its own document type so the proofing stage can be seen to be
+     * done without any "is this printed?" query mistaking it for a real run.
+     */
+    /**
+     * Store the date of issue on its own, for the White Copy card and the Print
+     * Manager's Edit.
+     *
+     * Mirrors LandRofoController::saveIssueDate, including the apply rule: a date
+     * already on a record is what an issued letter out in the world carries, so
+     * 'missing' (the default) fills only the blanks and 'all' is sent only when an
+     * operator has unlocked the field and confirmed the change.
+     */
+    public function saveIssueDate(Request $request)
+    {
+        $validated = $request->validate([
+            'ids'        => 'required|array|min:1',
+            'ids.*'      => 'integer',
+            'issue_date' => 'required|date',
+        ]);
+
+        $date      = \Carbon\Carbon::parse($validated['issue_date'])->startOfDay();
+        $overwrite = $request->input('issue_date_apply') === 'all';
+
+        $records = SltrRecommendation::whereIn('id', $validated['ids'])->get();
+
+        foreach ($records as $rec) {
+            if (!$overwrite && filled($rec->date_issued)) {
+                continue;
+            }
+
+            $rec->date_issued = $date;
+            $rec->updated_by  = Auth::id();
+            $rec->save();
+        }
+
+        return response()->json(['success' => true, 'count' => $records->count()]);
+    }
+
+    public function printWhiteCopy(Request $request, $id)
+    {
+        $view = $this->print($request, $id, true);
+
+        PrintLog::logWhiteCopy(
+            'SLTR RofO',
+            SltrRecommendation::find($id)?->sltr_number,
+            Auth::id()
+        );
+
+        return $view;
+    }
+
+    public function print(Request $request, $id, bool $whiteCopy = false)
     {
         $recommendation = SltrRecommendation::findOrFail($id);
 
@@ -103,7 +173,9 @@ class SltrRofoController extends Controller
             abort(403, 'ROFO must be generated before printing.');
         }
 
-        return view('sltr_rofos.templates.rofo_print', compact('recommendation'));
+        $isWhiteCopy = $whiteCopy;
+
+        return view('sltr_rofos.templates.rofo_print', compact('recommendation', 'isWhiteCopy'));
     }
 
     public function assignSecurityPaperCode(Request $request, $id)

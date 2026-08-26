@@ -2993,14 +2993,16 @@ class MlsFileNoController extends Controller
                         ]);
                         $newFileIndexing = $fileIndexing;
 
-                        // One related_file_number row per typed link (source_id is NOT NULL,
-                        // so this has to wait until the indexing row exists).
+                        // One related_file_number row per link — the typed ones plus every
+                        // plain related number that only reached the JSON column before
+                        // (source_id is NOT NULL, so this waits until the indexing row exists).
                         $this->storeRelatedFileLinks(
                             $typedRelatedFiles,
                             $fullFileNumber,
                             $validated['file_name'] ?? null,
                             $fileIndexing->prop_id ?? null,
-                            $fileIndexing->id ?? null
+                            $fileIndexing->id ?? null,
+                            json_decode((string) ($fileIndexing->related_fileno ?? ''), true) ?: []
                         );
 
                         // Create file_indexing_links record to link lineage (Subdivision/Merger/Extension/Recertification)
@@ -3705,43 +3707,45 @@ class MlsFileNoController extends Controller
         }
     }
 
-    private function storeRelatedFileLinks(array $relatedFiles, string $fileNumber, ?string $fileTitle, ?string $propId, $sourceId = null): void
+    /**
+     * Register the file's related numbers in related_file_number.
+     *
+     * $relatedFiles carries the typed entries from the related-files widget
+     * (['file_no' => .., 'type' => ..]); $plainNumbers carries the untyped related_fileno
+     * values, which used to be written to the JSON column only and never reached the
+     * register. Both go in. The untyped ones are tagged "Related File" — the neutral label
+     * LegalSearchService::suppressRedundantRelatedFileRows recognises, so they never print a
+     * spurious instrument type on a timeline (a literal "Other" would).
+     *
+     * @param array<int,array> $relatedFiles
+     * @param array<int,string> $plainNumbers
+     */
+    private function storeRelatedFileLinks(array $relatedFiles, string $fileNumber, ?string $fileTitle, ?string $propId, $sourceId = null, array $plainNumbers = []): void
     {
         // source_id is NOT NULL, so without an indexing row there is nothing to anchor
         // the link to; skip rather than write an orphan.
-        if (empty($relatedFiles) || empty($sourceId)) {
+        if (empty($sourceId) || (empty($relatedFiles) && empty($plainNumbers))) {
             return;
         }
 
-        $now = now();
-        $rows = [];
+        $registrar = app(\App\Services\RelatedFileNumberRegistrar::class);
 
-        foreach ($relatedFiles as $related) {
-            $rows[] = [
-                'related_fileno' => $related['file_no'],
-                'prop_id' => $propId,
-                'source_table' => 'file_indexings',
-                'source_id' => $sourceId,
-                'file_number' => $fileNumber,
-                'file_title' => $fileTitle,
-                'location' => null,
-                'comment' => trim(($related['type'] ?: 'Related file') . ' of ' . $related['file_no'] . ' for ' . $fileNumber),
-                'transaction_type' => $related['type'] ?: 'Other',
-                'created_at' => $now,
-                'updated_at' => $now,
-            ];
+        // Typed entries first so their relationship type wins over the generic fallback
+        // when the same number appears in both lists.
+        $entries = $relatedFiles;
+        foreach ($plainNumbers as $number) {
+            $entries[] = ['file_no' => $number, 'type' => \App\Services\RelatedFileNumberRegistrar::DEFAULT_TYPE];
         }
 
-        try {
-            DB::connection('sqlsrv')->table('related_file_number')->insert($rows);
-        } catch (\Exception $e) {
-            // A failed link must not roll back a successfully commissioned file number.
-            Log::warning('Failed to store related file links', [
-                'file_number' => $fileNumber,
-                'related' => array_column($relatedFiles, 'file_no'),
-                'error' => $e->getMessage(),
-            ]);
+        foreach ($entries as $index => $entry) {
+            $type = trim((string) ($entry['type'] ?? '')) ?: 'Other';
+            $entries[$index]['type'] = $type;
+            $entries[$index]['comment'] = trim($type . ' of ' . ($entry['file_no'] ?? '') . ' for ' . $fileNumber);
         }
+
+        // The registrar logs and swallows its own failures: a link must not roll back a
+        // successfully commissioned file number.
+        $registrar->sync((int) $sourceId, $fileNumber, $fileTitle, $propId, $entries, ['default_type' => 'Other']);
     }
 
     /**
@@ -4379,21 +4383,25 @@ class MlsFileNoController extends Controller
                 // commissioning (File Commissioning, then the onward movement).
                 $this->startBatchCommissioningTracking($request, $generatedFiles);
 
-                // Typed related-file links for every file in the batch. Re-queried rather
-                // than captured on insert because the bulk insert above returns no ids.
-                if (!empty($typedRelatedFiles) && !empty($generatedFiles)) {
-                    $indexingRows = DB::connection('sqlsrv')->table('file_indexings')
-                        ->whereIn('file_number', $generatedFiles)
-                        ->get(['id', 'file_number', 'file_title', 'prop_id']);
+                // Related-file links for every file in the batch: the typed entries plus each
+                // row's own plain related numbers. Re-queried rather than captured on insert
+                // because the bulk insert above returns no ids.
+                if (!empty($generatedFiles)) {
+                    foreach (array_chunk($generatedFiles, 500) as $chunk) {
+                        $indexingRows = DB::connection('sqlsrv')->table('file_indexings')
+                            ->whereIn('file_number', $chunk)
+                            ->get(['id', 'file_number', 'file_title', 'prop_id', 'related_fileno']);
 
-                    foreach ($indexingRows as $row) {
-                        $this->storeRelatedFileLinks(
-                            $typedRelatedFiles,
-                            $row->file_number,
-                            $row->file_title,
-                            $row->prop_id ?? null,
-                            $row->id
-                        );
+                        foreach ($indexingRows as $row) {
+                            $this->storeRelatedFileLinks(
+                                $typedRelatedFiles,
+                                $row->file_number,
+                                $row->file_title,
+                                $row->prop_id ?? null,
+                                $row->id,
+                                json_decode((string) ($row->related_fileno ?? ''), true) ?: []
+                            );
+                        }
                     }
                 }
 
@@ -4875,11 +4883,25 @@ class MlsFileNoController extends Controller
                 foreach ($generatedFiles as $generatedFileNumber) {
                     $edmsFolders[] = $this->ensureEdmsScanFolder($generatedFileNumber);
                 }
+                // Counted per registry rather than as one number: a batch now makes
+                // three folders per file, and a single "created: 40" for 40 files
+                // would read as a failure to anyone who counted the folders.
+                $edmsFolioSummary = [];
+                foreach (\App\Services\EdmsScanUploadFolderService::FOLIO_REGISTRIES as $folioRegistry) {
+                    $outcomes = array_column(array_column($edmsFolders, 'folios'), $folioRegistry);
+                    $edmsFolioSummary[$folioRegistry] = [
+                        'created'  => count(array_filter($outcomes, fn ($f) => $f['created'])),
+                        'existed'  => count(array_filter($outcomes, fn ($f) => $f['existed'])),
+                        'total'    => count($outcomes),
+                        'registry' => $outcomes[0]['registry'] ?? null,
+                    ];
+                }
                 $edmsFolderSummary = [
                     'created'  => count(array_filter($edmsFolders, fn ($f) => $f['created'])),
                     'existed'  => count(array_filter($edmsFolders, fn ($f) => $f['existed'])),
                     'total'    => count($edmsFolders),
                     'registry' => $edmsFolders[0]['registry'] ?? null,
+                    'folios'   => $edmsFolioSummary,
                 ];
 
                 $serialRange = $allocatedSerials[0] . ' to ' . end($allocatedSerials);
@@ -5281,7 +5303,7 @@ class MlsFileNoController extends Controller
     }
 
     /**
-     * Create the commissioned file's EDMS scan folder.
+     * Create the commissioned file's EDMS scan folder and its counterpart folios.
      *
      * Delegates to EdmsScanUploadFolderService so commissioning, indexing and the
      * scanning/page-typing readers all agree on one path. This used to build the
@@ -5289,12 +5311,17 @@ class MlsFileNoController extends Controller
      * MLS commissioning only ever issues Land file numbers, but it meant the
      * sanitising and slug rules lived in two places and could drift apart.
      *
-     * @return array{created:bool, existed:bool, path:?string, registry:?string, reason:string}
+     * ensureWithFolios() also creates the file-number folder in the Cadastral and
+     * Physical Planning registries, so the commissioned file's three physical
+     * homes all exist on disk from the moment the number is issued — the same
+     * thing indexing does, rather than only for files that arrive that way.
+     *
+     * @return array{created:bool, existed:bool, path:?string, registry:?string, reason:string, folios:array<string,array>}
      */
     private function ensureEdmsScanFolder(string $fileNumber): array
     {
         return app(\App\Services\EdmsScanUploadFolderService::class)
-            ->ensure($fileNumber, 'Lands Registry', ['source' => 'mls_commissioning']);
+            ->ensureWithFolios($fileNumber, 'Lands Registry', ['source' => 'mls_commissioning']);
     }
 
     /**

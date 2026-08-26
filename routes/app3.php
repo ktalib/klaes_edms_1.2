@@ -1157,6 +1157,8 @@ Route::middleware(['auth'])->group(function () {
     // SLTR Recommendation CRUD
     Route::get('/sltr-recommendations', [\App\Http\Controllers\SltrRecommendationController::class, 'index'])->name('sltr-recommendations.index');
     Route::post('/sltr-recommendations', [\App\Http\Controllers\SltrRecommendationController::class, 'store'])->name('sltr-recommendations.store');
+    // The proofing copy — see SltrRecommendationController::printWhiteCopy().
+    Route::get('/sltr-recommendations/{id}/white-copy', [\App\Http\Controllers\SltrRecommendationController::class, 'printWhiteCopy'])->name('sltr-recommendations.white-copy');
     Route::get('/sltr-recommendations/{id}/print', [\App\Http\Controllers\SltrRecommendationController::class, 'printRecommendation'])->name('sltr-recommendations.print');
     Route::get('/sltr-recommendations/{id}', [\App\Http\Controllers\SltrRecommendationController::class, 'show'])->name('sltr-recommendations.show');
     Route::put('/sltr-recommendations/{id}', [\App\Http\Controllers\SltrRecommendationController::class, 'update'])->name('sltr-recommendations.update');
@@ -1170,6 +1172,11 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/{id}/generate', [\App\Http\Controllers\SltrRofoController::class, 'generate'])->name('generate');
         Route::post('/{id}/assign-security-paper', [\App\Http\Controllers\SltrRofoController::class, 'assignSecurityPaperCode'])->name('assign-security-paper');
         Route::post('/{id}/reset-security-paper', [\App\Http\Controllers\SltrRofoController::class, 'resetSecurityPaperCode'])->name('reset-security-paper');
+        // The proofing copy — see SltrRofoController::printWhiteCopy().
+        Route::get('/{id}/white-copy', [\App\Http\Controllers\SltrRofoController::class, 'printWhiteCopy'])->name('white-copy');
+        // What the letter prints as DATE OF ISSUE: written by the White Copy card
+        // before the proof opens, and by the Print Manager's Edit.
+        Route::post('/issue-date', [\App\Http\Controllers\SltrRofoController::class, 'saveIssueDate'])->name('issue-date');
         Route::get('/{id}/print', [\App\Http\Controllers\SltrRofoController::class, 'print'])->name('print');
         Route::post('/{id}/log-print', [\App\Http\Controllers\SltrRofoController::class, 'logPrint'])->name('log-print');
     });

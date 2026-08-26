@@ -1282,6 +1282,24 @@ class ApplicationController extends Controller
             'rofo_serial_no' => $rofoSerialNo,
         ];
 
+        // The Recommendation Form prints a WHITE COPY, never the official document.
+        //
+        // What this route renders is whatever is in the form's fields at the moment
+        // the button is pressed — typed, possibly unsaved, and not yet read by
+        // anyone. That is a draft by definition, and it is exactly what the proofing
+        // stage is for: run it off, read it against the file, correct the form,
+        // print it again.
+        //
+        // The official recommendation stays where every other official print is —
+        // behind the Print Manager, which asks whether this proof has been read
+        // before it puts a serial on paper. Printing from here therefore mints no
+        // serial and logs nothing; see the template's $isWhiteCopy branches.
+        view()->share('isWhiteCopy', true);
+
+        // The proofing stage, recorded: the board's Recommendation tile opens on the
+        // strength of it and this button closes with it.
+        \App\Models\PrintLog::logWhiteCopy('Recommendation', $fileRef, Auth::id());
+
         return view('lands_one_stop_shop.partials.print_recommendation', compact('record'));
     }
 
@@ -1326,11 +1344,42 @@ class ApplicationController extends Controller
         // opening. Files ended up displaying a "security paper code" nobody had
         // entered and no sheet existed for. See the note in saveRecommendation().
 
+        // Whether an official copy has already been run off. Read from the print
+        // log rather than from any column: the recommendation is printed under
+        // several document types depending on where it was printed from, and all of
+        // them mean the same thing to an officer holding the paper.
+        //
+        // The board uses it to close off the White Copy. A proof is read BEFORE a
+        // document is issued; offering one for a recommendation already in the
+        // applicant's hand is offering to proofread the past.
+        $printed = !empty(\App\Models\PrintLog::printedAnyhowSinceReset(
+            'Recommendation For Grant',
+            [$recommendation->file_number],
+            false
+        )) || !empty(\App\Models\PrintLog::printedAnyhowSinceReset(
+            'OSS Recommendation For Grant',
+            [$recommendation->file_number],
+            false
+        )) || !empty(\App\Models\PrintLog::printedAnyhowSinceReset(
+            'Land Recommendation',
+            [$recommendation->file_number],
+            false
+        ));
+
+        // Whether the proof has been run off. The Recommendation tile opens on the
+        // strength of it; the White Copy tile closes with it.
+        $whiteCopyDone = !empty(\App\Models\PrintLog::whiteCopyPrinted(
+            'Recommendation',
+            [$recommendation->file_number]
+        ));
+
         return response()->json([
             'success' => true,
             'message' => 'Recommendation found.',
             'data' => [
                 'exists' => true,
+                'printed' => $printed,
+                'white_copy_done' => $whiteCopyDone,
                 'id' => $recommendation->id,
                 'file_ref' => (string) ($recommendation->file_number ?? ''),
                 'term' => (string) ($recommendation->term ?? ''),

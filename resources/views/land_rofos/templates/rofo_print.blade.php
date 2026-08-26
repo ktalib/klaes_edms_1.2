@@ -1260,10 +1260,26 @@
                     THIS R OF O IS SUBJECT TO VERIFICATION BEFORE ANY STATUTORY PAYMENTS TO REVENUE DEPARTMENT.
                 </div>
 
+                {{-- The applicant's own signature line — off the proof with the
+                     Commissioner's. It was kept at first on the reasoning that a line
+                     for the applicant is not official execution, which misses the
+                     point: a proof carrying any signature line is a sheet that can be
+                     signed, and a signed white copy read at a counter looks like an
+                     accepted offer. Nothing on this page is proofread by leaving it
+                     there — the rules above it are what an officer checks.
+
+                     The space it took is left behind so the page below the note box
+                     falls where it does on the official print. --}}
+                @if($isWhiteCopy)
+                <div class="white-copy-signature-gap" style="margin-top: 60px;">
+                    Signature block omitted — white copy for proofreading only
+                </div>
+                @else
                 <div class="signature-row">
                     <div class="signature-item">APPLICANT'S SIGNATURE</div>
                     <div class="signature-item-date">DATE</div>
                 </div>
+                @endif
                 <br>
                  <!-- Footer Logos -->
                 <div style="display: flex; align-items: center; justify-content: flex-end; margin-top: 16px; padding-top: 6px; border-top: 1px solid #ccc;">

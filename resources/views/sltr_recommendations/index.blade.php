@@ -175,6 +175,36 @@
                                                 </button>
                                                 @endif
                                             @endif
+                                            @php
+                                                // The proofing stage. This document prints no DATE OF ISSUE,
+                                                // so the card has no date to take — it only opens the proof.
+                                                //
+                                                // Once printed_at is stamped the record is issued and the
+                                                // entry below reads "View Recommendation"; a proof of an
+                                                // issued document has nothing left to check, so it closes too.
+                                                $sltrRecDone = $rec->printed_at
+                                                    || isset($whiteCopyDone[strtoupper(trim((string) $rec->sltr_number))]);
+                                            @endphp
+
+                                            {{-- Proof first, then the official copy. --}}
+                                            @if($sltrRecDone)
+                                            <span class="flex w-full items-center px-4 py-2.5 text-slate-300 cursor-not-allowed gap-2 font-medium"
+                                                  title="{{ $rec->printed_at
+                                                        ? 'Already printed — the white copy is a pre-print proof.'
+                                                        : 'White copy already run off — print the recommendation next.' }}">
+                                                <i data-lucide="file-search" class="h-4 w-4 text-slate-200"></i> Print White Copy
+                                            </span>
+                                            @else
+                                            <button type="button"
+                                                    onclick="openWhiteCopyModal({{ (int) $rec->id }}, @js($rec->sltr_number ?? $rec->applicant_name), '', @js(route('sltr-recommendations.white-copy', $rec->id)))"
+                                                    class="flex w-full items-center px-4 py-2.5 text-slate-700 hover:bg-slate-100 transition gap-2 font-medium">
+                                                <i data-lucide="file-search" class="h-4 w-4"></i> Print White Copy
+                                            </button>
+                                            @endif
+
+                                            {{-- Opens once the proof has been run, or once the record is
+                                                 already issued (where this entry is a viewer, not a print). --}}
+                                            @if($sltrRecDone)
                                             <a href="{{ route('sltr-recommendations.print', $rec->id) }}" target="_blank"
                                                class="flex w-full items-center px-4 py-2.5 text-blue-700 hover:bg-blue-50 transition gap-2 font-medium">
                                                 @if($rec->printed_at)
@@ -183,6 +213,12 @@
                                                     <i data-lucide="printer" class="h-4 w-4"></i> Print
                                                 @endif
                                             </a>
+                                            @else
+                                            <span class="flex w-full items-center px-4 py-2.5 text-slate-300 cursor-not-allowed gap-2 font-medium"
+                                                  title="Print and read the white copy first.">
+                                                <i data-lucide="printer" class="h-4 w-4 text-slate-200"></i> Print
+                                            </span>
+                                            @endif
                                             <div class="border-t border-slate-100 my-1"></div>
                                             <button type="button"
                                                     onclick="deleteRecord({{ $rec->id }}, '{{ $rec->sltr_number ?? $rec->applicant_name }}')"

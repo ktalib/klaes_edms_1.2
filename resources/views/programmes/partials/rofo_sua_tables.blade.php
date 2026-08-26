@@ -129,11 +129,26 @@
                                 $viewRofoUrl = route('programmes.view_rofo', $unitApplication->id);
                             @endphp
 
+                            {{-- Proof first, then the run — the order the work happens in
+                                 and the order every other module lists them in. ST prints
+                                 no DATE OF ISSUE, so the card has no date to take. --}}
                             <button type="button" class="dd-item"
-                                onclick="SmartPrintManager.open(
+                                onclick="openWhiteCopyModal(
+                                    {{ (int) $unitApplication->id }},
+                                    @js($unitApplication->fileno),
+                                    '',
+                                    '{{ route('programmes.white_copy_rofo', $unitApplication->id) }}'
+                                )">
+                                <i data-lucide="file-search" class="w-4 h-4 text-slate-600"></i>
+                                <span>Print White Copy</span>
+                            </button>
+
+                            <button type="button" class="dd-item"
+                                onclick="WhiteCopy.openPrintManager(
                                     '{{ $unitApplication->fileno }}',
                                     'ST RoFO',
-                                    '{{ route('programmes.print_rofo', $unitApplication->id) }}'
+                                    '{{ route('programmes.print_rofo', $unitApplication->id) }}',
+                                    @js(['whiteCopyUrl' => route('programmes.white_copy_rofo', $unitApplication->id)])
                                 )">
                                 <i data-lucide="printer" class="w-4 h-4 text-indigo-600"></i>
                                 <span>Print Manager</span>

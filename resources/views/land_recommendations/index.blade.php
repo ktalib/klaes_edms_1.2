@@ -540,17 +540,45 @@
                                                             ];
                                                         @endphp
 
+                                                        @php
+                                                            // Once it is on paper the proofing stage is over — the
+                                                            // copy that went out is the document now. Same test the
+                                                            // Date Printed column uses, so the menu and the column
+                                                            // can never disagree.
+                                                            $wcPrinted = isset($printDates[strtoupper(trim((string) $rec->file_number))]);
+
+                                                            // The proof has been run off, so the two entries hand
+                                                            // off: the White Copy closes and the Print Manager opens.
+                                                            $wcDone = isset($whiteCopyDone[strtoupper(trim((string) $rec->file_number))]);
+                                                        @endphp
+
+                                                        @if($wcPrinted || $wcDone)
+                                                        <span class="flex w-full items-center px-4 py-2.5 text-sm text-slate-300 cursor-not-allowed gap-2 font-bold"
+                                                              title="{{ $wcPrinted
+                                                                    ? 'This recommendation has already been printed — the white copy is a pre-print proof.'
+                                                                    : 'White copy already run off — print the recommendation next.' }}">
+                                                            <i data-lucide="file-search" class="h-4 w-4 text-slate-200"></i> Print White Copy
+                                                        </span>
+                                                        @else
                                                         <button type="button"
                                                                 onclick="openWhiteCopyModal(@js((int) $rec->id), @js($rec->file_number), '', @js(route('land-recommendations.white-copy', $rec->id)))"
                                                                 class="flex w-full items-center px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-100 transition gap-2 font-bold">
                                                             <i data-lucide="file-search" class="h-4 w-4"></i> Print White Copy
                                                         </button>
+                                                        @endif
 
+                                                        @if($wcDone || $wcPrinted)
                                                         <button type="button"
                                                                 onclick="WhiteCopy.openPrintManager(@js($rec->file_number), 'Recommendation For Grant', @js(route('land-recommendations.print', $rec->id)), @js($pmOptions))"
                                                                 class="flex w-full items-center px-4 py-2.5 text-sm text-blue-700 hover:bg-blue-50 transition gap-2 font-bold">
                                                             <i data-lucide="printer" class="h-4 w-4"></i>  Print Manager
                                                         </button>
+                                                        @else
+                                                        <span class="flex w-full items-center px-4 py-2.5 text-sm text-slate-300 cursor-not-allowed gap-2 font-bold"
+                                                              title="Print and read the white copy first.">
+                                                            <i data-lucide="printer" class="h-4 w-4 text-slate-200"></i>  Print Manager
+                                                        </span>
+                                                        @endif
                                                     @else
                                                         <span class="flex items-center px-4 py-2.5 text-sm text-slate-300 cursor-not-allowed gap-2 italic">
                                                             <i data-lucide="printer" class="h-4 w-4 text-slate-200"></i> Print (Pending Approval)
@@ -678,21 +706,9 @@
     function recBatchPrintGate(printUrl, whiteCopyUrl, label, count) {
         WhiteCopy.confirmProofread({
             subject: count + ' ' + (count === 1 ? 'recommendation' : 'recommendations') + ' in ' + label,
-            onYes:       function () { recOpenTab(printUrl); },
-            onWhiteCopy: function () { recOpenTab(whiteCopyUrl); }
+            onYes:       function () { WhiteCopy.openTab(printUrl); },
+            onWhiteCopy: function () { WhiteCopy.openTab(whiteCopyUrl); }
         });
-    }
-
-    // An anchor click rather than window.open(): browsers treat a synthesised link
-    // click as navigation, where a window.open() after an await reads as a pop-up.
-    function recOpenTab(url) {
-        var a = document.createElement('a');
-        a.href = url;
-        a.target = '_blank';
-        a.rel = 'noopener';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
     }
 
     var CHILDREN_URL = @json(url('land-recommendations/batch'));

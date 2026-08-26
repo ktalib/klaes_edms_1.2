@@ -208,10 +208,22 @@
 
                                 @if($unitMeta->isNotEmpty())
                                     <button type="button" class="dd-item"
-                                        onclick="SmartPrintManager.open(
+                                        onclick="openWhiteCopyModal(
+                                            {{ (int) $unitMeta->first()['id'] }},
+                                            @js($summary->primary_file_no),
+                                            '',
+                                            '{{ route('programmes.white_copy_rofo', $unitMeta->first()['id']) }}?batch_primary={{ $summary->main_application_id }}'
+                                        )">
+                                        <i data-lucide="file-search" class="w-4 h-4 text-slate-600"></i>
+                                        <span>Print White Copy</span>
+                                    </button>
+
+                                    <button type="button" class="dd-item"
+                                        onclick="WhiteCopy.openPrintManager(
                                             '{{ $summary->primary_file_no }}',
                                             'ST RoFO',
-                                            '{{ route('programmes.print_rofo', $unitMeta->first()['id']) }}?batch_primary={{ $summary->main_application_id }}'
+                                            '{{ route('programmes.print_rofo', $unitMeta->first()['id']) }}?batch_primary={{ $summary->main_application_id }}',
+                                            @js(['whiteCopyUrl' => route('programmes.white_copy_rofo', $unitMeta->first()['id']) . '?batch_primary={{ $summary->main_application_id }}'])
                                         )">
                                         <i data-lucide="printer" class="w-4 h-4 text-indigo-600"></i>
                                         <span>Print Manager</span>

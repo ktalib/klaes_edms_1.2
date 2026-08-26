@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\LandUse;
 use App\Models\Purpose;
+use App\Models\PrintLog;
 use App\Models\SltrRecommendation;
 use App\Models\StreetName;
 use App\Services\Pra\RofoPraSyncer;
@@ -55,10 +56,17 @@ class SltrRecommendationController extends Controller
 
         $canApprove = $this->userCanApprove();
 
+        // Which rows have had their proof run off: the official print opens on the
+        // strength of it, and the White Copy closes with it.
+        $whiteCopyDone = array_flip(PrintLog::whiteCopyPrinted(
+            'SLTR Recommendation',
+            $recommendations->getCollection()->pluck('sltr_number')->filter()->all()
+        ));
+
         return view('sltr_recommendations.index', compact(
             'recommendations', 'stats', 'PageTitle',
             'states', 'lgas', 'districts', 'streetOptions',
-            'landUseOptions', 'purposeOptions', 'canApprove'
+            'landUseOptions', 'purposeOptions', 'canApprove', 'whiteCopyDone'
         ));
     }
 
@@ -199,6 +207,30 @@ class SltrRecommendationController extends Controller
     {
         $rec = SltrRecommendation::with('creator', 'approver')->findOrFail($id);
         return response()->json(['success' => true, 'data' => $rec]);
+    }
+
+    /**
+     * The White Copy: a black & white proof of the SLTR recommendation, read against
+     * the record before an official copy is run off.
+     *
+     * The same record through the same template with every mark of an issued
+     * document taken off — the serial, the signature blocks, the acknowledgement
+     * sheet — and marked WHITE COPY instead.
+     *
+     * Crucially it does NOT stamp printed_at. That column is what switches this
+     * record's action from "Print" to "View Recommendation", so a proof that set it
+     * would close the official print behind a document nobody has issued. No serial
+     * is minted either — this template mints it as it renders, so a preview alone
+     * would have spent one.
+     */
+    public function printWhiteCopy($id)
+    {
+        $recommendation = SltrRecommendation::findOrFail($id);
+        $isWhiteCopy = true;
+
+        PrintLog::logWhiteCopy('SLTR Recommendation', $recommendation->sltr_number, Auth::id());
+
+        return view('sltr_recommendations.templates.recommendation_print', compact('recommendation', 'isWhiteCopy'));
     }
 
     public function printRecommendation($id)

@@ -95,15 +95,13 @@ class DuplexParcelUpdateController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'applicant_name'   => 'required',
-            'applicant_name.*' => 'nullable|string|max:255',
+            'applicant_name'   => 'required|string|max:255',
             // One value per file, or a single value for a one-file duplex.
             'file_title'       => 'nullable',
             'file_title.*'     => 'nullable|string|max:500',
             'source_entries'               => 'nullable|array|max:50',
             'source_entries.*.file_no'     => 'required_with:source_entries|string|max:100',
             'source_entries.*.file_title'  => 'nullable|string|max:500',
-            'source_entries.*.applicant'   => 'nullable|string|max:500',
             'source_entries.*.plot_no'     => 'nullable|string|max:100',
             'source_entries.*.district'    => 'nullable|string|max:255',
             'source_entries.*.lga'         => 'nullable|string|max:255',
@@ -170,12 +168,11 @@ class DuplexParcelUpdateController extends Controller
 
             $duplex = DuplexParcelUpdate::create([
                 'duplex_id'       => $duplexId,
-                // One value per source file, stored as a JSON array when there is
-                // more than one. A single-file duplex still stores a plain string.
-                'applicant_name'  => DuplexParcelUpdate::encodeList($data['applicant_name']),
-                'file_title'      => DuplexParcelUpdate::encodeList(
-                    $data['file_title'] ?? null
-                ) ?: DuplexParcelUpdate::encodeList($data['applicant_name']),
+                // ONE applicant for the whole duplex — a single instruction brought by
+                // a single person. The file TITLES differ per file, so those are a list.
+                'applicant_name'  => $data['applicant_name'],
+                'file_title'      => DuplexParcelUpdate::encodeList($data['file_title'] ?? null)
+                    ?: $data['applicant_name'],
                 'source_file_nos' => $data['source_file_nos'],
                 'stages'          => $stages->all(),
                 'status'          => DuplexParcelUpdate::STATUS_DRAFT,
@@ -231,7 +228,7 @@ class DuplexParcelUpdateController extends Controller
                     'role'              => DuplexParcelUpdateFile::ROLE_SOURCE,
                     'source_file_no'    => $fileNo,
                     'file_title'        => trim((string) ($entry['file_title'] ?? '')) ?: null,
-                    'holder_name'       => trim((string) ($entry['applicant'] ?? '')) ?: null,
+                    'holder_name'       => $data['applicant_name'],
                     'will_decommission' => 1,
                     'sequence'          => $i,
                 ]);

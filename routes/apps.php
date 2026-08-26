@@ -216,6 +216,10 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/save_rofo', [RofoController::class, 'saveRofO'])->name('programmes.save_rofo');
         Route::get('/view_rofo/{id}', [RofoController::class, 'viewRofO'])->name('programmes.view_rofo');
         Route::get('/view_rofo/{id}/print', [RofoController::class, 'printRofO'])->name('programmes.print_rofo');
+        // The proofing copy — see RofoController::printRofoWhiteCopy(). ST has a
+        // white copy for the RofO only; its other documents keep their existing
+        // print paths untouched.
+        Route::get('/view_rofo/{id}/white-copy', [RofoController::class, 'printRofoWhiteCopy'])->name('programmes.white_copy_rofo');
         Route::get('/rofo/pua-units/{primary}', [RofoController::class, 'showPuaUnits'])->name('programmes.rofo.pua-units');
         Route::get('/rofo/sua-units', [RofoController::class, 'showSuaUnits'])->name('programmes.rofo.sua-units');
         Route::post('/rofo/assign-security-paper/{id}', [RofoController::class, 'assignSecurityPaper'])->name('programmes.rofo.assign-security-paper');

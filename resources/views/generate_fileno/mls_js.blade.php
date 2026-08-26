@@ -2683,6 +2683,16 @@
                                             <span>${data.edms_folder.existed ? 'Scan folder already present' : 'EDMS scan folder created'}:
                                                 <b class="font-black text-${summaryColor}-900 break-all">${data.edms_folder.path}</b></span>
                                         </li>` : ''}
+                                        {{-- Counterpart folios: the same file number's folder in the Cadastral
+                                             and Physical Planning registries, where the file also physically
+                                             sits. Listed one per registry with its own path — the operator
+                                             walking to that registry needs the path, not a count. --}}
+                                        ${data.edms_folder && data.edms_folder.folios ? Object.entries(data.edms_folder.folios).map(([folioRegistry, folio]) => folio && folio.path ? `
+                                        <li class="flex items-start gap-2.5">
+                                            <div class="mt-1 w-1 h-1 rounded-full bg-${summaryColor}-400"></div>
+                                            <span>${folioRegistry} folio ${folio.existed ? 'already present' : 'created'}:
+                                                <b class="font-black text-${summaryColor}-900 break-all">${folio.path}</b></span>
+                                        </li>` : '').join('') : ''}
                                         {{-- Passport photograph filed into that folder and registered as a
                                              scan document, so the file shows up in Scan Upload / Page Typing. --}}
                                         ${data.passport_upload ? `

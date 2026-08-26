@@ -278,14 +278,40 @@
                                 <td class="px-6 py-4 text-slate-500 whitespace-nowrap text-xs">{{ $b->created_at ? \Carbon\Carbon::parse($b->created_at)->format('d/m/Y H:i') : '—' }}</td>
                                 <td class="px-6 py-4 text-right whitespace-nowrap" onclick="event.stopPropagation()">
                                     @if($generated > 0)
-                                        {{-- Only generated RofOs can be printed; the count says how many
-                                             this would actually put on paper.
+                                        {{-- Only generated RofOs can be shown here; the counts say how
+                                             many either button would actually put on paper.
 
-                                             One way in, the same as every other row on this page. The
-                                             three passes this used to list in a dropdown are the Print
-                                             Manager's own, so the menu was a second copy of a choice
-                                             that lives inside it — and one that could not show how far
-                                             the batch had already got. --}}
+                                             Proof first, then the run — the order the work happens in, and
+                                             the same order the row menus use. --}}
+
+                                        {{-- The proofing stage for a whole batch, beside the run that spends
+                                             the paper rather than inside it. A batch is where a mistake is
+                                             most expensive — one wrong field repeated across every letter in
+                                             it — so reading the set through once before any of it goes onto
+                                             security stock is worth a button of its own. --}}
+                                        @if($printed >= $generated)
+                                            <span class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-slate-300 border border-slate-200 text-[11px] font-bold rounded-lg cursor-not-allowed"
+                                                  title="Every RofO in this batch has been printed — the white copy is a pre-print proof.">
+                                                <i data-lucide="file-search" class="h-3.5 w-3.5"></i> White copy
+                                            </span>
+                                        @else
+                                        <button type="button"
+                                            onclick="openBatchWhiteCopy(@js($b->rofo_batch_id))"
+                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-700 border border-slate-300 text-[11px] font-bold rounded-lg hover:bg-slate-100 transition"
+                                            title="Black &amp; white proofs of every RofO in this batch. Nothing is marked printed and no serial is spent.">
+                                            <i data-lucide="file-search" class="h-3.5 w-3.5"></i> White copy
+                                        </button>
+                                        @endif
+
+                                        {{-- One way in to the official run, the same as every other row on
+                                             this page. The three passes this used to list in a dropdown are
+                                             the Print Manager's own, so the menu was a second copy of a
+                                             choice that lives inside it — and one that could not show how far
+                                             the batch had already got.
+
+                                             Left enabled whatever the proof's state: which letters in a batch
+                                             still owe one is a per-letter fact this summary row cannot carry,
+                                             and the manager it opens asks the proofread question itself. --}}
                                         <button type="button"
                                             {{-- @js, not @json: @json emits its own double quotes, which close this
                                                  double-quoted attribute at the first one and leave the browser with
@@ -294,18 +320,6 @@
                                             onclick="openBatchPrintManager(@js($b->rofo_batch_id))"
                                             class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-[11px] font-bold rounded-lg hover:bg-violet-700 transition">
                                             <i data-lucide="printer" class="h-3.5 w-3.5"></i> Print batch ({{ $generated }})
-                                        </button>
-
-                                        {{-- The proofing stage for a whole batch, beside the run that spends
-                                             the paper rather than inside it. A batch is where a mistake is
-                                             most expensive — one wrong field repeated across every letter in
-                                             it — so reading the set through once before any of it goes onto
-                                             security stock is worth a button of its own. --}}
-                                        <button type="button"
-                                            onclick="openBatchWhiteCopy(@js($b->rofo_batch_id))"
-                                            class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-700 border border-slate-300 text-[11px] font-bold rounded-lg hover:bg-slate-100 transition"
-                                            title="Black &amp; white proofs of every RofO in this batch. Nothing is marked printed and no serial is spent.">
-                                            <i data-lucide="file-search" class="h-3.5 w-3.5"></i> White copy
                                         </button>
                                     @else
                                         <span class="text-[10px] text-slate-400 font-semibold">No RofO generated yet</span>
@@ -633,19 +647,61 @@
                                                      correcting. Putting it inside the manager would have made
                                                      "print a draft" and "spend a sheet of security paper" two
                                                      buttons in one dialog. --}}
+                                                @php
+                                                    // Once the letter is on paper the proofing stage is over:
+                                                    // the copy in the applicant's hand is the document now, and
+                                                    // a proof of it would only be read against something already
+                                                    // issued. Reset print reopens this along with everything
+                                                    // else, which is the right way back to it.
+                                                    //
+                                                    // Read from the print log, not from rofo_print_count or the
+                                                    // tab: a letter printed through a batch has a full print
+                                                    // history and a count of zero, so it sits under Not Printed
+                                                    // with the paper already issued. See $whiteCopyLocked.
+                                                    $wcPrinted = isset($whiteCopyLocked[$rec->id]);
+
+                                                    // The proof has been run off. The two entries hand off to
+                                                    // each other from here: the White Copy closes, the Print
+                                                    // Manager opens.
+                                                    $wcDone = isset($whiteCopyDone[$rec->id]);
+                                                @endphp
+
+                                                @if($wcPrinted || $wcDone)
+                                                <span class="flex w-full items-center px-4 py-2.5 text-sm text-slate-300 cursor-not-allowed gap-2 font-bold"
+                                                      title="{{ $wcPrinted
+                                                            ? 'This RofO has already been printed — the white copy is a pre-print proof.'
+                                                            : 'White copy already run off — print the letter next.' }}">
+                                                    <i data-lucide="file-search" class="h-4 w-4 text-slate-200"></i>
+                                                    Print White Copy
+                                                </span>
+                                                @else
                                                 <button type="button"
                                                         onclick="openWhiteCopyModal(@js((int) $rec->id), @js($rec->file_number), @js($wcIssueDate), @js($wcUrl), { ownsDate: true })"
                                                         class="flex w-full items-center px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-100 transition gap-2 font-bold">
                                                     <i data-lucide="file-search" class="h-4 w-4"></i>
                                                     Print White Copy
                                                 </button>
+                                                @endif
 
+                                                {{-- Opens once the proof has been run off, or once the letter
+                                                     has been printed before (a reprint has already had its
+                                                     proofing done). Nothing else on this row says whether the
+                                                     letter was read, and that is the whole reason the proof
+                                                     exists. --}}
+                                                @if($wcDone || $wcPrinted)
                                                 <button type="button"
                                                         onclick="WhiteCopy.openPrintManager(@js($rec->file_number), @js($pmType), @js($pmUrl), @js($pmOptions))"
                                                         class="flex w-full items-center px-4 py-2.5 text-sm {{ $reissue ? 'text-amber-700 hover:bg-amber-50' : 'text-blue-700 hover:bg-blue-50' }} transition gap-2 font-bold">
                                                     <i data-lucide="printer" class="h-4 w-4"></i>
                                                     {{ $reissue ? 'Print Manager — Re-issuance' : 'Print Manager' }}
                                                 </button>
+                                                @else
+                                                <span class="flex w-full items-center px-4 py-2.5 text-sm text-slate-300 cursor-not-allowed gap-2 font-bold"
+                                                      title="Print and read the white copy first.">
+                                                    <i data-lucide="printer" class="h-4 w-4 text-slate-200"></i>
+                                                    {{ $reissue ? 'Print Manager — Re-issuance' : 'Print Manager' }}
+                                                </span>
+                                                @endif
                                             </div>
                                         </div>
                                     </div>
@@ -1604,12 +1660,32 @@ document.addEventListener('click', function (e) {
                             // from the row: a file number like RES-1993-2644(T) carries
                             // characters that end an HTML attribute early, and a handler
                             // cut in half never runs at all.
-                            ? '<button type="button" onclick="rofoOpenChildWhiteCopy(' + c.id + ')"'
-                              + ' class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-slate-600 hover:bg-slate-100 rounded" title="Black & white proof for vetting — does not count as a print">'
-                              + '<i data-lucide="file-search" class="h-3 w-3"></i> White copy</button>'
-                              + '<button type="button" onclick="rofoOpenChildPrintManager(' + c.id + ')"'
-                              + ' class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-50 rounded">'
-                              + '<i data-lucide="printer" class="h-3 w-3"></i> Print</button>'
+                            // Printed letters lose the proof, exactly as they do on the
+                            // main list: the copy in the applicant's hand is the document
+                            // now, so there is nothing left to proofread before printing.
+                            ? (function () {
+                                var printed = (c.print_count > 0 || c.print_stage === 'complete' || c.print_stage === 'originals');
+                                var proofed = !!c.white_copy_done;
+
+                                // Proof first, then the print — and each closes as the
+                                // other opens, exactly as on the main list.
+                                var wc = (printed || proofed)
+                                    ? '<span class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-slate-300 cursor-not-allowed" title="'
+                                      + (printed ? 'Already printed — the white copy is a pre-print proof' : 'White copy already run off') + '">'
+                                      + '<i data-lucide="file-search" class="h-3 w-3"></i> White copy</span>'
+                                    : '<button type="button" onclick="rofoOpenChildWhiteCopy(' + c.id + ')"'
+                                      + ' class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-slate-600 hover:bg-slate-100 rounded" title="Black & white proof for vetting — does not count as a print">'
+                                      + '<i data-lucide="file-search" class="h-3 w-3"></i> White copy</button>';
+
+                                var pr = (proofed || printed)
+                                    ? '<button type="button" onclick="rofoOpenChildPrintManager(' + c.id + ')"'
+                                      + ' class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-50 rounded">'
+                                      + '<i data-lucide="printer" class="h-3 w-3"></i> Print</button>'
+                                    : '<span class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-slate-300 cursor-not-allowed" title="Print and read the white copy first">'
+                                      + '<i data-lucide="printer" class="h-3 w-3"></i> Print</span>';
+
+                                return wc + pr;
+                              })()
                             : '<span class="text-[10px] text-slate-400">—</span>')
                     + '</td>'
                     + '</tr>';
@@ -1718,6 +1794,10 @@ function openRofoBatchManager(ids, label, status, missing, splitPasses) {
 
 function openRofoBatchManagerConfirmed(ids, label, status, missing, splitPasses) {
     window.SmartPrintManager.open(label, 'Land RofO', null, {
+        // The date of issue belongs to the White Copy for a batch exactly as it does
+        // for a row: the manager shows how the batch stands and sends the operator
+        // back to the proof if any letter is still undated.
+        whiteCopyOwnsDate: true,
         // Originals-first is a two-run operation over a whole batch, so it is
         // offered where batches are — the Batches tab. A hand-picked selection or a
         // single row gets "All Copies" only.
@@ -1730,6 +1810,10 @@ function openRofoBatchManagerConfirmed(ids, label, status, missing, splitPasses)
             // The batch pipeline stays where it is; the manager only names the pass.
             onPass: function (copies, extras) {
                 runRofoPrintPipeline(ids, copies, extras);
+            },
+            // And the way back to the proof, for a batch that still owes a date.
+            onWhiteCopy: function () {
+                rofoBatchWhiteCopyFor(ids, label);
             }
         }
     });
@@ -2235,8 +2319,6 @@ function rofoWithExtras(body, extras) {
 // The tab is claimed synchronously inside the click — a window opened after an
 // await is what pop-up blockers stop.
 function openBatchWhiteCopy(batchId) {
-    var proofWindow = window.open('', 'rofoBatchWhiteCopy');
-
     loadRofoBatchChildren(batchId)
         .then(function (data) {
             // Only a generated RofO has a letter behind it; the rest would render as
@@ -2246,7 +2328,6 @@ function openBatchWhiteCopy(batchId) {
                 .map(function (c) { return c.id; });
 
             if (!ids.length) {
-                if (proofWindow) { try { proofWindow.close(); } catch (e) {} }
                 Swal.fire({
                     icon: 'info',
                     title: 'Nothing to proofread yet',
@@ -2255,12 +2336,51 @@ function openBatchWhiteCopy(batchId) {
                 return;
             }
 
-            submitBatchWhiteCopy(ids, rofoCsrf(), proofWindow);
+            rofoBatchWhiteCopyFor(ids, batchId);
         })
         .catch(function (err) {
-            if (proofWindow) { try { proofWindow.close(); } catch (e) {} }
             Swal.fire({ icon: 'error', title: 'Error', text: err.message || 'Network error.' });
         });
+}
+
+// The White Copy card for a whole batch. It asks the server which of these letters
+// are still undated, then opens the card with that count — which is the only place
+// a date of issue is entered now, for a batch as much as for a single letter.
+//
+// The date is not written here: it rides on the print request as issue_date, and
+// the server writes it to the letters that have none as it renders them. That is
+// the same path the official batch print uses, so a date entered on the proof and
+// a date entered on a print cannot end up meaning different things.
+function rofoBatchWhiteCopyFor(ids, label) {
+    fetch('{{ route('land-rofos.issue-dates') }}', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': rofoCsrf(), 'Accept': 'application/json' },
+        body: JSON.stringify({ ids: ids })
+    })
+    .then(function (r) { return r.json(); })
+    // The count is a convenience, not a gate: if it cannot be read the card still
+    // opens and simply asks for a date.
+    .catch(function () { return null; })
+    .then(function (res) {
+        var rows    = (res && res.data) ? res.data : [];
+        var missing = rows.length ? rows.filter(function (r) { return !r.date_issued; }).length : ids.length;
+
+        WhiteCopy.open({
+            ref:          label,
+            ownsDate:     true,
+            count:        ids.length,
+            missingDates: missing,
+            onGenerate:   function (date) {
+                var extras = {};
+                if (date && missing > 0) {
+                    extras.issue_date = date;
+                    extras.issue_date_apply = 'missing';
+                }
+                submitBatchWhiteCopy(ids, rofoCsrf(), null, extras);
+            }
+        });
+    });
 }
 
 // Posted rather than linked, for the same reason the batch print is: the ids are a
@@ -2269,7 +2389,7 @@ function openBatchWhiteCopy(batchId) {
 // Nothing is logged before or after, and the page behind is NOT reloaded — no row
 // has changed state, and reloading would only throw away the expanded batch the
 // operator is working through.
-function submitBatchWhiteCopy(ids, csrf, proofWindow) {
+function submitBatchWhiteCopy(ids, csrf, proofWindow, extras) {
     var form = document.createElement('form');
     form.method = 'POST';
     form.action = '{{ route('land-rofos.batch-white-copy') }}';
@@ -2278,6 +2398,17 @@ function submitBatchWhiteCopy(ids, csrf, proofWindow) {
     var token = document.createElement('input');
     token.type = 'hidden'; token.name = '_token'; token.value = csrf;
     form.appendChild(token);
+
+    // What each letter prints as DATE OF ISSUE, and what the server writes to the
+    // records that have none as it renders them. 'missing' always: one answer given
+    // for many files must never overwrite a date a letter already carries.
+    if (extras && extras.issue_date) {
+        [['issue_date', extras.issue_date], ['issue_date_apply', extras.issue_date_apply || 'missing']].forEach(function (pair) {
+            var inp = document.createElement('input');
+            inp.type = 'hidden'; inp.name = pair[0]; inp.value = pair[1];
+            form.appendChild(inp);
+        });
+    }
 
     ids.forEach(function (id) {
         var inp = document.createElement('input');

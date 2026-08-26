@@ -336,6 +336,27 @@
         align-items: center;
         margin-top: 10px;
       }
+
+      /* On a proof the signature blocks are gone, so the page runs short and the
+         logos ride up under the ministry banner with the rest of the sheet empty
+         beneath them.
+
+         Pinned to the foot of the page rather than pushed down by a margin. The
+         margin was a guess at how much content the proof happened to lose, and the
+         answer differs per record — a long recommendation loses less. .form-container
+         is a fixed 296mm sheet with position: relative, so the logos can simply be
+         told where they belong: the bottom, inset to the same 15mm/10mm padding the
+         page uses, whatever the letter above them does.
+
+         Scoped to the proof: the official print fills its page and its spacing is
+         not this sheet's to change. */
+      .form-container.white-copy .footer-logos {
+        position: absolute;
+        left: 15mm;
+        right: 15mm;
+        bottom: 10mm;
+        margin-top: 0;
+      }
       .footer-logos img {
         height: 35px;
         width: auto;

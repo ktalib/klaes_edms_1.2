@@ -24,8 +24,12 @@ return new class extends Migration
 
                 $table->index('related_fileno');
                 $table->index('prop_id');
+                // NOT unique: one source row legitimately carries several related numbers
+                // (a merger quotes every source file). The live table, built from
+                // database/migrations/manual/create_related_file_number_table.sql, has no
+                // unique index either -- RelatedFileNumberRegistrar is what keeps a given
+                // (source, number) pair from being written twice.
                 $table->index(['source_table', 'source_id']);
-                $table->unique(['source_table', 'source_id'], 'uq_rfn_source');
             });
         }
 

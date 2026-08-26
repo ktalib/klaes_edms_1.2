@@ -171,14 +171,58 @@
                                                 <i data-lucide="eye" class="h-4 w-4"></i> View RofO
                                             </button>
                                             @else
+                                            @php
+                                                // The proofing stage, and the date of issue with it. SLTR has
+                                                // its own date_issued column now, and its letter prints DATE OF
+                                                // ISSUE like every other — so the White Copy takes that date
+                                                // (ownsDate) and the Print Manager shows it read-only with an
+                                                // Edit, exactly as the Land RofO does.
+                                                //
+                                                // issueDateUrl is not optional here: the shared card defaults to
+                                                // the Land endpoint, and a date entered on an SLTR proof and
+                                                // posted there would be written to a land record.
+                                                $sltrWcUrl      = route('sltr-rofos.white-copy', $rec->id);
+                                                $sltrDateUrl    = route('sltr-rofos.issue-date');
+                                                $sltrIssueDate  = optional($rec->date_issued)->format('Y-m-d') ?? '';
+                                                $sltrWcDone     = isset($whiteCopyDone[strtoupper(trim((string) $rec->sltr_number))]);
+                                                $sltrPmOpts     = [
+                                                    'recordId'          => (int) $rec->id,
+                                                    'whiteCopyUrl'      => $sltrWcUrl,
+                                                    'whiteCopyOwnsDate' => true,
+                                                    'issueDate'         => $sltrIssueDate,
+                                                    'issueDateUrl'      => $sltrDateUrl,
+                                                ];
+                                            @endphp
+
+                                            {{-- Proof first, then the run — the order the work happens in. --}}
+                                            @if($sltrWcDone)
+                                            <span class="flex w-full items-center px-4 py-2.5 text-slate-300 cursor-not-allowed gap-2 font-bold"
+                                                  title="White copy already run off — print the letter next.">
+                                                <i data-lucide="file-search" class="h-4 w-4 text-slate-200"></i> Print White Copy
+                                            </span>
+                                            @else
+                                            <button type="button"
+                                                    onclick="openWhiteCopyModal({{ (int) $rec->id }}, @js($rec->sltr_number), @js($sltrIssueDate), @js($sltrWcUrl), @js(['ownsDate' => true, 'issueDateUrl' => $sltrDateUrl]))"
+                                                    class="flex w-full items-center px-4 py-2.5 text-slate-700 hover:bg-slate-100 transition gap-2 font-bold">
+                                                <i data-lucide="file-search" class="h-4 w-4"></i> Print White Copy
+                                            </button>
+                                            @endif
+
+                                            @if($sltrWcDone)
                                             <button type="button"
                                                     {{-- SLTR keeps its own recommendations table, which has no
                                                          application_date column, so the manager opens without the
                                                          Date Issued panel — but with the same three passes. --}}
-                                                    onclick="SmartPrintManager.open('{{ $rec->sltr_number }}', 'SLTR RofO', '{{ route('sltr-rofos.print', $rec->id) }}', { recordId: {{ (int) $rec->id }} })"
+                                                    onclick="WhiteCopy.openPrintManager(@js($rec->sltr_number), 'SLTR RofO', @js(route('sltr-rofos.print', $rec->id)), @js($sltrPmOpts))"
                                                     class="flex w-full items-center px-4 py-2.5 text-blue-700 hover:bg-blue-50 transition gap-2 font-bold">
                                                 <i data-lucide="printer" class="h-4 w-4"></i> Print Manager
                                             </button>
+                                            @else
+                                            <span class="flex w-full items-center px-4 py-2.5 text-slate-300 cursor-not-allowed gap-2 font-bold"
+                                                  title="Print and read the white copy first.">
+                                                <i data-lucide="printer" class="h-4 w-4 text-slate-200"></i> Print Manager
+                                            </span>
+                                            @endif
                                             @endif
                                             <button type="button"
                                                     onclick="openAssignSecurityPaperModal({{ $rec->id }}, '{{ $rec->sltr_number }}', '{{ $rec->sltr_rofo_serial_no }}', '{{ route('sltr-rofos.assign-security-paper', $rec->id) }}')"

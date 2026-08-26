@@ -247,7 +247,10 @@
                                             // them up — and the approval comes last, on the strength of
                                             // that memo. KNUPDA therefore cannot wait on the approval;
                                             // it opens as soon as every stage is captured.
-                                            $canKnupda     = !$frozen && $allCaptured;
+                                            // KNUPDA is settled BEFORE the approval — the approval is given on
+                                            // the strength of it — so once the duplex is approved that answer is
+                                            // part of the record and is not reopened from this menu.
+                                            $canKnupda     = !$frozen && $allCaptured && !$isApproved;
                                             $canGenApp     = !$frozen && $knupdaOk && !$record->application_generated_at;
                                             $canPrintApp   = (bool) $record->application_generated_at;
                                             // The application sheet is off the menu for now (see below), so the
@@ -281,7 +284,7 @@
 
                                             <div class="py-1">
                                                 <button onclick="openKnupda({{ $record->id }})" @disabled(!$canKnupda)
-                                                    title="{{ $why($canKnupda, 'Capture every stage first') }}"
+                                                    title="{{ $why($canKnupda, $isApproved ? 'Settled — the duplex is already approved' : 'Capture every stage first') }}"
                                                     class="menu-item">KNUPDA</button>
                                             </div>
 
@@ -316,13 +319,15 @@
                                                     class="menu-item block {{ $canPrintMemo ? '' : 'is-disabled' }}">Print Memo</a>
                                             </div>
 
+                                            {{-- Approve and reject are two answers to ONE question, so the
+                                                 menu asks it once and the modal carries both. Reject sitting
+                                                 in the menu as its own row invited a mis-click on the way
+                                                 past something else. --}}
                                             <div class="py-1">
-                                                <button onclick="approveDuplex({{ $record->id }})" @disabled(!$canApprove)
-                                                    title="{{ $why($canApprove, $isApproved ? 'Already approved' : 'Capture every stage first') }}"
-                                                    class="menu-item text-emerald-700 font-bold">Approve</button>
-                                                <button onclick="rejectDuplex({{ $record->id }})" @disabled(!$canReject)
-                                                    title="{{ $why($canReject, '') }}"
-                                                    class="menu-item text-red-600">Reject</button>
+                                                <button onclick="openApprovalDecision({{ $record->id }}, {{ $canApprove ? 'true' : 'false' }})"
+                                                    @disabled(!$canApprove && !$canReject)
+                                                    title="{{ $why($canApprove || $canReject, 'Capture every stage first') }}"
+                                                    class="menu-item text-emerald-700 font-bold">Approval</button>
                                             </div>
 
                                             <div class="py-1">

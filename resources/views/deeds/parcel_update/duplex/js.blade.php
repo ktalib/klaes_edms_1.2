@@ -39,13 +39,12 @@
     /** The fields one entry carries, and the element each is edited in. */
     const ENTRY_FIELDS = {
         file_title: 'dx-file-title',
-        applicant:  'dx-applicant',
         plot_no:    'dx-plot-no-main',
         district:   'dx-district',
         lga:        'dx-lga',
     };
 
-    const blankEntry = () => ({ file_title: '', applicant: '', plot_no: '', district: '', lga: '' });
+    const blankEntry = () => ({ file_title: '', plot_no: '', district: '', lga: '' });
 
     // ---------------------------------------------------------------- helpers
     function post(url, body) {
@@ -311,30 +310,6 @@
         dxEntryTouched();
         state.entryIndex = (state.entryIndex + by + total) % total;
         renderEntry();
-    };
-
-    /**
-     * Copy the current entry's value onto every other file.
-     *
-     * A convenience, not a lock: the entries stay independently editable afterwards,
-     * so an officer can apply to all and then correct the one that differs.
-     */
-    window.dxApplyToAll = function (what) {
-        dxEntryTouched();
-
-        const total = state.entries.length;
-        if (total < 2) return toast('info', 'Only one file', 'There is nothing else to copy it to.');
-
-        const from   = state.entries[state.entryIndex];
-        const fields = what === 'location' ? ['plot_no', 'district', 'lga'] : [what];
-
-        state.entries.forEach((entry, i) => {
-            if (i === state.entryIndex) return;
-            fields.forEach(f => { entry[f] = from[f]; });
-        });
-
-        renderEntry();
-        toast('success', 'Applied to all ' + total + ' files');
     };
 
     /**
@@ -2385,8 +2360,10 @@
         document.getElementById('dx-applicant').disabled = locked;
         document.getElementById('dx-file-title').disabled = locked;
         // The arrows still work when locked — reading the other files is not editing.
-        document.querySelectorAll('#dx-entry-card button[onclick^="dxApplyToAll"]')
-            .forEach(b => { b.disabled = locked; b.classList.toggle('hidden', locked); });
+        ['dx-plot-no-main', 'dx-district', 'dx-lga'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.disabled = locked;
+        });
         // Quantities and plot sizes stay editable. What is fixed once the duplex row
         // exists is the PLAN — which updates, in what order, on which files — because
         // the stage rows and holding numbers were built from it. How many plots a stage
@@ -2450,19 +2427,10 @@
             // Checked in the order the fields now appear on the card.
             if (!state.sources.length) return toast('warning', 'Pick at least one source file');
 
-            // Every file needs an applicant, not just the one on screen — the others
-            // are one click away and easy to leave empty.
             dxEntryTouched();
-            const missing = state.entries
-                .map((e, i) => (String(e.applicant || '').trim() ? null : state.sources[i]?.fileNumber))
-                .filter(Boolean);
 
-            if (missing.length) {
-                const where = state.entries.findIndex(e => !String(e.applicant || '').trim());
-                if (where > -1) { state.entryIndex = where; renderEntry(); }
-                return toast('warning', 'Applicant required',
-                    'No applicant on ' + missing.join(', ') + '.');
-            }
+            const applicant = document.getElementById('dx-applicant').value.trim();
+            if (!applicant) return toast('warning', 'Applicant required');
             if (!state.plan.length) return toast('warning', 'Add at least one update');
 
             const merger = state.plan.find(p => p.type === 'merger');
@@ -2513,7 +2481,7 @@
                 // One value per file, in file order. The server stores a JSON array
                 // when there is more than one and a plain string when there is only one,
                 // so a single-file duplex reads exactly as it always did.
-                applicant_name: entryValues('applicant'),
+                applicant_name: document.getElementById('dx-applicant').value.trim(),
                 file_title: entryValues('file_title'),
                 plot_no: entryValues('plot_no'),
                 district: entryValues('district'),
@@ -2522,7 +2490,6 @@
                 source_entries: state.sources.map((src, i) => ({
                     file_no:    src.fileNumber,
                     file_title: state.entries[i]?.file_title || '',
-                    applicant:  state.entries[i]?.applicant || '',
                     plot_no:    state.entries[i]?.plot_no || '',
                     district:   state.entries[i]?.district || '',
                     lga:        state.entries[i]?.lga || '',
@@ -2779,7 +2746,6 @@
         };
 
         const titles     = asList(d.file_title);
-        const applicants = asList(d.applicant_name);
         const plots      = asList(d.plot_no);
         const districts  = asList(d.district);
         const lgas       = asList(d.lga);
@@ -2788,9 +2754,10 @@
         // read onto each entry rather than left on the first.
         const at = (list, i) => list[i] ?? (list.length === 1 ? list[0] : '') ?? '';
 
+        document.getElementById('dx-applicant').value = d.applicant_name || '';
+
         state.entries = state.sources.map((src, i) => ({
             file_title: at(titles, i),
-            applicant:  at(applicants, i),
             plot_no:    at(plots, i),
             district:   at(districts, i),
             lga:        at(lgas, i),
@@ -2907,10 +2874,49 @@
         setTimeout(() => window.location.reload(), 900);
     };
 
-    window.approveDuplex = async function (id) {
-        // Approval is what opens the rest of the pipeline and puts the duplex in front
-        // of Land, so it asks first — the same courtesy Reject already had.
-        if (window.Swal) {
+    /**
+     * The approval decision: approve or reject, in one place.
+     *
+     * They are two answers to the same question, so the menu asks it once and the modal
+     * carries both. Reject used to sit further down the menu as if it were an unrelated
+     * action, which invited it being clicked by mistake on the way past.
+     *
+     * `canApprove` is false once the duplex is already approved — the decision is then
+     * only whether to reject it, so the approve button is not offered.
+     */
+    window.openApprovalDecision = async function (id, canApprove) {
+        if (!window.Swal) {
+            return canApprove ? approveDuplex(id) : rejectDuplex(id);
+        }
+
+        const r = await Swal.fire({
+            icon: 'question',
+            title: 'Approval decision',
+            html: canApprove
+                ? '<p style="font-size:13px;color:#475569;line-height:1.6">Approving unlocks KNUPDA, '
+                  + 'the memo and the conveyance, and lists the duplex for commissioning.<br><br>'
+                  + 'Rejecting closes it: every action except viewing is disabled.</p>'
+                : '<p style="font-size:13px;color:#475569;line-height:1.6">This duplex is already '
+                  + 'approved. It can still be rejected, which closes it.</p>',
+            showConfirmButton: !!canApprove,
+            showDenyButton: true,
+            showCancelButton: true,
+            confirmButtonText: 'Approve',
+            confirmButtonColor: '#059669',
+            denyButtonText: 'Reject',
+            denyButtonColor: '#dc2626',
+            cancelButtonText: 'Cancel',
+            reverseButtons: true,
+            allowOutsideClick: false,
+        });
+
+        if (r.isConfirmed) return approveDuplex(id, true);
+        if (r.isDenied)    return rejectDuplex(id);
+    };
+
+    /** `decided` skips the confirmation — the approval modal has already asked. */
+    window.approveDuplex = async function (id, decided) {
+        if (!decided && window.Swal) {
             const r = await Swal.fire({
                 icon: 'question',
                 title: 'Approve this duplex?',

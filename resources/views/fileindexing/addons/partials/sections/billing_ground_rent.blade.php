@@ -1,6 +1,8 @@
 @php
     $currentYear = (int) date('Y');
     $years = range($currentYear, 1980);
+    // "To (Year)" may run ahead of today (prepaid / forward-dated periods) up to 2040.
+    $toYears = range(max(2040, $currentYear), 1980);
 
     // Seed the repeaters. On edit, the file_indexings single columns hold the
     // primary (first) bill of each type; the rest live in file_indexing_bills.
@@ -58,6 +60,7 @@
         open: true,
         tab: 'bill',
         years: @js($years),
+        toYears: @js($toYears),
         currentYear: {{ $currentYear }},
         bills: @js($initialBills),
         rents: @js($initialRents),
@@ -136,7 +139,7 @@
                             <label class="block text-sm font-medium text-gray-700 mb-2">To (Year)</label>
                             <select name="bill_to_year[]" x-model.number="row.to_year"
                                 class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-amber-500 focus:border-amber-500 sm:text-sm">
-                                <template x-for="y in years" :key="y"><option :value="y" x-text="y"></option></template>
+                                <template x-for="y in toYears" :key="y"><option :value="y" x-text="y"></option></template>
                             </select>
                         </div>
                     </div>
@@ -197,7 +200,7 @@
                             <label class="block text-sm font-medium text-gray-700 mb-2">To (Year)</label>
                             <select name="ground_rent_to_year[]" x-model.number="row.to_year"
                                 class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-emerald-500 focus:border-emerald-500 sm:text-sm">
-                                <template x-for="y in years" :key="y"><option :value="y" x-text="y"></option></template>
+                                <template x-for="y in toYears" :key="y"><option :value="y" x-text="y"></option></template>
                             </select>
                         </div>
                     </div>

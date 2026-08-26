@@ -192,12 +192,6 @@ class DuplexParcelUpdate extends Model
         return implode(', ', $list) . ' and ' . $last;
     }
 
-    /** The applicants, one per source file. */
-    public function applicantNames(): array
-    {
-        return static::decodeList($this->getRawOriginal('applicant_name'));
-    }
-
     /** The file titles, one per source file. */
     public function fileTitles(): array
     {
@@ -209,11 +203,6 @@ class DuplexParcelUpdate extends Model
      * summary card — gets the readable list without knowing an array was stored. Use
      * getRawOriginal() or the *Names()/Titles() helpers when the values are needed apart.
      */
-    public function getApplicantNameAttribute($value): string
-    {
-        return static::readableList($value);
-    }
-
     public function getFileTitleAttribute($value): string
     {
         return static::readableList($value);

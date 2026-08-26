@@ -71,36 +71,129 @@
                          stop. There is no fallback behind date_issued, so an
                          undated letter is not a letter — the passes stay disabled
                          and the way forward is back to the White Copy. --}}
+                    {{-- The panel's colour and its chip both follow issueDateOutstanding,
+                         not issueDate. A batch has no single date in that field — each
+                         letter carries its own — so reading the field made a fully
+                         dated batch announce itself as MISSING in red while the line
+                         below it said all its letters were dated. --}}
                     <div x-show="dateOnWhiteCopy" x-cloak
                          class="p-4 rounded-2xl border space-y-2"
-                         :class="issueDate ? 'border-slate-200 bg-slate-50' : 'border-red-300 bg-red-50/50'">
+                         :class="issueDateOutstanding ? 'border-red-300 bg-red-50/50' : 'border-slate-200 bg-slate-50'">
                         <div class="flex items-center justify-between gap-3">
                             <label class="text-[11px] font-black uppercase tracking-widest text-slate-500">
                                 Date Issued
                             </label>
-                            <span x-show="issueDate" x-cloak
+                            <span x-show="issueDateUnlocked" x-cloak
+                                  class="text-[10px] font-black text-amber-600 uppercase tracking-wider">Editing</span>
+                            <span x-show="!issueDateUnlocked && !issueDateOutstanding" x-cloak
                                   class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Set on the White Copy</span>
-                            <span x-show="!issueDate" x-cloak
+                            <span x-show="!issueDateUnlocked && issueDateOutstanding" x-cloak
                                   class="text-[10px] font-black text-red-500 uppercase tracking-wider">Missing</span>
                         </div>
 
-                        <p x-show="issueDate" x-cloak class="text-[15px] font-black text-slate-800 font-mono"
-                           x-text="issueDate"></p>
-                        <p x-show="issueDate" x-cloak class="text-[11px] text-slate-500 leading-relaxed">
-                            Prints on the letter as <b>DATE OF ISSUE</b>. To change it, go back to
-                            <b>Print White Copy</b> — a change to the letter is a change to proofread.
-                        </p>
-
-                        <template x-if="!issueDate">
+                        {{-- ── Read-only, which is how this panel normally stands ────
+                             The date belongs to the White Copy: it prints on the letter,
+                             so it is part of what was read on paper. Shown here so the
+                             operator can see what will print without leaving. --}}
+                        <template x-if="!issueDateUnlocked">
                             <div class="space-y-2">
-                                <p class="text-[12px] text-red-700 font-semibold leading-relaxed">
+                                {{-- One letter: the date it carries. --}}
+                                <div x-show="!isBatchMode && issueDate" x-cloak class="flex items-center gap-2">
+                                    <p class="text-[15px] font-black text-slate-800 font-mono flex-1" x-text="issueDate"></p>
+                                    <button type="button" @click="issueDateConfirming = true"
+                                            class="px-4 py-2 rounded-lg bg-slate-200 text-slate-700 text-xs font-black hover:bg-slate-300 transition">
+                                        Edit
+                                    </button>
+                                </div>
+                                <p x-show="!isBatchMode && issueDate" x-cloak class="text-[11px] text-slate-500 leading-relaxed">
+                                    Prints on the letter as <b>DATE OF ISSUE</b>. It is set on the White Copy, where it
+                                    is read back on paper — <b>Edit</b> changes it here if the proof was wrong.
+                                </p>
+
+                                {{-- A batch: how many of its letters are dated. There is no
+                                     one date to show — each carries its own — so what matters
+                                     here is whether any is still missing one. --}}
+                                <div x-show="isBatchMode && batchMissingDates === 0" x-cloak class="flex items-center gap-2">
+                                    <p class="text-[13px] font-bold text-slate-700 flex-1">
+                                        All <span x-text="batchCount"></span> letters carry a date of issue.
+                                    </p>
+                                    <button type="button" @click="issueDateConfirming = true"
+                                            class="px-4 py-2 rounded-lg bg-slate-200 text-slate-700 text-xs font-black hover:bg-slate-300 transition">
+                                        Edit
+                                    </button>
+                                </div>
+                                <p x-show="isBatchMode && batchMissingDates === 0" x-cloak
+                                   class="text-[11px] text-slate-500 leading-relaxed">
+                                    Each prints the date on its own record as <b>DATE OF ISSUE</b>. They are set on the
+                                    White copy — <b>Edit</b> replaces them here if the proof was wrong.
+                                </p>
+                            </div>
+                        </template>
+
+                        {{-- ── Unlocked ──────────────────────────────────────────────
+                             The proof was read and the date on it was wrong. Editing here
+                             rather than sending the operator back to the White Copy is a
+                             deliberate exception: the date is the one field on the letter
+                             whose correctness is settled by reading this dialog's own
+                             answer, and a second trip through the proof to change one
+                             date is a trip nobody makes.
+
+                             It is behind a confirmation because a date already on record
+                             is what an issued copy out in the world carries. --}}
+                        <template x-if="issueDateUnlocked">
+                            <div class="space-y-2">
+                                <input type="date" x-model="issueDate" :max="today" required
+                                       class="w-full px-3 py-2 bg-white rounded-lg text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-amber-500 border"
+                                       :class="issueDate ? 'border-amber-300' : 'border-red-400 bg-red-50/40'">
+                                <p x-show="!isBatchMode" class="text-[11px] text-slate-500 leading-relaxed">
+                                    Saved to the record when the print runs, and printed as <b>DATE OF ISSUE</b>.
+                                </p>
+                                <p x-show="isBatchMode" x-cloak class="text-[11px] text-amber-800 font-semibold leading-relaxed">
+                                    This replaces the date on <b>all <span x-text="batchCount"></span></b> letters in the
+                                    batch, not only the blank ones.
+                                </p>
+                            </div>
+                        </template>
+
+                        {{-- The confirmation. Filling a blank date never reaches here —
+                             there is nothing to overwrite — so this only guards a change
+                             to a date already on record. --}}
+                        <div x-show="issueDateConfirming" x-cloak
+                             class="p-3 rounded-lg bg-amber-50 border border-amber-300 text-[12px] text-amber-900 space-y-2">
+                            <p x-show="!isBatchMode">
+                                Change the date of issue? This letter is dated
+                                <b x-text="issueDateOnRecord || issueDate"></b>, and any copy already issued carries that date.
+                            </p>
+                            <p x-show="isBatchMode" x-cloak>
+                                Change the date of issue on <b>all <span x-text="batchCount"></span></b> letters in this
+                                batch? Any copy already issued carries the date it has now.
+                            </p>
+                            <div class="flex gap-2">
+                                <button type="button" @click="unlockIssueDate()"
+                                        class="px-3 py-1.5 rounded-md bg-amber-600 text-white text-[12px] font-bold">Yes, edit it</button>
+                                <button type="button" @click="issueDateConfirming = false"
+                                        class="px-3 py-1.5 rounded-md bg-slate-200 text-slate-700 text-[12px] font-bold">No</button>
+                            </div>
+                        </div>
+
+                        <p x-show="issueDateError" x-cloak x-text="issueDateError"
+                           class="text-[11.5px] font-bold text-red-600"></p>
+
+                        <template x-if="issueDateOutstanding && !issueDateUnlocked">
+                            <div class="space-y-2">
+                                <p class="text-[12px] text-red-700 font-semibold leading-relaxed" x-show="!isBatchMode">
                                     This letter has no date of issue, and nothing else supplies one. It is entered
                                     on the White Copy, where it can be read back before anything is printed.
+                                </p>
+                                <p class="text-[12px] text-red-700 font-semibold leading-relaxed" x-show="isBatchMode" x-cloak>
+                                    <b x-text="batchMissingDates"></b> of <b x-text="batchCount"></b> letters have no
+                                    date of issue, and nothing else supplies one. It is entered on the White Copy,
+                                    where it can be read back before anything is printed.
                                 </p>
                                 <button type="button" @click="goToWhiteCopy()"
                                         class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-white text-xs font-black hover:bg-slate-900 transition">
                                     <i data-lucide="file-search" class="h-3.5 w-3.5"></i>
-                                    Print White Copy
+                                    <span x-text="isBatchMode ? 'White copy' : 'Print White Copy'"></span>
                                 </button>
                             </div>
                         </template>
@@ -368,15 +461,46 @@
                         </div>
                     </button>
 
+                    {{-- The proofing stage, and FIRST on the board — it is the step
+                         that comes first in the work, and a board that lists the
+                         official print above it invites the officer to skip it.
+
+                         The two tiles hand off to each other: the proof is live until
+                         it has been run, then it closes and the official print opens.
+                         Neither is a mode of the other; one costs nothing and can be
+                         repeated, the other puts a serial on paper. --}}
+                    <button type="button" @click="ossLaunchRecommendationWhiteCopy()"
+                        :disabled="!ossGeneratedState.recommendation || ossRecommendationPrinted || ossWhiteCopyDone"
+                        :title="ossRecommendationPrinted
+                                    ? 'Already printed — the white copy is a pre-print proof'
+                                    : (ossWhiteCopyDone ? 'White copy already run off — print the recommendation next' : '')"
+                        class="flex items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:bg-slate-100 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-50">
+                        <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-slate-200 flex items-center justify-center">
+                            <i data-lucide="file-search" class="w-5 h-5 text-slate-700"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm font-bold text-slate-900">1. Recommendation — White Copy</p>
+                            <p class="text-xs text-slate-500 mt-0.5"
+                               x-text="ossRecommendationPrinted
+                                            ? 'Already printed — nothing left to proof'
+                                            : (ossWhiteCopyDone ? 'Proof already run off' : 'Black & white proof for vetting')"></p>
+                        </div>
+                    </button>
+
+                    {{-- Opens only once the proof has been run. Nothing else on this
+                         board says whether the letter was read, and the whole reason
+                         the proof exists is that it should be. --}}
                     <button type="button" @click="ossLaunchRecommendation()"
-                        :disabled="!ossGeneratedState.recommendation"
+                        :disabled="!ossGeneratedState.recommendation || !(ossWhiteCopyDone || ossRecommendationPrinted)"
+                        :title="!(ossWhiteCopyDone || ossRecommendationPrinted) ? 'Print and read the white copy first' : ''"
                         class="flex items-center gap-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-left transition hover:bg-blue-100 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-50">
                         <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
                             <i data-lucide="thumbs-up" class="w-5 h-5 text-blue-700"></i>
                         </div>
                         <div>
-                            <p class="text-sm font-bold text-blue-900">Recommendation</p>
-                            <p class="text-xs text-blue-600 mt-0.5" x-text="ossHints.recommendation"></p>
+                            <p class="text-sm font-bold text-blue-900">2. Recommendation</p>
+                            <p class="text-xs text-blue-600 mt-0.5"
+                               x-text="(ossWhiteCopyDone || ossRecommendationPrinted) ? ossHints.recommendation : 'Enabled after the white copy is printed'"></p>
                         </div>
                     </button>
 
@@ -528,6 +652,9 @@ document.addEventListener('alpine:init', () => {
         // form has only blank hand-signed date lines — so a proofing stage on its
         // own is not enough to take the field off this dialog.
         whiteCopyOwnsDate: false,
+        // Which module's records the Edit writes to. Defaults to the Land RofO
+        // endpoint; SLTR keeps its own table and passes its own.
+        issueDateUrl: '',
         issueDate: '',
         issueDateOnRecord: '',
         issueDateLocked: false,
@@ -539,6 +666,14 @@ document.addEventListener('alpine:init', () => {
             acknowledgement: false,
             recommendation: false
         },
+        // Whether the recommendation has already been printed officially. Closes
+        // the White Copy tile: a proof is read before a document is issued, so one
+        // offered for a recommendation already in the applicant's hand is a proof
+        // of the past.
+        ossRecommendationPrinted: false,
+        // Whether the proof has been run off. Opens the official tile and closes
+        // the proof's own.
+        ossWhiteCopyDone: false,
         ossHints: {
             verification: 'Enabled after verification is generated',
             acknowledgement: 'Enabled after acknowledgement is generated',
@@ -565,6 +700,9 @@ document.addEventListener('alpine:init', () => {
             this.reissuance = (data && data.reissuance) ? String(data.reissuance) : '';
             this.whiteCopyUrl = (data && data.whiteCopyUrl) ? String(data.whiteCopyUrl) : '';
             this.whiteCopyOwnsDate = !!(data && data.whiteCopyOwnsDate);
+            this.issueDateUrl = (data && data.issueDateUrl)
+                ? String(data.issueDateUrl)
+                : '{{ route('land-rofos.issue-date') }}';
             this.passesAllowed = !(data && data.passes === false);
             this.batch = (data && data.batch) ? data.batch : null;
 
@@ -639,9 +777,13 @@ document.addEventListener('alpine:init', () => {
             return !!this.whiteCopyUrl && !this.isBatchMode;
         },
 
-        // Only then is the editable panel replaced by the read-only one.
+        // Only then is the editable panel replaced by the read-only one. A batch
+        // counts as well as a row: the date belongs to the proof either way, and a
+        // field here that a batch could still type into would be a second place to
+        // set the one thing the proof was read to check.
         get dateOnWhiteCopy() {
-            return this.usesWhiteCopy && this.whiteCopyOwnsDate;
+            if (!this.whiteCopyOwnsDate) return false;
+            return this.isBatchMode || this.usesWhiteCopy;
         },
 
         get batchCount() {
@@ -671,9 +813,15 @@ document.addEventListener('alpine:init', () => {
         // table and has no such column, so it opens without the panel rather than
         // with one whose Save would go nowhere.
         get supportsIssueDate() {
-            if (this.isBatchMode) return this.batchMissingDates > 0;
+            // A batch in the White Copy flow always has something to say about the
+            // date — "all of them are dated" is an answer worth showing, and it is
+            // what tells the operator the passes are unlocked for a good reason.
+            if (this.isBatchMode) return this.dateOnWhiteCopy || this.batchMissingDates > 0;
             if (!this.recordId) return false;
-            if (String(this.docType).startsWith('SLTR')) return false;
+            // SLTR used to be excluded here: its table had no date_issued column, so
+            // the panel's Save would have gone nowhere. It has one now
+            // (2026_08_26_090000_add_date_issued_to_sltr_recommendations), and its
+            // letter prints DATE OF ISSUE like any other, so it is in.
             return String(this.docType).includes('RofO')
                 || String(this.docType).includes('Recommendation');
         },
@@ -690,11 +838,15 @@ document.addEventListener('alpine:init', () => {
 
         passDisabledReason(pass) {
             if (this.issueDateOutstanding) {
-                return this.dateOnWhiteCopy
-                    ? 'This letter has no date of issue. It is entered on the White '
-                      + 'Copy, so it is read back before anything is printed.'
-                    : 'Enter the date issued first — it prints on the letter as '
-                      + 'DATE OF ISSUE and nothing else supplies it.';
+                if (!this.dateOnWhiteCopy) {
+                    return 'Enter the date issued first — it prints on the letter as '
+                         + 'DATE OF ISSUE and nothing else supplies it.';
+                }
+                return this.isBatchMode
+                    ? this.batchMissingDates + ' of these letters have no date of issue. It is '
+                      + 'entered on the White copy, so it is read back before anything is printed.'
+                    : 'This letter has no date of issue. It is entered on the White '
+                      + 'Copy, so it is read back before anything is printed.';
             }
             if (this.passEnabled(pass)) return '';
             return 'Splitting the run into Originals and office copies is available '
@@ -790,11 +942,21 @@ document.addEventListener('alpine:init', () => {
         // the manager stays a component that knows nothing about the page it was
         // opened from.
         goToWhiteCopy() {
+            // A batch's proof is a form post over a list of ids, so the page that
+            // opened the manager keeps that pipeline and hands it back here.
+            if (this.isBatchMode) {
+                const run = this.batch && this.batch.onWhiteCopy;
+                this.closeModal();
+                if (typeof run === 'function') run();
+                return;
+            }
+
             const detail = {
                 recordId: this.recordId,
                 ref: this.refNumber,
                 url: this.whiteCopyUrl,
-                issueDate: this.issueDate || ''
+                issueDate: this.issueDate || '',
+                issueDateUrl: this.issueDateUrl
             };
             this.closeModal();
             window.dispatchEvent(new CustomEvent('open-white-copy', { detail }));
@@ -810,7 +972,12 @@ document.addEventListener('alpine:init', () => {
         // persistIssueDate() and runBatchPass() stay as the backstop.
         get issueDateOutstanding() {
             if (!this.supportsIssueDate) return false;
-            if (this.isBatchMode) return this.batchMissingDates > 0 && !this.issueDate;
+            // A date typed into the unlocked field counts: the operator is correcting
+            // it here, which is the one edit this panel allows. Without that, an
+            // unlocked field could never satisfy the very rule it exists to satisfy.
+            if (this.issueDateUnlocked) return !this.issueDate;
+            // Otherwise the plain fact: any letter without a date blocks the run.
+            if (this.isBatchMode) return this.batchMissingDates > 0;
             return !this.issueDate;
         },
 
@@ -835,14 +1002,16 @@ document.addEventListener('alpine:init', () => {
 
             // In the White Copy flow the date reaching here came off the record and
             // was written by the White Copy card. There is nothing to save, and
-            // saving anyway would let the printer rewrite a date nobody proofread.
-            if (this.dateOnWhiteCopy) return true;
+            // saving anyway would let the printer rewrite a date nobody proofread —
+            // unless the operator has explicitly unlocked the field to correct it,
+            // which is the one edit this panel allows and must therefore persist.
+            if (this.dateOnWhiteCopy && !this.issueDateUnlocked) return true;
 
             // Locked and untouched: the record already holds this date, nothing to write.
             if (this.issueDateLocked && !this.issueDateUnlocked) return true;
 
             try {
-                await fetch('{{ route('land-rofos.issue-date') }}', {
+                await fetch(this.issueDateUrl, {
                     method: 'POST',
                     credentials: 'same-origin',
                     headers: {
@@ -880,15 +1049,26 @@ document.addEventListener('alpine:init', () => {
             // date of issue, one has to be entered before the run goes ahead. It
             // fills those blanks only — a letter already carrying a date keeps it.
             if (this.batchMissingDates > 0 && !this.issueDate) {
-                this.issueDateError = 'Enter the date of issue before printing — '
-                    + this.batchMissingDates + ' of these letters have none.';
+                this.issueDateError = this.dateOnWhiteCopy
+                    ? this.batchMissingDates + ' of these letters have no date of issue. '
+                      + 'Set it on the White copy first.'
+                    : 'Enter the date of issue before printing — '
+                      + this.batchMissingDates + ' of these letters have none.';
                 return;
             }
 
+            // Only ever sent with a real date behind it. Where the White Copy owns
+            // the date and nothing has been unlocked, there is no field here to
+            // read: this carries nothing and each letter prints the date on its own
+            // record.
+            //
+            // 'all' for a confirmed edit — the operator was told it replaces every
+            // date in the batch — and 'missing' otherwise, so one answer given for
+            // many files can never overwrite a date a letter already carries.
             const extras = {};
-            if (this.batchMissingDates > 0) {
+            if (this.issueDate && (this.issueDateUnlocked || this.batchMissingDates > 0)) {
                 extras.issue_date = this.issueDate;
-                extras.issue_date_apply = 'missing';
+                extras.issue_date_apply = this.issueDateUnlocked ? 'all' : 'missing';
             }
 
             const run = this.batch.onPass;
@@ -1064,12 +1244,18 @@ document.addEventListener('alpine:init', () => {
                     const result = await res.json();
                     const ready = !!(result && result.success && result.data && result.data.exists);
                     this.ossGeneratedState.recommendation = ready;
+                    this.ossRecommendationPrinted = !!(ready && result.data.printed);
+                    this.ossWhiteCopyDone = !!(ready && result.data.white_copy_done);
                     if (ready && this.moduleRecord) {
                         this.moduleRecord.recommendation_id = result.data.id || null;
                     }
                     this.ossHints.recommendation = ready ? 'View & print recommendation' : 'Enabled after recommendation is generated';
                 } catch (_) {
                     this.ossGeneratedState.recommendation = false;
+                    // Unknown is not the same as printed: a status that could not be
+                    // read must not silently close off the proof.
+                    this.ossRecommendationPrinted = false;
+                    this.ossWhiteCopyDone = false;
                     this.ossHints.recommendation = 'Unable to verify status right now';
                 }
             }
@@ -1122,8 +1308,65 @@ document.addEventListener('alpine:init', () => {
                 return;
             }
 
+            // Official paper, so it stands behind the same question every other
+            // official print does. Answering "no" opens the proof instead.
+            //
+            // The gate lives in the white-copy component, which sits beside this one
+            // in layouts/app. (Written out rather than named as a tag: Blade compiles
+            // component tags anywhere in the file, comments and script bodies
+            // included, so writing the tag here renders the whole component into the
+            // middle of this script.)
+            // If a page ever renders one without the other, the print
+            // still goes ahead rather than dying on an undefined — a missing question
+            // must not become a missing document.
             this.closeModal();
-            window.open('/land-recommendations/' + recId + '/print', '_blank');
+            if (!window.WhiteCopy || typeof window.WhiteCopy.confirmProofread !== 'function') {
+                window.open('/land-recommendations/' + recId + '/print', '_blank');
+                return;
+            }
+            window.WhiteCopy.confirmProofread({
+                subject: this.refNumber || 'this recommendation',
+                onYes:       () => window.WhiteCopy.openTab('/land-recommendations/' + recId + '/print'),
+                onWhiteCopy: () => window.WhiteCopy.openTab('/land-recommendations/' + recId + '/white-copy')
+            });
+        },
+
+        // The proof of the same document: no arms, no QR, no serial, no signature
+        // blocks and no acknowledgement sheet, marked WHITE COPY. It mints nothing
+        // and logs nothing, so it is not asked to confirm anything first.
+        ossLaunchRecommendationWhiteCopy() {
+            if (!this.moduleRecord) return;
+            if (!this.ossGeneratedState.recommendation) {
+                Swal.fire({ icon: 'info', title: 'Recommendation Not Generated', text: 'Generate recommendation first, then use this print option.' });
+                return;
+            }
+            // The tile is already disabled for this; checked again because a
+            // disabled button is a hint, not a rule.
+            if (this.ossRecommendationPrinted) {
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Already printed',
+                    text: 'This recommendation has been printed. The white copy is a proof read before printing, so there is nothing left for it to check.'
+                });
+                return;
+            }
+            if (this.ossWhiteCopyDone) {
+                Swal.fire({
+                    icon: 'info',
+                    title: 'White copy already run off',
+                    text: 'The proof for this recommendation has been printed. Read it, and print the recommendation itself when it is right.'
+                });
+                return;
+            }
+
+            const recId = String(this.moduleRecord.recommendation_id || '').trim();
+            if (!recId) {
+                Swal.fire({ icon: 'warning', title: 'Missing Recommendation', text: 'Could not resolve recommendation record.' });
+                return;
+            }
+
+            this.closeModal();
+            window.open('/land-recommendations/' + recId + '/white-copy', '_blank');
         },
 
         async ossLaunchCommissioningSheet() {

@@ -24,6 +24,25 @@ use Illuminate\Support\Facades\Storage;
  * is the map this mirrors, and the paper-size subfolder (A4/A3) is deliberately
  * NOT created here: the uploader makes it, and an empty A4 folder would imply a
  * scan session that never happened.
+ *
+ * ── Counterpart folios ───────────────────────────────────────────────────────
+ *
+ * A land file does not live in one registry. The same file number also has a
+ * physical folder in the Cadastral registry and in the Physical Planning
+ * registry, and until now nothing on disk said so — a scan belonging to the
+ * cadastral copy had nowhere to go. ensureWithFolios() therefore creates the
+ * file-number folder in those two registries alongside the home one, so all
+ * three folios exist from the moment the file is indexed or commissioned.
+ *
+ * Deliberately NAKED (no edms_file_type segment). The classification — Regular,
+ * Subdivision Mother, Regrant New — is a fact about the file in its HOME
+ * registry; stamping it into all three would put the same fact on disk in three
+ * places, and EdmsFileTypeTransferService would then have to move three folders
+ * every time an operator re-types a file. The naked layout is a first-class
+ * supported state (EdmsFileType: a NULL type contributes no segment), it is what
+ * EdmsDocumentPathResolver::candidates() already probes, and it is what the
+ * Physical Planning folders on disk already look like — shadow:import reads bare
+ * file-number folder names straight out of that registry.
  */
 class EdmsScanUploadFolderService
 {
@@ -39,23 +58,89 @@ class EdmsScanUploadFolderService
         'SLTR Registry'      => 'SLTR_Registry',
         'ST Registry'        => 'ST_Registry',
         'Deeds Registry'     => 'Deeds_Registry',
+        // Not a home registry for any file KLAES issues, but every file gets a
+        // counterpart folio here — see FOLIO_REGISTRIES. The character-scrub in
+        // registrySlug() already produced this exact slug; it is spelled out so
+        // the folio target cannot drift if that fallback is ever narrowed.
+        'Physical Planning Registry' => 'Physical_Planning_Registry',
     ];
 
     /**
-     * Create the file's scan folder if it is not already there.
+     * The registries every file gets a counterpart folio in, on top of its own.
+     *
+     * A file whose home registry is already one of these is skipped rather than
+     * given a second folder in the same registry.
+     */
+    public const FOLIO_REGISTRIES = [
+        'Cadastral Registry',
+        'Physical Planning Registry',
+    ];
+
+    /**
+     * Create the file's scan folder, and its counterpart folios, if not already there.
      *
      * Best-effort: the file is already indexed by the time this runs, so a storage
      * failure is logged and reported, never thrown.
      *
-     * @return array{created:bool, existed:bool, path:?string, registry:?string, reason:string}
+     * @return array{created:bool, existed:bool, path:?string, registry:?string, reason:string, folios:array<string,array>}
      */
     public function ensureForIndexing(FileIndexing $record): array
     {
-        return $this->ensure(
+        return $this->ensureWithFolios(
             (string) ($record->file_number ?: $record->temp_file_no ?: ''),
             $this->registryNameFor($record),
             ['file_indexing_id' => $record->id]
         );
+    }
+
+    /**
+     * The home scan folder plus a folio in each of FOLIO_REGISTRIES.
+     *
+     * Returns the home outcome unchanged, with the folios hung off it under a
+     * `folios` key — every existing caller reads `path`/`reason` off the top
+     * level and keeps working without knowing folios exist.
+     *
+     * @param  array<string,mixed>  $logContext extra fields for the log lines
+     * @return array{created:bool, existed:bool, path:?string, registry:?string, reason:string, folios:array<string,array>}
+     */
+    public function ensureWithFolios(string $fileNumber, ?string $registryName = null, array $logContext = []): array
+    {
+        $home = $this->ensure($fileNumber, $registryName, $logContext);
+        $home['folios'] = $this->ensureFolios($fileNumber, $registryName, $logContext);
+
+        return $home;
+    }
+
+    /**
+     * Create the counterpart folio in each registry the file also physically sits in.
+     *
+     * Keyed by registry display name so the caller can name the registry in the
+     * post-action prompt without re-deriving it from the slug.
+     *
+     * @param  array<string,mixed>  $logContext
+     * @return array<string,array{created:bool, existed:bool, path:?string, registry:?string, reason:string}>
+     */
+    public function ensureFolios(string $fileNumber, ?string $registryName = null, array $logContext = []): array
+    {
+        $homeSlug = $this->registrySlug($registryName);
+        $folios = [];
+
+        foreach (self::FOLIO_REGISTRIES as $folioRegistry) {
+            // The file's own registry is one of the folio registries: its home
+            // folder IS the folio, and a second one would be the same path.
+            if ($this->registrySlug($folioRegistry) === $homeSlug) {
+                $folios[$folioRegistry] = $this->outcome(false, false, null, $homeSlug, 'same_as_home');
+                continue;
+            }
+
+            $folios[$folioRegistry] = $this->ensure(
+                $fileNumber,
+                $folioRegistry,
+                array_merge($logContext, ['folio_of' => $homeSlug])
+            );
+        }
+
+        return $folios;
     }
 
     /**

@@ -59,6 +59,8 @@ class LandRofoController extends Controller
             return response()->json(['success' => false, 'message' => 'Batch not found.'], 404);
         }
 
+        $childProofed = PrintLog::whiteCopyPrinted('Land ROFO', $children->pluck('file_number')->all());
+
         return response()->json([
             'success'  => true,
             'batch_id' => $batchId,
@@ -82,6 +84,7 @@ class LandRofoController extends Controller
                 // 'none' | 'originals' | 'complete' -- the batch table shows which
                 // half of a split print this child is still owed.
                 'print_stage'    => $c->rofo_print_stage,
+                'white_copy_done' => in_array(strtoupper(trim((string) $c->file_number)), $childProofed, true),
                 'print_url'      => route('land-rofos.print', $c->id),
                 // The proof copy, so a child of a batch can be vetted the same way
                 // a row on the main list is.
@@ -392,6 +395,54 @@ class LandRofoController extends Controller
             }
         }
 
+        // Which rows on this page have already had paper through the printer, so the
+        // White Copy can be closed off for them: a proof is a PRE-print reading, and
+        // once the letter is issued there is nothing left to proofread against.
+        //
+        // Deliberately NOT $printDates. That is gated on printedPredicateSql(),
+        // which reads rofo_print_count — a column only the single-print path
+        // increments. A letter run off through a batch therefore has a full print
+        // history and a count of zero, and would keep offering a proof of a document
+        // already in the applicant's hand. The print log is what actually knows.
+        $whiteCopyLocked = [];
+        $pageFileNumbers = $recommendations->getCollection()
+            ->pluck('file_number')->filter()->all();
+
+        if (!empty($pageFileNumbers)) {
+            // sinceReset: true — a reset reopens the whole workflow, the proofing
+            // stage included.
+            //
+            // It was false at first, on the reasoning that a letter run off once has
+            // been out in the world whatever the print state was later set to. But a
+            // reset is a Super Admin declaring that letter unprinted so it can be
+            // printed again — and the run that follows is a fresh one, over a record
+            // that may have been corrected in between. That is precisely the run a
+            // proof exists to check. Leaving the proof shut meant the one path back
+            // from a spoilt print skipped the reading.
+            $printedFiles = array_flip(PrintLog::printedAnyhowSinceReset('Land ROFO', $pageFileNumbers, true));
+
+            foreach ($recommendations->getCollection() as $rec) {
+                $key = strtoupper(trim((string) $rec->file_number));
+                if (isset($printedFiles[$key]) || isset($printDates[$rec->id])
+                    || (int) ($rec->rofo_print_count ?? 0) > 0) {
+                    $whiteCopyLocked[$rec->id] = true;
+                }
+            }
+        }
+
+        // Which rows have had their proof run off. The Print Manager opens on the
+        // strength of this, and the White Copy closes with it.
+        $whiteCopyDone = [];
+        if (!empty($pageFileNumbers)) {
+            $proofed = array_flip(PrintLog::whiteCopyPrinted('Land ROFO', $pageFileNumbers));
+
+            foreach ($recommendations->getCollection() as $rec) {
+                if (isset($proofed[strtoupper(trim((string) $rec->file_number))])) {
+                    $whiteCopyDone[$rec->id] = true;
+                }
+            }
+        }
+
         // Batch count for the tab badge, on the same record set the tabs filter.
         $rofoBatchCount = (clone $rofoScopeQuery)->whereNotNull('rofo_batch_id')
             ->distinct()->count('rofo_batch_id');
@@ -401,7 +452,7 @@ class LandRofoController extends Controller
                 ->get(['id', 'first_name', 'last_name'])->keyBy('id')
             : collect();
 
-        return view('land_rofos.index', compact('recommendations', 'PageTitle', 'landUses', 'stats', 'availableSerials', 'ossViewOnly', 'rofoSerials', 'tab', 'printDates', 'batchSizes', 'batchMemberIds', 'rofoBatches', 'rofoBatchCount', 'rofoBatchCreators'));
+        return view('land_rofos.index', compact('recommendations', 'PageTitle', 'landUses', 'stats', 'availableSerials', 'ossViewOnly', 'rofoSerials', 'tab', 'printDates', 'whiteCopyLocked', 'whiteCopyDone', 'batchSizes', 'batchMemberIds', 'rofoBatches', 'rofoBatchCount', 'rofoBatchCreators'));
     }
 
     /**
@@ -947,7 +998,16 @@ class LandRofoController extends Controller
      */
     public function printWhiteCopy(Request $request, $id)
     {
-        return $this->print($request, $id, true);
+        $view = $this->print($request, $id, true);
+
+        // Recorded so the proofing stage can be seen to be done: the Print Manager
+        // opens on the strength of it, and the proof itself closes. Logged on
+        // render rather than on afterprint because the template sends itself to the
+        // printer on load — and because an afterprint call is exactly what a proof
+        // must not have (see the template's @unless($isWhiteCopy)).
+        PrintLog::logWhiteCopy('Land ROFO', LandRecommendation::find($id)?->file_number, Auth::id());
+
+        return $view;
     }
 
     public function print(Request $request, $id, bool $whiteCopy = false)
@@ -1130,7 +1190,16 @@ class LandRofoController extends Controller
      */
     public function batchWhiteCopy(Request $request)
     {
-        return $this->batchPrint($request, true);
+        $view = $this->batchPrint($request, true);
+
+        // One line per letter, so a batch proof leaves every one of its files with
+        // the same standing a single proof gives one.
+        $ids = array_filter((array) $request->input('ids', []), 'is_numeric');
+        foreach (LandRecommendation::whereIn('id', $ids)->pluck('file_number') as $fileNumber) {
+            PrintLog::logWhiteCopy('Land ROFO', $fileNumber, Auth::id());
+        }
+
+        return $view;
     }
 
     public function batchPrint(Request $request, bool $whiteCopy = false)

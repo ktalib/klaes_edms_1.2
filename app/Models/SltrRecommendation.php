@@ -52,6 +52,10 @@ class SltrRecommendation extends Model
         'applicant_name',
         'applicant_address',
         'application_date',
+        // The date the letter is issued, printed on it as DATE OF ISSUE. Its own
+        // column: application_date is the applicant's and rofo_date_generated is
+        // this system's, and neither is the printer's to edit.
+        'date_issued',
         'location',
         'lga',
         'land_use',
@@ -81,6 +85,7 @@ class SltrRecommendation extends Model
 
     protected $casts = [
         'application_date'   => 'date',
+        'date_issued'        => 'date',
         'approved_at'        => 'datetime',
         'rofo_generated_at'  => 'datetime',
         'rofo_date_generated'=> 'date',

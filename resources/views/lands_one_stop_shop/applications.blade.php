@@ -2553,16 +2553,46 @@
         }
 
         var ref = (data.file_no || data.mls_file_no || data.mlsfNo || '—').toString().trim();
-        window.dispatchEvent(new CustomEvent('open-print-manager', {
-            detail: {
-                ref: ref,
-                type: 'OSS OP',
-                url: '',
-                module: 'oss',
-                record: data,
-                hideCommissioningSheet: {{ $isChangeOfName ? 'true' : 'false' }}
+
+        var openBoard = function () {
+            window.dispatchEvent(new CustomEvent('open-print-manager', {
+                detail: {
+                    ref: ref,
+                    type: 'OSS OP',
+                    url: '',
+                    module: 'oss',
+                    record: data,
+                    hideCommissioningSheet: {{ $isChangeOfName ? 'true' : 'false' }}
+                }
+            }));
+        };
+
+        // The proofread question, asked at the menu — the same place the RofO asks
+        // it, so the two modules behave alike.
+        //
+        // Only where there is a recommendation behind this record. The board also
+        // holds the Verification, the Acknowledgement and the Commissioning Sheet,
+        // none of which have a proofing stage; asking about a white copy that does
+        // not exist, to reach a document it has nothing to do with, is a question
+        // with no right answer. Where a recommendation IS there, it is the official
+        // document on this board, and the question belongs in front of it.
+        //
+        // Answering "no" opens the white copy straight away. The Recommendation tile
+        // inside the board keeps its own gate: the board can be left open, and a
+        // question answered several clicks ago is not an answer about this print.
+        var recId = String((data.recommendation_id || '')).trim();
+        if (!recId || !window.WhiteCopy || typeof window.WhiteCopy.confirmProofread !== 'function') {
+            openBoard();
+            return;
+        }
+
+        window.WhiteCopy.confirmProofread({
+            subject: ref,
+            onYes: openBoard,
+            onWhiteCopy: function () {
+                window.WhiteCopy.openTab('/land-recommendations/' + recId + '/white-copy');
             }
-        }));
+        });
     }
 
     function openLand12ForOP(btn) {
@@ -5862,7 +5892,17 @@
                     saveBtn.disabled = true;
                     saveBtn.classList.add('opacity-40', 'cursor-not-allowed');
                 }
-                if (printBtn) printBtn.disabled = false;
+                // This button prints a WHITE COPY — a proof read before the
+                // recommendation is issued. Once it has been issued there is nothing
+                // left for a proof to check, so the button closes with it. Same rule
+                // as the White Copy tile on the Print Manager board, off the same
+                // flag, so the two cannot disagree about one record.
+                if (printBtn) {
+                    printBtn.disabled = !!rec.printed;
+                    printBtn.title = rec.printed
+                        ? 'Already printed — the white copy is a pre-print proof'
+                        : 'Black & white proof of this form for vetting — not an official copy';
+                }
                 setRecommendationFieldsLocked(true);
             })
             .catch(function () {

@@ -274,6 +274,7 @@ class LandRecommendationController extends Controller
                 'ossTab'          => $ossTab,
                 'tab'             => $tab,
                 'printDates'      => [],
+                'whiteCopyDone'   => [],
                 'recSerials'      => [],
                 'batchSizes'      => collect(),
                 'batchActions'    => collect(),
@@ -383,7 +384,11 @@ class LandRecommendationController extends Controller
             }
         }
 
-        return view('land_recommendations.index', compact('recommendations', 'PageTitle', 'stats', 'cardStats', 'isOssView', 'pageType', 'ossTab', 'tab', 'printDates', 'recSerials', 'batchSizes', 'batchActions'));
+        // Which rows have had their proof run off: the official print opens on the
+        // strength of it, and the White Copy closes with it.
+        $whiteCopyDone = array_flip(PrintLog::whiteCopyPrinted('Recommendation', $fileNumbers));
+
+        return view('land_recommendations.index', compact('recommendations', 'PageTitle', 'stats', 'cardStats', 'isOssView', 'pageType', 'ossTab', 'tab', 'printDates', 'whiteCopyDone', 'recSerials', 'batchSizes', 'batchActions'));
     }
 
     /**
@@ -2466,7 +2471,15 @@ class LandRecommendationController extends Controller
         // reach a partial is the one failure this flag cannot afford.
         view()->share('isWhiteCopy', true);
 
-        return $this->print($request, $id);
+        $view = $this->print($request, $id);
+
+        PrintLog::logWhiteCopy(
+            'Recommendation',
+            LandRecommendation::find($id)?->file_number,
+            Auth::id()
+        );
+
+        return $view;
     }
 
     public function print(Request $request, $id)
@@ -2600,7 +2613,13 @@ class LandRecommendationController extends Controller
         // several of those include others.
         view()->share('isWhiteCopy', true);
 
-        return $this->printBatch($request, $batchId, true);
+        $view = $this->printBatch($request, $batchId, true);
+
+        foreach (LandRecommendation::where('rofo_batch_id', $batchId)->pluck('file_number') as $fileNumber) {
+            PrintLog::logWhiteCopy('Recommendation', $fileNumber, Auth::id());
+        }
+
+        return $view;
     }
 
     public function printBatch(Request $request, string $batchId, bool $whiteCopy = false)
