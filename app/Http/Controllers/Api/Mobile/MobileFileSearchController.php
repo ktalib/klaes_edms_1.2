@@ -192,7 +192,7 @@ class MobileFileSearchController extends Controller
 
         $phys = trim((string) ($indexing->physical_registry ?? ''));
         if ($phys !== '') {
-            return $phys;
+            return $this->canonicalRegistryName($phys);
         }
 
         if ((string) ($indexing->is_corresponding_file ?? '') === '1') {
@@ -216,6 +216,18 @@ class MobileFileSearchController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * Map a stored registry label onto the physical_registries catalog spelling.
+     * Older rows carry the plural "Registry N - Lands"; the catalog (and every
+     * dropdown built from it) uses the singular "Registry N - Land". The web
+     * Quick Search / File Tracker screens do the same substitution at render
+     * time, so the mobile badge and Registry (Origin) pre-select stay in step.
+     */
+    private function canonicalRegistryName(string $name): string
+    {
+        return preg_replace('/^(Registry\s+\S+\s+-\s+Land)s$/i', '$1', $name) ?? $name;
     }
 
     /**

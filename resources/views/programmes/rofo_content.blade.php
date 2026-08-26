@@ -95,8 +95,50 @@
            Geometry untouched — the frame keeps its width, the header keeps its
            height, the signature blocks leave their space — so the proof breaks
            across pages exactly where the official letter will. */
-        .white-copy .st-rofo-green-frame { border-color: #000 !important; }
-        .white-copy .original-placeholder { color: #000 !important; }
+        /* The decorative frame is painted by a border-image on ::before, which a
+           border-color rule cannot reach — that was the earlier attempt, and it left
+           the green border exactly where it was. Dropping the image is enough: the
+           20px border underneath is already transparent, and the padding that
+           positions the letter lives on the parent, so the geometry is untouched.
+
+           It comes off because it is the printed border of the security stock. A
+           sheet of plain paper carrying it reads as the real thing, which is the one
+           impression a proof must never give. */
+        .white-copy .st-rofo-green-frame::before {
+            border-image-source: none !important;
+            border-image-width: 0 !important;
+        }
+
+        /* Black on white, the whole sheet. Named selectors were not enough here
+           either: the letter carries accent colours of its own and the ministry
+           banner is navy with white text, so the proof paints everything black and
+           then puts back only what has to stay drawn.
+
+           Not a grayscale filter: that turns the accents into a mid-grey that prints
+           faint, and this sheet exists to be read. */
+        .white-copy,
+        .white-copy * { color: #000 !important; }
+
+        /* The navy ministry banner: white box, black rule, black text. Its inline
+           background is overridden here and the scheme switcher is told to leave a
+           proof alone (see applyScheme). */
+        .white-copy [data-rofo-badge] {
+            background: #fff !important;
+            border: 1px solid #000;
+        }
+
+        /* Nothing on a proof should offer to restyle the official frame. */
+        .white-copy #scheme-toolbar { display: none !important; }
+
+        /* The images that remain — the KLAES footer logo, the barcode — go
+           monochrome. The text is forced black above, but colour in an image is not
+           text and would still come out of a colour printer in colour. A filter is
+           right here where it was wrong for text: there is no faint-grey reading
+           problem in a logo. */
+        .white-copy img {
+            filter: grayscale(100%);
+            -webkit-filter: grayscale(100%);
+        }
 
         .white-copy-mark-block {
             position: absolute;
@@ -1178,6 +1220,10 @@
             C: { frame: 'sltr.jpeg', badge: '#4ebf97', label: 'C (green border, green badge)' }
         };
         function applyScheme(key) {
+            // A proof has no frame and no coloured badge to restyle; the toolbar is
+            // hidden there, but a stray call must not paint them back on.
+            if (document.querySelector('.rofo-wrapper.white-copy')) return;
+
             var s = stSchemes[key];
             var frameUrl = 'http://app.klaes.ng/storage/template_frames/' + s.frame;
             var css = '.st-rofo-green-frame::before { border-image-source: url("' + frameUrl + '") !important; }';

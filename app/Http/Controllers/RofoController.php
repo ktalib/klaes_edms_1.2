@@ -594,6 +594,24 @@ class RofoController extends Controller
             })
             ->values();
 
+        // Which units have had their proof run off. The Print Manager opens on the
+        // strength of it and the White Copy closes with it, the same hand-off every
+        // other module uses.
+        //
+        // Keyed by fileno because that is what printRofoWhiteCopy() logs against —
+        // the two ends have to agree on the key or the gate never opens.
+        $proofFileNos = collect($suaSubapplications ?? [])->pluck('fileno')
+            ->merge(collect($puaSubapplications ?? [])->pluck('fileno'))
+            ->merge(collect($puaPrimaries ?? [])->flatMap(
+                fn ($primary) => collect($primary->units ?? [])->pluck('fileno')
+            ))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $whiteCopyDone = array_flip(\App\Models\PrintLog::whiteCopyPrinted('ST RofO', $proofFileNos));
+
         return view('programmes.rofo', compact(
             'motherApplications',
             'subapplications',
@@ -601,6 +619,7 @@ class RofoController extends Controller
             'suaSubapplications',
             'puaPrimaries',
             'availableSecurityPapers',
+            'whiteCopyDone',
             'PageTitle',
             'PageDescription'
         ));

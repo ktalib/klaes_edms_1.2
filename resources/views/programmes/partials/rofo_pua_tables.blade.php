@@ -168,6 +168,12 @@
                                 ->filter()
                                 ->values();
 
+                            // printRofoWhiteCopy() logs against the fileno of the unit
+                            // the batch is opened from — the first one — so the gate has
+                            // to read the same key or it never opens.
+                            $stProofUnit = $unitCollection->first(fn ($u) => (int) ($u->id ?? 0) === (int) ($unitMeta->first()['id'] ?? 0));
+                            $stWcDone = isset($whiteCopyDone[strtoupper(trim((string) ($stProofUnit->fileno ?? '')))]);
+
                             $printCounters = $unitMeta->pluck('print_counter');
                             $hasUniformCounters = $unitMeta->isNotEmpty() && $printCounters->unique()->count() === 1;
                             $currentCounter = $hasUniformCounters ? $printCounters->first() : null;
@@ -207,25 +213,27 @@
                                 @endforeach
 
                                 @if($unitMeta->isNotEmpty())
-                                    <button type="button" class="dd-item"
+                                    <button type="button" class="dd-item{{ $stWcDone ? ' disabled' : '' }}"
+                                        @if($stWcDone) disabled title="White copy already run off — print the letters next" @endif
                                         onclick="openWhiteCopyModal(
                                             {{ (int) $unitMeta->first()['id'] }},
                                             @js($summary->primary_file_no),
                                             '',
                                             '{{ route('programmes.white_copy_rofo', $unitMeta->first()['id']) }}?batch_primary={{ $summary->main_application_id }}'
                                         )">
-                                        <i data-lucide="file-search" class="w-4 h-4 text-slate-600"></i>
+                                        <i data-lucide="file-search" class="w-4 h-4 {{ $stWcDone ? 'opacity-40' : 'text-slate-600' }}"></i>
                                         <span>Print White Copy</span>
                                     </button>
 
-                                    <button type="button" class="dd-item"
+                                    <button type="button" class="dd-item{{ $stWcDone ? '' : ' disabled' }}"
+                                        @unless($stWcDone) disabled title="Print and read the white copy first" @endunless
                                         onclick="WhiteCopy.openPrintManager(
                                             '{{ $summary->primary_file_no }}',
                                             'ST RoFO',
                                             '{{ route('programmes.print_rofo', $unitMeta->first()['id']) }}?batch_primary={{ $summary->main_application_id }}',
                                             @js(['whiteCopyUrl' => route('programmes.white_copy_rofo', $unitMeta->first()['id']) . '?batch_primary={{ $summary->main_application_id }}'])
                                         )">
-                                        <i data-lucide="printer" class="w-4 h-4 text-indigo-600"></i>
+                                        <i data-lucide="printer" class="w-4 h-4 {{ $stWcDone ? 'text-indigo-600' : 'opacity-40' }}"></i>
                                         <span>Print Manager</span>
                                     </button>
                                 @endif

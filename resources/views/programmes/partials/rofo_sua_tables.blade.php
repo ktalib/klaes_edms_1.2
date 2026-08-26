@@ -127,11 +127,22 @@
                             @php
                                 $printCounter = (int) ($unitApplication->print_counter ?? 0);
                                 $viewRofoUrl = route('programmes.view_rofo', $unitApplication->id);
+
+                                // The proof has been run off for this unit, so the two
+                                // entries hand off to each other: the White Copy closes,
+                                // the Print Manager opens.
+                                $stWcDone = isset($whiteCopyDone[strtoupper(trim((string) $unitApplication->fileno))]);
                             @endphp
 
                             {{-- Proof first, then the run — the order the work happens in
                                  and the order every other module lists them in. ST prints
                                  no DATE OF ISSUE, so the card has no date to take. --}}
+                            @if($stWcDone)
+                                <span class="dd-item disabled" title="White copy already run off — print the letter next">
+                                    <i data-lucide="file-search" class="w-4 h-4 opacity-40"></i>
+                                    <span>Print White Copy</span>
+                                </span>
+                            @else
                             <button type="button" class="dd-item"
                                 onclick="openWhiteCopyModal(
                                     {{ (int) $unitApplication->id }},
@@ -142,7 +153,12 @@
                                 <i data-lucide="file-search" class="w-4 h-4 text-slate-600"></i>
                                 <span>Print White Copy</span>
                             </button>
+                            @endif
 
+                            {{-- Opens only once the proof has been run. Nothing else on
+                                 this row says whether the letter was read, and that is
+                                 the whole reason the proof exists. --}}
+                            @if($stWcDone)
                             <button type="button" class="dd-item"
                                 onclick="WhiteCopy.openPrintManager(
                                     '{{ $unitApplication->fileno }}',
@@ -153,6 +169,12 @@
                                 <i data-lucide="printer" class="w-4 h-4 text-indigo-600"></i>
                                 <span>Print Manager</span>
                             </button>
+                            @else
+                                <span class="dd-item disabled" title="Print and read the white copy first">
+                                    <i data-lucide="printer" class="w-4 h-4 opacity-40"></i>
+                                    <span>Print Manager</span>
+                                </span>
+                            @endif
                             @if($unitApplication->security_paper_code)
                                 <span class="dd-item disabled" title="Security code already assigned">
                                     <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600"></i>
