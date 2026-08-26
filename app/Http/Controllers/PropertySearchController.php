@@ -6,15 +6,20 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Services\LegalSearchService;
 use App\Services\TimelineWeightingService;
 
 class PropertySearchController extends Controller
 {
     protected TimelineWeightingService $timelineService;
+    protected LegalSearchService $legalSearchService;
 
-    public function __construct(TimelineWeightingService $timelineService)
-    {
+    public function __construct(
+        TimelineWeightingService $timelineService,
+        LegalSearchService $legalSearchService
+    ) {
         $this->timelineService = $timelineService;
+        $this->legalSearchService = $legalSearchService;
     }
 
     /**
@@ -183,6 +188,121 @@ class PropertySearchController extends Controller
     }
 
     /**
+     * Build the Property Timeline payload from the core Legal Search report engine, so this
+     * modal, the LS timeline, the PHS portal and the certified slip cannot disagree.
+     *
+     * Returns null when the engine produces no rows — the caller then falls back to the
+     * legacy local pipeline rather than showing an empty modal.
+     */
+    private function buildTimelineFromLegalSearch(string $fileNumber, string $propId): ?array
+    {
+        try {
+            $query = [];
+            if ($fileNumber !== '') {
+                $query['file_number'] = $fileNumber;
+            }
+            if ($propId !== '') {
+                $query['prop_id'] = $propId;
+            }
+
+            $report = $this->legalSearchService->buildPrintReport($query);
+            if (($report['status'] ?? null) !== 200) {
+                return null;
+            }
+
+            $data = $report['payload']['data'] ?? [];
+            $rows = $data['rows'] ?? [];
+            if (empty($rows)) {
+                return null;
+            }
+        } catch (\Throwable $e) {
+            report($e);
+            return null;
+        }
+
+        // Map the report's print-shaped rows onto the keys the timeline view renders.
+        // "-" is the report's placeholder for an absent value; the view has its own em-dash
+        // rendering for empty, so translate rather than printing a literal dash.
+        $blank = fn ($v) => ($v === null || trim((string) $v) === '' || trim((string) $v) === '-')
+            ? null
+            : trim((string) $v);
+
+        $transactions = [];
+        foreach ($rows as $row) {
+            // The report puts a real date in reg_date and falls back to a bare year in
+            // transaction_date for legacy files with nothing on record — show whichever exists.
+            $displayDate = $blank($row['transaction_date'] ?? null) ?? $blank($row['reg_date'] ?? null);
+
+            $transactions[] = [
+                'source_table'     => $row['source_table'] ?? null,
+                'transaction_type' => $blank($row['instrument_type'] ?? null),
+                'party_1'          => $blank($row['grantor'] ?? null),
+                'party_2'          => $blank($row['grantee'] ?? null),
+                'party_3'          => $blank($row['party_3'] ?? null),
+                'primary_party'    => $blank($row['grantor'] ?? null),
+                'secondary_party'  => $blank($row['grantee'] ?? null),
+                'reg_no'           => $blank($row['reg_no'] ?? null),
+                'transaction_date' => $displayDate,
+                'display_date'     => $displayDate,
+                'reg_date'         => $blank($row['reg_date'] ?? null),
+                'location'         => $blank($row['location'] ?? null),
+                'file_number'      => $blank($row['file_no'] ?? null),
+                'root_of_title'    => $blank($row['root_of_title'] ?? null),
+                // Every row the report kept is part of the primary timeline: the engine has
+                // already dropped the duplicates that used to land in "Supporting Records".
+                'timeline_weight'  => 1.0,
+            ];
+        }
+
+        $first = $transactions[0] ?? [];
+        $last = $transactions[count($transactions) - 1] ?? [];
+
+        return [
+            'fileNumber' => $blank($data['file_number'] ?? null)
+                ?? ($fileNumber !== '' ? $fileNumber : ($first['file_number'] ?? $propId)),
+            'propId' => $propId !== '' ? $propId : $this->resolvePropIdForDisplay($fileNumber),
+            'landuse' => $blank($data['land_use'] ?? null),
+            'location' => $blank($data['plot_description'] ?? null) ?? ($first['location'] ?? null),
+            'totalTransactions' => count($transactions),
+            'originalOwner' => $first['primary_party'] ?? null,
+            'currentOwner' => $last['secondary_party'] ?? ($last['primary_party'] ?? null),
+            'transactions' => $transactions,
+            'weightedCount' => count($transactions),
+            'omittedCount' => 0,
+            'weighted' => $transactions,
+            'omitted' => [],
+        ];
+    }
+
+    /**
+     * The prop_id shown in the summary strip when the modal was opened by file number.
+     * Display only — PropID_Master is the canonical registry, so read it there rather than
+     * from file_indexings, whose prop_id is wrong on a large share of legacy rows.
+     */
+    private function resolvePropIdForDisplay(string $fileNumber): ?string
+    {
+        if ($fileNumber === '') {
+            return null;
+        }
+
+        try {
+            $aliasColumns = ['primary_file_number', 'mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'temp_fileno'];
+
+            $propId = DB::connection('sqlsrv')->table('PropID_Master')
+                ->where(function ($q) use ($aliasColumns, $fileNumber) {
+                    foreach ($aliasColumns as $col) {
+                        $q->orWhere($col, $fileNumber);
+                    }
+                })
+                ->value('prop_id');
+
+            return $propId !== null && trim((string) $propId) !== '' ? (string) $propId : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
      * Timeline view – shows all transactions for a given file number across all 4 tables, chronologically.
      */
     public function timeline(Request $request)
@@ -191,6 +311,29 @@ class PropertySearchController extends Controller
         $propId = trim((string) $request->query('prop_id', ''));
 
         abort_if($fileNumber === '' && $propId === '', 404, 'A file number or property ID is required.');
+
+        // The Property Timeline must show the SAME set the Legal Search timeline and the
+        // certified slip show — same synthetic File Commissioning / Root of Title row, same
+        // deduplication, same ordering. Rather than maintain a second engine that drifts
+        // (it did: this modal was missing the commissioning row entirely and listed both
+        // copies of a duplicated PRA deed as "Supporting Records"), read the authoritative
+        // rows straight from LegalSearchService::buildPrintReport() — the same call the PHS
+        // portal and the emailed online report already make.
+        //
+        // Falls back to the legacy local pipeline below when the report engine yields
+        // nothing, so a file it cannot key on still renders something.
+        $reportPayload = $this->buildTimelineFromLegalSearch($fileNumber, $propId);
+        if ($reportPayload !== null) {
+            $viewData = [
+                'PageTitle' => 'Property Transaction Timeline',
+                'historyPayload' => $reportPayload,
+                'fileNumber' => $reportPayload['fileNumber'],
+            ];
+
+            return $request->query('mode') === 'partial'
+                ? view('property_search.timeline_partial', $viewData)
+                : view('property_search.timeline', $viewData);
+        }
 
         $connection = DB::connection('sqlsrv');
         $transactions = collect();

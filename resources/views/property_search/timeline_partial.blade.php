@@ -20,6 +20,11 @@
     .tl-source-tag-CofO_staging         { background:#d1fae5;color:#065f46;border-color:#a7f3d0; }
     .tl-source-tag-pra                  { background:#fef3c7;color:#92400e;border-color:#fde68a; }
     .tl-source-tag-deed_registrations   { background:#ede9fe;color:#5b21b6;border-color:#ddd6fe; }
+    /* Synthetic rows emitted by the Legal Search report engine (not a real source table). */
+    .tl-source-tag-file-commissioning    { background:#f3f4f6;color:#374151;border-color:#e5e7eb; }
+    .tl-rot-tag { display:inline-flex;align-items:center;padding:0.15rem 0.5rem;border-radius:9999px;
+                  font-size:0.6rem;font-weight:700;letter-spacing:0.04em;white-space:nowrap;
+                  background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe; }
 
     .ptl-summary-grid { display:grid; grid-template-columns: repeat(2,1fr); gap:1rem; margin-bottom:1.25rem; }
     @media(min-width:640px){ .ptl-summary-grid { grid-template-columns: repeat(4,1fr); } }
@@ -120,13 +125,22 @@
         'CofO_staging': 'CofO',
         'pra': 'PRA',
         'deed_registrations': 'Deed Reg.',
+        'File Commissioning': 'File Commissioning',
+        'Temporary File': 'Temporary File',
     };
+
+    // source_table can be a synthetic label containing spaces ("File Commissioning"), which is
+    // not a valid CSS class fragment — slugify before interpolating into tl-source-tag-*.
+    const sourceClass = (src) => 'tl-source-tag-' + String(src || '')
+        .trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
     const dotColors = {
         'file_history_staging': '#3b82f6',
         'CofO_staging': '#10b981',
         'pra': '#f59e0b',
         'deed_registrations': '#8b5cf6',
+        'File Commissioning': '#6b7280',
+        'Temporary File': '#6b7280',
     };
 
     // Populate summary
@@ -163,7 +177,7 @@
 
         Object.entries(counts).forEach(([src, cnt]) => {
             const span = document.createElement('span');
-            span.className = `tl-source-tag tl-source-tag-${src}`;
+            span.className = `tl-source-tag ${sourceClass(src)}`;
             span.textContent = `${sourceLabel[src] || src}: ${cnt}`;
             badgesEl.appendChild(span);
         });
@@ -208,7 +222,7 @@
     const renderTxnCard = (t) => {
         const color  = dotColors[t.source_table] || '#6b7280';
         const label  = sourceLabel[t.source_table] || t.source_table;
-        const srcCls = `tl-source-tag-${t.source_table}`;
+        const srcCls = sourceClass(t.source_table);
 
         const parties = [
             t.primary_party   || t.party_1 || t.grantor || '',
@@ -230,6 +244,7 @@
                     <div class="flex items-center gap-2 flex-wrap">
                         <span class="tl-source-tag ${srcCls}">${e(label)}</span>
                         <span class="text-sm font-semibold text-gray-800">${e(t.transaction_type)}</span>
+                        ${t.root_of_title ? `<span class="tl-rot-tag">RoT: ${e(t.root_of_title)}</span>` : ''}
                         ${regPart}
                     </div>
                     <span class="text-xs text-gray-500 whitespace-nowrap">${e(t.display_date || t.transaction_date)}</span>

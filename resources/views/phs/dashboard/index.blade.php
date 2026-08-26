@@ -191,12 +191,17 @@
     .phs-source-tag-CofO_staging         { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
     .phs-source-tag-pra                  { background: #fef3c7; color: #92400e; border-color: #fde68a; }
     .phs-source-tag-deed_registrations   { background: #ede9fe; color: #5b21b6; border-color: #ddd6fe; }
+    /* Synthetic LS report rows (File Commissioning / Temporary File), slugified in portal.js */
+    .phs-source-tag-file-commissioning   { background: #f3f4f6; color: #374151; border-color: #e5e7eb; }
+    .phs-source-tag-temporary-file       { background: #f3f4f6; color: #374151; border-color: #e5e7eb; }
 
     /* Dark mode source tag overrides */
     .dark .phs-source-tag-file_history_staging { background: #1e3a5f; color: #93c5fd; border-color: #1d4ed8; }
     .dark .phs-source-tag-CofO_staging         { background: #064e3b; color: #6ee7b7; border-color: #065f46; }
     .dark .phs-source-tag-pra                  { background: #451a03; color: #fcd34d; border-color: #92400e; }
     .dark .phs-source-tag-deed_registrations   { background: #2e1065; color: #c4b5fd; border-color: #5b21b6; }
+    .dark .phs-source-tag-file-commissioning   { background: #1f2937; color: #d1d5db; border-color: #374151; }
+    .dark .phs-source-tag-temporary-file       { background: #1f2937; color: #d1d5db; border-color: #374151; }
 
     .package-card {
       cursor: pointer;

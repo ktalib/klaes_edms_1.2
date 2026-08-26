@@ -144,13 +144,21 @@
     setText('reference-no', result.reference_no);
 
     // Source-breakdown badges + total count (mirrors the LS Property Timeline modal).
-    const sourceLabels = { file_history_staging: 'File History', CofO_staging: 'CofO', pra: 'PRA', deed_registrations: 'Deed Reg.' };
+    // 'File Commissioning' / 'Temporary File' are synthetic rows the LS report engine emits;
+    // they are labels, not source tables, so they need an entry here and slugifying before
+    // being used as a CSS class (a raw value with a space produces an invalid class).
+    const sourceLabels = {
+      file_history_staging: 'File History', CofO_staging: 'CofO', pra: 'PRA', deed_registrations: 'Deed Reg.',
+      'File Commissioning': 'File Commissioning', 'Temporary File': 'Temporary File',
+    };
+    const sourceClass = (s) => 'phs-source-tag-' + String(s || '')
+      .trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     const counts = {};
     rows.forEach((r) => { const s = r.source_table || ''; if (s) counts[s] = (counts[s] || 0) + 1; });
     const badgesEl = $('timeline-source-badges');
     if (badgesEl) {
       badgesEl.innerHTML = Object.entries(counts)
-        .map(([s, c]) => `<span class="phs-source-tag phs-source-tag-${s}">${esc(sourceLabels[s] || s)}: ${c}</span>`)
+        .map(([s, c]) => `<span class="phs-source-tag ${sourceClass(s)}">${esc(sourceLabels[s] || s)}: ${c}</span>`)
         .join('');
     }
     const totalEl = $('timeline-total-count');
@@ -178,7 +186,7 @@
         <div class="bg-white dark:bg-gray-800 rounded-xl p-3 sm:p-4 border border-gray-100 dark:border-gray-700 shadow-sm relative z-10">
           <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
             <div class="flex items-center gap-2 flex-wrap">
-              ${src ? `<span class="phs-source-tag phs-source-tag-${src}">${esc(srcLabel)}</span>` : ''}
+              ${src ? `<span class="phs-source-tag ${sourceClass(src)}">${esc(srcLabel)}</span>` : ''}
               <span class="text-sm font-semibold text-gray-800 dark:text-gray-200">${esc(type)}</span>
               ${reg && reg !== '-' ? `<span class="text-xs text-gray-400">Reg: ${esc(reg)}</span>` : ''}
             </div>
