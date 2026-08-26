@@ -27,68 +27,68 @@
         <!-- Modal Body -->
         <div class="px-6 py-4 bg-gray-50 flex-1 overflow-y-auto">
             <!-- Tab Navigation -->
-            <div class="flex overflow-x-auto no-scrollbar gap-1 mb-4 bg-white p-1 rounded border border-gray-200">
+            <div class="flex flex-nowrap overflow-x-auto gap-1 mb-4 bg-white p-1 rounded border border-gray-200">
                 <button type="button"
-                    class="fileno-tab-btn flex-1 px-5 py-3 text-base font-semibold rounded-md transition-all duration-200 bg-white text-blue-600 shadow-sm whitespace-nowrap"
+                    class="fileno-tab-btn flex-1 min-w-0 px-2 py-2 text-sm font-semibold rounded-md transition-all duration-200 bg-white text-blue-600 shadow-sm whitespace-nowrap"
                     data-tab="mls" onclick="PhsFileNoModal.switchTab('mls'); return false;">
-                    <div class="flex items-center justify-center space-x-2">
-                        <i data-lucide="building-2" class="w-5 h-5 text-blue-600"></i>
+                    <div class="flex items-center justify-center gap-1.5">
+                        <i data-lucide="building-2" class="w-4 h-4 text-blue-600"></i>
                         <span>MLS</span>
                     </div>
                 </button>
                 <button type="button"
-                    class="fileno-tab-btn flex-1 px-5 py-3 text-base font-semibold rounded-md transition-all duration-200 text-gray-700 hover:text-gray-900 whitespace-nowrap"
+                    class="fileno-tab-btn flex-1 min-w-0 px-2 py-2 text-sm font-semibold rounded-md transition-all duration-200 text-gray-700 hover:text-gray-900 whitespace-nowrap"
                     data-tab="kangis" onclick="PhsFileNoModal.switchTab('kangis'); return false;">
-                    <div class="flex items-center justify-center space-x-2">
-                        <i data-lucide="map" class="w-5 h-5 text-green-600"></i>
+                    <div class="flex items-center justify-center gap-1.5">
+                        <i data-lucide="map" class="w-4 h-4 text-green-600"></i>
                         <span>KANGIS</span>
                     </div>
                 </button>
                 <button type="button"
-                    class="fileno-tab-btn flex-1 px-5 py-3 text-base font-semibold rounded-md transition-all duration-200 text-gray-700 hover:text-gray-900 whitespace-nowrap"
+                    class="fileno-tab-btn flex-1 min-w-0 px-2 py-2 text-sm font-semibold rounded-md transition-all duration-200 text-gray-700 hover:text-gray-900 whitespace-nowrap"
                     data-tab="newkangis" onclick="PhsFileNoModal.switchTab('newkangis'); return false;">
-                    <div class="flex items-center justify-center space-x-2">
-                        <i data-lucide="map-pin" class="w-5 h-5 text-purple-600"></i>
+                    <div class="flex items-center justify-center gap-1.5">
+                        <i data-lucide="map-pin" class="w-4 h-4 text-purple-600"></i>
                         <span>New KANGIS</span>
                     </div>
                 </button>
                 <button type="button"
-                    class="fileno-tab-btn flex-1 px-5 py-3 text-base font-semibold rounded-md transition-all duration-200 text-gray-700 hover:text-gray-900 whitespace-nowrap"
+                    class="fileno-tab-btn flex-1 min-w-0 px-2 py-2 text-sm font-semibold rounded-md transition-all duration-200 text-gray-700 hover:text-gray-900 whitespace-nowrap"
                     data-tab="sltr" onclick="PhsFileNoModal.switchTab('sltr'); return false;">
-                    <div class="flex items-center justify-center space-x-2">
-                        <i data-lucide="file-text" class="w-5 h-5 text-indigo-600"></i>
+                    <div class="flex items-center justify-center gap-1.5">
+                        <i data-lucide="file-text" class="w-4 h-4 text-indigo-600"></i>
                         <span>SLTR</span>
                     </div>
                 </button>
                 <button type="button"
-                    class="fileno-tab-btn flex-1 px-5 py-3 text-base font-semibold rounded-md transition-all duration-200 text-gray-700 hover:text-gray-900 whitespace-nowrap"
+                    class="fileno-tab-btn flex-1 min-w-0 px-2 py-2 text-sm font-semibold rounded-md transition-all duration-200 text-gray-700 hover:text-gray-900 whitespace-nowrap"
                     data-tab="old_mls" onclick="PhsFileNoModal.switchTab('old_mls'); return false;">
-                    <div class="flex items-center justify-center space-x-2">
-                        <i data-lucide="archive" class="w-5 h-5 text-yellow-600"></i>
+                    <div class="flex items-center justify-center gap-1.5">
+                        <i data-lucide="archive" class="w-4 h-4 text-yellow-600"></i>
                         <span>Old MLS (KN)</span>
                     </div>
                 </button>
                 <button type="button"
-                    class="fileno-tab-btn flex-1 px-5 py-3 text-base font-semibold rounded-md transition-all duration-200 text-gray-700 hover:text-gray-900 whitespace-nowrap"
+                    class="fileno-tab-btn flex-1 min-w-0 px-2 py-2 text-sm font-semibold rounded-md transition-all duration-200 text-gray-700 hover:text-gray-900 whitespace-nowrap"
                     data-tab="sit" onclick="PhsFileNoModal.switchTab('sit'); return false;">
-                    <div class="flex items-center justify-center space-x-2">
-                        <i data-lucide="file-digit" class="w-5 h-5 text-pink-600"></i>
+                    <div class="flex items-center justify-center gap-1.5">
+                        <i data-lucide="file-digit" class="w-4 h-4 text-pink-600"></i>
                         <span>SIT</span>
                     </div>
                 </button>
                 <button type="button"
-                    class="fileno-tab-btn flex-1 px-5 py-3 text-base font-semibold rounded-md transition-all duration-200 text-gray-700 hover:text-gray-900 whitespace-nowrap"
+                    class="fileno-tab-btn flex-1 min-w-0 px-2 py-2 text-sm font-semibold rounded-md transition-all duration-200 text-gray-700 hover:text-gray-900 whitespace-nowrap"
                     data-tab="dciv" onclick="PhsFileNoModal.switchTab('dciv'); return false;">
-                    <div class="flex items-center justify-center space-x-2">
-                        <i data-lucide="folder-open" class="w-5 h-5 text-teal-600"></i>
+                    <div class="flex items-center justify-center gap-1.5">
+                        <i data-lucide="folder-open" class="w-4 h-4 text-teal-600"></i>
                         <span>DCIV</span>
                     </div>
                 </button>
                 <button type="button"
-                    class="fileno-tab-btn flex-1 px-5 py-3 text-base font-semibold rounded-md transition-all duration-200 text-gray-700 hover:text-gray-900 whitespace-nowrap"
+                    class="fileno-tab-btn flex-1 min-w-0 px-2 py-2 text-sm font-semibold rounded-md transition-all duration-200 text-gray-700 hover:text-gray-900 whitespace-nowrap"
                     data-tab="gkn" onclick="PhsFileNoModal.switchTab('gkn'); return false;">
-                    <div class="flex items-center justify-center space-x-2">
-                        <i data-lucide="map-pinned" class="w-5 h-5 text-orange-600"></i>
+                    <div class="flex items-center justify-center gap-1.5">
+                        <i data-lucide="map-pinned" class="w-4 h-4 text-orange-600"></i>
                         <span>GKN</span>
                     </div>
                 </button>

@@ -141,7 +141,8 @@ class LegalSearchService
                 ->whereNull('deleted_at')
                 ->first(['prop_id', 'parent_prop_id']);
             if ($activeIndexing) {
-                if ($activeIndexing->prop_id) {
+                if ($activeIndexing->prop_id
+                    && !$this->isForeignIndexingPropId($conn, $fileNoVariants, (string) $activeIndexing->prop_id)) {
                     $activePropIds[] = (string) $activeIndexing->prop_id;
                 }
                 if ($activeIndexing->parent_prop_id) {
@@ -3819,6 +3820,92 @@ class LegalSearchService
             'tp_no' => $row->tp_no ?? null,
             'source_table' => $sourceLabel,
         ];
+    }
+
+    /**
+     * Whether a file_indexings.prop_id demonstrably belongs to a DIFFERENT file, and so must
+     * not be used to expand the search.
+     *
+     * A bulk import on 2025-11-20 stamped ~10.9k file_indexings rows with a value that is not
+     * the file's real prop_id (see propid:reconcile-indexing). Because PropID_Master maps those
+     * stray ids to real — but unrelated — files, trusting the stored value drags a stranger's
+     * transactions onto the timeline, and the cross-property guard downstream then reads that
+     * stranger as a legitimate PropID_Master "alias" of the searched parcel and keeps it.
+     * Production: CON-RES-1985-523's indexing row carries 16669, which PropID_Master registers
+     * to CON-RES-2018-489, whose Deeds of Assignment surfaced on the 1985 file's search.
+     *
+     * PropID_Master is the canonical registry, so the check is simply: does IT give the searched
+     * file a prop_id, and is the stored one a different id already spoken for by another file?
+     *
+     * Fail-open — this only ever REJECTS an id we can positively attribute elsewhere:
+     *   - searched file absent from PropID_Master  -> trust the stored id (nothing to check against)
+     *   - stored id is one of the file's own ids   -> trust it
+     *   - stored id registered to nobody           -> trust it (harmless; matches no other file)
+     * so the guard self-disables as propid:reconcile-indexing cleans the data.
+     *
+     * @param list<string> $fileNoVariants The searched file's base/"(T)" number variants.
+     */
+    private function isForeignIndexingPropId($conn, array $fileNoVariants, string $propId): bool
+    {
+        $propId = trim($propId);
+        if ($propId === '' || empty($fileNoVariants)) {
+            return false;
+        }
+
+        // A comma-separated lineage list is not a single id — leave those to the caller.
+        if (strpos($propId, ',') !== false) {
+            return false;
+        }
+
+        try {
+            $aliasColumns = ['primary_file_number', 'mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'temp_fileno'];
+
+            // The prop_id(s) PropID_Master genuinely gives the searched file, across every
+            // number format it may be registered under.
+            $ownPropIds = $conn->table('PropID_Master')
+                ->where(function ($q) use ($aliasColumns, $fileNoVariants) {
+                    foreach ($aliasColumns as $col) {
+                        $q->orWhereIn($col, $fileNoVariants);
+                    }
+                })
+                ->pluck('prop_id')
+                ->map(fn ($v) => trim((string) $v))
+                ->filter()
+                ->all();
+
+            if (empty($ownPropIds)) {
+                return false; // not registered — nothing authoritative to contradict the stored id
+            }
+            if (in_array($propId, $ownPropIds, true)) {
+                return false; // the stored id IS one of the file's own
+            }
+
+            // The stored id disagrees with the registry. Reject it only if it is positively
+            // registered to some OTHER file — that is the case that contaminates a timeline.
+            // Compared in PHP rather than SQL: the alias columns are frequently NULL, and
+            // "NULL NOT IN (...)" is UNKNOWN, which would silently discard the very rows
+            // being examined.
+            $mine = [];
+            foreach ($fileNoVariants as $variant) {
+                $v = strtoupper(trim((string) $variant));
+                if ($v !== '') {
+                    $mine[$v] = true;
+                }
+            }
+
+            foreach ($conn->table('PropID_Master')->where('prop_id', $propId)->get($aliasColumns) as $master) {
+                foreach ($aliasColumns as $col) {
+                    $v = strtoupper(trim((string) ($master->{$col} ?? '')));
+                    if ($v !== '' && !isset($mine[$v])) {
+                        return true; // this id is spoken for by a different file
+                    }
+                }
+            }
+
+            return false;
+        } catch (\Throwable $e) {
+            return false; // fail-open: never let this check break a search
+        }
     }
 
     /**
