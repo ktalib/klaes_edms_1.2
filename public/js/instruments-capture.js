@@ -431,8 +431,21 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    /* The OSS Applications and Land/MLS pages render #op_type_select instead of the
+     * banner (they never show one), so the chosen type stays visible on the card
+     * after the opening prompt is dismissed. The radios remain the source of truth
+     * and the posted value - the select only mirrors them, both ways. */
+    function syncOpTypeSelect() {
+        const select = document.getElementById('op_type_select');
+        if (!select) return;
+        const value = getSelectedOpType();
+        if (select.value !== value) select.value = value;
+    }
+    window.syncOpTypeSelect = syncOpTypeSelect;
+
     // Repaint the banner from whatever radio is currently checked.
     function updateOpTypeSummary() {
+        syncOpTypeSelect();
         const el = document.getElementById('op-type-summary-value');
         if (!el) return;
         const label = opTypeLabel(getSelectedOpType());
@@ -586,6 +599,12 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('input[name="op_type"]').forEach(radio => {
         radio.addEventListener('change', updateOpTypeSummary);
     });
+
+    // Picking a type on the card is the same answer the prompt gives.
+    const opTypeSelectEl = document.getElementById('op_type_select');
+    if (opTypeSelectEl) {
+        opTypeSelectEl.addEventListener('change', () => applyOpType(opTypeSelectEl.value));
+    }
 
     /* --- File Number dropdown --------------------------------------------------
      * The file number is chosen from a Select2 dropdown backed by the indexing
@@ -4985,7 +5004,11 @@ document.addEventListener('DOMContentLoaded', function () {
             // Keep this for op_type radio buttons if they still exist elsewhere (e.g. Occupancy Permit)
             // But for C of O we use dropdown now.
             const rb = document.querySelector(`input[name="op_type"][value="${data.op_type}"]`);
-            if (rb && rb.type === 'radio') rb.checked = true;
+            if (rb && rb.type === 'radio') {
+                rb.checked = true;
+                // Keep the OSS / MLS card select in step with the radio.
+                if (typeof window.syncOpTypeSelect === 'function') window.syncOpTypeSelect();
+            }
         }
 
         if (data.op_serial_number) {
@@ -5572,6 +5595,12 @@ document.addEventListener('DOMContentLoaded', function () {
             opTypeSummary.classList.toggle('hidden', typeKey !== 'occupancy-permit');
             if (typeKey === 'occupancy-permit') updateOpTypeSummary();
         }
+        // OSS / MLS render the card select instead of that banner.
+        const opTypeSelectBoxOpen = document.getElementById('op_type_select_container');
+        if (opTypeSelectBoxOpen) {
+            opTypeSelectBoxOpen.classList.toggle('hidden', typeKey !== 'occupancy-permit');
+            if (typeKey === 'occupancy-permit') syncOpTypeSelect();
+        }
 
         if (elements.opRegistrationDetails) {
             // Registration Details is shown for every OP capture - it used to be Match OP
@@ -5793,7 +5822,12 @@ document.addEventListener('DOMContentLoaded', function () {
             elements.registrationDialog.classList.remove('hidden');
         }
 
-        // OP Type: the radios are hidden inputs now; only the banner is shown/hidden.
+        // OP Type: the radios are hidden inputs; the banner (capture page) or the
+        // card select (OSS / MLS side capture) is what gets shown.
+        const opTypeSelectBox = document.getElementById('op_type_select_container');
+        if (opTypeSelectBox) {
+            opTypeSelectBox.classList.toggle('hidden', instrumentType !== 'occupancy-permit');
+        }
         const opTypeBanner = document.getElementById('op-type-summary');
         if (opTypeBanner) {
             if (instrumentType === 'occupancy-permit') {
@@ -5806,6 +5840,15 @@ document.addEventListener('DOMContentLoaded', function () {
                 opTypeBanner.classList.add('hidden');
                 document.querySelectorAll('input[name="op_type"]').forEach(el => { el.checked = false; });
             }
+        }
+        if (instrumentType === 'occupancy-permit') {
+            // Without a banner nothing else prefills or repaints, so do it here.
+            const prefill = opTypeFromCommissionPrefill();
+            if (prefill && !getSelectedOpType()) applyOpType(prefill);
+            syncOpTypeSelect();
+        } else {
+            document.querySelectorAll('input[name="op_type"]').forEach(el => { el.checked = false; });
+            syncOpTypeSelect();
         }
 
         // CoO Type Visibility
@@ -6482,7 +6525,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 : (normalizedType.includes('direct') ? 'op_type_direct_allocation' : null);
             if (targetId) {
                 const target = document.getElementById(targetId);
-                if (target) target.checked = true;
+                if (target) {
+                    target.checked = true;
+                    if (typeof window.syncOpTypeSelect === 'function') window.syncOpTypeSelect();
+                }
             }
         }
 
@@ -8417,6 +8463,7 @@ document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('input[name="op_type"]').forEach((radio) => {
             radio.checked = false;
         });
+        if (typeof syncOpTypeSelect === 'function') syncOpTypeSelect();
     }
 
     async function createOrUpdatePraBeforeCommission(payload) {

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Phs\PhsEmailHistory;
 use App\Models\Phs\PhsMember;
 use Illuminate\Http\Request;
+use App\Models\Phs\PhsEditRequest;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
@@ -49,6 +50,28 @@ class PhsOrganizationController extends Controller
             $memberLimit = $pkg ? (int) $pkg['team_members'] : null;
         }
 
+        // Correction requests raised by anyone in this organisation. Scoped to the
+        // institution, not the member, because this console is where an
+        // administrator answers "what have we reported, and what came back?".
+        //
+        // canRerun is decided per ROW by the model, and is true only for the
+        // logged-in member's own authorisations: the free re-run is granted to the
+        // member who was given the bad result, so an administrator cannot collect
+        // it on a colleague's behalf. Everyone else's rows are read-only status.
+        $editRequests = collect();
+        try {
+            $editRequests = PhsEditRequest::with('member')
+                ->where('phs_institution_id', $institution->id)
+                ->orderByRaw("CASE WHEN status = 'ready_for_rerun' THEN 0
+                                   WHEN status = 'edit_requested'  THEN 1
+                                   ELSE 2 END")
+                ->orderByDesc('id')
+                ->limit(100)
+                ->get();
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         return view('phs.organization.index', [
             'member' => $member,
             'institution' => $institution,
@@ -58,6 +81,10 @@ class PhsOrganizationController extends Controller
             'packages' => PhsTokenController::packages(),
             'memberLimit' => $memberLimit,
             'currentAdminCount' => $members->where('user_type', 'super_admin')->count(),
+            'editRequests' => $editRequests,
+            'readyForRerunCount' => $editRequests
+                ->filter(fn ($r) => $r->authorisesFreeRerun())
+                ->count(),
         ]);
     }
 

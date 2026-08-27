@@ -74,6 +74,14 @@ Route::prefix('phs')->name('phs.')->group(function () {
         // Feedback / complaints about incomplete or wrong transactions in a slip.
         Route::post('feedback', [PhsFeedbackController::class, 'store'])->name('feedback.store');
 
+        // "Send Edit Request" — a result the member says is wrong, routed to the
+        // PHS-P Admin. Once corrected, index() reports the free re-run the member
+        // is owed; the search route itself applies it.
+        Route::post('edit-requests', [\App\Http\Controllers\Phs\PhsEditRequestController::class, 'store'])
+            ->name('edit-requests.store');
+        Route::get('edit-requests', [\App\Http\Controllers\Phs\PhsEditRequestController::class, 'index'])
+            ->name('edit-requests.index');
+
         Route::get('tokens/transactions', [PhsTokenController::class, 'transactions'])->name('tokens.transactions');
         Route::post('tokens/pay-online', [PhsTokenController::class, 'payOnline'])->name('tokens.payOnline');
         Route::post('tokens/topup', [PhsTokenController::class, 'requestTopup'])->name('tokens.topup');

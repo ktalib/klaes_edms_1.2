@@ -6313,6 +6313,19 @@ class LegalSearchService
             $this->resolveCommissioningInfo($fileNumber, $fileNo)['source'] ?? null
         );
 
+        // File-level Root of Title, lifted off whichever row annotateRootOfTitle() tagged.
+        // The row already carries it for the Comments cell; the report header needs the bare
+        // label too, and deriving it here keeps the header and the timeline row reading the
+        // same value instead of each template re-deriving it from the rows.
+        $rootOfTitleLabel = null;
+        foreach ($rows as $rootRow) {
+            $candidate = trim((string) ($rootRow['root_of_title'] ?? ''));
+            if ($candidate !== '' && $candidate !== '-') {
+                $rootOfTitleLabel = $candidate;
+                break;
+            }
+        }
+
         $caveatedRecord = collect($transactions)->first(fn($t) => $t['is_caveated']);
         $caveatId = $caveatedRecord ? ($caveatedRecord['caveat_id'] ?? null) : null;
 
@@ -6683,6 +6696,9 @@ class LegalSearchService
                     'residual_term' => $residualTerm,
                     'commencement_date' => $commencementDate ? $commencementDate->format('jS F, Y') : null,
                     'commencement_source' => $commencementSource,
+                    // Header-level Root of Title. Null when the file has none on record, so a
+                    // template can hide the label entirely rather than print an empty field.
+                    'root_of_title' => $rootOfTitleLabel,
                     'client_name' => $clientName !== '' ? $clientName : null,
                     'client_address' => $clientAddress !== '' ? $clientAddress : null,
                     'rows' => $rows,

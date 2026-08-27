@@ -19,28 +19,46 @@ class PropertyRecordController extends Controller
 {
     private const PROPERTY_TABLE = 'file_history_staging';
     private const COFO_TABLE = 'CofO_staging';
-    private const COFO_TRANSACTION_TYPES = [
+    /**
+     * Transaction types that are written to CofO_staging rather than file_history_staging.
+     *
+     * Public because the File History Summary card has to predict, BEFORE the user saves,
+     * which table each captured transaction will land in. That card reads this constant (and
+     * OCCUPANCY_PERMIT_MARKER) via @json instead of carrying its own copy of the rule —
+     * a second hand-maintained routing table is exactly the kind of thing that drifts.
+     */
+    public const COFO_TRANSACTION_TYPES = [
         'Certificate of Occupancy',
         'ST Certificate of Occupancy',
         'SLTR Certificate of Occupancy',
     ];
+
+    /** The substring that marks a transaction type as an Occupancy Permit (routed to pra). */
+    public const OCCUPANCY_PERMIT_MARKER = 'Occupancy Permit (OP)';
     private const PRA_TABLE = 'pra';
     private const DEED_TABLE = 'deed_registrations';
     private PropertyIdAllocationService $propertyIdAllocationService;
     private TimelineWeightingService $timelineService;
+    private \App\Services\FileSnapshotService $fileSnapshotService;
 
     /**
      * Check if a transaction type is an Occupancy Permit variant.
+     *
+     * Public for the same reason as COFO_TRANSACTION_TYPES — see that constant.
      */
-    private static function isOccupancyPermit(string $transactionType): bool
+    public static function isOccupancyPermit(string $transactionType): bool
     {
-        return stripos($transactionType, 'Occupancy Permit (OP)') !== false;
+        return stripos($transactionType, self::OCCUPANCY_PERMIT_MARKER) !== false;
     }
 
-    public function __construct(PropertyIdAllocationService $propertyIdAllocationService, TimelineWeightingService $timelineService)
-    {
+    public function __construct(
+        PropertyIdAllocationService $propertyIdAllocationService,
+        TimelineWeightingService $timelineService,
+        \App\Services\FileSnapshotService $fileSnapshotService
+    ) {
         $this->propertyIdAllocationService = $propertyIdAllocationService;
         $this->timelineService = $timelineService;
+        $this->fileSnapshotService = $fileSnapshotService;
     }
 
     /**
@@ -3620,6 +3638,20 @@ class PropertyRecordController extends Controller
 
                         $persistedRecords['updated'][] = $recordId;
 
+                        // DATA LOSS GUARD: purgePraIndexingRecords() runs after this loop and
+                        // deletes pra rows matching the submitted file/type/serial, excluding
+                        // only the ids in pra_created + pra_updated. This branch can update a
+                        // row IN pra (when _source === 'pra' and the type is neither a CofO nor
+                        // an OP - e.g. Right of Occupancy, Deed of Assignment, Deed of
+                        // Mortgage), so the id has to be registered under pra_updated as well
+                        // or the purge deletes the row this request just updated.
+                        // Production: RES-1995-289 lost pra 102544 / 50950 / 66370 this way -
+                        // each logged "Updated property record ... table: pra" and then
+                        // "Purged PRA rows created through indexing payload ... deleted_rows: 1".
+                        if ($targetTable === self::PRA_TABLE) {
+                            $persistedRecords['pra_updated'][] = $recordId;
+                        }
+
                         \Log::info('Updated property record', [
                             'id' => $recordId,
                             'table' => $targetTable,
@@ -3752,6 +3784,24 @@ class PropertyRecordController extends Controller
                     ]
                 ]);
             });
+
+            // Snapshot AFTER the transaction has committed, so the captured rows are
+            // actually readable — a snapshot taken inside the closure would diff
+            // against uncommitted state. Best-effort: the transactions are already
+            // saved, so a failure here only costs the File Snapshot card.
+            if ($response instanceof \Illuminate\Http\JsonResponse && $response->getStatusCode() === 200) {
+                $snapshot = $this->fileSnapshotService->captureByFileNumber(
+                    $fileNumber,
+                    \App\Models\FileSnapshot::EVENT_TRANSACTION_ADDED,
+                    ['source' => 'property_record.store_from_indexing']
+                );
+
+                if ($snapshot) {
+                    $payload = $response->getData(true);
+                    $payload['snapshot'] = $snapshot->toCardPayload();
+                    $response->setData($payload);
+                }
+            }
 
             return $response;
 

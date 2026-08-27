@@ -716,6 +716,18 @@ Route::get('/fileindexing/available-shelves', [FileIndexingController::class, 'g
 Route::get('/fileindexing/get-shelf/{shelfId}', [FileIndexingController::class, 'getShelfById'])->name('fileindexing.get-shelf');
 Route::get('/fileindexing/{fileIndexing}/transactions', [FileIndexingController::class, 'transactions'])->name('fileindexing.transactions');
 
+// Newest File Snapshot for a file. The save responses already embed the snapshot
+// they just wrote, so this is the re-open path, not the usual one.
+Route::get('/fileindexing/{fileIndexing}/snapshot', [FileIndexingController::class, 'snapshot'])->name('fileindexing.snapshot');
+
+// Sample data for the Create File Index form. TEST AID — the action 404s unless
+// config('fileindexing.demo_fill') is on AND APP_ENV is not production, so on
+// production this is indistinguishable from a route that was never deployed.
+// Two segments, so it cannot collide with the three-segment {fileIndexing} routes above.
+Route::get('/fileindexing/demo-sample', [FileIndexingController::class, 'demoSample'])
+    ->middleware(['auth'])
+    ->name('fileindexing.demo-sample');
+
 // Distinct batch numbers from file_indexings (for Sign In & Out)
 Route::get('/fileindexing/distinct-batches', [FileIndexingController::class, 'distinctBatches'])->name('fileindexing.distinct-batches');
 

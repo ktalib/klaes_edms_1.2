@@ -1269,6 +1269,13 @@
                     class="flex-1 sm:flex-initial inline-flex items-center justify-center px-3 sm:px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
                     <i data-lucide="arrow-left" class="w-4 h-4 mr-2"></i>Back
                   </button>
+                  {{-- Raises a correction request with the PHS-P Admin. Distinct from the
+                       general feedback FAB: this one is tied to THIS result and, once the
+                       admin returns it, entitles the member to one free re-run. --}}
+                  <button id="phs-edit-request-btn" type="button"
+                    class="flex-1 sm:flex-initial inline-flex items-center justify-center px-3 sm:px-4 py-2 border border-amber-300 dark:border-amber-700 rounded-lg text-xs sm:text-sm font-medium text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 hover:bg-amber-100 dark:hover:bg-amber-900/50">
+                    <i data-lucide="file-warning" class="w-4 h-4 mr-2"></i>Send Edit Request
+                  </button>
                   <button id="print-slip-btn"
                     class="flex-1 sm:flex-initial inline-flex items-center justify-center px-3 sm:px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg text-xs sm:text-sm font-medium hover:bg-black/90 dark:hover:bg-gray-200">
                     <i data-lucide="printer" class="w-4 h-4 mr-2"></i>Print
@@ -1276,6 +1283,45 @@
                 </div>
               </div>
             </div>
+            {{-- An edit request is open on this file: tells the member where it stands
+                 so they do not raise it again or wonder if it was received. --}}
+            <div id="phs-edit-request-status" class="hidden no-print mx-4 sm:mx-6 mt-4 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-4 py-3">
+              <div class="flex items-start gap-3">
+                <i data-lucide="clock" class="w-4 h-4 mt-0.5 text-amber-600 dark:text-amber-400 shrink-0"></i>
+                <div class="min-w-0">
+                  <p class="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                    Edit Requested
+                  </p>
+                  <p class="text-xs text-amber-800 dark:text-amber-300" id="phs-edit-request-status-msg">
+                    Your correction request is with the PHS-P Admin.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {{-- The correction has been returned. This is the free re-run: the button is
+                 labelled "Re-run", and the copy states plainly that nothing is charged. --}}
+            <div id="phs-rerun-banner" class="hidden no-print mx-4 sm:mx-6 mt-4 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 px-4 py-3">
+              <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                <div class="flex items-start gap-3 min-w-0 flex-1">
+                  <i data-lucide="check-circle" class="w-4 h-4 mt-0.5 text-emerald-600 dark:text-emerald-400 shrink-0"></i>
+                  <div class="min-w-0">
+                    <p class="text-sm font-semibold text-emerald-900 dark:text-emerald-200">
+                      Your search result has been corrected
+                    </p>
+                    <p class="text-xs text-emerald-800 dark:text-emerald-300" id="phs-rerun-msg">
+                      Click Re-run Search to generate the updated result. No token will be deducted for this re-run.
+                    </p>
+                    <p class="text-[11px] text-emerald-700 dark:text-emerald-400 mt-1 hidden" id="phs-rerun-note"></p>
+                  </div>
+                </div>
+                <button id="phs-rerun-btn" type="button" data-file-number=""
+                  class="shrink-0 inline-flex items-center justify-center px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700">
+                  <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i>Re-run
+                </button>
+              </div>
+            </div>
+
             <div class="p-4 sm:p-6 relative overflow-hidden">
               {{-- Watermark: logo behind content --}}
               <img src="{{ asset('assets/logo/phs-light-logo.jpeg') }}" aria-hidden="true"
@@ -1422,6 +1468,89 @@
 
     <!-- ==================== FEEDBACK SIDEBAR (complaints) ==================== -->
     <!-- Floating launcher -->
+    {{-- Send Edit Request dialog. Reasons come from PhsEditRequest::REASONS so the
+         member's wording and the admin queue's filter cannot drift apart. --}}
+    <div id="phs-edit-request-backdrop"
+      class="no-print fixed inset-0 z-[60] bg-black/40 opacity-0 invisible transition-opacity duration-300"></div>
+
+    <div id="phs-edit-request-modal" role="dialog" aria-modal="true" aria-labelledby="phs-edit-request-title"
+      class="no-print fixed inset-0 z-[70] hidden items-center justify-center p-4">
+      <div class="w-full max-w-lg rounded-xl bg-white dark:bg-gray-900 shadow-2xl overflow-hidden">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+          <div class="flex items-center gap-2 min-w-0">
+            <i data-lucide="file-warning" class="w-5 h-5 text-amber-600 shrink-0"></i>
+            <h2 id="phs-edit-request-title" class="text-base font-bold text-gray-900 dark:text-gray-100 truncate">
+              Send Edit Request
+            </h2>
+          </div>
+          <button type="button" id="phs-edit-request-close"
+            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-full p-1">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <div id="phs-edit-request-success" class="hidden text-center px-5 py-10">
+          <i data-lucide="check-circle" class="w-12 h-12 mx-auto text-emerald-500 mb-3"></i>
+          <p class="text-sm text-gray-700 dark:text-gray-300 mb-5" id="phs-edit-request-success-msg"></p>
+          <button type="button" id="phs-edit-request-done"
+            class="inline-flex items-center px-4 py-2 rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-sm font-medium">
+            Close
+          </button>
+        </div>
+
+        <form id="phs-edit-request-form" class="px-5 py-4 space-y-4">
+          <div id="phs-edit-request-error"
+            class="hidden rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"></div>
+
+          <div class="rounded-lg bg-gray-50 dark:bg-gray-800 px-3 py-2 text-xs text-gray-600 dark:text-gray-400">
+            File number
+            <span class="font-semibold text-gray-900 dark:text-gray-100" id="phs-edit-request-file">--</span>
+            <span id="phs-edit-request-ref-wrap" class="hidden">
+              &nbsp;&bull;&nbsp;Ref <span class="font-mono" id="phs-edit-request-ref"></span>
+            </span>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+              What is wrong with this result? <span class="text-red-500">*</span>
+            </label>
+            <select id="phs-edit-request-reason-category" required
+              class="w-full rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 px-3 py-2 text-sm">
+              <option value="">Select a reason</option>
+              @foreach (\App\Models\Phs\PhsEditRequest::REASONS as $value => $label)
+                <option value="{{ $value }}">{{ $label }}</option>
+              @endforeach
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Describe the problem <span class="text-red-500">*</span>
+            </label>
+            <textarea id="phs-edit-request-reason" rows="4" required maxlength="4000"
+              placeholder="Tell the PHS-P Admin what is missing, wrong, or does not belong to this file."
+              class="w-full rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 px-3 py-2 text-sm"></textarea>
+          </div>
+
+          <p class="text-[11px] text-gray-500 dark:text-gray-400">
+            The result you are looking at is sent with your request so the admin can see exactly
+            what you saw. Once corrected you can re-run the search free of charge.
+          </p>
+
+          <div class="flex items-center justify-end gap-2 pt-1">
+            <button type="button" id="phs-edit-request-cancel"
+              class="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-300">
+              Cancel
+            </button>
+            <button type="submit" id="phs-edit-request-submit"
+              class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold">
+              Send Edit Request
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <button id="phs-feedback-fab" type="button"
       class="no-print fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg hover:bg-blue-700 transition focus:outline-none focus:ring-4 focus:ring-blue-600/30"
       aria-haspopup="dialog" aria-controls="phs-feedback-panel">
@@ -1663,7 +1792,9 @@
         requestInvoice: "{{ route('phs.tokens.requestInvoice') }}",
         transactions: "{{ route('phs.tokens.transactions') }}",
         print: "{{ route('phs.slip.print') }}",
-        feedback: "{{ route('phs.feedback.store') }}"
+        feedback: "{{ route('phs.feedback.store') }}",
+        editRequestStore: "{{ route('phs.edit-requests.store') }}",
+        editRequestIndex: "{{ route('phs.edit-requests.index') }}"
       },
       assets: {
         logo: "{{ asset('assets/logo/logo.png') }}",

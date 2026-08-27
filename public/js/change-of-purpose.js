@@ -1153,18 +1153,28 @@
                 info: 'Showing _START_ to _END_ of _TOTAL_ records',
                 emptyTable: 'No records found.',
                 paginate: { previous: 'Prev', next: 'Next' }
+            },
+            // Column 0 is a running serial number, not the record id: renumber it on
+            // every draw so it stays 1..N in the order actually shown (sort/search/page).
+            drawCallback: function () {
+                var start = this.api().page.info().start;
+                this.api().column(0, { search: 'applied', order: 'applied' })
+                    .nodes().each(function (cell, i) { cell.innerHTML = start + i + 1; });
             }
         };
 
+        // Columns: 0 #, 1 Applicant, 2 File No, 3 Land Use, 4 New Purpose,
+        //          5 Location, 6 Status, 7 Date, 8 Actions.
+        var dtColumnDefs = [{ orderable: false, targets: [0, 8] }];
+
         var pendingTable  = $('#cop-pending-table').DataTable(Object.assign({}, dtOptions, {
-            order: [[6, 'desc']],
-            columnDefs: [{ orderable: false, targets: [7] }]
+            order: [[7, 'desc']],
+            columnDefs: dtColumnDefs
         }));
 
         var approvedTable = $('#cop-approved-table').DataTable(Object.assign({}, dtOptions, {
-            // Sort by Date (index 7 after the Status column was added), Actions (8) not orderable.
             order: [[7, 'desc']],
-            columnDefs: [{ orderable: false, targets: [8] }]
+            columnDefs: dtColumnDefs
         }));
 
         document.getElementById('cop-search')?.addEventListener('input', function () {

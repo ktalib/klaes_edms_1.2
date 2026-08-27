@@ -149,6 +149,12 @@ class MobileFileSearchController extends Controller
                 // Duplicate-registry flag (CofO collected/ready, duplicate, temp, W/C/R) when
                 // the file number is registered in duplicate_fileno — null otherwise.
                 'duplicate_flag'           => $result['duplicate_flag'] ?? null,
+                // Every physical file registered under this number, but ONLY when the
+                // number is in BOTH file_indexings and duplicate_fileno. Non-empty means
+                // the user must pick the exact file before the request can go out.
+                // Kept in step with the web Quick Search payload, which renders the
+                // identical selection list from this same key.
+                'duplicate_candidates'     => $resolver->duplicateCandidates($result),
                 // Ownership history — the chronological chain of holders derived from the
                 // cross-table property timeline (file_history/CofO/pra/deeds). Rendered as a
                 // vertical timeline in the Holders panel. Only surfaced for indexed files: a

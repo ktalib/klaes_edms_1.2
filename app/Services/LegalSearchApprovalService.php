@@ -139,6 +139,170 @@ class LegalSearchApprovalService
     }
 
     /**
+     * Set once the mail transport has proved unreachable during THIS request.
+     *
+     * Opening a request sends one mail per approver plus one to the requester -
+     * seven sends in the current configuration. When the SMTP host is
+     * unreachable each of those waits for the socket timeout, so the failures
+     * multiply: seven dead sends is seven timeouts stacked inside a single web
+     * request. The first connection-level failure tells us the rest will fail
+     * the same way, so they are skipped and reported once.
+     *
+     * Deliberately per-instance rather than cached: a transport that is down now
+     * may be up on the next request, and this must never suppress mail beyond
+     * the request that observed the failure.
+     */
+    protected bool $mailTransportDown = false;
+
+    /**
+     * Send a mailable, giving up on the transport after the first failure that
+     * looks like the host being unreachable.
+     *
+     * Returns true when the mail was handed to the transport. A false return is
+     * never fatal to the caller - these are notifications, and the payment or
+     * approval they accompany has already happened.
+     */
+    protected function sendMail(string $email, $mailable, array $logContext = []): bool
+    {
+        if ($this->mailTransportDown) {
+            Log::warning('LegalSearchApprovalService: skipped mail, transport already failed this request', $logContext + [
+                'email' => $email,
+            ]);
+            return false;
+        }
+
+        if (!$this->mailHostReachable()) {
+            $this->mailTransportDown = true;
+            Log::error('LegalSearchApprovalService: mail host unreachable on pre-flight, skipping all sends', $logContext + [
+                'email' => $email,
+            ]);
+            return false;
+        }
+
+        try {
+            Mail::to($email)->send($mailable);
+            return true;
+        } catch (\Throwable $e) {
+            // A transport-level failure (refused, timed out, DNS) will repeat for
+            // every remaining recipient. Anything else - a bad address, a broken
+            // template - is specific to this one mail, so keep going.
+            if ($this->isTransportFailure($e)) {
+                $this->mailTransportDown = true;
+                Log::error('LegalSearchApprovalService: mail transport unreachable, skipping remaining sends', $logContext + [
+                    'email' => $email,
+                    'error' => $e->getMessage(),
+                ]);
+            } else {
+                Log::warning('LegalSearchApprovalService: mail failed', $logContext + [
+                    'email' => $email,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            return false;
+        }
+    }
+
+    /**
+     * Cheap pre-flight: can we open a socket to the mail host at all?
+     *
+     * The mailer's own `timeout` bounds the SMTP CONVERSATION, not the TCP
+     * connect underneath it. Against a blackholed port the OS connect alone
+     * takes ~21s, so the first send blew the request budget even with a 5s
+     * mailer timeout configured. A 2s probe answers the same question for a
+     * hundredth of the cost.
+     *
+     * The verdict is cached briefly so a run of payments does not each pay the
+     * probe, but only briefly - a mail host that comes back up must start
+     * delivering again without a deploy.
+     *
+     * Fails OPEN for non-SMTP mailers (log, array, ses): there is no host to
+     * probe and those transports do not block.
+     */
+    protected function mailHostReachable(): bool
+    {
+        $mailer = config('mail.default');
+        if ($mailer !== 'smtp') {
+            return true;
+        }
+
+        $host = (string) config('mail.mailers.smtp.host');
+        $port = (int) config('mail.mailers.smtp.port');
+        if ($host === '' || $port === 0) {
+            return true;
+        }
+
+        $cacheKey = 'mail:smtp-reachable:' . $host . ':' . $port;
+
+        try {
+            $cached = \Illuminate\Support\Facades\Cache::get($cacheKey);
+            if ($cached !== null) {
+                return (bool) $cached;
+            }
+        } catch (\Throwable $e) {
+            // A broken cache store must not stop mail being attempted.
+        }
+
+        $errno = 0;
+        $error = '';
+        $socket = @fsockopen($host, $port, $errno, $error, 2);
+        $reachable = $socket !== false;
+
+        if ($socket) {
+            fclose($socket);
+        }
+
+        try {
+            // Remember "down" only briefly; remember "up" a little longer, since
+            // a working host is the normal case and re-probing it is pure cost.
+            \Illuminate\Support\Facades\Cache::put($cacheKey, $reachable, $reachable ? 300 : 60);
+        } catch (\Throwable $e) {
+            // Same as above - caching is an optimisation, not a requirement.
+        }
+
+        if (!$reachable) {
+            Log::warning('LegalSearchApprovalService: SMTP pre-flight failed', [
+                'host'  => $host,
+                'port'  => $port,
+                'errno' => $errno,
+                'error' => $error,
+            ]);
+        }
+
+        return $reachable;
+    }
+
+    /**
+     * Whether this exception means the mail HOST is unreachable, as opposed to
+     * something wrong with this particular message.
+     */
+    protected function isTransportFailure(\Throwable $e): bool
+    {
+        if ($e instanceof \Symfony\Component\Mailer\Exception\TransportExceptionInterface) {
+            return true;
+        }
+
+        $message = strtolower($e->getMessage());
+
+        foreach ([
+            'connection could not be established',
+            'connection timed out',
+            'connection refused',
+            'could not connect',
+            'timed out',
+            'network is unreachable',
+            'name or service not known',
+            'ssl',
+        ] as $needle) {
+            if (str_contains($message, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * In-app notification (bell) + email to every Director / Deputy Director.
      * Best-effort: a notification failure must never lose the request.
      */
@@ -178,15 +342,11 @@ class LegalSearchApprovalService
                 continue;
             }
 
-            try {
-                Mail::to($email)->send(new LegalSearchRequestPendingApproval($request, $approver));
-            } catch (\Throwable $e) {
-                Log::warning('LegalSearchApprovalService: approver email failed', [
-                    'request_id' => $request->id,
-                    'email'      => $email,
-                    'error'      => $e->getMessage(),
-                ]);
-            }
+            $this->sendMail(
+                $email,
+                new LegalSearchRequestPendingApproval($request, $approver),
+                ['request_id' => $request->id, 'stage' => 'approver_notification']
+            );
         }
 
         if ($approvers->isEmpty()) {
@@ -201,14 +361,11 @@ class LegalSearchApprovalService
      */
     protected function acknowledgeRequester(LegalSearchOnlineRequest $request): void
     {
-        try {
-            Mail::to($request->requester_email)->send(new LegalSearchRequestSubmitted($request));
-        } catch (\Throwable $e) {
-            Log::warning('LegalSearchApprovalService: acknowledgement email failed', [
-                'request_id' => $request->id,
-                'error'      => $e->getMessage(),
-            ]);
-        }
+        $this->sendMail(
+            (string) $request->requester_email,
+            new LegalSearchRequestSubmitted($request),
+            ['request_id' => $request->id, 'stage' => 'requester_acknowledgement']
+        );
     }
 
     /**

@@ -19,6 +19,27 @@
         $transactionTypeOptions[] = 'Other';
     }
 @endphp
+
+{{-- Submission Summary + File Snapshot cards.
+
+     Loaded from this partial rather than from each page, because every screen that
+     can capture a transaction includes this modal but only some of them load
+     create-indexing-dialog.js. The file is a self-contained IIFE that only assigns
+     to window, so a page that also loads it directly (create_file_tracker_page)
+     re-running it costs nothing. --}}
+<script src="{{ asset('js/fileindexing/file-snapshot-card.js') }}?v={{ @filemtime(public_path('js/fileindexing/file-snapshot-card.js')) }}"></script>
+
+<script>
+    // Routing rule + history endpoint for the File History Summary card.
+    // COFO_TRANSACTION_TYPES / OCCUPANCY_PERMIT_MARKER are read straight off
+    // PropertyRecordController so the card's predicted destination and the table the server
+    // actually writes to cannot drift apart.
+    const FH_COFO_TRANSACTION_TYPES = @json(\App\Http\Controllers\PropertyRecordController::COFO_TRANSACTION_TYPES);
+    const FH_OP_MARKER = @json(\App\Http\Controllers\PropertyRecordController::OCCUPANCY_PERMIT_MARKER);
+    // The CORE Legal Search report engine - the same payload the LS timeline, the Property
+    // Timeline, the PHS portal and the online report are all built from.
+    const FH_HISTORY_URL = @json(route('legal_search.print.data'));
+</script>
   
 
 <div id="property-transaction-dialog" class="property-transaction-overlay hidden"
@@ -87,6 +108,19 @@
 
             lgas: [],
             districts: [],
+
+            // ---- File History Summary card state -------------------------------------
+            // See fileindexing/partial/file_history_summary_card.blade.php for the design.
+            fhSummaryOpen: true,
+            fhSummaryLoading: false,
+            fhSummaryError: false,
+            // Rows from LegalSearchService::buildPrintReport for the selected file.
+            fhOnFileRows: [],
+            // Which file number fhOnFileRows was fetched for, so a re-render never shows
+            // one file's history against another file's captured transactions.
+            fhLoadedFileNo: '',
+            // Post-save outcome keyed by transaction block id -> SAVED | UPDATED | HELD_BACK.
+            fhSaveOutcome: {},
 
             // District Selection Logic
             districtSelection: '',
@@ -380,6 +414,12 @@
                     if (typeof this.syncDistrictSelection === 'function') {
                         this.syncDistrictSelection();
                     }
+
+                    // A new file means a new history - clear the previous outcome badges and
+                    // kick off the (slow, abortable) fetch. Not awaited: the card already
+                    // renders the captured rows, so nothing here blocks the operator.
+                    this.fhSaveOutcome = {};
+                    this.fhLoadFileHistory(false);
                 };
 
                 if (typeof window.GlobalFileNoModal !== 'undefined'
@@ -395,9 +435,432 @@
                 }
             },
 
+            // ================= File History Summary card ==============================
+
+            /**
+             * Which table a captured transaction will be written to.
+             *
+             * Mirrors PropertyRecordController's routing decision exactly, reading its
+             * constants via a Blade json handoff rather than restating them, so the card
+             * cannot predict a destination the server would not actually use.
+             *
+             *   _source === 'deeds' (on an existing row) -> deed_registrations
+             *   CofO type, source unset or 'cofo'        -> CofO_staging
+             *   OP type,   source unset or 'pra'         -> pra
+             *   EXISTING row, routed by its own _source   -> pra / CofO_staging / deed_registrations
+             *   otherwise                                -> file_history_staging
+             *
+             * That fourth rule is easy to miss and was wrong here at first: an EXISTING row
+             * whose type is neither a CofO nor an OP still updates in the table it came from,
+             * not in file_history_staging. A Right of Occupancy loaded from pra updates in
+             * pra. Without this the card promised 'File History' while the server wrote to
+             * 'pra' - see the matching guard in PropertyRecordController's update branch.
+             */
+            fhResolveDestination(transaction) {
+                const type = String(transaction.transactionType || transaction.instrumentType || '').trim();
+                const source = String(transaction.source || '').trim().toLowerCase() || null;
+                const hasRecord = !!transaction.recordId;
+
+                const isCofO = FH_COFO_TRANSACTION_TYPES.includes(type);
+                const isOP = type.toLowerCase().includes(FH_OP_MARKER.toLowerCase());
+
+                if (hasRecord && source === 'deeds') return 'deed_registrations';
+                if (isCofO && (source === null || source === 'cofo')) return 'CofO_staging';
+                if (isOP && (source === null || source === 'pra')) return 'pra';
+
+                // Existing row with no type-specific handler: it stays where it came from.
+                if (hasRecord) {
+                    if (source === 'pra') return 'pra';
+                    if (source === 'cofo') return 'CofO_staging';
+                }
+
+                return 'file_history_staging';
+            },
+
+            fhDestinationLabel(key) {
+                return ({
+                    file_history_staging: 'File History',
+                    CofO_staging: 'CofO',
+                    pra: 'PRA',
+                    deed_registrations: 'Deed Reg.',
+                })[key] || key;
+            },
+
+            fhDestinationColor(key) {
+                return ({
+                    file_history_staging: '#3b82f6',
+                    CofO_staging: '#10b981',
+                    pra: '#f59e0b',
+                    deed_registrations: '#8b5cf6',
+                })[key] || '#94a3b8';
+            },
+
+            /**
+             * A loose identity for a transaction, used only to tell whether a row already on
+             * the file is the same dealing as one in the form - so an edited row is listed
+             * ONCE (as EDITING) instead of twice.
+             *
+             * Deliberately fuzzy: the report's rows carry no source ids to join on. Parties
+             * and instrument are normalised hard (case, punctuation and honorifics vary between
+             * capture sources: 'Alh. Tijjani' vs 'ALH TIJJANI'). A false miss is safe - the row
+             * simply shows twice; a false match would HIDE a genuinely new transaction, so the
+             * registration number is folded in whenever both sides carry one.
+             */
+            fhSignature(instrument, p1, p2, regNo) {
+                const norm = (v) => String(v || '')
+                    .toUpperCase()
+                    .replace(/\b(ALH|ALHAJI|ALHAJA|HAJIYA|HAJIA|MAL|MALLAM|MR|MRS|MISS|DR|ENGR)\b\.?/g, '')
+                    .replace(/[^A-Z0-9]+/g, '');
+                const reg = String(regNo || '').replace(/[^0-9]/g, '');
+                return [norm(instrument), norm(p1), norm(p2), (reg && reg !== '000') ? reg : ''].join('|');
+            },
+
+            /** Transaction blocks that carry enough detail to be worth listing. */
+            fhCapturedRows() {
+                const rows = [];
+                (this.transactions || []).forEach((t, index) => {
+                    const instrument = String(t.transactionType || t.instrumentType || '').trim();
+                    const p1 = String(t.firstParty || '').trim();
+                    const p2 = String(t.secondParty || '').trim();
+                    // An untouched blank block is not a transaction yet.
+                    if (!instrument && !p1 && !p2) return;
+
+                    const destinationKey = this.fhResolveDestination(t);
+                    const regNo = [t.serialNo, t.pageNo, t.volumeNo].filter(Boolean).join('/');
+                    const outcome = this.fhSaveOutcome[t.id] || null;
+
+                    let status = t.recordId ? 'EDITING' : 'NEW';
+                    if (outcome) status = outcome;
+
+                    rows.push({
+                        key: 'form-' + (t.id != null ? t.id : index),
+                        derived: false,
+                        destinationKey: destinationKey,
+                        destinationLabel: this.fhDestinationLabel(destinationKey),
+                        color: this.fhDestinationColor(destinationKey),
+                        status: status,
+                        // 'Existing' rather than 'Updated': the operator is being told what
+                        // was already on the file versus what this save added, not which SQL
+                        // verb ran. A re-saved row is still an existing one.
+                        statusLabel: ({
+                            NEW: 'New',
+                            EDITING: 'Existing',
+                            SAVED: 'Saved',
+                            UPDATED: 'Existing',
+                            HELD_BACK: 'Held back',
+                        })[status] || status,
+                        instrument: instrument || 'Instrument',
+                        parties: [p1, p2, t.thirdParty].filter(Boolean).join(' \u2192 ') || '\u2014',
+                        regNo: (regNo && regNo !== '//') ? regNo : '',
+                        date: t.transactionDate || t.regDate || '',
+                        sortTs: this.fhSortTimestamp(t.transactionDate || t.regDate || ''),
+                        signature: this.fhSignature(instrument, p1, p2, regNo),
+                    });
+                });
+                return rows;
+            },
+
+            /**
+             * The card's rows: everything already on the file, plus everything being captured,
+             * with rows that are the same dealing collapsed into one.
+             */
+            fhSummaryRows() {
+                const captured = this.fhCapturedRows();
+                const capturedSignatures = new Set(
+                    captured.map((r) => r.signature).filter((sig) => sig.replace(/\|/g, '') !== '')
+                );
+
+                const clean = (v) => (!v || v === '-') ? '' : v;
+                const onFile = [];
+
+                (this.fhOnFileRows || []).forEach((row, index) => {
+                    const instrument = clean(String(row.instrument_type || '').trim());
+                    const p1 = clean(String(row.grantor || '').trim());
+                    const p2 = clean(String(row.grantee || '').trim());
+
+                    // Synthetic report rows are context, not capturable records.
+                    const derived = ['File Commissioning', 'Temporary File'].includes(row.source_table)
+                        || String(row.instrument_type || '').toLowerCase().indexOf('commissioning') !== -1;
+
+                    const signature = this.fhSignature(instrument, p1, p2, clean(row.reg_no));
+                    // Already represented by a form block - the form block wins, because it is
+                    // the editable one and shows the real destination.
+                    if (!derived && capturedSignatures.has(signature)) return;
+
+                    const known = ['file_history_staging', 'CofO_staging', 'pra', 'deed_registrations'];
+                    const destinationKey = derived
+                        ? null
+                        : (known.indexOf(row.source_table) !== -1 ? row.source_table : null);
+
+                    onFile.push({
+                        key: 'ls-' + index,
+                        derived: derived,
+                        destinationKey: destinationKey,
+                        destinationLabel: destinationKey ? this.fhDestinationLabel(destinationKey) : '',
+                        color: derived ? '#94a3b8' : this.fhDestinationColor(destinationKey),
+                        status: 'ON_FILE',
+                        statusLabel: derived ? 'Derived' : 'On file',
+                        instrument: instrument || 'Instrument',
+                        parties: [p1, p2, clean(row.party_3)].filter(Boolean).join(' \u2192 ') || '\u2014',
+                        regNo: (clean(row.reg_no) && row.reg_no !== '0/0/0') ? row.reg_no : '',
+                        date: clean(row.transaction_date) || clean(row.reg_date) || '',
+                        sortTs: this.fhSortTimestamp(clean(row.transaction_date) || clean(row.reg_date) || ''),
+                        signature: signature,
+                    });
+                });
+
+                // One chronological list. Derived rows (File Commissioning) stay pinned at the
+                // top regardless of date: they mark the opening of the file, and the LS timeline
+                // orders them the same way - a 1995 commissioning still precedes a 1994 CofO
+                // there. Rows with no usable date sort to the end rather than to 1970.
+                const all = onFile.concat(captured);
+                const derived = all.filter((r) => r.derived);
+                const dated = all.filter((r) => !r.derived);
+
+                dated.sort((a, b) => {
+                    const at = a.sortTs;
+                    const bt = b.sortTs;
+                    if (at === null && bt === null) return 0;
+                    if (at === null) return 1;
+                    if (bt === null) return -1;
+                    return at - bt;
+                });
+
+                return derived.concat(dated);
+            },
+
+            /**
+             * A sortable timestamp for a transaction date, or null when there is nothing usable.
+             *
+             * These dates arrive in several shapes: an ISO date from a form input
+             * (2009-02-12), a formatted string from the report (Dec 29, 1994), a SQL Server
+             * datetime string (May 11 1995 12:00AM), or a bare year the report falls back to
+             * for legacy files (1995). Date.parse handles the first three; the bare year is
+             * matched explicitly, because Date.parse reads a 4-digit string as a year in some
+             * engines and as nonsense in others.
+             */
+            fhSortTimestamp(value) {
+                const raw = String(value || '').trim();
+                if (raw === '' || raw === '-') return null;
+
+                // ISO first, built explicitly in UTC. Date.parse treats 'YYYY-MM-DD' as UTC but
+                // 'May 11 1995' as LOCAL, so letting it handle both puts the two formats a
+                // timezone apart and can flip the order of same-day rows.
+                const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+                if (iso) return Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+
+                const bareYear = raw.match(/^(\d{4})$/);
+                if (bareYear) return Date.UTC(Number(bareYear[1]), 0, 1);
+
+                // 'May 11 1995 12:00AM' - SQL Server's string form. Date.parse rejects it
+                // outright without a space before AM/PM, which silently demoted these rows to
+                // the bare-year fallback and lost their month and day.
+                const spaced = raw.replace(/(\d)(AM|PM)\b/i, '$1 $2');
+                const named = spaced.match(/^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})/);
+                if (named) {
+                    const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+                    const m = months.indexOf(named[1].slice(0, 3).toLowerCase());
+                    if (m !== -1) return Date.UTC(Number(named[3]), m, Number(named[2]));
+                }
+
+                const parsed = Date.parse(spaced);
+                if (!isNaN(parsed)) return parsed;
+
+                // Last resort: a year embedded in a messier string.
+                const anyYear = raw.match(/(1[89]\d{2}|20\d{2})/);
+                return anyYear ? Date.UTC(Number(anyYear[1]), 0, 1) : null;
+            },
+
+            fhDestinationTally() {
+                const counts = {};
+                this.fhCapturedRows().forEach((r) => {
+                    if (!r.destinationKey) return;
+                    counts[r.destinationKey] = (counts[r.destinationKey] || 0) + 1;
+                });
+                return Object.keys(counts).map((key) => ({
+                    key: key,
+                    count: counts[key],
+                    label: this.fhDestinationLabel(key),
+                }));
+            },
+
+            fhSummaryHeadline() {
+                const captured = this.fhCapturedRows();
+                const onFile = this.fhSummaryRows().filter((r) => r.status === 'ON_FILE').length;
+                const fresh = captured.filter((r) => r.status === 'NEW' || r.status === 'SAVED').length;
+                const editing = captured.filter((r) => r.status === 'EDITING' || r.status === 'UPDATED').length;
+
+                const parts = [];
+                if (onFile) parts.push(onFile + ' on file');
+                if (editing) parts.push(editing + ' being edited');
+                if (fresh) parts.push(fresh + ' new');
+                return parts.length ? '\u00b7 ' + parts.join(' \u00b7 ') : '';
+            },
+
+            /**
+             * Load the file's real history from the core Legal Search report engine.
+             *
+             * That call costs ~3-5s, so it is deliberately kept off the typing path: it runs
+             * once per file number, is cached for the life of the page, aborts a superseded
+             * request when the user switches file, and never blocks Save. The card is already
+             * showing the captured rows by the time this resolves, so the latency is only ever
+             * a context section filling in late - never an empty card.
+             */
+            async fhLoadFileHistory(force) {
+                const fileNo = String(
+                    this.fileIndexingData.file_number || this.fileIndexingData.temp_file_no || ''
+                ).trim();
+
+                if (!fileNo) {
+                    this.fhOnFileRows = [];
+                    this.fhLoadedFileNo = '';
+                    this.fhSummaryError = false;
+                    return;
+                }
+                if (!force && this.fhLoadedFileNo === fileNo) return;
+
+                window._fhHistoryCache = window._fhHistoryCache || {};
+                if (!force && window._fhHistoryCache[fileNo]) {
+                    this.fhOnFileRows = window._fhHistoryCache[fileNo];
+                    this.fhLoadedFileNo = fileNo;
+                    this.fhSummaryError = false;
+                    return;
+                }
+
+                // Supersede any in-flight request - the user has moved to another file.
+                if (window._fhHistoryAbort) {
+                    try { window._fhHistoryAbort.abort(); } catch (e) { /* already settled */ }
+                }
+                const controller = new AbortController();
+                window._fhHistoryAbort = controller;
+
+                this.fhSummaryLoading = true;
+                this.fhSummaryError = false;
+
+                try {
+                    const url = FH_HISTORY_URL + '?file_number=' + encodeURIComponent(fileNo);
+                    // The endpoint is behind `auth`, so the session cookie has to go with it.
+                    const res = await fetch(url, {
+                        signal: controller.signal,
+                        credentials: 'same-origin',
+                        headers: { 'Accept': 'application/json' },
+                    });
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+
+                    // An expired session redirects to the login page, which is a 200 of HTML.
+                    // Detect that by content type rather than letting json() throw a parse
+                    // error that reads like a bug in the endpoint.
+                    const contentType = res.headers.get('content-type') || '';
+                    if (contentType.indexOf('application/json') === -1) {
+                        throw new Error('Expected JSON, got ' + (contentType || 'no content-type'));
+                    }
+
+                    const body = await res.json();
+                    const rows = (body && body.data && body.data.rows) ? body.data.rows : [];
+
+                    window._fhHistoryCache[fileNo] = rows;
+                    this.fhOnFileRows = rows;
+                    this.fhLoadedFileNo = fileNo;
+                } catch (err) {
+                    // An abort is a supersede, not a failure - leave the previous state alone.
+                    if (err && err.name === 'AbortError') return;
+                    console.warn('File History Summary: could not load history', err);
+                    this.fhOnFileRows = [];
+                    this.fhLoadedFileNo = fileNo;
+                    this.fhSummaryError = true;
+                } finally {
+                    if (window._fhHistoryAbort === controller) {
+                        window._fhHistoryAbort = null;
+                        this.fhSummaryLoading = false;
+                    }
+                }
+            },
+
+            /**
+             * The File History Summary rendered as a self-contained HTML block, for the
+             * confirmation dialog (which lives in SweetAlert, outside Alpine's reach).
+             *
+             * The rendering itself lives in fhRenderSummaryHtml() in the script block below,
+             * NOT here: this method body sits inside the x-data attribute, which is delimited
+             * by a double quote, so a single double quote anywhere in it ends the attribute
+             * early and dumps the rest of the component onto the page as visible text.
+             * Generating HTML needs quotes, so it belongs in a script block instead.
+             */
+            /**
+             * Scroll a transaction block into view and flash it.
+             *
+             * The form lists transactions in the file's CHRONOLOGICAL order, not the order
+             * they were added, so a newly captured record usually lands mid-list rather than
+             * at the bottom. Scrolling to the end then shows a different instrument, which
+             * reads as the record having gone missing. Clicking its row in the summary takes
+             * you straight to it.
+             */
+            fhJumpToTransaction(rowKey) {
+                const id = String(rowKey || '').replace(/^form-/, '');
+                if (!id) return;
+                const el = document.getElementById('fh-txn-' + id);
+                if (!el) return;
+
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                el.classList.remove('fh-txn-flash');
+                // Reflow so the animation restarts when the same row is clicked twice.
+                void el.offsetWidth;
+                el.classList.add('fh-txn-flash');
+            },
+
+            fhSummaryHtml() {
+                return (typeof window.fhRenderSummaryHtml === 'function')
+                    ? window.fhRenderSummaryHtml(this.fhSummaryRows(), this.fhDestinationTally())
+                    : '';
+            },
+
+            /**
+             * Apply a save response to the card: mark what persisted, then refetch the history
+             * so the ON FILE layer reflects the rows that were just written.
+             */
+            fhApplySaveOutcome(response) {
+                const data = (response && response.data) || {};
+                const created = new Set((data.created_ids || []).map(String));
+                const updated = new Set((data.updated_ids || []).map(String));
+
+                // A held-back duplicate identifies itself by its POSITION in the submitted
+                // array (splitDuplicateTransactions returns `index`), not by an id - the same
+                // key handleDeferredDuplicates() uses. The submit payload is a straight 1:1
+                // map of this.transactions, so the index still lines up here.
+                const heldIndexes = new Set(
+                    ((response && response.duplicates) || [])
+                        .map((d) => (d && d.index != null) ? Number(d.index) : null)
+                        .filter((i) => i !== null)
+                );
+
+                const outcome = {};
+                (this.transactions || []).forEach((t, index) => {
+                    if (heldIndexes.has(index)) { outcome[t.id] = 'HELD_BACK'; return; }
+                    const recordId = (t.recordId != null) ? String(t.recordId) : null;
+                    if (recordId && updated.has(recordId)) { outcome[t.id] = 'UPDATED'; return; }
+                    if (recordId && created.has(recordId)) { outcome[t.id] = 'SAVED'; return; }
+                    // Nothing to match on: fall back to what the block was going to do.
+                    outcome[t.id] = t.recordId ? 'UPDATED' : 'SAVED';
+                });
+
+                this.fhSaveOutcome = outcome;
+                this.fhSummaryOpen = true;
+
+                // The history is now stale - drop the cache entry and reload it.
+                const fileNo = String(
+                    this.fileIndexingData.file_number || this.fileIndexingData.temp_file_no || ''
+                ).trim();
+                if (fileNo && window._fhHistoryCache) delete window._fhHistoryCache[fileNo];
+                this.fhLoadFileHistory(true);
+            },
+
             clearFileNumber() {
                 this.fileIndexingData.file_number = '';
                 this.fileIndexingData.temp_file_no = '';
+                this.fhOnFileRows = [];
+                this.fhLoadedFileNo = '';
+                this.fhSaveOutcome = {};
+                this.fhSummaryError = false;
             },
 
             // Auto-fill first party for government transactions
@@ -613,6 +1076,8 @@
                         </div>
                     </div>
 
+                    @include('fileindexing.partial.file_history_summary_card')
+
                     <!-- Property Details Builder Section -->
                     <div class="border border-blue-100 rounded-lg p-4 mb-4 bg-blue-50/30">
                         <h4 class="text-sm font-semibold text-blue-800 mb-3 flex items-center gap-2">
@@ -686,7 +1151,8 @@
 
                     <!-- Transactions Container -->
                     <template x-for="(transaction, index) in transactions" :key="transaction.id">
-                        <div class="border border-gray-300 rounded-lg p-4 mb-4 bg-white shadow-sm">
+                        <div class="border border-gray-300 rounded-lg p-4 mb-4 bg-white shadow-sm fh-txn-block"
+                             :id="'fh-txn-' + transaction.id">
                             <div class="flex justify-between items-center mb-3">
                                 <h3 class="text-lg font-semibold text-gray-700 flex items-center gap-2">
                                     Transaction <span x-text="index + 1"></span>
@@ -1517,6 +1983,19 @@
                                 alpineComponent.ensureTransactionTypes([blankTransaction.transactionType]);
                                 alpineComponent.transactions = [blankTransaction];
                             }
+                            // File History Summary: the modal usually opens with a file
+                            // number already set, which never goes through selectFileNumber(),
+                            // so the history load has to be kicked off here as well. Not
+                            // awaited - the card already shows the captured rows.
+                            try {
+                                alpineComponent.fhSaveOutcome = {};
+                                if (typeof alpineComponent.fhLoadFileHistory === 'function') {
+                                    alpineComponent.fhLoadFileHistory(false);
+                                }
+                            } catch (e) {
+                                console.warn('File History Summary: could not start history load', e);
+                            }
+
                             console.log('Data set successfully');
                         } else {
                             console.warn('Alpine component not found, modal will still open');
@@ -1537,6 +2016,82 @@
         modal.style.display = 'flex';
         console.log('Modal should now be visible');
     }
+
+    /**
+     * Render the File History Summary as a standalone HTML block for the SweetAlert
+     * confirmation dialog, which is drawn outside this component's DOM and stylesheet.
+     *
+     * Lives here rather than in the Alpine x-data attribute on purpose: building HTML needs
+     * double quotes, and a double quote inside that attribute truncates it and dumps the
+     * whole component onto the page as text.
+     *
+     * Fed by the same fhSummaryRows() / fhDestinationTally() the inline card uses, so the two
+     * always agree about what a save did. All styling is inlined, since the dialog does not
+     * inherit the card's stylesheet.
+     */
+    window.fhRenderSummaryHtml = function (rows, tally) {
+        rows = rows || [];
+        if (!rows.length) return '';
+
+        const esc = (v) => String(v == null ? '' : v)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+
+        const chipBase = 'display:inline-block;padding:1px 6px;border-radius:9999px;'
+            + 'font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;'
+            + 'white-space:nowrap;border:1px solid transparent;';
+
+        const destStyle = {
+            file_history_staging: 'background:#dbeafe;color:#1e40af;border-color:#bfdbfe;',
+            CofO_staging:         'background:#d1fae5;color:#065f46;border-color:#a7f3d0;',
+            pra:                  'background:#fef3c7;color:#92400e;border-color:#fde68a;',
+            deed_registrations:   'background:#ede9fe;color:#5b21b6;border-color:#ddd6fe;',
+        };
+        const statusStyle = {
+            NEW:       'background:#059669;color:#fff;',
+            EDITING:   'background:#2563eb;color:#fff;',
+            ON_FILE:   'background:#f1f5f9;color:#475569;border-color:#e2e8f0;',
+            SAVED:     'background:#047857;color:#fff;',
+            UPDATED:   'background:#1d4ed8;color:#fff;',
+            HELD_BACK: 'background:#b45309;color:#fff;',
+        };
+
+        const items = rows.map((r) => {
+            const chips = [];
+            if (r.destinationKey) {
+                chips.push('<span style="' + chipBase + (destStyle[r.destinationKey] || '') + '">'
+                    + esc(r.destinationLabel) + '</span>');
+            }
+            chips.push('<span style="' + chipBase + (statusStyle[r.status] || '') + '">'
+                + esc(r.statusLabel) + '</span>');
+
+            return '<div style="padding:6px 0;border-bottom:1px solid #f1f5f9;'
+                + (r.derived ? 'opacity:.6;' : '') + '">'
+                +   '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-bottom:2px;">'
+                +     chips.join('')
+                +     '<span style="font-size:12px;font-weight:600;color:#1e293b;">' + esc(r.instrument) + '</span>'
+                +     (r.regNo ? '<span style="font-size:10px;color:#94a3b8;">Reg: ' + esc(r.regNo) + '</span>' : '')
+                +   '</div>'
+                +   '<div style="display:flex;justify-content:space-between;gap:10px;">'
+                +     '<span style="font-size:11px;color:#475569;">' + esc(r.parties) + '</span>'
+                +     '<span style="font-size:10px;color:#94a3b8;white-space:nowrap;">' + esc(r.date) + '</span>'
+                +   '</div>'
+                + '</div>';
+        }).join('');
+
+        const tallyText = (tally || []).map((d) => esc(d.label) + ' ' + d.count).join(' \u00b7 ');
+
+        return '<div style="margin-top:14px;text-align:left;">'
+            +    '<div style="font-size:11px;font-weight:700;color:#6d28d9;text-transform:uppercase;'
+            +    'letter-spacing:.05em;margin-bottom:2px;">File History Summary</div>'
+            +    (tallyText
+                    ? '<div style="font-size:10px;color:#64748b;margin-bottom:6px;">Written to: ' + tallyText + '</div>'
+                    : '')
+            +    items
+            + '</div>';
+    };
 
     // Global function to close the property transaction modal
     function closePropertyTransactionModal() {
@@ -1759,6 +2314,28 @@
             success: function (response) {
                 console.log('Success:', response);
 
+                // File History Summary: badge each block with what actually happened
+                // (SAVED / UPDATED / HELD BACK) and reload the file's history so the ON FILE
+                // layer reflects the rows just written. Best-effort - a card that cannot be
+                // updated must never turn a successful save into an error.
+                let fhSummaryHtml = '';
+                try {
+                    const fhEl = document.querySelector('#property-transaction-dialog [x-data]');
+                    if (fhEl && typeof Alpine !== 'undefined') {
+                        const fhCmp = Alpine.$data(fhEl);
+                        if (fhCmp && typeof fhCmp.fhApplySaveOutcome === 'function') {
+                            fhCmp.fhApplySaveOutcome(response);
+                        }
+                        // Snapshot AFTER applying the outcome, so the dialog carries the
+                        // SAVED / UPDATED / HELD BACK badges rather than the pre-save state.
+                        if (fhCmp && typeof fhCmp.fhSummaryHtml === 'function') {
+                            fhSummaryHtml = fhCmp.fhSummaryHtml();
+                        }
+                    }
+                } catch (e) {
+                    console.warn('File History Summary: could not apply save outcome', e);
+                }
+
                 // Partial save: everything that was not a duplicate is already stored.
                 // The rows the server held back come back here for the user to confirm.
                 const deferred = response.duplicates || [];
@@ -1808,21 +2385,32 @@
                 // the page (it lives in create-indexing-dialog.js) or the server
                 // could not build a summary.
                 const canShowCard = typeof window.showIndexingSavedCard === 'function'
-                    && (response.storage_summary || (response.instruments || []).length);
+                    && (response.storage_summary || (response.instruments || []).length || fhSummaryHtml);
 
                 if (canShowCard) {
                     window.showIndexingSavedCard(response, {
                         isUpdate: true,
                         title: 'Transactions captured',
+                        // The same File History Summary the inline card shows.
+                        extraHtml: fhSummaryHtml,
                         // Just the instruments — the file's full record footprint was
                         // already shown on the indexing card a moment earlier.
                         instrumentsOnly: true,
+                    }).then(() => {
+                        // File Snapshot for the version this capture just created.
+                        // No Submission Summary here: capturing a transaction files
+                        // no new file, so there are no destinations to review.
+                        if (typeof window.showFileSnapshotCard === 'function' && response.snapshot) {
+                            return window.showFileSnapshotCard(response.snapshot);
+                        }
                     }).then(() => {
                         if (submitBtn) {
                             submitBtn.disabled = false;
                             submitBtn.innerText = originalBtnText;
                         }
-                        closePropertyTransactionModal();
+                        // Modal deliberately left open: the File History Summary card above
+                        // now shows what was written and where. The operator closes it when
+                        // they have read it.
                         if (typeof checkExistingPropertyRecords === 'function') {
                             checkExistingPropertyRecords();
                         }
@@ -1838,12 +2426,13 @@
                         html: (response.message || 'Property transaction details saved successfully!') + detailHtml,
                         confirmButtonText: 'OK'
                     }).then(() => {
-                        // Re-enable in case user doesn't close modal (though we do close it)
                         if (submitBtn) {
                             submitBtn.disabled = false;
                             submitBtn.innerText = originalBtnText;
                         }
-                        closePropertyTransactionModal();
+                        // Modal deliberately left open: the File History Summary card above
+                        // now shows what was written and where. The operator closes it when
+                        // they have read it.
                         if (typeof checkExistingPropertyRecords === 'function') {
                             checkExistingPropertyRecords();
                         }
@@ -1858,7 +2447,7 @@
                         submitBtn.disabled = false;
                         submitBtn.innerText = originalBtnText;
                     }
-                    closePropertyTransactionModal();
+                    // Modal deliberately left open - see the note in the branches above.
                     if (typeof checkExistingPropertyRecords === 'function') {
                         checkExistingPropertyRecords();
                     }

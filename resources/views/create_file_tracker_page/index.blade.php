@@ -2916,6 +2916,10 @@
                         <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
                         <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
                         <script src="{{ asset('js/global-fileno-modal.js') }}?v={{ @filemtime(public_path('js/global-fileno-modal.js')) }}"></script>
+                        {{-- Submission Summary + File Snapshot cards, shown after a save.
+                             This page does not include property_transaction_modal (which loads
+                             the same file for every other indexing screen), so it loads it here. --}}
+                        <script src="{{ asset('js/fileindexing/file-snapshot-card.js') }}?v={{ @filemtime(public_path('js/fileindexing/file-snapshot-card.js')) }}"></script>
                         <script src="{{ asset('js/fileindexing/create-indexing-dialog.js') }}?v={{ @filemtime(public_path('js/fileindexing/create-indexing-dialog.js')) }}"></script>
 
                         <!-- Footer -->

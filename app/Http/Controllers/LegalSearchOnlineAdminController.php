@@ -9,6 +9,7 @@ use App\Models\LegalSearchOnlineFeedback;
 use App\Models\LegalSearchOnlineRequest;
 use App\Services\LandOfficerSignatureService;
 use App\Services\LegalSearchApprovalService;
+use App\Services\LegalSearchService;
 use Carbon\Carbon;
 
 class LegalSearchOnlineAdminController extends Controller
@@ -197,6 +198,80 @@ class LegalSearchOnlineAdminController extends Controller
 
         return $approvalService->renderPdf($searchRequest, $report)
             ->stream($approvalService->pdfFileName($searchRequest));
+    }
+
+    /**
+     * The correction workspace for a request: edit the records BEFORE approving.
+     *
+     * The Preview action streams a PDF, which cannot host controls, so correcting
+     * a result meant leaving the approval screen entirely. This renders the same
+     * report as an editable page, using the SAME record-editing endpoints as the
+     * Legal Search timeline (legalsearch.update / .remove / .drop) and the same
+     * Edit Record modal, so a correction made here behaves identically to one made
+     * there. Every change lands in audit_logs against the admin's name.
+     */
+    public function requestCorrect(int $id, LegalSearchApprovalService $approvalService, LegalSearchService $searchService)
+    {
+        abort_unless($approvalService->isApprover(auth()->user()), 403, 'Only a Director or Deputy Director may correct Online Legal Search requests.');
+
+        $searchRequest = LegalSearchOnlineRequest::with('payment')->findOrFail($id);
+        $fileNumber = trim((string) $searchRequest->file_number);
+
+        $report = null;
+        $reportError = null;
+        $records = [];
+
+        // ONE engine pass. buildPrintReport() calls search() internally, so asking
+        // for both ran the whole search twice — 22s of engine time on a heavy file.
+        // search() already returns the real records with ids, prop_id-expanded, which
+        // is what correcting needs; the printed report only added read-only synthetic
+        // rows on top.
+        try {
+            $found = $searchService->search(['query' => $fileNumber]);
+
+            if (empty($found['transactions'])) {
+                $reportError = 'No records were found for ' . ($fileNumber ?: '—') . '.';
+            }
+
+            foreach ($found['transactions'] ?? [] as $t) {
+                if (empty($t['id'])) {
+                    continue;
+                }
+
+                $table = [
+                    'File History'      => 'file_history_staging',
+                    'CofO'              => 'CofO_staging',
+                    'PRA'               => 'pra',
+                    'Deed Registration' => 'deed_registrations',
+                ][$t['source_table'] ?? ''] ?? null;
+
+                if (!$table) {
+                    continue;
+                }
+
+                $records[] = [
+                    'id'          => $t['id'],
+                    'table'       => $table,
+                    'instrument'  => $t['transaction_type'] ?? 'Instrument',
+                    'party_1'     => $t['party_1'] ?? null,
+                    'party_2'     => $t['party_2'] ?? null,
+                    'reg_no'      => $t['regNo'] ?? ($t['registration'] ?? null),
+                    'date'        => $t['transaction_date'] ?? ($t['reg_date'] ?? null),
+                    'file_number' => $t['lifecycle_file_no'] ?? ($t['file_number'] ?? $fileNumber),
+                ];
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return view('legal_search_online.correct', [
+            'PageTitle'     => 'Correct Search Result — ' . ($searchRequest->request_no ?: $fileNumber),
+            'searchRequest' => $searchRequest,
+            'report'        => $report,
+            'reportError'   => $reportError,
+            'records'       => $records,
+            'fileNumber'    => $fileNumber,
+        ]);
     }
 
     /**

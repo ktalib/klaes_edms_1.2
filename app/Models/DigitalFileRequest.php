@@ -28,6 +28,11 @@ class DigitalFileRequest extends Model
         'request_type',
         'file_no',
         'file_title',
+        // Which physical file was asked for, when the searched number is
+        // registered in both file_indexings and duplicate_fileno. The number
+        // itself cannot say — both records carry it.
+        'selected_record_id',
+        'selected_record_source',
         'requester_user_id',
         'sending_officer',
         'receiving_officer',

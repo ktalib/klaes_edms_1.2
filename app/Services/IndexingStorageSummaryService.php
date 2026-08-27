@@ -321,8 +321,7 @@ class IndexingStorageSummaryService
             $notes[] = match ($folio['reason']) {
                 'created' => [
                     'tone' => 'info',
-                    'text' => $folioRegistry . ' folio created at ' . $folio['path']
-                        . ' — the file\'s copy in that registry scans into here.',
+                    'text' => $folioRegistry . ' folio created at ' . $folio['path'] . '.',
                 ],
                 'already_exists' => [
                     'tone' => 'muted',

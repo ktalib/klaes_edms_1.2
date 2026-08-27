@@ -42,6 +42,27 @@
                                     {{ isset($record) ? 'Update the file indexing details below' : 'Enter the details for the new file to be indexed' }}
                                 </p>
                             </div>
+
+                            {{-- TEST AID. Renders only when config('fileindexing.demo_fill') is on
+                                 AND APP_ENV is not production — see that config block for why both
+                                 locks exist. Never shown in update mode: overwriting a real record's
+                                 particulars with sample data is exactly the mistake to avoid. --}}
+                            @if(!isset($record) && class_exists(\App\Services\DemoIndexingDataService::class)
+                                && app(\App\Services\DemoIndexingDataService::class)->enabled())
+                                <div class="shrink-0">
+                                    <button type="button" id="demo-fill-btn"
+                                        data-demo-url="{{ route('fileindexing.demo-sample') }}"
+                                        class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md
+                                               border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100
+                                               focus:outline-none focus:ring-2 focus:ring-amber-400">
+                                        <i data-lucide="flask-conical" class="h-4 w-4"></i>
+                                        <span id="demo-fill-btn-label">Fill demo data</span>
+                                    </button>
+                                    <p class="mt-1 text-[11px] text-amber-700 text-right max-w-[16rem]">
+                                        Test mode &mdash; real unindexed file number, invented details.
+                                    </p>
+                                </div>
+                            @endif
                         </div>
                         @if(isset($record))
                             <div class="mt-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-md">
@@ -367,6 +388,14 @@
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
     <script src="{{ asset('js/fileindexing/create-indexing-dialog.js') }}?v={{ @filemtime(public_path('js/fileindexing/create-indexing-dialog.js')) }}"></script>
+
+    {{-- TEST AID. Same two locks as the button itself, so on production this
+         script is not on the page at all rather than merely inert. Loaded AFTER
+         the dialog module because it calls window.autoFillArchiveDetailsFromAPI. --}}
+    @if(!isset($record) && class_exists(\App\Services\DemoIndexingDataService::class)
+        && app(\App\Services\DemoIndexingDataService::class)->enabled())
+        <script src="{{ asset('js/fileindexing/demo-fill.js') }}?v={{ @filemtime(public_path('js/fileindexing/demo-fill.js')) }}"></script>
+    @endif
 
     <script>
         // Phone number validation

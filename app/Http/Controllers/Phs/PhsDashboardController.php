@@ -5,17 +5,23 @@ namespace App\Http\Controllers\Phs;
 use App\Http\Controllers\Controller;
 use App\Models\Phs\PhsSearchLog;
 use App\Services\LegalSearchService;
+use App\Services\Phs\PhsEditRequestService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class PhsDashboardController extends Controller
 {
     protected LegalSearchService $searchService;
+    protected PhsEditRequestService $editRequests;
 
-    public function __construct(LegalSearchService $searchService)
-    {
+    public function __construct(
+        LegalSearchService $searchService,
+        PhsEditRequestService $editRequests
+    ) {
         $this->searchService = $searchService;
+        $this->editRequests = $editRequests;
     }
 
     public function index()
@@ -76,7 +82,14 @@ class PhsDashboardController extends Controller
             ? (int) $institution->token_balance
             : (int) $member->allocated_tokens;
 
-        if ($currentBalance < 1) {
+        // A correction returned by the PHS-P Admin entitles this member to ONE
+        // re-run of THAT file at no charge. Resolved before the balance check so
+        // an entitled member with an empty wallet can still collect the re-run
+        // they are owed - refusing them here would be charging them for our own
+        // bad result.
+        $freeRerun = $this->editRequests->findAuthorisation($member, $query);
+
+        if (!$freeRerun && $currentBalance < 1) {
             return response()->json([
                 'success' => false,
                 'insufficient_tokens' => true,
@@ -153,19 +166,24 @@ class PhsDashboardController extends Controller
         // Results found — now deduct 1 token.
         $reference = 'PHS/' . now()->format('Y') . '/' . strtoupper(Str::random(6));
 
-        if ($member->isSuperAdmin()) {
+        // Authorised free re-run: charge nothing, and record why. The
+        // authorisation is consumed further down, once the search log exists to
+        // point at - consuming it here would spend it even if the search failed.
+        if ($freeRerun) {
+            $debited = false;
+        } elseif ($member->isSuperAdmin()) {
             $debit = $institution->deductTokens(1, $member->id, [
                 'reference_no' => $reference,
                 'notes' => 'Search: ' . Str::limit($query, 100),
             ]);
             $debited = $debit !== null;
         } else {
-            $debited = \DB::connection('sqlsrv')->table('phs_members')
+            $debited = DB::connection('sqlsrv')->table('phs_members')
                 ->where('id', $member->id)
                 ->where('allocated_tokens', '>=', 1)
                 ->update([
-                    'allocated_tokens' => \DB::raw('allocated_tokens - 1'),
-                    'tokens_used' => \DB::raw('tokens_used + 1'),
+                    'allocated_tokens' => DB::raw('allocated_tokens - 1'),
+                    'tokens_used' => DB::raw('tokens_used + 1'),
                 ]) > 0;
         }
 
@@ -197,7 +215,7 @@ class PhsDashboardController extends Controller
             report($e);
         }
 
-        PhsSearchLog::create([
+        $searchLog = PhsSearchLog::create([
             'phs_institution_id' => $institution->id,
             'phs_member_id' => $member->id,
             'query' => Str::limit($query, 250),
@@ -207,10 +225,42 @@ class PhsDashboardController extends Controller
             'tokens_used' => $debited ? 1 : 0,
         ]);
 
+        // Spend the free-re-run authorisation, pointing it at the log row that
+        // proves the re-run happened. consume() is conditional on the row still
+        // being unspent, so two concurrent re-runs cannot both come out free -
+        // if this one loses the race it is charged like any other search.
+        $rerunApplied = false;
+        if ($freeRerun) {
+            $rerunApplied = $this->editRequests->consume($freeRerun, $searchLog->id, $member);
+
+            if (!$rerunApplied) {
+                $searchLog->forceFill(['tokens_used' => 1])->save();
+                $debited = $member->isSuperAdmin()
+                    ? $institution->deductTokens(1, $member->id, [
+                        'reference_no' => $reference,
+                        'notes' => 'Search: ' . Str::limit($query, 100),
+                    ]) !== null
+                    : DB::connection('sqlsrv')->table('phs_members')
+                        ->where('id', $member->id)
+                        ->where('allocated_tokens', '>=', 1)
+                        ->update([
+                            'allocated_tokens' => DB::raw('allocated_tokens - 1'),
+                            'tokens_used' => DB::raw('tokens_used + 1'),
+                        ]) > 0;
+                $member->refresh();
+                $institution->refresh();
+            }
+        }
+
         return response()->json([
             'success' => true,
             'reference_no' => $reference,
             'token_balance' => $member->isSuperAdmin() ? (int) $institution->token_balance : (int) $member->allocated_tokens,
+            // Set when this search was the free re-run of a corrected result, so
+            // the portal can say so instead of leaving the member to wonder
+            // whether they were charged.
+            'free_rerun' => $rerunApplied,
+            'free_rerun_reference' => $rerunApplied ? ($freeRerun->reference_no ?? null) : null,
             'transactions' => $timeline,
             'file_title' => $results['file_title'] ?? null,
             'file_district' => $results['file_district'] ?? null,

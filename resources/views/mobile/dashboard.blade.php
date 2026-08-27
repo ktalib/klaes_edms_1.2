@@ -752,6 +752,14 @@
 </div>
 
 <script>
+// The duplicate record the user picked, as {record_id, source}. Null until they
+// choose, and cleared on every fresh render — a Quick Search request raised on a
+// number that two physical files share must name WHICH one, since the number
+// cannot. Declared here rather than beside redirectLandFromSearch() so the render
+// function further up can clear it without a temporal-dead-zone error.
+// Mirrors selectedCandidate in the web Quick Search.
+let selectedCandidate = null;
+
 // ─── Server-injected data ─────────────────────────────────────────────────
 const CSRF_TOKEN  = '{{ csrf_token() }}';
 const API_BASE    = '{{ url("/api/file-trackers") }}';
@@ -1404,6 +1412,16 @@ async function searchFile() {
       // Mirrors directsToLand() in the web Quick Search.
       const directsToLand = !!(d.duplicate_flag && d.duplicate_flag.directs_to_land);
 
+      // The searched number is registered in BOTH file_indexings and duplicate_fileno,
+      // so it no longer identifies one physical file. The user must pick the exact
+      // record before the request can go out, and it must NOT fall through to the SCB
+      // just because one of the matches is indexed. Mirrors hasCandidates() on the web.
+      const dupCandidates = Array.isArray(d.duplicate_candidates) ? d.duplicate_candidates : [];
+      const hasCandidates = dupCandidates.length > 1;
+      // Cleared on every render — a stale pick from the previous search must never
+      // travel with a new file's request.
+      selectedCandidate = null;
+
       // OFS send block is split into two parts so the File Digital Library can sit
       // between the Registry (Origin) selector and the Send button.
       let ofsRegistry = '', ofsButton = '';
@@ -1518,7 +1536,9 @@ async function searchFile() {
       let landRedirectSend = '';
       if (IS_OFS && d.can_send_fr && directsToLand) {
         const grad = 'linear-gradient(135deg,#9333ea,#7e22ce)';
-        landRedirectSend = `<button class="btn" style="width:100%;margin-top:12px;padding:12px;font-size:13px;box-shadow:none;background:${grad};" onclick="redirectLandFromSearch(this)"><i class="fas fa-user-check"></i> Re-direct To Director Land (Land Department)</button>`;
+        // With a selection list on screen the action is unchanged but inert until a
+        // record is chosen: the request is saved against that record's id and source.
+        landRedirectSend = `<button class="btn" id="landRedirectBtn" ${hasCandidates ? 'disabled' : ''} style="width:100%;margin-top:12px;padding:12px;font-size:13px;box-shadow:none;background:${grad};${hasCandidates ? 'opacity:.5;' : ''}" onclick="redirectLandFromSearch(this)"><i class="fas fa-user-check"></i> Send Request to Director Land</button>`;
       }
 
       const inTransitLookupId = String(d.file_number || d.file_title || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -1740,6 +1760,31 @@ async function searchFile() {
                 ${d.registry ? `<span><strong>Registry:</strong> ${esc(d.registry)}</span>` : ''}
                 ${d.rack_shelf ? `<span><strong>Shelf/Rack:</strong> ${esc(d.rack_shelf)}</span>` : ''}
               </div>` : ''}
+            </div>` : ''}
+            ${hasCandidates ? `
+            <div style="margin-bottom:12px;background:#f59e0b14;border:1px solid #f59e0b55;border-radius:12px;padding:10px 12px;">
+              <div style="font-size:13px;font-weight:800;color:#b45309;"><i class="fas fa-layer-group" style="margin-right:5px;"></i>${dupCandidates.length} files under this number</div>
+              <div style="margin-top:3px;font-size:11px;color:#b45309;">Select the exact file you are looking for. The request carries the record you pick, not just the file number.</div>
+              <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">
+                ${dupCandidates.map((c) => `
+                <label style="display:flex;gap:10px;background:var(--card);border:1px solid #f59e0b40;border-radius:10px;padding:10px;">
+                  <input type="radio" name="dupCandidate" style="margin-top:3px;flex-shrink:0;"
+                    onchange="pickDupCandidate(${Number(c.record_id)}, '${esc(c.source)}', this)">
+                  <div style="min-width:0;flex:1;">
+                    <div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;">
+                      <span style="font-size:13px;font-weight:800;color:var(--text);">${esc(c.file_number)}</span>
+                      <span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:2px 7px;border-radius:999px;background:${c.source === 'duplicate_fileno' ? '#fef3c7;color:#92400e' : '#dbeafe;color:#1e40af'};">${esc(c.source_label)}</span>
+                    </div>
+                    <div style="margin-top:2px;font-size:12px;color:var(--text);">${esc(c.holder || DASH)}</div>
+                    <div style="margin-top:4px;font-size:10px;color:var(--muted);line-height:1.6;">
+                      ${c.registry ? `<span style="margin-right:10px;"><b>Registry:</b> ${esc(c.registry)}</span>` : ''}
+                      ${c.rack_shelf ? `<span style="margin-right:10px;"><b>Shelf/Rack:</b> ${esc(c.rack_shelf)}</span>` : ''}
+                      ${c.current_location ? `<span style="margin-right:10px;"><b>Location:</b> ${esc(c.current_location)}</span>` : ''}
+                      <span><b>Status:</b> ${esc(c.status_label)}</span>
+                    </div>
+                  </div>
+                </label>`).join('')}
+              </div>
             </div>` : ''}
             ${d.duplicate_flag ? `
             <div style="margin-bottom:12px;background:${d.duplicate_flag.color}14;border:1px solid ${d.duplicate_flag.color}55;border-radius:12px;padding:10px 12px;">
@@ -2622,7 +2667,13 @@ async function redirectDcivFromSearch(btn) {
   try {
     const res = await api(`{{ route('create-file-tracker.quick-search.redirect-dciv-director') }}`, {
       method: 'POST',
-      body: JSON.stringify({ file_number: d.file_number, file_title: d.file_title || null }),
+      body: JSON.stringify({
+        file_number: d.file_number,
+        file_title: d.file_title || null,
+        // Null on a file with no duplicate — the normal workflow.
+        selected_record_id:     selectedCandidate ? selectedCandidate.record_id : null,
+        selected_record_source: selectedCandidate ? selectedCandidate.source : null,
+      }),
     });
     if (res.success) {
       toast(res.message || `Request ${res.request_no || ''} re-directed to DCIV Director`);
@@ -2641,6 +2692,12 @@ async function redirectDcivFromSearch(btn) {
 // Re-direct a flagged file (duplicate_fileno: Duplicate / CofO / W-C-R) to the
 // Director Land (Land Department) instead of raising a File Search Request to the
 // SCB. Mirrors sendRedirectToDirectorLand() in the web Quick Search.
+function pickDupCandidate(recordId, source, radio) {
+  selectedCandidate = { record_id: recordId, source: source };
+  const btn = document.getElementById('landRedirectBtn');
+  if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+}
+
 async function redirectLandFromSearch(btn) {
   const d = lastFileSearch;
   if (!d) return;

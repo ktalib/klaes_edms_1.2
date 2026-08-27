@@ -260,9 +260,235 @@
       const data = await postJson(cfg.routes.search, { query, filters });
       setTokenBalance(data.token_balance);
       renderSearchResults(data, query);
+      setCurrentResult(data, query);
+      refreshEditRequestState();
     } catch (error) {
       hide($('loading-section'));
       alert(error.message || 'Search failed.');
+    }
+  }
+
+  // ==========================================================================
+  // Send Edit Request / free re-run
+  //
+  // A member who gets a wrong result raises an edit request against THIS file.
+  // Once PHS-P Admin returns the correction, the portal shows a Re-run button.
+  // The server decides whether a re-run is free - nothing here may assume it.
+  // ==========================================================================
+
+  // The result currently on screen, kept so the edit request can carry the exact
+  // report the member is complaining about rather than a re-fetch that may differ.
+  let currentResult = null;
+
+  function setCurrentResult(data, fileNo) {
+    currentResult = {
+      file_number: fileNo || data.file_index_number || '',
+      reference_no: data.reference_no || null,
+      rows: data.transactions || [],
+    };
+  }
+
+  function openEditRequestModal() {
+    if (!currentResult || !currentResult.file_number) {
+      alert('Run a search first, then raise an edit request against the result.');
+      return;
+    }
+    const modal = $('phs-edit-request-modal');
+    const backdrop = $('phs-edit-request-backdrop');
+    if (!modal) return;
+
+    $('phs-edit-request-file').textContent = currentResult.file_number;
+    const refWrap = $('phs-edit-request-ref-wrap');
+    if (currentResult.reference_no) {
+      $('phs-edit-request-ref').textContent = currentResult.reference_no;
+      refWrap?.classList.remove('hidden');
+    } else {
+      refWrap?.classList.add('hidden');
+    }
+
+    $('phs-edit-request-form')?.classList.remove('hidden');
+    $('phs-edit-request-success')?.classList.add('hidden');
+    $('phs-edit-request-error')?.classList.add('hidden');
+
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    backdrop?.classList.remove('opacity-0', 'invisible');
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  function closeEditRequestModal() {
+    const modal = $('phs-edit-request-modal');
+    modal?.classList.add('hidden');
+    modal?.classList.remove('flex');
+    $('phs-edit-request-backdrop')?.classList.add('opacity-0', 'invisible');
+  }
+
+  async function submitEditRequest(event) {
+    event.preventDefault();
+    const btn = $('phs-edit-request-submit');
+    const errorEl = $('phs-edit-request-error');
+    const category = $('phs-edit-request-reason-category').value;
+    const reason = $('phs-edit-request-reason').value.trim();
+
+    if (!category || !reason) {
+      errorEl.textContent = 'Please choose a reason and describe the problem.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = 'Sending...';
+    errorEl.classList.add('hidden');
+
+    try {
+      const data = await postJson(cfg.routes.editRequestStore, {
+        file_number: currentResult.file_number,
+        reference_no: currentResult.reference_no,
+        reason_category: category,
+        reason,
+        // What the member actually saw, so the admin corrects against that.
+        original_result: { rows: currentResult.rows },
+      });
+
+      $('phs-edit-request-form').classList.add('hidden');
+      $('phs-edit-request-success').classList.remove('hidden');
+      $('phs-edit-request-success-msg').textContent = data.message || 'Your edit request has been sent.';
+      if (window.lucide) window.lucide.createIcons();
+
+      $('phs-edit-request-reason').value = '';
+      $('phs-edit-request-reason-category').value = '';
+      refreshEditRequestState();
+    } catch (error) {
+      errorEl.textContent = error.message || 'Could not send the edit request.';
+      errorEl.classList.remove('hidden');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  }
+
+  /**
+   * Reflect any open edit request for the file on screen.
+   *
+   * can_rerun comes from the server and is the ONLY thing that reveals the
+   * Re-run button - the portal never infers entitlement from the status text.
+   */
+  async function refreshEditRequestState() {
+    const statusEl = $('phs-edit-request-status');
+    const rerunEl = $('phs-rerun-banner');
+    statusEl?.classList.add('hidden');
+    rerunEl?.classList.add('hidden');
+
+    if (!cfg.routes?.editRequestIndex || !currentResult?.file_number) return;
+
+    const same = (a, b) => String(a || '').toUpperCase().replace(/[\s\/_-]+/g, '')
+                        === String(b || '').toUpperCase().replace(/[\s\/_-]+/g, '');
+
+    try {
+      const res = await fetch(cfg.routes.editRequestIndex, {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+
+      const ready = (data.ready_for_rerun || []).find(r => same(r.file_number, currentResult.file_number));
+      if (ready) {
+        $('phs-rerun-msg').textContent = ready.notification
+          || 'Click Re-run Search to generate the updated result. No token will be deducted for this re-run.';
+        const note = $('phs-rerun-note');
+        if (ready.admin_response) {
+          note.textContent = 'Admin note: ' + ready.admin_response;
+          note.classList.remove('hidden');
+        } else {
+          note.classList.add('hidden');
+        }
+        $('phs-rerun-btn').dataset.fileNumber = ready.file_number || currentResult.file_number;
+        rerunEl?.classList.remove('hidden');
+        if (window.lucide) window.lucide.createIcons();
+        return;
+      }
+
+      const pending = (data.requests || []).find(
+        r => r.status === 'edit_requested' && same(r.file_number, currentResult.file_number)
+      );
+      if (pending) {
+        $('phs-edit-request-status-msg').textContent =
+          'Your correction request (' + (pending.reason_label || 'correction') + ') is with the PHS-P Admin. '
+          + 'You will be able to re-run this search free of charge once it is returned.';
+        statusEl?.classList.remove('hidden');
+        if (window.lucide) window.lucide.createIcons();
+      }
+    } catch (e) {
+      // Purely informational - a failure here must not disturb the result view.
+    }
+  }
+
+  /**
+   * Re-run the corrected search. The server applies (and consumes) the free-run
+   * authorisation; if it has already been spent this is charged like any search,
+   * which is why the balance is always taken from the response.
+   */
+  async function runRerun() {
+    const btn = $('phs-rerun-btn');
+    const fileNo = btn?.dataset.fileNumber || currentResult?.file_number;
+    if (!fileNo) return;
+
+    btn.disabled = true;
+    const original = btn.innerHTML;
+    btn.innerHTML = 'Re-running...';
+
+    try {
+      const data = await postJson(cfg.routes.search, { query: fileNo, filters: {} });
+      setTokenBalance(data.token_balance);
+      renderSearchResults(data, fileNo);
+
+      if (data.free_rerun === false) {
+        alert('This re-run was charged as a normal search — the free re-run for this file had already been used.');
+      }
+    } catch (error) {
+      alert(error.message || 'Re-run failed.');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = original;
+      if (window.lucide) window.lucide.createIcons();
+    }
+  }
+
+  /**
+   * Run a search that the org console asked for via ?rerun=<file>.
+   *
+   * Used when a corrected result is collected from the Edit Requests tab, which
+   * has nowhere to render a timeline. The URL parameter is consumed immediately
+   * so a refresh does not silently run (and possibly charge for) the search a
+   * second time.
+   */
+  async function consumePendingRerun() {
+    const params = new URLSearchParams(window.location.search);
+    const fileNumber = (params.get('rerun') || '').trim();
+    if (!fileNumber) return;
+
+    // Strip it from the address bar before running anything.
+    params.delete('rerun');
+    const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+    window.history.replaceState({}, '', clean);
+
+    const input = $('search-query');
+    if (input) input.value = fileNumber;
+
+    try {
+      const data = await postJson(cfg.routes.search, { query: fileNumber, filters: {} });
+      setTokenBalance(data.token_balance);
+      renderSearchResults(data, fileNumber);
+      setCurrentResult(data, fileNumber);
+      refreshEditRequestState();
+
+      if (data.free_rerun === false) {
+        alert('This re-run was charged as a normal search \u2014 the free re-run for this file had already been used.');
+      }
+    } catch (error) {
+      alert(error.message || 'Could not re-run the search.');
     }
   }
 
@@ -286,6 +512,17 @@
     $('buy-tokens-btn')?.addEventListener('click', () => show($('token-modal')));
     $('close-token-modal')?.addEventListener('click', () => hide($('token-modal')));
     $('cancel-token-purchase')?.addEventListener('click', () => hide($('token-modal')));
+
+    // A re-run handed over from the org console runs as soon as the portal is up.
+    consumePendingRerun();
+
+    $('phs-edit-request-btn')?.addEventListener('click', openEditRequestModal);
+    $('phs-edit-request-close')?.addEventListener('click', closeEditRequestModal);
+    $('phs-edit-request-cancel')?.addEventListener('click', closeEditRequestModal);
+    $('phs-edit-request-done')?.addEventListener('click', closeEditRequestModal);
+    $('phs-edit-request-backdrop')?.addEventListener('click', closeEditRequestModal);
+    $('phs-edit-request-form')?.addEventListener('submit', submitEditRequest);
+    $('phs-rerun-btn')?.addEventListener('click', runRerun);
 
     $('pay-online-token')?.addEventListener('click', async () => handleTokenAction(cfg.routes.payOnline));
     $('pay-invoice-token')?.addEventListener('click', async () => handleTokenAction(cfg.routes.requestInvoice));

@@ -307,31 +307,51 @@
       });
     };
 
-    document.querySelectorAll('[data-tab]').forEach((tab) => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('[data-tab]').forEach((btn) => btn.classList.remove('tab-active'));
-        document.querySelectorAll('[data-tab]').forEach((btn) => btn.classList.add('text-gray-500'));
-        tab.classList.add('tab-active');
-        tab.classList.remove('text-gray-500');
-        ['users', 'roles', 'activity', 'emails', 'branding', 'subscription'].forEach((name) => $(name + '-tab').classList.add('hidden'));
-        $(tab.dataset.tab + '-tab').classList.remove('hidden');
-        setSidebarActive(tab.dataset.tab);
-        if (tab.dataset.tab === 'activity') loadActivityLog();
-        if (tab.dataset.tab === 'emails') loadEmailHistory();
+    // Panel names are read from the DOM rather than hardcoded. The old list had to
+    // be edited by hand every time a tab was added, and a panel missing from it was
+    // simply never hidden.
+    const panelNames = () => Array.from(document.querySelectorAll('[id$="-tab"]'))
+      .map((el) => el.id.replace(/-tab$/, ''));
+
+    /**
+     * Show one panel.
+     *
+     * Works whether or not the tab has a twin in the top tab strip. Sidebar-only
+     * entries used to do nothing at all: the sidebar handler forwarded the click
+     * to `[data-tab="<name>"]`, and when no such element existed the optional
+     * chain swallowed it silently.
+     */
+    const activateTab = (name) => {
+      if (!name || !$(name + '-tab')) return;
+
+      panelNames().forEach((panel) => $(panel + '-tab')?.classList.add('hidden'));
+      $(name + '-tab').classList.remove('hidden');
+
+      document.querySelectorAll('[data-tab]').forEach((btn) => {
+        const active = btn.dataset.tab === name;
+        btn.classList.toggle('tab-active', active);
+        btn.classList.toggle('text-gray-500', !active);
       });
+
+      setSidebarActive(name);
+
+      if (name === 'activity') loadActivityLog();
+      if (name === 'emails') loadEmailHistory();
+    };
+
+    document.querySelectorAll('[data-tab]').forEach((tab) => {
+      tab.addEventListener('click', () => activateTab(tab.dataset.tab));
     });
 
     document.querySelectorAll('[data-sidebar-tab]').forEach((button) => {
-      button.addEventListener('click', () => {
-        document.querySelector(`[data-tab="${button.dataset.sidebarTab}"]`)?.click();
-      });
+      button.addEventListener('click', () => activateTab(button.dataset.sidebarTab));
     });
 
     // Deep-link support: open a specific tab via ?tab=branding (or #branding).
     const requestedTab = new URLSearchParams(window.location.search).get('tab')
       || window.location.hash.replace('#', '');
     if (requestedTab) {
-      document.querySelector(`[data-tab="${requestedTab}"]`)?.click();
+      activateTab(requestedTab);
     }
   }
 

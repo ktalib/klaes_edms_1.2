@@ -35,7 +35,9 @@
     $logoBrand = $logo('assets/logo/online_ls_print.jpeg')
         ?: $logo('assets/logo/online_ls.jpeg')
         ?: $logo('storage/upload/logo/logo.png');
-    $logoLas   = $logo('assets/logo/las.jpg');
+    // Footer mark. Left_Logo.png replaced las.jpg on 2026-08-26; the old file is still on
+    // disk and still used by other modules, so this is not a global swap.
+    $logoLas   = $logo('assets/logo/Left_Logo.png') ?: $logo('assets/logo/las.jpg');
 
     $rows = $report['rows'] ?? [];
 
@@ -306,7 +308,17 @@
         <td class="sp"></td>
         <td class="lbl"></td><td class="val"></td>
         <td class="sp"></td>
-        <td class="lbl"></td><td class="val"></td>
+        {{-- Root of Title, directly beneath the Date line in the same column. Rendered
+             only when the file has one on record, rather than printing an empty label. --}}
+        @if (!empty($report['root_of_title']))
+            {{-- Styled inline: this template has no .root-of-title rule, and the PDF
+                 renderer does not inherit the on-screen stylesheet. Bold italic indigo,
+                 matching how the HTML reports print it. --}}
+            <td class="val" colspan="2"
+                style="font-weight:700;font-style:italic;color:#6d28d9;">Root of Title: {{ $report['root_of_title'] }}</td>
+        @else
+            <td class="lbl"></td><td class="val"></td>
+        @endif
     </tr>
 </table>
 

@@ -172,7 +172,7 @@
                             <tbody>
                                 @forelse($pendingRecords as $record)
                                     <tr data-record='@json($record)'>
-                                        <td class="px-4 py-2.5 text-xs text-slate-400 font-mono">{{ $record->id }}</td>
+                                        <td class="px-4 py-2.5 text-xs text-slate-400 font-mono">{{ $loop->iteration }}</td>
                                         <td class="px-4 py-2.5 font-semibold text-slate-700">{{ $record->applicant_name }}</td>
                                         <td class="px-4 py-2.5 text-slate-700 font-mono text-xs">{{ $record->file_no ?: '-' }}</td>
                                         <td class="px-4 py-2.5 text-slate-700 text-xs">{{ $record->land_use ?: '-' }}</td>
@@ -347,7 +347,7 @@
                             <tbody>
                                 @forelse($approvedRecords as $record)
                                     <tr data-record='@json($record)'>
-                                        <td class="px-4 py-2.5 text-xs text-slate-400 font-mono">{{ $record->id }}</td>
+                                        <td class="px-4 py-2.5 text-xs text-slate-400 font-mono">{{ $loop->iteration }}</td>
                                         <td class="px-4 py-2.5 font-semibold text-slate-700">{{ $record->applicant_name }}</td>
                                         <td class="px-4 py-2.5 text-slate-700 font-mono text-xs">{{ $record->file_no ?: '-' }}</td>
                                         <td class="px-4 py-2.5 text-slate-700 text-xs">{{ $record->land_use ?: '-' }}</td>

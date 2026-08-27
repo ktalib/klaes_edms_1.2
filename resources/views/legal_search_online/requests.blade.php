@@ -160,30 +160,63 @@
                                         <div class="mt-1 max-w-xs truncate text-xs text-slate-500" title="{{ $req->rejection_reason }}">{{ $req->rejection_reason }}</div>
                                     @endif
                                 </td>
-                                <td class="px-4 py-3 text-right">
+                                <td class="px-4 py-3 text-right overflow-visible">
                                     @if($canApprove)
-                                        <div class="flex items-center justify-end gap-2">
-                                            <a href="{{ route('legal-search-online.admin.requests.preview', $req->id) }}" target="_blank"
-                                               class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Preview report</a>
+                                        {{-- One menu rather than a row of buttons: five side-by-side
+                                             actions crowded the table and pushed the destructive one
+                                             (Decline) right next to the primary one. --}}
+                                        <div class="relative inline-block text-left" data-ols-menu>
+                                            <button type="button" data-ols-menu-trigger
+                                                    class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                                                Actions
+                                                <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                                                </svg>
+                                            </button>
 
-                                            @if($req->payment_id)
-                                                <a href="{{ route('legal-search-online.admin.requests.invoice', $req->id) }}" target="_blank"
-                                                   class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Invoice</a>
-                                            @endif
+                                            <div data-ols-menu-panel
+                                                 class="absolute right-0 z-30 mt-1 hidden w-56 origin-top-right overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+                                                <a href="{{ route('legal-search-online.admin.requests.preview', $req->id) }}" target="_blank"
+                                                   class="block px-4 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50">
+                                                    Preview report
+                                                </a>
 
-                                            @if($req->isPending())
-                                                <button type="button"
-                                                        onclick="olsApprove({{ $req->id }}, '{{ $req->request_no }}', @js($req->requester_email))"
-                                                        class="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700">Approve &amp; Email</button>
-                                                <button type="button"
-                                                        onclick="olsReject({{ $req->id }}, '{{ $req->request_no }}')"
-                                                        class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700">Decline</button>
-                                            @elseif($req->isApproved())
-                                                <form method="POST" action="{{ route('legal-search-online.admin.requests.resend', $req->id) }}">
-                                                    @csrf
-                                                    <button class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Resend report</button>
-                                                </form>
-                                            @endif
+                                                {{-- The editable counterpart of Preview: correct the
+                                                     records before the report is approved. --}}
+                                                <a href="{{ route('legal-search-online.admin.requests.correct', $req->id) }}"
+                                                   class="block px-4 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50">
+                                                    Edit request
+                                                </a>
+
+                                                @if($req->payment_id)
+                                                    <a href="{{ route('legal-search-online.admin.requests.invoice', $req->id) }}" target="_blank"
+                                                       class="block px-4 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50">
+                                                        Invoice
+                                                    </a>
+                                                @endif
+
+                                                @if($req->isPending())
+                                                    <div class="border-t border-slate-100"></div>
+                                                    <button type="button"
+                                                            onclick="olsApprove({{ $req->id }}, '{{ $req->request_no }}', @js($req->requester_email))"
+                                                            class="block w-full px-4 py-2 text-left text-xs font-bold text-emerald-700 hover:bg-emerald-50">
+                                                        Approve &amp; Email
+                                                    </button>
+                                                    <button type="button"
+                                                            onclick="olsReject({{ $req->id }}, '{{ $req->request_no }}')"
+                                                            class="block w-full px-4 py-2 text-left text-xs font-bold text-red-700 hover:bg-red-50">
+                                                        Decline
+                                                    </button>
+                                                @elseif($req->isApproved())
+                                                    <div class="border-t border-slate-100"></div>
+                                                    <form method="POST" action="{{ route('legal-search-online.admin.requests.resend', $req->id) }}">
+                                                        @csrf
+                                                        <button class="block w-full px-4 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50">
+                                                            Resend report
+                                                        </button>
+                                                    </form>
+                                                @endif
+                                            </div>
                                         </div>
                                     @else
                                         <span class="text-xs text-slate-400">View only</span>
@@ -300,6 +333,30 @@
 </div>
 
 <script>
+// ---- Actions menu -------------------------------------------------------
+// One open menu at a time, closed by an outside click or Escape. Delegated, so
+// it keeps working if the table is ever re-rendered.
+document.addEventListener('click', function (event) {
+    var trigger = event.target.closest('[data-ols-menu-trigger]');
+
+    document.querySelectorAll('[data-ols-menu-panel]').forEach(function (panel) {
+        var isMine = trigger && panel.parentElement === trigger.parentElement;
+        if (!isMine) panel.classList.add('hidden');
+    });
+
+    if (!trigger) return;
+    event.preventDefault();
+    var panel = trigger.parentElement.querySelector('[data-ols-menu-panel]');
+    if (panel) panel.classList.toggle('hidden');
+});
+
+document.addEventListener('keydown', function (event) {
+    if (event.key !== 'Escape') return;
+    document.querySelectorAll('[data-ols-menu-panel]').forEach(function (panel) {
+        panel.classList.add('hidden');
+    });
+});
+
     const CSRF = @json(csrf_token());
     const OLS_APPROVE_URL = @json(route('legal-search-online.admin.requests.approve', ['id' => '__ID__']));
     const OLS_REJECT_URL  = @json(route('legal-search-online.admin.requests.reject',  ['id' => '__ID__']));

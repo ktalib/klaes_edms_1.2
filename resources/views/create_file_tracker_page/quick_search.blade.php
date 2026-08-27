@@ -374,6 +374,13 @@
         // label (see FileLocationResolver::actionMetaFor()) instead of re-deriving the
         // DCIV rule client-side.
         const isDciv = d => /DCIV Director/.test(d.next_action || '');
+        // The searched number is registered in BOTH file_indexings and duplicate_fileno,
+        // so it no longer identifies one physical file. The user must pick the exact
+        // record before anything can be sent — and the request must NOT fall through to
+        // the SCB just because one of the matches happens to be indexed.
+        const hasCandidates = d => Array.isArray(d.duplicate_candidates) && d.duplicate_candidates.length > 1;
+        // The record the user picked, as {record_id, source}. Null until they choose.
+        let selectedCandidate = null;
 
         function pickFileNumber() {
             if (typeof GlobalFileNoModal === 'undefined') { search(); return; }
@@ -445,8 +452,13 @@
                     // they are re-directed to the Director Land (Land Department) to resolve
                     // the duplication. Temporary files are excluded and fall through to the
                     // normal SCB workflow below.
-                    out.push(`<button type="button" data-redirect-land class="inline-flex items-center gap-2 rounded-lg bg-purple-600 hover:bg-purple-700 px-4 py-2 text-sm font-semibold text-white">
-                        <i data-lucide="user-check" class="h-4 w-4"></i> Re-direct To Director Land (Land Department)</button>`);
+                    // With a selection list on screen the button stays the same action
+                    // but is inert until a record is chosen: the request carries that
+                    // record's id, and the shared file number cannot stand in for it.
+                    const needsPick = hasCandidates(d);
+                    out.push(`<button type="button" data-redirect-land ${needsPick ? 'disabled' : ''}
+                        class="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white ${needsPick ? 'bg-purple-300 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700'}">
+                        <i data-lucide="user-check" class="h-4 w-4"></i> Send Request to Director Land</button>`);
                 } else if (isDciv(d)) {
                     // A file under DCIV investigation is not blind-searched by the SCB —
                     // it is re-directed to the DCIV Director to resolve.
@@ -1058,6 +1070,34 @@
                                 ${d.rack_shelf ? `<span><span class="font-semibold">Shelf/Rack:</span> ${esc(d.rack_shelf)}</span>` : ''}
                             </div>` : ''}
                         </div>` : ''}
+                        ${hasCandidates(d) ? `
+                        <div class="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3" data-candidates>
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="layers" class="h-4 w-4 shrink-0 text-amber-600"></i>
+                                <span class="text-sm font-bold text-amber-800">${d.duplicate_candidates.length} files are registered under this number</span>
+                            </div>
+                            <div class="mt-1 pl-6 text-xs text-amber-700">Select the exact file you are looking for. The request sent to the Director Land carries the record you pick, not just the file number.</div>
+                            <div class="mt-2.5 space-y-2">
+                                ${d.duplicate_candidates.map((c, i) => `
+                                <label class="flex gap-3 rounded-lg border border-amber-200 bg-white px-3 py-2.5 cursor-pointer hover:border-amber-400 transition-colors" data-candidate>
+                                    <input type="radio" name="dup-candidate" class="mt-1 h-4 w-4 shrink-0 text-purple-600 focus:ring-purple-500"
+                                        data-candidate-id="${esc(c.record_id)}" data-candidate-source="${esc(c.source)}">
+                                    <div class="min-w-0 flex-1">
+                                        <div class="flex items-baseline gap-2 flex-wrap">
+                                            <span class="text-sm font-bold text-gray-900">${esc(c.file_number)}</span>
+                                            <span class="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${c.source === 'duplicate_fileno' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}">${esc(c.source_label)}</span>
+                                        </div>
+                                        <div class="mt-0.5 text-sm text-gray-700">${esc(c.holder || '—')}</div>
+                                        <div class="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
+                                            ${c.registry ? `<span><span class="font-semibold">Registry:</span> ${esc(c.registry)}</span>` : ''}
+                                            ${c.rack_shelf ? `<span><span class="font-semibold">Shelf/Rack:</span> ${esc(c.rack_shelf)}</span>` : ''}
+                                            ${c.current_location ? `<span><span class="font-semibold">Location:</span> ${esc(c.current_location)}</span>` : ''}
+                                            <span><span class="font-semibold">Status:</span> ${esc(c.status_label)}</span>
+                                        </div>
+                                    </div>
+                                </label>`).join('')}
+                            </div>
+                        </div>` : ''}
                         ${d.duplicate_flag ? `
                         <div class="mb-3 rounded-lg px-4 py-3" style="background:${d.duplicate_flag.color}14;border:1px solid ${d.duplicate_flag.color}55;">
                             <div class="flex items-center gap-2">
@@ -1209,7 +1249,9 @@
                         })() : ''}
                         <div class="mt-3 rounded-lg bg-indigo-50 border border-indigo-100 px-4 py-3">
                             <div class="text-xs font-semibold text-indigo-700 uppercase tracking-wide">Next Action</div>
-                            <div class="text-sm text-indigo-900 mt-0.5">${esc(d.next_action)}</div>
+                            <div class="text-sm text-indigo-900 mt-0.5">${esc(hasCandidates(d)
+                                ? 'Select the exact file above, then send the request to the Director Land.'
+                                : d.next_action)}</div>
                         </div>
 
                         <details class="mt-3 rounded-lg border border-gray-200">
@@ -1336,6 +1378,25 @@
             if (redirectBtn) redirectBtn.addEventListener('click', () => sendRedirect(d, redirectBtn));
             const redirectLandBtn = result.querySelector('[data-redirect-land]');
             if (redirectLandBtn) redirectLandBtn.addEventListener('click', () => sendRedirectToDirectorLand(d, redirectLandBtn));
+            // Duplicate selection: the Director Land button stays inert until one of
+            // the matching records is chosen, because the request is saved against
+            // that record's id and source table — the shared file number cannot
+            // identify which of the two physical files was asked for.
+            selectedCandidate = null;
+            result.querySelectorAll('[data-candidate-id]').forEach((radio) => {
+                radio.addEventListener('change', () => {
+                    selectedCandidate = {
+                        record_id: Number(radio.dataset.candidateId),
+                        source:    radio.dataset.candidateSource,
+                    };
+                    result.querySelectorAll('[data-candidate]').forEach(l =>
+                        l.classList.toggle('border-purple-500', l.contains(radio)));
+                    if (redirectLandBtn) {
+                        redirectLandBtn.disabled = false;
+                        redirectLandBtn.className = 'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white bg-purple-600 hover:bg-purple-700';
+                    }
+                });
+            });
             const redirectDcivBtn = result.querySelector('[data-redirect-dciv]');
             if (redirectDcivBtn) redirectDcivBtn.addEventListener('click', () => sendRedirectToDcivDirector(d, redirectDcivBtn));
             const logBtn = result.querySelector('[data-log]');
@@ -2235,24 +2296,30 @@
                 const res = await fetch(REDIRECT_LAND_URL, {
                     method: 'POST',
                     headers: { 'Content-Type':'application/json', 'X-CSRF-TOKEN':CSRF, 'Accept':'application/json' },
-                    body: JSON.stringify({ file_number: d.file_number, file_title: d.file_title }),
+                    body: JSON.stringify({
+                        file_number: d.file_number,
+                        file_title: d.file_title,
+                        // Null on a file with no duplicate — the normal workflow.
+                        selected_record_id:     selectedCandidate ? selectedCandidate.record_id : null,
+                        selected_record_source: selectedCandidate ? selectedCandidate.source : null,
+                    }),
                 });
                 const json = await res.json();
                 if (json.success) {
                     btn.disabled = true;
                     btn.className = 'inline-flex items-center gap-2 rounded-lg bg-gray-300 px-4 py-2 text-sm font-semibold text-white cursor-not-allowed opacity-60';
-                    btn.innerHTML = '<i data-lucide="check" class="h-4 w-4"></i> Re-directed To Director Land (Land Department)';
+                    btn.innerHTML = '<i data-lucide="check" class="h-4 w-4"></i> Request Sent to Director Land';
                     if (window.Swal) Swal.fire(json.message || 'Re-directed to Director Land (Land Department).', '', 'success');
                     loadLog();
                 } else {
                     btn.disabled = false;
-                    btn.innerHTML = '<i data-lucide="user-check" class="h-4 w-4"></i> Re-direct To Director Land (Land Department)';
+                    btn.innerHTML = '<i data-lucide="user-check" class="h-4 w-4"></i> Send Request to Director Land';
                     alert(json.message || 'Could not re-direct to Director Land.');
                 }
                 if (window.lucide) window.lucide.createIcons();
             } catch (e) {
                 btn.disabled = false;
-                btn.innerHTML = '<i data-lucide="user-check" class="h-4 w-4"></i> Re-direct To Director Land (Land Department)';
+                btn.innerHTML = '<i data-lucide="user-check" class="h-4 w-4"></i> Send Request to Director Land';
                 alert('Network error — please try again.');
             }
         }

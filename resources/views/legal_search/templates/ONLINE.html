@@ -631,8 +631,10 @@
         <div class="lbl"></div>
         <div class="val"></div>
         <div class="sp"></div>
-        <div class="lbl"></div>
-        <div class="val"></div>
+        <!-- Root of Title, sitting directly beneath the Date line in the same column.
+             Hidden entirely when the file has none on record. -->
+        <div id="report-root-of-title-line" class="root-of-title"
+             style="grid-column: span 2; font-size: 11px; display: none;"></div>
       </div>
 
       <div class="section-label">File History</div>
@@ -742,7 +744,7 @@
       </div>
       <div class="gen-text" id="report-generated-by">Generated via Online Legal Search</div>
       <div class="footer-logo-right">
-        <img src="http://app.klaes.ng/assets/logo/las.jpg" alt="LAS" />
+        <img src="http://app.klaes.ng/assets/logo/Left_Logo.png" alt="LAS" />
       </div>
     </div>
   </div> <!-- End of page -->
@@ -1122,6 +1124,15 @@
           setText('report-plot-no', d.plot_no);
           setText('report-plot-description', d.plot_description);
           setText('report-tpno', d.tpno);
+
+          // Root of Title beneath the Date line. buildPrintReport() lifts this off the
+          // timeline row it annotated, so the header and that row always agree.
+          const rootLine = document.getElementById('report-root-of-title-line');
+          if (rootLine) {
+            const root = (d.root_of_title || '').trim();
+            rootLine.textContent = root ? ('Root of Title: ' + root) : '';
+            rootLine.style.display = root ? '' : 'none';
+          }
           setText('report-client-name', titleCase(d.client_name));
           setText('report-client-address', titleCase(d.client_address));
           setText('report-generated-by', d.generated_by);

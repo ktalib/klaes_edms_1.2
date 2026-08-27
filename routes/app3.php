@@ -666,6 +666,18 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/feedback', [PhsAdminController::class, 'feedback'])->name('feedback');
         Route::post('/feedback/{id}', [PhsAdminController::class, 'updateFeedback'])->name('feedback.update');
 
+        // Edit requests — members reporting a wrong search result. Returning one
+        // authorises that member's single free re-run, so the action lives behind
+        // the same admin gate as the rest of this group.
+        Route::get('/edit-requests', [\App\Http\Controllers\Phs\PhsEditRequestAdminController::class, 'index'])
+            ->name('edit-requests');
+        Route::get('/edit-requests/{id}/preview', [\App\Http\Controllers\Phs\PhsEditRequestAdminController::class, 'preview'])
+            ->name('edit-requests.preview');
+        Route::post('/edit-requests/{id}/return', [\App\Http\Controllers\Phs\PhsEditRequestAdminController::class, 'returnForRerun'])
+            ->name('edit-requests.return');
+        Route::post('/edit-requests/{id}/decline', [\App\Http\Controllers\Phs\PhsEditRequestAdminController::class, 'decline'])
+            ->name('edit-requests.decline');
+
         // Token package management (CRUD)
         Route::get('/packages', [PhsAdminController::class, 'packages'])->name('packages.index');
         Route::post('/packages', [PhsAdminController::class, 'storePackage'])->name('packages.store');
@@ -1243,6 +1255,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/requests', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestsIndex'])->name('requests');
         Route::get('/requests/{id}/preview', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestPreview'])->name('requests.preview');
         Route::get('/requests/{id}/invoice', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestInvoice'])->name('requests.invoice');
+        // Editable counterpart of the preview: correct the records before approving.
+        Route::get('/requests/{id}/correct', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestCorrect'])->name('requests.correct');
         Route::get('/requests/my-signature', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestSignature'])->name('requests.signature');
         Route::post('/requests/my-signature/otp', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestSignatureOtp'])->name('requests.signature.otp');
         Route::post('/requests/my-signature/verify', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestSignatureVerify'])->name('requests.signature.verify');

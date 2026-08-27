@@ -564,8 +564,11 @@
         <div class="lbl"></div>
         <div class="val"></div>
         <div class="sp"></div>
-        <div class="lbl"></div>
-        <div class="val"></div>
+        <!-- Root of Title, sitting directly beneath the Date line in the same column.
+             Hidden entirely when the file has none on record, rather than printing a
+             label with a dash after it. -->
+        <div id="report-root-of-title-line" class="root-of-title"
+             style="grid-column: span 2; font-size: 11px; display: none;"></div>
       </div>
 
       <div class="section-label">File History</div>
@@ -669,7 +672,7 @@
       </div>
       <div class="gen-text" id="report-generated-by">Generated via Pay-Per-Search</div>
       <div class="footer-logo-right">
-        <img src="http://app.klaes.ng/assets/logo/las.jpg" alt="LAS" />
+        <img src="http://app.klaes.ng/assets/logo/Left_Logo.png" alt="LAS" />
       </div>
     </div>
   </div> <!-- End of page -->
@@ -905,6 +908,15 @@
           // when present, otherwise derived from land use.
           setText('report-term', d.term || termFromLandUse(d.land_use));
           setText('report-rent', d.residual_term);
+
+          // Root of Title beneath the Date line. buildPrintReport() lifts this off the
+          // timeline row it annotated, so the header and that row always agree.
+          const rootLine = document.getElementById('report-root-of-title-line');
+          if (rootLine) {
+            const root = (d.root_of_title || '').trim();
+            rootLine.textContent = root ? ('Root of Title: ' + root) : '';
+            rootLine.style.display = root ? '' : 'none';
+          }
           const commencementText = (d.commencement_date && d.commencement_source)
             ? `${d.commencement_date} (${d.commencement_source})`
             : d.commencement_date;

@@ -163,6 +163,18 @@ class TitleHolderResolver
             ? $this->allocationRoot($chain, $commissioning['source'], $anchor, $anchorDate)
             : $this->preGrantRoot($chain, $boundary, $anchorIndex);
 
+        // Nothing predates the boundary: the title springs from the State grant
+        // itself, so THAT is the root (RES-2010-4268 — a 2011 RofO to MALLAM
+        // HALADU on a file commissioned in 2010, then assigned away in 2026).
+        // This is the same fallback allocationRoot() already applies when a
+        // Direct Allocation carries no OP row, generalised to every type per the
+        // recording: "even if it is direct allocation, the root of title will
+        // still show ... you can put the name and then the instrument into
+        // brackets". It never invents a name — the grant naming the Original
+        // Holder is the only row it can name, so Root == Original here by
+        // design, exactly as Scenario D of the rules doc prints it.
+        $root ??= $this->grantRoot($anchor);
+
         $original = $this->originalHolder($anchor, $type, $root, $indexing);
         $current  = $this->currentHolder($chain, $anchorIndex, $original, $indexing);
 
@@ -471,6 +483,28 @@ class TitleHolderResolver
         }
 
         return null;
+    }
+
+    /**
+     * Last-resort root: the Ministry grant that opens the chain. Used when no
+     * dealing predates the boundary, which is the normal shape of a file the
+     * State granted directly and that was only dealt with afterwards.
+     *
+     * The grantee is the root — a grant hands the plot TO its holder, the
+     * opposite direction from the private sale preGrantRoot() reads — and the
+     * instrument is the row's own label, never a hard-coded one.
+     */
+    private function grantRoot(?array $anchor): ?array
+    {
+        if ($anchor === null) {
+            return null;
+        }
+
+        $name = $this->receivingParty($anchor);
+
+        return $name === null
+            ? null
+            : $this->holder($name, $this->instrumentLabel($anchor), $anchor);
     }
 
     /**

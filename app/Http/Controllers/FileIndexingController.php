@@ -12,6 +12,7 @@ use Illuminate\Support\Arr;
 use Carbon\Carbon;
 use App\Models\FileIndexing;
 use App\Models\FileIndexingLink;
+use App\Models\FileSnapshot;
 use App\Models\MasterDcivLink;
 use App\Models\Grouping;
 use App\Models\Entity;
@@ -28,6 +29,7 @@ use App\Services\FileIndexingBillService;
 use App\Services\IndexingStorageSummaryService;
 use App\Services\FileRangeTrackingService;
 use App\Services\EdmsScanUploadFolderService;
+use App\Services\FileSnapshotService;
 
 class FileIndexingController extends Controller
 {
@@ -49,6 +51,7 @@ class FileIndexingController extends Controller
     private IndexingStorageSummaryService $indexingStorageSummaryService;
     private FileRangeTrackingService $fileRangeTrackingService;
     private EdmsScanUploadFolderService $edmsScanUploadFolderService;
+    private FileSnapshotService $fileSnapshotService;
 
     public function __construct(
         PropertyIdAllocationService $propertyIdAllocationService,
@@ -57,7 +60,8 @@ class FileIndexingController extends Controller
         KangisParentLinkService $kangisParentLinkService,
         IndexingStorageSummaryService $indexingStorageSummaryService,
         FileRangeTrackingService $fileRangeTrackingService,
-        EdmsScanUploadFolderService $edmsScanUploadFolderService
+        EdmsScanUploadFolderService $edmsScanUploadFolderService,
+        FileSnapshotService $fileSnapshotService
     ) {
         $this->propertyIdAllocationService = $propertyIdAllocationService;
         $this->commissioningMirrorService = $commissioningMirrorService;
@@ -66,6 +70,7 @@ class FileIndexingController extends Controller
         $this->indexingStorageSummaryService = $indexingStorageSummaryService;
         $this->fileRangeTrackingService = $fileRangeTrackingService;
         $this->edmsScanUploadFolderService = $edmsScanUploadFolderService;
+        $this->fileSnapshotService = $fileSnapshotService;
     }
 
     /**
@@ -1594,6 +1599,21 @@ class FileIndexingController extends Controller
                 )
                 : null;
 
+            // A new version of the audit trail rather than an overwrite of the last
+            // one — that is the whole point of the table. 'auto' lets the service
+            // work out from the diff whether this was an edit or a re-linking; a
+            // save that changed nothing writes no version at all.
+            $snapshotRecord = $billFileIndexing
+                ? ($billFileIndexing->fresh() ?? $billFileIndexing)
+                : null;
+
+            $snapshot = $snapshotRecord
+                ? $this->fileSnapshotService->capture($snapshotRecord, 'auto', [
+                    'source' => 'file_indexing.update',
+                    'storage_summary' => $storageSummary,
+                ])
+                : null;
+
             return response()->json([
                 'success' => true,
                 'message' => 'File indexing record updated successfully!',
@@ -1601,6 +1621,7 @@ class FileIndexingController extends Controller
                 'file_transactions' => $fileTransactions,
                 'storage_summary' => $storageSummary,
                 'propagation' => $propagation,
+                'snapshot' => $snapshot ? $snapshot->toCardPayload() : null,
             ]);
         } catch (\Exception $e) {
             Log::error('FileIndexing::update - failed', [
@@ -1625,6 +1646,53 @@ class FileIndexingController extends Controller
             'file_number' => $fileIndexing->file_number,
             'data' => $transactions,
         ]);
+    }
+
+    /**
+     * The newest snapshot for a file, for re-opening the File Snapshot card away
+     * from a save. The save responses already embed the snapshot they just wrote,
+     * so this is the fallback path, not the usual one.
+     */
+    public function snapshot(FileIndexing $fileIndexing)
+    {
+        $snapshot = $this->fileSnapshotService->latestFor((int) $fileIndexing->id);
+
+        return response()->json([
+            'success' => (bool) $snapshot,
+            'file_number' => $fileIndexing->file_number,
+            'snapshot' => $snapshot ? $snapshot->toCardPayload() : null,
+        ], $snapshot ? 200 : 404);
+    }
+
+    /**
+     * Sample data for the Create File Index form — TEST AID, disabled by default.
+     *
+     * Returns 404 rather than 403 when switched off: on production this endpoint
+     * should be indistinguishable from one that was never deployed.
+     *
+     * See config/fileindexing.php ('demo_fill') for the two locks.
+     */
+    public function demoSample(Request $request, \App\Services\DemoIndexingDataService $demo)
+    {
+        if (!$demo->enabled()) {
+            abort(404);
+        }
+
+        // File numbers this session has already been handed, so a second click
+        // offers a different file instead of the same one.
+        $exclude = array_filter(array_map('trim', (array) $request->input('exclude', [])));
+
+        $sample = $demo->sample($exclude);
+
+        if (!$sample) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No unindexed ' . config('fileindexing.demo_fill.land_use')
+                    . ' file is left in the grouping table to demo with.',
+            ], 404);
+        }
+
+        return response()->json(['success' => true] + $sample);
     }
 
     /**
@@ -4574,6 +4642,25 @@ class FileIndexingController extends Controller
                 'scan_folder' => $scanFolder,
             ]);
 
+            // Version 1 of the file's audit trail. Append-only and best-effort —
+            // the record is already committed, so a failed snapshot returns null
+            // and the response simply carries no 'snapshot' key.
+            $snapshot = $this->fileSnapshotService->capture($fileIndexing, FileSnapshot::EVENT_INDEXED, [
+                'source' => 'file_indexing.store',
+                'scan_folder' => $scanFolder,
+                'storage_summary' => $storageSummary,
+                'parent_prop_id' => $mainParentPropId,
+            ]);
+
+            // The standalone New KANGIS record is a file in its own right — it gets
+            // its own v1 rather than being folded into the main file's snapshot.
+            if ($kangisFileIndexing !== null) {
+                $this->fileSnapshotService->capture($kangisFileIndexing, FileSnapshot::EVENT_INDEXED, [
+                    'source' => 'file_indexing.store',
+                    'event_label' => 'New KANGIS file created and indexed',
+                ]);
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'File indexing created successfully!',
@@ -4581,6 +4668,7 @@ class FileIndexingController extends Controller
                 'siblings_updated' => $kangisPlaceholderResult['siblings'] ?? [],
                 'kangis_resolved' => $kangisPlaceholderResult['resolved'] ?? null,
                 'storage_summary' => $storageSummary,
+                'snapshot' => $snapshot ? $snapshot->toCardPayload() : null,
             ]);
         } catch (\Exception $e) {
             return response()->json([

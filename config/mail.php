@@ -41,7 +41,14 @@ return [
             'encryption' => env('MAIL_ENCRYPTION', 'tls'),
             'username' => env('MAIL_USERNAME'),
             'password' => env('MAIL_PASSWORD'),
-            'timeout' => null,
+            // Seconds to wait on the SMTP socket. NEVER leave this null: with no
+            // timeout a mail host that accepts the TCP connection but never speaks
+            // (a firewall or transparent proxy swallowing outbound 25/465/587, which
+            // is exactly what this deployment does) blocks the whole PHP request
+            // until max_execution_time kills it. One Online Legal Search payment
+            // sends 7 mails, so a null timeout turned a 1.3s Paystack verification
+            // into a 60s fatal error for a guest who had already been charged.
+            'timeout' => env('MAIL_TIMEOUT', 5),
             'local_domain' => env('MAIL_EHLO_DOMAIN'),
             // Set MAIL_VERIFY_PEER=false ONLY for local dev that lacks a CA bundle.
             // Keep it true in production so TLS certificates are verified.

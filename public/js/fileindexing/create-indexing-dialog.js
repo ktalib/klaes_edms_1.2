@@ -2333,7 +2333,11 @@
         // After capturing transactions the operator is confirming the instruments
         // themselves, not the file's whole footprint — so that card stops at the
         // instruments table and drops the destination groups below it.
-        const { instrumentsOnly = false } = options;
+        // extraHtml: caller-supplied block rendered under the instruments table. The
+        // property transaction modal passes its File History Summary through here so the
+        // confirmation dialog shows the same rows, destinations and NEW/UPDATED badges the
+        // inline card shows, instead of a second, differently-shaped account of the save.
+        const { instrumentsOnly = false, extraHtml = '' } = options;
         const groups = Array.isArray(summary.groups) ? summary.groups : [];
         const notes = Array.isArray(summary.notes) ? summary.notes : [];
 
@@ -2365,7 +2369,12 @@
             <div class="mt-3 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-left text-sm space-y-1">
                 ${identityHtml}
             </div>
-            ${renderCapturedInstruments(instruments)}
+            ${extraHtml
+                // The File History Summary supersedes the instruments table: it lists the same
+                // saved rows PLUS what was already on the file, with each row's destination and
+                // whether it was new or existing. Showing both meant reading one save twice.
+                ? extraHtml
+                : renderCapturedInstruments(instruments)}
             ${instrumentsOnly ? '' : `
                 ${groups.map(renderStorageSummaryGroup).join('')}
                 ${notesHtml}
@@ -2395,7 +2404,7 @@
      * message). Resolves once the operator dismisses it.
      */
     function showIndexingSavedCard(data, options = {}) {
-        const { isUpdate = false, extraText = '', title = null, instrumentsOnly = false } = options;
+        const { isUpdate = false, extraText = '', title = null, instrumentsOnly = false, extraHtml = '' } = options;
         const summary = data && data.storage_summary;
         // Present on the transaction-capture response; absent after plain indexing.
         const instruments = (data && data.instruments) || [];
@@ -2412,13 +2421,19 @@
             || (isUpdate ? 'Updated — here is where it lives' : 'Indexed — here is where it went');
 
         // Nothing to tabulate: keep the old lightweight toast rather than an empty card.
-        if (!summary && instruments.length === 0) {
+        // extraHtml counts as content - a save with no readable instruments still has a
+        // File History Summary worth showing.
+        if (!summary && instruments.length === 0 && !extraHtml) {
+            // No timer: this card reports where a save landed, so it stays until the
+            // operator dismisses it. A card that closes itself can take the only record of
+            // what happened off screen before it has been read.
             return Swal.fire({
                 title: isUpdate ? 'File index updated' : 'Success!',
                 text: message,
                 icon: 'success',
-                timer: 2500,
-                showConfirmButton: false,
+                confirmButtonText: 'Close',
+                allowOutsideClick: false,
+                allowEscapeKey: false,
             });
         }
 
@@ -2428,13 +2443,14 @@
                 summary || { groups: [], notes: [] },
                 message,
                 instruments,
-                { instrumentsOnly }
+                { instrumentsOnly, extraHtml }
             ),
             icon: 'success',
             width: 620,
             confirmButtonText: 'Continue',
             confirmButtonColor: '#059669',
             allowOutsideClick: false,
+            allowEscapeKey: false,
         });
     }
 
@@ -2442,6 +2458,27 @@
     // which lives outside this module but shows the same card after capturing
     // instruments — so both confirmations read identically.
     window.showIndexingSavedCard = showIndexingSavedCard;
+
+    /**
+     * Submission Summary then File Snapshot, from file-snapshot-card.js.
+     *
+     * Guarded rather than called directly: that file is a separate <script> and
+     * not every page that loads this module has been given it. A missing card is
+     * an acceptable outcome; a TypeError that swallows the transaction prompt
+     * after a successful save is not.
+     */
+    function postSubmitCards(data) {
+        if (typeof window.showPostSubmitCards !== 'function') {
+            return Promise.resolve();
+        }
+
+        try {
+            return window.showPostSubmitCards(data) || Promise.resolve();
+        } catch (error) {
+            console.warn('Post-submit cards could not be shown', error);
+            return Promise.resolve();
+        }
+    }
 
     function escapeAttribute(value) {
         return String(value)
@@ -6732,7 +6769,9 @@
                     if (isEditingExisting) {
                         const launchTransactionPrompt = () => promptPropertyTransactionCapture(propertyModalPayload);
 
-                        showIndexingSavedCard(data, { isUpdate: true }).then(launchTransactionPrompt);
+                        showIndexingSavedCard(data, { isUpdate: true })
+                            .then(() => postSubmitCards(data))
+                            .then(launchTransactionPrompt);
                     } else {
                         // The store response doesn't echo back tracking_id/file_title,
                         // so read them from the DOM (they were set in the form before submit).
@@ -6801,7 +6840,9 @@
                                     });
                                 }
                             }
-                            launchTransactionPrompt();
+                            // Submission Summary (every file this save touched, and where
+                            // each landed) then File Snapshot, before the transaction prompt.
+                            postSubmitCards(data).then(launchTransactionPrompt);
                         });
                     }
                 } else {

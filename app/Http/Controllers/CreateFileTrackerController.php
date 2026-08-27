@@ -1827,7 +1827,7 @@ HTML;
         $result = $resolver->resolve($fileNumber);
         $resolver->persist($result);
 
-        $data = $this->presentLocationResult($result);
+        $data = $this->presentLocationResult($result, true);
 
         // Surface any existing active request for this file so the Quick Search card can
         // warn about a duplicate the moment the file is selected — rather than waiting for
@@ -1895,7 +1895,7 @@ HTML;
 
         return response()->json([
             'success' => true,
-            'data'    => $this->presentLocationResult($fresh),
+            'data'    => $this->presentLocationResult($fresh, true),
             'message' => 'File location status updated.',
         ]);
     }
@@ -1912,6 +1912,15 @@ HTML;
         $validator = Validator::make($request->all(), [
             'file_number' => 'required|string|max:255',
             'file_title'  => 'nullable|string|max:255',
+            // Which physical file the front desk picked, when the searched number
+            // is registered in both file_indexings and duplicate_fileno. Sent as a
+            // pair or not at all — an id without its table names nothing.
+            'selected_record_id'     => 'nullable|integer|required_with:selected_record_source',
+            'selected_record_source' => [
+                'nullable',
+                'required_with:selected_record_id',
+                Rule::in([FileLocationResolver::SOURCE_INDEXED, FileLocationResolver::SOURCE_DUPLICATE]),
+            ],
         ]);
 
         if ($validator->fails()) {
@@ -1920,6 +1929,8 @@ HTML;
 
         $fileNumber = trim((string) $request->input('file_number'));
         $fileTitle  = $request->input('file_title');
+        $selectedId     = $request->input('selected_record_id');
+        $selectedSource = $request->input('selected_record_source');
 
         // Recipient: the active user whose rank (or work station) is "Director Land".
         $director = User::where('is_active', 1)
@@ -1938,11 +1949,18 @@ HTML;
         $directorName = trim(($director->first_name ?? '') . ' ' . ($director->last_name ?? ''));
         $user = Auth::user();
 
-        // Don't raise a second open re-direct for the same file to the Director Land.
+        // Don't raise a second open re-direct for the SAME PHYSICAL FILE. When a
+        // record was selected the guard keys on that record, not on the file
+        // number: the whole point of the selection is that two different files
+        // share one number, and a pending request for one of them must not block
+        // a request for the other — the requester may already be holding it.
         $existing = \App\Models\DigitalFileRequest::where('file_no', $fileNumber)
             ->where('is_redirected', true)
             ->where('receiving_officer', $directorName)
             ->where('request_status', \App\Models\DigitalFileRequest::STATUS_PENDING)
+            ->when($selectedId !== null, fn ($q) => $q
+                ->where('selected_record_id', $selectedId)
+                ->where('selected_record_source', $selectedSource))
             ->first();
 
         if ($existing) {
@@ -1958,6 +1976,8 @@ HTML;
             'request_type'            => \App\Models\DigitalFileRequest::TYPE_PHYSICAL,
             'file_no'                 => $fileNumber,
             'file_title'              => $fileTitle,
+            'selected_record_id'      => $selectedId,
+            'selected_record_source'  => $selectedSource,
             'requester_user_id'       => $user->id,
             'sending_officer'         => trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')),
             'receiving_officer'       => $directorName,
@@ -1965,7 +1985,13 @@ HTML;
             'current_file_location'   => 'Land Department',
             'is_redirected'           => true,
             'request_status'          => \App\Models\DigitalFileRequest::STATUS_PENDING,
-            'remarks'                 => 'Duplicate file — re-directed to Director Land for resolution.',
+            'remarks'                 => $selectedId !== null
+                ? sprintf(
+                    'Duplicate file — re-directed to Director Land for resolution. Selected record: %s #%d.',
+                    $selectedSource === FileLocationResolver::SOURCE_DUPLICATE ? 'Duplicate File' : 'Indexed File',
+                    $selectedId
+                )
+                : 'Duplicate file — re-directed to Director Land for resolution.',
             'requested_at'            => now(),
         ]);
 
@@ -2548,7 +2574,7 @@ HTML;
     /**
      * Shape a FileLocationResolver result for JSON (strip Eloquent models).
      */
-    protected function presentLocationResult(array $result): array
+    protected function presentLocationResult(array $result, bool $withCandidates = false): array
     {
         /** @var \App\Models\FileTracker|null $tracker */
         $tracker = $result['tracker'] ?? null;
@@ -2677,6 +2703,18 @@ HTML;
             // Duplicate-registry flag (CofO collected/ready, duplicate, temp, W/C/R) when
             // the file number is registered in duplicate_fileno — null otherwise.
             'duplicate_flag'   => $result['duplicate_flag'] ?? null,
+            // Every physical file registered under this number, but ONLY when the
+            // number is in BOTH file_indexings and duplicate_fileno. Non-empty means
+            // the front desk must pick the exact file before the request can go out:
+            // the number alone no longer identifies one file, and the user may
+            // already be holding one of the two. Empty = the existing workflow.
+            // Only the Quick Search paths ask for these: decorateTrackerForResponse()
+            // calls this presenter once per row of a paginated tracker list and reads
+            // none of them, so computing them there would be a per-row N+1 (see the
+            // File Log Table timeout this presenter already caused once).
+            'duplicate_candidates' => $withCandidates
+                ? app(FileLocationResolver::class)->duplicateCandidates($result)
+                : [],
             'file_tracker_id'  => $result['file_tracker_id'],
             'file_title'       => $tracker->file_title ?? $indexing->file_title ?? null,
             'receiving_officer_name' => $tracker->receiving_officer_name ?? null,

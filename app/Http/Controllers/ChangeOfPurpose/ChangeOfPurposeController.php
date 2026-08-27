@@ -7,6 +7,7 @@ use App\Models\Customer;
 use App\Models\Entity;
 use App\Models\ChangeOfPurposeApplication;
 use App\Services\ParcelUpdateNotificationService;
+use App\Services\TitleStatusParcelRouter;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -41,6 +42,10 @@ class ChangeOfPurposeController extends Controller
         $base = ChangeOfPurposeApplication::query()
             ->where(function ($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
+            // Hide rows routed in from Title Status / File Indexing until processed.
+            ->where(function ($q) {
+                $q->whereNull('status')->orWhere('status', '!=', TitleStatusParcelRouter::HIDDEN_STATUS);
             })
             ->when($search, function ($q) use ($search) {
                 $q->where(function ($sub) use ($search) {
@@ -79,17 +84,14 @@ class ChangeOfPurposeController extends Controller
         $streetNames = StreetName::orderBy('name')->get(['id', 'name'])->toBase();
 
         // Dashboard stats
+        $visible = fn ($q) => $q->where(fn ($x) => $x->whereNull('is_deleted')->orWhere('is_deleted', 0))
+                                ->where(fn ($x) => $x->whereNull('status')->orWhere('status', '!=', TitleStatusParcelRouter::HIDDEN_STATUS));
         $stats = [
-            'total' => ChangeOfPurposeApplication::where(function ($q) {
-                $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->count(),
-            'daily' => ChangeOfPurposeApplication::where(function ($q) {
-                $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->whereDate('created_at', today())->count(),
-            'pending' => ChangeOfPurposeApplication::where(function ($q) {
-                $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', ChangeOfPurposeApplication::STATUS_PENDING)->count(),
-            'approved' => ChangeOfPurposeApplication::where(function ($q) {
-                $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', ChangeOfPurposeApplication::STATUS_APPROVED)->count(),
-            'rejected' => ChangeOfPurposeApplication::where(function ($q) {
-                $q->whereNull('is_deleted')->orWhere('is_deleted', 0); })->where('status', ChangeOfPurposeApplication::STATUS_REJECTED)->count(),
+            'total'    => ChangeOfPurposeApplication::where($visible)->count(),
+            'daily'    => ChangeOfPurposeApplication::where($visible)->whereDate('created_at', today())->count(),
+            'pending'  => ChangeOfPurposeApplication::where($visible)->where('status', ChangeOfPurposeApplication::STATUS_PENDING)->count(),
+            'approved' => ChangeOfPurposeApplication::where($visible)->where('status', ChangeOfPurposeApplication::STATUS_APPROVED)->count(),
+            'rejected' => ChangeOfPurposeApplication::where($visible)->where('status', ChangeOfPurposeApplication::STATUS_REJECTED)->count(),
         ];
 
         return view('change_of_purpose.index', compact(

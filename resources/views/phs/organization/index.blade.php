@@ -201,6 +201,19 @@
               <i data-lucide="search" class="w-3.5 h-3.5"></i>
               Search Now
             </a>
+            {{-- Corrections raised against a search result. It belongs under Search
+                 rather than with the org-management items: it is about the member's
+                 own searches, and it is where a corrected result is collected. --}}
+            <button type="button" data-sidebar-tab="editrequests"
+              class="w-full flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100">
+              <i data-lucide="file-warning" class="w-3.5 h-3.5"></i>
+              Edit Requests
+              @if (($readyForRerunCount ?? 0) > 0)
+                <span class="ml-auto inline-flex items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-2 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+                  {{ $readyForRerunCount }}
+                </span>
+              @endif
+            </button>
             <a href="{{ route('phs.dashboard') }}"
               class="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100">
               <i data-lucide="history" class="w-3.5 h-3.5"></i>
@@ -366,6 +379,20 @@
             >
               <i data-lucide="shield" class="w-3 h-3 sm:w-4 sm:h-4"></i> Roles &amp; Permissions
             </button>
+            {{-- Mirrors the sidebar entry. Carries the ready-to-collect count so a
+                 corrected result is visible from the top strip too, without
+                 opening the tab. --}}
+            <button
+              class="py-3 sm:py-4 text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors whitespace-nowrap flex items-center gap-1 sm:gap-2"
+              data-tab="editrequests"
+            >
+              <i data-lucide="file-warning" class="w-3 h-3 sm:w-4 sm:h-4"></i> Edit Requests
+              @if (($readyForRerunCount ?? 0) > 0)
+                <span class="inline-flex items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                  {{ $readyForRerunCount }}
+                </span>
+              @endif
+            </button>
             <button
               class="py-3 sm:py-4 text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors whitespace-nowrap flex items-center gap-1 sm:gap-2"
               data-tab="activity"
@@ -476,6 +503,108 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Edit Requests Tab -->
+        <div id="editrequests-tab" class="p-4 sm:p-6 hidden">
+          <div class="flex flex-wrap items-center justify-between gap-3 mb-4 sm:mb-6">
+            <div>
+              <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100">Edit Requests</h2>
+              <p class="text-sm text-gray-500 dark:text-gray-400">
+                Search results your organisation reported as wrong, and the corrections returned by the PHS-P Admin.
+              </p>
+            </div>
+            @if (($readyForRerunCount ?? 0) > 0)
+              <span class="inline-flex items-center gap-2 rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                <i data-lucide="check-circle" class="w-4 h-4"></i>
+                {{ $readyForRerunCount }} ready to re-run &mdash; no token will be deducted
+              </span>
+            @endif
+          </div>
+
+          @php $requests = $editRequests ?? collect(); @endphp
+
+          @if ($requests->isEmpty())
+            <div class="rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 py-14 text-center">
+              <i data-lucide="file-check" class="w-8 h-8 mx-auto text-gray-300 mb-3"></i>
+              <p class="text-sm text-gray-500 dark:text-gray-400">
+                No edit requests yet. If a search result is wrong, use
+                <span class="font-semibold">Send Edit Request</span> on the result to have it corrected.
+              </p>
+            </div>
+          @else
+            <div class="space-y-3">
+              @foreach ($requests as $req)
+                @php
+                  $canRerun = $req->authorisesFreeRerun() && (int) $req->phs_member_id === (int) $member->id;
+                  $tone = [
+                      'ready_for_rerun' => ['emerald', 'check-circle'],
+                      'edit_requested'  => ['amber',   'clock'],
+                      'completed'       => ['gray',    'check'],
+                      'declined'        => ['rose',    'x-circle'],
+                  ][$req->status] ?? ['gray', 'circle'];
+                @endphp
+
+                <div class="rounded-2xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
+                  <div class="flex flex-col lg:flex-row lg:items-center gap-4">
+                    <div class="min-w-0 flex-1">
+                      <div class="flex flex-wrap items-center gap-2 mb-1">
+                        <span class="inline-flex items-center gap-1 rounded-full bg-{{ $tone[0] }}-50 dark:bg-{{ $tone[0] }}-900/30 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-{{ $tone[0] }}-700 dark:text-{{ $tone[0] }}-300">
+                          <i data-lucide="{{ $tone[1] }}" class="w-3 h-3"></i>{{ $req->statusLabel() }}
+                        </span>
+                        <span class="text-sm font-bold text-gray-900 dark:text-gray-100">{{ $req->file_number ?: '—' }}</span>
+                        @if ($req->reference_no)
+                          <span class="text-[11px] font-mono text-gray-400">{{ $req->reference_no }}</span>
+                        @endif
+                      </div>
+
+                      <p class="text-xs text-gray-600 dark:text-gray-300">
+                        <span class="font-semibold">{{ $req->reasonLabel() }}</span>
+                        @if ($req->reason) &mdash; {{ \Illuminate\Support\Str::limit($req->reason, 140) }} @endif
+                      </p>
+
+                      <p class="mt-1 text-[11px] text-gray-400">
+                        Raised by {{ optional($req->member)->name ?? $req->requester_name ?? '—' }}
+                        · {{ optional($req->requested_at)->format('d M Y H:i') ?? '—' }}
+                        @if ($req->corrected_at)
+                          · corrected {{ $req->corrected_at->format('d M Y H:i') }}
+                          @if ($req->reviewer_name) by {{ $req->reviewer_name }} @endif
+                        @endif
+                        @if ($req->rerun_at)
+                          · re-run {{ $req->rerun_at->format('d M Y H:i') }} at no charge
+                        @endif
+                      </p>
+
+                      @if ($req->admin_response)
+                        <p class="mt-2 rounded-lg bg-gray-50 dark:bg-gray-900/40 px-3 py-2 text-[11px] text-gray-600 dark:text-gray-300">
+                          <span class="font-semibold">Admin:</span> {{ $req->admin_response }}
+                        </p>
+                      @endif
+                    </div>
+
+                    <div class="shrink-0">
+                      @if ($canRerun)
+                        {{-- Label is "Re-run", not "Run Again". --}}
+                        <button type="button"
+                          class="org-rerun-btn inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
+                          data-file-number="{{ $req->file_number }}">
+                          <i data-lucide="refresh-cw" class="w-4 h-4"></i>Re-run
+                        </button>
+                        <p class="mt-1 text-center text-[10px] text-emerald-700 dark:text-emerald-400">No token deducted</p>
+                      @elseif ($req->authorisesFreeRerun())
+                        {{-- Corrected, but the free re-run belongs to the member who
+                             reported it — an administrator cannot spend it for them. --}}
+                        <p class="max-w-[190px] text-[11px] text-gray-400 text-right">
+                          Ready for re-run by
+                          <span class="font-semibold">{{ optional($req->member)->name ?? 'the requester' }}</span>
+                        </p>
+                      @endif
+                    </div>
+                  </div>
+                </div>
+              @endforeach
+            </div>
+          @endif
         </div>
 
         <!-- Activity Log Tab -->
@@ -987,6 +1116,25 @@
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script src="{{ asset('js/phs/organization.js') }}"></script>
   <script>
+    // Re-run a corrected search from the Edit Requests tab.
+    //
+    // The org console has no results panel, so this hands off to the dashboard
+    // with ?rerun=<file>; portal.js runs the search there. The token decision is
+    // the SERVER's — this only asks for the search, it does not assume it is free.
+    document.addEventListener('click', function (event) {
+      var btn = event.target.closest('.org-rerun-btn');
+      if (!btn) return;
+
+      var fileNumber = btn.dataset.fileNumber || '';
+      if (!fileNumber) return;
+
+      btn.disabled = true;
+      btn.innerHTML = 'Opening...';
+
+      window.location.href = @json(route('phs.dashboard'))
+        + '?rerun=' + encodeURIComponent(fileNumber);
+    });
+
     document.addEventListener('DOMContentLoaded', function () {
       var preloader = document.getElementById('preloader');
       if (preloader) {

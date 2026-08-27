@@ -384,6 +384,24 @@
                             </div>
                         </div>
 
+                        {{-- OP Type picker for the side-capture pages (OSS Applications and
+                             Land/MLS). Those pages do not render the capture banner, so without
+                             this select the chosen OP type is invisible once the opening prompt
+                             is dismissed. The hidden radios above stay the source of truth and
+                             the posted value; this select only mirrors them (both ways). --}}
+                        @if (!($showCaptureBanner ?? false))
+                        <div id="op_type_select_container" class="mt-4 hidden">
+                            <label for="op_type_select" class="text-xs font-semibold text-gray-800 mb-1 block">OP Type</label>
+                            <select id="op_type_select"
+                                class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-1 focus:ring-blue-500 outline-none"
+                                @if(isset($isView) && $isView) disabled @endif>
+                                <option value="">Select OP Type</option>
+                                <option value="OP Resettlement">Resettlement</option>
+                                <option value="OP Direct Allocation">Direct Allocation</option>
+                            </select>
+                        </div>
+                        @endif
+
                         <!-- Land Use (Purpose) Split Dropdowns -->
                         <div id="land_use_section" class="mt-4 grid grid-cols-2 gap-3">
                             <div>

@@ -632,6 +632,140 @@ class FileLocationResolver
         ];
     }
 
+    /** Source tags saved with a request so the exact physical file is identifiable. */
+    public const SOURCE_INDEXED   = 'file_indexings';
+    public const SOURCE_DUPLICATE = 'duplicate_fileno';
+
+    /**
+     * Every physical file registered under the searched number, but ONLY when the
+     * number exists in BOTH file_indexings and duplicate_fileno. In that case the
+     * front desk cannot act on the number alone — two different physical files
+     * carry it — so Quick Search lists the matches and makes the user pick one
+     * before the request can be sent to the Director Land.
+     *
+     * Returns an empty array whenever the number is in just one of the tables, so
+     * a file with no duplicate keeps the existing workflow untouched.
+     *
+     * A TEMP FILES registration is deliberately excluded (`directs_to_land` is
+     * false for it): a temporary file is a record in its own right with no
+     * duplication to resolve, and it keeps the normal SCB search — the same
+     * exception duplicateCategoryMeta() already makes for the badge.
+     *
+     * @param  array  $result  a resolved result from resolve()
+     * @return array<int,array{record_id:int,source:string,source_label:string,file_number:string,holder:?string,registry:?string,rack_shelf:?string,current_location:?string,status:?string,status_label:string,is_resolved:bool}>
+     */
+    public function duplicateCandidates(array $result): array
+    {
+        $flag = $result['duplicate_flag'] ?? null;
+        if (! $flag || empty($flag['directs_to_land'])) {
+            return [];
+        }
+
+        $fileNumber = trim((string) ($result['file_number'] ?? ''));
+        if ($fileNumber === '') {
+            return [];
+        }
+
+        $query = $this->indexingQuery($this->variants($fileNumber));
+        $indexed = $query === null ? collect() : $query->get();
+
+        $duplicates = DB::connection('sqlsrv')
+            ->table('duplicate_fileno')
+            ->whereIn('file_number', $this->duplicateVariants($fileNumber))
+            ->orderByDesc('id')
+            ->get(['id', 'registry', 'file_number', 'file_title', 'plot_number', 'location', 'category', 'comment']);
+
+        // "Exists in both tables" is the whole trigger. One side empty means there
+        // is nothing to choose between.
+        if ($indexed->isEmpty() || $duplicates->isEmpty()) {
+            return [];
+        }
+
+        $resolvedId = $result['indexing']->id ?? null;
+        $candidates = [];
+
+        foreach ($indexed as $row) {
+            // Only the row the resolver actually worked on carries a live location
+            // and status; a second indexed row was never resolved, so report what
+            // is on the row itself rather than borrowing the other file's status.
+            $isResolved = $resolvedId !== null && (int) $row->id === (int) $resolvedId;
+
+            $candidates[] = [
+                'record_id'        => (int) $row->id,
+                'source'           => self::SOURCE_INDEXED,
+                'source_label'     => 'Indexed File',
+                'file_number'      => trim((string) ($row->file_number ?: $fileNumber)),
+                'holder'           => $this->candidateHolder($row->file_title ?? null, $row->owner_name ?? null),
+                'registry'         => $this->registryLabel($isResolved ? ($result['registry'] ?? $row->registry) : $row->registry),
+                'rack_shelf'       => $isResolved
+                    ? ($result['rack_shelf'] ?? null)
+                    : $this->getRackShelf((string) $row->file_number, $row),
+                'current_location' => $isResolved ? ($result['current_location'] ?? null) : null,
+                'status'           => $isResolved ? ($result['status'] ?? null) : null,
+                'status_label'     => $isResolved
+                    ? $this->statusLabel((string) ($result['status'] ?? ''))
+                    : 'Indexed — location not resolved',
+                'is_resolved'      => $isResolved,
+            ];
+        }
+
+        foreach ($duplicates as $row) {
+            // duplicate_fileno carries no tracker and no shelf column of its own:
+            // its "status" IS the registration category, and its whereabouts are
+            // the registry / location recorded against the entry.
+            $meta = $this->duplicateCategoryMeta((string) ($row->category ?? ''));
+            $registry = $this->registryLabel($row->registry ?? null);
+            $where = array_values(array_filter([$registry, trim((string) ($row->location ?? '')) ?: null]));
+
+            $candidates[] = [
+                'record_id'        => (int) $row->id,
+                'source'           => self::SOURCE_DUPLICATE,
+                'source_label'     => 'Duplicate File',
+                'file_number'      => trim((string) $row->file_number),
+                'holder'           => $this->candidateHolder($row->file_title ?? null, null),
+                'registry'         => $registry,
+                // No shelf is recorded against a duplicate entry — the plot number
+                // is the only physical identifier the register holds.
+                'rack_shelf'       => trim((string) ($row->plot_number ?? '')) ?: null,
+                'current_location' => $where ? implode(' — ', $where) : null,
+                'status'           => $meta['category'] ?? null,
+                'status_label'     => $meta['label'] ?? 'Duplicate File',
+                'is_resolved'      => false,
+            ];
+        }
+
+        return $candidates;
+    }
+
+    /** File title / holder name for a candidate row, whichever the table records. */
+    protected function candidateHolder(?string $title, ?string $owner): ?string
+    {
+        return trim((string) ($title ?? '')) ?: (trim((string) ($owner ?? '')) ?: null);
+    }
+
+    /** "3" is a registry number, "KANGIS" is already a name — label only the former. */
+    protected function registryLabel($registry): ?string
+    {
+        $registry = trim((string) ($registry ?? ''));
+        if ($registry === '') {
+            return null;
+        }
+
+        return ctype_digit($registry) ? "Registry {$registry}" : $registry;
+    }
+
+    /** Human label for a resolver status constant, for the candidate list. */
+    protected function statusLabel(string $status): string
+    {
+        return match ($status) {
+            self::STATUS_IN_TRANSIT   => 'In Transit',
+            self::STATUS_IN_ARCHIVE   => 'In Archive',
+            self::STATUS_PENDING_FILE => 'Not Indexed',
+            '' => 'Unknown',
+            default => ucwords(strtolower(str_replace('_', ' ', $status))),
+        };
+    }
+
     /**
      * Look up the file in duplicate_fileno and, if present, return a normalized
      * badge payload (category + display label + colour). Surfaced on every Quick
@@ -859,6 +993,20 @@ class FileLocationResolver
 
     protected function findIndexing(array $variants): ?FileIndexing
     {
+        $query = $this->indexingQuery($variants);
+
+        return $query === null ? null : $query->first();
+    }
+
+    /**
+     * The file_indexings lookup shared by findIndexing() (which takes the newest
+     * match) and duplicateCandidates() (which needs EVERY match, because a file
+     * number registered in duplicate_fileno may be indexed more than once and the
+     * user has to pick the exact physical file). Null when there is nothing to
+     * match on.
+     */
+    protected function indexingQuery(array $variants)
+    {
         if (empty($variants)) {
             return null;
         }
@@ -876,8 +1024,7 @@ class FileLocationResolver
                     // mirroring the Create File Tracker lookup.
                     ->orWhereIn('temp_file_no', $variants);
             })
-            ->orderByDesc('id')
-            ->first();
+            ->orderByDesc('id');
     }
 
     /**
