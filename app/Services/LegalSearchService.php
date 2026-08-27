@@ -453,7 +453,10 @@ class LegalSearchService
 
         // Fetch matching related_file_number entries (orange Recertification rows)
         // and append them as synthetic timeline rows.
-        $relatedRecertRows = $this->fetchRelatedRecertificationRows($conn, $fileNo, $all);
+        // $searchedFileNo, not just $fileNo: a KANGIS search was rewritten to the
+        // mother MLS number near the top of this method, and a related_file_number
+        // row stored against the KANGIS number itself would otherwise never match.
+        $relatedRecertRows = $this->fetchRelatedRecertificationRows($conn, $fileNo, $all, $searchedFileNo);
         if (!empty($relatedRecertRows)) {
             $all = array_merge($all, $relatedRecertRows);
         }
@@ -1139,8 +1142,12 @@ class LegalSearchService
      * OR any prop_id that's already in the result set, and turn each into a
      * synthetic timeline entry tagged as 'Related Fileno' / Recertification.
      */
-    private function fetchRelatedRecertificationRows($conn, string $fileNo, array $existingRows): array
-    {
+    private function fetchRelatedRecertificationRows(
+        $conn,
+        string $fileNo,
+        array $existingRows,
+        ?string $searchedFileNo = null
+    ): array {
         if (!Schema::connection($conn->getName())->hasTable('related_file_number')) {
             return [];
         }
@@ -1168,6 +1175,14 @@ class LegalSearchService
         $candidateNumbers = [];
         if ($fileNo !== '') {
             $candidateNumbers[$fileNo] = true;
+        }
+        // The number the operator actually typed. For a KANGIS search this differs
+        // from $fileNo, which has already been rewritten to the mother MLS number,
+        // and a recertification link recorded against the KANGIS number is only
+        // reachable through this entry.
+        $searchedFileNo = trim((string) $searchedFileNo);
+        if ($searchedFileNo !== '') {
+            $candidateNumbers[$searchedFileNo] = true;
         }
         foreach ($existingRows as $r) {
             foreach (['fileno', 'file_number', 'mlsFNo', 'kangisFileNo', 'NewKANGISFileno'] as $col) {

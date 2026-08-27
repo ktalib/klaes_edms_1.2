@@ -7794,6 +7794,28 @@
         }
     }
 
+    // The KLAES mark at the foot of the sheet, left of the centred "Generated on" line
+    // and on the same baseline as the right-hand logo. Its width follows the image's own
+    // proportions so the mark is never stretched.
+    function drawFooterLeftLogo(doc, image) {
+        if (!image) return;
+
+        const height = 11.5, left = 25, bottom = 290;
+        let width = 31.8; // 1600x578 as filed
+        try {
+            const props = doc.getImageProperties(image);
+            if (props && props.width && props.height) {
+                width = height * (props.width / props.height);
+            }
+        } catch (e) { /* keep the filed proportions */ }
+
+        try {
+            doc.addImage(image, 'PNG', left, bottom - height, width, height);
+        } catch (e) {
+            console.warn('Could not draw the footer logo', e);
+        }
+    }
+
     // Draws a body label, shrinking it just enough to stay clear of the value column.
     // "Related FileNo/Old FileNo:" is longer than the column was drawn for; every other
     // label keeps the normal 10pt.
@@ -7861,8 +7883,9 @@
             // Fetch logos
             const logo1Base64 = await getImageBase64('/assets/logo/logo1.png') || await getImageBase64('/assets/logo/logo1.jpg') || await getImageBase64('/assets/logo/logoKlase.png');
             const logo2Base64 = await getImageBase64('/assets/logo/ministry2.png') || await getImageBase64('http://app.klaes.ng/assets/logo/ministry2.png') || await getImageBase64('/assets/logo/logo3.jpeg');
-            // Footer logo — local path first; the remote host is blocked by CORS off production.
+            // Footer logos — local path first; the remote host is blocked by CORS off production.
             const footerLogoBase64 = await getImageBase64('/assets/logo/Left_Logo.png') || await getImageBase64('http://app.klaes.ng/assets/logo/Left_Logo.png');
+            const footerLogoLeftBase64 = await getImageBase64('/assets/logo/logo.png') || await getImageBase64('/storage/upload/logo/logo.png') || await getImageBase64('http://app.klaes.ng/storage/upload/logo/logo.png');
             // Add Header
             if (logo1Base64) doc.addImage(logo1Base64, 'JPEG', 20, 12, 20, 20);
             if (logo2Base64) doc.addImage(logo2Base64, 'JPEG', 170, 12, 20, 20);
@@ -7968,8 +7991,10 @@
             doc.text("Approved by Signature", 150, y + 6, { align: "center" });
 
             // Footer logo, flush right under the body rules (which end at x=185),
-            // in line with the header's right-hand logo column.
-            if (footerLogoBase64) doc.addImage(footerLogoBase64, 'PNG', 140, 272, 45, 18);
+            // in line with the header's right-hand logo column. 28.8x11.5mm — down from
+            // the original 45x18, which stood too tall against the footer line.
+            if (footerLogoBase64) doc.addImage(footerLogoBase64, 'PNG', 156.2, 278.5, 28.8, 11.5);
+            drawFooterLeftLogo(doc, footerLogoLeftBase64);
 
             hideGlobalLoading();
             doc.save(`commissioning-sheet-${formData.get('file_number')}.pdf`);
@@ -7991,6 +8016,7 @@
             const logo1Base64 = await getImageBase64('/assets/logo/logo1.png') || await getImageBase64('/assets/logo/logo1.jpg') || await getImageBase64('/assets/logo/logoKlase.png');
             const logo2Base64 = await getImageBase64('/assets/logo/ministry2.png') || await getImageBase64('http://app.klaes.ng/assets/logo/ministry2.png') || await getImageBase64('/assets/logo/logo3.jpeg');
             const footerLogoBase64 = await getImageBase64('/assets/logo/Left_Logo.png') || await getImageBase64('http://app.klaes.ng/assets/logo/Left_Logo.png');
+            const footerLogoLeftBase64 = await getImageBase64('/assets/logo/logo.png') || await getImageBase64('/storage/upload/logo/logo.png') || await getImageBase64('http://app.klaes.ng/storage/upload/logo/logo.png');
 
             const totalPages = records.length;
 
@@ -8108,7 +8134,8 @@
                 // Footer
                 doc.setFontSize(8);
                 doc.text(`Generated on ${new Date().toLocaleString()} | Batch: ${batchNo || 'N/A'} | Page ${i + 1} of ${totalPages}`, 105, 270, { align: 'center' });
-                if (footerLogoBase64) doc.addImage(footerLogoBase64, 'PNG', 140, 272, 45, 18);
+                if (footerLogoBase64) doc.addImage(footerLogoBase64, 'PNG', 156.2, 278.5, 28.8, 11.5);
+                drawFooterLeftLogo(doc, footerLogoLeftBase64);
             }
 
             hideGlobalLoading();

@@ -98,9 +98,8 @@
         .sheet-footer {
             display: flex;
             align-items: flex-end;
-            /* One logo now, so flex-end rather than space-between — space-between
-               with a single child would park it on the left. */
-            justify-content: flex-end;
+            /* Two logos again — the KLAES mark on the left, the LAnd ADmin one on the right. */
+            justify-content: space-between;
             margin-top: 8mm;
         }
 
@@ -339,10 +338,18 @@
         .m-green { background: #0f6d3c; }
         .m-yellow { background: #f6c106; }
 
+        /* Matched in height to the right-hand mark; the width follows the image. */
+        .footer-logo-left {
+            height: 11.5mm;
+            width: auto;
+            object-fit: contain;
+        }
+
+        /* Down from 45x18mm — the mark stood too tall against the footer line. */
         .footer-logo-right {
-            width: 45mm;
+            width: 28.8mm;
             height: auto;
-            max-height: 18mm;
+            max-height: 11.5mm;
             object-fit: contain;
             flex-shrink: 0;
         }
@@ -510,9 +517,10 @@
         </div>{{-- end .sheet-body --}}
 <br><br>
         <div class="sheet-footer">
-            {{-- One logo, on the right. It was las.jpg until the Left_Logo mark was
-                 adopted for the foot of the sheet; the second, left-hand copy stays
-                 gone, since it only ever printed the same mark squashed to 16mm. --}}
+            {{-- Two marks: KLAES on the left, LAnd ADmin on the right. Either drops out
+                 quietly if its file cannot be reached. --}}
+            <img src="{{ asset('assets/logo/logo.png') }}" alt="KLAES Logo" class="footer-logo-left"
+                 onerror="if(!this.dataset.fallback){this.dataset.fallback='1';this.src='http://app.klaes.ng/storage/upload/logo/logo.png';}else{this.style.display='none';}">
             <img src="http://app.klaes.ng/assets/logo/Left_Logo.png" alt="Footer Logo" class="footer-logo-right" onerror="this.style.display='none'">
         </div>
     </div>
