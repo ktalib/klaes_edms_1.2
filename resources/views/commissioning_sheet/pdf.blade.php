@@ -16,7 +16,7 @@
         $dateCommissioned = $data['commissioning_date'] ?? ($data['date_created'] ?? '');
         $commissionedBy = $data['created_by'] ?? '';
         $trackingId = $data['tracking_id'] ?? $fileNumber;
-
+  
         // SIT files show the reason directly after the Location.
         $sitReason = $data['sit_reason'] ?? '';
         $isSit = stripos((string) $fileNumber, 'SIT-') === 0;

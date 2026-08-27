@@ -7879,7 +7879,6 @@
 
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
-
             // Fetch logos
             const logo1Base64 = await getImageBase64('/assets/logo/logo1.png') || await getImageBase64('/assets/logo/logo1.jpg') || await getImageBase64('/assets/logo/logoKlase.png');
             const logo2Base64 = await getImageBase64('/assets/logo/ministry2.png') || await getImageBase64('http://app.klaes.ng/assets/logo/ministry2.png') || await getImageBase64('/assets/logo/logo3.jpeg');
