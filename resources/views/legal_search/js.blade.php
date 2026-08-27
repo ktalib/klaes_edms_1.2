@@ -3619,7 +3619,57 @@ const executeSearchAjax = (filters, searchData) => {
       }
     });
 
-    return orderRecertGenerations(out);
+    return placeUnpairedRecertBelowCofo(orderRecertGenerations(out));
+  };
+
+  // A KANGIS Recertification with no KANGIS C of O to sit above belongs BELOW the file's
+  // ordinary C of O, not above it.
+  //
+  // placeKangisRecertBeforeCofo() pulls a recert above the C of O it recertifies — right
+  // when that C of O is itself a KANGIS one, because the pair is one KANGIS exercise. When
+  // the file's C of O is an ordinary Ministry C of O the recert did NOT produce it: the
+  // recertification came afterwards, against a title that already existed, so printing it
+  // above reverses the real sequence.
+  //
+  // Mirrors LegalSearchService::placeUnpairedRecertBelowCofo(). Keep the two in step.
+  const placeUnpairedRecertBelowCofo = (rows) => {
+    const typeOf = (r) => String(r?.transaction_type || r?.instrument_type || '').toLowerCase();
+    const isCofo = (r) => typeOf(r).includes('certificate of occupanc');
+    const isRecert = (r) => typeOf(r).includes('recertification');
+
+    const anchorIndex = rows.findIndex((r) => isCofo(r) && !extractKangisLifecycleKey(r));
+    if (anchorIndex === -1) return rows;
+
+    const cofoKeys = new Set();
+    rows.forEach((r) => {
+      if (!isCofo(r)) return;
+      const k = extractKangisLifecycleKey(r);
+      if (k) cofoKeys.add(k);
+    });
+
+    const moving = [];
+    const kept = [];
+    rows.forEach((r, i) => {
+      const key = isRecert(r) ? extractKangisLifecycleKey(r) : '';
+      const unpaired = isRecert(r) && (!key || !cofoKeys.has(key));
+      if (unpaired && i !== anchorIndex) { moving.push(r); return; }
+      kept.push(r);
+    });
+
+    if (!moving.length) return rows;
+
+    const out = [];
+    let placed = false;
+    kept.forEach((r) => {
+      out.push(r);
+      if (!placed && isCofo(r) && !extractKangisLifecycleKey(r)) {
+        moving.forEach((m) => out.push(m));
+        placed = true;
+      }
+    });
+    if (!placed) moving.forEach((m) => out.push(m));
+
+    return out;
   };
 
   // Lifecycle-transaction rule mirrored from LegalSearchService::orderRecertGenerations().
@@ -5053,7 +5103,11 @@ const executeSearchAjax = (filters, searchData) => {
   // the parsed dates rather than on row position.
   const REAL_INSTRUMENT_TABLES = ['pra', 'file_history_staging', 'CofO_staging', 'deed_registrations'];
 
-  const earliestInstrumentBeforeCommissioning = (rows, belongsToOwnFile) => {
+  // candidatesMustBeOwnFile: false for a Conversion/SLTR, whose earlier dealings sit on
+  // the predecessor being converted rather than on the new file. The commissioning
+  // cut-off is always taken from THIS file's own commissioning, so relaxing it widens
+  // which instruments qualify, never when. Mirrors the PHP of the same name.
+  const earliestInstrumentBeforeCommissioning = (rows, belongsToOwnFile, candidatesMustBeOwnFile = true) => {
     // The file's own final commissioning is the cut-off.
     let commissioningTs = null;
     for (const r of rows) {
@@ -5067,7 +5121,8 @@ const executeSearchAjax = (filters, searchData) => {
     let bestTs = null;
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      if (!r || !belongsToOwnFile(r)) continue;
+      if (!r) continue;
+      if (candidatesMustBeOwnFile && !belongsToOwnFile(r)) continue;
       if (!REAL_INSTRUMENT_TABLES.includes(timelineSourceToDbTable(r.source_table))) continue;
       if (isParcelUpdateRow(r)) continue;
       const type = String(getMappedValue(r, 'transactionType') || '').trim();
@@ -5084,6 +5139,51 @@ const executeSearchAjax = (filters, searchData) => {
       label: toProperCase(getMappedValue(rows[bestIndex], 'transactionType')),
     };
   };
+
+  // A Conversion or SLTR file, judged from its number.
+  //
+  // These never came off an allocation list: the land was already held under an earlier
+  // title and the file was opened to convert or regularise it. So File Commissioning is
+  // NOT their root, and labelling it "Allocation List" asserts an allocation that never
+  // happened.
+  //
+  // Read from the number rather than mls_file_no.source, which answers for only a
+  // fraction of them (3,127 rows carry source='Conversion' against 44,510 CON- and
+  // 6,107 SLTR- files) — the rest reach the legacy branch below.
+  //
+  // Mirrors LegalSearchService::isConversionOrSltrFileNo(). Keep the two in step.
+  const isConversionOrSltrFileNo = (fileNo) => /^(CON|SLTR)[-_/ ]/i.test(String(fileNo || '').trim());
+
+  // The first valid title document on the file: a Right of Occupancy, else a Certificate
+  // of Occupancy. Rows arrive in timeline order, so the first match is the earliest.
+  const firstTitleDocument = (rows, belongsToOwnFile, mustBeOwnFile = true) => {
+    let cofo = -1;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r) continue;
+      if (mustBeOwnFile && !belongsToOwnFile(r)) continue;
+      const type = canonicalWeightingInstrumentType(getMappedValue(r, 'transactionType'));
+      if (type === 'right of occupancy') {
+        return { index: i, label: toProperCase(getMappedValue(r, 'transactionType')) };
+      }
+      if (type === 'certificate of occupancy' && cofo === -1) cofo = i;
+    }
+    return cofo === -1
+      ? null
+      : { index: cofo, label: toProperCase(getMappedValue(rows[cofo], 'transactionType')) };
+  };
+
+  // Root of Title for a Conversion / SLTR file. The order is deliberate and must not be
+  // relaxed into a commissioning default:
+  //   1. the earliest real instrument executed BEFORE File Commissioning
+  //   2. failing that, the first valid title document (RofO, else CofO)
+  //   3. failing both, NO root — better silent than claiming an allocation that never was
+  //
+  // Candidates are not restricted to this file's own lifecycle: a conversion's earlier
+  // dealings sit on the file being converted, which is the whole point of a conversion.
+  const conversionRootOfTitle = (rows, belongsToOwnFile) =>
+    earliestInstrumentBeforeCommissioning(rows, belongsToOwnFile, false)
+      || firstTitleDocument(rows, belongsToOwnFile, false);
 
   // Returns { index, label } for the row the Root of Title comment belongs under,
   // or null when neither root can be established for the searched file.
@@ -5148,8 +5248,13 @@ const executeSearchAjax = (filters, searchData) => {
         // (a Conversion, Re-grant, Subdivision…), so the title did not start at
         // commissioning: the root is the earliest real instrument executed BEFORE the
         // final commissioning, marked on that entry itself.
-        return earliestInstrumentBeforeCommissioning(rows, belongsToOwnFile);
+        return conversionRootOfTitle(rows, belongsToOwnFile);
       }
+    } else if (isConversionOrSltrFileNo(ownFileNo)) {
+      // A Conversion / SLTR file with no recorded route. The legacy default below would
+      // label its File Commissioning "Allocation List" — a root it does not have — so it
+      // takes the conversion rule instead, and shows nothing when that finds nothing.
+      return conversionRootOfTitle(rows, belongsToOwnFile);
     } else {
       // 3. Nothing recorded at all — the file predates mls_file_no, which holds only files
       // commissioned through KLAES (~4.5% of file_indexings). For those legacy files the

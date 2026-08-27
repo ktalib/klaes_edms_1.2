@@ -4946,6 +4946,91 @@ class LegalSearchService
      * @param array<int, array<string, mixed>> $rows
      * @return array<int, array<string, mixed>>
      */
+    /**
+     * A KANGIS Recertification with no KANGIS C of O to sit above belongs BELOW the
+     * file's ordinary C of O, not above it.
+     *
+     * placeKangisRecertBeforeCofo() pulls a recert above the C of O it recertifies —
+     * correct when that C of O is itself a KANGIS one, because the pair is a single
+     * KANGIS exercise. When the file's C of O is an ordinary Ministry C of O the recert
+     * did NOT produce it: the recertification came afterwards, against a title that
+     * already existed, so printing it above reverses the actual sequence.
+     *
+     * "KANGIS C of O" is decided by extractKangisLifecycleKey() — the same test the
+     * pairing above uses — so both halves of the rule agree on what a KANGIS row is.
+     *
+     * Runs as a post-pass so it is correct whichever order the sort left the two rows
+     * in: a recert already below its C of O simply stays put.
+     */
+    private function placeUnpairedRecertBelowCofo(array $rows): array
+    {
+        $typeOf = fn ($r) => strtolower((string) ($r['transaction_type'] ?? ($r['instrument_type'] ?? '')));
+        $isCofo = fn ($r) => str_contains($typeOf($r), 'certificate of occupanc');
+        $isRecert = fn ($r) => str_contains($typeOf($r), 'recertification');
+
+        // The anchor: the file's first ordinary (non-KANGIS) C of O.
+        $anchorIndex = null;
+        foreach ($rows as $i => $row) {
+            if ($isCofo($row) && $this->extractKangisLifecycleKey($row) === '') {
+                $anchorIndex = $i;
+                break;
+            }
+        }
+        if ($anchorIndex === null) {
+            return $rows;
+        }
+
+        // Recerts that were NOT paired with a KANGIS C of O. A recert whose own KANGIS
+        // key matches a C of O in this set was placed deliberately and is left alone.
+        $cofoKeys = [];
+        foreach ($rows as $row) {
+            if (!$isCofo($row)) {
+                continue;
+            }
+            $k = $this->extractKangisLifecycleKey($row);
+            if ($k !== '') {
+                $cofoKeys[$k] = true;
+            }
+        }
+
+        $moving = [];
+        $kept = [];
+        foreach ($rows as $i => $row) {
+            $key = $isRecert($row) ? $this->extractKangisLifecycleKey($row) : '';
+            $isUnpaired = $isRecert($row) && ($key === '' || !isset($cofoKeys[$key]));
+
+            if ($isUnpaired && $i !== $anchorIndex) {
+                $moving[] = $row;
+                continue;
+            }
+            $kept[] = $row;
+        }
+
+        if (empty($moving)) {
+            return $rows;
+        }
+
+        // Re-find the anchor: removing rows above it will have shifted its index.
+        $out = [];
+        $placed = false;
+        foreach ($kept as $row) {
+            $out[] = $row;
+            if (!$placed && $isCofo($row) && $this->extractKangisLifecycleKey($row) === '') {
+                foreach ($moving as $m) {
+                    $out[] = $m;
+                }
+                $placed = true;
+            }
+        }
+        if (!$placed) {
+            foreach ($moving as $m) {
+                $out[] = $m;
+            }
+        }
+
+        return $out;
+    }
+
     private function placeKangisRecertBeforeCofo(array $rows): array
     {
         $typeOf = function (array $row): string {
@@ -8180,11 +8265,13 @@ class LegalSearchService
                 // nor OP (a Conversion, Re-grant, Subdivision…), so the title did not
                 // start at commissioning: the root is the earliest real instrument
                 // executed BEFORE the final commissioning, marked on that entry itself.
-                $earliest = $this->earliestInstrumentBeforeCommissioning($rows, $belongsToOwnFile);
-                if ($earliest === null) {
+                // Nothing before commissioning still has a root: the grant that created
+                // the title. Only when there is neither is the indicator left off.
+                $root = $this->conversionRootOfTitle($rows, $belongsToOwnFile);
+                if ($root === null) {
                     return $rows;
                 }
-                $rows[$earliest['index']]['root_of_title'] = $earliest['label'];
+                $rows[$root['index']]['root_of_title'] = $root['label'];
 
                 return $rows;
             }
@@ -8197,6 +8284,21 @@ class LegalSearchService
         //    off an allocation list. Rows are already in timeline order, so the first match
         //    IS the earliest.
         if ($targetIndex === null && $src === '') {
+            // A Conversion / SLTR file never came off an allocation list, so the
+            // legacy default below would state a root it does not have. Route it
+            // through the same rule the recorded-source path uses, and if that
+            // finds nothing, leave the indicator off entirely rather than
+            // labelling File Commissioning "Allocation List".
+            if ($this->isConversionOrSltrFileNo($ownFileNo)) {
+                $root = $this->conversionRootOfTitle($rows, $belongsToOwnFile);
+                if ($root === null) {
+                    return $rows;
+                }
+                $rows[$root['index']]['root_of_title'] = $root['label'];
+
+                return $rows;
+            }
+
             $rofoIndex = null;
             $cofoIndex = null;
             foreach ($rows as $i => $row) {
@@ -8265,8 +8367,108 @@ class LegalSearchService
      * Timeline order is weight-based, not purely chronological, so "earliest" is decided
      * on the parsed dates rather than on row position.
      */
-    private function earliestInstrumentBeforeCommissioning(array $rows, callable $belongsToOwnFile): ?array
+    /**
+     * A Conversion or SLTR file, judged from its number.
+     *
+     * These files did NOT come off an allocation list: the land was already held
+     * under an earlier title and the file was opened to convert or regularise it.
+     * So File Commissioning is not their root — some earlier instrument is.
+     *
+     * Read from the number rather than mls_file_no.source because that column
+     * answers for only a fraction of these files (3,127 rows carry
+     * source = 'Conversion' against 44,510 CON- and 6,107 SLTR- files), and the
+     * remainder fall through to the legacy branch which used to label every one
+     * of them "Allocation List" — the wrong root, asserted confidently.
+     *
+     * Matches the prefix only: CON-RES-1982-709 and SLTR-2019-14 qualify;
+     * a number that merely contains "con" does not.
+     */
+    private function isConversionOrSltrFileNo(?string $fileNo): bool
     {
+        $v = strtoupper(trim((string) $fileNo));
+        if ($v === '') {
+            return false;
+        }
+
+        return (bool) preg_match('~^(CON|SLTR)[-_/ ]~', $v);
+    }
+
+    /**
+     * The first valid title document on the file: a Right of Occupancy, else a
+     * Certificate of Occupancy. Rows arrive in timeline order, so the first match
+     * is the earliest.
+     *
+     * Used as the Conversion/SLTR fallback when nothing predates commissioning:
+     * the root moves to the grant that actually created the title, rather than
+     * being asserted against a commissioning row that represents no allocation.
+     *
+     * @return array{index:int,label:string}|null
+     */
+    private function firstTitleDocument(
+        array $rows,
+        callable $belongsToOwnFile,
+        bool $mustBeOwnFile = true
+    ): ?array {
+        $cofo = null;
+
+        foreach ($rows as $i => $row) {
+            $type = strtolower(trim((string) ($row['instrument_type'] ?? '')));
+            if ($type === '' || ($mustBeOwnFile && !$belongsToOwnFile($row))) {
+                continue;
+            }
+            if (str_contains($type, 'right of occupancy')) {
+                return ['index' => $i, 'label' => 'Right of Occupancy'];
+            }
+            if ($cofo === null && str_contains($type, 'certificate of occupancy')) {
+                $cofo = ['index' => $i, 'label' => 'Certificate of Occupancy'];
+            }
+        }
+
+        return $cofo;
+    }
+
+    /**
+     * Root of Title for a Conversion / SLTR file.
+     *
+     * Order is deliberate and must not be relaxed into a commissioning default:
+     *   1. the earliest real instrument executed BEFORE File Commissioning
+     *   2. failing that, the first valid title document (RofO, else CofO)
+     *   3. failing both, NO root at all — the indicator is left off rather than
+     *      claiming an allocation that never happened
+     *
+     * @return array{index:int,label:string}|null
+     */
+    private function conversionRootOfTitle(array $rows, callable $belongsToOwnFile): ?array
+    {
+        // A conversion's earlier dealings sit on the file being CONVERTED, not on the
+        // new file — that is what a conversion is. CON-COM-1985-53 carries nothing of
+        // its own; its 1977 CofO and 1982 assignment both belong to AG-RC-1982-194.
+        // Restricting candidates to this file's own lifecycle therefore finds nothing
+        // and the root silently disappears, which is the opposite of the rule.
+        //
+        // Safe to widen here: every row in this set has already passed the
+        // cross-property guard, so it is the same parcel, and the cut-off below is
+        // still THIS file's own commissioning date.
+        $earliest = $this->earliestInstrumentBeforeCommissioning($rows, $belongsToOwnFile, false);
+        if ($earliest !== null) {
+            return $earliest;
+        }
+
+        return $this->firstTitleDocument($rows, $belongsToOwnFile, false);
+    }
+
+    /**
+     * @param bool $candidatesMustBeOwnFile  Whether a candidate instrument has to sit on
+     *        THIS file's lifecycle. False for a Conversion/SLTR, whose earlier dealings sit
+     *        on the predecessor being converted — see conversionRootOfTitle(). The
+     *        commissioning cut-off is always taken from this file's OWN commissioning
+     *        regardless, so relaxing this widens WHICH instruments qualify, never WHEN.
+     */
+    private function earliestInstrumentBeforeCommissioning(
+        array $rows,
+        callable $belongsToOwnFile,
+        bool $candidatesMustBeOwnFile = true
+    ): ?array {
         // The file's own final commissioning is the cut-off.
         $commissioningTs = null;
         foreach ($rows as $row) {
@@ -8293,7 +8495,7 @@ class LegalSearchService
             if (!in_array(trim((string) ($row['source_table'] ?? '')), $realSources, true)) {
                 continue;
             }
-            if (!$belongsToOwnFile($row)) {
+            if ($candidatesMustBeOwnFile && !$belongsToOwnFile($row)) {
                 continue;
             }
             $type = trim((string) ($row['instrument_type'] ?? ''));
@@ -9559,6 +9761,8 @@ class LegalSearchService
         // Recertification/CoFO pairing executes strictly inside this lifecycle's
         // transaction phase so rows never leave their lifecycle group.
         $transactions = $this->placeKangisRecertBeforeCofo($transactions);
+        // A recert with no KANGIS C of O of its own goes BELOW the ordinary C of O.
+        $transactions = $this->placeUnpairedRecertBelowCofo($transactions);
 
         // A File Commissioning row is NO LONGER hoisted to the head of its block — it takes
         // the position its weight earns, so an Occupancy Permit (14) and its Transfer of

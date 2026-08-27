@@ -192,9 +192,10 @@
       </a>
 @endif
       <!-- h. Parcel/Title Management -->
-      @if($hasRole('Parcel/Title Management-Deeds') || $hasRole('Supper Admin'||$hasRole('Duplex Parcel Update-Deeds')))
+      @if($hasRole('Parcel/Title Management-Deeds') || $hasRole('Duplex Parcel Update-Deeds') || $hasRole('Supper Admin'))
         <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
           data-section="otherApplications-deeds">
+          
           <div class="flex items-center gap-2">
             <i data-lucide="files" class="h-4 w-4 text-teal-500"></i>
             <span>Parcel/Title Management</span>
