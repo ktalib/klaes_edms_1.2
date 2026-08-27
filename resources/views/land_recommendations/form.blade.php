@@ -489,12 +489,34 @@
                                     <th class="px-1 py-3 text-center w-8 bg-slate-50">#</th>
                                     <th id="batch-col-src" class="px-1 py-3 text-center w-10 bg-slate-50 text-violet-700" title="Which row Apply-to-all copies from">Src</th>
 
-                                    {{-- Left bank: per-plot --}}
+                                    {{-- Left bank: per-plot. Nothing here is copied by the
+                                         toolbar Apply-to-all — but four of these columns do
+                                         sometimes repeat across a whole batch (one address for
+                                         a family allocation, one plot series, one land use and
+                                         purpose for a whole layout), so each carries its own
+                                         opt-in Apply button, sitting above its label so the
+                                         labels themselves stay on one line together. It only
+                                         ever fires on a deliberate click, one column at a
+                                         time, and it asks before overwriting cells that
+                                         already hold a different value. Child File No has
+                                         none: a file number is unique by definition. --}}
                                     <th id="batch-col-file-no" class="px-2 py-3 align-bottom w-[126px] bg-amber-50/70 text-amber-900">Child File No</th>
-                                    <th class="px-2 py-3 align-bottom w-[76px] bg-amber-50/70 text-amber-900">Plot No</th>
-                                    <th class="px-2 py-3 align-bottom w-[168px] bg-amber-50/70 text-amber-900">Applicant Address</th>
-                                    <th class="px-2 py-3 align-bottom w-[116px] bg-amber-50/70 text-amber-900">Land Use</th>
-                                    <th class="px-2 py-3 align-bottom w-[112px] bg-amber-50/70 text-amber-900">Purpose</th>
+                                    <th class="px-2 py-3 align-bottom w-[76px] bg-amber-50/70 text-amber-900">
+                                        @include('land_recommendations.partials.batch_col_apply', ['f' => 'plot_number', 'label' => 'Plot No'])
+                                        Plot No
+                                    </th>
+                                    <th class="px-2 py-3 align-bottom w-[168px] bg-amber-50/70 text-amber-900">
+                                        @include('land_recommendations.partials.batch_col_apply', ['f' => 'applicant_address', 'label' => 'Applicant Address'])
+                                        Applicant Address
+                                    </th>
+                                    <th class="px-2 py-3 align-bottom w-[116px] bg-amber-50/70 text-amber-900">
+                                        @include('land_recommendations.partials.batch_col_apply', ['f' => 'land_use_id', 'label' => 'Land Use'])
+                                        Land Use
+                                    </th>
+                                    <th class="px-2 py-3 align-bottom w-[112px] bg-amber-50/70 text-amber-900">
+                                        @include('land_recommendations.partials.batch_col_apply', ['f' => 'purpose_id', 'label' => 'Purpose'])
+                                        Purpose
+                                    </th>
 
                                     {{-- Right bank: copied. The two sky columns are copied only
                                          into rows left blank, which the tint carries. --}}
@@ -2490,6 +2512,11 @@ document.addEventListener('DOMContentLoaded', function () {
         // "copied from the source row" over columns nothing copies into is worse
         // than no band at all.
         if (applyAllBtn) applyAllBtn.classList.toggle('hidden', regular);
+        // The per-column Apply buttons copy from the same source row, so they
+        // stand down with it.
+        document.querySelectorAll('.batch-col-apply').forEach(function (b) {
+            b.classList.toggle('hidden', regular);
+        });
         if (srcHint)     srcHint.classList.toggle('hidden', regular);
         if (copyLegend)  copyLegend.classList.toggle('hidden', regular);
         if (bandHeader)  bandHeader.classList.toggle('hidden', regular);
@@ -2710,6 +2737,9 @@ document.addEventListener('DOMContentLoaded', function () {
         countLabel.textContent = n + ' of ' + total + ' selected';
         // Nothing to copy into with fewer than two rows.
         if (applyAllBtn) applyAllBtn.disabled = total < 2;
+        document.querySelectorAll('.batch-col-apply').forEach(function (b) {
+            b.disabled = total < 2;
+        });
 
         // Keep the header box honest when rows arrive part-selected — children that
         // already have a recommendation come back unticked.
@@ -3944,6 +3974,116 @@ document.addEventListener('DOMContentLoaded', function () {
         // The copy is real work, so it is drafted rather than waiting on the next
         // keystroke — 100 rows changed at once is exactly what should not be lost.
         scheduleSave();
+    });
+
+    // ── Per-column Apply-to-all (the "never copied" bank) ───────────────────
+    // Plot No, Applicant Address, Land Use and Purpose are per-plot by default
+    // and the toolbar Apply deliberately never touches them. They do repeat
+    // across a whole batch often enough to be worth keying once — one address
+    // for a family allocation, one land use and purpose for a whole layout — so
+    // each gets its own button. It is opt-in in both senses: nothing happens without the click,
+    // and a click that would overwrite values already keyed asks first.
+    document.querySelectorAll('.batch-col-apply').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var f     = btn.dataset.f;
+            var label = btn.dataset.label || f;
+
+            var rows = Array.prototype.slice.call(rowsBody.querySelectorAll('.batch-row'));
+            if (rows.length < 2) return;
+
+            var src = sourceRow();
+            if (!src) return;
+
+            var from = src.querySelector('[data-f="' + f + '"]');
+            if (!from) return;
+            var value = from.value;
+
+            // Purpose only means anything under its own land use: the options in
+            // a row are fetched for that row's land use, so a purpose id from a
+            // different one is not in the list and would land as blank. Those
+            // rows are left alone and counted, rather than silently cleared.
+            var srcLandUse = f === 'purpose_id'
+                ? (src.querySelector('[data-f="land_use_id"]') || {}).value
+                : null;
+
+            var targets = [];
+            var skipped = 0;
+            rows.forEach(function (tr) {
+                if (tr === src) return;
+                var dst = tr.querySelector('[data-f="' + f + '"]');
+                if (!dst) return;
+                if (srcLandUse !== null) {
+                    var lu = (tr.querySelector('[data-f="land_use_id"]') || {}).value;
+                    if (String(lu || '') !== String(srcLandUse || '')) { skipped++; return; }
+                }
+                targets.push(dst);
+            });
+
+            if (!targets.length) {
+                alert(skipped
+                    ? 'Nothing to apply: every other row is on a different land use, and a purpose only belongs to its own land use.'
+                    : 'Nothing to apply.');
+                return;
+            }
+
+            var clashes = targets.filter(function (dst) {
+                return String(dst.value).trim() !== '' && String(dst.value) !== String(value);
+            }).length;
+
+            if (clashes && !confirm(
+                'Copy ' + label + ' from the source row into ' + targets.length + ' row' + (targets.length === 1 ? '' : 's') + '?' + String.fromCharCode(10, 10)
+                + clashes + ' row' + (clashes === 1 ? ' already holds a different value and it' : 's already hold a different value and they')
+                + ' will be overwritten.')) {
+                return;
+            }
+
+            targets.forEach(function (dst) {
+                dst.value = value;
+                // A value written straight onto a field does not fire change, and
+                // the land use one has a listener behind it — the Purpose options
+                // are fetched from it. Fire it so nothing is left stale.
+                dst.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+
+            if (skipped) {
+                alert(label + ' applied to ' + targets.length + ' row' + (targets.length === 1 ? '' : 's') + '. '
+                    + skipped + ' row' + (skipped === 1 ? ' was' : 's were')
+                    + ' left alone — a different land use, so this purpose does not apply to '
+                    + (skipped === 1 ? 'it' : 'them') + '.');
+            }
+
+            // Purpose hangs off land use: its options are fetched for whatever land
+            // use the row is on. Changing the land use therefore has to refetch
+            // them, and a purpose that does not exist under the new land use is
+            // gone — said out loud, because a purpose silently reset to "Select"
+            // on twenty rows is exactly the kind of blank that reaches a letter.
+            if (f === 'land_use_id') {
+                var kept = targets.map(function (dst) {
+                    var tr  = dst.closest('tr');
+                    var sel = tr.querySelector('.batch-purpose');
+                    if (!sel) return Promise.resolve(true);
+                    var was = sel.value;
+                    return loadPurposes(sel, value, was).then(function () {
+                        return !was || sel.value === was;
+                    });
+                });
+
+                Promise.all(kept).then(function (results) {
+                    var lost = results.filter(function (ok) { return !ok; }).length;
+                    if (lost) {
+                        alert(lost + ' row' + (lost === 1 ? '' : 's') + ' lost '
+                            + (lost === 1 ? 'its' : 'their') + ' purpose: it does not exist under '
+                            + 'the land use just applied. Re-pick the purpose on '
+                            + (lost === 1 ? 'that row' : 'those rows') + ', or use the Purpose '
+                            + 'Apply to all above.');
+                    }
+                    scheduleSave();
+                });
+                return;
+            }
+
+            scheduleSave();
+        });
     });
 
     // ── Draft autosave ─────────────────────────────────────────────────────

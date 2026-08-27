@@ -69,7 +69,22 @@ class UserController extends Controller
             ->orderByDesc('id')
             ->get();
 
-        return view('user.index', compact('users', 'PageTitle', 'PageDescription'));
+        // Counted in SQL: filtering these off the loaded collection re-parsed
+        // every created_at into a Carbon instance and cost ~8s on 500+ users.
+        $userStats = (array) User::query()
+            ->when($shouldFilterByParent, function ($query) use ($parentId) {
+                $query->where('parent_id', $parentId);
+            })
+            ->selectRaw('COUNT(*) as total')
+            ->selectRaw("SUM(CASE WHEN [type] COLLATE Latin1_General_BIN2 = 'admin' THEN 1 ELSE 0 END) as admins")
+            ->selectRaw("SUM(CASE WHEN [type] COLLATE Latin1_General_BIN2 = 'user' THEN 1 ELSE 0 END) as regular")
+            ->selectRaw('SUM(CASE WHEN [created_at] >= ? THEN 1 ELSE 0 END) as new_this_month', [
+                now()->startOfMonth(),
+            ])
+            ->first()
+            ->getAttributes();
+
+        return view('user.index', compact('users', 'userStats', 'PageTitle', 'PageDescription'));
     }
 
 

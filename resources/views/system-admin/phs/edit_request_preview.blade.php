@@ -83,6 +83,14 @@
                     Drop from this file
                 </button>
 
+                {{-- Drag-to-reorder. Asks whether to save permanently or just for
+                     this browser, because a permanent order rewrites what everyone
+                     sees, including the report. --}}
+                <button type="button" id="ls-arrange-btn"
+                    class="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300">
+                    Arrange
+                </button>
+
                 <span class="mx-1 h-5 w-px bg-slate-200"></span>
 
                 <a href="{{ route('legal_search.index', ['file' => $fileNumber]) }}" target="_blank"
@@ -94,7 +102,8 @@
                     Preview updated result
                 </button>
 
-                <span id="pc-status" class="ml-auto text-xs text-slate-400"></span>
+                <span id="ls-arrange-status" class="ml-auto text-xs text-slate-400"></span>
+                <span id="pc-status" class="text-xs text-slate-400"></span>
             </div>
             <p class="mt-2 text-[11px] text-slate-400">
                 Select a row to enable the row actions. Every change is written to the audit trail
@@ -232,6 +241,16 @@
 @include('propertycard.css.style')
 @include('legal_search.partials.record_edit_modal')
 @include('propertycard.partials.add_property_record')
+
+<script>
+  // Config for the shared arrangement partial below.
+  window.LS_ARRANGE = {
+      propId: @json($propId),
+      containerId: 'pc-current',
+      rowsSelector: '[data-pc-row]',
+  };
+</script>
+@include('legal_search.partials.timeline_arrange_js')
 
 <script>
   // Scope the shared modal script expects from its host page. On the Legal Search

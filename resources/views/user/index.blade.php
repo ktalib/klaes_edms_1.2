@@ -176,7 +176,7 @@
                     <div class="flex items-center justify-between">
                         <div>
                             <p class="text-blue-100 text-sm font-medium">{{ __('Total Users') }}</p>
-                            <p class="text-3xl font-bold">{{ $users->count() }}</p>
+                            <p class="text-3xl font-bold">{{ $userStats['total'] ?? $users->count() }}</p>
                         </div>
                         <div class="bg-blue-400 bg-opacity-30 rounded-full p-3">
                             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
@@ -190,7 +190,7 @@
                     <div class="flex items-center justify-between">
                         <div>
                             <p class="text-purple-100 text-sm font-medium">{{ __('Admin Users') }}</p>
-                            <p class="text-3xl font-bold">{{ $users->where('type', 'admin')->count() }}</p>
+                            <p class="text-3xl font-bold">{{ $userStats['admins'] ?? 0 }}</p>
                         </div>
                         <div class="bg-purple-400 bg-opacity-30 rounded-full p-3">
                             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
@@ -204,7 +204,7 @@
                     <div class="flex items-center justify-between">
                         <div>
                             <p class="text-orange-100 text-sm font-medium">{{ __('Regular Users') }}</p>
-                            <p class="text-3xl font-bold">{{ $users->where('type', 'user')->count() }}</p>
+                            <p class="text-3xl font-bold">{{ $userStats['regular'] ?? 0 }}</p>
                         </div>
                         <div class="bg-orange-400 bg-opacity-30 rounded-full p-3">
                             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
@@ -218,7 +218,7 @@
                     <div class="flex items-center justify-between">
                         <div>
                             <p class="text-indigo-100 text-sm font-medium">{{ __('New This Month') }}</p>
-                            <p class="text-3xl font-bold">{{ $users->where('created_at', '>=', now()->startOfMonth())->count() }}</p>
+                            <p class="text-3xl font-bold">{{ $userStats['new_this_month'] ?? 0 }}</p>
                         </div>
                         <div class="bg-indigo-400 bg-opacity-30 rounded-full p-3">
                             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">

@@ -4,6 +4,7 @@
     $hasRole('Deeds - Consent') || $hasRole('Deeds Registration') ||
     $hasRole('Deeds - Encumbrance') || $hasRole('Deeds - Surrender') ||
     $hasRole('Surrender & Release') || $hasRole('Parcel/Title Management') ||
+    $hasRole('Duplex Parcel Update-Deeds') ||
     $hasRole('Activity Monitoring') || $hasRole('Supper Admin')
   ) 
   <div class="py-1 px-3 mb-0.5 border-t border-slate-100">
@@ -191,7 +192,7 @@
       </a>
 @endif
       <!-- h. Parcel/Title Management -->
-      @if($hasRole('Parcel/Title Management') || $hasRole('Supper Admin'))
+      @if($hasRole('Parcel/Title Management') || $hasRole('Supper Admin'||$hasRole('Duplex Parcel Update-Deeds')))
         <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
           data-section="otherApplications-deeds">
           <div class="flex items-center gap-2">

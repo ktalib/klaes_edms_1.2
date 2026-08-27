@@ -387,13 +387,21 @@ class LegalSearchApprovalService
      * Render the report exactly as the requester receives it.
      *
      * Single source of truth for the emailed attachment and the approver's
-     * preview, so what is reviewed is byte-for-byte what is delivered.
+     * preview, so what is reviewed is byte-for-byte what is delivered — with one
+     * deliberate exception: $preview stamps a red PREVIEW line above the Ministry
+     * name.
+     *
+     * $preview defaults to FALSE so the mark can only ever appear when a caller
+     * explicitly asks for it. The delivered copy must never carry it, and a
+     * default of true would put it on every attachment the moment someone added a
+     * caller and forgot the argument.
      */
-    public function renderPdf(LegalSearchOnlineRequest $request, array $report): \Barryvdh\DomPDF\PDF
+    public function renderPdf(LegalSearchOnlineRequest $request, array $report, bool $preview = false): \Barryvdh\DomPDF\PDF
     {
         return \Barryvdh\DomPDF\Facade\Pdf::loadView('online_legal_search.print.report_pdf', [
             'report'        => $report,
             'searchRequest' => $request,
+            'isPreview'     => $preview,
             // Must be an inline data URI — DomPDF will not fetch over HTTP, so an
             // unreadable signature has to render as a blank line, never a broken one.
             'signature'     => \App\Support\SignatureImage::embeddable($request->reviewer_signature_path),

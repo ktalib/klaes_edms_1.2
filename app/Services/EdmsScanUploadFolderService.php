@@ -34,6 +34,10 @@ use Illuminate\Support\Facades\Storage;
  * file-number folder in those two registries alongside the home one, so all
  * three folios exist from the moment the file is indexed or commissioned.
  *
+ * LAND FILES ONLY. A DCIV, Secret, Deeds, ST, SLTR or KANGIS file has no
+ * cadastral or planning counterpart on paper, so it gets its own folder and
+ * nothing else — see FOLIO_HOME_REGISTRY.
+ *
  * Deliberately NAKED (no edms_file_type segment). The classification — Regular,
  * Subdivision Mother, Regrant New — is a fact about the file in its HOME
  * registry; stamping it into all three would put the same fact on disk in three
@@ -66,15 +70,26 @@ class EdmsScanUploadFolderService
     ];
 
     /**
-     * The registries every file gets a counterpart folio in, on top of its own.
-     *
-     * A file whose home registry is already one of these is skipped rather than
-     * given a second folder in the same registry.
+     * The registries a LAND file gets a counterpart folio in, on top of its own.
      */
     public const FOLIO_REGISTRIES = [
         'Cadastral Registry',
         'Physical Planning Registry',
     ];
+
+    /**
+     * The only home registry whose files get counterpart folios.
+     *
+     * A land file is the one that genuinely sits in three places: the Lands
+     * registry holds the file, and the Cadastral and Physical Planning registries
+     * each keep their own folder for the same parcel. Nothing corresponding
+     * exists for a DCIV, Secret, Deeds, ST, SLTR or KANGIS file — giving those an
+     * empty Cadastral folio would put folders on disk for a paper file that is
+     * not there, which is worse than having none: an operator sent to fetch it
+     * finds nothing and cannot tell a missing file from a folder that never
+     * should have existed.
+     */
+    public const FOLIO_HOME_REGISTRY = 'Lands Registry';
 
     /**
      * Create the file's scan folder, and its counterpart folios, if not already there.
@@ -94,7 +109,10 @@ class EdmsScanUploadFolderService
     }
 
     /**
-     * The home scan folder plus a folio in each of FOLIO_REGISTRIES.
+     * The home scan folder, plus a folio in each of FOLIO_REGISTRIES for a land file.
+     *
+     * A file in any other registry gets its home folder and nothing else, so
+     * `folios` comes back empty and the caller renders no folio lines.
      *
      * Returns the home outcome unchanged, with the folios hung off it under a
      * `folios` key — every existing caller reads `path`/`reason` off the top
@@ -123,16 +141,18 @@ class EdmsScanUploadFolderService
     public function ensureFolios(string $fileNumber, ?string $registryName = null, array $logContext = []): array
     {
         $homeSlug = $this->registrySlug($registryName);
+
+        // Land files only. Every other registry gets its own folder and nothing
+        // else — see FOLIO_HOME_REGISTRY. Compared on the slug so the "Land
+        // Registry" / "Lands Registry" / land-use-id spellings normalizeRegistry()
+        // already folds together all pass.
+        if ($homeSlug !== $this->registrySlug(self::FOLIO_HOME_REGISTRY)) {
+            return [];
+        }
+
         $folios = [];
 
         foreach (self::FOLIO_REGISTRIES as $folioRegistry) {
-            // The file's own registry is one of the folio registries: its home
-            // folder IS the folio, and a second one would be the same path.
-            if ($this->registrySlug($folioRegistry) === $homeSlug) {
-                $folios[$folioRegistry] = $this->outcome(false, false, null, $homeSlug, 'same_as_home');
-                continue;
-            }
-
             $folios[$folioRegistry] = $this->ensure(
                 $fileNumber,
                 $folioRegistry,

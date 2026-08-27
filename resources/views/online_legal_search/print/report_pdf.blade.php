@@ -239,10 +239,39 @@
 <body>
 
 {{-- Header --}}
+<style>
+    /* A bordered label card rather than loose text: the box is what stops it
+       reading as part of the letterhead. Centred above the Ministry name.
+       DomPDF handles inline-block + border reliably; the outer div does the
+       centring because DomPDF will not centre an inline-block via margin auto. */
+    .preview-mark-wrap {
+        text-align: center;
+        margin: 0 0 3px 0;
+    }
+    .preview-mark {
+        display: inline-block;
+        color: #c1121f;
+        background: #fff5f5;
+        border: 1.5px solid #c1121f;
+        border-radius: 3px;
+        font-weight: bold;
+        font-size: 11px;
+        letter-spacing: 2px;
+        padding: 2px 10px;
+        line-height: 1.2;
+    }
+</style>
 <table class="hdr">
     <tr>
         <td class="logo">@if($logoLeft)<img src="{{ $logoLeft }}" alt="">@endif</td>
         <td class="title">
+            {{-- Sits ABOVE the Ministry name so it is read before the document is,
+                 and is impossible to mistake for part of the letterhead. Only
+                 rendered when the caller asked for a preview: the copy emailed to
+                 the requester must never carry it. --}}
+            @if ($isPreview ?? false)
+                <div class="preview-mark-wrap"><span class="preview-mark">FOR PREVIEW ONLY</span></div>
+            @endif
             <h1>KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING</h1>
             <h2>LEGAL SEARCH REPORT</h2>
             <h3>Online Pay-per-Search</h3>

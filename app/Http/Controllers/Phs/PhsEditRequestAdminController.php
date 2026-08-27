@@ -71,6 +71,7 @@ class PhsEditRequestAdminController extends Controller
         $report = null;
         $reportError = null;
         $records = [];
+        $propId = null;
 
         // ONE engine pass. buildPrintReport() calls search() internally, so asking
         // for both ran the whole search twice — measured at 14.1s + 8.3s on a heavy
@@ -105,6 +106,12 @@ class PhsEditRequestAdminController extends Controller
                     continue;
                 }
 
+                // The arrangement table is keyed on prop_id, so capture it off the
+                // rows rather than looking it up again.
+                if ($propId === null && !empty($t['prop_id'])) {
+                    $propId = (string) $t['prop_id'];
+                }
+
                 $records[] = [
                     'id'          => $t['id'],
                     'table'       => $table,
@@ -126,6 +133,7 @@ class PhsEditRequestAdminController extends Controller
             'report'      => $report,
             'reportError' => $reportError,
             'records'     => $records,
+            'propId'      => $propId,
             'original'    => $editRequest->originalResult(),
             'fileNumber'  => $fileNumber,
         ]);

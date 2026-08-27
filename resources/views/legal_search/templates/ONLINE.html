@@ -556,7 +556,28 @@
       margin-top: 2px;
       line-height: 1.25;
     }
-  </style>
+      /* A bordered label card rather than loose text: the box is what stops it
+       reading as part of the letterhead. Colours are forced to print, so a
+       preview cannot be printed into something that looks final. */
+    .preview-mark-wrap {
+      text-align: center;
+      margin: 0 0 3px;
+    }
+    .preview-mark {
+      display: inline-block;
+      color: #c1121f;
+      background: #fff5f5;
+      border: 1.5px solid #c1121f;
+      border-radius: 3px;
+      font-weight: 800;
+      font-size: 11px;
+      letter-spacing: 2px;
+      padding: 2px 10px;
+      line-height: 1.2;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+</style>
 </head>
 
 <body>
@@ -571,6 +592,10 @@
         <div class="header-top">
           <div class="logo-box"><img src="http://app.klaes.ng/assets/logo/ministry1.jpg" alt="Logo" /></div>
           <div class="title-block">
+            <!-- Red PREVIEW mark, above the letterhead so it is read before the
+                 document is. Hidden by default and revealed only for ?preview=1:
+                 an issued copy must never carry it. -->
+            <div id="report-preview-mark" class="preview-mark-wrap" style="display:none;"><span class="preview-mark">FOR PREVIEW ONLY</span></div>
             <h1>KANO STATE MINISTRY OF LAND AND PHYSICAL PLANNING</h1>
             <h2>LEGAL SEARCH REPORT</h2>
             <h3>Online Pay-per-Search</h3>
@@ -1358,6 +1383,20 @@
           showFileCopy();
         }
       });
+    })();
+  </script>
+
+  <script>
+    // The PREVIEW mark is opt-in via ?preview=1. Anything that is not an explicit
+    // preview renders clean, so a copy handed to a requester can never be stamped
+    // by accident.
+    (function () {
+      try {
+        var isPreview = new URLSearchParams(window.location.search).get('preview') === '1';
+        if (!isPreview) return;
+        var mark = document.getElementById('report-preview-mark');
+        if (mark) mark.style.display = '';
+      } catch (e) { /* never let this break the report */ }
     })();
   </script>
 </body>

@@ -196,7 +196,9 @@ class LegalSearchOnlineAdminController extends Controller
             abort(404, 'The report for file ' . ($searchRequest->file_number ?: '—') . ' could not be generated. Approving this request will fail until the underlying record is fixed.');
         }
 
-        return $approvalService->renderPdf($searchRequest, $report)
+        // preview: true — this copy is being reviewed, not delivered, so it carries
+        // the red PREVIEW mark. The emailed attachment renders without it.
+        return $approvalService->renderPdf($searchRequest, $report, true)
             ->stream($approvalService->pdfFileName($searchRequest));
     }
 
@@ -220,6 +222,7 @@ class LegalSearchOnlineAdminController extends Controller
         $report = null;
         $reportError = null;
         $records = [];
+        $propId = null;
 
         // ONE engine pass. buildPrintReport() calls search() internally, so asking
         // for both ran the whole search twice — 22s of engine time on a heavy file.
@@ -249,6 +252,12 @@ class LegalSearchOnlineAdminController extends Controller
                     continue;
                 }
 
+                // The arrangement table is keyed on prop_id, so capture it off the
+                // rows rather than looking it up again.
+                if ($propId === null && !empty($t['prop_id'])) {
+                    $propId = (string) $t['prop_id'];
+                }
+
                 $records[] = [
                     'id'          => $t['id'],
                     'table'       => $table,
@@ -265,11 +274,12 @@ class LegalSearchOnlineAdminController extends Controller
         }
 
         return view('legal_search_online.correct', [
-            'PageTitle'     => 'Correct Search Result — ' . ($searchRequest->request_no ?: $fileNumber),
+            'PageTitle'     => 'Preview Report — ' . ($searchRequest->request_no ?: $fileNumber),
             'searchRequest' => $searchRequest,
             'report'        => $report,
             'reportError'   => $reportError,
             'records'       => $records,
+            'propId'        => $propId,
             'fileNumber'    => $fileNumber,
         ]);
     }

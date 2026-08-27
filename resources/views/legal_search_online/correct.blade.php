@@ -4,13 +4,20 @@
 
 @section('content')
 {{--
-  Correct an Online Legal Search result before approving it.
+  Review an Online Legal Search result before approving it.
 
-  The Preview action streams a PDF and cannot host controls, so this is the
-  editable counterpart. It reuses the Legal Search timeline's own record-editing
-  endpoints and its Edit Record modal rather than reimplementing either, so a
-  correction made here is the same operation as one made on that screen — and
-  every change is written to audit_logs against the approver's name.
+  This is what "Preview report" opens. It is not read-only on purpose: an online
+  requester has no way to report a bad result (unlike a PHS member, who can send
+  an edit request), so if the approver does not notice and fix a problem here, a
+  wrong report is emailed out and nobody is left to challenge it. The reviewing
+  screen therefore carries the editing tools.
+
+  It reuses the Legal Search timeline's own record-editing endpoints and its Edit
+  Record modal rather than reimplementing either, so a correction made here is the
+  same operation as one made on that screen — and every change is written to
+  audit_logs against the approver's name.
+
+  The finished PDF is one click away, via "Preview report" in the header.
 --}}
 <div class="flex-1 overflow-auto bg-slate-50 flex flex-col min-h-full"
      id="ols-correct"
@@ -19,7 +26,7 @@
 
     @include('admin.header', [
         'PageTitle' => $PageTitle,
-        'PageDescription' => 'Correct the records for ' . ($fileNumber ?: '—') . ' before the report is approved and emailed.',
+        'PageDescription' => 'Review the records for ' . ($fileNumber ?: '—') . ', correct anything wrong, then approve. The requester cannot report a bad result, so it is caught here or not at all.',
     ])
 
     <div class="flex-1 p-6 space-y-5">
@@ -47,9 +54,16 @@
                     </p>
                 </div>
                 <div class="flex shrink-0 items-center gap-2">
+                    {{-- Opens the actual report template — what the requester will be
+                         emailed. Kept as the primary action here because this page is
+                         where the approver decides the result is right. --}}
                     <a href="{{ route('legal-search-online.admin.requests.preview', $searchRequest->id) }}" target="_blank"
-                       class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                        Preview PDF
+                       class="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800">
+                        <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.5c-4 0-7 3-8 5.5 1 2.5 4 5.5 8 5.5s7-3 8-5.5c-1-2.5-4-5.5-8-5.5z"/>
+                            <circle cx="12" cy="12" r="2.2"/>
+                        </svg>
+                        Preview report
                     </a>
                     <a href="{{ route('legal-search-online.admin.requests') }}"
                        class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
@@ -85,6 +99,14 @@
                     Drop from this file
                 </button>
 
+                {{-- Drag-to-reorder. Asks whether to save permanently or just for
+                     this browser, because a permanent order rewrites what everyone
+                     sees, including the report this requester receives. --}}
+                <button type="button" id="ls-arrange-btn"
+                    class="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300">
+                    Arrange
+                </button>
+
                 <span class="mx-1 h-5 w-px bg-slate-200"></span>
 
                 <a href="{{ route('legal_search.index', ['file' => $fileNumber]) }}" target="_blank"
@@ -96,7 +118,8 @@
                     Preview updated result
                 </button>
 
-                <span id="oc-status" class="ml-auto text-xs text-slate-400"></span>
+                <span id="ls-arrange-status" class="ml-auto text-xs text-slate-400"></span>
+                <span id="oc-status" class="text-xs text-slate-400"></span>
             </div>
             <p class="mt-2 text-[11px] text-slate-400">
                 Select a record to enable the row actions. Every change is written to the audit
@@ -141,7 +164,7 @@
                     </a>
                     <a href="{{ route('legal-search-online.admin.requests.preview', $searchRequest->id) }}" target="_blank"
                        class="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                        Check the PDF first
+                        Preview report first
                     </a>
                 </div>
             </div>
@@ -162,6 +185,16 @@
 @include('propertycard.css.style')
 @include('legal_search.partials.record_edit_modal')
 @include('propertycard.partials.add_property_record')
+
+<script>
+  // Config for the shared arrangement partial below.
+  window.LS_ARRANGE = {
+      propId: @json($propId),
+      containerId: 'oc-current',
+      rowsSelector: '[data-pc-row]',
+  };
+</script>
+@include('legal_search.partials.timeline_arrange_js')
 
 <script>
   // Scope the shared modal script expects from its host page.
