@@ -1681,7 +1681,9 @@ document.addEventListener('DOMContentLoaded', function () {
      * variants register and number identically — only the mirror row differs.
      *
      * `types` lists the C of O Types the variant offers. Regular carries the
-     * classic subtypes; SLTR and ST are titled through their own programmes and
+     * issuing-authority list shared with File Indexing and the property card
+     * (Land CofO / KANGIS CofO - Old / KANGIS CofO - New); SLTR and ST are
+     * titled through their own programmes and
      * only distinguish a brand-new certificate from one replacing an existing
      * (old) title, so they get New / Old instead. `hasType` is derived from it —
      * every variant has types now, and both validation gates (the confirm dialog
@@ -1690,11 +1692,13 @@ document.addEventListener('DOMContentLoaded', function () {
     const cofoVariants = {
         regular: {
             instrumentType: 'Certificate of Occupancy',
-            // Regular no longer asks for a C of O Type: the variant IS the answer.
-            // (It used to offer Direct Allocation / Recertification / Conversion.)
-            // An empty list clears hasType, which hides the select in the prompt and
-            // in the form, and drops the "type not selected" validation.
-            types: [],
+            // Regular asks WHICH certificate is being registered, using the canonical
+            // CofO Type list every other screen offers (resources/views/partials/
+            // cofo_type_options.blade.php) minus SLTR CofO / ST CofO, which are the
+            // other two variants here. The value posts as cofo_type and lands in
+            // instrument_capture.cofo_type and CofO_staging.cofo_type, where File
+            // Indexing and the property card read the same three strings.
+            types: ['Land CofO', 'KANGIS CofO - Old', 'KANGIS CofO - New'],
             accent: 'red',
             note: ''
         },
@@ -1858,7 +1862,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return (document.getElementById('cofoType')?.value || '').trim();
     }
 
-    // Banner text: "Regular - Direct Allocation", or just the variant where no
+    // Banner text: "Regular - Land CofO", or just the variant where no
     // type applies. Turns red while a Regular capture still has no type.
     function updateCofoSummary() {
         const el = document.getElementById('cofo-summary-value');
@@ -7169,8 +7173,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 return false;
             }
         } else if (currentInstrumentType === 'certificate-of-occupancy') {
-            // Every variant carries a type now (Regular: Direct Allocation /
-            // Recertification / Conversion; SLTR and ST: New / Old C of O).
+            // Every variant carries a type now (Regular: Land CofO / KANGIS CofO -
+            // Old / KANGIS CofO - New; SLTR and ST: New / Old C of O).
             if (cofoVariants[getCofoVariant()].hasType) {
                 subType = document.getElementById('cofoType')?.value || '';
                 if (!subType) {
@@ -8935,8 +8939,8 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         // Certificate of Occupancy Specific Validation.
-        // Every variant offers a type (Regular: Direct Allocation / Recertification /
-        // Conversion; SLTR and ST: New / Old C of O), so it is required on all three.
+        // Every variant offers a type (Regular: Land CofO / KANGIS CofO - Old /
+        // KANGIS CofO - New; SLTR and ST: New / Old C of O), so it is required on all three.
         if (typeId === 'certificate-of-occupancy' || typeId === 'Certificate of Occupancy') {
             if (cofoVariants[getCofoVariant()].hasType) {
                 const cofoType = document.getElementById('cofoType')?.value;

@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
+use App\Services\KangisLandPairService;
 use Carbon\Carbon;
 
 class CommissioningSheetController extends Controller
@@ -527,16 +528,13 @@ class CommissioningSheetController extends Controller
                 }
             }
 
-            // 2. Get related file number from fileNumber.related_fileno
+            // 2. Get related file number from fileNumber.related_fileno, falling back to
+            //    the file's own indexing row (a subdivision child, a conversion).
             if (empty($data['related_file_number'])) {
-                $fnRow = DB::connection('sqlsrv')
-                    ->table('fileNumber')
-                    ->where('mlsfNo', $fileNo)
-                    ->select('related_fileno')
-                    ->first();
+                $related = $this->resolveRelatedFileNumber($fileNo);
 
-                if ($fnRow && !empty($fnRow->related_fileno)) {
-                    $data['related_file_number'] = $fnRow->related_fileno;
+                if ($related !== '') {
+                    $data['related_file_number'] = $related;
                 }
             }
 
@@ -593,6 +591,19 @@ class CommissioningSheetController extends Controller
             $data['passport_image'] = $this->resolveCommissioningPassport($fileNo)
                 ?? $this->resolveCommissioningPassport((string) ($data['related_file_number'] ?? ''));
 
+            // 7. Both quoted numbers print with their KANGIS/land counterpart, e.g.
+            //    "COM-2005-78 (KNML 74)" — a KANGIS number is an alias of a land file,
+            //    so the reader expects the pair whichever of the two was recorded.
+            //    Done last, so the raw numbers above still drive the lookups.
+            //    ST keeps its own two-line treatment and is left alone.
+            $pairs = app(KangisLandPairService::class);
+            if (!empty($data['old_file_number'])) {
+                $data['old_file_number'] = $pairs->formatList($data['old_file_number']);
+            }
+            if (!empty($data['related_file_number']) && stripos($fileNo, 'ST-') !== 0) {
+                $data['related_file_number'] = $pairs->formatList($data['related_file_number']);
+            }
+
             return view('commissioning_sheet.pdf', compact('data'));
 
         } catch (\Exception $e) {
@@ -621,6 +632,108 @@ class CommissioningSheetController extends Controller
             'success' => (bool) $image,
             'image'   => $image,
         ]);
+    }
+
+    /**
+     * The other file numbers a commissioning sheet quotes: the old (duplicated) number a
+     * Re-Issuance replaces, and the related file the record was raised from.
+     *
+     * Both come back print-ready — paired with their KANGIS/land counterpart, e.g.
+     * "COM-2005-78 (KNML 74)". The client-side PDF builder (Generate File Number /
+     * Commission modals) has no DB access and asks here instead.
+     */
+    public function fileLinks(Request $request)
+    {
+        $fileNumber = trim((string) $request->query('file_number', ''));
+
+        if ($fileNumber === '') {
+            return response()->json([
+                'success'             => false,
+                'old_file_number'     => '',
+                'related_file_number' => '',
+            ], 200);
+        }
+
+        $pairs = app(KangisLandPairService::class);
+        $old = '';
+        $related = '';
+
+        try {
+            // The old (duplicated) number lives on mls_file_no; the column post-dates
+            // some deployments, so it is checked before it is read.
+            if (Schema::connection('sqlsrv')->hasColumn('mls_file_no', 'old_fileno')) {
+                $oldRow = DB::connection('sqlsrv')
+                    ->table('mls_file_no')
+                    ->where('full_file_number', $fileNumber)
+                    ->select('old_fileno')
+                    ->first();
+
+                $candidate = trim((string) ($oldRow->old_fileno ?? ''));
+                // An entry equal to the file's own number is not a previous number.
+                if ($candidate !== '' && strcasecmp($candidate, $fileNumber) !== 0) {
+                    $old = $pairs->formatList($candidate);
+                }
+            }
+
+            $relatedRaw = $this->resolveRelatedFileNumber($fileNumber);
+            if ($relatedRaw !== '') {
+                $related = $pairs->formatList($relatedRaw);
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('Commissioning sheet file links lookup failed: ' . $e->getMessage());
+        }
+
+        return response()->json([
+            'success'             => true,
+            'old_file_number'     => $old,
+            'related_file_number' => $related,
+        ]);
+    }
+
+    /**
+     * The file a record was raised from, as stored (a JSON array, a comma list or a
+     * bare number) — empty when it has none.
+     *
+     * Two places hold it: fileNumber.related_fileno, written only when someone types the
+     * number into the Edit modal, and the file's own file_indexings row, written at
+     * creation for a file raised from another (a subdivision child, a conversion).
+     * Without the second, a whole batch of subdivided files prints with no related file.
+     */
+    private function resolveRelatedFileNumber(string $fileNumber): string
+    {
+        $fileNumber = trim($fileNumber);
+        if ($fileNumber === '') {
+            return '';
+        }
+
+        $fnRow = DB::connection('sqlsrv')
+            ->table('fileNumber')
+            ->where('mlsfNo', $fileNumber)
+            ->select('related_fileno')
+            ->first();
+
+        $related = trim((string) ($fnRow->related_fileno ?? ''));
+        if ($related !== '') {
+            return $related;
+        }
+
+        $isKangis = app(KangisLandPairService::class)->isKangisFormat($fileNumber);
+
+        $ownIndexing = DB::connection('sqlsrv')
+            ->table('file_indexings')
+            ->where('file_number', $fileNumber)
+            ->whereNull('deleted_at')
+            // A KANGIS-registry row is the alias of some land file, not this file's own
+            // record; its back-link is not a related file. Only skipped when the sheet is
+            // for a land file, since a KANGIS number's own row IS that row.
+            ->when(!$isKangis, function ($q) {
+                $q->where(function ($w) {
+                    $w->whereNull('registry')->orWhere('registry', '!=', 'KANGIS');
+                });
+            })
+            ->value('related_fileno');
+
+        return trim((string) $ownIndexing);
     }
 
     /**

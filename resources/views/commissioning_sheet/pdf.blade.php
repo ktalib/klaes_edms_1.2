@@ -251,6 +251,12 @@
             text-align: left;
         }
 
+        /* The Related/Old FileNo label is the longest on the sheet; it is set a little
+           smaller so it still fits the 52mm label column without wrapping. */
+        .label--wide {
+            font-size: 3.6mm;
+        }
+
         .value-line {
             border-bottom: 0.3mm solid #444444;
             min-height: 7mm;
@@ -431,13 +437,13 @@
                      rather than printing an empty rule. --}}
                 @if(!empty($data['old_file_number']))
                 <div class="row">
-                    <div class="label">Old FileNo:</div>
+                    <div class="label label--wide">Related FileNo/Old FileNo:</div>
                     <div class="value-line">{{ $data['old_file_number'] }}</div>
                 </div>
                 @endif
                 @if(!$isSt && !empty($data['related_file_number']))
                 <div class="row">
-                    <div class="label">Related File No:</div>
+                    <div class="label label--wide">Related FileNo/Old FileNo:</div>
                     <div class="value-line">{{ $data['related_file_number'] }}</div>
                 </div>
                 @endif

@@ -1130,6 +1130,8 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'commissioning-sheet'
     // Passport photograph for a commissioned file, as a data URI (used by the client-side
     // PDF builder). Declared before /{id} so the literal segment is not read as an id.
     Route::get('/passport-photo', [App\Http\Controllers\CommissioningSheetController::class, 'passportPhoto'])->name('commissioning-sheet.passport-photo');
+    // Old / related file numbers for a file, paired with their KANGIS counterpart.
+    Route::get('/file-links', [App\Http\Controllers\CommissioningSheetController::class, 'fileLinks'])->name('commissioning-sheet.file-links');
     Route::get('/print/{id}', [App\Http\Controllers\CommissioningSheetController::class, 'print'])->name('commissioning-sheet.print');
     Route::get('/{id}', [App\Http\Controllers\CommissioningSheetController::class, 'show'])->name('commissioning-sheet.show');
     Route::put('/{id}', [App\Http\Controllers\CommissioningSheetController::class, 'update'])->name('commissioning-sheet.update');

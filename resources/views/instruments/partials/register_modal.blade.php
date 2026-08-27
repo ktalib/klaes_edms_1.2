@@ -208,12 +208,15 @@
                     numbering, the shared vault, isCofoInstrument() — matches on the
                     "Certificate of Occupancy" substring, so all three keep working.
 
-                    "Certificate of Occupancy Type" (Direct Allocation /
-                    Recertification / Conversion) applies to the REGULAR variant
-                    only. SLTR and ST files are titled through their own programmes
-                    and have no such subtype, so the dropdown is hidden — and
-                    cleared, so a value picked on Regular can never ride along with
-                    an SLTR or ST capture.
+                    "Certificate of Occupancy Type" is per-variant. Regular offers the
+                    canonical issuing-authority list shared with File Indexing and the
+                    property card (Land CofO / KANGIS CofO - Old / KANGIS CofO - New,
+                    i.e. partials/cofo_type_options minus the SLTR/ST entries, which are
+                    the other two variants here); SLTR and ST offer New / Old C of O.
+                    The list is rebuilt on every variant switch and the value cleared
+                    when the new variant does not offer it, so a type picked on Regular
+                    can never ride along with an SLTR or ST capture. It posts as
+                    cofo_type into instrument_capture.cofo_type and CofO_staging.cofo_type.
                 --}}
                 {{-- Tailwind 2 does not ship a focus-visible variant, so the keyboard
                      focus ring is plain CSS. A mouse click leaves no ring; tabbing does. --}}
@@ -311,9 +314,9 @@
                             <select id="cofoType" name="cofo_type"
                                 class="w-full max-w-sm px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-1 focus:ring-gray-400 outline-none">
                                 <option value="">Select C of O Type</option>
-                                <option value="Direct Allocation">Direct Allocation</option>
-                                <option value="Recertification">Recertification</option>
-                                <option value="Conversion">Conversion</option>
+                                <option value="Land CofO">Land CofO</option>
+                                <option value="KANGIS CofO - Old">KANGIS CofO - Old</option>
+                                <option value="KANGIS CofO - New">KANGIS CofO - New</option>
                             </select>
                         </div>
                     </div>

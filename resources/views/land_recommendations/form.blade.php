@@ -500,22 +500,30 @@
                                          time, and it asks before overwriting cells that
                                          already hold a different value. Child File No has
                                          none: a file number is unique by definition. --}}
-                                    <th id="batch-col-file-no" class="px-2 py-3 align-bottom w-[126px] bg-amber-50/70 text-amber-900">Child File No</th>
+                                    {{-- Every label below is a block of the same fixed height,
+                                         two lines at this size. The cells are bottom-aligned,
+                                         so without it a label that wraps ("Applicant Address")
+                                         is taller than its neighbours and pushes its own Apply
+                                         button a line higher than the rest — the buttons only
+                                         sit on one level if the blocks beneath them do. --}}
+                                    <th id="batch-col-file-no" class="px-2 py-3 align-bottom w-[126px] bg-amber-50/70 text-amber-900">
+                                        <span class="block min-h-[26px]">Child File No</span>
+                                    </th>
                                     <th class="px-2 py-3 align-bottom w-[76px] bg-amber-50/70 text-amber-900">
                                         @include('land_recommendations.partials.batch_col_apply', ['f' => 'plot_number', 'label' => 'Plot No'])
-                                        Plot No
+                                        <span class="block min-h-[26px]">Plot No</span>
                                     </th>
                                     <th class="px-2 py-3 align-bottom w-[168px] bg-amber-50/70 text-amber-900">
                                         @include('land_recommendations.partials.batch_col_apply', ['f' => 'applicant_address', 'label' => 'Applicant Address'])
-                                        Applicant Address
+                                        <span class="block min-h-[26px]">Applicant Address</span>
                                     </th>
                                     <th class="px-2 py-3 align-bottom w-[116px] bg-amber-50/70 text-amber-900">
                                         @include('land_recommendations.partials.batch_col_apply', ['f' => 'land_use_id', 'label' => 'Land Use'])
-                                        Land Use
+                                        <span class="block min-h-[26px]">Land Use</span>
                                     </th>
                                     <th class="px-2 py-3 align-bottom w-[112px] bg-amber-50/70 text-amber-900">
                                         @include('land_recommendations.partials.batch_col_apply', ['f' => 'purpose_id', 'label' => 'Purpose'])
-                                        Purpose
+                                        <span class="block min-h-[26px]">Purpose</span>
                                     </th>
 
                                     {{-- Right bank: copied. The two sky columns are copied only

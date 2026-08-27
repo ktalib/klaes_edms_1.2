@@ -266,26 +266,34 @@
         sourceInput.value = '';
         sourceInput.dataset.fileNo = key.toUpperCase();
         setCommissioningOldFileNumber('');
+        setCommissioningRelatedFileNumber('');
         updateCommissioningFileType();
         if (!key) return;
+
+        const stillOnSameFile = () => {
+            const input = document.getElementById('cs_file_number');
+            return input && input.value.trim().toUpperCase() === sourceInput.dataset.fileNo;
+        };
 
         try {
             const response = await fetch(`{{ route("mls-fileno.show", ":id") }}`.replace(':id', encodeURIComponent(key)));
             const payload = await response.json();
             const record = (payload && payload.success && payload.data) ? payload.data : payload;
-            const input = document.getElementById('cs_file_number');
-            const stillSameFile = input && input.value.trim().toUpperCase() === sourceInput.dataset.fileNo;
-            if (record && stillSameFile) {
-                if (record.source) {
-                    sourceInput.value = String(record.source).trim();
-                    updateCommissioningFileType();
-                }
-                // A Re-Issuance replaces an earlier (duplicated) number; the sheet
-                // names it under the new one. Every other file leaves the line out.
-                setCommissioningOldFileNumber(record.old_fileno || record.old_file_number || '', key);
+            if (record && record.source && stillOnSameFile()) {
+                sourceInput.value = String(record.source).trim();
+                updateCommissioningFileType();
             }
         } catch (e) {
             console.warn('Could not resolve file source for commissioning sheet', e);
+        }
+
+        // The old (duplicated) number a Re-Issuance replaces and the file this one was
+        // raised from. Both come back paired with their KANGIS/land counterpart, and
+        // both leave their row out when there is none.
+        const links = await fetchCommissioningFileLinks(key);
+        if (stillOnSameFile()) {
+            setCommissioningOldFileNumber(links.old_file_number, key);
+            setCommissioningRelatedFileNumber(links.related_file_number, key);
         }
     }
 
@@ -304,6 +312,23 @@
 
         input.value = old;
         if (wrap) wrap.classList.toggle('hidden', old === '');
+    }
+
+    // Same treatment for the Related File No line: a file with no related file keeps
+    // the row off the sheet entirely.
+    function setCommissioningRelatedFileNumber(value, fileNumber = '') {
+        const input = document.getElementById('cs_related_file_number');
+        const wrap = document.getElementById('cs_related_file_number_wrap');
+        if (!input) return;
+
+        let related = String(value || '').trim();
+        // A file is not related to itself.
+        if (related && fileNumber && related.toUpperCase() === String(fileNumber).trim().toUpperCase()) {
+            related = '';
+        }
+
+        input.value = related;
+        if (wrap) wrap.classList.toggle('hidden', related === '');
     }
 
     // Reflect the detected File Type as a badge next to the File No input in the commissioning modal.
@@ -7575,8 +7600,9 @@
         document.getElementById('dataLoadStatus').classList.add('hidden');
         // Reset form
         document.getElementById('commissioningSheetForm').reset();
-        // Hide the Old File No line again (form.reset() clears the value, not the row)
+        // Hide the Old / Related File No lines again (form.reset() clears the value, not the row)
         setCommissioningOldFileNumber('');
+        setCommissioningRelatedFileNumber('');
         // Set today's date
         document.getElementById('cs_date_created').value = new Date().toISOString().split('T')[0];
     }
@@ -7747,24 +7773,42 @@
     // The old (duplicated) number a Re-Issuance replaces. Reprint paths build their
     // FormData from an API row and may not carry it, so it is looked up here rather
     // than left off the sheet.
-    async function fetchCommissioningOldFileNumber(fileNumber) {
+    async function fetchCommissioningFileLinks(fileNumber) {
+        const empty = { old_file_number: '', related_file_number: '' };
         const number = String(fileNumber || '').trim();
-        if (!number) return '';
+        if (!number) return empty;
 
         try {
-            const res = await fetch(`{{ route("mls-fileno.show", ":id") }}`.replace(':id', encodeURIComponent(number)), {
+            const res = await fetch('{{ route('commissioning-sheet.file-links') }}?file_number=' + encodeURIComponent(number), {
                 headers: { 'Accept': 'application/json' }
             });
-            if (!res.ok) return '';
+            if (!res.ok) return empty;
             const payload = await res.json();
-            const record = (payload && payload.success && payload.data) ? payload.data : payload;
-            const old = String((record && (record.old_fileno || record.old_file_number)) || '').trim();
-            // An entry equal to the file's own number is not a previous number.
-            return old.toUpperCase() === number.toUpperCase() ? '' : old;
+            return {
+                old_file_number: String(payload.old_file_number || '').trim(),
+                related_file_number: String(payload.related_file_number || '').trim()
+            };
         } catch (e) {
-            console.warn('Old file number lookup failed', e);
-            return '';
+            console.warn('File links lookup failed', e);
+            return empty;
         }
+    }
+
+    // Draws a body label, shrinking it just enough to stay clear of the value column.
+    // "Related FileNo/Old FileNo:" is longer than the column was drawn for; every other
+    // label keeps the normal 10pt.
+    function drawCommissioningLabel(doc, label, x, y, valueStartX) {
+        const available = valueStartX - x - 2;
+        doc.setFont('helvetica', 'bold');
+
+        let size = 10;
+        while (size > 7 && doc.getTextWidth(label) > available) {
+            size -= 0.5;
+            doc.setFontSize(size);
+        }
+
+        doc.text(label, x, y);
+        doc.setFontSize(10);
     }
 
     // Prints the photograph in the right margin beside the QR code. Files commissioned
@@ -7868,15 +7912,20 @@
             // Append the record's source after the File No, e.g. "CON-COM-2026-429 (Conversion)".
             const fileTypeLabel = getCommissioningSourceLabel(formData.get('source'), fileNumberVal);
             const fileNoDisplay = fileTypeLabel ? `${fileNumberVal} (${fileTypeLabel})` : fileNumberVal;
-            // Only a Re-Issuance carries one; the row is dropped otherwise. Reprints
-            // build their FormData from an API row, so fall back to a lookup.
+            // Only a Re-Issuance carries an old number, and not every file has a related
+            // one; each row is dropped when its number is absent. Reprints build their
+            // FormData from an API row, so fall back to a lookup.
             let oldFileNoVal = String(formData.get('old_file_number') || '').trim();
-            if (!oldFileNoVal) {
-                oldFileNoVal = await fetchCommissioningOldFileNumber(fileNumberVal);
+            let relatedFileNoVal = String(formData.get('related_file_number_display') || '').trim();
+            if (!oldFileNoVal || !relatedFileNoVal) {
+                const links = await fetchCommissioningFileLinks(fileNumberVal);
+                oldFileNoVal = oldFileNoVal || links.old_file_number;
+                relatedFileNoVal = relatedFileNoVal || links.related_file_number;
             }
             const fields = [
                 ['File No/(File Type):', fileNoDisplay],
-                ...(oldFileNoVal ? [['Old FileNo:', oldFileNoVal]] : []),
+                ...(oldFileNoVal ? [['Related FileNo/Old FileNo:', oldFileNoVal]] : []),
+                ...(relatedFileNoVal ? [['Related FileNo/Old FileNo:', relatedFileNoVal]] : []),
                 ['File Name:', formData.get('file_name')],
                 ['Plot No:', formData.get('plot_number')],
                 ['TP No:', formData.get('tp_number')],
@@ -7891,8 +7940,7 @@
             const reasonLineHeight = 5;     // vertical spacing between wrapped reason lines (mm)
 
             fields.forEach(([label, value]) => {
-                doc.setFont("helvetica", "bold");
-                doc.text(label, 25, y);
+                drawCommissioningLabel(doc, label, 25, y, 72);
                 doc.setFont("helvetica", "normal");
 
                 const text = String(value || '');
@@ -8005,11 +8053,16 @@
                 // Append the record's source after the File No, e.g. "CON-COM-2026-429 (Conversion)".
                 const rowFileTypeLabel = getCommissioningSourceLabel(row.source, rowFileNo);
                 const rowFileNoDisplay = rowFileTypeLabel ? `${rowFileNo} (${rowFileTypeLabel})` : rowFileNo;
-                const rowOldFileNo = String(row.old_fileno || row.old_file_number || '').trim();
+                // Old and related numbers, each paired with its KANGIS/land counterpart.
+                // The batch rows carry neither, so both are looked up per record.
+                const rowLinks = await fetchCommissioningFileLinks(rowFileNo);
+                const rowOldFileNo = rowLinks.old_file_number || String(row.old_fileno || row.old_file_number || '').trim();
                 const hasRowOldFileNo = rowOldFileNo !== '' && rowOldFileNo.toUpperCase() !== String(rowFileNo).trim().toUpperCase();
+                const rowRelatedFileNo = rowLinks.related_file_number;
                 const fields = [
                     ['File No/(File Type):', rowFileNoDisplay],
-                    ...(hasRowOldFileNo ? [['Old FileNo:', rowOldFileNo]] : []),
+                    ...(hasRowOldFileNo ? [['Related FileNo/Old FileNo:', rowOldFileNo]] : []),
+                    ...(rowRelatedFileNo ? [['Related FileNo/Old FileNo:', rowRelatedFileNo]] : []),
                     ['File Name:', row.file_name || ''],
                     ['Plot No:', row.plot_no || 'N/A'],
                     ['TP No:', row.tp_no || 'N/A'],
@@ -8024,8 +8077,7 @@
                 const reasonLineHeight = 5;             // vertical spacing between wrapped reason lines (mm)
 
                 fields.forEach(([label, value]) => {
-                    doc.setFont('helvetica', 'bold');
-                    doc.text(label, leftMargin, y);
+                    drawCommissioningLabel(doc, label, leftMargin, y, textStartX);
                     doc.setFont('helvetica', 'normal');
 
                     const text = String(value || '');
