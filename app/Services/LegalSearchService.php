@@ -5827,34 +5827,24 @@ class LegalSearchService
             }
         };
 
-        // OP / TOT / RofO carry their operative date in transaction_date; every other event
-        // is keyed off its registration date. Mirrors getTransactionTimestamp() in
-        // resources/views/legal_search/js.blade.php — without this branch the printed slip
-        // dated those three off reg_date and could order them differently from the screen.
+        // Registration date FIRST for every event, without exception, falling back to the
+        // transaction date only when no registration date is recorded. Mirrors
+        // getTransactionTimestamp() in resources/views/legal_search/js.blade.php — the two
+        // must agree or the printed slip orders rows differently from the screen.
+        //
+        // OP / TOT(OP) / RofO were previously keyed off transaction_date instead, which put
+        // them out of sequence against neighbours sorted on their reg date.
         $getTransactionTimestamp = function (array $item) use ($parseTimelineDateValue, $canonicalTransactionType): ?int {
             $txType = $canonicalTransactionType($item['transaction_type'] ?? ($item['instrument_type'] ?? ''));
-            $transactionDateFirst = in_array(
-                LegalSearchTimelineWeights::classify($item, $txType),
-                [
-                    LegalSearchTimelineWeights::OCCUPANCY_PERMIT,
-                    LegalSearchTimelineWeights::TRANSFER_OF_TITLE_OP,
-                    LegalSearchTimelineWeights::RIGHT_OF_OCCUPANCY,
-                ],
-                true
-            );
-
             $regDate = ['date' => $item['reg_date'] ?? null, 'time' => $item['reg_time'] ?? null];
             $deedsDate = ['date' => $item['deeds_date'] ?? null, 'time' => $item['deeds_time'] ?? null];
             $txnDate = ['date' => $item['transaction_date'] ?? null, 'time' => $item['transaction_time'] ?? ($item['time'] ?? null)];
 
-            $candidates = $transactionDateFirst
-                ? [$txnDate, $deedsDate, $regDate]
-                // deeds_date BEFORE transaction_date: pra and CofO_staging have no literal
-                // reg_date column (the fetch selects NULL AS reg_date) and carry their
-                // registration date in deeds_date. With transaction_date ahead of it these
-                // two sources never reached their reg date at all and sorted on the
-                // transaction date instead — which is what this branch exists to avoid.
-                : [$regDate, $deedsDate, $txnDate];
+            // deeds_date BEFORE transaction_date: pra and CofO_staging have no literal
+            // reg_date column (the fetch selects NULL AS reg_date) and carry their
+            // registration date in deeds_date. Without it those two sources would fall
+            // straight through to transaction_date and never sort on a registration date.
+            $candidates = [$regDate, $deedsDate, $txnDate];
 
             $candidates = array_merge($candidates, [
                 ['date' => $item['cofo_date'] ?? null, 'time' => $item['time'] ?? null],
@@ -9632,30 +9622,19 @@ class LegalSearchService
             return \App\Support\LegalSearchTimelineWeights::weightFor($row, $txType);
         };
 
-        // OP / TOT / RofO carry their operative date in transaction_date; every other event —
-        // C of O, recertifications, other instruments — is keyed off its REGISTRATION date.
-        // Mirrors getTransactionTimestamp() in buildPrintReport() and js.blade.php. Without
-        // the split this block sorter re-ordered every lifecycle on transaction_date and
-        // silently undid the ordering those two had already agreed on.
-        $ts = function (array $r) use ($canonicalTransactionType): ?int {
-            $transactionDateFirst = in_array(
-                LegalSearchTimelineWeights::classify(
-                    $r,
-                    $canonicalTransactionType($r['transaction_type'] ?? ($r['instrument_type'] ?? ''))
-                ),
-                [
-                    LegalSearchTimelineWeights::OCCUPANCY_PERMIT,
-                    LegalSearchTimelineWeights::TRANSFER_OF_TITLE_OP,
-                    LegalSearchTimelineWeights::RIGHT_OF_OCCUPANCY,
-                ],
-                true
-            );
-
-            $candidates = $transactionDateFirst
-                ? [$r['transaction_date'] ?? null, $r['deeds_date'] ?? null, $r['reg_date'] ?? null]
-                // reg_date, then deeds_date (the registration date on pra/CofO_staging rows,
-                // which have no literal reg_date column), and only then transaction_date.
-                : [$r['reg_date'] ?? null, $r['deeds_date'] ?? null, $r['transaction_date'] ?? null];
+        // Every event is keyed off its REGISTRATION date, falling back to the transaction
+        // date only when none is recorded. Mirrors getTransactionTimestamp() in
+        // buildPrintReport() and js.blade.php; if these three drift apart the block sorter
+        // silently re-orders lifecycles the other two had already agreed on.
+        $ts = function (array $r): ?int {
+            // Registration date FIRST for every event, without exception; deeds_date next
+            // (the registration date on pra/CofO_staging rows, which have no literal
+            // reg_date column); transaction_date only as a fallback.
+            //
+            // OP / TOT(OP) / RofO were previously keyed off transaction_date here, which
+            // ordered them differently from every other row. Mirrors getTransactionTimestamp()
+            // in js.blade.php — the two must agree or screen and slip disagree.
+            $candidates = [$r['reg_date'] ?? null, $r['deeds_date'] ?? null, $r['transaction_date'] ?? null];
 
             $candidates = array_merge($candidates, [
                 $r['cofo_date'] ?? null,

@@ -177,7 +177,7 @@
                                             </button>
 
                                             <div data-ols-menu-panel
-                                                 class="absolute right-0 z-30 mt-1 hidden w-56 origin-top-right overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+                                                 class="fixed z-50 hidden w-56 origin-top-right overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
                                                 {{-- Preview opens the REVIEW page, not the PDF. An
                                                      online requester never sends an edit request, so the
                                                      approver has to be able to spot and fix a bad result
@@ -337,25 +337,76 @@
 // ---- Actions menu -------------------------------------------------------
 // One open menu at a time, closed by an outside click or Escape. Delegated, so
 // it keeps working if the table is ever re-rendered.
+//
+// The panel is position:fixed and placed by script rather than absolutely
+// positioned inside the cell: the table sits in an overflow-x-auto wrapper
+// inside an overflow-hidden card, so an absolute panel gets clipped to the
+// table body and the last rows' menus are unusable.
+function olsCloseMenus() {
+    document.querySelectorAll('[data-ols-menu-panel]').forEach(function (panel) {
+        panel.classList.add('hidden');
+        panel.removeAttribute('data-ols-menu-open');
+    });
+}
+
+function olsPlaceMenu(panel, trigger) {
+    var rect = trigger.getBoundingClientRect();
+    var gap = 4;
+
+    // Measure while visible; the panel is display:none until now.
+    panel.style.top = '0px';
+    panel.style.left = '0px';
+    var height = panel.offsetHeight;
+    var width = panel.offsetWidth;
+
+    var top = rect.bottom + gap;
+    if (top + height > window.innerHeight - 8 && rect.top - gap - height > 8) {
+        top = rect.top - gap - height;   // flip above when there is no room below
+    }
+    top = Math.max(8, Math.min(top, window.innerHeight - height - 8));
+
+    var left = rect.right - width;       // right-aligned with the trigger
+    left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+
+    panel.style.top = top + 'px';
+    panel.style.left = left + 'px';
+}
+
 document.addEventListener('click', function (event) {
     var trigger = event.target.closest('[data-ols-menu-trigger]');
 
-    document.querySelectorAll('[data-ols-menu-panel]').forEach(function (panel) {
-        var isMine = trigger && panel.parentElement === trigger.parentElement;
-        if (!isMine) panel.classList.add('hidden');
-    });
+    if (!trigger) {
+        // A click inside an open panel must not close it before the link or
+        // button it landed on has run.
+        if (!event.target.closest('[data-ols-menu-panel]')) olsCloseMenus();
+        return;
+    }
 
-    if (!trigger) return;
     event.preventDefault();
     var panel = trigger.parentElement.querySelector('[data-ols-menu-panel]');
-    if (panel) panel.classList.toggle('hidden');
+    var wasOpen = panel && !panel.classList.contains('hidden');
+    olsCloseMenus();
+    if (!panel || wasOpen) return;
+
+    panel.classList.remove('hidden');
+    panel.setAttribute('data-ols-menu-open', '1');
+    olsPlaceMenu(panel, trigger);
 });
+
+// Fixed panels do not travel with the page, so follow the trigger on scroll
+// and resize instead of leaving the menu stranded.
+function olsRepositionOpenMenu() {
+    var panel = document.querySelector('[data-ols-menu-panel][data-ols-menu-open]');
+    if (!panel) return;
+    var trigger = panel.parentElement.querySelector('[data-ols-menu-trigger]');
+    if (trigger) olsPlaceMenu(panel, trigger);
+}
+window.addEventListener('scroll', olsRepositionOpenMenu, true);
+window.addEventListener('resize', olsRepositionOpenMenu);
 
 document.addEventListener('keydown', function (event) {
     if (event.key !== 'Escape') return;
-    document.querySelectorAll('[data-ols-menu-panel]').forEach(function (panel) {
-        panel.classList.add('hidden');
-    });
+    olsCloseMenus();
 });
 
     const CSRF = @json(csrf_token());

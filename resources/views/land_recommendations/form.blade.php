@@ -5320,6 +5320,21 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
             }
         @endif
+
+        {{-- Set by the GET guard on /land-recommendations/batch: someone reached the
+             batch save endpoint by GET (a refresh of the page a save posted to, or
+             the URL out of history) and was sent back here. Not an error — the work
+             is in the draft — so it is said rather than alarmed about. --}}
+        @if(session('warning'))
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Batch capture reopened',
+                    text: @json(session('warning')),
+                    confirmButtonColor: '#2563eb',
+                });
+            }
+        @endif
     });
 </script>
 @endpush

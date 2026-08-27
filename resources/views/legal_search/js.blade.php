@@ -3413,33 +3413,27 @@ const executeSearchAjax = (filters, searchData) => {
   // C of O, recertifications, other instruments — is keyed off its registration date.
   // Keyed off the event class rather than the weight: the weight scale has no stable
   // "default" number to test against, and a null (floating) weight is not comparable.
-  const TRANSACTION_DATE_FIRST_EVENTS = new Set([
-    'OCCUPANCY_PERMIT', 'TRANSFER_OF_TITLE_OP', 'RIGHT_OF_OCCUPANCY',
-  ]);
-
   const getTransactionTimestamp = (item) => {
-    const candidates = TRANSACTION_DATE_FIRST_EVENTS.has(classifyTimelineEvent(item))
-      ? [
-        item.transaction_date,
-        item.deeds_date,
-        item.reg_date,
-        item.cofo_date,
-        item.certificateDate,
-        item.approval_date,
-        item.date,
-      ]
-      : [
-        // deeds_date BEFORE transaction_date: pra and CofO_staging have no literal reg_date
-        // column and carry their registration date in deeds_date, so with transaction_date
-        // ahead of it those two sources never sorted on their reg date at all.
-        item.reg_date,
-        item.deeds_date,
-        item.transaction_date,
-        item.cofo_date,
-        item.certificateDate,
-        item.approval_date,
-        item.date,
-      ];
+    // Registration date FIRST, for every event without exception, falling back to the
+    // transaction date only when no registration date is recorded.
+    //
+    // Occupancy Permits, Transfers of Title (OP) and Rights of Occupancy used to be
+    // exempted and sorted on transaction_date instead, which put them out of sequence
+    // against neighbours sorted on their reg date. The register is what dates a dealing,
+    // so one rule now covers them all.
+    //
+    // deeds_date sits second because pra and CofO_staging have no literal reg_date column
+    // and carry their registration date there — without it those two sources would fall
+    // straight through to transaction_date and never sort on a registration date at all.
+    const candidates = [
+      item.reg_date,
+      item.deeds_date,
+      item.transaction_date,
+      item.cofo_date,
+      item.certificateDate,
+      item.approval_date,
+      item.date,
+    ];
 
     for (const candidate of candidates) {
       const ts = parseTimelineDateValue(candidate);

@@ -117,6 +117,10 @@
           <i data-lucide="user-plus" class="h-3.5 w-3.5 text-cyan-400"></i>
           <span>Onboarding Requests</span>
         </a>
+        <a href="{{ route('system-admin.phs.edit-requests') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('system-admin.phs.edit-requests*') ? 'active' : '' }}">
+          <i data-lucide="file-pen-line" class="h-3.5 w-3.5 text-cyan-400"></i>
+          <span>Edit Requests</span>
+        </a>
         <a href="{{ route('system-admin.phs.pending-invoices') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('system-admin.phs.pending-invoices') ? 'active' : '' }}">
           <i data-lucide="file-clock" class="h-3.5 w-3.5 text-cyan-400"></i>
           <span>Pending Invoice</span>

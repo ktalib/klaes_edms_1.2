@@ -1224,15 +1224,32 @@ Route::middleware(['auth'])->group(function () {
     // Above the resource route, or /batch/{id}/edit reads as a record id.
     Route::get('land-recommendations/batch/{batchId}/edit', [\App\Http\Controllers\LandRecommendationController::class, 'editBatch'])->name('land-recommendations.batch-edit');
     Route::put('land-recommendations/batch/{batchId}', [\App\Http\Controllers\LandRecommendationController::class, 'updateBatch'])->name('land-recommendations.batch-update');
-    Route::resource('land-recommendations', \App\Http\Controllers\LandRecommendationController::class);
-    Route::post('land-recommendations/{id}/log-print', [\App\Http\Controllers\LandRecommendationController::class, 'logPrint'])->name('land-recommendations.log-print');
-    Route::post('land-recommendations/{id}/approve', [\App\Http\Controllers\LandRecommendationController::class, 'approve'])->name('land-recommendations.approve');
+    // /land-recommendations/batch is a POST endpoint with no GET side. Anything
+    // that arrives here by GET — a refresh of the page the save posted to, the URL
+    // typed or opened from history, a 30x that turned the POST into a GET — used to
+    // fall through to the resource route below and be read as a record whose id is
+    // the word "batch", which SQL Server then failed to cast to bigint: a raw
+    // "Error converting data type nvarchar to bigint" in the user's face. Send them
+    // back to the capture screen instead; the draft they were keying is still there
+    // to resume.
+    Route::get('land-recommendations/batch', function () {
+        return redirect()->route('land-recommendations.create')
+            ->with('warning', 'That address only accepts a batch being saved, so the page could not be reopened from it. '
+                . 'Switch Batch Mode on and press Resume to pick your draft up where it left off — nothing you keyed is lost.');
+    })->name('land-recommendations.batch-get');
+    // Every id below is a bigint. Without this, any non-numeric segment reaching
+    // {id} is passed to the query as-is and comes back as an SQL cast error rather
+    // than a 404 — the same trap the GET above works around.
+    Route::resource('land-recommendations', \App\Http\Controllers\LandRecommendationController::class)
+        ->whereNumber('land_recommendation');
+    Route::post('land-recommendations/{id}/log-print', [\App\Http\Controllers\LandRecommendationController::class, 'logPrint'])->name('land-recommendations.log-print')->whereNumber('id');
+    Route::post('land-recommendations/{id}/approve', [\App\Http\Controllers\LandRecommendationController::class, 'approve'])->name('land-recommendations.approve')->whereNumber('id');
     // The proofing copy: the same recommendation as a black & white draft, with the
     // coat of arms, QR, security serial and signature blocks off it and no
     // acknowledgement sheet behind it. It mints no serial and logs no print — see
     // printWhiteCopy().
-    Route::get('land-recommendations/{id}/white-copy', [\App\Http\Controllers\LandRecommendationController::class, 'printWhiteCopy'])->name('land-recommendations.white-copy');
-    Route::get('land-recommendations/{id}/print', [\App\Http\Controllers\LandRecommendationController::class, 'print'])->name('land-recommendations.print');
+    Route::get('land-recommendations/{id}/white-copy', [\App\Http\Controllers\LandRecommendationController::class, 'printWhiteCopy'])->name('land-recommendations.white-copy')->whereNumber('id');
+    Route::get('land-recommendations/{id}/print', [\App\Http\Controllers\LandRecommendationController::class, 'print'])->name('land-recommendations.print')->whereNumber('id');
 
     Route::prefix('print-manager')->name('print-manager.')->group(function () {
         Route::post('/log', [PrintManagerController::class, 'log'])->name('log');
