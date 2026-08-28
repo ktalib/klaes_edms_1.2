@@ -1879,6 +1879,13 @@
 </style>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
+{{-- The capture screen's own account of itself — batch mode, mother/children
+     loads, draft saves and restores, submits, script errors, unloads. Posted to
+     /land-recommendations/client-log and written to
+     storage/logs/land_recommendation.log next to the server's own entries, so one
+     capture reads as one timeline. It only observes; nothing here changes how the
+     form saves. --}}
+<script src="{{ asset('js/land-recommendation-diagnostics.js') }}?v={{ filemtime(public_path('js/land-recommendation-diagnostics.js')) }}"></script>
 <script src="{{ asset('js/land_recommendations.js') }}?v={{ time() + 1 }}"></script>
 <script>
 // ── Old File Number capture for derived application types ──────────────────

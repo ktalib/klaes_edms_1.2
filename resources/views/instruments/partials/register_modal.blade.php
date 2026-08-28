@@ -507,7 +507,12 @@
                                 value="{{ isset($record->instrument_date) ? \Carbon\Carbon::parse($record->instrument_date)->format('Y-m-d') : '' }}">
                         </div>
 
-                        <!-- OP Registration Particulars (Occupancy Permit) -->
+                        {{-- OP Registration Particulars. Rendered ONLY on the side-capture pages
+                             (OSS Applications and Land/MLS), where an existing paper permit is
+                             being recorded and its Serial / Page / Volume are hand-typed. The
+                             dedicated capture page registers the instrument, so the vault
+                             allocates the particulars there and these inputs must not show. --}}
+                        @if (!($showCaptureBanner ?? false))
                         <div id="op-registration-details" class="mt-4 hidden">
                             <p class="text-xs font-semibold text-gray-800 mb-2">Registration Details</p>
                             <div class="grid grid-cols-3 gap-3">
@@ -554,6 +559,7 @@
                                 </div>
                             </div>
                         </div>
+                        @endif
                     </div>
 
                     <!-- Instrument Info Display Section -->

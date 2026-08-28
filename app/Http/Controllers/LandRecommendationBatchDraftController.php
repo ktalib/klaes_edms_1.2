@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\LandRecommendationBatchDraft;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
+use App\Support\LandRecommendationLog as RecLog;
 
 /**
  * Autosave endpoints for the Plot Subdivision batch capture.
@@ -20,6 +20,13 @@ use Illuminate\Support\Facades\Log;
  * (ownership, size, JSON shape); the recommendation rules stay in
  * LandRecommendationController::storeBatch(), which is still the only path that
  * writes a recommendation.
+ *
+ * Every refusal, failure and row loss here is written to
+ * storage/logs/land_recommendation.log through {@see \App\Support\LandRecommendationLog},
+ * alongside the capture form's own entries — a draft that "was saving" and a batch
+ * that "was never saved" are the same story, and it reads as one timeline. Successful
+ * autosaves are deliberately not logged one by one: only the first save of a draft
+ * key is recorded, because the entries that matter after it carry the same key.
  */
 class LandRecommendationBatchDraftController extends Controller
 {
@@ -69,6 +76,12 @@ class LandRecommendationBatchDraftController extends Controller
         ]);
 
         if (strlen($validated['payload']) > self::MAX_PAYLOAD_BYTES) {
+            RecLog::warning('Draft autosave refused — payload too large', [
+                'draft_key' => $validated['draft_key'],
+                'bytes'     => strlen($validated['payload']),
+                'limit'     => self::MAX_PAYLOAD_BYTES,
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'This draft is too large to autosave.',
@@ -77,6 +90,11 @@ class LandRecommendationBatchDraftController extends Controller
 
         $payload = json_decode($validated['payload'], true);
         if (!is_array($payload)) {
+            RecLog::warning('Draft autosave refused — payload was not valid JSON', [
+                'draft_key' => $validated['draft_key'],
+                'bytes'     => strlen($validated['payload']),
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Draft payload was not valid JSON.',
@@ -92,6 +110,11 @@ class LandRecommendationBatchDraftController extends Controller
         // rather than quietly starting a second row on the same key (the column
         // is unique, so that would fail anyway — just less clearly).
         if ($draft && $draft->user_id && (int) $draft->user_id !== (int) Auth::id()) {
+            RecLog::warning('Draft autosave refused — draft belongs to another user', [
+                'draft_key' => $validated['draft_key'],
+                'owner_id'  => $draft->user_id,
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'This draft belongs to another user.',
@@ -102,6 +125,11 @@ class LandRecommendationBatchDraftController extends Controller
         // the batch was saved (an in-flight request that lost the race with the
         // redirect), that late write must not resurrect it into the resume list.
         if ($draft && $draft->status !== LandRecommendationBatchDraft::STATUS_OPEN) {
+            RecLog::info('Draft autosave ignored — already ' . $draft->status, [
+                'draft_key' => $validated['draft_key'],
+                'status'    => $draft->status,
+            ]);
+
             return response()->json([
                 'success'  => true,
                 'ignored'  => true,
@@ -135,11 +163,27 @@ class LandRecommendationBatchDraftController extends Controller
             $after  = count($payload['children'] ?? []);
 
             if ($after < $before) {
+                // The one event on this screen that means work disappeared without
+                // anyone asking for it. Logged at warning so it stands out in the
+                // file next to whatever the browser reported at the same moment.
+                RecLog::warning('Draft autosave lost rows — previous copy banked', [
+                    'draft_key'      => $validated['draft_key'],
+                    'mother_file_no' => $validated['mother_file_no'] ?? null,
+                    'children_before' => $before,
+                    'children_after'  => $after,
+                ]);
+
                 $attributes['payload_previous']        = $draft->payload;
                 $attributes['previous_children_total'] = $before;
                 $attributes['previous_saved_at']       = $draft->last_saved_at;
             }
         }
+
+        // Autosave fires every few seconds; logging each one would bury everything
+        // else in the file. Only the first save of a key is recorded — it dates the
+        // start of the capture, and the entries that matter after it (row loss,
+        // failures, the batch save that closes it) all carry the same draft_key.
+        $isFirstSave = $draft === null;
 
         try {
             $draft = LandRecommendationBatchDraft::updateOrCreate(
@@ -147,15 +191,29 @@ class LandRecommendationBatchDraftController extends Controller
                 $attributes
             );
         } catch (\Throwable $e) {
-            Log::error('Batch draft autosave failed', [
-                'draft_key' => $validated['draft_key'],
-                'error'     => $e->getMessage(),
+            RecLog::error('Draft autosave failed', [
+                'draft_key'      => $validated['draft_key'],
+                'mother_file_no' => $validated['mother_file_no'] ?? null,
+                'children_total' => $validated['children_total'] ?? null,
+                'exception'      => get_class($e),
+                'error'          => $e->getMessage(),
+                'at'             => $e->getFile() . ':' . $e->getLine(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Could not save the draft: ' . $e->getMessage(),
             ], 500);
+        }
+
+        if ($isFirstSave) {
+            RecLog::info('Draft opened', [
+                'draft_key'         => $draft->draft_key,
+                'application_type'  => $draft->application_type,
+                'mother_file_no'    => $draft->mother_file_no,
+                'children_total'    => $draft->children_total,
+                'children_selected' => $draft->children_selected,
+            ]);
         }
 
         return response()->json([
@@ -180,6 +238,16 @@ class LandRecommendationBatchDraftController extends Controller
         }
 
         $data = $draft->toClientArray(true);
+
+        // A restore repaints the whole table, so a capture that looks wrong
+        // afterwards has to be read against which copy was handed back.
+        RecLog::info('Draft restored', [
+            'draft_key'      => $draft->draft_key,
+            'mother_file_no' => $draft->mother_file_no,
+            'children_total' => $draft->children_total,
+            'previous'       => $request->boolean('previous'),
+            'last_saved_at'  => optional($draft->last_saved_at)->toDateTimeString(),
+        ]);
 
         // ?previous=1 asks for the copy banked before the last save that lost rows
         // — the way back from a restore or a reload that emptied the table.
@@ -214,6 +282,12 @@ class LandRecommendationBatchDraftController extends Controller
                 'message' => 'Draft not found.',
             ], 404);
         }
+
+        RecLog::info('Draft discarded', [
+            'draft_key'      => $draft->draft_key,
+            'mother_file_no' => $draft->mother_file_no,
+            'children_total' => $draft->children_total,
+        ]);
 
         $draft->status = LandRecommendationBatchDraft::STATUS_DISCARDED;
         $draft->save();

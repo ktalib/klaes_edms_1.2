@@ -85,6 +85,15 @@ Route::post('/legal-search/online/payment/verify', [\App\Http\Controllers\LegalS
 Route::get('/legal-search/online/auth/check', [\App\Http\Controllers\LegalSearchOnlineController::class, 'authCheck'])->name('legal_search.online.auth.check');
 Route::post('/legal-search/online/auth/pend', [\App\Http\Controllers\LegalSearchOnlineController::class, 'pendSearch'])->name('legal_search.online.auth.pend');
 
+// The Recommendation capture screen's own account of itself — batch mode changes,
+// rows loaded, draft saves and restores, submits, script errors, unloads. Outside
+// the auth group on purpose: a session that dropped part-way through a long batch
+// capture is one of the things this trace exists to prove, and an authenticated-only
+// endpoint would bounce exactly that beacon. See
+// LandRecommendationDiagnosticsController for what it will and will not accept.
+Route::post('land-recommendations/client-log', [\App\Http\Controllers\LandRecommendationDiagnosticsController::class, 'clientLog'])
+    ->name('land-recommendations.client-log');
+
 Route::middleware(['auth'])->group(function () {
 
     // Mortgage Table Routes
@@ -1231,6 +1240,15 @@ Route::middleware(['auth'])->group(function () {
     Route::get('land-recommendations/batch/{batchId}/children', [\App\Http\Controllers\LandRecommendationController::class, 'batchChildren'])->name('land-recommendations.batch-children');
     // Read-only register of everything captured in one batch.
     Route::get('land-recommendations/batch/{batchId}/records', [\App\Http\Controllers\LandRecommendationController::class, 'batchRecords'])->name('land-recommendations.batch-records');
+
+    // The mother's scanned recommendation. A subdivision's children inherit her
+    // grant rather than earning letters of their own, so they show this one
+    // document in place of a Print action. See
+    // LandRecommendationBatchDocumentController for why it hangs off the batch
+    // rather than off each child.
+    Route::post('land-recommendations/batch/{batchId}/document', [\App\Http\Controllers\LandRecommendationBatchDocumentController::class, 'store'])->name('land-recommendations.batch-document.store');
+    Route::get('land-recommendations/batch/{batchId}/document', [\App\Http\Controllers\LandRecommendationBatchDocumentController::class, 'show'])->name('land-recommendations.batch-document.show');
+    Route::delete('land-recommendations/batch/{batchId}/document', [\App\Http\Controllers\LandRecommendationBatchDocumentController::class, 'destroy'])->name('land-recommendations.batch-document.destroy');
     // A saved batch re-opened in the capture form, and the save that comes back.
     // Above the resource route, or /batch/{id}/edit reads as a record id.
     Route::get('land-recommendations/batch/{batchId}/edit', [\App\Http\Controllers\LandRecommendationController::class, 'editBatch'])->name('land-recommendations.batch-edit');

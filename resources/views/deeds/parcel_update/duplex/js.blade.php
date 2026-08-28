@@ -2991,6 +2991,37 @@
         const name = state.sitePlan.name || String(state.sitePlan.path || '').split('/').pop();
         const pdf  = /\.pdf$/i.test(name);
 
+        /**
+         * The drawing itself, not just its filename.
+         *
+         * A site plan is the one attachment whose CONTENT has to be checked — the wrong
+         * sheet uploaded under a plausible name is exactly the mistake this step exists
+         * to catch, and "duplex_10059_site_plan_1787896368.png" tells the officer
+         * nothing. An image renders inline; a PDF gets a native browser preview, which
+         * needs no library and no conversion.
+         *
+         * Both are click-through to the full-size view, and the frame is fixed height
+         * with the image contained inside it so a portrait survey sheet cannot push the
+         * Replace and Remove buttons off the panel.
+         */
+        const preview = pdf
+            ? `<div class="mt-4 rounded-xl overflow-hidden border border-emerald-200 bg-white">
+                   <object data="${state.sitePlan.url}#toolbar=0&navpanes=0&view=FitH"
+                           type="application/pdf" class="w-full h-64 block">
+                       {{-- Shown when the browser has no inline PDF viewer. --}}
+                       <div class="h-64 flex flex-col items-center justify-center gap-2 text-slate-400">
+                           <i data-lucide="file-text" class="w-8 h-8"></i>
+                           <p class="text-xs font-bold">Preview not available here — use View</p>
+                       </div>
+                   </object>
+               </div>`
+            : `<a href="${state.sitePlan.url}" target="_blank" rel="noopener"
+                  class="block mt-4 rounded-xl overflow-hidden border border-emerald-200 bg-white group">
+                   <img src="${state.sitePlan.url}" alt="Site plan for ${state.duplex ? state.duplex.duplex_id : 'this duplex'}"
+                        class="w-full h-64 object-contain bg-slate-50 group-hover:opacity-95 transition"
+                        onerror="this.closest('a').classList.add('hidden')">
+               </a>`;
+
         box.innerHTML = `
             <div class="rounded-2xl border border-emerald-200 bg-emerald-50/40 px-5 py-4">
                 <div class="flex items-center gap-3">
@@ -3006,6 +3037,8 @@
                         <i data-lucide="eye" class="w-3.5 h-3.5"></i> View
                     </a>
                 </div>
+
+                ${preview}
 
                 <div class="flex items-center gap-2 mt-4 pt-3 border-t border-emerald-200/70">
                     <button type="button" onclick="document.getElementById('dx-siteplan-input').click()"

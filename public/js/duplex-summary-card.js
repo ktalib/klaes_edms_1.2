@@ -117,15 +117,55 @@
         var stages = box('Stages — In Execution Order',
             (d.stages || []).map(stageCard).join(''), 'tint');
 
+        /**
+         * Every number this run issued, in the order the stages minted them.
+         *
+         * This panel used to list d.commissioned — what is ACTIVE at the end — under
+         * the heading "File Numbers Generated". For a merger-then-extension duplex
+         * that is one number where two were minted, so the sheet contradicted both the
+         * stage cards above it and its own "2 file number(s) issued" footer.
+         *
+         * It answers only "what did this process generate". Which of them the parcel
+         * still holds is a separate question, and has its own panel below.
+         */
+        function issuedList() {
+            var all = (d.issued && d.issued.length) ? d.issued : (d.commissioned || []);
+
+            return numberList(all, '#15803d')
+                + '<p style="font-size:10px;color:#94a3b8;margin-top:6px;font-family:system-ui,sans-serif">'
+                + esc(all.length) + ' file number(s) generated in this process.</p>';
+        }
+
         // After commissioning these are real file numbers; before it they are the
         // holding numbers that will become them.
         var generated = committed
-            ? box('File Numbers Generated', numberList(d.commissioned, '#15803d'), 'good')
+            ? box('File Numbers Generated', issuedList(), 'good')
             : box('Files To Be Generated',
                 numberList(d.planned, '#64748b')
                 + '<p style="font-size:10px;color:#94a3b8;margin-top:6px">'
                 + esc((d.planned || []).length) + ' file number(s) will be issued at the Land step.</p>',
                 'tint');
+
+        /**
+         * What the parcel actually holds now.
+         *
+         * Separate from the panel above on purpose: a duplex issues a number per stage
+         * and each stage retires what the previous one produced, so "generated" and
+         * "active" are almost never the same list. Reading one as the other is what
+         * made a two-file run look like a one-file run.
+         *
+         * Only after commissioning — before it there is nothing active to report, and
+         * the holding numbers are already shown as "Files To Be Generated".
+         */
+        var active = (committed && (d.commissioned || []).length)
+            ? box('Active', numberList(d.commissioned, '#15803d')
+                + '<p style="font-size:10px;color:#94a3b8;margin-top:6px;font-family:system-ui,sans-serif">'
+                + esc((d.commissioned || []).length) + ' file(s) active at the end of this duplex'
+                + (((d.issued || []).length > (d.commissioned || []).length)
+                    ? '; the rest were retired by a later stage.'
+                    : '.')
+                + '</p>', 'good')
+            : '';
 
         var retired = (d.retired || []).length
             ? box('Decommissioned', d.retired.map(function (r) {
@@ -140,9 +180,20 @@
             }).join(''), 'bad')
             : '';
 
+        // The plot as the ISSUED files actually carry it. A duplex ending in an
+        // extension issues "C & B & EXTENSION" while the duplex row still holds the
+        // "C & B" captured up front, and the sheet named the one no file has. Several
+        // active files (a subdivision) list every plot; nothing commissioned yet falls
+        // back to what was captured.
+        var plots = [];
+        Object.keys(d.plot_numbers || {}).forEach(function (fileNo) {
+            var p = d.plot_numbers[fileNo];
+            if (p && plots.indexOf(p) === -1) plots.push(p);
+        });
+
         var location = box('Location Details',
             '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
-            + field('Plot', m.plot_no)
+            + field('Plot', plots.length ? plots.join(' · ') : m.plot_no)
             + field('Location', m.location)
             + field('Captured', m.captured)
             + field('Commissioned', m.committed || 'Not yet')
@@ -181,7 +232,7 @@
               + '<b>Nothing commissioned yet.</b> The numbers above are holding numbers; real file '
               + 'numbers are issued at the Land step.</div>';
 
-        return header + sources + stages + generated + retired + location + where + todo + strip;
+        return header + sources + stages + generated + active + retired + location + where + todo + strip;
     }
 
     /** Fetch and show. `base` is the duplex-parcel-update URL prefix. */

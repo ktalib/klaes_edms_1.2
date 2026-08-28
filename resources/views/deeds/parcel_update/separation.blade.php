@@ -247,6 +247,29 @@
                                                     @endif
                                                 </div>
                                                 <div class="py-1">
+                                                    {{-- Approve sits SECOND TO LAST, immediately above Delete: the
+                                                         approval is given on the strength of the recommendation memo, so
+                                                         it cannot be offered above the two documents it depends on. Same
+                                                         order of business the duplex register follows.
+
+                                                         This page had no Approve item at all - the route and the
+                                                         controller action existed, but the only way to approve was the
+                                                         KNUPDA Handshake, which is a different decision. --}}
+                                                    @if($record->status === 'approved')
+                                                        <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Already approved{{ $record->knupda_status === 'Approved' ? ' via the KNUPDA Handshake' : '' }}">
+                                                            <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-300"></i> Approved
+                                                        </button>
+                                                    @elseif($record->knupda_status === 'Approved')
+                                                        <button onclick="approveRecord({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-emerald-700 hover:bg-emerald-50 gap-2 font-bold">
+                                                            <i data-lucide="check-circle" class="w-4 h-4 text-emerald-500"></i> Approve
+                                                        </button>
+                                                    @else
+                                                        <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Record the KNUPDA Handshake first">
+                                                            <i data-lucide="check-circle" class="w-4 h-4 text-slate-300"></i> Approve
+                                                        </button>
+                                                    @endif
+                                                </div>
+                                                <div class="py-1">
                                                     @if($record->status === 'approved')
                                                         <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Approved applications cannot be deleted">
                                                             <i data-lucide="trash-2" class="w-4 h-4 text-slate-300"></i> Delete
@@ -807,6 +830,43 @@
             else { Swal.fire('Error', 'Recommendation can only be generated for Approved applications.', 'error'); }
         } catch (error) {
             Swal.fire('Error', 'Failed to generate recommendation', 'error');
+        }
+    }
+
+    /**
+     * Approve a separation application.
+     *
+     * The page carried a Delete and a KNUPDA Handshake but no way to approve, even
+     * though plot-separation.approve has always existed - so a separation could only
+     * be approved as a side effect of the handshake.
+     */
+    async function approveRecord(id) {
+        const result = await Swal.fire({
+            title: 'Approve Application?',
+            text: 'Are you sure you want to approve this separation application?',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#10b981',
+            confirmButtonText: 'Yes, approve'
+        });
+
+        if (!result.isConfirmed) return;
+
+        try {
+            const response = await fetch(`{{ url('plot-separation') }}/${id}/approve`, {
+                method: 'POST',
+                headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json' }
+            });
+            const res = await response.json();
+
+            if (res.success) {
+                Swal.fire('Approved!', res.message, 'success');
+                location.reload();
+            } else {
+                Swal.fire('Error!', res.message || 'Failed to approve record.', 'error');
+            }
+        } catch (error) {
+            Swal.fire('Error!', 'Failed to approve record.', 'error');
         }
     }
 

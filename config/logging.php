@@ -153,6 +153,40 @@ return [
             'days' => 60,
         ],
 
+        // Recommendation capture (/land-recommendations/create). One screen saves a
+        // single recommendation or a whole subdivision/regular batch, autosaving a
+        // draft throughout — so a report of "I keyed 40 children and lost them" has
+        // to be answered from several places at once (what was posted, what the
+        // validator rejected, what the draft held, what the browser was doing).
+        // This channel carries all of it, server side and the page's own trace,
+        // on one timeline instead of scattered through laravel.log.
+        'land_recommendation' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/land_recommendation.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => 60,
+        ],
+
+        // MLPP File Number commissioning (/mls-fileno, the Commission New File
+        // Number modal in resources/views/generate_fileno/mlsfno.blade.php).
+        // One click on Generate runs the longest write path in the system: serial
+        // reservation, prefix/land-use resolution, prop_id allocation, the fileNumber
+        // row, PRA/instrument mirrors, tracking lines and the EDMS folder. When it
+        // fails the officer is told only "An error occurred while generating the file
+        // number", so the question is always which of those stages it reached — and
+        // that answer was previously scattered through laravel.log between other
+        // users' indexing traffic. This channel carries the whole screen, server side
+        // and the page's own trace, on one timeline keyed by tracking id.
+        //
+        // Batch generation keeps its own mls_batch / mls_batch_errors channels; this
+        // one is the single-file path and everything around it.
+        'mls_file_number' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/mls_file_number.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => 60,
+        ],
+
         // Plot Subdivision (Deeds → Parcel Update). Subdivision mutates parcel
         // lineage, so a per-application audit trail of who captured/approved/rejected
         // what is worth keeping separate from the general log.

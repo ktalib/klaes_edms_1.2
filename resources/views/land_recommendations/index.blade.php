@@ -197,6 +197,14 @@
                                 $generated = (int) $b->generated_count;
                                 $pending   = $total - $approved;
                                 $creator   = $batchCreators[$b->created_by] ?? null;
+
+                                // A subdivision batch is keyed to a mother file; a regular batch is a
+                                // set of unrelated files with no mother. The children of a subdivision
+                                // inherit the mother's recommendation instead of earning letters of
+                                // their own, so this is what decides between the print actions and the
+                                // mother's scanned letter.
+                                $isSubdivision = trim((string) ($b->mother_file_no ?: '')) !== '';
+                                $batchDoc      = ($batchDocuments ?? collect())[$b->rofo_batch_id] ?? null;
                             @endphp
                             <tr class="batch-row hover:bg-violet-50/40 transition cursor-pointer" data-batch="{{ $b->rofo_batch_id }}" aria-expanded="false">
                                 <td class="px-4 py-4 text-center">
@@ -274,28 +282,100 @@
                                                  x-transition:leave-start="opacity-100 scale-100"
                                                  x-transition:leave-end="opacity-0 scale-95"
                                                  :style="menuStyle"
-                                                 class="w-56 rounded-xl shadow-2xl bg-white ring-1 ring-black ring-opacity-5 overflow-hidden"
+                                                 class="w-64 rounded-xl shadow-2xl bg-white ring-1 ring-black ring-opacity-5 overflow-hidden"
                                                  style="display: none;">
                                                 <div class="py-1 text-left">
+                                                    {{-- Every item in this menu is laid out the same way: a fixed
+                                                         icon, then a left-aligned label that takes the rest of the
+                                                         width. `text-left` is on the buttons because a <button>
+                                                         centres its own text by default — a two-line label then sits
+                                                         centred under an icon that is not, which is what this looked
+                                                         like before. --}}
                                                     <a href="{{ route('land-recommendations.batch-records', $b->rofo_batch_id) }}"
-                                                        class="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
-                                                        <i data-lucide="table-2" class="h-4 w-4"></i> View records
+                                                        class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
+                                                        <i data-lucide="table-2" class="h-4 w-4 shrink-0"></i>
+                                                        <span class="flex-1">View records</span>
                                                     </a>
                                                     <a href="{{ route('land-recommendations.batch-edit', $b->rofo_batch_id) }}"
-                                                        class="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
-                                                        <i data-lucide="pencil" class="h-4 w-4"></i> Edit batch
+                                                        class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition">
+                                                        <i data-lucide="pencil" class="h-4 w-4 shrink-0"></i>
+                                                        <span class="flex-1">Edit batch</span>
                                                     </a>
 
                                                     <div class="border-t border-slate-100 my-1"></div>
 
-                                                    @if($pending > 0)
+                                                    @if($isSubdivision)
+                                                        {{-- The mother's letter comes first: it is what the children
+                                                             inherit, and it is the step an officer opens this menu to
+                                                             do. Approving 500 children that show nothing when opened
+                                                             is the wrong way round.
+
+                                                             No print actions here at all — the children inherit the
+                                                             mother's grant, so the letter is printed once for the
+                                                             mother and signed on paper, and that sheet is what gets
+                                                             scanned in. --}}
+                                                        <button type="button" @click="open = false"
+                                                            onclick="uploadMotherRecommendation(@js($b->rofo_batch_id), @js($b->mother_file_no), {{ (int) $total }}, {{ $batchDoc ? 'true' : 'false' }})"
+                                                            class="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-bold text-violet-700 hover:bg-violet-50 transition">
+                                                            <i data-lucide="upload" class="h-4 w-4 shrink-0"></i>
+                                                            <span class="flex-1 leading-tight">{{ $batchDoc ? 'Replace mother recommendation' : 'Upload mother recommendation' }}</span>
+                                                        </button>
+
+                                                        @if($batchDoc)
+                                                            <a href="{{ route('land-recommendations.batch-document.show', $b->rofo_batch_id) }}" target="_blank"
+                                                                class="flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-emerald-700 hover:bg-emerald-50 transition">
+                                                                <i data-lucide="image" class="h-4 w-4 shrink-0"></i>
+                                                                <span class="flex-1 leading-tight">View mother recommendation</span>
+                                                                <span class="shrink-0 text-[10px] font-medium text-slate-400">{{ $batchDoc->summary() }}</span>
+                                                            </a>
+                                                        @else
+                                                            {{-- Kept visible rather than hidden: the pair reads as one
+                                                                 step, and an item that appears only after the upload
+                                                                 makes the menu change shape under the officer. --}}
+                                                            <span class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-300 cursor-not-allowed">
+                                                                <i data-lucide="image" class="h-4 w-4 shrink-0 text-slate-200"></i>
+                                                                <span class="flex-1 leading-tight italic">View (nothing uploaded)</span>
+                                                            </span>
+                                                        @endif
+
+                                                        @if($pending > 0)
+                                                            <div class="border-t border-slate-100 my-1"></div>
+
+                                                            @if($batchDoc)
+                                                                <button type="button" @click="open = false"
+                                                                    onclick='approveWholeBatch(@json($b->rofo_batch_id))'
+                                                                    class="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-bold text-green-600 hover:bg-green-50 transition">
+                                                                    <i data-lucide="check-circle" class="h-4 w-4 shrink-0"></i>
+                                                                    <span class="flex-1 leading-tight">Approve all ({{ $pending }})</span>
+                                                                </button>
+                                                            @else
+                                                                {{-- Approval is what turns these children into records an
+                                                                     officer can open, and what they open is the mother's
+                                                                     letter — so it cannot come first. Shown disabled with
+                                                                     the reason rather than hidden: an absent item reads as
+                                                                     a bug, and the officer would go looking for it. The
+                                                                     server refuses this too (motherRecommendationGate),
+                                                                     because the same approval runs from the main list. --}}
+                                                                <span title="Upload the mother recommendation first — these children inherit it"
+                                                                    class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-300 cursor-not-allowed">
+                                                                    <i data-lucide="check-circle" class="h-4 w-4 shrink-0 text-slate-200"></i>
+                                                                    <span class="flex-1 leading-tight">
+                                                                        Approve all ({{ $pending }})
+                                                                        <span class="block text-[10px] font-medium not-italic text-amber-600">Upload the recommendation first</span>
+                                                                    </span>
+                                                                </span>
+                                                            @endif
+                                                        @endif
+                                                    @elseif($pending > 0)
                                                         <button type="button" @click="open = false"
                                                             onclick='approveWholeBatch(@json($b->rofo_batch_id))'
-                                                            class="flex w-full items-center gap-2 px-4 py-2.5 text-sm font-bold text-green-600 hover:bg-green-50 transition">
-                                                            <i data-lucide="check-circle" class="h-4 w-4"></i> Approve all ({{ $pending }})
+                                                            class="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-bold text-green-600 hover:bg-green-50 transition">
+                                                            <i data-lucide="check-circle" class="h-4 w-4 shrink-0"></i>
+                                                            <span class="flex-1 leading-tight">Approve all ({{ $pending }})</span>
                                                         </button>
-                                                        <span class="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-300 cursor-not-allowed italic">
-                                                            <i data-lucide="printer" class="h-4 w-4 text-slate-200"></i> Print all (locked)
+                                                        <span class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-300 cursor-not-allowed">
+                                                            <i data-lucide="printer" class="h-4 w-4 shrink-0 text-slate-200"></i>
+                                                            <span class="flex-1 leading-tight italic">Print all (locked)</span>
                                                         </span>
                                                     @else
                                                         {{-- Proofs of the whole batch, in front of the official run.
@@ -303,16 +383,18 @@
                                                              print no DATE OF ISSUE, so the card would have nothing
                                                              to ask for. --}}
                                                         <a href="{{ route('land-recommendations.batch-white-copy', $b->rofo_batch_id) }}" target="_blank"
-                                                            class="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100 transition">
-                                                            <i data-lucide="file-search" class="h-4 w-4"></i> White copy all ({{ $total }})
+                                                            class="flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100 transition">
+                                                            <i data-lucide="file-search" class="h-4 w-4 shrink-0"></i>
+                                                            <span class="flex-1 leading-tight">White copy all ({{ $total }})</span>
                                                         </a>
                                                         {{-- A button, not the link it used to be: the official run
                                                              stands behind the same proofread question a single
                                                              record does, and a plain href cannot ask one. --}}
                                                         <button type="button" @click="open = false"
                                                             onclick="recBatchPrintGate(@js(route('land-recommendations.batch-print', $b->rofo_batch_id)), @js(route('land-recommendations.batch-white-copy', $b->rofo_batch_id)), @js(($b->mother_file_no ?: $b->rofo_batch_id)), {{ (int) $total }})"
-                                                            class="flex w-full items-center gap-2 px-4 py-2.5 text-sm font-bold text-violet-700 hover:bg-violet-50 transition">
-                                                            <i data-lucide="printer" class="h-4 w-4"></i> Print all ({{ $total }})
+                                                            class="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-bold text-violet-700 hover:bg-violet-50 transition">
+                                                            <i data-lucide="printer" class="h-4 w-4 shrink-0"></i>
+                                                            <span class="flex-1 leading-tight">Print all ({{ $total }})</span>
                                                         </button>
                                                     @endif
                                                 </div>
@@ -792,6 +874,28 @@
                 if (!data.success) throw new Error(data.message || 'Could not load the batch.');
                 holder.dataset.loaded = '1';
 
+                // A subdivision's children inherit the mother's recommendation, so
+                // their row offers her scanned letter instead of a Print action:
+                // View once it is uploaded, Upload while it is not. One document
+                // covers the whole batch, so every row points at the same URL and
+                // one upload answers for all of them.
+                var doc = data.document;
+
+                function childAction(c) {
+                    if (!data.is_subdivision) {
+                        return '<a href="' + c.print_url + '" target="_blank" class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-50 rounded">Print</a>';
+                    }
+
+                    if (doc) {
+                        return '<a href="' + escHtml(doc.view_url) + '" target="_blank" title="' + escHtml(doc.original_name || '') + '"'
+                            + ' class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-emerald-700 hover:bg-emerald-50 rounded">View</a>';
+                    }
+
+                    return '<button type="button" onclick="uploadMotherRecommendation(' + JSON.stringify(data.batch_id) + ', '
+                        + JSON.stringify(data.mother_file_no || '') + ', ' + data.count + ', false)"'
+                        + ' class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-50 rounded">Upload</button>';
+                }
+
                 var rows = data.children.map(function (c) {
                     return '<tr class="border-b border-violet-100/70 hover:bg-white/70">'
                         + '<td class="px-4 py-2.5 text-center text-[11px] font-bold text-slate-400">' + c.seq + '</td>'
@@ -804,7 +908,7 @@
                         + '<td class="px-4 py-2.5 text-center">' + statusPill(c.rofo_status, 'generated', 'Generated', 'Pending') + '</td>'
                         + '<td class="px-4 py-2.5 text-right whitespace-nowrap">'
                         +   '<a href="' + c.edit_url + '" class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-blue-700 hover:bg-blue-50 rounded">Edit</a>'
-                        +   '<a href="' + c.print_url + '" target="_blank" class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-50 rounded">Print</a>'
+                        +   childAction(c)
                         + '</td>'
                         + '</tr>';
                 }).join('');
@@ -812,7 +916,14 @@
                 cell.innerHTML =
                     '<div class="px-6 py-4">'
                     + '<p class="text-[10px] font-black uppercase tracking-widest text-violet-700 mb-2">'
-                    +   'All ' + data.count + ' children of this batch</p>'
+                    +   'All ' + data.count + ' children of this batch'
+                    +   (data.is_subdivision
+                            ? (doc
+                                ? '<span class="ml-2 normal-case tracking-normal font-bold text-emerald-700">· mother recommendation uploaded '
+                                    + escHtml(doc.uploaded_at || '') + ' (' + escHtml(doc.summary || '') + ')</span>'
+                                : '<span class="ml-2 normal-case tracking-normal font-bold text-amber-600">· no mother recommendation uploaded yet</span>')
+                            : '')
+                    +   '</p>'
                     + '<div class="overflow-x-auto rounded-lg border border-violet-200 bg-white">'
                     + '<table class="w-full text-left border-collapse min-w-[880px]">'
                     + '<thead><tr class="bg-violet-50 text-[10px] font-black text-violet-800 uppercase tracking-widest">'
@@ -836,6 +947,87 @@
     // Approve every pending child of a batch straight from the Batches tab. The ids
     // are not on the page here (the tab lists batches, not rows), so they are
     // fetched first — the same endpoint the main list's batch row uses.
+    // ── The mother's scanned recommendation ────────────────────────────────
+    // A subdivision's children inherit the mother's grant, so no letter is printed
+    // for a child: the mother's signed sheet is scanned once and every child in the
+    // batch shows it. One upload therefore answers for all of them, which is why
+    // this is reachable both from the batch menu and from any child row.
+    function uploadMotherRecommendation(batchId, motherFileNo, childCount, alreadyUploaded) {
+        var label = motherFileNo ? ('<b>' + escHtml(motherFileNo) + '</b>') : 'this batch';
+
+        Swal.fire({
+            title: alreadyUploaded ? 'Replace mother recommendation' : 'Upload mother recommendation',
+            html: '<p class="text-sm text-slate-600">Scan or photograph the signed recommendation for ' + label + '.</p>'
+                + '<p class="text-xs text-slate-500 mt-2">It will be shown against <b>all ' + childCount + '</b> children of this batch.</p>'
+                + (alreadyUploaded
+                    ? '<p class="text-xs text-amber-600 mt-2">This replaces the copy already uploaded.</p>'
+                    : '')
+                + '<input type="file" id="mother-rec-file" accept="image/*,application/pdf" '
+                + 'class="mt-4 block w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg '
+                + 'file:border-0 file:text-sm file:font-bold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100">',
+            focusConfirm: false,
+            showCancelButton: true,
+            confirmButtonText: alreadyUploaded ? 'Replace' : 'Upload',
+            confirmButtonColor: '#7c3aed',
+            preConfirm: function () {
+                var input = document.getElementById('mother-rec-file');
+                var file = input && input.files ? input.files[0] : null;
+
+                if (!file) {
+                    Swal.showValidationMessage('Choose the scanned letter first.');
+                    return false;
+                }
+                // The server enforces this too; checking here saves the officer a
+                // 20 MB upload that is only going to be refused at the end of it.
+                if (file.size > 20 * 1024 * 1024) {
+                    Swal.showValidationMessage('That file is larger than 20 MB. Scan it at a lower resolution.');
+                    return false;
+                }
+
+                var body = new FormData();
+                body.append('document', file);
+                body.append('_token', '{{ csrf_token() }}');
+
+                Swal.showLoading();
+
+                return fetch('{{ url('land-recommendations/batch') }}/' + encodeURIComponent(batchId) + '/document', {
+                    method: 'POST',
+                    body: body,
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                    .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+                    .then(function (res) {
+                        if (!res.ok || !res.data.success) {
+                            // Laravel returns validation failures under `errors`; the
+                            // file rules are the ones an officer actually trips.
+                            var errors = res.data.errors && res.data.errors.document;
+                            throw new Error(errors ? errors[0] : (res.data.message || 'The upload failed.'));
+                        }
+                        return res.data;
+                    })
+                    .catch(function (err) {
+                        Swal.showValidationMessage(err.message || 'Network error during the upload.');
+                        return false;
+                    });
+            }
+        }).then(function (result) {
+            if (!result.isConfirmed || !result.value) return;
+
+            Swal.fire({
+                icon: 'success',
+                title: alreadyUploaded ? 'Replaced' : 'Uploaded',
+                text: result.value.message,
+                confirmButtonColor: '#7c3aed'
+            }).then(function () {
+                // The batch menu and every expanded child row both key off whether a
+                // document exists, and they are rendered in two different places —
+                // so the page is reloaded rather than patched in two.
+                window.location.reload();
+            });
+        });
+    }
+
     function approveWholeBatch(batchId) {
         fetch(CHILDREN_URL + '/' + encodeURIComponent(batchId) + '/children', {
             credentials: 'same-origin',
@@ -1027,19 +1219,31 @@
                         'Accept': 'application/json'
                     }
                 })
-                .then(response => {
-                    if (!response.ok) throw new Error(response.statusText);
-                    return response.json();
+                // The body carries the reason, so it is read on failure too. A
+                // refusal answers 422 with a message an officer can act on — most
+                // often "the mother recommendation has not been uploaded yet" —
+                // and reporting the HTTP status instead would throw that away.
+                .then(response => response.json()
+                    .catch(() => ({}))
+                    .then(data => ({ ok: response.ok, data })))
+                .then(res => {
+                    if (!res.ok || !res.data.success) {
+                        throw new Error(res.data.message || 'The approval failed.');
+                    }
+                    return res.data;
                 })
                 .catch(error => {
-                    Swal.showValidationMessage(`Request failed: ${error}`);
+                    Swal.showValidationMessage(error.message || 'Request failed.');
+                    // Without this the dialog resolves as confirmed and the caller
+                    // announces an approval that never happened.
+                    return false;
                 });
             }
         }).then((result) => {
-            if (result.isConfirmed) {
-                Swal.fire('Approved!', 'Document has been approved successfully.', 'success')
+            if (!result.isConfirmed || !result.value) return;
+
+            Swal.fire('Approved!', 'Document has been approved successfully.', 'success')
                 .then(() => window.location.reload());
-            }
         });
     }
     @endif

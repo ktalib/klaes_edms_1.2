@@ -138,6 +138,13 @@ class DuplexRollback extends Command
                 $n = $conn->table($table)->whereIn($col, $list)->count();
                 if ($n) $this->line(sprintf('    would delete %-22s %d', $table, $n));
             }
+
+            $n = $conn->table('related_file_number')
+                ->whereIn('file_number', $created)
+                ->orWhereIn('related_fileno', $created)
+                ->count();
+            if ($n) $this->line(sprintf('    would delete %-22s %d', 'related_file_number', $n));
+
             return;
         }
 
@@ -174,6 +181,22 @@ class DuplexRollback extends Command
                     + $conn->table('PropID_Master')->whereIn($col, $created)->delete();
             }
 
+            // The lineage links the commissioning wrote — one row per source the new
+            // file was linked to, plus the extension's link back to the file it
+            // extended. Missed until now, and they are not inert: Legal Search reads
+            // related_file_number directly, so a rolled-back run left "Related File of
+            // …" rows on the SOURCE file's timeline pointing at file numbers that no
+            // longer exist anywhere else in the registry.
+            //
+            // Matched on BOTH endpoints: the row is stored one way round for a merger
+            // source and the other way round for an extension.
+            $deleted['related_file_number'] = $conn->table('related_file_number')
+                ->where(function ($q) use ($created) {
+                    $q->whereIn('file_number', $created)
+                        ->orWhereIn('related_fileno', $created);
+                })
+                ->delete();
+
             // Both the source and any child a later stage replaced were archived.
             $deleted['decommissioned_files'] = $conn->table('decommissioned_files')
                 ->whereIn('file_no', array_merge($created, $sources))->delete();
@@ -207,6 +230,10 @@ class DuplexRollback extends Command
             $conn->table('file_indexings')->whereIn('file_number', $sources)->update([
                 'is_decommissioned'      => 0,
                 'decommissioned_at'      => null,
+                // Cleared with the rest of the stamp. Left behind, it named whoever ran
+                // the commissioning as the officer who decommissioned a file that is
+                // demonstrably still active - the fileNumber side already clears it.
+                'decommissioned_by'      => null,
                 'decommissioning_reason' => null,
                 'successor_file_no'      => null,
                 'updated_at'             => now(),

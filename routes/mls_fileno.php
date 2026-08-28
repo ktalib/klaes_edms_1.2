@@ -4,6 +4,16 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\MlsFileNoController;
 use App\Http\Controllers\MlsPlotExtensionController;
 
+// The Commission New File Number modal's own account of itself — modal opened,
+// application/allocation type, prefix and land use, serial and preview changes,
+// the Generate and its outcome, script errors, unloads. Outside the auth group on
+// purpose: a session that dropped while the modal was open is one of the things
+// this trace exists to prove, and an authenticated-only endpoint would bounce
+// exactly that beacon. See MlsFileNumberDiagnosticsController for what it will and
+// will not accept.
+Route::post('mls-fileno/client-log', [\App\Http\Controllers\MlsFileNumberDiagnosticsController::class, 'clientLog'])
+    ->name('mls-fileno.client-log');
+
 // File Number Management Routes (Global Management)
 // NOTE: This /mls-fileno route provides a global view of ALL file numbers (MLS, ST, KANGIS, etc.)
 // from the main 'fileNumber' table. This is NOT the generator tool.

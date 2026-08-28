@@ -126,7 +126,7 @@
                     ['Draft', $stats['draft'], 'pencil', 'text-amber-500'],
                     ['Pending', $stats['pending'], 'clock', 'text-orange-500'],
                     ['Approved', $stats['approved'], 'check-circle', 'text-emerald-500'],
-                    ['Committed', $stats['committed'], 'landmark', 'text-indigo-500'],
+                    ['Commissioned', $stats['committed'], 'landmark', 'text-indigo-500'],
                 ] as [$label, $value, $icon, $tone])
                 <div class="bg-white rounded-2xl border border-slate-100 p-4 hover:border-slate-200 transition">
                     <div class="flex items-center justify-between">
@@ -208,8 +208,14 @@
                                             default => 'bg-slate-50 text-slate-600 border-slate-200',
                                         };
                                     @endphp
+                                    {{-- `committed` is the stored value; COMMISSIONED is what it
+                                         means to an officer, and what the summary card has always
+                                         called it. The column is left alone - renaming a status in
+                                         the database would touch every guard that reads it. --}}
                                     <span class="px-2 py-0.5 rounded-lg border text-[11px] font-bold uppercase {{ $tone }}">
-                                        {{ str_replace('_', ' ', $record->status) }}
+                                        {{ $record->status === 'committed'
+                                            ? 'commissioned'
+                                            : str_replace('_', ' ', $record->status) }}
                                     </span>
                                 </td>
                                 @unless ($readOnly)

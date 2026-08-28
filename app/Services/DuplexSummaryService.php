@@ -50,6 +50,11 @@ class DuplexSummaryService
                 'file_title' => $duplex->file_title,
                 'location'   => $duplex->address,
                 'plot_no'    => $duplex->plot_no,
+                // The commissioning modal seeds each file's Location Details from these.
+                // It has always read duplex.lga, which this block did not carry - so the
+                // LGA silently never seeded, and district was not offered at all.
+                'lga'        => $duplex->lga,
+                'district'   => $duplex->district,
                 'land_use'   => $duplex->land_use,
                 'status'     => $duplex->status,
                 'captured'   => optional($duplex->created_at)->format('d M Y'),
@@ -58,7 +63,22 @@ class DuplexSummaryService
             ],
             'sources'      => array_values((array) ($duplex->source_file_nos ?? [])),
             'stages'       => $stages,
+            // The plot number each ACTIVE file actually carries, read back from the
+            // registry. The duplex's own plot_no is what was captured up front, so a
+            // duplex ending in an extension reported "C & B" while the file it issued
+            // reads "C & B & EXTENSION" - the sheet named a plot no file has.
+            'plot_numbers' => $this->plotNumbers($commissioned),
             'commissioned' => array_values(array_unique($commissioned)),
+            // EVERY number this duplex issued, in the order the stages issued them —
+            // not just the ones still active at the end. `commissioned` answers "what
+            // does this parcel hold now"; the sheet's "File Numbers Generated" panel
+            // asks a different question, and answering it with `commissioned` under-
+            // reported a merger-then-extension duplex as one file when it minted two.
+            'issued'       => collect($stages)
+                ->flatMap(fn ($s) => $s['new_numbers'])
+                ->unique()
+                ->values()
+                ->all(),
             'planned'      => array_values(array_unique($planned)),
             'retired'      => $retired,
             'totals'       => [
@@ -144,6 +164,45 @@ class DuplexSummaryService
             'produced'    => $rows->pluck('final_file_no')->filter()->values()->all(),
             'holdings'    => $rows->pluck('holding_no')->filter()->values()->all(),
         ];
+    }
+
+    /**
+     * file number => the plot number it carries, for the files a duplex left active.
+     *
+     * From mls_file_no first (the commissioning register's own answer) and fileNumber
+     * behind it, because a file commissioned before mls_file_no was populated still has
+     * a plot on the registry row. Read-only, and silent when there is nothing to read:
+     * a duplex that has not commissioned yet simply has no entries.
+     */
+    protected function plotNumbers(array $fileNos): array
+    {
+        $fileNos = array_values(array_filter(array_unique($fileNos)));
+
+        if (empty($fileNos)) {
+            return [];
+        }
+
+        $conn = DB::connection('sqlsrv');
+        $out  = [];
+
+        foreach ([
+            ['mls_file_no', 'full_file_number'],
+            ['fileNumber',  'mlsfNo'],
+        ] as [$table, $col]) {
+            $rows = $conn->table($table)
+                ->whereIn($col, $fileNos)
+                ->get([$col . ' as file_no', 'plot_no']);
+
+            foreach ($rows as $row) {
+                $plot = trim((string) ($row->plot_no ?? ''));
+
+                if ($plot !== '' && empty($out[$row->file_no])) {
+                    $out[$row->file_no] = $plot;
+                }
+            }
+        }
+
+        return $out;
     }
 
     /**

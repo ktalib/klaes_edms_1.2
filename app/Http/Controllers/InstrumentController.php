@@ -163,6 +163,59 @@ class InstrumentController extends Controller
             ->all();
     }
 
+    /**
+     * PHP can refuse to parse a multipart request body outright, before any of this
+     * controller runs. When it does, $_POST and $_FILES arrive EMPTY and the capture
+     * fails validation on whatever field is checked first - the officer is told "The
+     * instrument type field is required" about a form they filled in completely, and
+     * nothing in that message points at the server.
+     *
+     * The usual cause is a php.ini limit that has overflowed to a negative number
+     * (max_multipart_body_parts, or the max_input_vars it defaults to), after which
+     * the very first body part already "exceeds" the limit and PHP drops the whole
+     * body with:
+     *
+     *   PHP Request Startup: Multipart body parts limit exceeded -1947483649.
+     *   To increase the limit change max_multipart_body_parts in php.ini.
+     *
+     * A body PHP would not parse is indistinguishable from an empty form at this
+     * level, so the check is: a multipart POST that carried bytes, of which nothing
+     * survived. That cannot be a real submission - the capture form always posts
+     * _token at minimum.
+     *
+     * @return array{0:bool,1:string} [dropped, reason]
+     */
+    private function detectDroppedRequestBody(Request $request): array
+    {
+        $contentType = strtolower((string) $request->header('Content-Type', ''));
+        if (!str_contains($contentType, 'multipart/form-data')) {
+            return [false, ''];
+        }
+
+        $declaredLength = (int) $request->server('CONTENT_LENGTH', 0);
+        if ($declaredLength <= 0 || !empty($_POST) || !empty($_FILES)) {
+            return [false, ''];
+        }
+
+        // Report the two limits back so whoever reads the log or the screen has the
+        // actual numbers, not a general instruction to "check php.ini".
+        $maxParts = ini_get('max_multipart_body_parts');
+        $maxVars = ini_get('max_input_vars');
+        $reason = sprintf(
+            'PHP discarded the submitted form data before it reached the application '
+            . '(multipart body dropped; %s bytes were sent, none arrived). '
+            . 'This is a server setting, not something in the form: ask IT to check '
+            . 'max_multipart_body_parts (currently %s) and max_input_vars (currently %s) '
+            . 'in the php.ini Apache/PHP-FPM loads - a value large enough to overflow makes '
+            . 'the limit negative, which drops EVERY upload - then restart the web server.',
+            number_format($declaredLength),
+            $maxParts === false || $maxParts === '' ? 'unset' : $maxParts,
+            $maxVars === false || $maxVars === '' ? 'unset' : $maxVars
+        );
+
+        return [true, $reason];
+    }
+
     public function store(Request $request)
     {
         // One reference per capture attempt, stamped on every line this request
@@ -177,6 +230,33 @@ class InstrumentController extends Controller
             'fileno' => $request->input('fileno') ?: $request->input('temp_fileno'),
             'payload' => Arr::except($request->all(), ['_token', '_method']),
         ]);
+
+        // Checked BEFORE validation: with an empty $_POST every rule fails, and the
+        // "field is required" list that comes back describes a form the officer did
+        // fill in. See detectDroppedRequestBody().
+        [$bodyDropped, $bodyDropReason] = $this->detectDroppedRequestBody($request);
+        if ($bodyDropped) {
+            $this->captureLog()->error('Capture aborted: request body dropped by PHP', [
+                'ref' => $ref,
+                'user_id' => Auth::id(),
+                'content_length' => $request->server('CONTENT_LENGTH'),
+                'max_multipart_body_parts' => ini_get('max_multipart_body_parts'),
+                'max_input_vars' => ini_get('max_input_vars'),
+            ]);
+
+            $message = $bodyDropReason . ' Nothing was saved. Reference: ' . $ref;
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $message,
+                    'ref' => $ref,
+                    'error_type' => 'request_body_dropped',
+                ], 422);
+            }
+
+            return redirect()->back()->withErrors(['instrument_type' => $message]);
+        }
 
         try {
             // Basic Validation
@@ -1522,6 +1602,32 @@ class InstrumentController extends Controller
             'user_id' => Auth::id(),
             'payload' => Arr::except($request->all(), ['_token', '_method']),
         ]);
+
+        // Same guard as store(): an update whose body PHP dropped would otherwise
+        // overwrite the record with nothing but nulls.
+        [$bodyDropped, $bodyDropReason] = $this->detectDroppedRequestBody($request);
+        if ($bodyDropped) {
+            $this->captureLog()->error('Update aborted: request body dropped by PHP', [
+                'ref' => $ref,
+                'instrument_capture_id' => $id,
+                'content_length' => $request->server('CONTENT_LENGTH'),
+                'max_multipart_body_parts' => ini_get('max_multipart_body_parts'),
+                'max_input_vars' => ini_get('max_input_vars'),
+            ]);
+
+            $message = $bodyDropReason . ' The record was left unchanged. Reference: ' . $ref;
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $message,
+                    'ref' => $ref,
+                    'error_type' => 'request_body_dropped',
+                ], 422);
+            }
+
+            return redirect()->back()->withErrors(['instrument_type' => $message]);
+        }
 
         try {
             // Validate if necessary?

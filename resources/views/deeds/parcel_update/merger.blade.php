@@ -223,11 +223,6 @@
                                                             <i data-lucide="handshake" class="w-4 h-4 text-purple-500"></i> KNUPDA Handshake
                                                         </button>
                                                     @endif
-                                                    @if($record->knupda_status === 'Approved' && $record->status !== 'approved')
-                                                        <button onclick="approveRecord({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-emerald-700 hover:bg-emerald-50 gap-2 font-bold border-t border-slate-50 mt-1">
-                                                            <i data-lucide="check-circle" class="w-4 h-4 text-emerald-500"></i> Process Approval
-                                                        </button>
-                                                    @endif
                                                 </div>
                                                 <div class="py-1">
                                                     @if($record->knupda_status === 'Approved')
@@ -286,6 +281,25 @@
                                                         </button>
                                                         <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
                                                             <i data-lucide="file-text" class="w-4 h-4 text-slate-300"></i> Print Recommendation
+                                                        </button>
+                                                    @endif
+                                                </div>
+                                                <div class="py-1">
+                                                    {{-- Approve sits SECOND TO LAST, immediately above Delete: the
+                                                         approval is given on the strength of the recommendation memo, so
+                                                         it cannot be offered above the two documents it depends on. Same
+                                                         order of business the duplex register follows. --}}
+                                                    @if($record->status === 'approved')
+                                                        <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Already approved{{ $record->knupda_status === 'Approved' ? ' via the KNUPDA Handshake' : '' }}">
+                                                            <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-300"></i> Approved
+                                                        </button>
+                                                    @elseif($record->knupda_status === 'Approved')
+                                                        <button onclick="approveRecord({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-emerald-700 hover:bg-emerald-50 gap-2 font-bold">
+                                                            <i data-lucide="check-circle" class="w-4 h-4 text-emerald-500"></i> Approve
+                                                        </button>
+                                                    @else
+                                                        <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Record the KNUPDA Handshake first">
+                                                            <i data-lucide="check-circle" class="w-4 h-4 text-slate-300"></i> Approve
                                                         </button>
                                                     @endif
                                                 </div>

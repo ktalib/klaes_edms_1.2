@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\District;
 use App\Models\LandRecommendation;
+use App\Models\LandRecommendationBatchDocument;
 use App\Models\LandRecommendationBatchDraft;
 use App\Models\LandUse;
 use App\Models\Purpose;
@@ -14,6 +15,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use App\Models\PrintLog;
+use App\Support\LandRecommendationLog as RecLog;
 use App\Http\Controllers\Concerns\ExecutesMasterDelete;
 use App\Services\RofoRecommendationPurgeService;
 
@@ -264,12 +266,24 @@ class LandRecommendationController extends Controller
                 ->get(['id', 'first_name', 'last_name'])
                 ->keyBy('id');
 
+            // Which of the batches on this page already carry the mother's scanned
+            // recommendation. Loaded for the whole page in one query rather than
+            // asked per row: the menu on every subdivision batch offers either
+            // Upload or View depending on the answer.
+            $batchDocuments = LandRecommendationBatchDocument::whereIn(
+                    'rofo_batch_id',
+                    collect($batches->items())->pluck('rofo_batch_id')->filter()->values()
+                )
+                ->get()
+                ->keyBy('rofo_batch_id');
+
             $PageTitle = 'Recommendation For Grant Of Statutory Right Of Occupancy';
 
             return view('land_recommendations.index', [
                 'recommendations' => new \Illuminate\Pagination\LengthAwarePaginator([], 0, 20),
                 'batches'         => $batches,
                 'batchCreators'   => $batchCreators,
+                'batchDocuments'  => $batchDocuments,
                 'PageTitle'       => $PageTitle,
                 'stats'           => $stats,
                 'cardStats'       => $cardStats,
@@ -465,17 +479,39 @@ class LandRecommendationController extends Controller
             ->get([
                 'id', 'batch_seq', 'file_number', 'applicant_name', 'plot_number', 'location',
                 'purpose_of_clause', 'purpose_id', 'land_use', 'land_use_id',
-                'status', 'rofo_status', 'land_rofo_serial_no',
+                'status', 'rofo_status', 'land_rofo_serial_no', 'batch_mother_file_no',
             ]);
 
         if ($children->isEmpty()) {
             return response()->json(['success' => false, 'message' => 'Batch not found.'], 404);
         }
 
+        // A subdivision's children inherit the mother's recommendation rather than
+        // earning letters of their own, so their rows offer the mother's scan
+        // instead of a Print action. A regular batch has no mother, so its children
+        // print exactly as they always did — the flag below is what separates them.
+        $isSubdivision = trim((string) $children->first()->batch_mother_file_no) !== '';
+        $document = $isSubdivision
+            ? LandRecommendationBatchDocument::where('rofo_batch_id', $batchId)->first()
+            : null;
+
         return response()->json([
             'success'  => true,
             'batch_id' => $batchId,
             'count'    => $children->count(),
+            'is_subdivision' => $isSubdivision,
+            'mother_file_no' => $children->first()->batch_mother_file_no,
+            // One document for the whole batch: every child row links to the same
+            // URL, so it is sent once rather than repeated on all 500 rows.
+            'document' => $document ? [
+                'view_url'      => route('land-recommendations.batch-document.show', $batchId),
+                'original_name' => $document->original_name,
+                'summary'       => $document->summary(),
+                'uploaded_at'   => optional($document->uploaded_at)->format('d/m/Y H:i'),
+            ] : null,
+            'upload_url' => $isSubdivision
+                ? route('land-recommendations.batch-document.store', $batchId)
+                : null,
             'children' => $children->map(fn ($c, $i) => [
                 'id'             => $c->id,
                 'seq'            => $c->batch_seq ?: ($i + 1),
@@ -758,6 +794,16 @@ class LandRecommendationController extends Controller
         $PageTitle ='Recommendation For Grant Of Statutory Right Of Occupancy';
         $landUses = LandUse::orderBy('landuse')->get();
 
+        // Opens the timeline for this capture: everything the officer does from
+        // here — draft autosaves, the submit, its outcome — is read back against
+        // this entry, so it records how they arrived (fresh, re-issuance, or with
+        // a file number already chosen elsewhere).
+        RecLog::info('Capture form opened', [
+            'reissuance'  => $request->query('reissuance'),
+            'source_id'   => $request->query('source_id'),
+            'file_number' => $request->query('file_number'),
+        ]);
+
         // RofO Re-issuance entry point (from the Land RofO page). The re-issued
         // letter is captured as a NEW recommendation for the same file number:
         //   klaes  — the original exists in KLAES, so its details are copied in
@@ -912,74 +958,88 @@ class LandRecommendationController extends Controller
         // A re-issuance intentionally repeats the file number of the letter it
         // replaces, so the duplicate guard does not apply to it.
         $isReissuance = $request->boolean('is_reissuance');
-        if (!$isReissuance) {
-            $this->guardAgainstDuplicate($request);
-        }
 
-        $validated = $request->validate([
-            'file_number' => 'required|string',
-            'old_file_number' => 'nullable|string|max:100',
-            'is_reissuance' => 'nullable|boolean',
-            'reissuance_source' => 'nullable|string|in:klaes,legacy',
-            'reissued_from_id' => 'nullable|integer',
-            // The legacy path is the only one that has to key in the original
-            // letter's date; the KLAES path re-issues a record that already has it.
-            'reissuance_original_date' => 'nullable|date|before_or_equal:today',
-            'applicant_name' => 'required|string',
-            'purpose_of_clause' => 'nullable|string',
-            'purpose_id' => 'nullable|string',
-            'purpose_id_other' => 'nullable|string',
-            'location' => 'nullable|string',
-            'term' => 'nullable|string',
-            'cofo_year' => 'nullable|integer|min:1900|max:' . date('Y'),
-            'selected_year' => 'nullable|integer|min:1900|max:' . (date('Y') + 10),
-            'ground_rent' => 'nullable|numeric',
-            'effective_date' => 'nullable|date',
-            'premium' => 'nullable|numeric',
-            'development_period' => 'nullable|string',
-            'survey_fees' => 'nullable|numeric',
-            'preparation_fees' => 'nullable|numeric',
-            'land_use' => 'nullable|string',
-            'land_use_id' => 'required|exists:sqlsrv.land_uses,id',
-            'meeting_date' => 'nullable|date',
-            'recommendation' => 'nullable|string',
-            'plot_number' => 'nullable|string',
-            'house_no' => 'nullable|string',
-            'street_name' => 'nullable|string',
-            'district' => 'nullable|string',
-            'state' => 'nullable|string',
-            'layout_plan_no' => 'nullable|string',
-            'development_value' => 'nullable|numeric',
-            'development_charge' => 'nullable|string',
-            'tracking_id' => 'nullable|string',
-            'application_date' => 'required|date',
-            'applicant_address' => 'required|string',
-            'type' => 'nullable|string',
-            'application_type' => 'nullable|string',
-            'use_standard_template' => 'nullable|boolean',
-            'page' => 'nullable|string',
-            'page_survey_report' => 'nullable|string',
-            'survey_report' => 'nullable|string',
-            'physical_planning_comment' => 'nullable|string',
-            'improvement' => 'nullable|string',
-            'revision_period' => 'nullable|string',
-            'time_of_erection' => 'nullable|string',
-            'rofo_survey_method' => 'nullable|string|in:DIRECTOR,LICENSED',
-            'rofo_date_generated' => 'nullable|date',
-            'rofo_time_generated' => 'nullable|string',
-            'premium' => 'nullable|numeric',
-            'num_plots' => 'nullable|string',
-            'file_title' => 'nullable|string',
-            'premium_words' => 'nullable|string',
-            'preparation_fees_words' => 'nullable|string',
-            'plot_sizes' => 'nullable|string',
-            'page_2' => 'nullable|string',
-            'page_3' => 'nullable|string',
-            'page_4' => 'nullable|string',
-            'page_5' => 'nullable|string',
-            'purpose_description' => 'nullable|string',
-            'dimensions_text' => 'nullable|string',
-        ]);
+        // Everything that can turn the officer back — the duplicate guard and the
+        // rules below — is logged with the reason before it is re-thrown. A
+        // rejection redirects back with the errors painted on the form, so without
+        // this the log would show a capture that was simply never saved.
+        try {
+            if (!$isReissuance) {
+                $this->guardAgainstDuplicate($request);
+            }
+
+            $validated = $request->validate([
+                'file_number' => 'required|string',
+                'old_file_number' => 'nullable|string|max:100',
+                'is_reissuance' => 'nullable|boolean',
+                'reissuance_source' => 'nullable|string|in:klaes,legacy',
+                'reissued_from_id' => 'nullable|integer',
+                // The legacy path is the only one that has to key in the original
+                // letter's date; the KLAES path re-issues a record that already has it.
+                'reissuance_original_date' => 'nullable|date|before_or_equal:today',
+                'applicant_name' => 'required|string',
+                'purpose_of_clause' => 'nullable|string',
+                'purpose_id' => 'nullable|string',
+                'purpose_id_other' => 'nullable|string',
+                'location' => 'nullable|string',
+                'term' => 'nullable|string',
+                'cofo_year' => 'nullable|integer|min:1900|max:' . date('Y'),
+                'selected_year' => 'nullable|integer|min:1900|max:' . (date('Y') + 10),
+                'ground_rent' => 'nullable|numeric',
+                'effective_date' => 'nullable|date',
+                'premium' => 'nullable|numeric',
+                'development_period' => 'nullable|string',
+                'survey_fees' => 'nullable|numeric',
+                'preparation_fees' => 'nullable|numeric',
+                'land_use' => 'nullable|string',
+                'land_use_id' => 'required|exists:sqlsrv.land_uses,id',
+                'meeting_date' => 'nullable|date',
+                'recommendation' => 'nullable|string',
+                'plot_number' => 'nullable|string',
+                'house_no' => 'nullable|string',
+                'street_name' => 'nullable|string',
+                'district' => 'nullable|string',
+                'state' => 'nullable|string',
+                'layout_plan_no' => 'nullable|string',
+                'development_value' => 'nullable|numeric',
+                'development_charge' => 'nullable|string',
+                'tracking_id' => 'nullable|string',
+                'application_date' => 'required|date',
+                'applicant_address' => 'required|string',
+                'type' => 'nullable|string',
+                'application_type' => 'nullable|string',
+                'use_standard_template' => 'nullable|boolean',
+                'page' => 'nullable|string',
+                'page_survey_report' => 'nullable|string',
+                'survey_report' => 'nullable|string',
+                'physical_planning_comment' => 'nullable|string',
+                'improvement' => 'nullable|string',
+                'revision_period' => 'nullable|string',
+                'time_of_erection' => 'nullable|string',
+                'rofo_survey_method' => 'nullable|string|in:DIRECTOR,LICENSED',
+                'rofo_date_generated' => 'nullable|date',
+                'rofo_time_generated' => 'nullable|string',
+                'premium' => 'nullable|numeric',
+                'num_plots' => 'nullable|string',
+                'file_title' => 'nullable|string',
+                'premium_words' => 'nullable|string',
+                'preparation_fees_words' => 'nullable|string',
+                'plot_sizes' => 'nullable|string',
+                'page_2' => 'nullable|string',
+                'page_3' => 'nullable|string',
+                'page_4' => 'nullable|string',
+                'page_5' => 'nullable|string',
+                    'purpose_description' => 'nullable|string',
+                    'dimensions_text' => 'nullable|string',
+            ]);
+        } catch (ValidationException $e) {
+            RecLog::warning('Single capture rejected', [
+                'file_number'   => trim((string) $request->input('file_number', '')),
+                'is_reissuance' => $isReissuance,
+                'errors'        => $e->errors(),
+            ]);
+            throw $e;
+        }
 
         // Map survey method radio to YES/NO flags
         $validated['rofo_director_survey']  = ($request->rofo_survey_method === 'DIRECTOR') ? 'YES' : 'NO';
@@ -1019,7 +1079,27 @@ class LandRecommendationController extends Controller
             $validated['rofo_generated_at'] = now();
         }
 
-        $recommendation = LandRecommendation::create($validated);
+        try {
+            $recommendation = LandRecommendation::create($validated);
+        } catch (\Throwable $e) {
+            RecLog::error('Single capture failed to save', [
+                'file_number' => $validated['file_number'] ?? null,
+                'exception'   => get_class($e),
+                'error'       => $e->getMessage(),
+                'at'          => $e->getFile() . ':' . $e->getLine(),
+            ]);
+            throw $e;
+        }
+
+        RecLog::info('Single recommendation saved', [
+            'id'            => $recommendation->id,
+            'file_number'   => $recommendation->file_number,
+            'land_use_id'   => $recommendation->land_use_id,
+            'is_reissuance' => $isReissuance,
+            'reissuance_source' => $validated['reissuance_source'] ?? null,
+            'reissued_from_id'  => $validated['reissued_from_id'] ?? null,
+            'status'        => $recommendation->status,
+        ]);
 
         if ($isReissuance) {
             return redirect()->route('land-rofos.index')
@@ -1101,6 +1181,14 @@ class LandRecommendationController extends Controller
             ->values();
 
         if ($childFileNumbers->isEmpty()) {
+            // "I picked the mother and nothing loaded" is the most common report
+            // about this screen, and the answer is almost always lineage rather
+            // than the form — so the lookup that came back empty is recorded.
+            RecLog::warning('Subdivision mother has no children', [
+                'mother_file_no' => $mother,
+                'variants'       => implode(', ', $variants),
+            ]);
+
             return response()->json([
                 'success'  => true,
                 'mother'   => $mother,
@@ -1144,6 +1232,17 @@ class LandRecommendationController extends Controller
                 return $row;
             });
         }
+
+        // What the officer is about to key against: how many children the lineage
+        // produced, how many already carry a recommendation (those come back
+        // untickable), and whether the mother's grant conditions were inherited.
+        RecLog::info('Subdivision children loaded', [
+            'mother_file_no'  => $mother,
+            'children'        => $payload->count(),
+            'already_have_rec' => $payload->filter(fn ($r) => !empty($r['has_existing_record']))->count(),
+            'mother_rec_id'   => $motherRec->id ?? null,
+            'exclude_batch_id' => $excludeBatchId,
+        ]);
 
         return response()->json([
             'success'  => true,
@@ -1232,8 +1331,71 @@ class LandRecommendationController extends Controller
 
         $indexByFile = DB::connection('sqlsrv')->table('file_indexings')
             ->whereIn('file_number', $childFileNumbers)
-            ->get(['file_number', 'file_title', 'plot_number', 'district', 'lga', 'land_use_type', 'residence_address', 'location'])
+            ->get(['file_number', 'file_title', 'plot_number', 'district', 'lga', 'land_use_type',
+                'residence_address', 'location', 'current_holder', 'original_holder'])
             ->keyBy(fn ($r) => $key($r->file_number));
+
+        // Fourth name source, and the one the other three miss most often. A file
+        // commissioned outside the MLS path (KANGIS, ST, a temporary number) has its
+        // holder on the fileNumber registry and nowhere else, so a child hydrated
+        // only from mls_file_no/file_indexings came back with a blank Applicant Name
+        // — and the officer's only way to fill it was Apply-to-all from the source
+        // row, which stamps one owner's name across children who each have their own.
+        // Every number column is searched because a child is picked by whichever of
+        // its numbers the officer holds.
+        $registryNames = [];
+        $registryRows = DB::connection('sqlsrv')->table('fileNumber')
+            ->where(function ($q) use ($childFileNumbers) {
+                $q->whereIn('mlsfNo', $childFileNumbers->all())
+                    ->orWhereIn('kangisFileNo', $childFileNumbers->all())
+                    ->orWhereIn('NewKANGISFileNo', $childFileNumbers->all())
+                    ->orWhereIn('st_file_no', $childFileNumbers->all());
+            })
+            ->where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
+            ->get(['mlsfNo', 'kangisFileNo', 'NewKANGISFileNo', 'st_file_no', 'FileName']);
+
+        foreach ($registryRows as $row) {
+            $name = trim((string) ($row->FileName ?? ''));
+            if ($name === '') {
+                continue;
+            }
+
+            foreach ([$row->mlsfNo, $row->kangisFileNo, $row->NewKANGISFileNo, $row->st_file_no] as $number) {
+                $lookup = $key($number);
+                // A file number can carry several registry rows (a re-commissioning,
+                // a KANGIS alias). The first row that actually names someone wins;
+                // a later blank must not overwrite it.
+                if ($lookup !== '' && !isset($registryNames[$lookup])) {
+                    $registryNames[$lookup] = $name;
+                }
+            }
+        }
+
+        // original_holder / current_holder are stored JSON-encoded — a quoted scalar
+        // for a single holder, an array for a block-indexed one — so they cannot be
+        // read as plain columns. Mirrors FileIndexing::formattedHolder(), which is on
+        // the model while these rows come back from the query builder.
+        $holder = function ($raw): string {
+            $raw = (string) ($raw ?? '');
+            if (trim($raw) === '') {
+                return '';
+            }
+
+            $decoded = json_decode($raw, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                return trim($raw);
+            }
+
+            if (is_array($decoded)) {
+                $names = array_filter(array_map('trim', $decoded), fn ($n) => $n !== '');
+
+                return implode(', ', $names);
+            }
+
+            return trim((string) $decoded);
+        };
 
         // Children that already carry a recommendation come back with it attached:
         // the row is unticked (the duplicate guard would reject it) and shows what
@@ -1257,7 +1419,7 @@ class LandRecommendationController extends Controller
             ->all();
 
         $payload = $childFileNumbers
-            ->map(function ($fileNo) use ($mlsByFile, $indexByFile, $legacyByChild, $existingByFile, $canonToLandUseId, $normalizer, $key, $excludeBatchId) {
+            ->map(function ($fileNo) use ($mlsByFile, $indexByFile, $legacyByChild, $existingByFile, $registryNames, $holder, $canonToLandUseId, $normalizer, $key, $excludeBatchId) {
                 $lookup = $key($fileNo);
                 $mls    = $mlsByFile[$lookup] ?? null;
                 $index  = $indexByFile[$lookup] ?? null;
@@ -1309,8 +1471,14 @@ class LandRecommendationController extends Controller
 
                 return [
                     'file_number'    => $fileNo,
+                    // Whoever the file says it belongs to, from every register that
+                    // could answer — the holder lines are consulted last because they
+                    // are a title question, and a file titled in one name may still be
+                    // recommended to another, but a name from them beats a blank box.
                     'applicant_name' => $pick($rec->applicant_name ?? null, $index->file_title ?? null,
-                        $mls->file_name ?? null, $legacy->applicant_name ?? null),
+                        $mls->file_name ?? null, $registryNames[$lookup] ?? null,
+                        $holder($index->current_holder ?? null), $holder($index->original_holder ?? null),
+                        $legacy->applicant_name ?? null),
                     'plot_number'    => $pick($rec->plot_number ?? null, $mls->plot_no ?? null,
                         $legacy->child_plot_number ?? null, $index->plot_number ?? null),
                     // file_indexings carries the property description too, and for
@@ -1336,7 +1504,8 @@ class LandRecommendationController extends Controller
                     // Nothing on file anywhere. The row is still rendered — the number
                     // was picked deliberately — but the picker says so, because an
                     // empty row is otherwise indistinguishable from a load that failed.
-                    'is_unknown'     => $mls === null && $index === null && $legacy === null && $rec === null,
+                    'is_unknown'     => $mls === null && $index === null && $legacy === null && $rec === null
+                        && !isset($registryNames[$lookup]),
                     // Whether the file carries a recommendation at all, as opposed
                     // to whether that counts as a clash here. The mother's grant
                     // conditions are only inherited onto children that have none of
@@ -1789,6 +1958,92 @@ class LandRecommendationController extends Controller
     }
 
     /**
+     * Did PHP drop half of this batch post on the way in?
+     *
+     * PHP stops parsing a request at max_input_vars and says nothing: the request
+     * simply arrives short. A batch row is ~9 fields, so a 500-child batch is
+     * ~4,500 variables against a typical limit of 1,000-2,500 — the post is cut
+     * mid-row, and everything the form renders *after* the children table (the
+     * application date, the grant conditions, the survey method) never arrives
+     * either.
+     *
+     * Two signals, because either can appear alone:
+     *
+     *   1. Fewer rows than the browser declared. #batch-children-expected is
+     *      written from the ticked-row count at submit time, and sits above the
+     *      table in the DOM, so it is one of the first fields parsed and survives
+     *      a cut that the rows below it do not.
+     *   2. A row missing keys the form always posts for a ticked row. This is the
+     *      row the cut landed inside — the count can still match when the partial
+     *      row is itself the last one received.
+     *
+     * @return array{message:string}|null Null when the post looks whole.
+     */
+    private function detectTruncatedBatchPost(Request $request): ?array
+    {
+        $children = $request->input('children');
+        $children = is_array($children) ? $children : [];
+
+        $expected = (int) $request->input('children_expected', 0);
+        $received = count($children);
+
+        // Every ticked row renders all four: file_number as a hidden input, the
+        // other three as required inputs. A row that arrives without one of the keys
+        // at all (as opposed to holding a blank value) was cut, not left empty.
+        $partial = [];
+        foreach ($children as $index => $child) {
+            if (!is_array($child)) {
+                $partial[] = $index;
+                continue;
+            }
+
+            foreach (['file_number', 'applicant_name', 'applicant_address', 'land_use_id'] as $field) {
+                if (!array_key_exists($field, $child)) {
+                    $partial[] = $index;
+                    break;
+                }
+            }
+        }
+
+        $short = $expected > 0 && $received < $expected;
+
+        if (!$short && !$partial) {
+            return null;
+        }
+
+        // What the officer needs is the number that fits, not the number that did
+        // not. The cost of a row is counted from the widest row that actually
+        // arrived whole — the table's own field count — rather than assumed, so it
+        // stays right as columns are added or dropped. The margin covers the fields
+        // outside the table (the common grant conditions, the CSRF token) that have
+        // to fit in the same post.
+        $limit  = (int) ini_get('max_input_vars');
+        $perRow = 0;
+        foreach ($children as $index => $child) {
+            if (is_array($child) && !in_array($index, $partial, true)) {
+                $perRow = max($perRow, count($child));
+            }
+        }
+        $safe = $perRow > 0 && $limit > 0 ? (int) floor(($limit * 0.85) / $perRow) : 0;
+
+        $message = ($short
+                ? 'Only ' . $received . ' of ' . $expected . ' children reached the server'
+                : 'The last child to reach the server arrived incomplete')
+            . ' — the form is larger than this server accepts in one post '
+            . '(PHP max_input_vars is ' . $limit . '). Nothing was saved and your draft is safe. '
+            . ($safe > 0 ? 'Save the batch in groups of about ' . $safe . ' files, ' : 'Save the batch in smaller groups, ')
+            . 'or ask an administrator to raise max_input_vars.';
+
+        return [
+            'message'           => $message,
+            'children_expected' => $expected,
+            'children_received' => $received,
+            'partial_rows'      => implode(', ', array_slice($partial, 0, 10)),
+            'partial_row_count' => count($partial),
+        ];
+    }
+
+    /**
      * Save a batch: one recommendation per selected file, all sharing a
      * rofo_batch_id so the RofO table can group them back together.
      *
@@ -1805,20 +2060,55 @@ class LandRecommendationController extends Controller
         // exactly what it always did.
         $kind = $request->input('batch_kind') === 'regular' ? 'regular' : 'subdivision';
 
-        $validated = $request->validate($this->batchRules($kind));
+        // A batch is the expensive capture on this screen — 40+ children keyed by
+        // hand over an hour — so what arrived is recorded before anything can turn
+        // it back. children_expected is the browser's own count: read against the
+        // count the validator saw, it is what separates "the officer selected 12"
+        // from "200 were sent and PHP kept 12".
+        RecLog::info('Batch save attempted', [
+            'batch_kind'        => $kind,
+            'mother_file_no'    => $request->input('batch_mother_file_no'),
+            'children_expected' => (int) $request->input('children_expected', 0),
+            'children_received' => is_array($request->input('children')) ? count($request->input('children')) : 0,
+            'draft_key'         => $request->input('draft_key'),
+            'max_input_vars'    => ini_get('max_input_vars'),
+        ]);
 
         // A 200-child batch is over 2,000 form fields. PHP discards everything past
         // max_input_vars silently, so a truncated post would save a short batch and
-        // report success — the children that fell off would just never exist. The
-        // browser declares its own count so the mismatch is caught here instead.
-        $expected = (int) ($validated['children_expected'] ?? 0);
-        if ($expected > 0 && $expected !== count($validated['children'])) {
+        // report success — the children that fell off would just never exist.
+        //
+        // This runs BEFORE validation, and must stay there. A cut post is missing
+        // whole rows and half of the row it was cut inside, so the rules fire first
+        // and bury the real problem under "the children.492.applicant_name field is
+        // required" — an error about a field the officer did fill, on a row they
+        // cannot even see, alongside required-field errors for the common fields
+        // that were cut off after the table. The message below is the only one that
+        // says what actually happened.
+        $truncation = $this->detectTruncatedBatchPost($request);
+        if ($truncation) {
+            RecLog::warning('Batch POST truncated — nothing saved', array_merge([
+                'batch_kind'     => $kind,
+                'mother_file_no' => $request->input('batch_mother_file_no'),
+                'draft_key'      => $request->input('draft_key'),
+                'max_input_vars' => ini_get('max_input_vars'),
+            ], $truncation));
+
             throw ValidationException::withMessages([
-                'children' => 'Only ' . count($validated['children']) . ' of ' . $expected
-                    . ' children reached the server — the form is larger than this server accepts in one post '
-                    . '(PHP max_input_vars is ' . ini_get('max_input_vars') . '). Nothing was saved and your draft is safe. '
-                    . 'Save the batch in smaller groups, or ask an administrator to raise max_input_vars.',
+                'children' => $truncation['message'],
             ]);
+        }
+
+        try {
+            $validated = $request->validate($this->batchRules($kind));
+        } catch (ValidationException $e) {
+            RecLog::warning('Batch rejected by validation', [
+                'batch_kind'     => $kind,
+                'mother_file_no' => $request->input('batch_mother_file_no'),
+                'draft_key'      => $request->input('draft_key'),
+                'errors'         => $e->errors(),
+            ]);
+            throw $e;
         }
 
         $mother = trim((string) ($validated['batch_mother_file_no'] ?? ''));
@@ -1833,6 +2123,14 @@ class LandRecommendationController extends Controller
             }
         }
         if ($clashes) {
+            RecLog::warning('Batch blocked by existing recommendations', [
+                'batch_kind'     => $kind,
+                'mother_file_no' => $mother,
+                'draft_key'      => $validated['draft_key'] ?? null,
+                'clashes'        => implode(', ', array_slice($clashes, 0, 40)),
+                'clash_count'    => count($clashes),
+            ]);
+
             throw ValidationException::withMessages([
                 'children' => 'These children already have a recommendation: ' . implode(', ', $clashes)
                     . '. Untick them and save again.',
@@ -1930,6 +2228,21 @@ class LandRecommendationController extends Controller
         } catch (\Throwable $e) {
             DB::connection('sqlsrv')->rollBack();
 
+            // $created is how far the loop got before it threw — the child that
+            // failed is the next one, which is the only thing that makes a rolled
+            // back batch diagnosable after the fact.
+            RecLog::error('Batch rolled back', [
+                'batch_id'         => $batchId,
+                'batch_kind'       => $kind,
+                'mother_file_no'   => $mother,
+                'draft_key'        => $validated['draft_key'] ?? null,
+                'children_total'   => count($validated['children']),
+                'children_written' => $created ?? 0,
+                'exception'        => get_class($e),
+                'error'            => $e->getMessage(),
+                'at'               => $e->getFile() . ':' . $e->getLine(),
+            ]);
+
             // The draft is deliberately left open: the user is coming straight back
             // to this form to fix whatever failed, and it is all they still have.
             return back()->withInput()
@@ -1938,8 +2251,9 @@ class LandRecommendationController extends Controller
 
         // Close the autosaved draft only now that the recommendations are committed.
         // Doing it any earlier would throw the capture away on a failed save.
+        $draftsClosed = 0;
         if (!empty($validated['draft_key'])) {
-            LandRecommendationBatchDraft::where('draft_key', $validated['draft_key'])
+            $draftsClosed = LandRecommendationBatchDraft::where('draft_key', $validated['draft_key'])
                 ->where('status', LandRecommendationBatchDraft::STATUS_OPEN)
                 ->update([
                     'status'        => LandRecommendationBatchDraft::STATUS_SUBMITTED,
@@ -1947,6 +2261,23 @@ class LandRecommendationController extends Controller
                     'updated_at'    => now(),
                 ]);
         }
+
+        // The batch id is what every later question is asked with (the RofO table
+        // filters on it, printBatch prints it), so it is logged with the files it
+        // covers. draft_closed = 0 against a draft_key means the autosaved draft
+        // stayed open behind a committed batch — it would come back in the resume
+        // list as work that is in fact already saved.
+        RecLog::info('Batch saved', [
+            'batch_id'       => $batchId,
+            'batch_kind'     => $kind,
+            'mother_file_no' => $mother,
+            'created'        => $created,
+            'draft_key'      => $validated['draft_key'] ?? null,
+            'draft_closed'   => $draftsClosed,
+            'file_numbers'   => implode(', ', array_slice(
+                array_map(fn ($c) => trim((string) $c['file_number']), $validated['children']), 0, 40
+            )),
+        ]);
 
         $summary = $kind === 'subdivision'
             ? "Subdivision batch saved — {$created} recommendations created for children of {$mother}."
@@ -2361,9 +2692,79 @@ class LandRecommendationController extends Controller
             ->with('success', 'Recommendation updated successfully.');
     }
 
+    /**
+     * Subdivision batches among these recommendations whose mother recommendation
+     * has not been uploaded yet.
+     *
+     * A subdivision's children inherit the mother's letter instead of earning one
+     * each, so an approved child is a record that points at that scan. Approving
+     * before it exists produces hundreds of approved recommendations that show
+     * nothing when opened, and the officer has no way to tell from the list that
+     * anything is missing — the approval is the point at which it has to be there.
+     *
+     * Regular batches and single recommendations are unaffected: they have no
+     * mother, so there is nothing to wait for.
+     *
+     * @return array<string,string> rofo_batch_id => mother file number
+     */
+    private function batchesMissingMotherRecommendation(array $ids): array
+    {
+        $batches = LandRecommendation::whereIn('id', $ids)
+            ->whereNotNull('rofo_batch_id')
+            ->whereRaw("ISNULL(batch_mother_file_no, '') <> ''")
+            ->pluck('batch_mother_file_no', 'rofo_batch_id');
+
+        if ($batches->isEmpty()) {
+            return [];
+        }
+
+        $uploaded = LandRecommendationBatchDocument::whereIn('rofo_batch_id', $batches->keys())
+            ->pluck('rofo_batch_id')
+            ->all();
+
+        return $batches->except($uploaded)->all();
+    }
+
+    /**
+     * The refusal for the above, or null when there is nothing to refuse. Shared by
+     * both approval endpoints so a child approved one at a time from the main list
+     * is held to the same rule as "Approve all".
+     */
+    private function motherRecommendationGate(array $ids): ?string
+    {
+        $missing = $this->batchesMissingMotherRecommendation($ids);
+
+        if (!$missing) {
+            return null;
+        }
+
+        $mothers = implode(', ', array_unique(array_values($missing)));
+
+        RecLog::warning('Approval blocked — mother recommendation not uploaded', [
+            'batches'      => implode(', ', array_keys($missing)),
+            'mothers'      => $mothers,
+            'ids_attempted' => count($ids),
+        ]);
+
+        return count($missing) === 1
+            ? 'The mother recommendation for ' . $mothers . ' has not been uploaded yet. '
+                . 'Upload it from the batch menu first — these children inherit that letter, '
+                . 'so approving them now would leave records pointing at nothing.'
+            : 'These subdivision batches have no mother recommendation uploaded yet: ' . $mothers . '. '
+                . 'Upload each one from its batch menu before approving.';
+    }
+
     public function approve($id)
     {
         $recommendation = LandRecommendation::findOrFail($id);
+
+        // Held to the same rule as "Approve all": a child of a subdivision batch
+        // cannot be approved before the mother's letter is on file, however it is
+        // approached.
+        if ($blocked = $this->motherRecommendationGate([$recommendation->id])) {
+            return response()->json(['success' => false, 'message' => $blocked], 422);
+        }
+
         $recommendation->update([
             'status' => LandRecommendation::STATUS_APPROVED,
             'approved_at' => now()
@@ -2391,6 +2792,10 @@ class LandRecommendationController extends Controller
     public function batchApprove(Request $request)
     {
         $ids = $request->validate(['ids' => 'required|array', 'ids.*' => 'integer'])['ids'];
+
+        if ($blocked = $this->motherRecommendationGate($ids)) {
+            return response()->json(['success' => false, 'message' => $blocked], 422);
+        }
 
         $count = LandRecommendation::whereIn('id', $ids)
             ->where('status', LandRecommendation::STATUS_PENDING)

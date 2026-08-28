@@ -234,7 +234,12 @@
         }
     </style>
 </head>
-<body>
+{{-- Opens the print dialog on load, the same as the application and recommendation
+     sheets (duplex/print/_layout.blade.php). This route is only ever reached by
+     clicking Print on the register, so the click has already been made - asking for a
+     second one on arrival was a step with nothing behind it. The button stays for the
+     reprint: cancelling the dialog must not leave the page with no way to print. --}}
+<body onload="window.print()">
 
 <div class="no-print">
     <button onclick="window.print()">Print this conveyance</button>

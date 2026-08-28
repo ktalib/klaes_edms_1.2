@@ -3259,6 +3259,11 @@
     <!-- ===== /Batch Print Modal ===== -->
 
     @push('scripts')
+        {{-- Commissioning trace: what this screen did, on one timeline with the
+             server's own entries in storage/logs/mls_file_number.log. Loaded first
+             so its fetch wrapper is installed before mls_js.blade.php issues the
+             Generate request it exists to describe. Purely observational. --}}
+        <script src="{{ asset('js/mls-file-number-diagnostics.js') }}?v={{ @filemtime(public_path('js/mls-file-number-diagnostics.js')) }}"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
         @include('partials.maps_scripts')

@@ -5875,8 +5875,11 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         if (elements.opRegistrationDetails) {
-            // Registration Details is shown for every OP capture - it used to be Match OP
-            // only, where opcfSubmit() posts serial/page/vol/reg date+time.
+            // Registration Details is shown for every OP capture on the side-capture
+            // pages (OSS Applications and Land/MLS), where opcfSubmit() posts
+            // serial/page/vol/reg date+time for an existing paper permit. The dedicated
+            // capture page registers the instrument and the vault allocates the
+            // particulars, so the block is not rendered there at all - hence the guard.
             const showOpRegistration = typeKey === 'occupancy-permit';
             elements.opRegistrationDetails.classList.toggle('hidden', !showOpRegistration);
             // Every OP capture - Single, Batch and Match OP alike - types its own
@@ -7530,6 +7533,36 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    /**
+     * Pull a JSON payload out of a response that has something printed in front of it.
+     *
+     * A PHP warning emitted at request startup (the multipart-body-parts limit is the
+     * one that bit us) is written before Laravel's JSON, so the body reads:
+     *
+     *   Warning: PHP Request Startup: Multipart body parts limit exceeded ...
+     *   {"success":false,"message":"...","errors":{...}}
+     *
+     * JSON.parse rejects the whole thing, and the officer used to be shown the raw
+     * warning under "Server Error (422)" while the server's own explanation - the part
+     * that says what to do - went unread. Returns the parsed object, or null when there
+     * is genuinely no JSON in there (a real HTML error page).
+     */
+    function salvageJsonPayload(responseText) {
+        const text = String(responseText || '');
+        const start = text.indexOf('{');
+        if (start < 0) return null;
+
+        // Trailing output is possible too, so walk back from the last brace.
+        for (let end = text.lastIndexOf('}'); end > start; end = text.lastIndexOf('}', end - 1)) {
+            try {
+                const parsed = JSON.parse(text.slice(start, end + 1));
+                if (parsed && typeof parsed === 'object') return parsed;
+            } catch (ignored) { /* keep shrinking */ }
+        }
+        return null;
+    }
+    window.salvageJsonPayload = salvageJsonPayload;
+
     async function handleSubmit(e) {
         if (e) e.preventDefault();
 
@@ -8142,7 +8175,15 @@ document.addEventListener('DOMContentLoaded', function () {
             try {
                 data = JSON.parse(responseText);
             } catch (parseError) {
-                console.error('Failed to parse response as JSON:', parseError);
+                // A PHP warning printed before the response (display_errors on) leaves a
+                // perfectly good JSON body with a line of text glued to the front, and the
+                // officer was shown the raw warning while the server's own explanation sat
+                // unread inside it. Recover the JSON and carry on down the normal path.
+                data = salvageJsonPayload(responseText);
+            }
+
+            if (!data) {
+                console.error('Failed to parse response as JSON');
                 // Production hides the stack trace, so "invalid response format" was all
                 // the clerk could report. Surface whatever the HTML error page carries -
                 // status code, <title>, and the first readable line - so a failure is
@@ -8326,9 +8367,12 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                 });
             } else {
+                // A body PHP threw away is not a form the officer filled in wrongly, and
+                // titling it "Validation Failed" sends them hunting for a missing field.
+                const bodyDropped = data.error_type === 'request_body_dropped';
                 Swal.fire({
-                    icon: 'warning',
-                    title: 'Validation Failed',
+                    icon: bodyDropped ? 'error' : 'warning',
+                    title: bodyDropped ? 'The form data did not reach the server' : 'Validation Failed',
                     text: data.message || 'Please check the form input.'
                 });
                 elements.submitBtn.disabled = false;

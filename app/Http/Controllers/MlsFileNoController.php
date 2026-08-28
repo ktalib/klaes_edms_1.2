@@ -7,7 +7,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Yajra\DataTables\Facades\DataTables;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
+// Aliased so every bare Log:: call in this controller lands in
+// storage/logs/mls_file_number.log instead of laravel.log, where a
+// commissioning used to be interleaved with every other user's traffic.
+// Log::channel('mls_batch') and Log::channel('fileno_duplicates') below keep
+// pointing at their own channels — see ChannelLog::channel().
+use App\Support\MlsFileNumberLog as Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 
@@ -3371,13 +3376,16 @@ class MlsFileNoController extends Controller
                     $res = $workflowService->decommissionFiles([$oldFile], "Plot Extension to $fullFileNumber", $commissionedBy, $fullFileNumber);
                     $decommissionSummary['archived'] = array_merge($decommissionSummary['archived'], $res['archived']);
 
-                    // PRA comment on the new extension file and the old file
+                    // The extension comment belongs on the EXTENSION file's own row. It used
+                    // to be stamped on every pra row carrying the old file number as well,
+                    // which overwrote whatever that row already said: a file merged and then
+                    // extended in the same duplex ended up with its Merger row reading "Plot
+                    // … extended by extra …", so Legal Search showed the merger describing the
+                    // extension. A dealing's comment is the record of that dealing and no
+                    // later event may rewrite it.
                     $extensionComment = "Plot {$oldFile} extended by extra {$fullFileNumber}";
                     DB::connection('sqlsrv')->table('pra')
                         ->where('mlsFNo', $fullFileNumber)
-                        ->update(['comments' => $extensionComment]);
-                    DB::connection('sqlsrv')->table('pra')
-                        ->where('fileno', $oldFile)
                         ->update(['comments' => $extensionComment]);
 
                     $parcelNotifier->notifyCommissioned(

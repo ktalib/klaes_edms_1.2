@@ -21,5 +21,15 @@ class VerifyCsrfToken extends Middleware
         // unload — where a 419 would silently discard the last thing the page had
         // to say. Writes nothing but bounded strings to a log file.
         'buyer/client-log',
+
+        // Same for the Recommendation capture screen's trace: sent by sendBeacon on
+        // the way out, and a stale token part-way through a long batch capture is
+        // itself one of the things it exists to report.
+        'land-recommendations/client-log',
+
+        // Same for the Commission New File Number modal's trace: sent by sendBeacon
+        // on the way out, and a stale token at the moment of Generate is itself one
+        // of the things it exists to report.
+        'mls-fileno/client-log',
     ];
 }

@@ -58,10 +58,18 @@ abstract class ChannelLog
 
     /**
      * The underlying channel logger, for callers that want it directly.
+     *
+     * The optional $channel exists so that aliasing this class over the Log facade
+     * (`use App\Support\XyzLog as Log;`) stays honest. A controller that already
+     * routes some of its entries elsewhere — Log::channel('mls_batch'), say — would
+     * otherwise have that name silently ignored by a no-argument override and its
+     * entries diverted into the feature channel, which is the one failure a logging
+     * change must never introduce. Called with no argument it still returns the
+     * feature's own channel.
      */
-    public static function channel()
+    public static function channel(?string $channel = null)
     {
-        return Log::channel(static::CHANNEL);
+        return Log::channel($channel ?? static::CHANNEL);
     }
 
     /**

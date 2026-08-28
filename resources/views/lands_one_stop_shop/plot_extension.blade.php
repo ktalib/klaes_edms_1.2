@@ -196,6 +196,27 @@
                                                         <button onclick="peEdit(this)" class="flex items-center w-full px-4 py-2.5 text-sm text-amber-700 hover:bg-amber-50 gap-2">
                                                             <i data-lucide="edit" class="w-4 h-4"></i> Edit
                                                         </button>
+                                                    </div>
+                                                    <div class="py-1">
+                                                        {{-- Approve sits immediately above Delete, for the same reason as
+                                                             the other parcel-update pages: it is given on the strength of
+                                                             the recommendation memo. peApprove() already existed - it had
+                                                             simply never been put on the menu. --}}
+                                                        @if($record->status === 'approved')
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Already approved{{ $record->knupda_status === 'Approved' ? ' via the KNUPDA Handshake' : '' }}">
+                                                                <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-300"></i> Approved
+                                                            </button>
+                                                        @elseif($record->knupda_status === 'Approved')
+                                                            <button onclick="peApprove({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-emerald-700 hover:bg-emerald-50 gap-2 font-bold">
+                                                                <i data-lucide="check-circle" class="w-4 h-4 text-emerald-500"></i> Approve
+                                                            </button>
+                                                        @else
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Record the KNUPDA Handshake first">
+                                                                <i data-lucide="check-circle" class="w-4 h-4 text-slate-300"></i> Approve
+                                                            </button>
+                                                        @endif
+                                                    </div>
+                                                    <div class="py-1">
                                                         <button onclick="peDelete(this)" class="flex items-center w-full px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 gap-2">
                                                             <i data-lucide="trash-2" class="w-4 h-4"></i> Delete
                                                         </button>

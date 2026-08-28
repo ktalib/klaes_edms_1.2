@@ -154,6 +154,104 @@
     const GROUPING_LOOKUP_TIMEOUT_MS = 4500;
     const GENERATE_REQUEST_TIMEOUT_MS = 60000;
 
+    /**
+     * Read a Generate response without losing the reason it failed.
+     *
+     * `response.json()` on its own turns every non-JSON reply into the same opaque
+     * SyntaxError, and the caller's .catch then shows "An error occurred while
+     * generating the file number" for causes that need completely different repairs:
+     * a validation rejection the officer could have fixed, a session that expired, a
+     * server error, or — the one seen in production — a perfectly good 422 whose body
+     * had PHP notice output (`<br /><b>Warning</b>: ...`) written in front of it by
+     * display_errors.
+     *
+     * That last case is recoverable here: the framework's JSON is intact, just not at
+     * the start of the body, so it is salvaged from the first brace and the officer
+     * gets their field errors while the php.ini fix is applied separately. Everything
+     * else is rethrown as an Error carrying enough to say something true.
+     */
+    async function parseGenerateResponse(response) {
+        const body = await response.text();
+
+        let data = null;
+        try {
+            data = JSON.parse(body);
+        } catch (e) {
+            // Salvage JSON that had output written ahead of it.
+            const brace = body.indexOf('{');
+            if (brace > 0) {
+                try { data = JSON.parse(body.slice(brace)); } catch (e2) { /* not salvageable */ }
+            }
+
+            if (data) {
+                console.warn(
+                    '[mls-fileno] Response body had ' + brace + ' bytes of output before the JSON. ' +
+                    'This is PHP display_errors writing into the response — see the leading bytes:',
+                    body.slice(0, 200)
+                );
+            }
+        }
+
+        if (!data) {
+            const err = new Error('unparseable_response');
+            err.mlsStatus = response.status;
+            err.mlsBody = body.slice(0, 400);
+            throw err;
+        }
+
+        if (!response.ok) {
+            const err = new Error('http_error');
+            err.mlsStatus = response.status;
+            err.mlsData = data;
+            throw err;
+        }
+
+        return data;
+    }
+
+    /**
+     * Turn a parseGenerateResponse failure into something an officer can act on.
+     * Laravel's 422 body carries the per-field messages; showing them is the whole
+     * difference between "fix the Land Use" and "an error occurred".
+     */
+    function describeGenerateFailure(error) {
+        const status = error && error.mlsStatus;
+        const data = error && error.mlsData;
+
+        if (status === 419) {
+            return 'Your session expired while the form was open. Please reload the page and sign in again — nothing was commissioned.';
+        }
+
+        if (status === 401 || status === 403) {
+            return 'You are not signed in, or not permitted to commission this file. Please reload the page and sign in again.';
+        }
+
+        if (status === 422 && data) {
+            const fields = data.errors && typeof data.errors === 'object' ? Object.values(data.errors) : [];
+            const messages = fields.reduce((all, list) => all.concat(list), []).filter(Boolean);
+
+            if (messages.length) {
+                return messages.slice(0, 6).join('\n');
+            }
+
+            return data.message || 'The form was rejected. Please check the highlighted fields.';
+        }
+
+        if (error && error.message === 'unparseable_response') {
+            // The status line was fine or not; either way the body was not JSON at
+            // all, so there is nothing to quote back except what it started with.
+            return 'The server replied with something this page could not read' +
+                (status ? ' (HTTP ' + status + ')' : '') +
+                '. This is a server configuration problem, not your data — please report it with the time shown.';
+        }
+
+        if (data && data.message) {
+            return data.message;
+        }
+
+        return 'An error occurred while generating the file number' + (status ? ' (HTTP ' + status + ')' : '');
+    }
+
     /** Is a duplex currently driving the modal? */
     function duplexIsDriving() {
         const el = document.querySelector('[x-data^="fileNumberGenerator"]');
@@ -2536,7 +2634,7 @@
             },
             signal: controller.signal
         })
-            .then(response => response.json())
+            .then(parseGenerateResponse)
             .then(async data => {
                 clearTimeout(timeoutHandle);
                 hideGlobalLoading();
@@ -2820,7 +2918,7 @@
                             body: formData,
                             headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content') }
                         })
-                        .then(r => r.json())
+                        .then(parseGenerateResponse)
                         .then(async retryData => {
                             hideGlobalLoading();
                             if (submitBtn) hideLoadingButton(submitBtn, originalText);
@@ -2848,10 +2946,16 @@
                                 Swal.fire({ icon: 'error', title: 'Error!', text: retryData.message || 'An error occurred', confirmButtonColor: '#ef4444' });
                             }
                         })
-                        .catch(() => {
+                        .catch(error => {
                             hideGlobalLoading();
                             if (submitBtn) hideLoadingButton(submitBtn, originalText);
-                            Swal.fire({ icon: 'error', title: 'Error!', text: 'An error occurred while generating the file number', confirmButtonColor: '#ef4444' });
+                            console.error('Generate (override retry) failed:', error, error && error.mlsBody);
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Error!',
+                                text: describeGenerateFailure(error),
+                                confirmButtonColor: '#ef4444'
+                            });
                         });
                     }
                 } else {
@@ -2871,12 +2975,18 @@
                 }
                 console.error('Error:', error);
                 const isTimeout = error && (error.name === 'AbortError' || String(error).includes('aborted'));
+                // The body is logged as well as shown: describeGenerateFailure keeps
+                // the dialog short, while the console keeps whatever the server
+                // actually sent for whoever reads the report afterwards.
+                if (error && error.mlsBody) {
+                    console.error('Generate response body (first 400 bytes):', error.mlsBody);
+                }
                 Swal.fire({
                     icon: 'error',
                     title: 'Error!',
                     text: isTimeout
                         ? 'Generation timed out on the server. Please retry. If it repeats, we need to optimize the backend generate flow.'
-                        : 'An error occurred while generating the file number',
+                        : describeGenerateFailure(error),
                     confirmButtonColor: '#ef4444'
                 });
             });
@@ -10455,16 +10565,41 @@
                     const a = container._x_dataStack[0];
                     if (typeof a.updateBatchPreview === 'function') a.updateBatchPreview();
 
+                    // Each seed remembers WHICH STAGE it came from: an extension's file
+                    // carries the "& EXTENSION" plot marker and the others do not, so the
+                    // type has to survive the flatten.
                     const seeds = (d.stages || []).flatMap(st =>
-                        (st.files || []).filter(f => !f.carried).map(f => f));
+                        (st.files || []).filter(f => !f.carried)
+                            .map(f => Object.assign({ _stageType: st.type }, f)));
+
+                    const dx = d.duplex || {};
 
                     seeds.forEach((f, i) => {
                         const e = a.locationEntries[i];
                         if (!e) return;
-                        if (!e.plotNo && f.plot_no) e.plotNo = f.plot_no;
+
+                        // Plot number, in order: what the stage recorded for this file, then
+                        // the duplex's own. The stage panels capture size, dimensions and
+                        // holder but NOT a plot number, so f.plot_no is almost always empty
+                        // and the field opened blank on every duplex - the officer retyped a
+                        // number the duplex already held.
+                        if (!e.plotNo) {
+                            const plot = f.plot_no || dx.plot_no || '';
+
+                            // An extension's file reads "<plot> & EXTENSION". The server
+                            // appends that itself, so this is only about showing the officer
+                            // what will be written; withExtensionPlotSuffix is idempotent, so
+                            // the value cannot end up carrying the marker twice.
+                            e.plotNo = (plot && f._stageType === 'extension'
+                                && typeof withExtensionPlotSuffix === 'function')
+                                ? withExtensionPlotSuffix(plot)
+                                : plot;
+                        }
+
                         if (!e.file_name && f.holder) e.file_name = f.holder;
-                        if (!e.lga && d.duplex && d.duplex.lga) e.lga = d.duplex.lga;
-                        if (!e.location && d.duplex && d.duplex.location) e.location = d.duplex.location;
+                        if (!e.lga && dx.lga) e.lga = dx.lga;
+                        if (!e.district && dx.district) e.district = dx.district;
+                        if (!e.location && dx.location) e.location = dx.location;
                     });
                 }
 
