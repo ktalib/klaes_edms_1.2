@@ -393,6 +393,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/{id}/stages/{stageId}', [DuplexParcelUpdateController::class, 'saveStage'])->name('save-stage')->where(['id' => '[0-9]+', 'stageId' => '[0-9]+']);
         Route::post('/{id}/stages/{stageId}/reject', [DuplexParcelUpdateController::class, 'rejectStage'])->name('reject-stage')->where(['id' => '[0-9]+', 'stageId' => '[0-9]+']);
         Route::get('/{id}/stages/{stageId}/holding-preview', [DuplexParcelUpdateController::class, 'holdingPreview'])->name('holding-preview')->where(['id' => '[0-9]+', 'stageId' => '[0-9]+']);
+        Route::post('/{id}/site-plan', [DuplexParcelUpdateController::class, 'uploadSitePlan'])->name('site-plan')->where('id', '[0-9]+');
+        Route::delete('/{id}/site-plan', [DuplexParcelUpdateController::class, 'deleteSitePlan'])->name('site-plan.destroy')->where('id', '[0-9]+');
         Route::post('/{id}/knupda', [DuplexParcelUpdateController::class, 'updateKnupda'])->name('knupda')->where('id', '[0-9]+');
         Route::post('/{id}/approve', [DuplexParcelUpdateController::class, 'approve'])->name('approve')->where('id', '[0-9]+');
         Route::post('/{id}/reject', [DuplexParcelUpdateController::class, 'reject'])->name('reject')->where('id', '[0-9]+');
@@ -1144,6 +1146,10 @@ Route::middleware(['auth'])->group(function () {
         // How far a previous split print of these ids got, so the print dialog can
         // offer to resume run 2 instead of reprinting the Originals.
         Route::post('/batch-print-status', [\App\Http\Controllers\LandRofoController::class, 'batchPrintStatus'])->name('batch-print-status');
+        // MASTER DELETE — un-issues the RofO and leaves the recommendation standing.
+        // Supper Admin only, and the operator has to type the file number back;
+        // both are enforced in the controller, not here.
+        Route::delete('/{id}/master-destroy', [\App\Http\Controllers\LandRofoController::class, 'masterDestroy'])->name('master-destroy');
         Route::post('/{id}/generate', [\App\Http\Controllers\LandRofoController::class, 'generate'])->name('generate');
         Route::post('/{id}/assign-security-paper', [\App\Http\Controllers\LandRofoController::class, 'assignSecurityPaperCode'])->name('assign-security-paper');
         Route::post('/{id}/reset-security-paper', [\App\Http\Controllers\LandRofoController::class, 'resetSecurityPaperCode'])->name('reset-security-paper');
@@ -1175,12 +1181,17 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/sltr-recommendations/{id}', [\App\Http\Controllers\SltrRecommendationController::class, 'show'])->name('sltr-recommendations.show');
     Route::put('/sltr-recommendations/{id}', [\App\Http\Controllers\SltrRecommendationController::class, 'update'])->name('sltr-recommendations.update');
     Route::delete('/sltr-recommendations/{id}', [\App\Http\Controllers\SltrRecommendationController::class, 'destroy'])->name('sltr-recommendations.destroy');
+    // MASTER DELETE — the recommendation AND the RofO it became, out of every
+    // table. destroy() above only removes the row. Supper Admin only.
+    Route::delete('/sltr-recommendations/{id}/master-destroy', [\App\Http\Controllers\SltrRecommendationController::class, 'masterDestroy'])->name('sltr-recommendations.master-destroy');
     Route::post('/sltr-recommendations/{id}/approve', [\App\Http\Controllers\SltrRecommendationController::class, 'approve'])->name('sltr-recommendations.approve');
     Route::get('/sltr-recommendations/check-file-number', [\App\Http\Controllers\SltrRecommendationController::class, 'checkFileNumber'])->name('sltr-recommendations.check-file-number');
 
     // SLTR RofO Routes
     Route::prefix('sltr-rofos')->name('sltr-rofos.')->group(function () {
         Route::get('/', [\App\Http\Controllers\SltrRofoController::class, 'index'])->name('index');
+        // MASTER DELETE — un-issues the RofO and leaves the recommendation standing.
+        Route::delete('/{id}/master-destroy', [\App\Http\Controllers\SltrRofoController::class, 'masterDestroy'])->name('master-destroy');
         Route::post('/{id}/generate', [\App\Http\Controllers\SltrRofoController::class, 'generate'])->name('generate');
         Route::post('/{id}/assign-security-paper', [\App\Http\Controllers\SltrRofoController::class, 'assignSecurityPaperCode'])->name('assign-security-paper');
         Route::post('/{id}/reset-security-paper', [\App\Http\Controllers\SltrRofoController::class, 'resetSecurityPaperCode'])->name('reset-security-paper');
@@ -1240,6 +1251,10 @@ Route::middleware(['auth'])->group(function () {
     // Every id below is a bigint. Without this, any non-numeric segment reaching
     // {id} is passed to the query as-is and comes back as an SQL cast error rather
     // than a 404 — the same trap the GET above works around.
+    // MASTER DELETE — erases the recommendation AND the RofO it became. Declared
+    // ahead of the resource route so {id}/master-destroy is not read as a resource
+    // segment. Supper Admin only, typed confirmation — enforced in the controller.
+    Route::delete('land-recommendations/{id}/master-destroy', [\App\Http\Controllers\LandRecommendationController::class, 'masterDestroy'])->name('land-recommendations.master-destroy')->whereNumber('id');
     Route::resource('land-recommendations', \App\Http\Controllers\LandRecommendationController::class)
         ->whereNumber('land_recommendation');
     Route::post('land-recommendations/{id}/log-print', [\App\Http\Controllers\LandRecommendationController::class, 'logPrint'])->name('land-recommendations.log-print')->whereNumber('id');

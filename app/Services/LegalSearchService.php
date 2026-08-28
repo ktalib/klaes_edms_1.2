@@ -4962,6 +4962,65 @@ class LegalSearchService
      * Runs as a post-pass so it is correct whichever order the sort left the two rows
      * in: a recert already below its C of O simply stays put.
      */
+    /**
+     * Lift each File Commissioning / Temporary File row above every row that ranks
+     * BELOW it, so it leads its lifecycle block.
+     *
+     * Rows that genuinely outrank commissioning keep their place above it — an Old KN
+     * commissioning (15), an Occupancy Permit (14) and its Transfer of Title (13) all
+     * precede the commissioning line (12) by design.
+     *
+     * A weightless row counts as ranking below, so commissioning never sits under an
+     * undated floater.
+     *
+     * @param callable $weightOf Returns the row's rank, or null when it has none.
+     */
+    private function hoistCommissioningAboveLowerRanks(array $rows, callable $weightOf): array
+    {
+        if (count($rows) < 2) {
+            return $rows;
+        }
+
+        $isCommissioning = function (array $r): bool {
+            $evt = $this->classifyLifecycleEventType($r);
+            return $evt === 'File Commissioning' || $evt === 'Temporary File';
+        };
+
+        foreach ($rows as $i => $row) {
+            if (!$isCommissioning($row)) {
+                continue;
+            }
+
+            $ownWeight = $weightOf($row);
+            if ($ownWeight === null) {
+                // Already hoisted by the floating-commissioning pass above.
+                continue;
+            }
+
+            // The first row this one outranks: everything from there down belongs below it.
+            $target = null;
+            foreach ($rows as $j => $other) {
+                if ($j >= $i) {
+                    break;
+                }
+                $w = $weightOf($other);
+                if ($w === null || $w < $ownWeight) {
+                    $target = $j;
+                    break;
+                }
+            }
+
+            if ($target === null || $target >= $i) {
+                continue;
+            }
+
+            array_splice($rows, $i, 1);
+            array_splice($rows, $target, 0, [$row]);
+        }
+
+        return $rows;
+    }
+
     private function placeUnpairedRecertBelowCofo(array $rows): array
     {
         $typeOf = fn ($r) => strtolower((string) ($r['transaction_type'] ?? ($r['instrument_type'] ?? '')));
@@ -9770,6 +9829,13 @@ class LegalSearchService
         }
 
         $transactions = array_merge($floatingCommissioning, $otherTransactions);
+
+        // A WEIGHTED commissioning row must still lead everything it outranks. Phase 1
+        // should have done this, but a commissioning row that loses its weight anywhere
+        // upstream is injected by date instead and sinks into the middle of the block
+        // (production: CON-RES-RC-1982-709 read RofO(11), CofO(1), Commissioning(12)).
+        // Placing it explicitly makes the outcome independent of that.
+        $transactions = $this->hoistCommissioningAboveLowerRanks($transactions, $weightOf);
 
         // Sectional Titling: within an ST unit's block the transactions must read strictly
         // chronologically (e.g. Right of Occupancy before its later Assignment/Transfer of

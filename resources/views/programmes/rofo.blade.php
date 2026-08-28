@@ -263,6 +263,42 @@
         @include($footerPartial ?? 'admin.footer')
     </div>
 
+    <script src="{{ asset('js/master-delete.js') }}"></script>
+    <script>
+        /**
+         * Master Delete for an ST RofO.
+         *
+         * scope 'unit'    — one SUA row, its own RofO.
+         * scope 'primary' — one PUA row, the RofOs of every unit under it, which is
+         *                   what "Generate Batch RoFO" produced in a single pass and
+         *                   what the row stands for.
+         *
+         * Deletes `rofo` rows only. The applications, their memos and their file
+         * numbers survive; erasing an ST FILE is the master delete on the ST file
+         * number screen.
+         */
+        function masterDeleteStRofo(scope, id, fileNo, unitCount) {
+            const isPrimary = scope === 'primary';
+
+            MasterDelete.confirm({
+                url: '{{ route('programmes.rofo.master-destroy') }}',
+                body: { scope: scope, id: id },
+                reference: fileNo,
+                title: 'Master Delete RofO',
+                lead: isPrimary
+                    ? 'This permanently deletes the RofOs of <b>all ' + (unitCount || 0) + ' unit(s)</b> under <b>' + fileNo + '</b>. It cannot be undone.'
+                    : 'This permanently deletes the RofO for <b>' + fileNo + '</b>. It cannot be undone.',
+                targets: [
+                    'The RofO record(s) and their RofO numbers',
+                    'Their PRA transactions',
+                    'Their security paper codes (released, or retired if already printed)',
+                    'Their print history, white copies included'
+                ],
+                keeps: 'The application, its ST memo and its file number are untouched.'
+            });
+        }
+    </script>
+
     <script>
         let currentMainTab = 'pua';
         const subTabState = { pua: 'not', sua: 'not' };

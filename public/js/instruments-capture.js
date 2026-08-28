@@ -252,6 +252,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     updatePartyLabels(subtype);
                     showInstrumentForm(subtype);
                     setHidden('instrument_type', typeData.name);
+                    // Only rendered where the banner is not (OSS / Land-MLS), but keep
+                    // the two in step so neither can show a stale member.
+                    updateInstrumentChoiceSummary(subtype);
 
                     // Update Submit Button Label
                     const isAtomicType = true; // All types are now atomic in this context
@@ -782,6 +785,18 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (!answer) return;
                     openRegistrationDialog(type);   // resets to Regular, so apply afterwards
                     applyCofoSelection(answer.variant, answer.type);
+                });
+                return;
+            }
+            // The grouped cards (Assignment/Gift, Mortgage/Tripartite, Surrender and
+            // Release/PoA/IPoA) ask which member first, the same way OP and CofO do.
+            const familyKey = instrumentFamilyKeyFor(type);
+            if (familyKey) {
+                // Nothing is pre-selected: the card stands for the whole family, and
+                // highlighting its first member would read as an answer already given.
+                chooseInstrumentWithNotice(familyKey, '').then(chosen => {
+                    if (!chosen) return;   // dismissed: the capture form stays closed
+                    openRegistrationDialog(chosen);
                 });
                 return;
             }
@@ -2052,6 +2067,247 @@ document.addEventListener('DOMContentLoaded', function () {
     // Anything that sets the type directly (edit mode, consent auto-fill) repaints.
     document.getElementById('cofoType')?.addEventListener('change', updateCofoSummary);
 
+    /* --- Grouped instrument families -------------------------------------------
+     * Three cards on the instrument-type screen each stand for more than one
+     * instrument: "Deed of Assignment/Gift", "Deed of Mortgage/Tripartite
+     * Mortgage" and "Deed of Surrender and Release/Power of Attorney/Irrevocable
+     * Power of Attorney". Clicking one used to open the FIRST member and leave the
+     * choice to a select buried inside the form (#instrument-subtype-select),
+     * which is how a Gift got captured as an Assignment.
+     *
+     * They now follow OP and CofO: the member is asked up front as a card prompt,
+     * confirmed against the volume it would be registered into, and shown in a
+     * banner with "Change" while the form is filled in. Unlike op_type / cofo_type
+     * the answer is not a sub-field - each member IS its own instrument type, so
+     * the answer only decides which type the dialog opens with and what
+     * instrument_type is posted. Nothing downstream needed changing.
+     *
+     * The in-form select stays for the pages that embed this modal without the
+     * banner (OSS Applications, Land/MLS), exactly as #op_type_select does.
+     * ------------------------------------------------------------------------ */
+    const INSTRUMENT_FAMILIES = {
+        'deed-of-assignment': {
+            title: 'Deed of Assignment / Gift',
+            bannerLabel: 'Deed of Assignment / Gift',
+            question: 'Which deed is being captured?',
+            options: [
+                {
+                    type: 'deed-of-assignment', label: 'Assignment',
+                    blurb: 'Transfer of an interest from assignor to assignee.',
+                    accent: '#ca8a04', accentSoft: '#fefce8',
+                },
+                {
+                    type: 'deed-of-gift', label: 'Gift',
+                    blurb: 'Transfer without consideration, donor to donee.',
+                    accent: '#059669', accentSoft: '#ecfdf5',
+                },
+            ],
+        },
+        'deed-of-mortgage': {
+            title: 'Mortgage Type',
+            bannerLabel: 'Mortgage',
+            question: 'Which mortgage is being captured?',
+            options: [
+                {
+                    type: 'deed-of-mortgage', label: 'Deed of Mortgage',
+                    blurb: 'Two parties: mortgagor and mortgagee.',
+                    accent: '#7c3aed', accentSoft: '#f5f3ff',
+                },
+                {
+                    type: 'tripartite-mortgage', label: 'Tripartite Mortgage',
+                    blurb: 'Three parties, where the borrower is not the title holder.',
+                    accent: '#db2777', accentSoft: '#fdf2f8',
+                },
+            ],
+        },
+        'deed-of-surrender-release': {
+            title: 'Surrender and Release / Power of Attorney',
+            bannerLabel: 'Surrender and Release / Power of Attorney',
+            question: 'Which instrument is being captured?',
+            options: [
+                {
+                    type: 'deed-of-surrender-release', label: 'Surrender and Release',
+                    blurb: 'Possession returned, or a party discharged from a claim.',
+                    accent: '#65a30d', accentSoft: '#f7fee7',
+                },
+                {
+                    type: 'power-of-attorney', label: 'Power of Attorney',
+                    blurb: 'Authority to act on behalf of the donor.',
+                    accent: '#2563eb', accentSoft: '#eff6ff',
+                },
+                {
+                    type: 'irrevocable-power-of-attorney', label: 'Irrevocable PoA',
+                    blurb: 'Authority that the donor cannot revoke.',
+                    accent: '#0891b2', accentSoft: '#ecfeff',
+                },
+            ],
+        },
+    };
+
+    // The family a type key belongs to. Every family is keyed by its first
+    // member, so searching the members alone answers both "is this a card?" and
+    // "which card does this instrument sit under?".
+    function instrumentFamilyKeyFor(typeKey) {
+        return Object.keys(INSTRUMENT_FAMILIES).find(
+            key => INSTRUMENT_FAMILIES[key].options.some(opt => opt.type === typeKey)
+        ) || '';
+    }
+
+    function instrumentChoiceMeta(typeKey) {
+        const familyKey = instrumentFamilyKeyFor(typeKey);
+        if (!familyKey) return null;
+        const family = INSTRUMENT_FAMILIES[familyKey];
+        return { familyKey, family, option: family.options.find(opt => opt.type === typeKey) || null };
+    }
+
+    // Repaint the banner for whichever member the dialog is currently on. Hides
+    // itself for every instrument that is not part of a family.
+    function updateInstrumentChoiceSummary(typeKey) {
+        const banner = document.getElementById('instrument-choice-summary');
+        if (!banner) return;
+
+        const meta = instrumentChoiceMeta(typeKey || currentInstrumentType);
+        if (!meta || !meta.option) {
+            banner.classList.add('hidden');
+            return;
+        }
+
+        banner.classList.remove('hidden');
+        const labelEl = document.getElementById('instrument-choice-summary-label');
+        if (labelEl) labelEl.textContent = meta.family.bannerLabel + ':';
+        const valueEl = document.getElementById('instrument-choice-summary-value');
+        if (valueEl) valueEl.textContent = instrumentTypes[meta.option.type]?.name || meta.option.label;
+
+        paintSummaryBanner('instrument-choice-summary', meta.option);
+
+        refreshRegistrationPreview(
+            instrumentTypes[meta.option.type]?.name || '',
+            null,
+            'instrument-choice-reg-particulars',
+            'volume'
+        );
+    }
+    window.updateInstrumentChoiceSummary = updateInstrumentChoiceSummary;
+
+    /**
+     * Ask which member of the family is being captured. Resolves to the chosen
+     * type key, or '' when dismissed.
+     *
+     * Same shape as promptForOpType(): the click on a card IS the answer, so
+     * there is no Continue button.
+     */
+    function promptForInstrumentChoice(familyKey, current) {
+        const family = INSTRUMENT_FAMILIES[familyKey];
+        if (!family) return Promise.resolve(current || '');
+        if (typeof Swal === 'undefined') return Promise.resolve(current || family.options[0].type);
+
+        let chosen = family.options.some(opt => opt.type === current) ? current : '';
+        const cards = family.options.map(opt => (
+            '<button type="button" class="type-prompt__card type-prompt__card--action"'
+            + ' data-instrument-choice="' + opt.type + '"'
+            + ' style="--accent:' + opt.accent + ';--accent-soft:' + opt.accentSoft + '">'
+            + '<span class="type-prompt__card-title">' + opt.label + '</span>'
+            + '<span class="type-prompt__card-blurb">' + opt.blurb + '</span>'
+            + '</button>'
+        )).join('');
+
+        // Two members sit side by side; three fall back to the default 3-up grid.
+        const cardsClass = family.options.length === 2
+            ? 'type-prompt__cards type-prompt__cards--two'
+            : 'type-prompt__cards';
+
+        return Swal.fire({
+            title: family.title,
+            html: '<div class="type-prompt">'
+                + '<div class="type-prompt__question">' + family.question + '</div>'
+                + '<div class="' + cardsClass + '">' + cards + '</div>'
+                + '</div>',
+            width: family.options.length === 3 ? 560 : 480,
+            showConfirmButton: false,
+            showCancelButton: true,
+            cancelButtonText: 'Cancel',
+            focusConfirm: false,
+            didOpen: () => {
+                document.querySelectorAll('[data-instrument-choice]').forEach(card => {
+                    card.classList.toggle('is-selected', card.dataset.instrumentChoice === chosen);
+                    card.addEventListener('click', () => {
+                        chosen = card.dataset.instrumentChoice;
+                        Swal.clickConfirm();   // the pick confirms itself
+                    });
+                });
+            },
+            preConfirm: () => chosen,
+        }).then(result => (result.isConfirmed && result.value) ? String(result.value) : '');
+    }
+    window.promptForInstrumentChoice = promptForInstrumentChoice;
+
+    /**
+     * The OP/CofO notice for a family member: what is about to be registered and
+     * the volume it would land in. Resolves true to carry on, false on "Change".
+     */
+    function showInstrumentChoiceNotice(typeKey) {
+        if (typeof Swal === 'undefined') return Promise.resolve(true);
+        // Create page only, like showOpTypeNotice(): the pages that embed this
+        // modal for a side capture render no banner and announce nothing.
+        if (!document.getElementById('instrument-choice-summary')) return Promise.resolve(true);
+
+        const meta = instrumentChoiceMeta(typeKey);
+        if (!meta || !meta.option) return Promise.resolve(true);
+
+        const accent = meta.option.accent;
+        const accentSoft = meta.option.accentSoft;
+        const instrumentName = instrumentTypes[typeKey]?.name || meta.option.label;
+
+        return fetchRegistrationPreview(instrumentName, null).then(preview => {
+            const volume = (preview && (preview.volume === 0 || preview.volume))
+                ? String(preview.volume)
+                : '\u2014';
+
+            return Swal.fire({
+                title: 'You are about to register',
+                html: '<div style="text-align:left;border-left:4px solid ' + accent + ';'
+                    + 'background:' + accentSoft + ';padding:12px 14px;border-radius:8px;">'
+                    + '<p style="margin:0;font-size:14px;color:#374151;">' + meta.family.bannerLabel + ': '
+                    + '<strong style="color:' + accent + ';">' + instrumentName + '</strong></p>'
+                    + '<p style="margin:8px 0 0;font-size:18px;font-weight:700;color:#374151;">Volume: '
+                    + '<strong style="font-family:ui-monospace,monospace;font-size:22px;color:' + accent + ';">'
+                    + volume + '</strong></p>'
+                    + '</div>',
+                width: 440,
+                showCancelButton: true,
+                confirmButtonText: 'Continue',
+                cancelButtonText: 'Change',
+                confirmButtonColor: accent,
+                reverseButtons: true,
+            }).then(result => result.isConfirmed === true);
+        });
+    }
+    window.showInstrumentChoiceNotice = showInstrumentChoiceNotice;
+
+    // Ask, then confirm; "Change" re-opens the same prompt.
+    function chooseInstrumentWithNotice(familyKey, current) {
+        return promptForInstrumentChoice(familyKey, current).then(chosen => {
+            if (!chosen) return '';
+            return showInstrumentChoiceNotice(chosen)
+                .then(ok => (ok ? chosen : chooseInstrumentWithNotice(familyKey, chosen)));
+        });
+    }
+    window.chooseInstrumentWithNotice = chooseInstrumentWithNotice;
+
+    // "Change" on the banner re-opens the prompt. A different member is a
+    // different instrument with different fields, so it re-opens the dialog
+    // (which clears the form); re-picking the same one changes nothing.
+    const instrumentChoiceChangeBtn = document.getElementById('instrument-choice-change-btn');
+    if (instrumentChoiceChangeBtn) {
+        instrumentChoiceChangeBtn.addEventListener('click', () => {
+            const familyKey = instrumentFamilyKeyFor(currentInstrumentType);
+            if (!familyKey) return;
+            chooseInstrumentWithNotice(familyKey, currentInstrumentType).then(chosen => {
+                if (chosen && chosen !== currentInstrumentType) openRegistrationDialog(chosen);
+            });
+        });
+    }
+
 
     // --- Duplicate Check Logic (Updated) ---
 
@@ -2413,7 +2669,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Remember WHICH consent this capture was filled from, so the next
         // duplicate check can grey it out instead of offering it again.
-        if (cons.id) {
+        // A synthetic ST Assignment consent (id "memo_123") is not a
+        // consent_applications row — there is nothing to link to, and it is
+        // reusable anyway, so leave the link empty.
+        if (cons.id && !cons.is_synthetic) {
             setHidden('consent_application_id', cons.id);
         }
 
@@ -3302,6 +3561,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 : 'border-indigo-200 bg-indigo-50 hover:bg-indigo-100';
             const badgeTone = offType ? 'bg-amber-200 text-amber-800' : 'bg-indigo-200 text-indigo-800';
 
+            // A sectional file's consent is its approved ST memo, not a consent
+            // letter. It backs every transfer of the unit, so it never greys out.
+            const stNote = consent.is_synthetic
+                ? `<div class="text-[11px] text-purple-700 mt-1">Sectional memo${consent.unit_file_number ? ` · unit ${escapeHtmlText(consent.unit_file_number)}` : ''} — stays available for later assignments</div>`
+                : '';
+
             html += `
             <button type="button" data-consent-id="${escapeHtmlText(consent.id)}"
                 class="w-full text-left rounded-lg border ${tone} ${isApplied ? 'ring-2 ring-indigo-500' : ''} p-2.5 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-400">
@@ -3310,6 +3575,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         <div class="text-xs font-semibold text-gray-800">${escapeHtmlText(consent.consent_type)} · ${escapeHtmlText(ref)}</div>
                         <div class="text-[11px] text-gray-600 truncate">${escapeHtmlText(parties)}</div>
                         ${dated ? `<div class="text-[11px] text-gray-400">Applied ${escapeHtmlText(dated)}</div>` : ''}
+                        ${stNote}
                     </div>
                     <span class="shrink-0 text-[10px] font-bold uppercase tracking-wide ${isApplied ? 'bg-green-200 text-green-800' : badgeTone} rounded px-1.5 py-0.5">
                         ${isApplied ? 'In form' : (offType ? 'Other type' : 'Use this')}
@@ -3337,7 +3603,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!consent) return;
 
         duplicateCheckState.consentApp = consent;
-        setHidden('consent_application_id', consent.id);
+        // Synthetic ST Assignment consents have no consent_applications row to
+        // link to — see autoFillFromConsent.
+        setHidden('consent_application_id', consent.is_synthetic ? '' : consent.id);
 
         alreadyCapturedLock = false;
         handleCreateNew({ explicit: true });
@@ -5634,9 +5902,17 @@ document.addEventListener('DOMContentLoaded', function () {
             cofoSummary.classList.add('hidden');
         }
 
-        // Handle Subtypes
+        // The grouped instrument families answer their choice in a prompt before the
+        // form opens; the banner is what shows it afterwards (OP/CofO pattern).
+        updateInstrumentChoiceSummary(typeKey);
+
+        // Handle Subtypes. Where the banner is rendered (the dedicated capture page)
+        // it replaces this select entirely - two controls for the same answer is how
+        // they drift apart. The pages that embed this modal without a banner (OSS
+        // Applications, Land/MLS) keep it, exactly as they keep #op_type_select.
         if (elements.subtypeContainer && elements.subtypeSelect) {
-            if (type.subtypes && type.subtypes.length > 0) {
+            const bannerOwnsChoice = !!document.getElementById('instrument-choice-summary');
+            if (!bannerOwnsChoice && type.subtypes && type.subtypes.length > 0) {
                 elements.subtypeContainer.classList.remove('hidden');
                 elements.subtypeSelect.innerHTML = '';
                 type.subtypes.forEach(stKey => {

@@ -225,7 +225,9 @@ class PlotExtensionController extends Controller
 
     public function printRecommendation(int $id)
     {
-        $record = PlotExtensionApplication::findOrFail($id);
+        // plotSizes is eager-loaded because the memo now prints the parcel sizes, the
+        // way the duplex memo does. Without it the sheet issues one query per row.
+        $record = PlotExtensionApplication::with('plotSizes')->findOrFail($id);
         return view('lands_one_stop_shop.print.extension_recommendation', compact('record'));
     }
 

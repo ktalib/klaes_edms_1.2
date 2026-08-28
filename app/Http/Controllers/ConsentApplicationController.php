@@ -8,6 +8,7 @@ use App\Models\FileNumber;
 use App\Models\StreetName;
 use App\Models\LandUseType;
 use App\Models\Purpose;
+use App\Services\StAssignmentConsentResolver;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -558,6 +559,33 @@ class ConsentApplicationController extends Controller
             ->first();
 
         if (!$consent) {
+            // A sectional file carries no consent_applications row. Its consent is the
+            // approved memo shown on /deeds-applications as an "ST Assignment", which
+            // stands for an Assignment (or Gift) consent when a later transfer of an
+            // ST unit is captured. It has no letter to print and no Commissioner's
+            // signature window — the memo is already approved — so both sub-rules pass.
+            if (in_array($consentType, ['Assignment', 'Gift'], true)) {
+                $stConsent = (new StAssignmentConsentResolver())->forFileNumber($fileNo)->first();
+
+                if ($stConsent) {
+                    return response()->json([
+                        'has_consent'          => true,
+                        'has_printed'          => true,
+                        'print_count'          => 0,
+                        'consent_type'         => StAssignmentConsentResolver::CONSENT_TYPE,
+                        'consent_id'           => $stConsent->id,
+                        'has_signature'        => true,
+                        'captured_at'          => $stConsent->created_at
+                            ? Carbon::parse($stConsent->created_at)->toDateString()
+                            : null,
+                        'signature_date'       => null,
+                        'signature_days'       => 0,
+                        'days_until_signature' => 0,
+                        'source'               => 'memo',
+                    ]);
+                }
+            }
+
             return response()->json($blocked);
         }
 

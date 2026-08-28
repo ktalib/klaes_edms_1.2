@@ -154,6 +154,16 @@
     function fillPlainInputs(form) {
         selectByText(byId('general-registry'), form.general_registry);
         selectByText(byId('indexing-type'), form.indexing_type);
+
+        // Root of Title is a plain input in the Holders card. It only exists for the
+        // SLTR and Land/Registry-3 combinations, so fill it only when the registries
+        // just selected above actually ask for it — otherwise the demo would store a
+        // root on a file the rule says has none.
+        const rootOfTitle = byId('root-of-title');
+        if (rootOfTitle && form.root_of_title && window.rootOfTitleApplies?.()) {
+            rootOfTitle.value = form.root_of_title;
+            rootOfTitle.dispatchEvent(new Event('input', { bubbles: true }));
+        }
     }
 
     /**

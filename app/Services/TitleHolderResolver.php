@@ -178,6 +178,14 @@ class TitleHolderResolver
         $original = $this->originalHolder($anchor, $type, $root, $indexing);
         $current  = $this->currentHolder($chain, $anchorIndex, $original, $indexing);
 
+        // Last resort: the Root of Title keyed in on the File Indexing form. Deriving
+        // it needs a pre-grant dealing on the chain, and most files have none — the
+        // indexer holds the physical file and can read it off the documents, which is
+        // why the form now requires it. Applied AFTER $original is resolved on purpose:
+        // this is free text, and letting it feed the Direct Allocation branch of
+        // originalHolder() would print an instrument description as an owner's name.
+        $root ??= $this->indexedRoot($indexing);
+
         return [
             'application_type' => $type,
             'root_of_title'    => $root,
@@ -751,6 +759,18 @@ class TitleHolderResolver
             }
         }
         return false;
+    }
+
+    /**
+     * The Root of Title as captured on the File Indexing form. Free text, so it is
+     * carried as the name with no instrument — the officer writes whatever the
+     * physical file says, instrument included.
+     */
+    private function indexedRoot(?FileIndexing $indexing): ?array
+    {
+        $indexed = $indexing?->formattedHolder('root_of_title');
+
+        return $indexed ? $this->holder($indexed, null, null) : null;
     }
 
     private function holder(?string $name, ?string $instrument, ?array $row = null, ?string $date = null): ?array

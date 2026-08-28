@@ -14,9 +14,13 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use App\Models\PrintLog;
+use App\Http\Controllers\Concerns\ExecutesMasterDelete;
+use App\Services\RofoRecommendationPurgeService;
 
 class LandRecommendationController extends Controller
 {
+    use ExecutesMasterDelete;
+
     /**
      * Grant-condition columns a regular batch may set per file rather than once
      * for the whole batch. Kept in step with GRANT_FIELDS in the form's Grant
@@ -2696,6 +2700,70 @@ class LandRecommendationController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error logging print: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * MASTER DELETE — erase a land recommendation from every table it reached.
+     *
+     * Destructive and irreversible. The recommendation row goes, and with it the
+     * RofO it became: the PRA transaction, the security paper (released back to
+     * the pool, or retired if the sheet has already been through a printer), its
+     * `security_codes` tracking row and the whole print history under both the
+     * Recommendation and the RofO document types.
+     *
+     * What it does NOT touch: the file number itself, its indexing, and any deed
+     * or instrument registered against the same file. Only rows this module wrote
+     * are in range — see RofoRecommendationPurgeService.
+     */
+    public function masterDestroy(Request $request, $id)
+    {
+        if ($deny = $this->denyUnlessMasterDeleter()) {
+            return $deny;
+        }
+
+        $recommendation = LandRecommendation::find($id);
+        if (!$recommendation) {
+            return response()->json(['success' => false, 'message' => 'Recommendation not found.'], 404);
+        }
+
+        if ($deny = $this->denyUnlessConfirmationMatches($request, $recommendation->file_number)) {
+            return $deny;
+        }
+
+        $snapshot = $recommendation->toArray();
+
+        DB::connection('sqlsrv')->beginTransaction();
+        try {
+            $counts = app(RofoRecommendationPurgeService::class)->purgeLandRecommendation($recommendation);
+
+            DB::connection('sqlsrv')->commit();
+
+            $this->logMasterDelete(
+                'land_recommendation',
+                $recommendation->id,
+                $snapshot,
+                $counts,
+                'Land Recommendation ' . $recommendation->file_number
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Recommendation ' . $recommendation->file_number . ' deleted from all tables.',
+                'details' => $counts,
+            ]);
+        } catch (\Throwable $e) {
+            DB::connection('sqlsrv')->rollBack();
+            Log::error('Land recommendation master delete failed', [
+                'id'    => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error deleting recommendation: ' . $e->getMessage(),
             ], 500);
         }
     }

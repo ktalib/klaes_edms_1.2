@@ -12,9 +12,14 @@ use App\Models\Lga;
 use App\Models\StreetName;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Log;
+use App\Http\Controllers\Concerns\ExecutesMasterDelete;
+use App\Services\RofoRecommendationPurgeService;
 
 class ProgrammesController extends Controller
 {
+    use ExecutesMasterDelete;
+
     /**
      * Derive a displayable owner name from an application row.
      * Rules:
@@ -1598,6 +1603,24 @@ class ProgrammesController extends Controller
 
 
 
+    /**
+     * Put a `created_by_name` on each row from its created_by id.
+     *
+     * One query for the page, not one per row. A row whose created_by is null or
+     * names a deleted user gets null and the listing prints a dash — the audit
+     * columns came later than these tables, so plenty of historic rows have no
+     * author to show.
+     */
+    private function attachCreatorNames($rows): void
+    {
+        $ids = collect($rows)->pluck('created_by')->filter()->map(fn ($id) => (int) $id)->unique()->values()->all();
+        $names = empty($ids) ? [] : \App\Models\User::whereIn('id', $ids)->pluck('name', 'id')->all();
+
+        foreach ($rows as $row) {
+            $row->created_by_name = $row->created_by ? ($names[(int) $row->created_by] ?? null) : null;
+        }
+    }
+
     public function PlanningRecomm(Request $request)
     {
         $PageTitle = 'Planning Recommendation';
@@ -1653,6 +1676,8 @@ class ProgrammesController extends Controller
             $application->owner_name = $this->computeOwnerName($application) ?? 'N/A';
         }
 
+        $this->attachCreatorNames($applications);
+
         // Get unit applications sorted by sys_date (most recent first)
         $unitQuery = DB::connection('sqlsrv')->table('subapplications')
             ->leftJoin('mother_applications', 'subapplications.main_application_id', '=', 'mother_applications.id')
@@ -1684,6 +1709,8 @@ class ProgrammesController extends Controller
 
         $unitApplications = $unitQuery->orderBy('subapplications.sys_date', 'desc')
             ->paginate(15, ['*'], 'unit_page');
+
+        $this->attachCreatorNames($unitApplications);
 
         // Process owner names for unit applications
         foreach ($unitApplications as $unitApplication) {
@@ -3436,5 +3463,100 @@ class ProgrammesController extends Controller
         $PageDescription = $isReport ? 'Summary of SPAS payment records.' : 'Record and manage payments for Special Assignment bills.';
 
         return view('programmes.spa_payments', compact('PageTitle', 'PageDescription', 'stats', 'isReport'));
+    }
+
+    /**
+     * MASTER DELETE — unmake an ST planning recommendation.
+     *
+     * ST keeps no recommendation record: the decision lives as three columns on
+     * the application itself (planning_recommendation_status, its approval date and
+     * its comment). There is therefore nothing to delete, only to unmake — this
+     * puts the file back to Pending so the recommendation can be given again.
+     *
+     * Named Master Delete, and gated like one, because from the operator's side it
+     * is the same act on the same kind of row as the Land and SLTR deletes: an
+     * approval put on a file in error, taken off it.
+     *
+     * The application, its units, its memo, its RofO and its file number all
+     * survive. Erasing an ST FILE is CommissionNewSTController::masterDestroy.
+     */
+    public function masterDestroyPlanningRecommendation(Request $request)
+    {
+        if ($deny = $this->denyUnlessMasterDeleter()) {
+            return $deny;
+        }
+
+        $validated = $request->validate([
+            'scope' => 'required|string|in:primary,unit',
+            'id'    => 'required|integer',
+        ]);
+
+        $isPrimary = $validated['scope'] === 'primary';
+        $table     = $isPrimary ? 'mother_applications' : 'subapplications';
+
+        $row = DB::connection('sqlsrv')->table($table)
+            ->where('id', $validated['id'])
+            ->first();
+
+        if (!$row) {
+            return response()->json(['success' => false, 'message' => 'Application not found.'], 404);
+        }
+
+        // The typed confirmation is the only safeguard between a row menu and an
+        // irreversible change, so a file number is required to have one at all.
+        $reference = trim((string) ($row->fileno ?? ''));
+        if ($reference === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'This application has no file number, so a master delete cannot be confirmed against it.',
+            ], 422);
+        }
+
+        if ($deny = $this->denyUnlessConfirmationMatches($request, $reference)) {
+            return $deny;
+        }
+
+        $snapshot = [
+            'planning_recommendation_status' => $row->planning_recommendation_status ?? null,
+            'planning_approval_date'         => $row->planning_approval_date ?? null,
+            'comments'                       => $isPrimary
+                ? ($row->recomm_comments ?? null)
+                : ($row->planning_recomm_comments ?? null),
+        ];
+
+        DB::connection('sqlsrv')->beginTransaction();
+        try {
+            $counts = app(RofoRecommendationPurgeService::class)
+                ->resetStRecommendation($validated['scope'], (int) $validated['id']);
+
+            DB::connection('sqlsrv')->commit();
+
+            $this->logMasterDelete(
+                'st_planning_recommendation',
+                $validated['id'],
+                $snapshot,
+                $counts,
+                'ST Planning Recommendation ' . $reference
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Planning recommendation for ' . $reference . ' cleared. The application is back to Pending.',
+                'details' => $counts,
+            ]);
+        } catch (\Throwable $e) {
+            DB::connection('sqlsrv')->rollBack();
+            Log::error('ST planning recommendation master delete failed', [
+                'scope' => $validated['scope'],
+                'id'    => $validated['id'],
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error clearing planning recommendation: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 }

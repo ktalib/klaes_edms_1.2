@@ -11,7 +11,7 @@
                 </button>
             </div>
 
-            {{ Form::model($user, ['route' => ['users.update', $user->id], 'method' => 'PUT']) }}
+            {{ Form::model($user, ['route' => ['users.update', $user->id], 'method' => 'PUT', 'enctype' => 'multipart/form-data']) }}
 
             @php
                 $workStationOptions = collect($workStations ?? [])
@@ -284,6 +284,51 @@
                             {{-- Basic Information Section --}}
                             <div class="mb-6 space-y-5 rounded-lg border border-gray-200 bg-gray-50 p-6">
                                 <h4 class="text-md font-medium text-gray-800">Basic Information</h4>
+
+                                {{-- Passport photo. Existing value may be a public-disk path, a bare
+                                     filename under upload/profile, or the legacy "avatar.png" placeholder,
+                                     so the URL is resolved by the model accessor. --}}
+                                <div class="flex flex-col items-center gap-4 rounded-lg border border-dashed border-gray-300 bg-white p-4 sm:flex-row sm:items-start">
+                                    <div class="h-24 w-24 flex-shrink-0 overflow-hidden rounded-full border-2 border-gray-200 bg-gray-100">
+                                        <img id="editProfilePreview"
+                                            src="{{ $user->profile_url ?? '' }}"
+                                            alt="{{ __('Profile photo') }}"
+                                            class="h-full w-full object-cover {{ $user->profile_url ? '' : 'hidden' }}">
+                                        <div id="editProfilePlaceholder"
+                                            class="flex h-full w-full items-center justify-center text-gray-400 {{ $user->profile_url ? 'hidden' : '' }}">
+                                            <i class="fas fa-user text-3xl"></i>
+                                        </div>
+                                    </div>
+                                    <div class="w-full">
+                                        {{ Form::label('profile', __('Passport Photo'), ['class' => 'mb-1 block text-sm font-medium text-gray-700']) }}
+                                        <div class="mb-2 text-xs text-gray-500">{{ __('JPG, PNG or GIF, max 2MB. Leave empty to keep the current photo.') }}</div>
+                                        <input type="file" name="profile" id="profile"
+                                            accept="image/jpeg,image/png,image/gif"
+                                            class="w-full rounded-md border border-gray-300 p-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-gray-100 file:px-3 file:py-1 file:text-sm"
+                                            onchange="(function(input){
+                                                var img = document.getElementById('editProfilePreview');
+                                                var ph = document.getElementById('editProfilePlaceholder');
+                                                var file = input.files && input.files[0];
+                                                if (!file) { return; }
+                                                if (file.size > 2 * 1024 * 1024) {
+                                                    alert('{{ __('The photo must be 2MB or smaller.') }}');
+                                                    input.value = '';
+                                                    return;
+                                                }
+                                                var reader = new FileReader();
+                                                reader.onload = function (e) {
+                                                    img.src = e.target.result;
+                                                    img.classList.remove('hidden');
+                                                    ph.classList.add('hidden');
+                                                };
+                                                reader.readAsDataURL(file);
+                                            })(this)">
+                                        @error('profile')
+                                            <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+                                </div>
+
                                 <div class="grid gap-4 md:grid-cols-2">
                                     <div>
                                         {{ Form::label('username', __('Username'), ['class' => 'mb-1 block text-sm font-medium text-gray-700']) }}

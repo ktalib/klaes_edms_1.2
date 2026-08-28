@@ -19,8 +19,8 @@
                         
                         <div class="profile-avatar-container">
                             <div class="profile-avatar-wrapper">
-                                @if(Auth::check() && Auth::user()->profile)
-                                    <img src="{{ asset('storage/app/public/'.auth()->user()->profile) }}" alt="Profile" class="profile-avatar-img">
+                                @if(Auth::check() && Auth::user()->profile_url)
+                                    <img src="{{ auth()->user()->profile_url }}" alt="Profile" class="profile-avatar-img">
                                 @else
                                     <div class="profile-avatar-placeholder">
                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">

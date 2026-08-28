@@ -4812,6 +4812,33 @@ const executeSearchAjax = (filters, searchData) => {
 
     arrangedTransactions = [...floatingCommissioning, ...otherTransactions];
 
+    // A WEIGHTED commissioning row must still lead everything it outranks. Phase 1
+    // should already do this, but a commissioning row that loses its weight upstream is
+    // injected by date instead and sinks into the middle of the block (production:
+    // CON-RES-RC-1982-709 read RofO(11), CofO(1), Commissioning(12)). Placing it
+    // explicitly makes the outcome independent of that.
+    //
+    // Rows that genuinely outrank commissioning keep their place above it: an Old KN
+    // commissioning (15), an Occupancy Permit (14) and its Transfer of Title (13).
+    // Mirrors LegalSearchService::hoistCommissioningAboveLowerRanks().
+    for (let i = 0; i < arrangedTransactions.length; i++) {
+      const row = arrangedTransactions[i];
+      if (!isCommissioningEvent(row)) continue;
+
+      const ownWeight = recordPriorityWeight(row);
+      if (ownWeight === null) continue;   // already hoisted by the floater pass above
+
+      let target = -1;
+      for (let k = 0; k < i; k++) {
+        const w = recordPriorityWeight(arrangedTransactions[k]);
+        if (w === null || w < ownWeight) { target = k; break; }
+      }
+      if (target === -1 || target >= i) continue;
+
+      arrangedTransactions.splice(i, 1);
+      arrangedTransactions.splice(target, 0, row);
+    }
+
     // Sectional Titling: within an ST unit's block the transactions read strictly
     // chronologically (Right of Occupancy before its later Assignment/Transfer of Title),
     // NOT by the global legal-hierarchy weight (which ranks Transfer of Title above Right

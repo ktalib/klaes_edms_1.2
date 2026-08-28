@@ -2,8 +2,8 @@
   <div class="flex items-center gap-3">
     <div class="relative">
       <div class="h-10 w-10 rounded-full border-2 border-blue-600 cursor-pointer hover:scale-105 transition-transform overflow-hidden flex items-center justify-center bg-gray-100">
-        @if(auth()->user()->profile)
-          <img src="{{ asset('storage') . '/' . auth()->user()->profile }}" alt="User" class="h-full w-full object-cover" />
+        @if(auth()->user()->profile_url)
+          <img src="{{ auth()->user()->profile_url }}" alt="User" class="h-full w-full object-cover" />
         @else
           <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-500" fill="none" viewBox="0 0 24 24"
             stroke="currentColor">
@@ -13,13 +13,18 @@
         @endif
       </div>
     </div>
-    <div class="flex flex-col">
-      @if(strtolower(trim(auth()->user()->email)) =='ict_director@klas.com.ng')
-        <span class="text-sm font-medium">Supper Admin</span>
-      @else
-        <span class="text-sm font-medium">User</span>
-      @endif
-      <span class="text-xs text-gray-500">{{ auth()->user()->email }}</span>
+    @php
+      // The account's own username, not the generic "User" label that used to sit here.
+      $sidebarUser = auth()->user();
+      $sidebarUsername = $sidebarUser->username
+        ?: (trim($sidebarUser->name) ?: $sidebarUser->email);
+      $sidebarIsSupperAdmin = strtolower(trim((string) $sidebarUser->email)) === 'ict_director@klas.com.ng';
+    @endphp
+    <div class="flex min-w-0 flex-col">
+      <span class="truncate text-sm font-medium" title="{{ $sidebarUsername }}">{{ $sidebarUsername }}</span>
+      <span class="truncate text-xs text-gray-500" title="{{ $sidebarUser->email }}">
+        {{ $sidebarIsSupperAdmin ? __('Supper Admin') : $sidebarUser->email }}
+      </span>
     </div>
     <div class="relative ml-auto">
       <button class="p-1.5 rounded-md hover:bg-gray-100" id="userMenuButton">

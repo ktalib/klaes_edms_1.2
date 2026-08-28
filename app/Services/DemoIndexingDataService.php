@@ -224,6 +224,9 @@ class DemoIndexingDataService
             'entity_name' => $company,
             'customer_type' => 'Corporate',
             'customer_name' => $company,
+            // Root of Title is required on the form, so the demo fill has to supply
+            // one or a demo record cannot be saved.
+            'root_of_title' => 'Customary Right of Occupancy - ' . strtoupper($previous),
             'current_holder' => $company,
             'original_holder' => $previous,
             'applicant_name' => $contact,

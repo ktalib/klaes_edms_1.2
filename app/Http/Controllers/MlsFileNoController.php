@@ -2404,6 +2404,15 @@ class MlsFileNoController extends Controller
                     'source_value' => $sourceValue
                 ]);
 
+                // What the PRA block below decides on. It has to be read BEFORE the
+                // override two lines down: that override renames the extension source
+                // to "Extension File" for the mls_file_no.source column, and the PRA
+                // branch matches on the bare "Extension" - so every extension ever
+                // commissioned fell through to "skipped for non-OP source" and the new
+                // file was left with no Plot Extension row at all. The branch's own
+                // Extension handling (its comment, its Grantor rule) was dead code.
+                $praSourceValue = $sourceValue;
+
                 // Override source for temporary and extension file options
                 if ($fileOption === 'temporary') {
                     $sourceValue = 'Temporary File';
@@ -2798,14 +2807,14 @@ class MlsFileNoController extends Controller
                                 'file_number' => $fullFileNumber,
                             ]);
                         }
-                    } elseif (!$skipAutoPra && in_array($sourceValue, ['Subdivision', 'Merger', 'Extension', 'Separation'])) {
+                    } elseif (!$skipAutoPra && in_array($praSourceValue, ['Subdivision', 'Merger', 'Extension', 'Separation'])) {
                         // Create PRA transaction records for Subdivision/Merger/Extension/Separation
                         try {
-                            $plotTransactionType = $sourceValue === 'Extension' ? 'Plot Extension'
-                                : ($sourceValue === 'Separation' ? 'Plot Separation' : $sourceValue);
+                            $plotTransactionType = $praSourceValue === 'Extension' ? 'Plot Extension'
+                                : ($praSourceValue === 'Separation' ? 'Plot Separation' : $praSourceValue);
                             $fileName = (string) ($validated['file_name'] ?? '');
                             $grantee = $fileName;
-                            $grantor = ($sourceValue === 'Subdivision' || $sourceValue === 'Merger' || $sourceValue === 'Extension' || $sourceValue === 'Separation') ? ($motherOwner ?: $fileName) : $fileName;
+                            $grantor = ($praSourceValue === 'Subdivision' || $praSourceValue === 'Merger' || $praSourceValue === 'Extension' || $praSourceValue === 'Separation') ? ($motherOwner ?: $fileName) : $fileName;
 
                             $propId = app(\App\Services\PropertyIdAllocationService::class)->allocateOrRetrievePropId(
                                 $fullFileNumber,
@@ -2819,23 +2828,23 @@ class MlsFileNoController extends Controller
 
                             // Custom Comment building based on transaction type for PRA
                             $praComment = $plotTransactionType . " commissioning for " . $fullFileNumber;
-                            if ($sourceValue === 'Merger') {
+                            if ($praSourceValue === 'Merger') {
                                 $mergerApp = \App\Models\PlotMergerApplication::find($validated['merger_app_id'] ?? 0);
                                 if ($mergerApp) {
                                     $sourceFiles = $mergerApp->plotSizes()->whereIn('type', ['source', 'merger_source'])->pluck('source_file_no')->toArray();
                                     $praComment = 'Plot Merger: ' . implode(', ', $sourceFiles) . '; the new ' . $fullFileNumber;
                                 }
-                            } elseif ($sourceValue === 'Subdivision') {
+                            } elseif ($praSourceValue === 'Subdivision') {
                                 $subdivisionApp = \App\Models\PlotSubdivisionApplication::find($validated['subdivision_app_id'] ?? 0);
                                 if ($subdivisionApp) {
                                     $praComment = 'Plot Subdivision: ' . ($subdivisionApp->num_plots ?? '0') . ' Subdivided from ' . ($subdivisionApp->file_no ?? '');
                                 }
-                            } elseif ($sourceValue === 'Separation') {
+                            } elseif ($praSourceValue === 'Separation') {
                                 $separationApp = \App\Models\PlotSeparationApplication::find($validated['separation_app_id'] ?? 0);
                                 if ($separationApp) {
                                     $praComment = 'Plot Separation: ' . ($separationApp->num_plots ?? '0') . ' Separated from ' . ($separationApp->file_no ?? '');
                                 }
-                            } elseif ($sourceValue === 'Extension') {
+                            } elseif ($praSourceValue === 'Extension') {
                                 $extFileNo = (string) ($validated['existing_file_no'] ?? '');
                                 $praComment = 'Plot Extension: Plot ' . $extFileNo . ' extended by extra ' . $fullFileNumber;
                             }
@@ -2869,16 +2878,16 @@ class MlsFileNoController extends Controller
                                     ? implode(', ', (array) (json_decode($relatedFileNumbers, true) ?: []))
                                     : null,
                                 'comments' => $praComment,
-                                'remarks' => "Commissioned via " . $sourceValue . " workflow",
+                                'remarks' => "Commissioned via " . $praSourceValue . " workflow",
                             ], Auth::id());
 
-                            Log::info("PRA record created for {$sourceValue}", [
+                            Log::info("PRA record created for {$praSourceValue}", [
                                 'file_number' => $fullFileNumber,
                                 'prop_id' => $propId,
                                 'transaction_type' => $plotTransactionType,
                             ]);
                         } catch (\Exception $praError) {
-                            Log::error("PRA creation failed for {$sourceValue} (non-critical)", [
+                            Log::error("PRA creation failed for {$praSourceValue} (non-critical)", [
                                 'error' => $praError->getMessage(),
                                 'file_number' => $fullFileNumber,
                             ]);

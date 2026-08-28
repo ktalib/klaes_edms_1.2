@@ -2,7 +2,7 @@
 {{ Form::model($loginUser, ['route' => ['setting.account'], 'method' => 'post', 'enctype' => 'multipart/form-data']) }}
 <div class="space-y-6">
     <div class="flex items-center gap-4">
-        <img src="{{ !empty($users->profile) ? $profile . '/' . $users->profile : $profile . '/avatar.png' }}"
+        <img src="{{ $users->profile_url ?? $profile . '/avatar.png' }}"
             alt="user-image"
             class="h-20 w-20 rounded-2xl border-4 border-white object-cover shadow-lg" />
     </div>

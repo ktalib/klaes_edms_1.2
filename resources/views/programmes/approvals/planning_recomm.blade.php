@@ -611,6 +611,7 @@
                                     <th class="table-header">JSI Capture Status</th>
                                     <th class="table-header">JSI Approval Status</th>
                                     <th class="table-header">Planning Recommendation Status</th>
+                                    <th class="table-header">Created By</th>
                                     <th class="table-header">Date Captured</th>
                                     <th class="table-header">Comment</th>
                                     <th class="table-header">Actions</th>
@@ -765,6 +766,7 @@
                                             <span class="{{ $primaryPlanningBadgeClass }}">{{ $primaryPlanningLabel }}</span>
                                             {{ $primaryPlanningDate }}
                                         </td>
+                                        <td class="table-cell">{{ $application->created_by_name ?? '—' }}</td>
                                         <td class="table-cell">
                                             @if($application->created_at)
                                                 {{ \Carbon\Carbon::parse($application->created_at)->format('d/m/Y h:i A') }}
@@ -781,7 +783,7 @@
                                     </tr>
                                 @empty
                                     <tr class="text-xs">
-                                        <td colspan="9" class="table-cell text-center py-4 text-gray-500">No primary survey
+                                        <td colspan="11" class="table-cell text-center py-4 text-gray-500">No primary survey
                                             records found</td>
                                     </tr>
                                 @endforelse
@@ -860,6 +862,7 @@
                                     <th class="table-header">JSI Capture Status</th>
                                     <th class="table-header">JSI Approval Status</th>
                                     <th class="table-header">Planning Recommendation Status</th>
+                                    <th class="table-header">Created By</th>
                                     <th class="table-header">Date Captured</th>
                                     <th class="table-header">Comment</th>
                                     <th class="table-header">Actions</th>
@@ -1014,6 +1017,7 @@
                                             {{ $unitPlanningDate }}
                                         </td>
 
+                                        <td class="table-cell">{{ $unitApplication->created_by_name ?? '—' }}</td>
                                         <td class="table-cell">
                                             @if($unitApplication->created_at)
                                                 {{ \Carbon\Carbon::parse($unitApplication->created_at)->format('d/m/Y h:i A') }}
@@ -1216,12 +1220,27 @@
                                                         </div>
                                                     </li>
                                                 @endif
+
+                                                {{-- ST keeps no recommendation record — the decision is three
+                                                     columns on the application — so Master Delete here unmakes
+                                                     the decision rather than deleting a row. The application,
+                                                     its memo and its RofO all survive. Supper Admin only. --}}
+                                                @if(auth()->user()?->assign_role === 'Supper Admin' && !empty($unitApplication->planning_approval_date))
+                                                    <li>
+                                                        <button type="button"
+                                                            onclick="masterDeleteStRecommendation('unit', {{ (int) $unitApplication->id }}, @js($unitApplication->fileno))"
+                                                            class="w-full text-left px-4 py-2 flex items-center space-x-2 text-red-700 hover:bg-red-50 font-semibold">
+                                                            <i data-lucide="shield-alert" class="w-4 h-4"></i>
+                                                            <span>Master Delete</span>
+                                                        </button>
+                                                    </li>
+                                                @endif
                                             </ul>
                                         </td>
                                     </tr>
                                 @empty
                                     <tr class="text-xs">
-                                        <td colspan="10" class="table-cell text-center py-4 text-gray-500">No unit applications
+                                        <td colspan="11" class="table-cell text-center py-4 text-gray-500">No unit applications
                                             found</td>
                                     </tr>
                                 @endforelse
@@ -1326,6 +1345,34 @@
 
     <!-- Include Joint Site Inspection Modal -->
     @include('programmes.partials.joint_site_inspection_modal')
+
+    <script src="{{ asset('js/master-delete.js') }}"></script>
+    <script>
+        /**
+         * Master Delete for an ST planning recommendation.
+         *
+         * ST stores no recommendation record — the decision is three columns on the
+         * application — so this unmakes the decision rather than deleting a row. It
+         * is named and gated as a Master Delete because from the operator's side it
+         * is the same act as the Land and SLTR deletes: an approval put on a file in
+         * error, taken back off it.
+         */
+        function masterDeleteStRecommendation(scope, id, fileNo) {
+            MasterDelete.confirm({
+                url: '{{ route('programmes.approvals.planning_recomm.master-destroy') }}',
+                body: { scope: scope, id: id },
+                reference: fileNo,
+                title: 'Master Delete Planning Recommendation',
+                lead: 'This permanently clears the planning recommendation recorded against <b>' + fileNo + '</b>. It cannot be undone.',
+                targets: [
+                    'The recommendation decision (Approved / Declined)',
+                    'Its approval date',
+                    'Its recommendation comment'
+                ],
+                keeps: 'The application, its units, its ST memo, its RofO and its file number are all untouched — the file simply goes back to Pending.'
+            });
+        }
+    </script>
 
     <script>
         // Make shared utilities and unit data available to the modal

@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use App\Services\InstrumentCaptureService;
+use App\Services\StAssignmentConsentResolver;
 use App\Models\Gender;
 use App\Models\StreetName;
 use Illuminate\Validation\Rule;
@@ -489,6 +490,9 @@ class InstrumentController extends Controller
             'Assignment' => ['Deed of Assignment'],
             'Gift' => ['Deed of Gift'],
             'Mortgage' => ['Deed of Mortgage', 'Tripartite Mortgage'],
+            // "ST Assignment" and "ST Assignment (Transfer of Title)" are the same
+            // thing; canonicalType() folds the long form onto the short one.
+            StAssignmentConsentResolver::CONSENT_TYPE => ['Deed of Assignment', 'ST Assignment (Transfer of Title)'],
         ];
 
         // Normalize fileno for more robust matching
@@ -519,6 +523,18 @@ class InstrumentController extends Controller
             ->orderBy('created_at', 'desc')
             ->orderBy('id', 'desc')
             ->get();
+
+        // A sectional file has no row in consent_applications — its consent is the
+        // approved memo that /deeds-applications shows as an "ST Assignment". Resolve
+        // it here so a LATER assignment of an ST unit can be captured on this form
+        // instead of being told the file has no consent. Matches on either the unit's
+        // own ST file number or the mother application's file number.
+        $stConsents = (new StAssignmentConsentResolver())->forFileNumber($fileno);
+        if ($stConsents->isNotEmpty()) {
+            $consentApps = $consentApps->concat($stConsents)
+                ->sortByDesc(fn ($c) => (string) ($c->created_at ?? ''))
+                ->values();
+        }
 
         // 5. Instrument captures on this file — the prior record used for auto-fill
         //    fallback, and the basis for deciding which consents are already spent.
@@ -564,7 +580,7 @@ class InstrumentController extends Controller
         // consent rather than the one already registered.
         $pickConsent = function (array $types, bool $unusedOnly) use ($consentApps) {
             foreach ($consentApps as $candidate) {
-                if (!in_array($candidate->consent_type, $types, true)) {
+                if (!in_array(StAssignmentConsentResolver::canonicalType($candidate->consent_type), $types, true)) {
                     continue;
                 }
                 if ($unusedOnly && $candidate->is_used) {
@@ -580,9 +596,12 @@ class InstrumentController extends Controller
             $requestedType = $consentTypeMap[$type];
             // Assignment and Gift are interchangeable enough to fall back on each
             // other; a Mortgage consent never stands in for either.
+            // An ST Assignment consent backs a Deed of Assignment (and a Gift, the
+            // same way a plain Assignment consent does), but only as a fallback —
+            // a real Assignment consent on the file still wins.
             $consentGroups = [
-                'Assignment' => ['Assignment', 'Gift'],
-                'Gift' => ['Assignment', 'Gift'],
+                'Assignment' => ['Assignment', 'Gift', StAssignmentConsentResolver::CONSENT_TYPE],
+                'Gift' => ['Assignment', 'Gift', StAssignmentConsentResolver::CONSENT_TYPE],
                 'Mortgage' => ['Mortgage'],
             ];
             $allowedFallbackTypes = $consentGroups[$requestedType] ?? [$requestedType];
@@ -659,7 +678,31 @@ class InstrumentController extends Controller
 
         $claimedCaptureIds = [];
 
+        $acceptedTypes = ($type && isset($consentTypeMap[$type]))
+            ? [
+                $consentTypeMap[$type],
+                // A Deed of Assignment / Gift may be backed by the file's ST
+                // Assignment memo, so that is on-type here rather than off-type.
+                ...($consentTypeMap[$type] === 'Mortgage' ? [] : [StAssignmentConsentResolver::CONSENT_TYPE]),
+            ]
+            : null;
+
         foreach ($consentApps as $consent) {
+            $consentType = StAssignmentConsentResolver::canonicalType($consent->consent_type);
+            $consent->matches_type = $acceptedTypes === null || in_array($consentType, $acceptedTypes, true);
+
+            // An ST Assignment memo is not a one-shot consent letter: it backs the
+            // unit's first transfer and every later one, exactly like a file that
+            // keeps getting new Assignment consents. It is also not a real
+            // consent_applications row, so it can never be linked by id — and
+            // (int) 'memo_7' is 0, which would otherwise match every capture whose
+            // consent_application_id is NULL. Skip the usage pass entirely.
+            if (!empty($consent->is_synthetic)) {
+                $consent->is_used = false;
+                $consent->used_by = null;
+                continue;
+            }
+
             $usedBy = null;
 
             foreach ($fileCaptures as $capture) {
@@ -673,7 +716,7 @@ class InstrumentController extends Controller
             }
 
             if (!$usedBy) {
-                $consumingTypes = $consentInstrumentMap[$consent->consent_type] ?? [];
+                $consumingTypes = $consentInstrumentMap[$consentType] ?? [];
                 $consentParty = $normalizeName($consent->party_name ?? '');
 
                 foreach ($fileCaptures as $capture) {
@@ -710,13 +753,6 @@ class InstrumentController extends Controller
                 'party_2_name' => $usedBy->party_2_name ?? null,
                 'is_linked' => !empty($usedBy->consent_application_id),
             ] : null;
-
-            // Whether this consent's type suits the instrument being captured.
-            // Ungated instrument types (Power of Attorney and friends) can draw
-            // property details from any consent, so nothing is off-type there.
-            $consent->matches_type = ($type && isset($consentTypeMap[$type]))
-                ? $consent->consent_type === $consentTypeMap[$type]
-                : true;
         }
     }
 

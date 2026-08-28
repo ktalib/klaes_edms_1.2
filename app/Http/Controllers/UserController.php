@@ -176,6 +176,49 @@ class UserController extends Controller
     }
 
 
+    /**
+     * Store an uploaded passport photo against the user, replacing any previous file.
+     * Returns true when a new photo was saved; false when the request carried none
+     * (in which case the existing photo is left untouched).
+     */
+    private function applyProfileUpload(Request $request, User $user): bool
+    {
+        if (!$request->hasFile('profile')) {
+            return false;
+        }
+
+        $file = $request->file('profile');
+        $filename = uniqid('profile_') . '_' . time() . '.' . $file->getClientOriginalExtension();
+        Storage::disk('public')->putFileAs('upload/profile', $file, $filename);
+
+        // Remove the previous file, but never the shared "avatar.png" placeholder.
+        $previous = trim((string) $user->profile);
+        if ($previous !== '' && strtolower($previous) !== 'avatar.png') {
+            foreach ([$previous, 'upload/profile/' . $previous] as $candidate) {
+                if (Storage::disk('public')->exists($candidate)) {
+                    Storage::disk('public')->delete($candidate);
+                    break;
+                }
+            }
+        }
+
+        // Stored as a public-disk relative path so every screen resolves it the same way.
+        $user->profile = 'upload/profile/' . $filename;
+        $user->passport_photo_path = 'upload/profile/' . $filename;
+
+        return true;
+    }
+
+    private function profileUploadRules(bool $required = false): array
+    {
+        return [
+            ($required ? 'required' : 'nullable'),
+            'image',
+            'mimes:jpeg,jpg,png,gif',
+            'max:2048',
+        ];
+    }
+
     public function store(Request $request)
     {
         if (\Auth::user()->type == 'super admin') {
@@ -186,6 +229,7 @@ class UserController extends Controller
                         'username' => 'required|unique:users', // add username validation
                         'password' => 'required|min:6',
                         'work_station' => $this->workStationValidationRule(false),
+                        'profile' => $this->profileUploadRules(),
                     ]
                 );
                 if ($validator->fails()) {
@@ -220,14 +264,7 @@ class UserController extends Controller
                 $user->auto_deactivate = true;
                 
                 // Handle optional profile image upload
-                if ($request->hasFile('profile')) {
-                    $file = $request->file('profile');
-                    $filename = uniqid('profile_') . '_' . time() . '.' . $file->getClientOriginalExtension();
-                    // store in public disk under upload/profile
-                    Storage::disk('public')->putFileAs('upload/profile', $file, $filename);
-                    $user->profile = $filename;
-                    $user->passport_photo_path = 'upload/profile/' . $filename;
-                } else {
+                if (!$this->applyProfileUpload($request, $user)) {
                     $user->profile = 'avatar.png';
                 }
 
@@ -288,6 +325,7 @@ class UserController extends Controller
                         'deputy_user_id' => 'nullable|integer|exists:sqlsrv.users,id',
                         'out_of_office_from' => 'nullable|date',
                         'out_of_office_to' => 'nullable|date|after_or_equal:out_of_office_from',
+                        'profile' => $this->profileUploadRules(),
                     ]
                 );
                 if ($validator->fails()) {
@@ -356,16 +394,10 @@ class UserController extends Controller
                 $user->email_verified_at = now();
                 
                 // Handle required profile image upload
-                if ($request->hasFile('profile')) {
-                    $file = $request->file('profile');
-                    $filename = uniqid('profile_') . '_' . time() . '.' . $file->getClientOriginalExtension();
-                    Storage::disk('public')->putFileAs('upload/profile', $file, $filename);
-                    $user->profile = $filename;
-                    $user->passport_photo_path = 'upload/profile/' . $filename;
-                } else {
+                if (!$this->applyProfileUpload($request, $user)) {
                     // Fallback, though validation requires it
                     $user->profile = 'avatar.png';
-                    $user->passport_photo_path = $user->profile ? 'upload/profile/' . $user->profile : null;
+                    $user->passport_photo_path = null;
                 }
                 
                 $user->lang = 'english';
@@ -478,6 +510,7 @@ class UserController extends Controller
                         'username' => 'required|unique:users,username,' . $id, // add username validation
                         'work_station' => $this->workStationValidationRule(false),
                         'password' => 'nullable|min:6',
+                        'profile' => $this->profileUploadRules(),
                     ]
                 );
                 if ($validator->fails()) {
@@ -487,7 +520,10 @@ class UserController extends Controller
                 }
 
                 $userData = $request->all();
+                // The uploaded file must never reach the fillable "profile" column directly.
+                unset($userData['profile']);
                 $user->fill($userData);
+                $this->applyProfileUpload($request, $user);
                 $user->username = $request->username; // update username
                 $user->email = $request->filled('email') ? $request->email : uniqid('temp') . '@klaes.com.ng';
                 if ($request->filled('password')) {
@@ -531,6 +567,7 @@ class UserController extends Controller
                         'out_of_office_from' => 'nullable|date',
                         'out_of_office_to' => 'nullable|date|after_or_equal:out_of_office_from',
                         'password' => 'nullable|min:6',
+                        'profile' => $this->profileUploadRules(),
                     ]
                 );
                 if ($validator->fails()) {
@@ -625,6 +662,7 @@ class UserController extends Controller
                 if ($request->filled('password')) {
                     $user->password = Hash::make($request->password);
                 }
+                $this->applyProfileUpload($request, $user);
                 $user->save();
                 $this->notifyAccountUpdate($user);
                 

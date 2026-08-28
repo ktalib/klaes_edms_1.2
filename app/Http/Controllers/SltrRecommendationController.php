@@ -12,9 +12,14 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use App\Http\Controllers\Concerns\ExecutesMasterDelete;
+use App\Services\RofoRecommendationPurgeService;
+use Illuminate\Support\Facades\Log;
 
 class SltrRecommendationController extends Controller
 {
+    use ExecutesMasterDelete;
+
     public function index(Request $request)
     {
         $query = SltrRecommendation::with('creator');
@@ -244,5 +249,67 @@ class SltrRecommendationController extends Controller
         }
 
         return view('sltr_recommendations.templates.recommendation_print', compact('recommendation'));
+    }
+
+    /**
+     * MASTER DELETE — erase an SLTR recommendation from every table it reached.
+     *
+     * Destructive and irreversible. On SLTR the recommendation record IS the RofO
+     * record, so this takes both: the row, its PRA transaction, its security paper
+     * (back to the pool, or retired if the sheet has been printed), its
+     * `security_codes` tracking row and its print history.
+     *
+     * To undo only the issuance and keep the approved recommendation, use the
+     * Master Delete on the SLTR RofO screen instead.
+     */
+    public function masterDestroy(Request $request, $id)
+    {
+        if ($deny = $this->denyUnlessMasterDeleter()) {
+            return $deny;
+        }
+
+        $rec = SltrRecommendation::find($id);
+        if (!$rec) {
+            return response()->json(['success' => false, 'message' => 'Recommendation not found.'], 404);
+        }
+
+        if ($deny = $this->denyUnlessConfirmationMatches($request, $rec->sltr_number)) {
+            return $deny;
+        }
+
+        $snapshot = $rec->toArray();
+
+        DB::connection('sqlsrv')->beginTransaction();
+        try {
+            $counts = app(RofoRecommendationPurgeService::class)->purgeSltrRecommendation($rec);
+
+            DB::connection('sqlsrv')->commit();
+
+            $this->logMasterDelete(
+                'sltr_recommendation',
+                $rec->id,
+                $snapshot,
+                $counts,
+                'SLTR Recommendation ' . $rec->sltr_number
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Recommendation ' . $rec->sltr_number . ' deleted from all tables.',
+                'details' => $counts,
+            ]);
+        } catch (\Throwable $e) {
+            DB::connection('sqlsrv')->rollBack();
+            Log::error('SLTR recommendation master delete failed', [
+                'id'    => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error deleting recommendation: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 }

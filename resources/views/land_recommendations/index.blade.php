@@ -584,6 +584,18 @@
                                                             <i data-lucide="printer" class="h-4 w-4 text-slate-200"></i> Print (Pending Approval)
                                                         </span>
                                                     @endif
+
+                                                    {{-- Master Delete: the recommendation AND the RofO it became,
+                                                         out of every table it reached. Supper Admin only — the
+                                                         server enforces the same rule, so this only hides it. --}}
+                                                    @if(auth()->user()?->assign_role === 'Supper Admin')
+                                                    <div class="border-t border-slate-100 my-1"></div>
+                                                    <button type="button"
+                                                        onclick="masterDeleteLandRecommendation({{ $rec->id }}, @js($rec->file_number))"
+                                                        class="flex w-full items-center px-4 py-2.5 text-sm text-red-700 hover:bg-red-50 transition gap-2 font-bold">
+                                                        <i data-lucide="shield-alert" class="h-4 w-4"></i> Master Delete
+                                                    </button>
+                                                    @endif
                                                 </div>
                                             </div>
                                         </div>
@@ -688,6 +700,30 @@
 </div>
 
 @push('scripts')
+<script src="{{ asset('js/master-delete.js') }}"></script>
+<script>
+    /**
+     * Master Delete for a land recommendation — the record AND the RofO it became.
+     * MasterDelete.confirm() owns the two-step confirmation; the server re-checks
+     * both the typed file number and the Supper Admin role.
+     */
+    function masterDeleteLandRecommendation(id, fileNumber) {
+        MasterDelete.confirm({
+            url: '/land-recommendations/' + id + '/master-destroy',
+            reference: fileNumber,
+            title: 'Master Delete Recommendation',
+            lead: 'This permanently deletes the recommendation for <b>' + fileNumber + '</b> and everything it produced. It cannot be undone.',
+            targets: [
+                'The recommendation record',
+                'The RofO it became — status, dates and date of issue',
+                'Its PRA transaction',
+                'Its security paper code (released, or retired if already printed)',
+                'Its print history, white copies included'
+            ],
+            keeps: 'The file number, its indexing and any deed registered against it are untouched.'
+        });
+    }
+</script>
 <script>
     // ── Batches tab ────────────────────────────────────────────────────────
     // One row per batch. Expanding fetches EVERY child from the server rather

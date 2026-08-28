@@ -13,9 +13,15 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use App\Services\Pra\RofoPraSyncer;
 use App\Services\SecurityPaperCodeService;
+use App\Models\User;
+use App\Http\Controllers\Concerns\ExecutesMasterDelete;
+use App\Services\RofoRecommendationPurgeService;
+use Illuminate\Support\Facades\Log;
 
 class RofoController extends Controller
 {
+    use ExecutesMasterDelete;
+
     private function getAvailableSecurityPapers()
     {
         return SecurityPaperCodeService::availableQuery()->get();
@@ -420,12 +426,17 @@ class RofoController extends Controller
                 'sa.multiple_owners_names',
                 'sa.land_use',
                 'sa.created_at',
+                // Two authors, and they are not the same person: sa.created_by
+                // captured the unit application, rofo.created_by generated the
+                // RofO. The listing shows whichever one the row is about.
+                'sa.created_by as unit_created_by',
                 'rofo.rofo_no',
                 'rofo.print_counter',
                 'rofo.approval_date',
                 'rofo.security_paper_code',
                 'rofo.active as rofo_active',
-                'rofo.id as rofo_id'
+                'rofo.id as rofo_id',
+                'rofo.created_by as rofo_created_by'
             )
             ->orderByDesc('sa.created_at')
             ->get();
@@ -475,7 +486,18 @@ class RofoController extends Controller
             }
         }
 
-        $subapplications = $subapplications->map(function ($unit) use ($memoUploads, $puaMemoRecords, $suaMemoRecords) {
+        // One lookup for every author on the page rather than a query per row.
+        $userNames = User::whereIn('id', $subapplications
+                ->flatMap(fn ($u) => [$u->rofo_created_by ?? null, $u->unit_created_by ?? null])
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values()
+                ->all())
+            ->pluck('name', 'id')
+            ->all();
+
+        $subapplications = $subapplications->map(function ($unit) use ($memoUploads, $puaMemoRecords, $suaMemoRecords, $userNames) {
             $applicantType = strtolower(trim($unit->applicant_type ?? ''));
 
             if ($applicantType === 'corporate' && !empty($unit->corporate_name)) {
@@ -519,6 +541,13 @@ class RofoController extends Controller
             $unit->rofo_active = (int) ($unit->rofo_active ?? 0);
             $unit->rofo_generated = !empty($unit->rofo_no) && $unit->rofo_active === 1;
             $unit->print_counter = (int) ($unit->print_counter ?? 0);
+
+            // Created By on a RofO row means whoever generated the RofO. Rows with
+            // no RofO yet fall back to whoever captured the unit application, which
+            // is the only authorship those rows have. Pre-migration RofOs carry no
+            // author at all and print a dash — see the rofo.created_by migration.
+            $creatorId = $unit->rofo_created_by ?: ($unit->rofo_id ? null : $unit->unit_created_by);
+            $unit->created_by_name = $creatorId ? ($userNames[(int) $creatorId] ?? null) : null;
 
             $unitLga = trim((string) ($unit->unit_lga ?? ''));
             if ($unitLga !== '') {
@@ -566,6 +595,10 @@ class RofoController extends Controller
                 $landUse = optional($mother)->land_use ?? optional($referenceUnit)->land_use ?? 'N/A';
                 $createdAt = optional($mother)->created_at ?? optional($referenceUnit)->created_at;
 
+                // A primary's RofOs are generated for all its units in one pass, so
+                // the units agree on their author; take the first one that has any.
+                $createdByName = $units->pluck('created_by_name')->filter()->first();
+
                 return (object) [
                     'main_application_id' => $mainId,
                     'primary_file_no' => $primaryFileNo,
@@ -575,6 +608,7 @@ class RofoController extends Controller
                     'property_lga' => $propertyLga,
                     'land_use' => $landUse,
                     'created_at' => $createdAt,
+                    'created_by_name' => $createdByName,
                     'total_units' => $totalUnits,
                     'generated_units' => $rofoGenerated,
                     'pending_units' => max(0, $totalUnits - $rofoGenerated),
@@ -1269,6 +1303,10 @@ class RofoController extends Controller
                             'end_date' => $endDate,
                             'active' => $isModal ? 0 : 1,
                             'created_at' => $now,
+                            // Who generated the RofO. Written on insert only: an
+                            // update is an edit of an existing RofO, and reassigning
+                            // authorship on an edit would lose the issuer.
+                            'created_by' => Auth::id(),
                         ]);
 
                         $processedId = $connection->table('rofo')->insertGetId($insertData);
@@ -1738,6 +1776,121 @@ class RofoController extends Controller
             \Log::error('Error stack trace: ' . $e->getTraceAsString());
             return redirect()->route('programmes.view_rofo', $id)
                 ->with('error', 'An error occurred while preparing the printable ROFO.');
+        }
+    }
+
+    /**
+     * MASTER DELETE — erase ST RofOs.
+     *
+     * ST is the one module where the RofO is a record of its own (`rofo`), so this
+     * really does delete rows. It takes the RofO, its PRA transaction, its print
+     * history and its security paper (back to the pool if unused, retired if it has
+     * already been through a printer).
+     *
+     * The unit applications, the primary application, the ST memo and the file
+     * number are NOT touched. Erasing an ST FILE is a different, larger operation
+     * with its own screen — CommissionNewSTController::masterDestroy.
+     *
+     * Two scopes, because that is how ST issues RofOs:
+     *   scope=unit     one SUA row  — its own RofO.
+     *   scope=primary  one PUA row  — the RofOs of every unit under that primary,
+     *                                 which is what "Generate Batch RoFO" produced
+     *                                 in a single pass and what the row stands for.
+     */
+    public function masterDestroy(Request $request)
+    {
+        if ($deny = $this->denyUnlessMasterDeleter()) {
+            return $deny;
+        }
+
+        $validated = $request->validate([
+            'scope' => 'required|string|in:unit,primary',
+            'id'    => 'required|integer',
+        ]);
+
+        $connection = DB::connection('sqlsrv');
+        $isPrimary  = $validated['scope'] === 'primary';
+
+        if ($isPrimary) {
+            $application = $connection->table('mother_applications')
+                ->where('id', $validated['id'])
+                ->first(['id', 'fileno']);
+
+            $subApplicationIds = $connection->table('subapplications')
+                ->where('main_application_id', $validated['id'])
+                ->pluck('id')
+                ->all();
+        } else {
+            $application = $connection->table('subapplications')
+                ->where('id', $validated['id'])
+                ->first(['id', 'fileno']);
+
+            $subApplicationIds = [$validated['id']];
+        }
+
+        if (!$application) {
+            return response()->json(['success' => false, 'message' => 'Application not found.'], 404);
+        }
+
+        // The typed confirmation is the only safeguard between a row menu and an
+        // irreversible delete, so a file number is required to have one at all.
+        $reference = trim((string) ($application->fileno ?? ''));
+        if ($reference === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'This application has no file number, so a master delete cannot be confirmed against it.',
+            ], 422);
+        }
+
+        if ($deny = $this->denyUnlessConfirmationMatches($request, $reference)) {
+            return $deny;
+        }
+
+        $snapshot = $connection->table('rofo')
+            ->whereIn('sub_application_id', $subApplicationIds)
+            ->get()
+            ->map(fn ($r) => (array) $r)
+            ->all();
+
+        if (empty($snapshot)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No RofO has been generated for ' . $reference . ', so there is nothing to delete.',
+            ], 404);
+        }
+
+        $connection->beginTransaction();
+        try {
+            $counts = app(RofoRecommendationPurgeService::class)->purgeStRofo($subApplicationIds);
+
+            $connection->commit();
+
+            $this->logMasterDelete(
+                'st_rofo',
+                $validated['id'],
+                ['rofo_rows' => $snapshot],
+                $counts,
+                'ST RofO ' . $reference . ($isPrimary ? ' (all units under the primary)' : '')
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => $counts['rofo'] . ' RofO record(s) for ' . $reference . ' deleted. The application itself is untouched.',
+                'details' => $counts,
+            ]);
+        } catch (\Throwable $e) {
+            $connection->rollBack();
+            Log::error('ST RofO master delete failed', [
+                'scope' => $validated['scope'],
+                'id'    => $validated['id'],
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error deleting RofO: ' . $e->getMessage(),
+            ], 500);
         }
     }
 }

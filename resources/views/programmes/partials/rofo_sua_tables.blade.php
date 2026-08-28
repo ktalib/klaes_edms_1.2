@@ -11,6 +11,7 @@
                 <th>Unit/Section/Block</th>
                 <th>ST Memo Status</th>
                 <th>RoFO Details</th>
+                <th>Created By</th>
                 <th>Date Created</th>
                 <th>Actions</th>
             </tr>
@@ -41,6 +42,7 @@
                         <span class="muted">Pending</span>
                     @endif
                 </td>
+                <td>{{ $unitApplication->created_by_name ?? '—' }}</td>
                 <td>{{ $unitApplication->created_at ? date('d-m-Y', strtotime($unitApplication->created_at)) : 'N/A' }}</td>
                 <td class="actions">
                     <div class="dd">
@@ -69,7 +71,7 @@
             </tr>
             @empty
             <tr>
-                <td colspan="10" class="muted">No SUA records pending RoFO generation</td>
+                <td colspan="12" class="muted">No SUA records pending RoFO generation</td>
             </tr>
             @endforelse
         </tbody>
@@ -89,6 +91,7 @@
                 <th>Unit Type</th>
                 <th>Unit/Section/Block</th>
                 <th>RoFO Details</th>
+                <th>Created By</th>
                 <th>Date Created</th>
                 <th>Actions</th>
             </tr>
@@ -113,6 +116,7 @@
                         <span class="muted">Pending</span>
                     @endif
                 </td>
+                <td>{{ $unitApplication->created_by_name ?? '—' }}</td>
                 <td>{{ $unitApplication->created_at ? date('d-m-Y', strtotime($unitApplication->created_at)) : 'N/A' }}</td>
                 <td class="actions">
                     <div class="dd">
@@ -197,13 +201,26 @@
                                     <span>Enter Security Code</span>
                                 </button>
                             @endif
+
+                            {{-- Master Delete removes the `rofo` row itself, with its PRA
+                                 transaction, security paper and print log. The unit
+                                 application, its memo and its file number survive — erasing
+                                 an ST FILE is a different screen. Supper Admin only; the
+                                 server enforces the same rule. --}}
+                            @if(auth()->user()?->assign_role === 'Supper Admin')
+                                <button type="button" class="dd-item"
+                                    onclick="masterDeleteStRofo('unit', {{ (int) $unitApplication->id }}, @js($unitApplication->fileno))">
+                                    <i data-lucide="shield-alert" class="w-4 h-4 text-red-600"></i>
+                                    <span class="text-red-700 font-semibold">Master Delete</span>
+                                </button>
+                            @endif
                         </div>
                     </div>
                 </td>
             </tr>
             @empty
             <tr>
-                <td colspan="10" class="muted">No generated SUA RoFO applications found</td>
+                <td colspan="12" class="muted">No generated SUA RoFO applications found</td>
             </tr>
             @endforelse
         </tbody>

@@ -1142,6 +1142,15 @@ class FileIndexingController extends Controller
                 'residence_address' => 'nullable',
                 'dciv_reason' => 'nullable|string|max:500',
                 'complainant' => 'nullable|string|max:255',
+                // Root of Title is a data-entry requirement of the File Indexing form
+                // (create, edit and KANGIS update all post here), but only for the two
+                // registry combinations that have a root to state — see
+                // rootOfTitleIsRequired(). The non-form write paths have no such field,
+                // so they are exempted the same way gender is.
+                'root_of_title' => [
+                    Rule::requiredIf(fn () => $this->rootOfTitleIsRequired($request)),
+                    'nullable', 'string', 'max:255',
+                ],
                 'current_holder' => 'nullable',
                 'original_holder' => 'nullable',
                 // Entity & Customer fields
@@ -1239,6 +1248,7 @@ class FileIndexingController extends Controller
                 'ground_rent_receipt_date' => 'nullable|array',
             ], [
                 'land_use_type.required' => 'Please select a Land Use Type.',
+                'root_of_title.required' => 'Please enter the Root of Title.',
                 'kangis_fileno_placeholder.required' => 'KANGIS FileNo Placeholder is required when KANGIS Registry is selected.',
                 'new_kangis_file_no.required' => 'New KANGIS File No is required when "Has New KANGIS FileNo" is checked.',
             ]);
@@ -2825,6 +2835,7 @@ class FileIndexingController extends Controller
                 'dciv_reason' => $record->dciv_reason ?? null,
                 'created_at' => $record->created_at,
                 'updated_at' => $record->updated_at,
+                'root_of_title' => $record->root_of_title ?? null,
                 'current_holder' => $record->current_holder ?? $record->file_title,
                 'original_holder' => $record->original_holder ?? $record->file_title,
                 'related_fileno' => $record->related_fileno ?? null,
@@ -3341,6 +3352,40 @@ class FileIndexingController extends Controller
         ]);
     }
 
+    /**
+     * Does this submission need a Root of Title?
+     *
+     * Only two registry combinations do (client rule 2026-08-27):
+     *   - SLTR              — General Registry OR Physical Registry says SLTR
+     *   - Land / Registry 3 — General Registry "Land Registry" AND Physical
+     *                         Registry "Registry 3 - Land"
+     * Everything else (KANGIS, DCIV, the other Land physical registries) neither
+     * shows the field nor validates it. rootOfTitleApplies() in
+     * create-indexing-dialog.js is the same test on the form side; the two must
+     * agree, or the officer is asked for a field that is not on screen.
+     *
+     * The automated scanning importer is exempt outright: it has no registry
+     * question and no root to give, the same exemption gender carries.
+     */
+    private function rootOfTitleIsRequired(Request $request): bool
+    {
+        if ($request->input('source') === 'scanning_upload') {
+            return false;
+        }
+
+        $norm = fn ($v) => preg_replace('/\s+/', ' ', strtoupper(trim((string) $v)));
+
+        $general  = $norm($request->input('general_registry'));
+        $physical = $norm($request->input('physical_registry'));
+
+        $isSltr = str_contains($general, 'SLTR') || str_contains($physical, 'SLTR');
+
+        $isLandRegistry3 = str_contains($general, 'LAND REGISTRY')
+            && str_contains(preg_replace('/[^A-Z0-9]/', '', $physical), 'REGISTRY3');
+
+        return $isSltr || $isLandRegistry3;
+    }
+
     public function store(Request $request)
     {
         try {
@@ -3548,6 +3593,15 @@ class FileIndexingController extends Controller
                 'residence_address' => 'nullable',
                 'dciv_reason' => 'nullable|string|max:500',
                 'complainant' => 'nullable|string|max:255',
+                // Root of Title is a data-entry requirement of the File Indexing form
+                // (create, edit and KANGIS update all post here), but only for the two
+                // registry combinations that have a root to state — see
+                // rootOfTitleIsRequired(). The non-form write paths have no such field,
+                // so they are exempted the same way gender is.
+                'root_of_title' => [
+                    Rule::requiredIf(fn () => $this->rootOfTitleIsRequired($request)),
+                    'nullable', 'string', 'max:255',
+                ],
                 'current_holder' => 'nullable',
                 'original_holder' => 'nullable',
                 // Entity & Customer fields
@@ -3644,6 +3698,7 @@ class FileIndexingController extends Controller
                 'ground_rent_receipt_date' => 'nullable|array',
             ], [
                 'land_use_type.required' => 'Please select a Land Use Type.',
+                'root_of_title.required' => 'Please enter the Root of Title.',
                 'kangis_fileno_placeholder.required' => 'KANGIS FileNo Placeholder is required when KANGIS Registry is selected.',
                 'new_kangis_file_no.required' => 'New KANGIS File No is required when "Has New KANGIS FileNo" is checked.',
             ]);

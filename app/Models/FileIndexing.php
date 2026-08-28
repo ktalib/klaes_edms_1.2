@@ -86,6 +86,10 @@ class FileIndexing extends Model
         'batch_generated_by',
         'is_deleted',
         'deleted_at',
+        // Root of Title — the pre-grant instrument/holder the title springs from.
+        // Captured by hand on the File Indexing form (required there); read as the
+        // last-resort fallback by TitleHolderResolver when no chain row supplies it.
+        'root_of_title',
         'current_holder',
         'original_holder',
         'party_3',
@@ -215,6 +219,7 @@ class FileIndexing extends Model
             'dciv_reason',
             'dciv_status',
             'dciv_fileno',
+            'root_of_title',
             'current_holder',
             'original_holder',
             'party_3',
@@ -420,11 +425,14 @@ class FileIndexing extends Model
     }
 
     /**
-     * Normalize a holder column ('original_holder' | 'current_holder') for display.
+     * Normalize a holder column ('root_of_title' | 'original_holder' |
+     * 'current_holder') for display.
      *
-     * These columns store EITHER a plain name string OR a JSON-encoded array of
-     * names (block indexing). The model casts them as 'array', which decodes a
-     * plain-string value to null — so we read the raw attribute and handle both.
+     * original_holder/current_holder store EITHER a plain name string OR a
+     * JSON-encoded array of names (block indexing). The model casts those two as
+     * 'array', which decodes a plain-string value to null — so we read the raw
+     * attribute and handle both. root_of_title is always a plain string (one root
+     * per file) and is read through here so callers need only one accessor.
      */
     public function formattedHolder(string $which): ?string
     {

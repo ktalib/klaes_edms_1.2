@@ -247,6 +247,27 @@
                                     </select>
                                 </div>
 
+                                {{-- Physical Registry sits directly under General Registry: both
+                                     name the registry holding the file, so they are answered
+                                     together. Moved here from Digital Archive Details. --}}
+                                <div class="form-group mt-4">
+                                    <label for="physical-registry" class="block text-sm font-medium text-gray-700 mb-2">Physical Registry <span
+                                            class="text-red-500">*</span></label>
+                                    <select id="physical-registry"
+                                        class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                        name="physical_registry" required>
+                                        <option value="">Select Registry</option>
+                                        @if(isset($physicalRegistries))
+                                            @foreach($physicalRegistries as $pHregistry)
+                                                <option value="{{ $pHregistry->name }}" {{ (isset($record) && $record->physical_registry == $pHregistry->name) ? 'selected' : '' }}>
+                                                    {{ $pHregistry->name }}
+                                                </option>
+                                            @endforeach
+                                        @endif
+                                        <option value="Other" {{ (isset($record) && $record->physical_registry == 'Other') ? 'selected' : '' }}>Other</option>
+                                    </select>
+                                </div>
+
                                 <!-- Reason for Investigation (DCIV) - Conditional Display -->
                                 <div class="form-group mt-6 hidden" id="dciv-reason-container">
                                     <label for="dciv-reason" class="block text-sm font-medium text-gray-700 mb-2">

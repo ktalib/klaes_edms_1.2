@@ -1745,8 +1745,8 @@
                                     </div>
                                     <div class="flex items-center gap-4 px-4 py-2 bg-white border border-gray-200 rounded-lg">
                                         <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden">
-                                                @if(Auth::user()->profile)
-              <img src="{{ asset('storage') . '/' . auth()->user()->profile }}" alt="Profile"
+                                                @if(Auth::user()->profile_url)
+              <img src="{{ auth()->user()->profile_url }}" alt="Profile"
                 class="w-full h-full object-cover">
             @else
               <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-500" fill="none" viewBox="0 0 24 24"

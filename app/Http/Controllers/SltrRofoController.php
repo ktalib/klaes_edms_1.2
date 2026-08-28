@@ -10,9 +10,14 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use App\Http\Controllers\Concerns\ExecutesMasterDelete;
+use App\Services\RofoRecommendationPurgeService;
+use Illuminate\Support\Facades\Log;
 
 class SltrRofoController extends Controller
 {
+    use ExecutesMasterDelete;
+
     public function index(Request $request)
     {
         $query = SltrRecommendation::with('creator')
@@ -262,5 +267,68 @@ class SltrRofoController extends Controller
         $recommendation->increment('rofo_print_count');
 
         return response()->json(['success' => true]);
+    }
+
+    /**
+     * MASTER DELETE — un-issue an SLTR RofO.
+     *
+     * The recommendation SURVIVES, approved, and can be generated again. What goes
+     * is the issuance: the generated status and its dates, the surveyor flags, the
+     * date of issue, the print history and the PRA transaction, plus the security
+     * paper — released back to the pool if unused, retired if it has already been
+     * through a printer.
+     *
+     * To erase the recommendation as well, use the Master Delete on the SLTR
+     * Recommendation screen — that one takes this with it.
+     */
+    public function masterDestroy(Request $request, $id)
+    {
+        if ($deny = $this->denyUnlessMasterDeleter()) {
+            return $deny;
+        }
+
+        $rec = SltrRecommendation::find($id);
+        if (!$rec) {
+            return response()->json(['success' => false, 'message' => 'RofO record not found.'], 404);
+        }
+
+        if ($deny = $this->denyUnlessConfirmationMatches($request, $rec->sltr_number)) {
+            return $deny;
+        }
+
+        $snapshot = $rec->toArray();
+
+        DB::connection('sqlsrv')->beginTransaction();
+        try {
+            $counts = app(RofoRecommendationPurgeService::class)->purgeSltrRofo($rec);
+
+            DB::connection('sqlsrv')->commit();
+
+            $this->logMasterDelete(
+                'sltr_rofo',
+                $rec->id,
+                $snapshot,
+                $counts,
+                'SLTR RofO ' . $rec->sltr_number
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'RofO for ' . $rec->sltr_number . ' deleted. The recommendation remains and can be generated again.',
+                'details' => $counts,
+            ]);
+        } catch (\Throwable $e) {
+            DB::connection('sqlsrv')->rollBack();
+            Log::error('SLTR RofO master delete failed', [
+                'id'    => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error deleting RofO: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 }

@@ -715,6 +715,13 @@
             applyAutofillLock([fileTitleInput.id], false);
         }
 
+        // Populate Root of Title. Only when the looked-up record actually carries one:
+        // it is required on save, so overwriting a typed value with an empty lookup
+        // would silently blank the one field the officer cannot leave empty.
+        if (record.root_of_title) {
+            setAutoFilledValue('root-of-title', record.root_of_title, { lock: false });
+        }
+
         // Populate Original Holder
         setAutoFilledValue('original-holder', record.original_holder ?? '', { lock: false });
 
@@ -5898,6 +5905,31 @@
             }
         }
 
+        // Root of Title required validation (Holders card). The server enforces the
+        // same rule; this is here so the officer is told before the round trip.
+        {
+            const rootInput = document.getElementById('root-of-title');
+            if (rootInput && rootOfTitleApplies() && !(rootInput.value || '').trim()) {
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Root of Title Required',
+                        text: 'Please enter the Root of Title before saving.',
+                        confirmButtonText: 'OK',
+                        confirmButtonColor: '#f59e0b'
+                    }).then(() => {
+                        rootInput.focus();
+                        try { rootInput.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) { }
+                    });
+                } else {
+                    alert('Please enter the Root of Title before saving.');
+                    rootInput.focus();
+                }
+                updateCreateButtonState();
+                return;
+            }
+        }
+
         const tempSuffixPattern = /\(\s*T\s*\)\s*$/i;
         const hiddenFileNumberValue = (document.getElementById('fileno')?.value || '').trim();
         const displayFileNumberValue = (document.getElementById('file-number-display')?.value || '').trim();
@@ -6159,6 +6191,9 @@
                 const ta = document.getElementById('ts-remark');
                 return (ta?.value || '').trim() || null;
             })(),
+            // Root of Title is one value per file however many holder names there are,
+            // so it stays a plain string in both Single and Block indexing.
+            root_of_title: (document.getElementById('root-of-title')?.value || '').trim(),
             current_holder: indexingType === 'Block' ? currentHolders : (currentHolders[0] || fileTitle),
             original_holder: indexingType === 'Block' ? (originalHolders && originalHolders.length > 0 ? originalHolders : [currentHolders[0] || fileTitle]) : (originalHolders ? originalHolders[0] : (currentHolders[0] || fileTitle)),
             land_use_type: collectArrayValues('land_use_type') || (document.getElementById('land-use-type')?.value || ''),
@@ -8039,6 +8074,56 @@
     }
     window.populateFromGroupingRecord = populateFromGroupingRecord;
 
+    /**
+     * Does this file need a Root of Title?
+     *
+     * Only two registry combinations do (client rule 2026-08-27):
+     *   - SLTR              — General Registry OR Physical Registry says SLTR
+     *   - Land / Registry 3 — General Registry "Land Registry" AND Physical
+     *                         Registry "Registry 3 - Land"
+     * Every other registry (KANGIS, DCIV, and the other Land physical registries)
+     * neither shows the field nor validates it. The server applies the same test,
+     * so a hidden field can never block a save.
+     */
+    function rootOfTitleApplies() {
+        const norm = (el) => (el?.value || '').toUpperCase().replace(/\s+/g, ' ').trim();
+        const squash = (v) => v.replace(/[^A-Z0-9]/g, '');
+
+        const general = norm(document.getElementById('general-registry'));
+        const physical = norm(document.getElementById('physical-registry'));
+
+        const isSltr = general.includes('SLTR') || physical.includes('SLTR');
+        const isLandRegistry3 = general.includes('LAND REGISTRY')
+            && squash(physical).includes('REGISTRY3');
+
+        return isSltr || isLandRegistry3;
+    }
+
+    /**
+     * Show/hide the Root of Title field and its `required` attribute to match.
+     *
+     * The value is deliberately NOT cleared when the field is hidden: a registry
+     * change must never silently destroy something the officer already typed, and
+     * an existing record being edited under a non-applicable registry keeps the
+     * root it was captured with.
+     */
+    function syncRootOfTitleVisibility() {
+        const group = document.getElementById('root-of-title-group');
+        const input = document.getElementById('root-of-title');
+        if (!group || !input) return;
+
+        const applies = rootOfTitleApplies();
+        group.classList.toggle('hidden', !applies);
+        // A hidden `required` input makes the browser refuse a native submit with
+        // "not focusable", so the attribute has to come off with the field.
+        if (applies) {
+            input.setAttribute('required', 'required');
+        } else {
+            input.removeAttribute('required');
+        }
+    }
+    window.rootOfTitleApplies = rootOfTitleApplies;
+
     function handleRegistryFieldToggling() {
         const registrySelect = document.getElementById('general-registry');
         const physicalRegistrySelect = document.getElementById('physical-registry');
@@ -8293,6 +8378,9 @@
                     }
                 }
             }
+
+            // Root of Title only applies to SLTR and to Land Registry / Registry 3.
+            syncRootOfTitleVisibility();
         }
 
         function hidekangisPlaceholderFeedback() {

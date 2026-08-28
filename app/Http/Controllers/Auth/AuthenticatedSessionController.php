@@ -68,6 +68,9 @@ class AuthenticatedSessionController extends Controller
         }
         userLoggedHistory();
 
+        // Show the welcome card once, on the first page loaded after login
+        session(['show_welcome_popup' => true]);
+
         // Clear intended URL if it points to a JSON/utility endpoint
         // (e.g. /world-time, /api/*, etc.) to prevent redirecting there after login
         $intended = session()->get('url.intended');

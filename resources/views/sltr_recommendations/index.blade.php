@@ -102,6 +102,7 @@
                                 <th class="px-6 py-4 text-center whitespace-nowrap">Status</th>
                                 <th class="px-6 py-4 text-center whitespace-nowrap">RofO Status</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Created By</th>
+                                <th class="px-6 py-4 whitespace-nowrap">Date Created</th>
                                 <th class="px-6 py-4 text-right sticky right-0 bg-slate-50 border-l border-slate-200 z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap">Actions</th>
                             </tr>
                         </thead>
@@ -133,6 +134,7 @@
                                     @endif
                                 </td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->creator->name ?? 'System' }}</td>
+                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->created_at ? $rec->created_at->format('d-m-Y') : '—' }}</td>
                                 <td class="px-4 py-2 text-right sticky right-0 bg-white shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] border-l border-slate-100 z-10 whitespace-nowrap">
                                     <div x-data="{
                                         open: false,
@@ -225,13 +227,24 @@
                                                     class="flex w-full items-center px-4 py-2.5 text-red-600 hover:bg-red-50 transition gap-2">
                                                 <i data-lucide="trash-2" class="h-4 w-4"></i> Delete
                                             </button>
+                                            {{-- Master Delete goes further than Delete above, which only
+                                                 removes this row: it also takes the RofO the record became,
+                                                 its PRA transaction, its security paper and its print log.
+                                                 Supper Admin only — the server enforces the same rule. --}}
+                                            @if(auth()->user()?->assign_role === 'Supper Admin')
+                                            <button type="button"
+                                                    onclick="masterDeleteSltrRecommendation({{ $rec->id }}, @js($rec->sltr_number))"
+                                                    class="flex w-full items-center px-4 py-2.5 text-red-700 hover:bg-red-50 transition gap-2 font-bold">
+                                                <i data-lucide="shield-alert" class="h-4 w-4"></i> Master Delete
+                                            </button>
+                                            @endif
                                         </div>
                                     </div>
                                 </td>
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="14" class="px-8 py-12 text-center">
+                                <td colspan="15" class="px-8 py-12 text-center">
                                     <div class="flex flex-col items-center">
                                         <div class="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 mb-4">
                                             <i data-lucide="file-text" class="h-6 w-6"></i>
@@ -606,6 +619,29 @@
 @endpush
 
 @push('scripts')
+<script src="{{ asset('js/master-delete.js') }}"></script>
+<script>
+    /**
+     * Master Delete for an SLTR recommendation — the record AND the RofO it became.
+     * MasterDelete.confirm() owns the two-step confirmation; the server re-checks
+     * both the typed number and the Supper Admin role.
+     */
+    function masterDeleteSltrRecommendation(id, sltrNumber) {
+        MasterDelete.confirm({
+            url: '/sltr-recommendations/' + id + '/master-destroy',
+            reference: sltrNumber,
+            title: 'Master Delete Recommendation',
+            lead: 'This permanently deletes <b>' + sltrNumber + '</b> and everything it produced. It cannot be undone.',
+            targets: [
+                'The SLTR recommendation record',
+                'The RofO it became — status, dates and date of issue',
+                'Its PRA transaction',
+                'Its security paper code (released or retired)',
+                'Its print history, white copies included'
+            ]
+        });
+    }
+</script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 <script>

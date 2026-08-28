@@ -24,6 +24,7 @@
                 <th>Total Units</th>
                 <th>Memo Status</th>
                 <th>RoFO Status</th>
+                <th>Created By</th>
                 <th>Date Created</th>
                 <th>Actions</th>
             </tr>
@@ -67,6 +68,7 @@
                         @endif
                         <div class="muted text-xs mt-1">Details captured: {{ $detailsCaptured }} / {{ $summary->total_units ?? 0 }}</div>
                     </td>
+                    <td>{{ $summary->created_by_name ?? '—' }}</td>
                     <td>{{ !empty($summary->created_at) ? date('d-m-Y', strtotime($summary->created_at)) : 'N/A' }}</td>
                     <td class="actions">
                         <div class="dd">
@@ -108,7 +110,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="10" class="muted">No primaries pending RoFO generation</td>
+                    <td colspan="11" class="muted">No primaries pending RoFO generation</td>
                 </tr>
             @endforelse
         </tbody>
@@ -127,6 +129,7 @@
                 <th>Total Units</th>
                 <th>Memo Status</th>
                 <th>RoFO Status</th>
+                <th>Created By</th>
                 <th>Date Created</th>
                 <th>Actions</th>
             </tr>
@@ -147,6 +150,7 @@
                     <td>{{ $summary->total_units ?? 0 }}</td>
                     <td>{{ $summary->memo_generated_units ?? 0 }} / {{ $summary->total_units ?? 0 }}</td>
                     <td>{{ $summary->generated_units ?? 0 }} / {{ $summary->total_units ?? 0 }}</td>
+                    <td>{{ $summary->created_by_name ?? '—' }}</td>
                     <td>{{ !empty($summary->created_at) ? date('d-m-Y', strtotime($summary->created_at)) : 'N/A' }}</td>
                     <td class="actions">
                         @php
@@ -241,13 +245,26 @@
                                     <i data-lucide="layout-grid" class="w-4 h-4 text-blue-500"></i>
                                     <span>View PuA(s)</span>
                                 </button>
+
+                                {{-- A primary's RofOs are generated for every unit in one pass,
+                                     so this row has no single `rofo` row to remove — Master
+                                     Delete here takes the RofOs of ALL its units, which is what
+                                     the row stands for. The applications survive. Supper Admin
+                                     only; the server enforces the same rule. --}}
+                                @if(auth()->user()?->assign_role === 'Supper Admin')
+                                <button type="button" class="dd-item"
+                                    onclick="masterDeleteStRofo('primary', {{ (int) $summary->main_application_id }}, @js($summary->primary_file_no), {{ (int) ($summary->generated_units ?? 0) }})">
+                                    <i data-lucide="shield-alert" class="w-4 h-4 text-red-600"></i>
+                                    <span class="text-red-700 font-semibold">Master Delete</span>
+                                </button>
+                                @endif
                             </div>
                         </div>
                     </td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="10" class="muted">No primaries with generated RoFOs</td>
+                    <td colspan="11" class="muted">No primaries with generated RoFOs</td>
                 </tr>
             @endforelse
         </tbody>

@@ -105,8 +105,8 @@
           aria-expanded="false">
           <div
             class="w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200 flex items-center justify-center bg-gray-100">
-            @if(Auth::user()->profile)
-              <img  src="{{ asset('storage') . '/' . auth()->user()->profile }}"
+            @if(Auth::user()->profile_url)
+              <img  src="{{ auth()->user()->profile_url }}"
                 class="w-full h-full object-cover">
             @else
               <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-500" fill="none" viewBox="0 0 24 24"
@@ -181,6 +181,29 @@
   </div>
 </div>
 
+{{-- Standing reminder for accounts with no passport photo on file. Dismissing hides it
+     for the current page only, so it comes back until a photo is actually uploaded. --}}
+@if (Auth::check() && !Auth::user()->has_profile_photo)
+  <div id="missingProfilePhotoBanner"
+    class="flex flex-wrap items-center gap-3 border-b border-amber-200 bg-amber-50 px-6 py-3 text-sm text-amber-900">
+    <span class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-amber-100">
+      <i data-lucide="camera" class="h-4 w-4 text-amber-700"></i>
+    </span>
+    <span class="flex-1 min-w-[12rem]">
+      <strong>{{ __('Your profile picture is missing.') }}</strong>
+      {{ __('Upload a passport photo so colleagues can identify you on files and requests.') }}
+    </span>
+    <a href="{{ route('profile.index') }}"
+      class="inline-flex items-center rounded-md bg-amber-600 px-3 py-1.5 font-semibold text-white hover:bg-amber-700">
+      {{ __('Upload photo') }}
+    </a>
+    <button type="button" class="p-1 text-amber-700 hover:text-amber-900" aria-label="{{ __('Dismiss') }}"
+      onclick="document.getElementById('missingProfilePhotoBanner').remove()">
+      <i data-lucide="x" class="h-4 w-4"></i>
+    </button>
+  </div>
+@endif
+
 <!-- Tailwind CDN must come BEFORE our configuration -->
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="{{ asset('js/header-tailwind.js') }}"></script>
@@ -206,7 +229,7 @@
         }
       }
       $primaryLogo = $storageLogoPng ?? $defaultLogo;
-      $secondaryLogo = $storageLogoJpeg ?? $primaryLogo;
+      $secondaryLogo = $storageLogoJpeg ?? asset('assets/logo/Left_Logo.png');
     @endphp
     <div class="flex justify-center items-center space-x-6 pt-4">
       <img src="{{ $primaryLogo }}" alt="KLAES Logo" class="h-12">
@@ -227,9 +250,30 @@
           <h3 class="text-2xl md:text-3xl font-extrabold text-gray-900">
             WELCOME TO KLAES
           </h3>
+          <div class="flex justify-center mt-3">
+            <div
+              class="w-20 h-20 rounded-full overflow-hidden border-4 border-white shadow-md flex items-center justify-center bg-gray-100">
+              @if(Auth::check() && Auth::user()->profile_url)
+                <img src="{{ auth()->user()->profile_url }}" alt="Profile"
+                  class="w-full h-full object-cover">
+              @else
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-gray-500" fill="none" viewBox="0 0 24 24"
+                  stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              @endif
+            </div>
+          </div>
           <p class="text-xl md:text-2xl font-bold mt-2">
             Dear <span id="username" class="text-brand-green-fallback">USERNAME</span>
           </p>
+          @if (Auth::check() && !Auth::user()->has_profile_photo)
+            <a href="{{ route('profile.index') }}"
+              class="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-amber-700 underline hover:text-amber-800">
+              {{ __('Add your profile picture') }}
+            </a>
+          @endif
         </div>
       </div>
 

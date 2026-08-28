@@ -98,7 +98,10 @@
         $sizePhrase = $size['has'] ? ' of ' . $size['list'] . ' m²' : '';
 
         // What this stage acts on, named where it is known.
-        $actsOn = $stage->rank === 1
+        // Cast: sqlsrv hands rank back as a STRING, so a strict === 1 never matched and
+        // stage 1 printed "the resulting parcel" instead of naming the source files it
+        // actually consumes. Same trap DuplexSummaryService already guards against.
+        $actsOn = (int) $stage->rank === 1
             ? implode(', ', array_map(fn ($f) => Str::upper($f), $sources))
             : 'the resulting parcel' . ($incoming === 1 ? '' : 's');
 

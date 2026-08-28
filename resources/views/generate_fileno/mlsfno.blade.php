@@ -975,9 +975,13 @@
                                                          name="customer_type" x-model="customerType" :disabled="fileOption === 'sit'" required
                                                          {{-- Passport belongs to Individual files only; drop any image already
                                                               picked when the type changes, so a hidden field can't post one. --}}
-                                                         @change="if (customerType !== 'Individual') clearPassport()">
+                                                         @change="if (customerType !== 'Individual') clearPassport()"
+                                                         {{-- Individual is the ordinary case, so the form opens on it
+                                                              rather than on the placeholder. Only fills a blank value,
+                                                              so an inherited/SIT-forced type is never overwritten. --}}
+                                                         x-init="if (!customerType) customerType = 'Individual'">
                                                         <option value="">Select Customer Type</option>
-                                                        <option value="Individual">Individual</option>
+                                                        <option value="Individual" selected>Individual</option>
                                                         <option value="Corporate">Corporate</option>
                                                         <option value="Multiple">Multiple</option>
                                                         <option value="Government">Government</option>

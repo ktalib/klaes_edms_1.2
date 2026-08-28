@@ -22,7 +22,7 @@
                         <div class="flex items-center">
                             <div class="flex-shrink-0 h-12 w-12 relative">
                                 <img class="user-avatar h-12 w-12 rounded-full object-cover border-2 border-gray-200 shadow-sm"
-                                    src="{{ !empty($user->profile) ? asset(Storage::url('upload/profile')) . '/' . $user->profile : asset(Storage::url('upload/profile')) . '/avatar.png' }}"
+                                    src="{{ $user->profile_url ?? asset(Storage::url('upload/profile')) . '/avatar.png' }}"
                                     alt="User image">
                                 <div class="absolute bottom-0 right-0 h-3 w-3 bg-green-400 border-2 border-white rounded-full"></div>
                             </div>

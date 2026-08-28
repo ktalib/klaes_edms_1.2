@@ -553,4 +553,36 @@ class User extends Authenticatable implements MustVerifyEmail
         'general settings',
         'company settings',
     ];
+
+    /**
+     * The `profile` column holds three different shapes depending on which screen wrote it:
+     * a public-disk path ("profiles/x.jpg" from the profile page or "upload/profile/x.jpg"
+     * from user create/edit), a bare filename that lives under upload/profile, or the legacy
+     * "avatar.png" placeholder that has no file behind it. Resolve all of them in one place.
+     *
+     * Deliberately does not stat the disk: the user list renders hundreds of avatars and a
+     * per-row existence check cost ~0.8ms each. A row pointing at a deleted file therefore
+     * yields a broken image rather than the placeholder.
+     */
+    public function getProfileUrlAttribute(): ?string
+    {
+        $value = trim((string) ($this->profile ?? ''));
+
+        if ($value === '' || strtolower($value) === 'avatar.png') {
+            return null;
+        }
+
+        // Bare filenames were only ever written into upload/profile.
+        $path = str_contains($value, '/') ? $value : 'upload/profile/' . $value;
+
+        return \Illuminate\Support\Facades\Storage::disk('public')->url($path);
+    }
+
+    /**
+     * True when the account has a passport photo on file — used to prompt users to upload one.
+     */
+    public function getHasProfilePhotoAttribute(): bool
+    {
+        return $this->profile_url !== null;
+    }
 }

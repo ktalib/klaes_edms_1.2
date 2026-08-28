@@ -194,6 +194,24 @@
                                                 </div>
                                             </li>
                                         @endif
+
+                                        {{-- ST keeps no recommendation record — the decision is three
+                                             columns on the application — so Master Delete here unmakes
+                                             the decision rather than deleting a row: the file goes back
+                                             to Pending and can be recommended again. The application,
+                                             its units, its memo and its RofO all survive; erasing an ST
+                                             FILE is a different screen. Supper Admin only, and only once
+                                             a decision has actually been recorded. --}}
+                                        @if(auth()->user()?->assign_role === 'Supper Admin' && !empty($application->planning_approval_date))
+                                            <li>
+                                                <button type="button"
+                                                    onclick="masterDeleteStRecommendation('primary', {{ (int) $application->id }}, @js($application->fileno))"
+                                                    class="w-full text-left px-4 py-2 flex items-center space-x-2 text-red-700 hover:bg-red-50 font-semibold">
+                                                    <i data-lucide="shield-alert" class="w-4 h-4"></i>
+                                                    <span>Master Delete</span>
+                                                </button>
+                                            </li>
+                                        @endif
                                     </ul>
 
 @once

@@ -375,6 +375,9 @@
                                 <th class="px-6 py-4 text-center text-green-600 whitespace-nowrap">Approved On</th>
                                 <!-- <th class="px-6 py-4 text-center text-blue-600 whitespace-nowrap">RofO Status</th> -->
                                 <th class="px-6 py-4 whitespace-nowrap">Created By</th>
+                                {{-- When the record was captured. Distinct from Date Generated
+                                     further along, which is when the RofO was issued off it. --}}
+                                <th class="px-6 py-4 whitespace-nowrap">Date Created</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Security Paper Code</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Date Generated</th>
                                 <th class="px-6 py-4 whitespace-nowrap text-green-600">Print Date</th>
@@ -468,6 +471,7 @@
                                     {{ $isOssRec ? '—' : ($rec->approved_at ? $rec->approved_at->format('Y-m-d h:i A') : 'N/A') }}
                                 </td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->creator->name ?? 'System' }}</td>
+                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->created_at ? $rec->created_at->format('d-m-Y') : '—' }}</td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">
                                     @if($rec->land_rofo_serial_no)
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-800 border border-slate-200">
@@ -702,6 +706,20 @@
                                                     {{ $reissue ? 'Print Manager — Re-issuance' : 'Print Manager' }}
                                                 </span>
                                                 @endif
+
+                                                {{-- Master Delete un-issues the RofO and leaves the
+                                                     recommendation standing, approved and ready to be
+                                                     generated again. To erase the record itself, use the
+                                                     Master Delete on the Land Recommendation screen.
+                                                     Supper Admin only — the server enforces it too. --}}
+                                                @if(auth()->user()?->assign_role === 'Supper Admin')
+                                                <div class="border-t border-slate-100 my-1"></div>
+                                                <button type="button"
+                                                        onclick="masterDeleteLandRofo({{ $rec->id }}, @js($rec->file_number))"
+                                                        class="flex w-full items-center px-4 py-2.5 text-sm text-red-700 hover:bg-red-50 transition gap-2 font-bold">
+                                                    <i data-lucide="shield-alert" class="h-4 w-4"></i> Master Delete
+                                                </button>
+                                                @endif
                                             </div>
                                         </div>
                                     </div>
@@ -710,7 +728,7 @@
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="{{ $ossViewOnly ? 20 : 21 }}" class="px-8 py-12 text-center">
+                                <td colspan="{{ $ossViewOnly ? 21 : 22 }}" class="px-8 py-12 text-center">
                                     <div class="flex flex-col items-center">
                                         <div class="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 mb-4">
                                             <i data-lucide="file-text" class="h-6 w-6"></i>
@@ -1007,6 +1025,31 @@
      The component also pulls in Select2, which the KLAES path's dropdown uses. --}}
 @include('components.global-fileno-modal')
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
+<script src="{{ asset('js/master-delete.js') }}"></script>
+
+<script>
+    /**
+     * Master Delete for a land RofO — the ISSUANCE only. The recommendation stays
+     * approved and can be generated again; erasing the record itself is the Master
+     * Delete on the Land Recommendation screen.
+     */
+    function masterDeleteLandRofo(id, fileNumber) {
+        MasterDelete.confirm({
+            url: '/land-rofos/' + id + '/master-destroy',
+            reference: fileNumber,
+            title: 'Master Delete RofO',
+            lead: 'This permanently un-issues the RofO for <b>' + fileNumber + '</b>. It cannot be undone.',
+            targets: [
+                'RofO status, generation date and date of issue',
+                "The RofO's own survey fees, development charge and surveyor flags",
+                'Its PRA transaction',
+                'Its security paper code (released, or retired if already printed)',
+                'Its print history, white copies included'
+            ],
+            keeps: 'The recommendation itself is kept, approved, and can be generated again.'
+        });
+    }
+</script>
 
 <script>
 // ── RofO Re-issuance ────────────────────────────────────────────

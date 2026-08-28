@@ -34,7 +34,7 @@
                                         <div class="flex items-center">
                                             <div class="flex-shrink-0 h-12 w-12">
                                                 <img class="h-12 w-12 rounded-full object-cover"
-                                                    src="{{ !empty($user->profile) ? $profile . '/' . $user->profile : $profile . '/avatar.png' }}"
+                                                    src="{{ $user->profile_url ?? $profile . '/avatar.png' }}"
                                                     alt="User image" />
                                             </div>
                                             <div class="ml-4">

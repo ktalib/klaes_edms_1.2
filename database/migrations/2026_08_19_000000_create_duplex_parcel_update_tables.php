@@ -19,8 +19,10 @@ use Illuminate\Support\Facades\Schema;
  * generateMlsFileNumber) so the lineage, PRA and decommissioning rules stay in
  * exactly one place.
  *
- * A one-stage duplex is legal and expected — the page is also where an officer
- * works when there is only a single update to make.
+ * A duplex carries TWO or more updates — that is what makes it a duplex. A single
+ * update belongs on its own page (Plot Subdivision / Merger / Extension /
+ * Separation). The rule is enforced at capture, in the wizard and in store(); the
+ * schema stays permissive because duplexes captured before it may hold one stage.
  */
 return new class extends Migration
 {

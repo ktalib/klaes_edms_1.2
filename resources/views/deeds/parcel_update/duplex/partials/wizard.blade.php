@@ -62,7 +62,8 @@
                     1 => ['Select & rank', 'list-checks'],
                     2 => ['Quantities', 'hash'],
                     3 => ['Stages', 'git-branch'],
-                    4 => ['Done', 'check'],
+                    4 => ['Site Plan', 'map'],
+                    5 => ['Done', 'check'],
                 ] as $n => [$label, $icon])
                 <li class="dx-step-tab flex-1" data-tab="{{ $n }}">
                     <button type="button" onclick="goToWizardStep({{ $n }})"
@@ -326,11 +327,16 @@
                             </p>
                         </div>
 
-                        <div id="dx-single-note" class="hidden mt-4 flex gap-2.5 text-[11px] text-slate-600 bg-blue-50/70 border border-blue-100 rounded-xl px-3.5 py-3">
-                            <i data-lucide="info" class="w-4 h-4 text-blue-500 shrink-0 mt-px"></i>
+{{-- A duplex is a COMBINATION of parcel updates. With only one there is nothing
+                             to combine, and the single-workflow page for that update is the right
+                             place — so this says so and Start Process stays disabled until a
+                             second update is added. --}}
+                        <div id="dx-single-note" class="hidden mt-4 flex gap-2.5 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-3">
+                            <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-500 shrink-0 mt-px"></i>
                             <span>
-                                Only one update added — that is fine. It still runs through the duplex
-                                pipeline: holding number, one approval, one memo, one commissioning.
+                                A duplex carries <b>two or more</b> updates as one instruction. Add another
+                                update to continue — for a single update, use its own page under
+                                <b>Parcel Update &mdash; New</b>.
                             </span>
                         </div>
                     </div>
@@ -359,8 +365,51 @@
                 </div>
             </div>
 
-            {{-- ============ STEP 4 — done ============ --}}
+            {{-- ============ STEP 4 — site plan ============
+                 One drawing for the whole instruction. It sits here, after the last
+                 stage, because only by now is it settled what the plan has to show:
+                 the officer has declared every portion and, where there is an
+                 extension, the extension land beside them. --}}
             <div class="wizard-step" data-step="4">
+                <div class="p-8 max-w-2xl mx-auto">
+                    <div class="flex gap-3 mb-6 text-sm text-slate-600 bg-white border border-slate-200 rounded-2xl px-5 py-4">
+                        <i data-lucide="map" class="w-4.5 h-4.5 text-slate-400 shrink-0 mt-0.5"></i>
+                        <p class="leading-relaxed">
+                            Attach the recommended site plan — one drawing covering every portion
+                            this duplex acts on. It is what the recommendation is read against.
+                        </p>
+                    </div>
+
+                    {{-- Drop target and file picker in one. The whole card is the
+                         label, so a click anywhere on it opens the file dialog. --}}
+                    <label id="dx-siteplan-drop"
+                        class="block rounded-2xl border-2 border-dashed border-slate-300 bg-white
+                               hover:border-blue-400 hover:bg-blue-50/30 transition cursor-pointer
+                               px-6 py-10 text-center">
+                        <input type="file" id="dx-siteplan-input" class="hidden"
+                               accept=".pdf,.png,.jpg,.jpeg"
+                               onchange="uploadDuplexSitePlan(this.files[0])">
+                        <span class="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-slate-50 border border-slate-200">
+                            <i data-lucide="upload-cloud" class="w-6 h-6 text-slate-400"></i>
+                        </span>
+                        <p class="text-sm font-bold text-slate-700 mt-3">Choose the site plan, or drop it here</p>
+                        <p class="text-xs text-slate-400 mt-1">PDF, PNG or JPG &middot; up to 5 MB</p>
+                    </label>
+
+                    {{-- What is attached now. Replaces the drop card once a plan is on
+                         the row, so the officer sees the plan of record rather than an
+                         empty box that says nothing about what was uploaded. --}}
+                    <div id="dx-siteplan-current" class="hidden mt-4"></div>
+
+                    <p class="text-[11px] text-slate-400 mt-4 text-center">
+                        Optional at capture — a duplex is often opened before the drawing comes
+                        back from Survey. You can attach it later by resuming the duplex.
+                    </p>
+                </div>
+            </div>
+
+            {{-- ============ STEP 5 — done ============ --}}
+            <div class="wizard-step" data-step="5">
                 <div class="p-8">
                     <div class="max-w-2xl mx-auto text-center">
                         <span class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100">

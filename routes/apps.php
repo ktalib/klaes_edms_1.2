@@ -224,6 +224,14 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/rofo/sua-units', [RofoController::class, 'showSuaUnits'])->name('programmes.rofo.sua-units');
         Route::post('/rofo/assign-security-paper/{id}', [RofoController::class, 'assignSecurityPaper'])->name('programmes.rofo.assign-security-paper');
         Route::post('/rofo/reset-security-paper/{id}', [RofoController::class, 'resetSecurityPaper'])->name('programmes.rofo.reset-security-paper');
+        // MASTER DELETE — deletes the `rofo` row(s) only. The unit/primary
+        // application, its memo and its file number all survive; erasing an ST FILE
+        // is CommissionNewSTController::masterDestroy. Supper Admin only, with a
+        // typed confirmation — both enforced in the controller, not here.
+        Route::delete('/rofo/master-destroy', [RofoController::class, 'masterDestroy'])->name('programmes.rofo.master-destroy');
+        // MASTER DELETE for the ST planning recommendation: no record to remove,
+        // so it puts the decision columns back to Pending. See the controller.
+        Route::delete('/approvals/planning_recomm/master-destroy', [ProgrammesController::class, 'masterDestroyPlanningRecommendation'])->name('programmes.approvals.planning_recomm.master-destroy');
         Route::get('/cofo/sua-units', [CofoController::class, 'showSuaUnits'])->name('programmes.cofo.sua-units');
 
         Route::get('/view_cofo/{id}', [CofoController::class, 'ViewCofO'])->name('programmes.view_cofo');

@@ -510,6 +510,29 @@
         </h4>
 
         <div class="space-y-4">
+            {{-- Root of Title — the instrument/holder the title springs from, i.e. what
+                 happened BEFORE the file was commissioned. It sits above the two holder
+                 lines because that is the order the title reads in (Root -> Original ->
+                 Current, client spec 2026-08-20 SS12). Required: the indexer is looking at
+                 the physical file and is the only one who can state it.
+
+                 Shown, and required, ONLY for the two registry combinations that have a
+                 root to state: SLTR (either registry field), and Land Registry with
+                 Physical Registry "Registry 3 - Land". syncRootOfTitleVisibility() in
+                 create-indexing-dialog.js owns the toggle and the `required` attribute;
+                 it starts hidden here so the field never flashes on an unrelated
+                 registry before that runs. FileIndexingController applies the same test
+                 server-side. --}}
+            <div class="form-group hidden" id="root-of-title-group">
+                <label for="root-of-title" class="block text-sm font-medium text-gray-700 mb-2">
+                    Root of Title <span class="text-red-600">*</span>
+                </label>
+                <input type="text" name="root_of_title" id="root-of-title"
+                    value="{{ isset($record) ? ($record->root_of_title ?? '') : '' }}"
+                    placeholder="e.g. Customary Right of Occupancy - ALIYU MUSA"
+                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+            </div>
+
             <div class="form-group">
                 <label for="original-holder" class="block text-sm font-medium text-gray-700 mb-2">Original Holder</label>
                 <div id="original-holders-wrapper" class="space-y-2">

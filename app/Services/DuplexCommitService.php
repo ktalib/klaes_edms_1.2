@@ -338,6 +338,16 @@ class DuplexCommitService
         $quantity = max(1, $quantity);
         $landUse  = $this->landUseFor($duplex, $stage, $inputs);
 
+        // An extension adjusts ONE parcel's boundary and issues one number, whatever
+        // the stage's rows happen to say. Letting a mis-saved second holding row push
+        // it down the batch path would mint a fresh serial instead of extending the
+        // incoming file.
+        $isExtension = $stage->type === 'extension';
+
+        if ($isExtension) {
+            $quantity = 1;
+        }
+
         $payload  = (array) ($stage->payload ?? []);
         $plots    = (array) ($payload['plots'] ?? []);
 
@@ -364,14 +374,31 @@ class DuplexCommitService
             $base[$appIdField] = $appId;
         }
 
+        if ($isExtension) {
+            // The commissioning engine builds an extension's number from the file it
+            // extends - "<incoming> AND EXTENSION" - and consumes no serial. It reads
+            // that file from existing_file_no, and lineage (parent_prop_id,
+            // related_fileno, the PRA row) hangs off the same key, so passing
+            // original_file_no alone left the stage unable to commission at all.
+            $base['existing_file_no'] = $inputs[0];
+
+            // The " AND EXTENSION" suffix is opt-out on the manual modal only. A duplex
+            // extension always takes it: its incoming file is either a source the
+            // officer picked or a number a previous stage just commissioned, and both
+            // already exist in mls_file_no, where full_file_number is unique.
+            $base['suppress_extension_suffix'] = 0;
+        }
+
         if ($quantity < 2) {
             $plot  = $plots[0] ?? [];
             $entry = $this->entryFor($meta, 0);
 
+            $plotNo = $this->pick($entry, 'plotNo', $plot['plot_no'] ?? $duplex->plot_no);
+
             return $this->callSingle($base + [
                 'tracking_id'      => $this->pick($entry, 'tracking_id', $this->trackingIdFor($stage)),
                 'file_name'        => $this->pick($entry, 'file_name', $plot['holder'] ?? ($duplex->file_title ?: $duplex->applicant_name)),
-                'plot_no'          => $this->pick($entry, 'plotNo', $plot['plot_no'] ?? $duplex->plot_no),
+                'plot_no'          => $isExtension ? $this->extensionPlotNo($plotNo) : $plotNo,
                 'tp_no'            => $this->pick($entry, 'tpNo', null),
                 'location'         => $this->pick($entry, 'location', $this->locationFor($duplex)),
                 'lga'              => $this->pick($entry, 'lga', $duplex->lga),
@@ -713,6 +740,22 @@ class DuplexCommitService
      * A stage's land use is the new purpose for a Change of Purpose, and otherwise
      * whatever the incoming file already carries.
      */
+    /**
+     * The plot number an extension writes: "463 & EXTENSION".
+     *
+     * The marker sits on the PLOT number for every extension, whether or not the file
+     * number carries " AND EXTENSION" - that is what identifies the record as an
+     * extension - and it mirrors withExtensionPlotSuffix() on the commissioning modal.
+     * Idempotent, so a plot number the officer already typed the marker onto does not
+     * come out with it twice.
+     */
+    protected function extensionPlotNo($plotNo): ?string
+    {
+        $base = trim(preg_replace('/\s*&\s*EXTENSION\s*$/i', '', (string) $plotNo));
+
+        return $base === '' ? null : $base . ' & EXTENSION';
+    }
+
     protected function landUseFor(DuplexParcelUpdate $duplex, DuplexParcelUpdateStage $stage, array $inputs): string
     {
         $payload = (array) ($stage->payload ?? []);

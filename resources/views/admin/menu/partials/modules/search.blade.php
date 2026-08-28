@@ -117,10 +117,6 @@
           <i data-lucide="user-plus" class="h-3.5 w-3.5 text-cyan-400"></i>
           <span>Onboarding Requests</span>
         </a>
-        <a href="{{ route('system-admin.phs.edit-requests') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('system-admin.phs.edit-requests*') ? 'active' : '' }}">
-          <i data-lucide="file-pen-line" class="h-3.5 w-3.5 text-cyan-400"></i>
-          <span>Edit Requests</span>
-        </a>
         <a href="{{ route('system-admin.phs.pending-invoices') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('system-admin.phs.pending-invoices') ? 'active' : '' }}">
           <i data-lucide="file-clock" class="h-3.5 w-3.5 text-cyan-400"></i>
           <span>Pending Invoice</span>
@@ -161,10 +157,23 @@
           <span>Legal Department</span>
         </a>
 
-        <a href="{{ route('system-admin.phs.feedback') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('system-admin.phs.feedback') ? 'active' : '' }}">
-          <i data-lucide="message-square-warning" class="h-3.5 w-3.5 text-cyan-400"></i>
+        <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md" data-section="phsFeedback">
+          <div class="flex items-center gap-2">
+          <i data-lucide="message-square-warning" class="h-4 w-4 text-cyan-500"></i>
           <span>Feedback &amp; Complaints</span>
-        </a>
+          </div>
+          <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200" data-chevron="phsFeedback"></i>
+        </div>
+        <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="phsFeedback">
+          <a href="{{ route('system-admin.phs.feedback') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('system-admin.phs.feedback') ? 'active' : '' }}">
+            <i data-lucide="message-square-warning" class="h-3.5 w-3.5 text-cyan-400"></i>
+            <span>Feedback &amp; Complaints</span>
+          </a>
+          <a href="{{ route('system-admin.phs.edit-requests') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('system-admin.phs.edit-requests*') ? 'active' : '' }}">
+            <i data-lucide="file-pen-line" class="h-3.5 w-3.5 text-cyan-400"></i>
+            <span>Edit Request</span>
+          </a>
+        </div>
       </div>
       @endif
       </div>

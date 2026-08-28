@@ -109,6 +109,7 @@
                                 <th class="px-6 py-4 text-center whitespace-nowrap">RofO Status</th>
                                 <th class="px-6 py-4 text-center whitespace-nowrap">Generated On</th>
                                 <th class="px-6 py-4 whitespace-nowrap">Created By</th>
+                                <th class="px-6 py-4 whitespace-nowrap">Date Created</th>
                                 <th class="px-6 py-4 text-right sticky right-0 bg-slate-50 border-l border-slate-200 z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap">Actions</th>
                             </tr>
                         </thead>
@@ -134,6 +135,10 @@
                                     {{ $rec->rofo_generated_at ? $rec->rofo_generated_at->format('Y-m-d h:i A') : 'N/A' }}
                                 </td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->creator->name ?? 'System' }}</td>
+                                {{-- When the record was captured, which is not "Generated On" two
+                                     columns back: a recommendation can sit for weeks before its
+                                     RofO is issued. --}}
+                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->created_at ? $rec->created_at->format('d-m-Y') : '—' }}</td>
                                 <td class="px-4 py-2 text-right sticky right-0 bg-white shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] border-l border-slate-100 z-10 whitespace-nowrap">
                                     <div x-data="{
                                         open: false,
@@ -237,13 +242,25 @@
                                                 <i data-lucide="rotate-ccw" class="h-4 w-4"></i> Reset Security Paper Code
                                             </button>
                                             @endif
+                                            {{-- Master Delete un-issues the RofO and leaves the
+                                                 recommendation standing, approved and ready to generate
+                                                 again. To erase the record itself, use the Master Delete
+                                                 on the Recommendation screen. Supper Admin only. --}}
+                                            @if(auth()->user()?->assign_role === 'Supper Admin')
+                                            <div class="border-t border-slate-100 my-1"></div>
+                                            <button type="button"
+                                                    onclick="masterDeleteSltrRofo({{ $rec->id }}, @js($rec->sltr_number))"
+                                                    class="flex w-full items-center px-4 py-2.5 text-sm text-red-700 hover:bg-red-50 transition gap-2 font-bold">
+                                                <i data-lucide="shield-alert" class="h-4 w-4"></i> Master Delete
+                                            </button>
+                                            @endif
                                         </div>
                                     </div>
                                 </td>
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="12" class="px-8 py-12 text-center">
+                                <td colspan="13" class="px-8 py-12 text-center">
                                     <div class="flex flex-col items-center">
                                         <div class="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 mb-4">
                                             <i data-lucide="file-text" class="h-6 w-6"></i>
@@ -322,6 +339,29 @@
 </div>
 
 @push('scripts')
+<script src="{{ asset('js/master-delete.js') }}"></script>
+<script>
+    /**
+     * Master Delete for an SLTR RofO — the ISSUANCE only. The recommendation stays
+     * approved and can be generated again; erasing the record is the Master Delete
+     * on the Recommendation screen.
+     */
+    function masterDeleteSltrRofo(id, sltrNumber) {
+        MasterDelete.confirm({
+            url: '/sltr-rofos/' + id + '/master-destroy',
+            reference: sltrNumber,
+            title: 'Master Delete RofO',
+            lead: 'This permanently un-issues the RofO for <b>' + sltrNumber + '</b>. It cannot be undone.',
+            targets: [
+                'RofO status, generation date and date of issue',
+                'Its PRA transaction',
+                'Its security paper code (released, or retired if already printed)',
+                'Its print history, white copies included'
+            ],
+            keeps: 'The recommendation itself is kept, approved, and can be generated again.'
+        });
+    }
+</script>
 <script>
 // Only Supper Admin / Director SLTR may reprint from the view card.
 window.sltrCanApprove = {{ $canApprove ? 'true' : 'false' }};

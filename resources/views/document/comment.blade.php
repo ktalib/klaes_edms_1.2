@@ -52,7 +52,7 @@
                                                         <div class="d-flex align-items-center">
                                                             <div class="flex-shrink-0">
                                                                 <img class="img-radius img-fluid wid-40"
-                                                                    src="{{ !empty($comment->user) ? asset(Storage::url('upload/profile/')) . '/' . $comment->user->profile : asset(Storage::url('upload/profile')) . '/avatar.png' }}"
+                                                                    src="{{ optional($comment->user)->profile_url ?? asset(Storage::url('upload/profile')) . '/avatar.png' }}"
                                                                     alt="User image">
                                                             </div>
                                                             <div class="flex-grow-1 ms-3">

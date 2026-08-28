@@ -1713,6 +1713,35 @@ async function searchFile() {
         : meta;
 
       result.innerHTML = `
+          ${/* The pick-a-file gate sits ABOVE the result card, not inside it: until a
+                record is chosen the card below describes only ONE of the files sharing
+                this number, so the choice has to come first. Styled to match
+                .result-card (18px radius, same shadow) so it reads as its own card. */''}
+          ${hasCandidates ? `
+          <div style="margin-bottom:10px;background:#f59e0b14;border:1px solid #f59e0b55;border-radius:18px;box-shadow:var(--shadow-sm);padding:12px 14px;">
+            <div style="font-size:13px;font-weight:800;color:#b45309;"><i class="fas fa-layer-group" style="margin-right:5px;"></i>${dupCandidates.length} files under this number</div>
+            <div style="margin-top:3px;font-size:11px;color:#b45309;">Select the exact file you are looking for. The request carries the record you pick, not just the file number.</div>
+            <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">
+              ${dupCandidates.map((c) => `
+              <label style="display:flex;gap:10px;background:var(--card);border:1px solid #f59e0b40;border-radius:10px;padding:10px;">
+                <input type="radio" name="dupCandidate" style="margin-top:3px;flex-shrink:0;"
+                  onchange="pickDupCandidate(${Number(c.record_id)}, '${esc(c.source)}', this)">
+                <div style="min-width:0;flex:1;">
+                  <div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;">
+                    <span style="font-size:13px;font-weight:800;color:var(--text);">${esc(c.file_number)}</span>
+                    <span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:2px 7px;border-radius:999px;background:${c.source === 'duplicate_fileno' ? '#fef3c7;color:#92400e' : '#dbeafe;color:#1e40af'};">${esc(c.source_label)}</span>
+                  </div>
+                  <div style="margin-top:2px;font-size:12px;color:var(--text);">${esc(c.holder || DASH)}</div>
+                  <div style="margin-top:4px;font-size:10px;color:var(--muted);line-height:1.6;">
+                    ${c.registry ? `<span style="margin-right:10px;"><b>Registry:</b> ${esc(c.registry)}</span>` : ''}
+                    ${c.rack_shelf ? `<span style="margin-right:10px;"><b>Shelf/Rack:</b> ${esc(c.rack_shelf)}</span>` : ''}
+                    ${c.current_location ? `<span style="margin-right:10px;"><b>Location:</b> ${esc(c.current_location)}</span>` : ''}
+                    <span><b>Status:</b> ${esc(c.status_label)}</span>
+                  </div>
+                </div>
+              </label>`).join('')}
+            </div>
+          </div>` : ''}
         <div class="result-card">
           <div style="background:var(--surface-2);padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px;">
             <div>
@@ -1760,31 +1789,6 @@ async function searchFile() {
                 ${d.registry ? `<span><strong>Registry:</strong> ${esc(d.registry)}</span>` : ''}
                 ${d.rack_shelf ? `<span><strong>Shelf/Rack:</strong> ${esc(d.rack_shelf)}</span>` : ''}
               </div>` : ''}
-            </div>` : ''}
-            ${hasCandidates ? `
-            <div style="margin-bottom:12px;background:#f59e0b14;border:1px solid #f59e0b55;border-radius:12px;padding:10px 12px;">
-              <div style="font-size:13px;font-weight:800;color:#b45309;"><i class="fas fa-layer-group" style="margin-right:5px;"></i>${dupCandidates.length} files under this number</div>
-              <div style="margin-top:3px;font-size:11px;color:#b45309;">Select the exact file you are looking for. The request carries the record you pick, not just the file number.</div>
-              <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">
-                ${dupCandidates.map((c) => `
-                <label style="display:flex;gap:10px;background:var(--card);border:1px solid #f59e0b40;border-radius:10px;padding:10px;">
-                  <input type="radio" name="dupCandidate" style="margin-top:3px;flex-shrink:0;"
-                    onchange="pickDupCandidate(${Number(c.record_id)}, '${esc(c.source)}', this)">
-                  <div style="min-width:0;flex:1;">
-                    <div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;">
-                      <span style="font-size:13px;font-weight:800;color:var(--text);">${esc(c.file_number)}</span>
-                      <span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:2px 7px;border-radius:999px;background:${c.source === 'duplicate_fileno' ? '#fef3c7;color:#92400e' : '#dbeafe;color:#1e40af'};">${esc(c.source_label)}</span>
-                    </div>
-                    <div style="margin-top:2px;font-size:12px;color:var(--text);">${esc(c.holder || DASH)}</div>
-                    <div style="margin-top:4px;font-size:10px;color:var(--muted);line-height:1.6;">
-                      ${c.registry ? `<span style="margin-right:10px;"><b>Registry:</b> ${esc(c.registry)}</span>` : ''}
-                      ${c.rack_shelf ? `<span style="margin-right:10px;"><b>Shelf/Rack:</b> ${esc(c.rack_shelf)}</span>` : ''}
-                      ${c.current_location ? `<span style="margin-right:10px;"><b>Location:</b> ${esc(c.current_location)}</span>` : ''}
-                      <span><b>Status:</b> ${esc(c.status_label)}</span>
-                    </div>
-                  </div>
-                </label>`).join('')}
-              </div>
             </div>` : ''}
             ${d.duplicate_flag ? `
             <div style="margin-bottom:12px;background:${d.duplicate_flag.color}14;border:1px solid ${d.duplicate_flag.color}55;border-radius:12px;padding:10px 12px;">

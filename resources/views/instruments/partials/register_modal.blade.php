@@ -260,6 +260,49 @@
                 </div>
                 @endif
 
+                {{--
+                    The grouped instrument cards - "Deed of Assignment/Gift", "Deed of
+                    Mortgage/Tripartite Mortgage" and "Deed of Surrender and Release/Power of
+                    Attorney/Irrevocable Power of Attorney" - each stand for more than one
+                    instrument. Which one is being captured is asked in a prompt the moment the
+                    card is clicked (promptForInstrumentChoice() in instruments-capture.js), the
+                    same as OP and CofO; this banner is what shows the answer afterwards, with
+                    "Change" to re-open the prompt.
+
+                    Unlike OP and CofO the answer is not a sub-field: each member is its own
+                    instrument type, so it is instrument_type itself that the choice sets.
+                    #instrument-subtype-select above stays hidden wherever this banner renders.
+                --}}
+                @if ($showCaptureBanner ?? false)
+                <div id="instrument-choice-summary" class="capture-banner hidden mb-6 px-4 py-3 rounded-lg">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <p class="capture-banner__lead">
+                                You are about to register
+                            </p>
+                            <p class="capture-banner__line">
+                                <span class="capture-banner__icon">
+                                    <i data-lucide="file-signature" class="h-4 w-4"></i>
+                                </span>
+                                <span>
+                                    <span id="instrument-choice-summary-label">Instrument:</span>
+                                    <strong id="instrument-choice-summary-value" class="font-semibold">Not selected</strong>
+                                </span>
+                            </p>
+                            {{-- Read-only peek at the vault, exactly as the OP and CofO banners
+                                 do: the number is only consumed when the instrument is registered. --}}
+                            <p class="capture-banner__meta capture-banner__meta--volume">
+                                Volume:
+                                <strong id="instrument-choice-reg-particulars" class="capture-banner__volume font-mono">&mdash;</strong>
+                            </p>
+                        </div>
+                        <button type="button" id="instrument-choice-change-btn" class="capture-banner__change">
+                            Change
+                        </button>
+                    </div>
+                </div>
+                @endif
+
                 <div id="cofo-variant-container" class="hidden mb-6">
                     <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
                         Certificate of Occupancy Variant

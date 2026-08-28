@@ -18,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -26,9 +27,10 @@ use Illuminate\Support\Facades\Validator;
  *
  * The page is self-contained by design: the five single-workflow pages are left
  * untouched, and the Land confirm/reject step lives here rather than as another tab
- * on the commissioning screen. A duplex carrying exactly ONE update is normal and
- * fully supported — sometimes there is only one thing to do, and the officer should
- * still be able to work here.
+ * on the commissioning screen. A duplex must carry TWO or more updates: with one
+ * there is nothing to combine, and Plot Subdivision / Merger / Extension / Separation
+ * each have their own page for that. Duplexes captured before this rule may hold a
+ * single stage, and every read path still handles them.
  *
  * Nothing in this controller writes to the registry. Real file numbers appear only
  * when commit() hands the duplex to DuplexCommitService, which delegates to the one
@@ -107,7 +109,10 @@ class DuplexParcelUpdateController extends Controller
             'source_entries.*.lga'         => 'nullable|string|max:255',
             'source_file_nos'  => 'required|array|min:1',
             'source_file_nos.*' => 'required|string|max:100',
-            'stages'           => 'required|array|min:1',
+            // TWO or more. A duplex is a combination of parcel updates; with one there
+            // is nothing to combine, and the single-workflow page for that update is
+            // where it belongs. The wizard disables Start Process on the same rule.
+            'stages'           => 'required|array|min:2',
             'stages.*.type'    => 'required|string|in:' . implode(',', array_keys(DuplexParcelUpdate::TYPES)),
             'stages.*.rank'    => 'required|integer|min:1',
             'stages.*.count'   => 'nullable|integer|min:1|max:200',
@@ -136,7 +141,13 @@ class DuplexParcelUpdateController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->has('stages')
+                    ? 'A duplex carries two or more updates. For a single update, use its own page under Parcel Update — New.'
+                    : 'Check the entries and try again.',
+                'errors'  => $validator->errors(),
+            ], 422);
         }
 
         $data   = $validator->validated();
@@ -307,13 +318,22 @@ class DuplexParcelUpdateController extends Controller
         $count = (int) $request->query('count', 1);
         $count = max(0, min($count, 200));
 
+        // The stage's own rows are excluded because saveStage clears them
+        // before allocating: a stage being re-filled reclaims its numbers.
+        $numbers = $count === 0
+            ? []
+            : $this->holding->previewHoldingNumbers($duplex, $count, $stage->id);
+
+        // An extension re-numbers the file it receives, so its holding number is shown
+        // the way the file will actually read — suffixed exactly as saveStage mints it,
+        // or the preview and the saved plan would disagree.
+        if ($stage->type === 'extension') {
+            $numbers = $this->holding->withExtensionSuffixes($numbers);
+        }
+
         return response()->json([
             'success' => true,
-            'numbers' => $count === 0
-                ? []
-                // The stage's own rows are excluded because saveStage clears them
-                // before allocating: a stage being re-filled reclaims its numbers.
-                : $this->holding->previewHoldingNumbers($duplex, $count, $stage->id),
+            'numbers' => $numbers,
         ]);
     }
 
@@ -348,6 +368,12 @@ class DuplexParcelUpdateController extends Controller
             'cop_rows.*.new_land_use'   => 'required_with:cop_rows|string|max:50',
             'plots'             => 'nullable|array',
             'plots.*.size'      => 'nullable|numeric|min:0',
+            // The dimensions the size was worked out from, kept beside it: the officer
+            // reads Length x Width off the survey plan and the area is derived, so a
+            // stage reopened for correction can show what was measured rather than only
+            // the product. `size` remains the authority everything downstream reads.
+            'plots.*.length'    => 'nullable|numeric|min:0',
+            'plots.*.width'     => 'nullable|numeric|min:0',
             'plots.*.plot_no'   => 'nullable|string|max:100',
             'plots.*.holder'    => 'nullable|string|max:255',
             'plots.*.file_title' => 'nullable|string|max:500',
@@ -468,6 +494,14 @@ class DuplexParcelUpdateController extends Controller
             } else {
                 $outputs = $stage->fresh()->outputCount();
                 $numbers = $this->holding->allocateHoldingNumbers($duplex, max(1, $outputs));
+
+                // An Extension stage's holding number carries " AND EXTENSION", because
+                // that is what the file it produces will read: commissioning turns the
+                // incoming file into "<incoming> AND EXTENSION" rather than minting a
+                // number from the series. The serial underneath is untouched.
+                if ($stage->type === 'extension') {
+                    $numbers = $this->holding->withExtensionSuffixes($numbers);
+                }
 
                 foreach ($numbers as $i => $holdingNo) {
                     $plot = $payload['plots'][$i] ?? [];
@@ -778,6 +812,112 @@ class DuplexParcelUpdateController extends Controller
                 'storage_summary' => $service->storageSummary($duplex),
             ],
         ]);
+    }
+
+    /**
+     * Attach the recommended site plan to the duplex.
+     *
+     * ONE drawing for the whole instruction, not one per stage: the stages are legs
+     * of a single instruction over the same parcels, and the officer recommending it
+     * reads a single application plan showing every portion — plus the extension land
+     * where there is an extension. Asking per stage would collect the same sheet
+     * several times and leave nothing able to say which copy is the plan of record.
+     *
+     * Optional at capture, as it is on Merger / Subdivision / Separation: a duplex is
+     * often opened before the drawing comes back from Survey, and blocking capture on
+     * it would only push officers into holding the whole instruction outside the
+     * system until the plan arrives.
+     *
+     * Uploaded the moment it is chosen rather than at Submit, so a plan attached to a
+     * duplex the officer then abandons is still on the row when they resume it.
+     */
+    public function uploadSitePlan(Request $request, int $id): JsonResponse
+    {
+        $duplex = DuplexParcelUpdate::findOrFail($id);
+
+        if ($duplex->status === DuplexParcelUpdate::STATUS_COMMITTED) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This duplex has already been commissioned; its site plan can no longer be changed.',
+            ], 422);
+        }
+
+        $validator = Validator::make($request->all(), [
+            // Same shapes and ceiling as the single workflows, so a plan that uploads
+            // on a Merger cannot be refused here.
+            'site_plan' => 'required|file|mimes:pdf,png,jpg,jpeg|max:5120',
+        ], [
+            'site_plan.mimes' => 'The site plan must be a PDF or an image (PNG or JPG).',
+            'site_plan.max'   => 'The site plan must be 5 MB or smaller.',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+        }
+
+        try {
+            $file     = $request->file('site_plan');
+            $filename = 'duplex_' . $duplex->id . '_site_plan_' . time() . '.' . $file->getClientOriginalExtension();
+            $path     = $file->storeAs('parcel_documents/duplex', $filename, 'public');
+
+            // Replacing the plan removes the sheet it replaces: these are large scans,
+            // and an orphaned file nothing links to is only ever storage nobody can
+            // account for. Done after the new one is safely written.
+            $previous = $duplex->site_plan;
+
+            $duplex->update([
+                'site_plan'  => $path,
+                'updated_by' => Auth::id(),
+            ]);
+
+            if ($previous && $previous !== $path && Storage::disk('public')->exists($previous)) {
+                Storage::disk('public')->delete($previous);
+            }
+
+            Log::info('Duplex site plan uploaded', [
+                'duplex_id' => $duplex->duplex_id,
+                'path'      => $path,
+                'replaced'  => $previous,
+            ]);
+
+            return response()->json([
+                'success'   => true,
+                'message'   => 'Site plan attached to ' . $duplex->duplex_id . '.',
+                'site_plan' => $path,
+                'url'       => Storage::url($path),
+                'name'      => $file->getClientOriginalName(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Duplex site plan upload failed', [
+                'duplex_id' => $duplex->duplex_id,
+                'error'     => $e->getMessage(),
+            ]);
+
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /** Detach the site plan, and remove the file with it. */
+    public function deleteSitePlan(int $id): JsonResponse
+    {
+        $duplex = DuplexParcelUpdate::findOrFail($id);
+
+        if ($duplex->status === DuplexParcelUpdate::STATUS_COMMITTED) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This duplex has already been commissioned; its site plan can no longer be changed.',
+            ], 422);
+        }
+
+        $path = $duplex->site_plan;
+
+        $duplex->update(['site_plan' => null, 'updated_by' => Auth::id()]);
+
+        if ($path && Storage::disk('public')->exists($path)) {
+            Storage::disk('public')->delete($path);
+        }
+
+        return response()->json(['success' => true, 'message' => 'Site plan removed.']);
     }
 
     /** One click, one pass: every file number for the whole duplex. */

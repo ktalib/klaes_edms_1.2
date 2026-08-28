@@ -10400,9 +10400,16 @@
                         : null;
 
                     if (next) {
-                        const total = (d.stages || []).reduce((sum, st) => sum + (st.files || []).filter(f => !f.carried).length, 0);
+                        // Serials, not files. An Extension stage issues
+                        // "<incoming> AND EXTENSION" and consumes no serial at all, so
+                        // counting its file here made the preview reserve a range one
+                        // wider than commissioning actually takes.
+                        const total = (d.stages || [])
+                            .filter(st => st.type !== 'extension')
+                            .reduce((sum, st) => sum + (st.files || []).filter(f => !f.carried).length, 0);
                         a.serialNo = next;
-                        a.serialRangePreview = total > 1 ? `${next} to ${next + total - 1}` : String(next);
+                        a.serialRangePreview = total > 1 ? `${next} to ${next + total - 1}`
+                            : (total === 1 ? String(next) : '--');
                     }
                 }
 
@@ -10412,7 +10419,12 @@
                 if (bd) {
                     bd.innerHTML = (d.stages || []).map(st => {
                         const n = (st.files || []).filter(f => !f.carried).length;
-                        const how = n > 1 ? `batch of ${n}` : `${n} file`;
+                        // An extension re-numbers the file it receives rather than
+                        // taking a number out of the series, which is worth saying on
+                        // the breakdown where every other stage reads "1 file".
+                        const how = st.type === 'extension'
+                            ? 'AND EXTENSION on the incoming file'
+                            : (n > 1 ? `batch of ${n}` : `${n} file`);
                         return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-blue-200 text-[11px] font-semibold text-blue-800">
                                     <span class="w-4 h-4 rounded bg-blue-100 text-blue-700 text-[9px] font-black flex items-center justify-center">${st.rank}</span>
                                     ${st.label} — ${how}

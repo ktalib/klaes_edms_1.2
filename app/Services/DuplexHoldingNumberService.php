@@ -23,6 +23,21 @@ class DuplexHoldingNumberService
 {
     public const PREFIX = 'DPX';
 
+    /**
+     * What an Extension stage's holding number carries: DPX-2026-0007-H03 AND EXTENSION.
+     *
+     * An extension does not mint a number out of the series — it re-numbers the file
+     * it receives as "<incoming> AND EXTENSION" — so a bare holding number said the
+     * opposite of what the stage was going to do. Carrying the suffix through the plan
+     * means the officer reads the same words on the wizard, on the commissioning modal
+     * and on the file the registry ends up with.
+     *
+     * The suffix is presentational only: every serial computation and every registry
+     * guard below reads through stripExtensionSuffix(), so it can never shift a serial
+     * or open a hole in the namespace.
+     */
+    public const EXTENSION_SUFFIX = ' AND EXTENSION';
+
     /** Next free DPX-<year>-<serial> for this year. */
     public function allocateDuplexId(?int $year = null): string
     {
@@ -44,6 +59,24 @@ class DuplexHoldingNumberService
         return sprintf('%s-%d-%04d', self::PREFIX, $year, $max + 1);
     }
 
+    /** DPX-2026-0007-H03 -> DPX-2026-0007-H03 AND EXTENSION. */
+    public function withExtensionSuffix(string $holdingNo): string
+    {
+        return $this->stripExtensionSuffix($holdingNo) . self::EXTENSION_SUFFIX;
+    }
+
+    /** The bare holding number, whatever suffix it was displayed with. */
+    public function stripExtensionSuffix(?string $value): string
+    {
+        return trim(preg_replace('/\s+AND\s+EXTENSION\s*$/i', '', (string) $value));
+    }
+
+    /** Apply the extension suffix to a whole list, in order. */
+    public function withExtensionSuffixes(array $holdingNos): array
+    {
+        return array_map(fn ($no) => $this->withExtensionSuffix((string) $no), $holdingNos);
+    }
+
     /**
      * Next holding number for a duplex: DPX-2026-0007-H03.
      *
@@ -59,7 +92,7 @@ class DuplexHoldingNumberService
             ->pluck('holding_no');
 
         foreach ($existing as $no) {
-            if (preg_match('/-H(\d+)$/i', (string) $no, $m)) {
+            if (preg_match('/-H(\d+)(?:\s+AND\s+EXTENSION)?$/i', (string) $no, $m)) {
                 $max = max($max, (int) $m[1]);
             }
         }
@@ -107,7 +140,7 @@ class DuplexHoldingNumberService
         }
 
         foreach ($query->pluck('holding_no') as $no) {
-            if (preg_match('/-H(\d+)$/i', (string) $no, $m)) {
+            if (preg_match('/-H(\d+)(?:\s+AND\s+EXTENSION)?$/i', (string) $no, $m)) {
                 $max = max($max, (int) $m[1]);
             }
         }
@@ -121,8 +154,14 @@ class DuplexHoldingNumberService
 
     public function isHoldingNumber(?string $value): bool
     {
+        // The " AND EXTENSION" an extension stage's holding number carries is part of
+        // the holding namespace, not a way out of it: without this the commit guard
+        // silently skipped exactly the rows it was written to check.
         return $value !== null
-            && (bool) preg_match('/^' . self::PREFIX . '-\d{4}-\d+-H\d+$/i', trim($value));
+            && (bool) preg_match(
+                '/^' . self::PREFIX . '-\d{4}-\d+-H\d+(?:\s+AND\s+EXTENSION)?$/i',
+                trim($value)
+            );
     }
 
     /**
@@ -133,9 +172,13 @@ class DuplexHoldingNumberService
     {
         $conn = DB::connection('sqlsrv');
 
-        $hit = $conn->table('fileNumber')->where('mlsfNo', $holdingNo)->exists()
-            || $conn->table('file_indexings')->where('file_number', $holdingNo)->exists()
-            || $conn->table('mls_file_no')->where('full_file_number', $holdingNo)->exists();
+        // Checked bare: the suffixed form is a label the wizard shows, so looking that
+        // up would miss a leaked DPX-2026-0007-H03 sitting in the registry.
+        $bare = $this->stripExtensionSuffix($holdingNo);
+
+        $hit = $conn->table('fileNumber')->where('mlsfNo', $bare)->exists()
+            || $conn->table('file_indexings')->where('file_number', $bare)->exists()
+            || $conn->table('mls_file_no')->where('full_file_number', $bare)->exists();
 
         if ($hit) {
             throw new \RuntimeException(

@@ -10,9 +10,14 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use App\Models\PrintLog;
+use App\Http\Controllers\Concerns\ExecutesMasterDelete;
+use App\Services\RofoRecommendationPurgeService;
+use Illuminate\Support\Facades\Log;
 
 class LandRofoController extends Controller
 {
+    use ExecutesMasterDelete;
+
     /**
      * SQL predicate for "this RofO counts as printed".
      *
@@ -1575,6 +1580,70 @@ class LandRofoController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error logging ROFO print: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * MASTER DELETE — un-issue a land RofO.
+     *
+     * The recommendation SURVIVES, approved, and can be generated again. What goes
+     * is everything the issuance produced: the generated status and its dates, the
+     * RofO's own copies of the fees and surveyor flags, the date of issue, the PRA
+     * transaction, the print history, and the security paper — released back to the
+     * pool if the sheet is unused, retired if it has already been through a printer,
+     * because a printed sheet carries the details of a RofO that no longer exists.
+     *
+     * To erase the recommendation as well, use the Master Delete on the Land
+     * Recommendation screen — that one takes this with it.
+     */
+    public function masterDestroy(Request $request, $id)
+    {
+        if ($deny = $this->denyUnlessMasterDeleter()) {
+            return $deny;
+        }
+
+        $recommendation = LandRecommendation::find($id);
+        if (!$recommendation) {
+            return response()->json(['success' => false, 'message' => 'RofO record not found.'], 404);
+        }
+
+        if ($deny = $this->denyUnlessConfirmationMatches($request, $recommendation->file_number)) {
+            return $deny;
+        }
+
+        $snapshot = $recommendation->toArray();
+
+        DB::connection('sqlsrv')->beginTransaction();
+        try {
+            $counts = app(RofoRecommendationPurgeService::class)->purgeLandRofo($recommendation);
+
+            DB::connection('sqlsrv')->commit();
+
+            $this->logMasterDelete(
+                'land_rofo',
+                $recommendation->id,
+                $snapshot,
+                $counts,
+                'Land RofO ' . $recommendation->file_number
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'RofO for ' . $recommendation->file_number . ' deleted. The recommendation remains and can be generated again.',
+                'details' => $counts,
+            ]);
+        } catch (\Throwable $e) {
+            DB::connection('sqlsrv')->rollBack();
+            Log::error('Land RofO master delete failed', [
+                'id'    => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error deleting RofO: ' . $e->getMessage(),
             ], 500);
         }
     }

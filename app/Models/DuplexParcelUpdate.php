@@ -50,6 +50,9 @@ class DuplexParcelUpdate extends Model
         'state',
         'phone',
         'address',
+        // Relative path on the `public` disk to the recommended site plan — one
+        // drawing for the whole instruction, uploaded on the step before Done.
+        'site_plan',
         'land_value',
         'knupda_fee',
         'knupda_status',
@@ -120,7 +123,13 @@ class DuplexParcelUpdate extends Model
         })->implode('  ');
     }
 
-    /** A single-stage duplex still runs the whole pipeline; wording just changes. */
+    /**
+     * True for a duplex holding one stage.
+     *
+     * Capture now requires two or more, so this answers for records captured before
+     * that rule — the memo and the application sheet drop their plural wording for
+     * them rather than printing "these updates" over a single point.
+     */
     public function isSingleStage(): bool
     {
         return count($this->stages ?? []) === 1;
