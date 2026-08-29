@@ -37,21 +37,35 @@ abstract class ChannelLog
     ];
 
     /**
-     * Forward any Log facade method (info, warning, error, debug, log, ...) to the
-     * dedicated channel, merging the actor/request stamp into the context array.
+     * Forward any Log facade method to the right place.
+     *
+     * A level call (info, warning, error, debug, log, ...) goes to the dedicated
+     * channel with the actor/request stamp merged into its context. Everything else
+     * goes to the LogManager untouched.
+     *
+     * That split matters because this class is aliased over the Log facade
+     * (`use App\Support\XyzLog as Log;`), which is a promise that every existing
+     * Log:: call in the file keeps working. LogManager methods — build(), stack(),
+     * driver(), extend() — do not exist on the Logger that Log::channel() returns, so
+     * forwarding them there turns a working line into a fatal
+     * "Call to undefined method Monolog\Logger::build()" at runtime, in whatever rare
+     * branch happens to use one. Production found exactly that in a try/catch'd audit
+     * writer, where it degraded silently into a warning.
      */
     public static function __callStatic(string $method, array $arguments)
     {
+        if (! \in_array($method, self::LEVELS, true)) {
+            return Log::{$method}(...$arguments);
+        }
+
         // Log::log($level, $message, $context) puts the context third; every other
         // level helper puts it second.
         $contextIndex = $method === 'log' ? 2 : 1;
 
-        if (\in_array($method, self::LEVELS, true)) {
-            $context = $arguments[$contextIndex] ?? [];
-            $arguments[$contextIndex] = \is_array($context)
-                ? \array_merge(self::stamp(), $context)
-                : $context;
-        }
+        $context = $arguments[$contextIndex] ?? [];
+        $arguments[$contextIndex] = \is_array($context)
+            ? \array_merge(self::stamp(), $context)
+            : $context;
 
         return Log::channel(static::CHANNEL)->{$method}(...$arguments);
     }

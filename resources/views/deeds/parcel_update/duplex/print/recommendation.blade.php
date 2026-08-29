@@ -52,6 +52,39 @@
         ];
     };
 
+    /**
+     * The parcels' dimensions, lettered, the way the Ministry's memo states them:
+     *
+     *     A: 60.00m x 21.00m x 46.00m x 21.00m x 42.71m.
+     *     B: 21.00m x 95.60m x 16.00m x 47.00m.
+     *
+     * Sides, not a length and a width — these are surveyed polygons. Printed only for
+     * the parcels that have them, so a stage captured before dimensions existed reads
+     * exactly as it did before.
+     */
+    $dimensionsOf = function ($stage) use ($num) {
+        $letters = range('A', 'Z');
+        $lines   = [];
+
+        foreach (array_values((array) data_get($stage->payload, 'plots', [])) as $i => $plot) {
+            $sides = collect((array) ($plot['dimensions'] ?? []))
+                ->filter(fn ($v) => $v !== null && $v !== '' && (float) $v > 0)
+                // Always two decimals, as the Ministry writes them: "60.00m", not "60m".
+                // A survey figure carries its precision - dropping it makes a measured
+                // side read like a rounded one.
+                ->map(fn ($v) => number_format((float) $v, 2, '.', ',') . 'm')
+                ->values();
+
+            if ($sides->isEmpty()) {
+                continue;
+            }
+
+            $lines[] = ($letters[$i] ?? ($i + 1)) . ': ' . $sides->implode(' x ') . '.';
+        }
+
+        return $lines;
+    };
+
     // How many parcels each stage RECEIVES, walked forward through the chain. A merger
     // at rank 3 consumes what rank 2 produced, not the duplex's original source files —
     // reading the source count there would misstate the memo.
@@ -107,6 +140,7 @@
 
         $stages[] = [
             'name'  => Str::upper($stage->label()),
+            'dimensions' => $dimensionsOf($stage),
             // Just the count and the name — the memo lists what is being applied for,
             // it does not narrate it. The lettered points below carry the detail.
             'seeks' => match ($stage->type) {
@@ -195,6 +229,9 @@
         .addressee { font-weight: bold; text-decoration: underline; margin-top: 15px; margin-bottom: 15px; font-size: 1.1em; }
         .body-paragraph { text-align: justify; line-height: 1.4; margin-bottom: 15px; }
         .point-block { margin-top: 15px; margin-bottom: 10px; font-weight: bold; }
+        .dimension-block { margin: 8px 0 12px; }
+        .dimension-block p { margin: 0 0 4px; }
+        .dimension-line { font-weight: bold; margin-left: 40px !important; }
         .signature-field-container { display: flex; flex-direction: column; gap: 15px; margin-bottom: 25px; }
         .sig-row { display: flex; justify-content: space-between; align-items: flex-end; gap: 30px; }
         .sig-item { display: flex; align-items: flex-end; width: 45%; }
@@ -244,6 +281,17 @@
 
             @foreach ($stages as $i => $stage)
                 <div class="point-block">{{ $letters[$i] }}.) {{ $stage['point'] }}</div>
+
+                @if (!empty($stage['dimensions']))
+                    {{-- "Find the recommended site plan at back cover showing the dimension as:"
+                         — the parcels' sides, lettered, indented as on the Ministry's sheet. --}}
+                    <div class="dimension-block">
+                        <p>Find the recommended site plan at back cover showing the dimension as:</p>
+                        @foreach ($stage['dimensions'] as $line)
+                            <p class="dimension-line">{{ $line }}</p>
+                        @endforeach
+                    </div>
+                @endif
             @endforeach
 
             <div class="signature-field-container">

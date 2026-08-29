@@ -1641,7 +1641,14 @@ class MlsFileNoController extends Controller
                 'file_option' => $request->input('file_option')
             ]);
 
-            $validated = $request->validate([
+            // Wrapped so a rejection is recorded. Laravel turns a ValidationException
+            // straight into the 422 response, which meant the log ended at "generate
+            // request started" and the officer got the page's generic "An error
+            // occurred" — with the failing field named nowhere on either side. This
+            // logs which rules failed and what the request actually carried for them,
+            // then rethrows so the 422 and its messages are unchanged.
+            try {
+                $validated = $request->validate([
                 'land_use' => 'required_unless:file_option,sit|nullable|string|max:50',
                 'file_name' => 'nullable|string|max:500',
                 'plot_no' => 'nullable|string|max:100',
@@ -1697,7 +1704,28 @@ class MlsFileNoController extends Controller
                 // Re-Issuance of FileNo: the old (duplicated) number being re-issued.
                 'old_fileno' => 'nullable|string|max:100',
                 'old_fileno_title' => 'nullable|string|max:500',
-            ]);
+                ]);
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                $errors = $e->errors();
+
+                Log::warning('MLS generate rejected by validation', [
+                    'fields' => array_keys($errors),
+                    'errors' => $errors,
+                    // What arrived for each rejected field, so "required" can be told
+                    // apart from "sent, but not in the allowed list" without guessing.
+                    'submitted' => collect(array_keys($errors))
+                        ->mapWithKeys(fn ($field) => [
+                            $field => $request->has($field)
+                                ? mb_substr((string) $request->input($field), 0, 120)
+                                : '<<not sent>>',
+                        ])
+                        ->all(),
+                    'file_option' => $request->input('file_option'),
+                    'tracking_id' => $request->input('tracking_id'),
+                ]);
+
+                throw $e;
+            }
 
             $landUse = $validated['land_use'] ?? null;
             $fileOption = $validated['file_option'] ?? 'normal';

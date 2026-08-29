@@ -2129,10 +2129,58 @@ class ApplicationController extends Controller
             ], 500);
         }
 
+        // An FFR capture IS a change-of-ownership application, so it belongs on the
+        // Change of Ownership list like any other OP-backed OSS record. That list is
+        // driven from oss_applications while this method only ever wrote pra, so
+        // without this mirror an FFR record showed on the OP/FEFR page (pra-driven)
+        // and was missing from Applications → Change of Ownership entirely.
+        //
+        // Keyed on the source file number, which is what the pra row above carries in
+        // both mlsFNo and fileno. The file is deliberately still uncommissioned — the
+        // mls_file_no write above is an update-if-present, never an insert — so it
+        // stays on the FEFR side of the fc/fefr split and the listing's LEFT JOIN
+        // simply leaves the file-number columns blank until it is commissioned.
+        //
+        // Best-effort, exactly like the Match OP path: the capture has already
+        // committed and a mirror failure must not undo it.
+        $ossMirror = null;
+        try {
+            $ossMirror = app(\App\Services\MlsCommissioningOssApplicationService::class)->sync([
+                'full_file_number' => $sourceFileNo,
+                'file_name' => $newParty2,
+                'plot_no' => $plotNo,
+                'tp_no' => $tpNo,
+                'location' => $validated['location'] ?? data_get($opRecord, 'location'),
+                'district' => data_get($opRecord, 'district'),
+                'lga' => $lgaValue,
+                'land_use' => $validated['land_use'] ?? data_get($opRecord, 'land_use'),
+                // Both halves of the OSS gate in MlsCommissioningOssApplicationService:
+                // OSS entry point, and OP-backed via the "OP " sub_source prefix.
+                // Without both it would be filed as a plain generator record and never
+                // reach the change-of-name page.
+                'system_sub_type' => \App\Support\OssOpCommissionFilter::OSS,
+                'sub_source' => 'OP Change of Ownership',
+                'created_at' => now(),
+            ]);
+
+            Log::info('FFR mirrored to the OSS application list', [
+                'source_file_no' => $sourceFileNo,
+                'action' => $ossMirror['action'] ?? null,
+                'oss_application_id' => $ossMirror['id'] ?? null,
+                'user_id' => Auth::id(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Could not mirror FFR capture to the OSS application list', [
+                'source_file_no' => $sourceFileNo,
+                'error' => $e->getMessage(),
+                'user_id' => Auth::id(),
+            ]);
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'FFR saved successfully. PRA timeline and name fields were synchronized.',
-            'data' => $result,
+            'data' => array_merge($result, ['oss_application' => $ossMirror]),
         ]);
     }
 

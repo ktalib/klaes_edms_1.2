@@ -232,7 +232,30 @@
               + '<b>Nothing commissioned yet.</b> The numbers above are holding numbers; real file '
               + 'numbers are issued at the Land step.</div>';
 
-        return header + sources + stages + generated + active + retired + location + where + todo + strip;
+        /**
+         * Generated and Active, side by side.
+         *
+         * They answer two halves of one question - what this run issued, and what the
+         * parcel still holds - and reading them as a pair is the whole point: "2
+         * generated, 1 active" says the extension retired the merged file, which is
+         * invisible when one panel sits a scroll below the other.
+         *
+         * Falls back to the stacked pair whenever there is only one of them: before
+         * commissioning there is no Active panel, and a duplex whose last stage keeps
+         * every file it made has nothing to contrast. A lone panel in a two-column grid
+         * would sit at half width for no reason.
+         *
+         * Each column is min-width:0 so a long file number wraps inside its own box
+         * instead of forcing the grid wider than the sheet.
+         */
+        var outcome = (generated && active)
+            ? '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start">'
+              + '<div style="min-width:0">' + generated + '</div>'
+              + '<div style="min-width:0">' + active + '</div>'
+              + '</div>'
+            : generated + active;
+
+        return header + sources + stages + outcome + retired + location + where + todo + strip;
     }
 
     /** Fetch and show. `base` is the duplex-parcel-update URL prefix. */

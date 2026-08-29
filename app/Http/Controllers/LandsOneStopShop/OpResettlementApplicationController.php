@@ -4592,6 +4592,94 @@ class OpResettlementApplicationController extends Controller
      * Body: { pra_id: int, current_holder?: string }
      */
 
+    /**
+     * Put an OP-backed change-of-ownership record on the Change of Ownership list.
+     *
+     * Applications → Change of Ownership is driven entirely from oss_applications,
+     * while the OP/FEFR page is driven from pra. The match and capture paths only ever
+     * wrote pra, so a matched record appeared on FEFR and was missing from the
+     * application list altogether — the file was findable in one place and invisible
+     * in the other.
+     *
+     * MlsCommissioningOssApplicationService::sync() only files a row as change-of-name
+     * when BOTH halves of its gate are set: an OSS entry point, and an OP-backed
+     * commissioning (the "OP " sub_source prefix). With either missing the row is
+     * written as a plain generator record and never reaches the page, so both are
+     * pinned here rather than left to the caller.
+     *
+     * The file is deliberately left uncommissioned — nothing here inserts into
+     * mls_file_no — so it stays on the FEFR side of the fc/fefr split and the
+     * listing's LEFT JOIN leaves the file-number columns blank until it is
+     * commissioned.
+     *
+     * Best-effort by design: the match has already committed, and a mirror failure
+     * must never undo it or fail the officer's request.
+     *
+     * @param  object|null  $opRow  an OP pra row for enrichment; looked up when omitted
+     * @return array{action:string,id:?int,file_number:string}|null
+     */
+    private function mirrorChangeOfNameApplication(
+        string $fileNumber,
+        ?string $applicantName = null,
+        $opRow = null,
+        $createdAt = null
+    ): ?array {
+        $fileNumber = trim($fileNumber);
+        if ($fileNumber === '') {
+            return null;
+        }
+
+        try {
+            // The caller usually already holds the OP row it just matched. When it
+            // does not (the merger path builds its OP set inside the transaction),
+            // the earliest OP for the file carries the same plot/location details.
+            if ($opRow === null) {
+                $opRow = DB::connection('sqlsrv')->table('pra')
+                    ->whereRaw("COALESCE(NULLIF(mlsFNo,''), fileno) = ?", [$fileNumber])
+                    ->where(function ($q) {
+                        $q->where('instrument_type', 'like', '%Occupancy Permit%')
+                            ->orWhere('transaction_type', 'like', '%Occupancy Permit%');
+                    })
+                    ->where(function ($q) {
+                        $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                    })
+                    ->orderBy('id')
+                    ->first();
+            }
+
+            $result = app(\App\Services\MlsCommissioningOssApplicationService::class)->sync([
+                'full_file_number' => $fileNumber,
+                'file_name' => $applicantName,
+                'plot_no' => data_get($opRow, 'plot_no'),
+                'tp_no' => data_get($opRow, 'tp_no'),
+                'location' => data_get($opRow, 'location') ?? data_get($opRow, 'property_description'),
+                'district' => data_get($opRow, 'district'),
+                'lga' => data_get($opRow, 'lga') ?? data_get($opRow, 'lgsaOrCity'),
+                'land_use' => data_get($opRow, 'land_use'),
+                'system_sub_type' => \App\Support\OssOpCommissionFilter::OSS,
+                'sub_source' => 'OP Change of Ownership',
+                'created_at' => $createdAt ?? now(),
+            ]);
+
+            Log::channel('op_batch')->info('Mirrored change-of-ownership record to the OSS application list', [
+                'file_no' => $fileNumber,
+                'action' => $result['action'] ?? null,
+                'oss_application_id' => $result['id'] ?? null,
+                'user_id' => Auth::id(),
+            ]);
+
+            return $result;
+        } catch (\Throwable $e) {
+            Log::channel('op_batch')->warning('Could not mirror change-of-ownership record to the OSS application list', [
+                'file_no' => $fileNumber,
+                'error' => $e->getMessage(),
+                'user_id' => Auth::id(),
+            ]);
+
+            return null;
+        }
+    }
+
     public function matchOp(Request $request, PraRecordService $praService): JsonResponse
     {
         // Merger path: pra_ids[] (multiple OPs → grouped match)
@@ -4856,6 +4944,15 @@ class OpResettlementApplicationController extends Controller
             ], 500);
         }
 
+        // The Transfer of Title row now exists, so this file is a change-of-ownership
+        // record and belongs on the application list. The applicant is the NEW holder;
+        // the listing derives the original holder separately from the earliest OP row.
+        $result['oss_application'] = $this->mirrorChangeOfNameApplication(
+            (string) ($result['mlsFNo'] ?? ''),
+            (string) ($result['current_holder'] ?? '') ?: (string) ($result['allottee'] ?? ''),
+            $opRow
+        );
+
         return response()->json([
             'success' => true,
             'message' => 'OP matched successfully. Transfer of Title row created.',
@@ -5019,6 +5116,14 @@ class OpResettlementApplicationController extends Controller
                 'message' => 'Match Merger OP failed: ' . $e->getMessage(),
             ], 500);
         }
+
+        // Same as the single-OP path: the merged file now has its Transfer of Title and
+        // belongs on the Change of Ownership list. party_1 carries the combined holder
+        // names the merger resolved.
+        $result['oss_application'] = $this->mirrorChangeOfNameApplication(
+            (string) ($result['mlsFNo'] ?? ''),
+            (string) ($result['party_1'] ?? '')
+        );
 
         return response()->json([
             'success' => true,

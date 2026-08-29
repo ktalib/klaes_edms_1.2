@@ -4,7 +4,7 @@
     <div class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"></div>
     <div class="relative bg-white rounded-3xl shadow-2xl w-full max-w-lg border border-slate-100">
         <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-            <h3 class="text-base font-black text-slate-800">KNUPDA Evaluation</h3>
+            <h3 class="text-base font-black text-slate-800">KNUPDA / Physical Planning Evaluation</h3>
             <button onclick="closeKnupda()" class="text-slate-400 hover:text-slate-600">
                 <i data-lucide="x" class="w-5 h-5"></i>
             </button>
@@ -17,7 +17,7 @@
                     <input type="number" step="0.01" id="knupda-land-value" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm">
                 </div>
                 <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">KNUPDA Fee</label>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">KNUPDA / Physical Planning Fee</label>
                     <input type="number" step="0.01" id="knupda-fee" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm">
                 </div>
             </div>
@@ -30,7 +30,7 @@
                     <option value="Pending">Pending</option>
                 </select>
                 <p class="text-[11px] text-slate-400 mt-1">
-                    The memo cannot be generated until KNUPDA reads Approved.
+                    The memo cannot be generated until this reads Approved, and the duplex cannot be approved until the memo and conveyance exist.
                 </p>
             </div>
             <div>

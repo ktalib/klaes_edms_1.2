@@ -376,7 +376,8 @@
                         <i data-lucide="map" class="w-4.5 h-4.5 text-slate-400 shrink-0 mt-0.5"></i>
                         <p class="leading-relaxed">
                             Attach the recommended site plan — one drawing covering every portion
-                            this duplex acts on. It is what the recommendation is read against.
+                            this duplex acts on. It is what the recommendation is read against,
+                            and the duplex cannot be approved without it.
                         </p>
                     </div>
 
@@ -402,8 +403,9 @@
                     <div id="dx-siteplan-current" class="hidden mt-4"></div>
 
                     <p class="text-[11px] text-slate-400 mt-4 text-center">
-                        Optional at capture — a duplex is often opened before the drawing comes
-                        back from Survey. You can attach it later by resuming the duplex.
+                        Required to finish. This step is open from the moment the duplex is
+                        started, so the plan can be attached as soon as it comes back from
+                        Survey — you do not have to capture every stage first.
                     </p>
                 </div>
             </div>

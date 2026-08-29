@@ -1181,7 +1181,8 @@
         // actually came from.
         if (p.type === 'change_of_purpose') return 0;
         if (p.type === 'merger') return incoming;
-        if (p.type === 'extension') return 1;
+        // One set of dimension boxes per stripe — see stripeCount(). Still one file.
+        if (p.type === 'extension') return stripeCount(p);
         return p.count || 2;
     }
 
@@ -1195,25 +1196,48 @@
      * attributes, and that cannot happen again.
      */
     function dimCell(p, index, i) {
-        const d = (p.dims || [])[i] || {};
+        const terms = normaliseTerms((p.dims || [])[i]);
 
-        const box = (axis, value, label) => `
-            <input type="number" step="any" min="0" placeholder="${label}"
-                   value="${value ?? ''}" aria-label="${label}"
-                   data-idx="${index}" data-slot="${i}" data-axis="${axis}"
-                   oninput="onDimInput(this)"
-                   class="dx-dim dx-dim-${axis} w-full px-2 py-2 rounded-lg border border-slate-200 bg-white text-sm text-center">`;
+        const box = (t, value) => `
+            <div class="relative">
+                <input type="number" step="any" min="0" placeholder="${t + 1}"
+                       value="${value ?? ''}" aria-label="Side ${t + 1} in metres"
+                       data-idx="${index}" data-slot="${i}" data-term="${t}"
+                       oninput="onDimInput(this)"
+                       class="dx-dim w-16 px-1.5 py-2 rounded-lg border border-slate-200 bg-white text-sm text-center">
+                ${terms.length > 1 ? `
+                    <button type="button" onclick="removeDimTerm(${index}, ${i}, ${t})"
+                        title="Remove this side"
+                        class="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-white border border-slate-200
+                               text-slate-400 hover:text-rose-600 hover:border-rose-200 text-[9px] font-black
+                               leading-none flex items-center justify-center">&times;</button>` : ''}
+            </div>`;
 
         return `
             <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1.5">
-                ${p.type === 'merger' ? 'File' : 'Plot'} ${i + 1}</label>
-            <div class="flex items-center gap-1.5">
-                ${box('l', d.l, 'Length')}
-                <span class="text-slate-400 text-xs font-black shrink-0">×</span>
-                ${box('w', d.w, 'Width')}
+                ${p.type === 'merger' ? 'File' : (p.type === 'extension' ? 'Stripe' : 'Plot')} ${i + 1}</label>
+            <div class="flex flex-wrap items-center gap-1.5">
+                ${terms.map((v, t) => box(t, v)).join('<span class="text-slate-400 text-xs font-black shrink-0">×</span>')}
+                <button type="button" onclick="addDimTerm(${index}, ${i})"
+                    title="Add another side"
+                    class="w-7 h-9 rounded-lg border border-dashed border-slate-300 text-slate-400
+                           hover:border-blue-400 hover:text-blue-600 transition text-sm font-black shrink-0">+</button>
             </div>
             <p class="dx-slot-area text-[10px] font-bold text-slate-500 text-center mt-1"
                data-idx="${index}" data-slot="${i}"></p>`;
+    }
+
+    /** Always at least one box to type in. */
+    function normaliseTerms(value) {
+        // Captured as {l, w} before dimensions became a chain; read forward so a stage
+        // saved then still opens with what it holds.
+        if (value && !Array.isArray(value)) {
+            return [value.l ?? '', value.w ?? ''];
+        }
+
+        const terms = Array.isArray(value) ? value.slice() : [];
+
+        return terms.length ? terms : ['', ''];
     }
 
     /**
@@ -1268,10 +1292,10 @@
                 <div class="flex items-center justify-between gap-3 mb-2">
                     <p class="text-[11px] font-black uppercase tracking-wider text-slate-500">
                         Plot dimension${slots === 1 ? '' : 's'} (m) &middot;
-                        <span class="text-slate-400">area in Ha is worked out for you</span></p>
+                        <span class="text-slate-400">one box per side &mdash; use + for a parcel with more than two</span></p>
                     ${applyAll}
                 </div>
-                <div class="grid grid-cols-2 md:grid-cols-3 gap-3">${cells}</div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">${cells}</div>
                 ${allocating ? '' : '<div class="mt-2.5">' + noteEl + '</div>'}
             </div>`;
     }
@@ -1287,23 +1311,30 @@
         const entry = state.plan[Number(index)];
         if (!row || !entry) return;
 
-        const lengths = [...row.querySelectorAll('.dx-dim-l')];
-        const widths  = [...row.querySelectorAll('.dx-dim-w')];
+        const slots = row.querySelectorAll('.dx-size-grid .grid > div').length;
+        const first = normaliseTerms((entry.dims || [])[0]);
 
-        const l = (lengths[0]?.value ?? '').trim();
-        const w = (widths[0]?.value ?? '').trim();
-
-        if (l === '' && w === '') {
+        if (!dimsText(first)) {
             return toast('info', 'Nothing to copy',
-                'Type the first plot\'s length and width, then apply them to the rest.');
+                'Enter the first plot\'s dimensions, then apply them to the rest.');
         }
 
-        lengths.forEach(input => { input.value = l; });
-        widths.forEach(input => { input.value = w; });
+        // The whole chain, and the area with it: a parcel measured by its perimeter has
+        // an area that cannot be re-derived from the sides, so copying the sides alone
+        // would leave every other plot showing an area its own boxes cannot account for.
+        const size = (entry.sizes || [])[0];
 
-        entry.dims  = lengths.map(() => ({ l, w }));
-        entry.sizes = entry.dims.map(d => areaOfDims(d.l, d.w));
-        refreshSizeNotes();
+        entry.dims  = entry.dims  || [];
+        entry.sizes = entry.sizes || [];
+
+        for (let i = 0; i < slots; i++) {
+            entry.dims[i]  = first.slice();
+            entry.sizes[i] = size;
+        }
+
+        // Every cell changed shape (a different number of boxes), so this one repaints
+        // the grid rather than writing values into the inputs that are there.
+        renderQuantities();
     };
 
     /**
@@ -1313,23 +1344,77 @@
      * boxes leaves the last computed figure alone rather than replacing it with 0 —
      * an officer tabbing through a stage they are not editing must not lose its sizes.
      */
+    /** One more side on this parcel. */
+    window.addDimTerm = function (index, slot) {
+        const entry = state.plan[Number(index)];
+        if (!entry) return;
+
+        entry.dims = entry.dims || [];
+        entry.dims[slot] = normaliseTerms(entry.dims[slot]);
+        entry.dims[slot].push('');
+
+        redrawDimCell(index, slot);
+    };
+
+    window.removeDimTerm = function (index, slot, term) {
+        const entry = state.plan[Number(index)];
+        if (!entry) return;
+
+        entry.dims[slot] = normaliseTerms(entry.dims[slot]);
+
+        // Never down to nothing: a parcel with no box has no way back.
+        if (entry.dims[slot].length <= 1) return;
+
+        entry.dims[slot].splice(Number(term), 1);
+        recomputeSlot(entry, slot);
+        redrawDimCell(index, slot);
+    };
+
+    /**
+     * Repaint one parcel's cell in place.
+     *
+     * Only that cell: re-rendering the whole step would take the focus out of a box
+     * the officer is still typing in two rows down.
+     */
+    function redrawDimCell(index, slot) {
+        const row = document.querySelectorAll('#dx-quantities > div')[Number(index)];
+        const entry = state.plan[Number(index)];
+        if (!row || !entry) return;
+
+        const cell = row.querySelectorAll('.dx-size-grid .grid > div')[Number(slot)];
+        if (!cell) return;
+
+        cell.innerHTML = dimCell(entry, index, slot);
+        refreshSizeNotes();
+        icons();
+    }
+
+    /** The area this parcel's sides imply, where they imply one. */
+    function recomputeSlot(entry, slot) {
+        const derived = areaFromTerms(entry.dims[slot]);
+
+        entry.sizes = entry.sizes || [];
+
+        if (derived !== null) {
+            entry.sizes[slot] = derived;
+        }
+    }
+
     window.onDimInput = function (input) {
         const entry = state.plan[Number(input.dataset.idx)];
         if (!entry) return;
 
         const slot = Number(input.dataset.slot);
+        const term = Number(input.dataset.term);
 
         entry.dims  = entry.dims  || [];
         entry.sizes = entry.sizes || [];
-        entry.dims[slot] = entry.dims[slot] || {};
-        entry.dims[slot][input.dataset.axis] = input.value;
+        entry.dims[slot] = normaliseTerms(entry.dims[slot]);
+        entry.dims[slot][term] = input.value;
 
-        const { l, w } = entry.dims[slot];
-
-        if ((l ?? '') !== '' || (w ?? '') !== '') {
-            entry.sizes[slot] = areaOfDims(l, w);
-        }
-
+        // Only where the sides give an answer. A parcel measured by its perimeter keeps
+        // whatever area was typed for it - editing a side must not wipe that.
+        recomputeSlot(entry, slot);
         refreshSizeNotes();
     };
 
@@ -1363,8 +1448,58 @@
     const AREA_UNIT = 'm²';
     const M2_PER_HECTARE = 10000;
 
-    /** Length x Width, in metres, as an area in m2. Blank or junk reads as 0. */
-    const areaOfDims = (l, w) => (parseFloat(l) || 0) * (parseFloat(w) || 0);
+    /**
+     * A parcel's dimensions are a CHAIN OF SIDES, not a length and a width.
+     *
+     * The Ministry's own memo prints them that way — "A: 60.00m x 21.00m x 46.00m x
+     * 21.00m x 42.71m" — because the parcels are surveyed polygons, not rectangles.
+     * Two boxes could only ever describe the rectangular minority, and forced everyone
+     * else to round their plot into a shape it is not.
+     *
+     * So dimensions are a list of any length, and the AREA is only derived where the
+     * arithmetic is honest: two sides multiply, and nothing else does. Side lengths
+     * alone do not determine the area of a polygon — three or more sides can enclose
+     * many different areas — so a parcel with more than two sides carries its
+     * dimensions and no computed area, rather than one invented from the perimeter.
+     */
+    const DERIVABLE_TERMS = 2;
+
+    /**
+     * An extension may come in SEVERAL STRIPES.
+     *
+     * The land added to a parcel is not always one piece — a boundary adjustment can
+     * pick up two or three separate stripes along different sides, each with its own
+     * dimensions on the survey plan. The stage asked for one and one only, so the rest
+     * had nowhere to be recorded.
+     *
+     * The count is therefore how many stripes to MEASURE, and nothing else. An
+     * extension still issues exactly ONE holding number and ONE file number, whatever
+     * the count says: the stripes are added to a single parcel, and that parcel keeps
+     * being one file. DuplexParcelUpdateStage::outputCount() already returns 1 for an
+     * extension regardless of plot_count, so the server is the guarantee and this is
+     * only the screen agreeing with it.
+     */
+    const stripeCount = p => Math.max(1, Number(p.count) || 1);
+
+    /** What a stage HANDS ON, which for a merger and an extension is always one file. */
+    const outputCountOf = p => (p.type === 'merger' || p.type === 'extension')
+        ? 1
+        : (p.count || 2);
+
+    /** The terms as the memo prints them: "60 x 21 x 46". Blanks dropped. */
+    const dimsText = terms => (terms || [])
+        .map(v => String(v ?? '').trim())
+        .filter(v => v !== '')
+        .join(' x ');
+
+    /** m2 from the sides, or null where it cannot honestly be derived. */
+    const areaFromTerms = terms => {
+        const nums = (terms || [])
+            .map(v => parseFloat(v))
+            .filter(v => isFinite(v) && v > 0);
+
+        return nums.length === DERIVABLE_TERMS ? nums[0] * nums[1] : null;
+    };
 
     /** 2842.3474 -> "0.2842 Ha". Four places: a plot is a fraction of a hectare. */
     const hectares = m2 => {
@@ -1479,14 +1614,27 @@
         let incoming = state.sources.length;
 
         box.innerHTML = state.plan.map((p, idx) => {
-            // Merger collapses many into one and Extension is a 1-to-1 adjustment,
-            // so neither has a count to ask for.
-            const fixed = (p.type === 'merger' || p.type === 'extension');
-            const outputs = fixed ? 1 : (p.count || 2);
+            /**
+             * A merger has no count to ask for: it swallows whatever it is given.
+             *
+             * An extension DOES — how many stripes of land are being added — but nearly
+             * every extension is one stripe, so the box stays locked and a small button
+             * opens it. An always-editable field on a stage that hands on ONE file
+             * invites a number that reads like a file count; asking for the click makes
+             * the several-stripe case deliberate, which is what it is.
+             */
+            // A count already above one is its own unlock: a resumed duplex rebuilds the
+            // plan from the stage rows and loses the flag, and a locked box showing "3"
+            // would be a number nobody could correct.
+            const fixed = (p.type === 'merger')
+                || (p.type === 'extension' && !p.stripesUnlocked && stripeCount(p) <= 1);
+            const outputs = outputCountOf(p);
 
-            // For a merger the useful number is how many files go IN — that is what the
-            // officer picked, and "1" on its own reads as "one file".
-            const shown = p.type === 'merger' ? incoming : outputs;
+            // The number in the BOX is what the officer answers, which is not always
+            // what the stage hands on: a merger shows how many files go in, an
+            // extension how many stripes it covers, everything else its own output.
+            const shown = p.type === 'merger' ? incoming
+                : (p.type === 'extension' ? stripeCount(p) : outputs);
 
             // A Change of Purpose does NOT shrink the file count — it renames some and
             // passes the rest on — so its badge reads "39 -> 3" and needs saying out
@@ -1494,7 +1642,7 @@
             const hint = p.type === 'merger'
                 ? `<b class="text-slate-600">${incoming}</b> file${incoming === 1 ? '' : 's'} merged into one parcel`
                 : (p.type === 'extension'
-                    ? 'One adjusted parcel, replacing the incoming file'
+                    ? 'How many stripes'
                     : (p.type === 'change_of_purpose'
                         ? `How many of the <b class="text-slate-600">${incoming}</b> take a new purpose &middot; the rest keep theirs and carry on`
                         : 'How many plots'));
@@ -1522,6 +1670,14 @@
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
                         ${flow}
+                        ${p.type === 'extension' && !p.stripesUnlocked && stripeCount(p) <= 1 ? `
+                            <button type="button" onclick="unlockStripes(${idx})"
+                                title="More than one stripe of land is being added"
+                                class="px-2.5 py-2 rounded-xl border border-dashed border-slate-300 text-[11px]
+                                       font-bold text-slate-500 hover:border-blue-400 hover:text-blue-600
+                                       transition inline-flex items-center gap-1 shrink-0">
+                                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Stripes
+                            </button>` : ''}
                         <input type="number" min="1" max="200" ${fixed ? 'disabled' : ''}
                             value="${shown}"
                             data-idx="${idx}"
@@ -1577,6 +1733,26 @@
 
     // Re-rendering on every keystroke would steal focus, so the counts are read back
     // into the plan first and only the flow badges are refreshed.
+    /**
+     * Open an extension's stripe count for editing.
+     *
+     * The flag lives on the plan entry, not the DOM, so the box stays open through the
+     * re-renders that follow every keystroke in it. Nothing else changes: the stage
+     * still hands on one file however high the count goes.
+     */
+    window.unlockStripes = function (index) {
+        const entry = state.plan[Number(index)];
+        if (!entry) return;
+
+        entry.stripesUnlocked = true;
+        renderQuantities();
+
+        const row = document.querySelectorAll('#dx-quantities > div')[Number(index)];
+        const qty = row?.querySelector('.dx-qty');
+
+        if (qty) { qty.focus(); qty.select(); }
+    };
+
     window.renderQuantities = function () {
         collectQuantities();
         refreshQuantityFlows();
@@ -1590,8 +1766,7 @@
             const p = state.plan[i];
             if (!p) return;
 
-            const fixed = (p.type === 'merger' || p.type === 'extension');
-            const outputs = fixed ? 1 : (p.count || 2);
+            const outputs = outputCountOf(p);
             const badge = row.querySelector('.dx-flow-in');
             const outEl = row.querySelector('.dx-flow-out');
             const qty = row.querySelector('.dx-qty');
@@ -1624,7 +1799,7 @@
                 const label = row.querySelector('.dx-size-grid p');
                 if (label) {
                     label.innerHTML = 'Plot dimension' + (want === 1 ? '' : 's') + ' (m) &middot; '
-                        + '<span class="text-slate-400">area in Ha is worked out for you</span>';
+                        + '<span class="text-slate-400">one box per side &mdash; use + for a parcel with more than two</span>';
                 }
             }
 
@@ -1707,11 +1882,14 @@
             plots.forEach((pl, i) => {
                 const blank = v => (v ?? '') === '';
 
-                entry.dims[i] = entry.dims[i] || {};
+                if (blank(entry.sizes[i]) && !blank(pl.size)) entry.sizes[i] = pl.size;
 
-                if (blank(entry.sizes[i])  && !blank(pl.size))   entry.sizes[i]  = pl.size;
-                if (blank(entry.dims[i].l) && !blank(pl.length)) entry.dims[i].l = pl.length;
-                if (blank(entry.dims[i].w) && !blank(pl.width))  entry.dims[i].w = pl.width;
+                if (!dimsText(entry.dims[i])) {
+                    const saved = pl.dimensions
+                        ?? ((pl.length != null || pl.width != null) ? [pl.length, pl.width] : null);
+
+                    if (dimsText(saved)) entry.dims[i] = normaliseTerms(saved);
+                }
             });
         });
     }
@@ -1798,13 +1976,16 @@
 
         const savedPlots = Array.from({ length: slotCount }).map((_, i) => {
             const kept = (saved.plots || [])[i] || {};
-            const dim  = plannedDims[i] || {};
+            const dim  = plannedDims[i];
+
+            const plannedTerms = dimsText(dim) ? normaliseTerms(dim) : null;
+            const keptTerms = kept.dimensions
+                ?? ((kept.length != null || kept.width != null) ? [kept.length, kept.width] : null);
 
             return {
                 ...kept,
-                size:   filled(planned[i]) ? planned[i] : (kept.size   ?? null),
-                length: filled(dim.l)      ? dim.l      : (kept.length ?? null),
-                width:  filled(dim.w)      ? dim.w      : (kept.width  ?? null),
+                size:       filled(planned[i]) ? planned[i] : (kept.size ?? null),
+                dimensions: plannedTerms ?? keptTerms,
             };
         });
         const savedApplies = saved.applies_to || [];
@@ -1829,22 +2010,37 @@
          * area in that hidden field and both boxes blank, and keeps that area until a
          * dimension is typed.
          */
-        const plotSizeBlock = (i, plot) => `
+        const plotSizeBlock = (i, plot) => {
+            const terms = normaliseTerms(plot?.dimensions
+                ?? (plot && (plot.length != null || plot.width != null)
+                    ? [plot.length, plot.width]
+                    : null));
+
+            const box = (t, value) => `
+                <div class="relative">
+                    <input type="number" step="any" min="0" placeholder="${t + 1}" aria-label="Side ${t + 1} in metres"
+                           value="${esc(value)}" data-slot="${i}" data-term="${t}"
+                           oninput="onPlotDimInput(this)"
+                           class="dx-plot-dim w-14 px-1.5 py-2 rounded-lg border border-slate-200 bg-white text-sm text-center">
+                    ${terms.length > 1 ? `
+                        <button type="button" onclick="removePlotDimTerm(${i}, ${t})" title="Remove this side"
+                            class="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-white border border-slate-200
+                                   text-slate-400 hover:text-rose-600 hover:border-rose-200 text-[9px] font-black
+                                   leading-none flex items-center justify-center">&times;</button>` : ''}
+                </div>`;
+
+            return `
             <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 mt-3">
                 Dimensions (m)</label>
-            <div class="flex items-center gap-1.5">
-                <input type="number" step="any" min="0" placeholder="Length" aria-label="Length"
-                       value="${esc(plot?.length)}" data-slot="${i}" data-axis="l"
-                       oninput="onPlotDimInput(this)"
-                       class="dx-plot-dim dx-plot-len w-full px-2 py-2 rounded-lg border border-slate-200 bg-white text-sm text-center">
-                <span class="text-slate-400 text-xs font-black shrink-0">×</span>
-                <input type="number" step="any" min="0" placeholder="Width" aria-label="Width"
-                       value="${esc(plot?.width)}" data-slot="${i}" data-axis="w"
-                       oninput="onPlotDimInput(this)"
-                       class="dx-plot-dim dx-plot-wid w-full px-2 py-2 rounded-lg border border-slate-200 bg-white text-sm text-center">
+            <div class="dx-plot-dims flex flex-wrap items-center gap-1.5" data-slot="${i}">
+                ${terms.map((v, t) => box(t, v)).join('<span class="text-slate-400 text-xs font-black shrink-0">×</span>')}
+                <button type="button" onclick="addPlotDimTerm(${i})" title="Add another side"
+                    class="w-7 h-9 rounded-lg border border-dashed border-slate-300 text-slate-400
+                           hover:border-blue-400 hover:text-blue-600 transition text-sm font-black shrink-0">+</button>
             </div>
             <input type="hidden" class="dx-plot-size" data-slot="${i}" value="${esc(plot?.size)}">
             <p class="dx-plot-area text-[10px] font-bold text-slate-500 text-center mt-1" data-slot="${i}"></p>`;
+        };
 
         // How many holding numbers this stage will mint. Needed before the template,
         // because it decides whether the Tracking ID is optional.
@@ -2027,11 +2223,19 @@
                         </div>`).join('')}
                 </div>`;
         } else {
-            const label = stage.type === 'extension' ? 'Adjusted parcel' : 'Plot';
+            // A stripe is a piece of land being ADDED, not a parcel being created —
+            // several of them still make one extended parcel, and one file.
+            const label = stage.type === 'extension'
+                ? (count > 1 ? 'Stripe' : 'Adjusted parcel')
+                : 'Plot';
+
             body = `
                 <p class="text-sm text-slate-600 mb-4">
                     ${stage.type === 'extension'
-                        ? 'The extended parcel replaces the incoming file.'
+                        ? (count > 1
+                            ? 'Measure each stripe of land being added. They all go onto the one extended '
+                              + 'parcel, which replaces the incoming file — <b>one file number, not ' + count + '</b>.'
+                            : 'The extended parcel replaces the incoming file.')
                         : 'Size each plot, and name its holder. The holder defaults to the applicant — change it where a plot goes to someone else.'}
                 </p>
                 ${plotApplyAll(count, label)}
@@ -2069,7 +2273,11 @@
 
                 <div class="px-6 py-3 border-t border-slate-100 bg-slate-50/60 flex items-center gap-2 text-[11px] text-slate-500">
                     <i data-lucide="corner-down-right" class="w-3.5 h-3.5 text-slate-400"></i>
-                    <span id="dx-stage-produces">Produces <strong class="text-slate-700">${outputs}</strong> holding number${outputs === 1 ? '' : 's'} for the next stage.</span>
+                    <span id="dx-stage-produces">Produces <strong class="text-slate-700">${outputs}</strong> holding number${outputs === 1 ? '' : 's'} for the next stage.${
+                        stage.type === 'extension' && count > 1
+                            ? ` The ${count} stripes are measurements on that one parcel, not files of their own.`
+                            : ''
+                    }</span>
                 </div>
             </div>`;
 
@@ -2443,26 +2651,40 @@
         const panel = document.getElementById('dx-stage-panel');
         if (!panel) return;
 
-        // 'size' copies the DIMENSIONS - the area is derived, so copying the figure
-        // alone would leave every other card showing an area its own boxes contradict.
+        // 'size' copies the whole DIMENSION CHAIN and the area with it. Copying the
+        // sides alone would leave every other card showing an area its own boxes cannot
+        // account for, which is exactly the case for a parcel measured off the plan.
         if (field === 'size') {
-            const lengths = [...panel.querySelectorAll('.dx-plot-len')];
-            const widths  = [...panel.querySelectorAll('.dx-plot-wid')];
-            if (lengths.length < 2) return;
+            const slots = panel.querySelectorAll('.dx-plot-dims').length;
+            if (slots < 2) return;
 
-            const l = (lengths[0]?.value ?? '').trim();
-            const w = (widths[0]?.value ?? '').trim();
+            const first = plotTermsOf(panel, 0)
+                .map(v => String(v ?? '').trim())
+                .filter(v => v !== '');
 
-            if (l === '' && w === '') {
+            if (!first.length) {
                 return toast('info', 'Nothing to copy',
-                    'Fill the first plot\'s length and width, then apply them to the rest.');
+                    'Enter the first plot\'s dimensions, then apply them to the rest.');
             }
 
-            lengths.forEach(input => { input.value = l; });
-            widths.forEach(input => { input.value = w; });
-            panel.querySelectorAll('.dx-plot-dim').forEach(syncPlotArea);
+            const size = panel.querySelector('.dx-plot-size[data-slot="0"]')?.value ?? '';
+            const stage = state.stages[state.stageIndex];
+            const entry = stage && state.plan.find(p => Number(p.rank) === Number(stage.rank));
 
-            return toast('success', 'Applied to all ' + lengths.length);
+            if (entry) {
+                entry.dims  = entry.dims  || [];
+                entry.sizes = entry.sizes || [];
+
+                for (let i = 0; i < slots; i++) {
+                    entry.dims[i]  = first.slice();
+                    entry.sizes[i] = size === '' ? '' : parseFloat(size);
+                }
+            }
+
+            // Every card changes shape (a different number of boxes), so the panel is
+            // repainted rather than having values written into the inputs on screen.
+            renderStagePanel();
+            return toast('success', 'Applied to all ' + slots);
         }
 
         const inputs = [...panel.querySelectorAll('.dx-plot-holder')];
@@ -2478,36 +2700,48 @@
         toast('success', 'Applied to all ' + inputs.length);
     };
 
-    /** Recompute one step-3 card's area from its boxes and repaint its readout. */
+    /** The sides typed on one step-3 card, in order. */
+    function plotTermsOf(panel, slot) {
+        return [...panel.querySelectorAll('.dx-plot-dims[data-slot="' + slot + '"] .dx-plot-dim')]
+            .map(el => el.value);
+    }
+
+    /**
+     * Recompute one step-3 card's area from its boxes, repaint its readout, and write
+     * the answer back into the plan.
+     *
+     * The plan is the live copy - step 2 renders it and the next stage panel is seeded
+     * from it - so a measurement corrected here has to reach it, or stepping back to
+     * Quantities would show the figure it replaced and the stale one would win.
+     */
     function syncPlotArea(input) {
         const panel = document.getElementById('dx-stage-panel');
         if (!panel) return;
 
-        const slot = input.dataset.slot;
-        const l = panel.querySelector('.dx-plot-len[data-slot="' + slot + '"]');
-        const w = panel.querySelector('.dx-plot-wid[data-slot="' + slot + '"]');
+        const slot   = input.dataset.slot;
+        const terms  = plotTermsOf(panel, slot);
         const hidden = panel.querySelector('.dx-plot-size[data-slot="' + slot + '"]');
-        const out = panel.querySelector('.dx-plot-area[data-slot="' + slot + '"]');
+        const out    = panel.querySelector('.dx-plot-area[data-slot="' + slot + '"]');
 
-        // Left alone until a dimension is actually present, so a card opened and not
-        // edited keeps the area it was captured with.
-        if (hidden && ((l?.value ?? '') !== '' || (w?.value ?? '') !== '')) {
-            hidden.value = areaOfDims(l?.value, w?.value) || '';
+        // Two sides multiply and give the area; any other count is a surveyed polygon,
+        // whose area its sides do not determine. There is no area box to fill in, so
+        // the parcel simply carries its dimensions and no figure — rather than one
+        // invented from the perimeter.
+        const derived = areaFromTerms(terms);
 
-            // Straight back into the plan, which is the copy step 2 renders and the
-            // copy the next stage panel is seeded from. Without this a measurement
-            // corrected here was shown as the old figure the moment the officer
-            // stepped back to Quantities, and the stale one won from then on.
-            const stage = state.stages[state.stageIndex];
-            const entry = stage && state.plan.find(p => Number(p.rank) === Number(stage.rank));
+        if (hidden && derived !== null) {
+            hidden.value = derived;
+        }
 
-            if (entry) {
-                const i = Number(slot);
-                entry.sizes = entry.sizes || [];
-                entry.dims  = entry.dims  || [];
-                entry.dims[i] = { l: l?.value ?? '', w: w?.value ?? '' };
-                entry.sizes[i] = parseFloat(hidden.value) || '';
-            }
+        const stage = state.stages[state.stageIndex];
+        const entry = stage && state.plan.find(p => Number(p.rank) === Number(stage.rank));
+
+        if (entry) {
+            const i = Number(slot);
+            entry.sizes = entry.sizes || [];
+            entry.dims  = entry.dims  || [];
+            entry.dims[i]  = terms.slice();
+            entry.sizes[i] = hidden && hidden.value !== '' ? parseFloat(hidden.value) : '';
         }
 
         if (out) {
@@ -2520,23 +2754,86 @@
 
     window.onPlotDimInput = function (input) { syncPlotArea(input); };
 
+    /** One more side on a step-3 card, added in place so the panel keeps its state. */
+    window.addPlotDimTerm = function (slot) {
+        const panel = document.getElementById('dx-stage-panel');
+        const wrap = panel?.querySelector('.dx-plot-dims[data-slot="' + slot + '"]');
+        if (!wrap) return;
+
+        const term = wrap.querySelectorAll('.dx-plot-dim').length;
+        const plus = wrap.querySelector('button[onclick^="addPlotDimTerm"]');
+
+        const sep = document.createElement('span');
+        sep.className = 'text-slate-400 text-xs font-black shrink-0';
+        sep.textContent = '×';
+
+        const cell = document.createElement('div');
+        cell.className = 'relative';
+        cell.innerHTML =
+            '<input type="number" step="any" min="0" placeholder="' + (term + 1) + '"'
+            + ' aria-label="Side ' + (term + 1) + ' in metres" data-slot="' + slot + '" data-term="' + term + '"'
+            + ' oninput="onPlotDimInput(this)"'
+            + ' class="dx-plot-dim w-14 px-1.5 py-2 rounded-lg border border-slate-200 bg-white text-sm text-center">'
+            + '<button type="button" onclick="removePlotDimTerm(' + slot + ', ' + term + ')" title="Remove this side"'
+            + ' class="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-white border border-slate-200'
+            + ' text-slate-400 hover:text-rose-600 hover:border-rose-200 text-[9px] font-black'
+            + ' leading-none flex items-center justify-center">&times;</button>';
+
+        wrap.insertBefore(sep, plus);
+        wrap.insertBefore(cell, plus);
+
+        cell.querySelector('input').focus();
+        syncPlotArea(cell.querySelector('input'));
+    };
+
+    window.removePlotDimTerm = function (slot, term) {
+        const panel = document.getElementById('dx-stage-panel');
+        const wrap = panel?.querySelector('.dx-plot-dims[data-slot="' + slot + '"]');
+        if (!wrap) return;
+
+        const boxes = [...wrap.querySelectorAll('.dx-plot-dim')];
+        if (boxes.length <= 1) return;   // never down to nothing
+
+        const values = boxes.map(b => b.value);
+        values.splice(Number(term), 1);
+
+        // Rebuilt rather than spliced out of the DOM, so every remaining box carries
+        // the right data-term and the × buttons stay addressed correctly.
+        const stage = state.stages[state.stageIndex];
+        const entry = stage && state.plan.find(p => Number(p.rank) === Number(stage.rank));
+        if (entry) {
+            entry.dims = entry.dims || [];
+            entry.dims[Number(slot)] = values;
+        }
+
+        renderStagePanel();
+    };
+
     function collectStagePayload() {
         const stage = state.stages[state.stageIndex];
         const panel = document.getElementById('dx-stage-panel');
 
         const sizes = [...panel.querySelectorAll('.dx-plot-size')].map(e => e.value);
         const holders = [...panel.querySelectorAll('.dx-plot-holder')].map(e => e.value);
-        const lengths = [...panel.querySelectorAll('.dx-plot-len')].map(e => e.value);
-        const widths = [...panel.querySelectorAll('.dx-plot-wid')].map(e => e.value);
 
         // size stays the authority - it is what the memo and the summary read - and the
         // dimensions ride alongside it so the stage can be reopened and re-measured.
-        const plots = sizes.map((size, i) => ({
-            size: size === '' ? null : parseFloat(size),
-            length: (lengths[i] ?? '') === '' ? null : parseFloat(lengths[i]),
-            width: (widths[i] ?? '') === '' ? null : parseFloat(widths[i]),
-            holder: holders[i] || null,
-        }));
+        const plots = sizes.map((size, i) => {
+            const terms = plotTermsOf(panel, i)
+                .map(v => String(v ?? '').trim())
+                .filter(v => v !== '')
+                .map(Number);
+
+            return {
+                size: size === '' ? null : parseFloat(size),
+                // The chain, in survey order. length/width are still written for a
+                // two-sided parcel so anything reading them keeps working.
+                dimensions: terms,
+                length: terms.length === 2 ? terms[0] : null,
+                width:  terms.length === 2 ? terms[1] : null,
+                holder: holders[i] || null,
+            };
+        });
 
         const payload = {
             plot_count: stage.plot_count || plots.length || 1,
@@ -2589,16 +2886,20 @@
      * behind them is fixed by then - the stage rows and holding numbers were built
      * from it - so they open read-only rather than pretending an edit would stick.
      *
-     * Step 4 (the site plan) and step 5 (the summary) both wait for every stage to be
-     * captured. The site plan waits because only by then is it settled what the drawing
-     * has to show - every portion the stages act on, and the extension land beside them
-     * where there is an extension.
+     * Step 4 (the site plan) opens as soon as the duplex row exists - a DRAFT included.
+     * The drawing usually arrives from Survey while the stages are still being captured,
+     * and there is nothing about attaching it that depends on the stages being finished;
+     * making the officer complete every stage first only meant the plan sat on a desk.
+     *
+     * Step 5 (the summary) still waits for every stage: it reports what was captured,
+     * and there is nothing to report until there is.
      */
     function canGoToStep(step) {
         if (step === state.step) return true;
         if (step <= 2) return true;
         if (step === 3) return !!state.duplex;
-        if (step === 4 || step === 5) return !!state.duplex && state.stages.length > 0
+        if (step === 4) return !!state.duplex;
+        if (step === 5) return !!state.duplex && state.stages.length > 0
             && state.stages.every(s => s.status === 'done');
         return false;
     }
@@ -2606,7 +2907,7 @@
     window.goToWizardStep = function (step) {
         if (!canGoToStep(step)) {
             const why = step === 4
-                ? 'Every stage has to be captured before the site plan.'
+                ? 'Start the duplex first — the plan attaches to it.'
                 : (step === 5
                     ? 'Every stage has to be captured before the summary.'
                     : 'Finish selecting the updates first.');
@@ -2709,9 +3010,7 @@
             label.textContent = 'Step 3 of 4';
             subtitle.textContent = 'Each stage runs on holding numbers — nothing is commissioned yet.';
         } else if (step === 4) {
-            // Named for what it does rather than "Next": the plan is optional, and the
-            // button has to read the same whether one is attached or not.
-            next.textContent = state.sitePlan ? 'Continue' : 'Continue without a plan';
+            next.textContent = 'Continue';
             label.textContent = 'Step 4 of 4';
             subtitle.textContent = 'The drawing the recommendation is read against.';
         } else {
@@ -2927,20 +3226,18 @@
             return showStep(4);
         }
 
-        // The site plan is optional, so this step never refuses to move on - it only
-        // makes sure the officer knows they are leaving without one.
+        // The site plan is REQUIRED to finish. It is the drawing the recommendation is
+        // read against, so a duplex submitted without one cannot be recommended and
+        // simply comes back. The step itself is reachable from the moment the duplex
+        // exists, so this asks for nothing the officer could not already have done.
         if (state.step === 4) {
-            if (!state.sitePlan && window.Swal) {
-                const go = await Swal.fire({
-                    icon: 'question',
-                    title: 'No site plan attached',
-                    text: 'You can attach it later by resuming this duplex. Continue without one?',
-                    showCancelButton: true,
-                    confirmButtonText: 'Continue',
-                    cancelButtonText: 'Attach one now',
-                    confirmButtonColor: '#2563eb',
-                });
-                if (!go.isConfirmed) return;
+            if (!state.sitePlan) {
+                document.getElementById('dx-siteplan-drop')?.classList.add(
+                    'border-rose-400', 'bg-rose-50/40');
+
+                return toast('warning', 'Site plan required',
+                    'Attach the recommended site plan before finishing. It is the drawing '
+                    + 'the recommendation is read against.');
             }
 
             renderDone();
@@ -2982,6 +3279,9 @@
             icons();
             return;
         }
+
+        // Clears the red the "site plan required" warning painted on the drop card.
+        drop.classList.remove('border-rose-400', 'bg-rose-50/40');
 
         // The drop card is hidden rather than left below: two upload targets on one
         // screen reads as "attach a second plan", and a duplex has exactly one.
@@ -3470,34 +3770,34 @@
      * `canApprove` is false once the duplex is already approved — the decision is then
      * only whether to reject it, so the approve button is not offered.
      */
-    window.openApprovalDecision = async function (id, canApprove) {
+    /**
+     * The approval, with its consequences stated before it is given.
+     *
+     * Only ever reached from an ENABLED Approval item, which the register now gates on
+     * the whole chain — stages, KNUPDA/Physical Planning, conveyance, memo, site plan.
+     * So this no longer has to explain why approving is impossible; when it opens,
+     * it is possible. Reject has its own menu item and is no longer carried here.
+     */
+    window.openApprovalDecision = async function (id) {
         if (!window.Swal) {
-            return canApprove ? approveDuplex(id) : rejectDuplex(id);
+            return approveDuplex(id);
         }
 
         const r = await Swal.fire({
             icon: 'question',
-            title: 'Approval decision',
-            html: canApprove
-                ? '<p style="font-size:13px;color:#475569;line-height:1.6">Approving unlocks KNUPDA, '
-                  + 'the memo and the conveyance, and lists the duplex for commissioning.<br><br>'
-                  + 'Rejecting closes it: every action except viewing is disabled.</p>'
-                : '<p style="font-size:13px;color:#475569;line-height:1.6">This duplex is already '
-                  + 'approved. It can still be rejected, which closes it.</p>',
-            showConfirmButton: !!canApprove,
-            showDenyButton: true,
+            title: 'Approve this duplex?',
+            html: '<p style="font-size:13px;color:#475569;line-height:1.6">Approving lists the '
+                + 'duplex for commissioning and closes the KNUPDA/Physical Planning answer, '
+                + 'the memo and the conveyance as they stand.</p>',
             showCancelButton: true,
             confirmButtonText: 'Approve',
             confirmButtonColor: '#059669',
-            denyButtonText: 'Reject',
-            denyButtonColor: '#dc2626',
             cancelButtonText: 'Cancel',
             reverseButtons: true,
             allowOutsideClick: false,
         });
 
         if (r.isConfirmed) return approveDuplex(id, true);
-        if (r.isDenied)    return rejectDuplex(id);
     };
 
     /** `decided` skips the confirmation — the approval modal has already asked. */

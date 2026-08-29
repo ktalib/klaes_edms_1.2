@@ -368,10 +368,14 @@ class DuplexParcelUpdateController extends Controller
             'cop_rows.*.new_land_use'   => 'required_with:cop_rows|string|max:50',
             'plots'             => 'nullable|array',
             'plots.*.size'      => 'nullable|numeric|min:0',
-            // The dimensions the size was worked out from, kept beside it: the officer
-            // reads Length x Width off the survey plan and the area is derived, so a
-            // stage reopened for correction can show what was measured rather than only
-            // the product. `size` remains the authority everything downstream reads.
+            // The parcel's sides, in survey order: "60.00 x 21.00 x 46.00 x 21.00 x 42.71".
+            // A polygon, not a rectangle - which is how the Ministry's own memo states
+            // them - so this is a LIST, of any length. `size` remains the authority
+            // everything downstream reads; where the sides cannot give it (any count but
+            // two) the officer enters the measured area from the plan.
+            'plots.*.dimensions'   => 'nullable|array|max:24',
+            'plots.*.dimensions.*' => 'nullable|numeric|min:0',
+            // Still written for a two-sided parcel, so anything reading them keeps working.
             'plots.*.length'    => 'nullable|numeric|min:0',
             'plots.*.width'     => 'nullable|numeric|min:0',
             'plots.*.plot_no'   => 'nullable|string|max:100',
@@ -612,6 +616,28 @@ class DuplexParcelUpdateController extends Controller
                 'success' => false,
                 'message' => 'Every stage must be completed before the duplex can be approved.',
             ], 422);
+        }
+
+        // Approval comes LAST. Each of these is a document the approver is meant to
+        // have read, and the register's menu greys the action out for the same reasons
+        // - but a greyed button is a reminder, and this is the rule. Reported one at a
+        // time, in the order the work is done, so the answer is always the next step
+        // rather than a list.
+        $missing = null;
+
+        if (strcasecmp((string) $duplex->knupda_status, 'Approved') !== 0) {
+            $missing = 'Record the KNUPDA/Physical Planning clearance before approving.';
+        } elseif (!$duplex->conveyance_generated_at) {
+            $missing = 'Generate the conveyance before approving.';
+        } elseif (!$duplex->recommendation_generated_at) {
+            $missing = 'Generate the memo before approving — the approval is given on the strength of it.';
+        } elseif (trim((string) $duplex->site_plan) === '') {
+            // Also covers a plan removed after capture, which the wizard cannot see.
+            $missing = 'Attach the site plan before approving — it is the drawing the recommendation is read against.';
+        }
+
+        if ($missing !== null) {
+            return response()->json(['success' => false, 'message' => $missing], 422);
         }
 
         $duplex->update([

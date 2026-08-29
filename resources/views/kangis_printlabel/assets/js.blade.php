@@ -546,10 +546,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 updateSelectAllCheckbox();
                 updateAssignBatchBtn();
 
-                if (registryOverrideSummary) registryOverrideSummary.textContent = (files.length) + ' file(s) matched. ' + ((data.data.missing && data.data.missing.length) ? data.data.missing.length + ' missing.' : '');
+                var notIndexed = (data.data.not_indexed && data.data.not_indexed.length) ? data.data.not_indexed : [];
+                if (registryOverrideSummary) {
+                    registryOverrideSummary.textContent = (files.length) + ' file(s) matched. '
+                        + ((data.data.missing && data.data.missing.length) ? data.data.missing.length + ' missing. ' : '')
+                        // Files present in the registry but with no indexing record are skipped.
+                        + (notIndexed.length ? notIndexed.length + ' skipped (not indexed).' : '');
+                }
 
                 hideLoading();
-                if (!files.length) showError('No matching files found for the entered file numbers.');
+                if (!files.length) showError(notIndexed.length
+                    ? 'None of the entered file numbers are indexed yet: ' + notIndexed.join(', ')
+                    : 'No matching files found for the entered file numbers.');
                 else showSuccess('Loaded ' + files.length + ' file(s) from manual input.');
 
                 if (state.activeTab === 'preview') refreshPreview(true);
@@ -594,8 +602,11 @@ document.addEventListener('DOMContentLoaded', function() {
             if (pd) pd.textContent = prefix;
 
             hideLoading();
-            if (files.length === 0) showError('No records found for prefix ' + prefix + ' in kangis_grouping.');
-            else showSuccess('Loaded ' + files.length + ' file' + (files.length===1?'':'s') + ' for prefix ' + prefix + '.');
+            // Files with no indexing record are dropped server-side; say how many.
+            var skipped = Number((data.data && data.data.skipped_not_indexed) || 0);
+            var skippedNote = skipped ? ' ' + skipped + ' file' + (skipped===1?'':'s') + ' skipped (not indexed yet).' : '';
+            if (files.length === 0) showError('No indexed records found for prefix ' + prefix + '.' + skippedNote);
+            else showSuccess('Loaded ' + files.length + ' file' + (files.length===1?'':'s') + ' for prefix ' + prefix + '.' + skippedNote);
 
             if (state.activeTab === 'preview') refreshPreview(true);
         } catch(err) { hideLoading(); showError('Failed to load files: ' + (err.message||err)); }

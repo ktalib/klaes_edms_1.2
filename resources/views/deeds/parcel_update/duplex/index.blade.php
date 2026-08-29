@@ -111,7 +111,7 @@
                 {{-- The pipeline, spelled out. New officers cannot infer these steps from
                      the row menu alone, and skipping one is the usual support call. --}}
                 <div class="px-7 py-3.5 border-t border-slate-100 bg-slate-50/70 flex flex-wrap items-center gap-x-2 gap-y-2 text-[11px] font-bold text-slate-400">
-                    @foreach (['Capture stages', 'KNUPDA', 'Approve', 'Memo + Conveyance', 'Send to Land', 'Commission'] as $i => $step)
+                    @foreach (['Capture stages', 'KNUPDA/Physical Planning', 'Memo + Conveyance', 'Approve', 'Send to Land', 'Commission'] as $i => $step)
                         @if ($i)<i data-lucide="chevron-right" class="w-3.5 h-3.5 text-slate-300"></i>@endif
                         <span class="{{ $i === 5 ? 'text-indigo-600' : '' }}">{{ $step }}</span>
                     @endforeach
@@ -246,7 +246,39 @@
                                             $knupdaOk    = strcasecmp((string) $record->knupda_status, 'Approved') === 0;
                                             $allCaptured = $record->stageRows->every(fn ($st) => $st->status === 'done');
 
-                                            $canApprove    = !$frozen && !$isApproved && $allCaptured;
+                                            /**
+                                             * Approval comes LAST, and only once everything it rests on exists.
+                                             *
+                                             * The comment below has always described this order, but the guard
+                                             * checked the stages alone — so Approval sat enabled on a duplex with
+                                             * no KNUPDA/Physical Planning clearance and neither paper drawn, which
+                                             * is a decision with nothing behind it. Each condition is a document
+                                             * the approver is meant to have read:
+                                             *
+                                             *   every stage captured   — there is something to approve
+                                             *   KNUPDA/PP approved     — the planning authority has cleared it
+                                             *   conveyance generated   — the letter to the applicant exists
+                                             *   memo generated         — the recommendation carrying it up exists
+                                             *   site plan attached     — the drawing the memo is read against
+                                             *
+                                             * approve() enforces the same set, so this is the reminder and that
+                                             * is the rule.
+                                             */
+                                            $hasSitePlan   = trim((string) $record->site_plan) !== '';
+                                            $canApprove    = !$frozen && !$isApproved && $allCaptured
+                                                             && $knupdaOk
+                                                             && $record->conveyance_generated_at
+                                                             && $record->recommendation_generated_at
+                                                             && $hasSitePlan;
+
+                                            // Naming the FIRST thing still missing, in the order it is done.
+                                            $approvalBlocker = !$allCaptured ? 'Capture every stage first'
+                                                : (!$knupdaOk ? 'Record the KNUPDA/Physical Planning clearance first'
+                                                : (!$record->conveyance_generated_at ? 'Generate the conveyance first'
+                                                : (!$record->recommendation_generated_at ? 'Generate the memo first'
+                                                : (!$hasSitePlan ? 'Attach the site plan first'
+                                                : 'Already approved'))));
+
                                             $canReject     = !$frozen;
                                             // The order of business: KNUPDA recommends, the papers are
                                             // drawn — application, conveyance, then the memo that carries
@@ -291,7 +323,7 @@
                                             <div class="py-1">
                                                 <button onclick="openKnupda({{ $record->id }})" @disabled(!$canKnupda)
                                                     title="{{ $why($canKnupda, $isApproved ? 'Settled — the duplex is already approved' : 'Capture every stage first') }}"
-                                                    class="menu-item">KNUPDA</button>
+                                                    class="menu-item">KNUPDA/Physical Planning</button>
                                             </div>
 
                                             <div class="py-1">
@@ -325,15 +357,26 @@
                                                     class="menu-item block {{ $canPrintMemo ? '' : 'is-disabled' }}">Print Memo</a>
                                             </div>
 
-                                            {{-- Approve and reject are two answers to ONE question, so the
-                                                 menu asks it once and the modal carries both. Reject sitting
-                                                 in the menu as its own row invited a mis-click on the way
-                                                 past something else. --}}
+                                            {{-- Approve and reject were ONE item opening a modal that carried
+                                                 both answers. That made Approval read as available on a duplex
+                                                 that cannot be approved: the item was disabled only when it
+                                                 could be neither approved NOR rejected, and a draft can always
+                                                 be rejected — so on every draft it sat there in bold, live,
+                                                 above four greyed steps it is supposed to come after.
+
+                                                 Two items now, each enabled by its own rule, so what the menu
+                                                 shows is what the action will do. Reject is kept quiet — small
+                                                 and grey, not red — because it is the rarer answer and this is
+                                                 a menu people pass through on the way to something else. --}}
                                             <div class="py-1">
-                                                <button onclick="openApprovalDecision({{ $record->id }}, {{ $canApprove ? 'true' : 'false' }})"
-                                                    @disabled(!$canApprove && !$canReject)
-                                                    title="{{ $why($canApprove || $canReject, 'Capture every stage first') }}"
+                                                <button onclick="openApprovalDecision({{ $record->id }})"
+                                                    @disabled(!$canApprove)
+                                                    title="{{ $why($canApprove, $approvalBlocker) }}"
                                                     class="menu-item text-emerald-700 font-bold">Approval</button>
+                                                <button onclick="rejectDuplex({{ $record->id }})"
+                                                    @disabled(!$canReject)
+                                                    title="{{ $why($canReject, 'Nothing left to reject') }}"
+                                                    class="menu-item">Reject</button>
                                             </div>
 
                                             <div class="py-1">
