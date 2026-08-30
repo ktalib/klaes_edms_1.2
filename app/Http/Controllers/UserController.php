@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage; // added for profile image storage
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use App\Services\ProfilePhotoService;
 use App\Services\UserNotificationService;
 use App\Services\Payroll\WorkstationPaymentStructureService;
 use App\Support\Concerns\ResolvesWorkStations;
@@ -187,36 +188,70 @@ class UserController extends Controller
             return false;
         }
 
-        $file = $request->file('profile');
-        $filename = uniqid('profile_') . '_' . time() . '.' . $file->getClientOriginalExtension();
-        Storage::disk('public')->putFileAs('upload/profile', $file, $filename);
-
-        // Remove the previous file, but never the shared "avatar.png" placeholder.
-        $previous = trim((string) $user->profile);
-        if ($previous !== '' && strtolower($previous) !== 'avatar.png') {
-            foreach ([$previous, 'upload/profile/' . $previous] as $candidate) {
-                if (Storage::disk('public')->exists($candidate)) {
-                    Storage::disk('public')->delete($candidate);
-                    break;
-                }
-            }
-        }
-
-        // Stored as a public-disk relative path so every screen resolves it the same way.
-        $user->profile = 'upload/profile/' . $filename;
-        $user->passport_photo_path = 'upload/profile/' . $filename;
+        app(ProfilePhotoService::class)->store($request->file('profile'), $user);
 
         return true;
     }
 
     private function profileUploadRules(bool $required = false): array
     {
-        return [
-            ($required ? 'required' : 'nullable'),
-            'image',
-            'mimes:jpeg,jpg,png,gif',
-            'max:2048',
-        ];
+        return ProfilePhotoService::rules($required);
+    }
+
+    /**
+     * Minimal public-facing profile used by the clickable "Created by / Indexed by"
+     * cells: full name, username, phone and photo, nothing else.
+     *
+     * Accepts either an id or a display name, because the two tables that use it store
+     * the creator differently — land recommendations/RofOs keep a user id, while
+     * file_indexings.created_by holds the indexer's NAME.
+     */
+    public function profileCard(Request $request)
+    {
+        $id = trim((string) $request->query('id', ''));
+        $name = trim((string) $request->query('name', ''));
+
+        $user = null;
+
+        $columns = ['id', 'first_name', 'last_name', 'username', 'phone_number', 'profile', 'passport_photo_path'];
+
+        if ($id !== '' && ctype_digit($id)) {
+            $user = User::find((int) $id, $columns);
+        }
+
+        // file_indexings.created_by holds an id on most rows and a typed name on the rest,
+        // so a value arriving as `name` may still be an id.
+        if (!$user && $name !== '' && ctype_digit($name)) {
+            $user = User::find((int) $name, $columns);
+        }
+
+        if (!$user && $name !== '') {
+            $user = User::query()
+                ->where(function ($query) use ($name) {
+                    $query->whereRaw("LTRIM(RTRIM(COALESCE(first_name, '') + ' ' + COALESCE(last_name, ''))) = ?", [$name])
+                        ->orWhere('username', $name);
+                })
+                ->first($columns);
+        }
+
+        if (!$user) {
+            return response()->json([
+                'found' => false,
+                'message' => __('No matching user record was found.'),
+                'full_name' => $name !== '' ? $name : null,
+            ], 404);
+        }
+
+        return response()->json([
+            'found' => true,
+            'id' => $user->id,
+            'full_name' => trim($user->first_name . ' ' . $user->last_name) ?: $user->username,
+            'username' => $user->username,
+            'phone_number' => $user->phone_number,
+            'profile_url' => $user->profile_url,
+            // Drives the verified tick / missing-photo mark on the card.
+            'has_photo' => $user->has_profile_photo,
+        ]);
     }
 
     public function store(Request $request)

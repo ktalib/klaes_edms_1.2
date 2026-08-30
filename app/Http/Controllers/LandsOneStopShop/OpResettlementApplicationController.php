@@ -52,6 +52,22 @@ class OpResettlementApplicationController extends Controller
     }
 
     /**
+     * Format one pinned coordinate for the Latitude / Longitude columns.
+     *
+     * Only file_indexings stores the pin, and plenty of files were never pinned, so a
+     * null is the normal case. 0 counts as unpinned — 0,0 is the Gulf of Guinea, never
+     * a Kano parcel.
+     */
+    private function formatCoordinate($value): string
+    {
+        if (!is_numeric($value) || (float) $value == 0.0) {
+            return '—';
+        }
+
+        return number_format((float) $value, 6, '.', '');
+    }
+
+    /**
      * Lean record set for the OP Batch Commissioning view.
      *
      * The main FC query carries per-row correlated subqueries (MAX(id) on mls_file_no,
@@ -72,6 +88,17 @@ class OpResettlementApplicationController extends Controller
                     ->whereRaw('p.op_batch IS NOT NULL');
             })
             ->whereNotNull('m.op_batch')
+            // Coordinates — file_indexings is the only table holding them.
+            ->leftJoin(DB::raw("(
+                SELECT file_number,
+                       MAX(latitude) as latitude,
+                       MAX(longitude) as longitude
+                FROM file_indexings
+                WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+                GROUP BY file_number
+            ) as fi_geo"), function ($join) {
+                $join->whereRaw("fi_geo.file_number = m.full_file_number");
+            })
             ->select([
                 'm.id as mls_id',
                 'm.full_file_number',
@@ -89,6 +116,8 @@ class OpResettlementApplicationController extends Controller
                 'p.id as pra_id',
                 'p.Grantee',
                 'p.land_use as pra_land_use',
+                'fi_geo.latitude as fi_latitude',
+                'fi_geo.longitude as fi_longitude',
                 // Location: pra first, mls_file_no as fallback. tp_no comes from
                 // mls_file_no only — pra.tp_no is NULL on every one of these rows.
                 DB::raw("COALESCE(NULLIF(LTRIM(RTRIM(p.plot_no)), ''), NULLIF(LTRIM(RTRIM(m.plot_no)), '')) as plot_no"),
@@ -143,6 +172,8 @@ class OpResettlementApplicationController extends Controller
                     'plot_no' => $row->plot_no ? strtoupper((string) $row->plot_no) : '—',
                     'lga' => $row->lga ? strtoupper((string) $row->lga) : '—',
                     'location' => $row->location ? strtoupper((string) $row->location) : '—',
+                    'latitude' => $this->formatCoordinate($row->fi_latitude ?? null),
+                    'longitude' => $this->formatCoordinate($row->fi_longitude ?? null),
                     'commissioned_by' => $row->created_by ? strtoupper((string) $row->created_by) : '—',
                     'time_commissioned' => $time ? strtoupper($time->format('g:i A')) : '—',
                     'date_commissioned' => $date ? strtoupper($date->format('M d, Y')) : '—',
@@ -233,6 +264,9 @@ class OpResettlementApplicationController extends Controller
 
         $fiHasFileType = $hasSqlsrvColumn('file_indexings', 'file_type');
         $fiHasCustomerType = $hasSqlsrvColumn('file_indexings', 'customer_type');
+        // Coordinates live only on file_indexings — pra and mls_file_no have no lat/long.
+        $fiHasCoords = $hasSqlsrvColumn('file_indexings', 'latitude')
+            && $hasSqlsrvColumn('file_indexings', 'longitude');
         $fiResolvedTypeExpr = $fiHasFileType && $fiHasCustomerType
             ? 'COALESCE(file_type, customer_type)'
             : ($fiHasFileType ? 'file_type' : ($fiHasCustomerType ? 'customer_type' : null));
@@ -365,6 +399,20 @@ class OpResettlementApplicationController extends Controller
                     $join->whereRaw("fi_agg.file_number = COALESCE(NULLIF(p.mlsFNo, ''), p.fileno)");
                 });
             })
+            // Kept separate from fi_agg: that join only exists when the customer-type
+            // columns are present, and the two lookups are unrelated.
+            ->when($fiHasCoords, function ($builder) {
+                $builder->leftJoin(DB::raw("(
+                    SELECT file_number,
+                           MAX(latitude) as latitude,
+                           MAX(longitude) as longitude
+                    FROM file_indexings
+                    WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+                    GROUP BY file_number
+                ) as fi_geo"), function ($join) {
+                    $join->whereRaw("fi_geo.file_number = COALESCE(NULLIF(p.mlsFNo, ''), p.fileno)");
+                });
+            })
             ->select([
                 DB::raw("COALESCE(fn.id, 0) as id"),
                 'p.id as pra_id',
@@ -395,6 +443,8 @@ class OpResettlementApplicationController extends Controller
                     NULLIF(NULLIF(UPPER(LTRIM(RTRIM(fn.location))), 'OTHER'), 'OTHERS'),
                     p.location
                 ) as location"),
+                DB::raw($fiHasCoords ? 'fi_geo.latitude as fi_latitude' : 'CAST(NULL AS decimal(10,8)) as fi_latitude'),
+                DB::raw($fiHasCoords ? 'fi_geo.longitude as fi_longitude' : 'CAST(NULL AS decimal(11,8)) as fi_longitude'),
                 'fn.created_at as fn_created_at',
                 'fn.commissioning_date',
                 'fn.is_deleted',
@@ -632,6 +682,8 @@ class OpResettlementApplicationController extends Controller
                     'plot_no' => $row->plot_no ? strtoupper((string) $row->plot_no) : '—',
                     'lga' => $row->lga ? strtoupper((string) $row->lga) : '—',
                     'location' => $row->location ? strtoupper((string) $row->location) : '—',
+                    'latitude' => $this->formatCoordinate($row->fi_latitude ?? null),
+                    'longitude' => $this->formatCoordinate($row->fi_longitude ?? null),
                     'commissioned_by' => $row->created_by_name ? strtoupper((string) $row->created_by_name) : '—',
                     'time_commissioned' => $commissionedAt ? strtoupper($commissionedAt->format('g:i A')) : '—',
                     'date_commissioned' => $commissionedAt ? strtoupper($commissionedAt->format('M d, Y')) : '—',
@@ -741,6 +793,8 @@ class OpResettlementApplicationController extends Controller
                         'plot_no' => $this->collapseBatchField($sorted, 'plot_no'),
                         'lga' => $this->collapseBatchField($sorted, 'lga'),
                         'location' => $this->collapseBatchField($sorted, 'location'),
+                        'latitude' => $this->collapseBatchField($sorted, 'latitude'),
+                        'longitude' => $this->collapseBatchField($sorted, 'longitude'),
                         'commissioned_by' => $this->collapseBatchField($sorted, 'commissioned_by'),
                         'time_commissioned' => $this->collapseBatchField($sorted, 'time_commissioned'),
                         'date_commissioned' => $this->collapseBatchField($sorted, 'date_commissioned'),
@@ -3412,6 +3466,7 @@ class OpResettlementApplicationController extends Controller
             // 4) Update PRA rows tied to this source so parties/land/purpose stay aligned.
             $praTable = 'pra';
             $targetPraId = !empty($validated['pra_id']) ? (int) $validated['pra_id'] : null;
+            $targetPraRow = null;
             $praPropId = null;
 
             // When a specific PRA row is selected, target it directly
@@ -3472,6 +3527,46 @@ class OpResettlementApplicationController extends Controller
                 $party2Name = !empty($validated['party_2_name'])
                     ? strtoupper(trim((string) $validated['party_2_name']))
                     : $opGrantee;
+
+                // A linked Transfer of Title must always inherit Party 1 from its
+                // source OP. The edit form can omit party_1_name (or submit an
+                // incorrect value), and trusting that payload previously allowed
+                // a linked ToT's Grantor/party_1 to be blanked or mixed up.
+                if ($isTransferOfTitle && $targetPraRow
+                    && strtolower(trim((string) ($targetPraRow->source_op_table ?? ''))) === 'pra'
+                    && !empty($targetPraRow->source_op_id)) {
+                    $linkedOriginalHolder = DB::connection('sqlsrv')
+                        ->table($praTable)
+                        ->where('id', (int) $targetPraRow->source_op_id)
+                        ->select(['Grantee', 'party_2'])
+                        ->first();
+                    $linkedOriginalHolder = trim((string) (
+                        ($linkedOriginalHolder->Grantee ?? null)
+                        ?: ($linkedOriginalHolder->party_2 ?? '')
+                    ));
+
+                    if ($linkedOriginalHolder !== '') {
+                        $linkedOriginalHolder = strtoupper($linkedOriginalHolder);
+                        if ($party1Name !== null && strcasecmp($party1Name, $linkedOriginalHolder) !== 0) {
+                            Log::warning('OP Change-of-Name edit: ignored mismatched Transfer of Title Party 1', [
+                                'pra_id' => $targetPraId,
+                                'source_op_id' => (int) $targetPraRow->source_op_id,
+                                'submitted_party_1' => $party1Name,
+                                'linked_op_holder' => $linkedOriginalHolder,
+                                'user_id' => Auth::id(),
+                            ]);
+                        }
+                        $party1Name = $linkedOriginalHolder;
+                    }
+                } elseif ($isTransferOfTitle && $targetPraRow && !$wasSubmitted('party_1_name')) {
+                    // Preserve an existing Party 1 on unlinked legacy ToT rows when
+                    // older forms do not include the field at all.
+                    $party1Name = trim((string) (
+                        ($targetPraRow->Grantor ?? null)
+                        ?: ($targetPraRow->party_1 ?? '')
+                    ));
+                    $party1Name = $party1Name !== '' ? strtoupper($party1Name) : null;
+                }
 
                 $praUpdates = [];
                 if ($wasSubmitted('land_use') && Schema::connection('sqlsrv')->hasColumn($praTable, 'land_use')) {

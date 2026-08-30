@@ -173,6 +173,7 @@
                                 <th class="table-header text-green-500">Units</th>
                                 <th class="table-header text-green-500">Application Date</th>
                                 <th class="table-header text-green-500">Date Created</th>
+                                <th class="table-header text-green-500">Created By</th>
                                 <th class="table-header text-green-500" data-column="jsi-status">JSI Status</th>
                                 <th class="table-header text-green-500" data-column="jsi-approval">JSI Approval</th>
                                 <th class="table-header text-green-500" data-column="planning-status">Planning
@@ -354,6 +355,17 @@
                                     </td>
                                     <td class="table-cell" data-order="{{ $PrimaryApplication->sys_date }}">
                                         {{ \Carbon\Carbon::parse($PrimaryApplication->sys_date)->format('Y-m-d') }}
+                                    </td>
+                                    <td class="table-cell">
+                                        @php $stCreatedBy = trim((string) ($PrimaryApplication->created_by_name ?? '')); @endphp
+                                        @if($stCreatedBy !== '')
+                                            <span class="upc-trigger" data-user-card
+                                                  data-user-id="{{ $PrimaryApplication->created_by }}"
+                                                  data-user-name="{{ $stCreatedBy }}"
+                                                  title="{{ __('View profile') }}">{{ $stCreatedBy }}</span>
+                                        @else
+                                            <span class="text-gray-400">&mdash;</span>
+                                        @endif
                                     </td>
                                     @php
                                         $jsiApproved = (int) ($PrimaryApplication->jsi_is_approved ?? 0) === 1;

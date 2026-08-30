@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\LandOfficer;
 use App\Models\User;
+use App\Services\ProfilePhotoService;
 use App\Support\Concerns\ResolvesWorkStations;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -57,7 +58,7 @@ class ProfileController extends Controller
             'rank' => 'nullable|string|max:255',
             'rank_other' => 'nullable|string|max:255|required_if:rank,' . \App\Models\OfficerRank::OTHER_VALUE,
             'password' => 'nullable|string|min:8|confirmed',
-            'profile' => 'nullable',
+            'profile' => ProfilePhotoService::rules(),
             'signature_file' => 'nullable|image|mimes:png,jpg,jpeg|max:2048',
             'work_station' => $workStationRule,
             'is_on_leave' => 'nullable|boolean',
@@ -70,14 +71,7 @@ class ProfileController extends Controller
 
         // Handle profile image upload if provided
         if ($request->hasFile('profile')) {
-            // Delete old profile image if it exists
-            if ($user->profile && Storage::exists('public/' . $user->profile)) {
-                Storage::delete('public/' . $user->profile);
-            }
-            
-            // Store the new image
-            $profilePath = $request->file('profile')->store('profiles', 'public');
-            $user->profile = $profilePath;
+            app(ProfilePhotoService::class)->store($request->file('profile'), $user);
         }
 
         // Store/update Lands 12 signature against the user's linked land officer profile.
@@ -143,5 +137,41 @@ class ProfileController extends Controller
         
         return redirect()->route('profile.index')
                         ->with('success', 'Profile updated successfully.');
+    }
+
+    /**
+     * Passport photo upload used by the mandatory profile-picture card.
+     *
+     * Kept separate from update() because that method requires the full profile form;
+     * this one accepts the photo on its own so a user locked out by
+     * RequireProfilePhoto can satisfy the requirement without filling anything else in.
+     */
+    public function storePicture(Request $request)
+    {
+        $request->validate(
+            ['profile' => ProfilePhotoService::rules(true)],
+            [
+                'profile.required' => __('Please choose a passport photo to upload.'),
+                'profile.image' => __('The file must be an image (JPG, PNG or GIF).'),
+                'profile.mimes' => __('The file must be an image (JPG, PNG or GIF).'),
+                'profile.max' => __('The photo must be 2MB or smaller.'),
+            ]
+        );
+
+        $user = Auth::user();
+        app(ProfilePhotoService::class)->store($request->file('profile'), $user);
+        $user->save();
+
+        $message = __('Your profile picture has been uploaded successfully. You can now continue using the system.');
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'profile_url' => $user->profile_url,
+            ]);
+        }
+
+        return redirect()->back()->with('success', $message);
     }
 }

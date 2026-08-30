@@ -133,7 +133,17 @@
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">PENDING</span>
                                     @endif
                                 </td>
-                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->creator->name ?? 'System' }}</td>
+                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">
+                                    @php $sltrCreatedBy = trim((string) ($rec->creator->name ?? '')); @endphp
+                                    @if($sltrCreatedBy !== '')
+                                        <span class="upc-trigger" data-user-card
+                                              data-user-id="{{ $rec->creator->id }}"
+                                              data-user-name="{{ $sltrCreatedBy }}"
+                                              title="{{ __('View profile') }}">{{ $sltrCreatedBy }}</span>
+                                    @else
+                                        System
+                                    @endif
+                                </td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->created_at ? $rec->created_at->format('d-m-Y') : '—' }}</td>
                                 <td class="px-4 py-2 text-right sticky right-0 bg-white shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] border-l border-slate-100 z-10 whitespace-nowrap">
                                     <div x-data="{

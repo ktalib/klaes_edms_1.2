@@ -220,10 +220,15 @@
       (item) => item && !this.state.previousIds.has(item.id)
     );
 
-    const shouldPlaySound =
-      this.state.initialised && newItems.length > 0 && this.state.audioPrimed;
+    // The first payload after a page load has an empty previousIds set, so
+    // every item looks "new". Flag it so listeners can skip announcing a
+    // backlog the user has already seen.
+    const isInitialLoad = !this.state.initialised;
 
-    if (!this.state.initialised) {
+    const shouldPlaySound =
+      !isInitialLoad && newItems.length > 0 && this.state.audioPrimed;
+
+    if (isInitialLoad) {
       this.state.initialised = true;
     }
 
@@ -231,7 +236,7 @@
       this.playSound();
     }
 
-    if (newItems.length) {
+    if (newItems.length && !isInitialLoad) {
       this.broadcastBrowserNotifications(newItems.slice(0, 3));
     }
 
@@ -242,6 +247,7 @@
       unreadCount,
       totalCount,
       newItems,
+      isInitialLoad,
       raw: payload,
     });
   };

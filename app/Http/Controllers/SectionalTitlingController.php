@@ -58,8 +58,10 @@ class SectionalTitlingController extends Controller
                     ->whereNull('jsi.sub_application_id');
             })
             ->whereRaw("(dbo.mother_applications.is_deleted IS NULL OR dbo.mother_applications.is_deleted = '0')")
+            ->leftJoin('dbo.users as creator', DB::raw('TRY_CAST(dbo.mother_applications.created_by AS INT)'), '=', 'creator.id')
             ->select(
                 'dbo.mother_applications.*',
+                DB::raw("LTRIM(RTRIM(COALESCE(creator.first_name, '') + ' ' + COALESCE(creator.last_name, ''))) as created_by_name"),
                 'jsi.is_generated as jsi_is_generated',
                 'jsi.is_submitted as jsi_is_submitted',
                 'jsi.is_approved as jsi_is_approved',
@@ -556,6 +558,7 @@ class SectionalTitlingController extends Controller
             ->leftJoin('dbo.joint_site_inspection_reports as jsi', function ($join) {
                 $join->on('jsi.sub_application_id', '=', 'dbo.subapplications.id');
             })
+            ->leftJoin('dbo.users as creator', DB::raw('TRY_CAST(dbo.subapplications.created_by AS INT)'), '=', 'creator.id')
             ->select(
                 'dbo.subapplications.fileno',
                 'dbo.subapplications.scheme_no',
@@ -595,6 +598,9 @@ class SectionalTitlingController extends Controller
                 'dbo.mother_applications.property_lga',
                 'dbo.mother_applications.np_fileno',
                 'dbo.subapplications.is_sua_unit',
+                // Creator name for the "Created By" column's profile card — created_by
+                // holds a user id, so the name has to come from users.
+                DB::raw("LTRIM(RTRIM(COALESCE(creator.first_name, '') + ' ' + COALESCE(creator.last_name, ''))) as created_by_name"),
                 'jsi.is_generated as jsi_is_generated',
                 'jsi.is_submitted as jsi_is_submitted',
                 'jsi.is_approved as jsi_is_approved',

@@ -157,7 +157,7 @@ function renderRows(rows) {
             case 'lga':
               return `<td class="${standardCellClass}">${escapeHtml(lgaValue)}</td>`;
             case 'indexed_by':
-              return `<td class="${standardCellClass}">${escapeHtml(row.indexed_by)}</td>`;
+              return buildIndexedByCell(row, standardCellClass);
             case 'indexed_date':
               return `<td class="${standardCellClass}">${escapeHtml(row.indexed_at ?? '')}</td>`;
             case 'dciv_fileno':
@@ -259,7 +259,7 @@ function renderRows(rows) {
             ${col('lpkn_no', `<td class="${standardCellClass}">${escapeHtml(row.lpkn_no)}</td>`)}
             ${col('district', `<td class="${standardCellClass}">${escapeHtml(row.district)}</td>`)}
             ${col('lga', `<td class="${standardCellClass}">${escapeHtml(lgaValue)}</td>`)}
-            ${col('indexed_by', `<td class="${standardCellClass}">${escapeHtml(row.indexed_by)}</td>`)}
+            ${col('indexed_by', buildIndexedByCell(row, standardCellClass))}
             ${col('indexed_date', `<td class="${standardCellClass}">${escapeHtml(row.indexed_at ?? '')}</td>`)}
             ${col('dciv_reason', `<td class="p-3 text-gray-600 max-w-xs whitespace-normal break-words">${Number(row.dciv_status) === 1 && row.dciv_reason ? escapeHtml(row.dciv_reason) : '<span class="text-gray-400">-</span>'}</td>`)}
             ${col('lon_value', buildLonCell(row))}
@@ -308,7 +308,7 @@ function renderRows(rows) {
         ${col('file_title', `<td class="p-3 whitespace-nowrap text-gray-700">${escapeHtml(row.file_title)}</td>`)}
         ${col('plot_number', `<td class="${standardCellClass}">${escapeHtml(row.plot_number)}</td>`)}
         ${col('indexed_date', `<td class="${standardCellClass}">${escapeHtml(row.indexed_at ?? '')}</td>`)}
-        ${col('indexed_by', `<td class="${standardCellClass}">${escapeHtml(row.indexed_by)}</td>`)}
+        ${col('indexed_by', buildIndexedByCell(row, standardCellClass))}
         ${col('tp_no', `<td class="${standardCellClass}">${escapeHtml(row.tp_no)}</td>`)}
         ${col('lpkn_no', `<td class="${standardCellClass}">${escapeHtml(row.lpkn_no)}</td>`)}
         ${col('land_use_type', `<td class="p-3 whitespace-nowrap">${landUseBadge}</td>`)}
@@ -4405,6 +4405,26 @@ function escapeHtml(value) {
   };
 
   return text.replace(/[&<>"']/g, (char) => map[char]);
+}
+
+/**
+ * "Indexed By" cell. file_indexings.created_by holds the indexer's NAME rather than an
+ * id, so the shared profile card is opened by name and resolves the user server-side.
+ * A blank or placeholder value stays plain text — there is nothing to look up.
+ */
+function buildIndexedByCell(row, cellClass) {
+  const name = String(row.indexed_by ?? '').trim();
+
+  if (name === '' || name === '-' || name.toLowerCase() === 'unknown') {
+    return `<td class="${cellClass}">${escapeHtml(row.indexed_by)}</td>`;
+  }
+
+  // Most rows hold a user id, the rest a typed name; send whichever it is.
+  const attr = /^\d+$/.test(name)
+    ? `data-user-id="${escapeHtml(name)}"`
+    : `data-user-name="${escapeHtml(name)}"`;
+
+  return `<td class="${cellClass}"><span class="upc-trigger" data-user-card ${attr} title="View profile">${escapeHtml(name)}</span></td>`;
 }
 
 function formatNumber(value) {

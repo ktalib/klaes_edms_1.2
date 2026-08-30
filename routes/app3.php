@@ -1249,6 +1249,18 @@ Route::middleware(['auth'])->group(function () {
     Route::post('land-recommendations/batch/{batchId}/document', [\App\Http\Controllers\LandRecommendationBatchDocumentController::class, 'store'])->name('land-recommendations.batch-document.store');
     Route::get('land-recommendations/batch/{batchId}/document', [\App\Http\Controllers\LandRecommendationBatchDocumentController::class, 'show'])->name('land-recommendations.batch-document.show');
     Route::delete('land-recommendations/batch/{batchId}/document', [\App\Http\Controllers\LandRecommendationBatchDocumentController::class, 'destroy'])->name('land-recommendations.batch-document.destroy');
+    // OP-holder Match. A file whose Occupancy Permit names one holder while File
+    // Indexing names another, with no transfer explaining the change, is offered a
+    // Match on the capture form: it writes the missing Transfer of Title, and the
+    // record then carries the ALREADY-APPROVED letter (uploaded here) instead of
+    // generating a new one. Above the resource route so /{id}/approved-recommendation
+    // is not read as a record show.
+    Route::get('land-recommendations/op-match/check', [\App\Http\Controllers\LandRecommendationOpMatchController::class, 'check'])->name('land-recommendations.op-match.check');
+    Route::post('land-recommendations/op-match', [\App\Http\Controllers\LandRecommendationOpMatchController::class, 'match'])->name('land-recommendations.op-match.store');
+    Route::post('land-recommendations/{id}/approved-recommendation', [\App\Http\Controllers\LandRecommendationOpMatchController::class, 'storeDocument'])->name('land-recommendations.approved-recommendation.store')->whereNumber('id');
+    Route::get('land-recommendations/{id}/approved-recommendation', [\App\Http\Controllers\LandRecommendationOpMatchController::class, 'showDocument'])->name('land-recommendations.approved-recommendation.show')->whereNumber('id');
+    Route::delete('land-recommendations/{id}/approved-recommendation', [\App\Http\Controllers\LandRecommendationOpMatchController::class, 'destroyDocument'])->name('land-recommendations.approved-recommendation.destroy')->whereNumber('id');
+
     // A saved batch re-opened in the capture form, and the save that comes back.
     // Above the resource route, or /batch/{id}/edit reads as a record id.
     Route::get('land-recommendations/batch/{batchId}/edit', [\App\Http\Controllers\LandRecommendationController::class, 'editBatch'])->name('land-recommendations.batch-edit');

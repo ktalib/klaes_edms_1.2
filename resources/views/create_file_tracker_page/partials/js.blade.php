@@ -6268,7 +6268,13 @@
                                     const isCompleted = entryStatusLabel === 'Completed' || entryStatusLabel === 'In Archive';
                                     const displayName = isCompleted ? 'Archive' : (officerName ? sanitize(officerName) : 'N/A');
                                     const badge = isCompleted ? null : (officerId ? sanitize(String(officerId)) : null);
-                                    return '<div class="flex items-center gap-2"><span>' + displayName + '</span>' + (badge ? '<span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-mono text-blue-700">' + badge + '</span>' : '') + '</div>';
+                                    // A real officer opens the shared profile card; 'Archive' and
+                                    // 'N/A' are placeholders with nobody behind them.
+                                    const isPerson = !isCompleted && officerName;
+                                    const nameHtml = isPerson
+                                        ? '<span class="upc-trigger" data-user-card' + (officerId ? ' data-user-id="' + sanitize(String(officerId)) + '"' : '') + ' data-user-name="' + sanitize(officerName) + '" title="View profile">' + displayName + '</span>'
+                                        : '<span>' + displayName + '</span>';
+                                    return '<div class="flex items-center gap-2">' + nameHtml + (badge ? '<span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-mono text-blue-700">' + badge + '</span>' : '') + '</div>';
                                 })()}
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">
@@ -6477,7 +6483,11 @@
                                     const isCompleted = entryStatusLabel === 'Completed' || entryStatusLabel === 'In Archive';
                                     const finalDisplayName = isCompleted ? 'Archive' : displayName;
                                     const finalBadge = isCompleted ? null : officerBadge;
-                                    return `<div class="flex items-center gap-2"><span>${finalDisplayName}</span>${finalBadge ? `<span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-mono text-blue-700">${finalBadge}</span>` : ''}</div>`;
+                                    const isPerson = !isCompleted && officerName;
+                                    const nameHtml = isPerson
+                                        ? `<span class="upc-trigger" data-user-card${officerId ? ` data-user-id="${sanitize(String(officerId))}"` : ''} data-user-name="${sanitize(officerName)}" title="View profile">${finalDisplayName}</span>`
+                                        : `<span>${finalDisplayName}</span>`;
+                                    return `<div class="flex items-center gap-2">${nameHtml}${finalBadge ? `<span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-mono text-blue-700">${finalBadge}</span>` : ''}</div>`;
                                 })()}
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600">

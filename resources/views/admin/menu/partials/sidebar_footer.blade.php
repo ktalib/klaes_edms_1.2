@@ -1,7 +1,7 @@
 <div class="sidebar-footer border-t border-gray-200 p-4">
   <div class="flex items-center gap-3">
     <div class="relative">
-      <div class="h-10 w-10 rounded-full border-2 border-blue-600 cursor-pointer hover:scale-105 transition-transform overflow-hidden flex items-center justify-center bg-gray-100">
+      <div data-user-avatar class="h-10 w-10 rounded-full border-2 border-blue-600 cursor-pointer hover:scale-105 transition-transform overflow-hidden flex items-center justify-center bg-gray-100">
         @if(auth()->user()->profile_url)
           <img src="{{ auth()->user()->profile_url }}" alt="User" class="h-full w-full object-cover" />
         @else

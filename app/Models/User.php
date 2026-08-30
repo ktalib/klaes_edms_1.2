@@ -585,4 +585,26 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return $this->profile_url !== null;
     }
+
+    /**
+     * True when the mandatory passport-photo card should be shown and the system locked.
+     *
+     * This is the FIRST gate a user meets: it comes before the first-login password
+     * change, so nothing else may prompt until a photo is on file.
+     */
+    public function getNeedsProfilePhotoAttribute(): bool
+    {
+        return !$this->has_profile_photo;
+    }
+
+    /**
+     * The first-login password change, which the dashboard prompts for.
+     *
+     * Held back until the passport photo is uploaded — its prompt sends the user to the
+     * profile page, which RequireProfilePhoto blocks while the photo is still missing.
+     */
+    public function getNeedsPasswordChangeAttribute(): bool
+    {
+        return is_null($this->is_password_change) && $this->has_profile_photo;
+    }
 }

@@ -336,7 +336,11 @@
                                         </td>
                                         <td class="align-top whitespace-nowrap">
                                             @if(!empty(trim($instrument->created_by_name)))
-                                                <span class="text-gray-700 text-xs font-medium">{{ ucwords(strtolower(trim($instrument->created_by_name))) }}</span>
+                                                {{-- Opens the shared profile card; created_by is a real user id here. --}}
+                                                <span class="text-gray-700 text-xs font-medium upc-trigger" data-user-card
+                                                    data-user-id="{{ $instrument->created_by }}"
+                                                    data-user-name="{{ trim($instrument->created_by_name) }}"
+                                                    title="{{ __('View profile') }}">{{ ucwords(strtolower(trim($instrument->created_by_name))) }}</span>
                                             @else
                                                 <span class="text-gray-300 text-xs">—</span>
                                             @endif

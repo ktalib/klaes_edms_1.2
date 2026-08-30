@@ -34,9 +34,13 @@ class SUAController extends Controller
                 ->leftJoin('joint_site_inspection_reports as jsi', function ($join) {
                     $join->on('jsi.sub_application_id', '=', 'subapplications.id');
                 })
+                ->leftJoin('users as creator', DB::raw('TRY_CAST(subapplications.created_by AS INT)'), '=', 'creator.id')
                 ->where('subapplications.unit_type', 'SUA')
                 ->select([
                     'subapplications.*',
+                    // Creator name for the "Created By" column's profile card — created_by
+                    // holds a user id, so the name has to come from users.
+                    DB::raw("LTRIM(RTRIM(COALESCE(creator.first_name, '') + ' ' + COALESCE(creator.last_name, ''))) as created_by_name"),
                     'jsi.is_generated as jsi_is_generated',
                     'jsi.is_submitted as jsi_is_submitted',
                     'jsi.is_approved as jsi_is_approved',

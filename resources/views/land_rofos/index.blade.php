@@ -274,7 +274,15 @@
                                         <span class="text-[10px] font-bold text-slate-400">&mdash;</span>
                                     @endif
                                 </td>
-                                <td class="px-6 py-4 text-slate-600 whitespace-nowrap">{{ $creator ? trim($creator->first_name . ' ' . $creator->last_name) : '—' }}</td>
+                                <td class="px-6 py-4 text-slate-600 whitespace-nowrap">
+                                    @if($creator)
+                                        {{-- Opens the shared profile card (js/user-profile-card.js). --}}
+                                        <span class="upc-trigger" data-user-card data-user-id="{{ $creator->id }}"
+                                            title="{{ __('View profile') }}">{{ trim($creator->first_name . ' ' . $creator->last_name) }}</span>
+                                    @else
+                                        —
+                                    @endif
+                                </td>
                                 <td class="px-6 py-4 text-slate-500 whitespace-nowrap text-xs">{{ $b->created_at ? \Carbon\Carbon::parse($b->created_at)->format('d/m/Y H:i') : '—' }}</td>
                                 <td class="px-6 py-4 text-right whitespace-nowrap" onclick="event.stopPropagation()">
                                     @if($generated > 0)
@@ -470,7 +478,14 @@
                                 <td class="px-4 py-2 text-center text-slate-500 text-xs whitespace-nowrap">
                                     {{ $isOssRec ? '—' : ($rec->approved_at ? $rec->approved_at->format('Y-m-d h:i A') : 'N/A') }}
                                 </td>
-                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->creator->name ?? 'System' }}</td>
+                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">
+                                    @if($rec->creator)
+                                        <span class="upc-trigger" data-user-card data-user-id="{{ $rec->creator->id }}"
+                                            title="{{ __('View profile') }}">{{ $rec->creator->name }}</span>
+                                    @else
+                                        System
+                                    @endif
+                                </td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->created_at ? $rec->created_at->format('d-m-Y') : '—' }}</td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">
                                     @if($rec->land_rofo_serial_no)

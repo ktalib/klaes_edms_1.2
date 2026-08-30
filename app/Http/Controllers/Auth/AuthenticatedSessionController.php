@@ -71,6 +71,12 @@ class AuthenticatedSessionController extends Controller
         // Show the welcome card once, on the first page loaded after login
         session(['show_welcome_popup' => true]);
 
+        // Stamps this login. The notification flash toasts key their
+        // "already played" marker off this value, so they replay once per
+        // login instead of on every page load. Set here (not lazily in the
+        // header) so the value is stable for the whole session.
+        session(['last_login_time' => time()]);
+
         // Clear intended URL if it points to a JSON/utility endpoint
         // (e.g. /world-time, /api/*, etc.) to prevent redirecting there after login
         $intended = session()->get('url.intended');

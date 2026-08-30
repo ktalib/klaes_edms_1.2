@@ -1061,6 +1061,24 @@
                 }
 
                 // Helper function to get status CSS class
+                /**
+                 * "Commissioned By" cell. st_file_numbers.created_by is a real user id and the
+                 * API also returns the resolved name, so the shared profile card
+                 * (js/user-profile-card.js) is opened by id with the name as a fallback.
+                 */
+                function renderCommissionedBy(file) {
+                    const name = String(file.created_by_name || '').trim();
+
+                    if (name === '' || name === 'System') {
+                        return 'System';
+                    }
+
+                    const safe = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+                    const idAttr = file.created_by ? ` data-user-id="${String(file.created_by).replace(/"/g, '')}"` : '';
+
+                    return `<span class="upc-trigger" data-user-card${idAttr} data-user-name="${safe}" title="View profile">${safe}</span>`;
+                }
+
                 function getStatusClass(status) {
                     if (!status) return 'generated';
 
@@ -1223,7 +1241,7 @@
                                     <div class="text-xs">${file.created_at ? new Date(file.created_at).toLocaleTimeString() : ''}</div>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm text-gray-900 font-medium">${file.created_by_name || 'System'}</div>
+                                    <div class="text-sm text-gray-900 font-medium">${renderCommissionedBy(file)}</div>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <span class="status-badge status-${getStatusClass(file.status)}">${getStatusDisplay(file.status)}</span>

@@ -382,7 +382,18 @@
                                     <td class="px-4 py-2.5 font-mono text-xs text-slate-600" data-order="{{ $record->created_at ? \Carbon\Carbon::parse($record->created_at)->format('Y-m-d') : '' }}">
                                         {{ $record->created_at ? \Carbon\Carbon::parse($record->created_at)->format('M d, Y') : '—' }}
                                     </td>
-                                    <td class="px-4 py-2.5 text-xs text-slate-600">{{ $record->captured_by_name ?? '—' }}</td>
+                                    <td class="px-4 py-2.5 text-xs text-slate-600">
+                                        @php $capturedByName = trim((string) ($record->captured_by_name ?? '')); @endphp
+                                        @if($capturedByName !== '' && $capturedByName !== '—')
+                                            {{-- Opens the shared profile card (js/user-profile-card.js). --}}
+                                            <span class="upc-trigger" data-user-card
+                                                @if(!empty($record->captured_by)) data-user-id="{{ $record->captured_by }}" @endif
+                                                data-user-name="{{ $capturedByName }}"
+                                                title="{{ __('View profile') }}">{{ $capturedByName }}</span>
+                                        @else
+                                            —
+                                        @endif
+                                    </td>
                                     <td class="px-4 py-2.5 font-mono text-xs text-slate-600" data-order="{{ $record->created_at ? \Carbon\Carbon::parse($record->created_at)->format('Y-m-d H:i:s') : '' }}">
                                         {{ $record->created_at ? \Carbon\Carbon::parse($record->created_at)->format('M d, Y') : '—' }}
                                     </td>

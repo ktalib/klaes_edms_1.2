@@ -94,7 +94,14 @@
                                             <div class="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500">
                                                 <i data-lucide="user-check" class="h-3.5 w-3.5"></i>
                                             </div>
-                                            <span class="text-slate-600 text-sm font-medium">{{ $report->user ? $report->user->first_name . ' ' . $report->user->last_name : 'System' }} </span>
+                                            @php $generatedBy = $report->user ? trim($report->user->first_name . ' ' . $report->user->last_name) : ''; @endphp
+                                            @if($generatedBy !== '')
+                                                <span class="upc-trigger text-slate-600 text-sm font-medium" data-user-card
+                                                      data-user-id="{{ $report->user->id }}"
+                                                      title="{{ __('View profile') }}">{{ $generatedBy }}</span>
+                                            @else
+                                                <span class="text-slate-600 text-sm font-medium">System</span>
+                                            @endif
                                         </div>
                                     </td>
                                     <td class="px-6 py-4 text-slate-600 font-medium whitespace-nowrap text-xs">

@@ -92,6 +92,21 @@ class TitleHolderResolver
     ];
 
     /**
+     * The two commissioning routes the legacy Root of Title rule can name. Same
+     * strings LegalSearchService::annotateRootOfTitle() prints, so the file-title
+     * fallback and the Legal Search remark agree on wording.
+     */
+    private const ROUTE_ALLOCATION_LIST = 'Allocation List';
+    private const ROUTE_OP              = 'Occupancy Permit (OP)';
+
+    /**
+     * Provenance tag written onto a holder derived from file_indexings.file_title
+     * rather than from a dealing. Callers that need to distinguish a derived line
+     * from a chain-resolved one read holder['source'].
+     */
+    public const SOURCE_FILE_TITLE = 'file_title';
+
+    /**
      * Dealings that MOVE the title to somebody else. Only these can promote a
      * party to Current Holder. Everything outside this list (mortgage, surrender
      * & release, caveat, recertification, change of purpose, a re-issued CofO...)
@@ -185,6 +200,19 @@ class TitleHolderResolver
         // this is free text, and letting it feed the Direct Allocation branch of
         // originalHolder() would print an instrument description as an owner's name.
         $root ??= $this->indexedRoot($indexing);
+
+        // Absolute last resort: no chain, no holder columns, no keyed-in root —
+        // the file offers no dealing to read ownership off at all. It still
+        // carries ONE recorded name, its file title: the party the file was
+        // opened for (4,262 of the 4,495 indexed files with both holder columns
+        // empty have one). Printing three dashes on a file titled "IBRAHIM
+        // JIBRIL" hides the only answer on record, so the title fills all three
+        // lines. Applied only when ALL THREE are empty: once the chain has named
+        // anybody, that answer is better than the file title and must not be
+        // overwritten or padded out with it.
+        if ($root === null && $original === null && $current === null) {
+            [$root, $original, $current] = $this->fileTitleFallback($fileNumber, $indexing, $commissioning['source']);
+        }
 
         return [
             'application_type' => $type,
@@ -773,6 +801,78 @@ class TitleHolderResolver
         return $indexed ? $this->holder($indexed, null, null) : null;
     }
 
+    /**
+     * The three lines derived from file_indexings.file_title, for a file that
+     * offers nothing else. Returns [root, original, current] — all three null
+     * when the file has no title either, leaving the dashes exactly as before.
+     *
+     * The Root line additionally carries the ROUTE the title came by, from
+     * legacyRootRoute() below.
+     *
+     * @return array{0:?array,1:?array,2:?array}
+     */
+    private function fileTitleFallback(string $fileNumber, ?FileIndexing $indexing, ?string $commissioningSource): array
+    {
+        $title = trim((string) ($indexing->file_title ?? ''));
+        if ($title === '') {
+            return [null, null, null];
+        }
+
+        $route = $this->legacyRootRoute($fileNumber, $commissioningSource);
+
+        return [
+            $this->fromFileTitle($title, $route),
+            $this->fromFileTitle($title, null),
+            $this->fromFileTitle($title, null),
+        ];
+    }
+
+    /** A holder built off the file title, tagged with its provenance. */
+    private function fromFileTitle(string $name, ?string $instrument): ?array
+    {
+        $holder = $this->holder($name, $instrument);
+        if ($holder !== null) {
+            $holder['source'] = self::SOURCE_FILE_TITLE;
+        }
+
+        return $holder;
+    }
+
+    /**
+     * The Root of Title ROUTE, by the rule that answered this question before the
+     * File Indexing form gained its own Root of Title field — the same ladder
+     * LegalSearchService::annotateRootOfTitle() walks, reduced to the only case
+     * that reaches it here: a file with an empty chain, so there is no OP row to
+     * match (rule 1) and no earlier instrument to anchor on (rule 3's search).
+     *
+     *   - mls_file_no.source recorded the commissioning route: an allocation
+     *     (Direct Allocation / Allocation List) or an Occupancy Permit.
+     *   - Any OTHER recorded source (Conversion, Re-grant, Subdivision...) means
+     *     the title did not start at commissioning; its root is an earlier
+     *     instrument, and this file carries none — so no route is asserted.
+     *   - Nothing recorded — the ~95% of files absent from mls_file_no. A legacy
+     *     file came off an allocation list, EXCEPT a Conversion or SLTR file:
+     *     that land was already held under an earlier title, so calling it
+     *     "Allocation List" would state a root it does not have.
+     */
+    private function legacyRootRoute(string $fileNumber, ?string $commissioningSource): ?string
+    {
+        $src = strtolower(trim(preg_replace('/\s+/', ' ', (string) $commissioningSource)));
+
+        if ($src !== '') {
+            if ($src === 'direct allocation' || $src === 'allocation list') {
+                return self::ROUTE_ALLOCATION_LIST;
+            }
+            if ($src === 'op' || str_starts_with($src, 'op ') || str_contains($src, 'occupancy permit')) {
+                return self::ROUTE_OP;
+            }
+
+            return null;
+        }
+
+        return preg_match('~^(CON|SLTR)[-_/ ]~i', trim($fileNumber)) ? null : self::ROUTE_ALLOCATION_LIST;
+    }
+
     private function holder(?string $name, ?string $instrument, ?array $row = null, ?string $date = null): ?array
     {
         $name = trim((string) $name);
@@ -886,7 +986,7 @@ class TitleHolderResolver
             'root_of_title'    => null,
             'original_holder'  => null,
             'current_holder'   => null,
-            'lines'            => self::SPEC_TABLE[$type]['lines'] ?? self::SPEC_TABLE[self::TYPE_UNKNOWN]['lines'],
+            'lines'            => self::LINES,
         ];
     }
 }

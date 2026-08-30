@@ -949,6 +949,84 @@
 
         // Initialize DataTable with performance optimizations
         // Initialize DataTable
+
+    // ── Table "View Map" modal ────────────────────────────────────────────────
+    // Uses the same google.maps facade as the generator's own map (see
+    // partials/maps_scripts — it is Leaflet behind a shim), so no extra library.
+    let mlsfMapModalMap = null;
+    let mlsfMapModalMarker = null;
+
+    function openMlsfMapModal(lat, lon, fileNo, fileTitle) {
+        const latNum = parseFloat(lat);
+        const lonNum = parseFloat(lon);
+        const modal = document.getElementById('mlsfMapModal');
+        if (!modal || !isFinite(latNum) || !isFinite(lonNum)) return;
+
+        const subtitle = document.getElementById('mlsfMapModalSubtitle');
+        if (subtitle) {
+            subtitle.textContent = [fileNo, fileTitle].filter(v => v && v !== 'N/A').join(' — ');
+        }
+        const latEl = document.getElementById('mlsfMapModalLat');
+        const lngEl = document.getElementById('mlsfMapModalLng');
+        if (latEl) latEl.textContent = latNum.toFixed(6);
+        if (lngEl) lngEl.textContent = lonNum.toFixed(6);
+
+        const external = document.getElementById('mlsfMapModalExternal');
+        if (external) {
+            external.href = `https://www.openstreetmap.org/?mlat=${latNum}&mlon=${lonNum}#map=17/${latNum}/${lonNum}`;
+        }
+
+        modal.classList.remove('hidden');
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+
+        if (typeof google === 'undefined' || !google.maps) {
+            console.warn('[mlsf-map] map library not ready');
+            return;
+        }
+
+        const canvas = document.getElementById('mlsfMapModalCanvas');
+        const position = { lat: latNum, lng: lonNum };
+
+        // The canvas has no size until the modal is visible, so build/resize the map
+        // after the browser has laid it out — otherwise it renders as a grey box.
+        requestAnimationFrame(function () {
+            if (!mlsfMapModalMap) {
+                mlsfMapModalMap = new google.maps.Map(canvas, {
+                    center: position,
+                    zoom: 17,
+                    mapTypeId: 'satellite',
+                    streetViewControl: true,
+                    fullscreenControl: true
+                });
+            }
+
+            google.maps.event.trigger(mlsfMapModalMap, 'resize');
+            mlsfMapModalMap.setCenter(position);
+
+            if (!mlsfMapModalMarker) {
+                mlsfMapModalMarker = new google.maps.Marker({
+                    position: position,
+                    map: mlsfMapModalMap,
+                    title: fileNo || 'Property location'
+                });
+            } else {
+                mlsfMapModalMarker.setPosition(position);
+            }
+        });
+    }
+
+    function closeMlsfMapModal() {
+        const modal = document.getElementById('mlsfMapModal');
+        if (modal) modal.classList.add('hidden');
+    }
+
+    window.openMlsfMapModal = openMlsfMapModal;
+    window.closeMlsfMapModal = closeMlsfMapModal;
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') closeMlsfMapModal();
+    });
+
         table = $('#mlsfTable').DataTable({
             processing: true,
             serverSide: true,
@@ -1201,13 +1279,80 @@
                         return data ? data.toUpperCase() : 'N/A';
                     }
                 },
+                // Latitude / Longitude come from file_indexings — the map pin this page
+                // saves on Generate lands there, not on fileNumber or mls_file_no. Most
+                // legacy files were never pinned, so N/A is the normal reading.
+                {
+                    data: 'latitude',
+                    name: 'latitude',
+                    title: 'Latitude',
+                    defaultContent: 'N/A',
+                    searchable: false,
+                    render: function (data, type, row) {
+                        if (!data || data === 'N/A') {
+                            return '<span class="text-gray-400">N/A</span>';
+                        }
+                        return `<span class="font-mono text-xs text-gray-700">${data}</span>`;
+                    }
+                },
+                {
+                    data: 'longitude',
+                    name: 'longitude',
+                    title: 'Longitude',
+                    defaultContent: 'N/A',
+                    searchable: false,
+                    render: function (data, type, row) {
+                        if (!data || data === 'N/A') {
+                            return '<span class="text-gray-400">N/A</span>';
+                        }
+                        // Plain value — the Map column owns opening the location.
+                        return `<span class="font-mono text-xs text-gray-700">${data}</span>`;
+                    }
+                },
+                {
+                    data: null,
+                    name: 'map',
+                    title: 'Map',
+                    orderable: false,
+                    searchable: false,
+                    className: 'text-center',
+                    render: function (data, type, row) {
+                        const lat = row.latitude && row.latitude !== 'N/A' ? row.latitude : '';
+                        const lon = row.longitude && row.longitude !== 'N/A' ? row.longitude : '';
+                        if (!lat || !lon) {
+                            return '<span class="text-gray-300" title="No coordinates pinned on this file">&mdash;</span>';
+                        }
+                        const label = String(row.mlsfNo || row.primaryFileNo || '').replace(/"/g, '&quot;');
+                        const title = String(row.FileName || '').replace(/"/g, '&quot;');
+                        return `<button type="button"
+                                    onclick="openMlsfMapModal('${lat}', '${lon}', '${label}', '${title}')"
+                                    class="inline-flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-indigo-50 px-3 py-1.5 text-[11px] font-semibold text-indigo-700 transition hover:bg-indigo-100">
+                                    <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+                                    <span>View Map</span>
+                                </button>`;
+                    }
+                },
                 {
                     data: 'created_by',
                     name: 'created_by',
                     title: 'Commissioned By',
                     defaultContent: 'System',
                     render: function (data, type, row) {
-                        return data ? data.toUpperCase() : 'SYSTEM';
+                        const label = data ? String(data).toUpperCase() : 'SYSTEM';
+
+                        // Sorting, filtering and the CSV/PDF exports need the bare text.
+                        if (type !== 'display' || !data) {
+                            return label;
+                        }
+
+                        // created_by holds a user id on some rows and a typed name on others;
+                        // the shared profile card (js/user-profile-card.js) resolves either.
+                        const raw = String(data).trim();
+                        const attr = /^\d+$/.test(raw)
+                            ? 'data-user-id="' + raw + '"'
+                            : 'data-user-name="' + raw.replace(/"/g, '&quot;') + '"';
+
+                        return '<span class="upc-trigger" data-user-card ' + attr + ' title="View profile">' + label.replace(/</g, '&lt;') + '</span>';
                     }
                 },
                 {
@@ -1302,7 +1447,7 @@
                     }
                 }
             ]; if (window.MLSF_IS_ADMIN) cols.unshift(mlsfCheckboxColumn); return cols; })(),
-            order: [[window.MLSF_IS_ADMIN ? 12 : 11, 'desc']],
+            order: [[window.MLSF_IS_ADMIN ? 15 : 14, 'desc']],
             pageLength: 20,
             lengthMenu: [[10, 20, 25, 50, 100], [10, 20, 25, 50, 100]],
             responsive: true,
@@ -5105,6 +5250,7 @@
                     this.district = val;
                     if (this.batchMode) this.updateLocationEntry('district', val);
                     this.buildLocation();
+                    this.autoPinLocationOnMap();
                 }
             },
 
@@ -5112,12 +5258,14 @@
                 this.district = val;
                 if (this.batchMode) this.updateLocationEntry('district', val);
                 this.buildLocation();
+                this.autoPinLocationOnMap();
             },
 
             onLgaChange(val) {
                 this.lga = val;
                 if (this.batchMode) this.updateLocationEntry('lga', val);
                 this.buildLocation();
+                this.autoPinLocationOnMap();
             },
 
             getCurrentEntryCoordinates() {
@@ -5268,19 +5416,67 @@
                     this.setMapPin(coords.latitude, coords.longitude, true, this.mapCoordSource || 'Stored coordinates');
                 } else {
                     this.clearMapPin();
+                    // Stepping onto a batch entry that has an LGA but no pin yet: geocode
+                    // it the same way picking the LGA would have.
+                    this.autoPinLocationOnMap();
                 }
             },
 
-            pinCurrentLocationOnMap() {
-                const currentLocation = (this.location || '').toString().trim();
-                const currentDistrict = (this.district || '').toString().trim();
-                const currentLga = (this.lga || '').toString().trim();
+            // Auto-pin: the LGA/District pick is itself the geocode input, so the map
+            // pins itself as soon as the location is known and "Pin on Map" becomes a
+            // manual re-run rather than a required step. A pin the user placed or
+            // dragged is never overwritten — only geocoded/empty pins are refreshed.
+            autoPinLocationOnMap() {
+                const manualSources = ['Pinned on map', 'Adjusted manually', 'Click map to set pin'];
+                if (manualSources.includes(this.mapCoordSource || '')) {
+                    return;
+                }
 
-                const query = [currentLocation, currentDistrict, currentLga, 'Kano', 'Nigeria']
-                    .filter(Boolean)
-                    .join(', ');
+                clearTimeout(this._autoPinTimer);
+                this._autoPinTimer = setTimeout(() => {
+                    // The user may still be mid-edit (District then LGA); re-read state
+                    // at fire time rather than trusting the values from the trigger.
+                    this.pinCurrentLocationOnMap({ auto: true });
+                }, 450);
+            },
+
+            pinCurrentLocationOnMap(options = {}) {
+                const auto = options.auto === true;
+
+                // In batch mode the per-entry values are the source of truth (same
+                // reason buildLocation() reads them), so pin the entry on screen.
+                let dist = this.district, lga = this.lga;
+                if (this.batchMode && this.locationEntries[this.currentEntryIndex]) {
+                    const entry = this.locationEntries[this.currentEntryIndex];
+                    dist = entry.district;
+                    lga = entry.lga;
+                }
+                const currentDistrict = (dist || '').toString().trim();
+                const currentLga = (lga || '').toString().trim();
+
+                // The Location field is auto-built as "<district>, <lga>", so feeding
+                // it plus the district again produced "ABASAWA, ALBASU, ABASAWA,
+                // Albasu, ..." which the geocoder cannot resolve. Districts are also
+                // local names the gazetteer rarely knows, so the LGA-only query is the
+                // reliable one: try district-qualified first, fall back to LGA alone.
+                const queries = [];
+                if (currentDistrict && currentLga) {
+                    queries.push([currentDistrict, currentLga, 'Kano', 'Nigeria'].join(', '));
+                }
+                if (currentLga) {
+                    queries.push([currentLga, 'Kano', 'Nigeria'].join(', '));
+                } else if (currentDistrict) {
+                    queries.push([currentDistrict, 'Kano', 'Nigeria'].join(', '));
+                }
 
                 if (typeof google === 'undefined' || !google.maps) {
+                    // An auto-pin fires while the modal is still opening, so the library
+                    // may genuinely not be there yet — retry quietly instead of nagging.
+                    if (auto) {
+                        clearTimeout(this._autoPinTimer);
+                        this._autoPinTimer = setTimeout(() => this.pinCurrentLocationOnMap({ auto: true }), 1000);
+                        return;
+                    }
                     Swal.fire({
                         icon: 'warning',
                         title: 'Map not ready',
@@ -5290,13 +5486,32 @@
                     return;
                 }
 
-                if (!query) {
-                    this.ensureLocationMap(GENERATOR_MAP_KANO_CENTER.lat, GENERATOR_MAP_KANO_CENTER.lng, 13, true);
+                const showMapShell = () => {
                     const mapWrapper = document.getElementById('generatorMapWrapper');
                     const mapEmpty = document.getElementById('generatorMapEmpty');
                     if (mapWrapper) mapWrapper.classList.remove('hidden');
                     if (mapEmpty) mapEmpty.classList.add('hidden');
-                    this.setMapCoordSource('Click map to set pin');
+                };
+
+                // Never pan away from a pin that is already set - the marker would
+                // still exist but sit off-screen, looking to the user like it vanished.
+                const fallbackToManual = (label) => {
+                    const coords = this.getCurrentEntryCoordinates();
+                    if (coords.latitude !== null && coords.longitude !== null) {
+                        this.setMapPin(coords.latitude, coords.longitude, true, this.mapCoordSource || 'Pinned on map');
+                        return;
+                    }
+                    this.ensureLocationMap(GENERATOR_MAP_KANO_CENTER.lat, GENERATOR_MAP_KANO_CENTER.lng, 13, true);
+                    showMapShell();
+                    this.setMapCoordSource(label);
+                };
+
+                if (!queries.length) {
+                    // Nothing to geocode yet (no LGA picked). On an auto-run leave the
+                    // empty-state card alone so the panel does not flash a blank map.
+                    if (!auto) {
+                        fallbackToManual('Click map to set pin');
+                    }
                     return;
                 }
 
@@ -5304,20 +5519,29 @@
                     this._locationGeocoder = new google.maps.Geocoder();
                 }
 
-                this._locationGeocoder.geocode({ address: query }, (results, status) => {
-                    if (status === 'OK' && results && results[0] && results[0].geometry && results[0].geometry.location) {
-                        const loc = results[0].geometry.location;
-                        this.setMapPin(loc.lat(), loc.lng(), true, 'Geocoded from location');
+                const tryQuery = (index) => {
+                    if (index >= queries.length) {
+                        if (auto) {
+                            // Nothing resolved. Say so on the card and let the user click
+                            // the map (or the button) — do not disturb the current view.
+                            this.setMapCoordSource('Could not locate - click Pin on Map or click the map');
+                            return;
+                        }
+                        fallbackToManual('Geocode failed - click map to set pin');
                         return;
                     }
 
-                    this.ensureLocationMap(GENERATOR_MAP_KANO_CENTER.lat, GENERATOR_MAP_KANO_CENTER.lng, 13, true);
-                    const mapWrapper = document.getElementById('generatorMapWrapper');
-                    const mapEmpty = document.getElementById('generatorMapEmpty');
-                    if (mapWrapper) mapWrapper.classList.remove('hidden');
-                    if (mapEmpty) mapEmpty.classList.add('hidden');
-                    this.setMapCoordSource('Geocode failed - click map to set pin');
-                });
+                    this._locationGeocoder.geocode({ address: queries[index] }, (results, status) => {
+                        if (status === 'OK' && results && results[0] && results[0].geometry && results[0].geometry.location) {
+                            const loc = results[0].geometry.location;
+                            this.setMapPin(loc.lat(), loc.lng(), true, 'Geocoded from location');
+                            return;
+                        }
+                        tryQuery(index + 1);
+                    });
+                };
+
+                tryQuery(0);
             },
 
             applyBackfilledCoordinates(lat, lng, sourceLabel = 'Backfilled from existing file') {

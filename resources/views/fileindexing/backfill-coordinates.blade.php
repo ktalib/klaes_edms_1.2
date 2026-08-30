@@ -11,9 +11,16 @@
         </div>
 
         <p class="text-sm text-slate-500 mb-6">
-            Geocodes <code>file_indexings</code> rows missing latitude/longitude via Google, in batches of 30,
+            Geocodes <code>file_indexings</code> rows missing latitude/longitude via OpenStreetMap, in batches of 10,
             automatically continuing until nothing is left. Rows that already have coordinates are never touched.
         </p>
+
+        <div class="mb-6 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            OpenStreetMap allows about one lookup per second and a single row can need up to three, so expect
+            roughly <strong>4 seconds per row</strong>. Each request here starts with an empty address cache;
+            the CLI keeps one warm for the whole run and is much faster for a large backfill:
+            <code>php artisan fileindexing:backfill-coordinates --limit=5000</code>
+        </div>
 
         <div class="grid grid-cols-3 gap-4 mb-6">
             <div class="bg-slate-50 rounded-lg p-4 text-center">
@@ -21,7 +28,7 @@
                 <div class="text-xs text-slate-500 mt-1">Remaining</div>
             </div>
             <div class="bg-slate-50 rounded-lg p-4 text-center">
-                <div class="text-2xl font-bold text-emerald-600" x-text="totals.OK ? totals.OK.toLocaleString() : 0"></div>
+                <div class="text-2xl font-bold text-emerald-600" x-text="okTotal().toLocaleString()"></div>
                 <div class="text-xs text-slate-500 mt-1">Geocoded (OK)</div>
             </div>
             <div class="bg-slate-50 rounded-lg p-4 text-center">
@@ -29,6 +36,15 @@
                 <div class="text-xs text-slate-500 mt-1">Processed this session</div>
             </div>
         </div>
+
+        <label class="mb-4 flex items-start gap-2 text-xs text-slate-600">
+            <input type="checkbox" x-model="skipLgaOnly" :disabled="running"
+                   class="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-indigo-600">
+            <span>
+                Skip LGA-only matches. Without this, a row that resolves no further than its LGA is written
+                with that LGA's town centre &mdash; the same point for every file in the LGA.
+            </span>
+        </label>
 
         <div class="flex gap-3 mb-6">
             <button type="button" @click="start()" :disabled="running || finished"
@@ -39,7 +55,24 @@
                     class="px-4 py-2 rounded-md bg-slate-200 text-slate-700 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed">
                 Stop
             </button>
+            <button type="button" @click="resetCursor()" :disabled="running"
+                    class="px-4 py-2 rounded-md border border-slate-300 bg-white text-slate-600 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Forget where the last run stopped and sweep from the first row again">
+                Restart from beginning
+            </button>
         </div>
+
+        {{-- The cursor survives in localStorage between visits, so a run left over from
+             the old Google-based backfill would silently resume past everything before
+             it. Show where it stands and let it be cleared. --}}
+        <p class="-mt-3 mb-6 text-xs text-slate-400">
+            <template x-if="afterId !== null">
+                <span>Resuming after row id <strong x-text="afterId"></strong>. Rows before it are not revisited.</span>
+            </template>
+            <template x-if="afterId === null">
+                <span>Starting from the first row.</span>
+            </template>
+        </p>
 
         <template x-if="error">
             <div class="mb-6 p-3 rounded-md bg-red-50 text-red-700 text-sm" x-text="error"></div>
@@ -72,7 +105,16 @@ function backfillRunner(initialRemaining) {
         error: null,
         log: [],
         stopRequested: false,
+        skipLgaOnly: false,
         afterId: Number.isFinite(storedCursor) ? storedCursor : null,
+
+        // Outcomes are labelled by precision — "OK (street)", "OK (district)",
+        // "OK (lga)" — so the card sums every OK tier rather than one fixed key.
+        okTotal() {
+            return Object.entries(this.totals)
+                .filter(([status]) => status.startsWith('OK'))
+                .reduce((sum, [, n]) => sum + n, 0);
+        },
 
         start() {
             if (this.running || this.finished) return;
@@ -84,6 +126,14 @@ function backfillRunner(initialRemaining) {
 
         stop() {
             this.stopRequested = true;
+        },
+
+        resetCursor() {
+            if (this.running) return;
+            this.afterId = null;
+            localStorage.removeItem(cursorKey);
+            this.finished = this.remaining <= 0;
+            this.appendLog('Cursor cleared — the next run sweeps from the first row.');
         },
 
         appendLog(text) {
@@ -103,7 +153,11 @@ function backfillRunner(initialRemaining) {
                             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
                             'Accept': 'application/json',
                         },
-                        body: JSON.stringify({ limit: 30, after_id: this.afterId }),
+                        body: JSON.stringify({
+                            limit: 10,
+                            after_id: this.afterId,
+                            skip_lga_only: this.skipLgaOnly,
+                        }),
                     });
 
                     if (!res.ok) {

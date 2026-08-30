@@ -10,7 +10,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>@yield('doc-title', 'Duplex Parcel Update') — {{ $duplex->duplex_id }}</title>
+    <title>@yield('doc-title', 'APU - Advance Parcel Update (Duplex)') — {{ $duplex->duplex_id }}</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -58,7 +58,7 @@
         <h2>Kano Land Administration and Revenue Enhancement System (KLAES)</h2>
     </div>
 
-    <div class="doc-title">@yield('doc-title', 'Duplex Parcel Update')</div>
+    <div class="doc-title">@yield('doc-title', 'APU - Advance Parcel Update (Duplex)')</div>
 
     <div class="ref-row">
         <span><strong>Duplex Ref:</strong> <span class="mono">{{ $duplex->duplex_id }}</span></span>

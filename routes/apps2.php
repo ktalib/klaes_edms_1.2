@@ -241,6 +241,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/', [ProfileController::class, 'index'])->name('profile.index');
         Route::get('/edit', [ProfileController::class, 'edit'])->name('profile.edit');
         Route::put('/update', [ProfileController::class, 'update'])->name('profile.update');
+        // Reachable while RequireProfilePhoto has the rest of the system locked.
+        Route::post('/picture', [ProfileController::class, 'storePicture'])->name('profile.picture.store');
     });
 
     // Property Record Routes - Keep only these relevant routes

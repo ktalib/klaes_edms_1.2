@@ -219,6 +219,9 @@ Route::get('dashboard', [HomeController::class, 'index'])->name('dashboard')->mi
 //-------------------------------User-------------------------------------------
 // User import routes need to resolve before the resource wildcard.
 Route::group(['prefix' => 'users', 'middleware' => ['auth', 'XSS']], function () {
+    // Feeds the clickable creator/indexer cells. Declared here so it resolves
+    // before the users/{id} resource wildcard.
+    Route::get('/profile-card', [\App\Http\Controllers\UserController::class, 'profileCard'])->name('users.profile-card');
     Route::get('/import-form', [\App\Http\Controllers\UserImportController::class, 'showImportForm'])->name('users.import.form');
     Route::get('/import-template', [\App\Http\Controllers\UserImportController::class, 'downloadTemplate'])->name('users.import.template');
     Route::get('/department-lookup', [\App\Http\Controllers\UserImportController::class, 'departmentLookupPdf'])->name('users.department.lookup-pdf');

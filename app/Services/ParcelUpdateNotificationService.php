@@ -167,7 +167,7 @@ class ParcelUpdateNotificationService
             'merger'            => 'Plot Merger',
             'extension'         => 'Plot Extension',
             'change_of_purpose' => 'Change of Purpose',
-            'duplex'            => 'Duplex Parcel Update',
+            'duplex'            => 'APU - Advance Parcel Update (Duplex)',
             default             => ucfirst(str_replace('_', ' ', $type)),
         };
     }

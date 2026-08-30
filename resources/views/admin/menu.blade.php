@@ -27,7 +27,11 @@
         return false;
     };
 @endphp
-<div class="sidebar border-r border-gray-200 bg-white transition-all duration-300 ease-in-out">
+{{-- Greyed out and inert while the account has no passport photo. This is the visual
+     half of the rule; RequireProfilePhoto blocks the URLs themselves. --}}
+@php $sidebarPhotoLocked = auth()->check() && auth()->user()->needs_profile_photo; @endphp
+<div class="sidebar border-r border-gray-200 bg-white transition-all duration-300 ease-in-out{{ $sidebarPhotoLocked ? ' sidebar-locked' : '' }}"
+  @if($sidebarPhotoLocked) aria-disabled="true" @endif>
   <!-- Sidebar Header -->
   @include('admin.menu.partials.sidebar_header')
  

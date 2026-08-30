@@ -329,13 +329,30 @@
     var geocodeBusy = false;
     var MIN_GAP_MS = 1200;
 
+    // Nominatim ranks an LGA's administrative boundary above the town inside it,
+    // and a boundary's point is the polygon centroid - for "Albasu, Kano, Nigeria"
+    // that is empty bush ~11km from Albasu town. Every caller here is pinning a
+    // property, so prefer the most specific settlement (class "place": town,
+    // village, suburb...) over the boundary, and only fall back to Nominatim's own
+    // first result when no settlement came back.
+    function pickBestPlace(results) {
+        var best = null;
+        for (var i = 0; i < results.length; i++) {
+            var r = results[i];
+            if (r['class'] !== 'place') continue;
+            var rank = Number(r.place_rank);
+            if (!best || (isFinite(rank) && rank > Number(best.place_rank))) best = r;
+        }
+        return best || results[0];
+    }
+
     function pumpGeocodeQueue() {
         if (geocodeBusy || !geocodeQueue.length) return;
         geocodeBusy = true;
 
         var job = geocodeQueue.shift();
         var url = 'https://nominatim.openstreetmap.org/search'
-                + '?format=json&limit=1&countrycodes=ng&addressdetails=0'
+                + '?format=json&limit=5&countrycodes=ng&addressdetails=0'
                 + '&q=' + encodeURIComponent(job.address);
 
         fetch(url, { headers: { 'Accept': 'application/json' } })
@@ -348,7 +365,7 @@
                     job.callback([], 'ZERO_RESULTS');
                     return;
                 }
-                var hit = results[0];
+                var hit = pickBestPlace(results);
                 job.callback([{
                     geometry: { location: new LatLng(hit.lat, hit.lon) },
                     formatted_address: hit.display_name || job.address

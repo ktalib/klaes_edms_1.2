@@ -40,6 +40,8 @@
 
             <form id="land-recommendation-form" action="{{ $batchEdit ? route('land-recommendations.batch-update', $batchEdit['batch_id']) : ($isEdit ? route('land-recommendations.update', $recommendation->id) : route('land-recommendations.store')) }}" method="POST" class="p-8 space-y-8"
                 data-dupcheck-url="{{ route('land-recommendations.check-duplicate') }}"
+                data-opmatch-check-url="{{ route('land-recommendations.op-match.check') }}"
+                data-opmatch-url="{{ route('land-recommendations.op-match.store') }}"
                 data-record-id="{{ $recommendation->id ?? '' }}">
                 {{-- Hidden inputs live inside a [hidden] wrapper on purpose: space-y-8 uses
                      "> :not([hidden]) ~ :not([hidden])", and a bare <input type="hidden">
@@ -578,6 +580,32 @@
                             </button>
                         </div>
                     </div>
+                </div>
+
+                {{-- OP-holder Match.
+
+                     A file whose Occupancy Permit was granted to one person while File
+                     Indexing holds another, with no transfer explaining the change, is
+                     a file whose chain is missing a dealing. The card shows that chain
+                     and offers Match, which records the missing Transfer of Title.
+
+                     It also appears — without a Match button — when a transfer IS on
+                     file but its party is spelt differently from the file title. That
+                     file needs a name correction, not a second transfer, and saying so
+                     here is what stops one being created.
+
+                     Rendered by public/js/land-recommendation-op-match.js. --}}
+                <div id="op-match-card" class="hidden"></div>
+
+                {{-- Set by that script once Match has run. The server records the
+                     decision rather than re-deriving it: Match writes the very row
+                     whose absence made the file qualify, so by submit time the file no
+                     longer meets the condition. --}}
+                <div hidden>
+                    <input type="hidden" name="is_existing_recommendation" id="is_existing_recommendation"
+                           value="{{ old('is_existing_recommendation', ($recommendation->is_existing_recommendation ?? false) ? 1 : 0) }}">
+                    <input type="hidden" name="op_match_tot_pra_id" id="op_match_tot_pra_id"
+                           value="{{ old('op_match_tot_pra_id', $recommendation->op_match_tot_pra_id ?? '') }}">
                 </div>
 
                 {{-- Everything below describes one file, and most of it is filled from the
@@ -1879,6 +1907,7 @@
 </style>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
+<script src="{{ asset('js/land-recommendation-op-match.js') }}?v={{ filemtime(public_path('js/land-recommendation-op-match.js')) }}"></script>
 {{-- The capture screen's own account of itself — batch mode, mother/children
      loads, draft saves and restores, submits, script errors, unloads. Posted to
      /land-recommendations/client-log and written to

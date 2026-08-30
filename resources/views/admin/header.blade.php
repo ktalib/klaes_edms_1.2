@@ -103,7 +103,7 @@
 
         <button class="flex items-center focus:outline-none" type="button" data-dropdown-toggle aria-haspopup="true"
           aria-expanded="false">
-          <div
+          <div data-user-avatar
             class="w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200 flex items-center justify-center bg-gray-100">
             @if(Auth::user()->profile_url)
               <img  src="{{ auth()->user()->profile_url }}"
@@ -183,7 +183,7 @@
 
 {{-- Standing reminder for accounts with no passport photo on file. Dismissing hides it
      for the current page only, so it comes back until a photo is actually uploaded. --}}
-@if (Auth::check() && !Auth::user()->has_profile_photo)
+@if (Auth::check() && Auth::user()->needs_profile_photo)
   <div id="missingProfilePhotoBanner"
     class="flex flex-wrap items-center gap-3 border-b border-amber-200 bg-amber-50 px-6 py-3 text-sm text-amber-900">
     <span class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-amber-100">
@@ -193,13 +193,9 @@
       <strong>{{ __('Your profile picture is missing.') }}</strong>
       {{ __('Upload a passport photo so colleagues can identify you on files and requests.') }}
     </span>
-    <a href="{{ route('profile.index') }}"
+    <button type="button" data-profile-photo-trigger
       class="inline-flex items-center rounded-md bg-amber-600 px-3 py-1.5 font-semibold text-white hover:bg-amber-700">
       {{ __('Upload photo') }}
-    </a>
-    <button type="button" class="p-1 text-amber-700 hover:text-amber-900" aria-label="{{ __('Dismiss') }}"
-      onclick="document.getElementById('missingProfilePhotoBanner').remove()">
-      <i data-lucide="x" class="h-4 w-4"></i>
     </button>
   </div>
 @endif
@@ -251,7 +247,7 @@
             WELCOME TO KLAES
           </h3>
           <div class="flex justify-center mt-3">
-            <div
+            <div data-user-avatar
               class="w-20 h-20 rounded-full overflow-hidden border-4 border-white shadow-md flex items-center justify-center bg-gray-100">
               @if(Auth::check() && Auth::user()->profile_url)
                 <img src="{{ auth()->user()->profile_url }}" alt="Profile"
@@ -268,11 +264,11 @@
           <p class="text-xl md:text-2xl font-bold mt-2">
             Dear <span id="username" class="text-brand-green-fallback">USERNAME</span>
           </p>
-          @if (Auth::check() && !Auth::user()->has_profile_photo)
-            <a href="{{ route('profile.index') }}"
+          @if (Auth::check() && Auth::user()->needs_profile_photo)
+            <button type="button" data-profile-photo-trigger
               class="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-amber-700 underline hover:text-amber-800">
               {{ __('Add your profile picture') }}
-            </a>
+            </button>
           @endif
         </div>
       </div>
@@ -290,10 +286,19 @@
 <script src="{{ asset('js/push-notification-center.js') }}" defer></script>
 <script src="{{ asset('js/file-tracker-notifications.js') }}" defer></script>
 <script src="{{ asset('js/welcome-popup.js') }}" defer></script>
+@if (Auth::check() && Auth::user()->needs_profile_photo)
+  @include('profile.partials.photo-required-card')
+@endif
 <script src="{{ asset('js/auto-logout.js') }}" defer></script>
 <script src="{{ asset('js/user-profile-dropdown.js') }}" defer></script>
 @php
-  $flashSessionKey = 'notificationFlash-' . (session('last_login_time') ?? time());
+  // Stamped by AuthenticatedSessionController on login. The fallback covers
+  // sessions that pre-date that change; it must be written BEFORE the key is
+  // built, otherwise every page load mints a fresh key and replays the flash.
+  if (!session()->has('last_login_time')) {
+      session(['last_login_time' => time()]);
+  }
+  $flashSessionKey = 'notificationFlash-' . session('last_login_time');
 @endphp
 <script>
   window.NotificationFlashConfig = {
@@ -305,11 +310,6 @@
 </script>
 <script src="{{ asset('js/notification-flash.js') }}" defer></script>
 
-@php
-  if (!session()->has('last_login_time')) {
-    session(['last_login_time' => time()]);
-  }
-@endphp
 
 
 <!--

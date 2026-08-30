@@ -211,6 +211,9 @@
                                     <th
                                         class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Date Captured</th>
+                                    <th
+                                        class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Created By</th>
 
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                                         data-column="jsi-status">
@@ -388,6 +391,19 @@
                                                                 @endif
                                                             </td>
 
+                                                            <!-- Created By -->
+                                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                                @php $stCreatedBy = trim((string) ($sua->created_by_name ?? '')); @endphp
+                                                                @if($stCreatedBy !== '')
+                                                                    <span class="upc-trigger" data-user-card
+                                                                          data-user-id="{{ $sua->created_by }}"
+                                                                          data-user-name="{{ $stCreatedBy }}"
+                                                                          title="{{ __('View profile') }}">{{ $stCreatedBy }}</span>
+                                                                @else
+                                                                    <span class="text-gray-400">&mdash;</span>
+                                                                @endif
+                                                            </td>
+
                                                             <!-- JSI Status -->
                                                             @php
                                                                 $jsiApproved = (int) ($sua->jsi_is_approved ?? 0) === 1;
@@ -484,7 +500,7 @@
                                                         </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="12" class="px-6 py-8 text-center">
+                                        <td colspan="13" class="px-6 py-8 text-center">
                                             <div class="flex flex-col items-center">
                                                 <i data-lucide="file-x" class="w-12 h-12 text-gray-400 mb-4"></i>
                                                 <h3 class="text-lg font-medium text-gray-900 mb-2">No SUA Applications

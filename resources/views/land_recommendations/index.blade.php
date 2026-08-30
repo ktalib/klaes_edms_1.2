@@ -238,7 +238,15 @@
                                         <span class="text-[10px] font-bold text-slate-400">&mdash;</span>
                                     @endif
                                 </td>
-                                <td class="px-6 py-4 text-slate-600 whitespace-nowrap">{{ $creator ? trim($creator->first_name . ' ' . $creator->last_name) : '—' }}</td>
+                                <td class="px-6 py-4 text-slate-600 whitespace-nowrap">
+                                    @if($creator)
+                                        {{-- Opens the shared profile card (js/user-profile-card.js). --}}
+                                        <span class="upc-trigger" data-user-card data-user-id="{{ $creator->id }}"
+                                            title="{{ __('View profile') }}">{{ trim($creator->first_name . ' ' . $creator->last_name) }}</span>
+                                    @else
+                                        —
+                                    @endif
+                                </td>
                                 <td class="px-6 py-4 text-slate-500 whitespace-nowrap text-xs">{{ $b->created_at ? \Carbon\Carbon::parse($b->created_at)->format('d/m/Y H:i') : '—' }}</td>
                                 <td class="px-6 py-4 text-right whitespace-nowrap" onclick="event.stopPropagation()">
                                     {{-- Re-opens the whole batch in the capture form, filled
@@ -484,7 +492,11 @@
                             @forelse($recommendations as $rec)
 
                             <tr class="hover:bg-slate-50/50 transition row-item"
-                                data-id="{{ $rec->id }}" data-status="{{ $rec->status }}">
+                                data-id="{{ $rec->id }}" data-status="{{ $rec->status }}"
+                                data-file-number="{{ $rec->file_number }}"
+                                {{-- Marks a record still waiting for its already-approved letter, so a
+                                     save that arrives with ?upload_letter=<id> can open the upload on it. --}}
+                                @if($rec->is_existing_recommendation) data-approved-letter-pending="{{ $rec->id }}" @endif>
                                 @if(empty($isOssView))
                                 <td class="px-4 py-2 text-center whitespace-nowrap">
                                     @if($rec->status === \App\Models\LandRecommendation::STATUS_PENDING)
@@ -536,7 +548,14 @@
                                         </span>
                                     @endif
                                 </td>
-                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->creator->name ?? 'System' }}</td>
+                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">
+                                    @if($rec->creator)
+                                        <span class="upc-trigger" data-user-card data-user-id="{{ $rec->creator->id }}"
+                                            title="{{ __('View profile') }}">{{ $rec->creator->name }}</span>
+                                    @else
+                                        System
+                                    @endif
+                                </td>
                                 <td class="px-4 py-2 text-slate-500 text-xs whitespace-nowrap">
                                     {{ $rec->created_at ? $rec->created_at->format('Y-m-d h:i A') : 'N/A' }}
                                 </td>
@@ -593,8 +612,47 @@
 
                                                     <div class="border-t border-slate-100 my-1"></div>
 
+                                                    @php
+                                                        // This record stands for a recommendation approved on
+                                                        // paper (the OP-holder Match flow): nothing was generated
+                                                        // for it, so the scan of that letter is what it points at.
+                                                        $needsLetter  = (bool) $rec->is_existing_recommendation;
+                                                        $letter       = ($approvedLetters ?? collect())[$rec->id] ?? null;
+                                                        $letterMissing = $needsLetter && !$letter;
+                                                    @endphp
+
+                                                    @if($needsLetter)
+                                                        <button type="button"
+                                                                onclick="uploadApprovedRecommendation({{ (int) $rec->id }}, @js($rec->file_number), {{ $letter ? 'true' : 'false' }})"
+                                                                class="flex w-full items-center px-4 py-2.5 text-sm {{ $letterMissing ? 'text-amber-700 hover:bg-amber-50' : 'text-slate-700 hover:bg-slate-50' }} transition gap-2 font-bold">
+                                                            <i data-lucide="upload" class="h-4 w-4"></i>
+                                                            {{ $letter ? 'Replace approved recommendation' : 'Upload approved recommendation' }}
+                                                        </button>
+
+                                                        @if($letter)
+                                                            <a href="{{ route('land-recommendations.approved-recommendation.show', $rec->id) }}" target="_blank"
+                                                               class="flex items-center px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition gap-2">
+                                                                <i data-lucide="file-check-2" class="h-4 w-4"></i> View approved recommendation
+                                                            </a>
+                                                        @endif
+
+                                                        <div class="border-t border-slate-100 my-1"></div>
+                                                    @endif
+
                                                     <!-- Approval Action -->
-                                                    @if($rec->status === \App\Models\LandRecommendation::STATUS_PENDING)
+                                                    @if($rec->status === \App\Models\LandRecommendation::STATUS_PENDING && $letterMissing)
+                                                        {{-- Held shut on purpose: approving now would approve a
+                                                             recommendation with nothing behind it. The server
+                                                             refuses this too — this only saves the round trip. --}}
+                                                        <span title="Upload the already-approved recommendation for this file first."
+                                                              class="flex items-center px-4 py-2.5 text-sm text-slate-300 cursor-not-allowed gap-2 italic">
+                                                            <i data-lucide="check-circle" class="h-4 w-4 text-slate-200"></i>
+                                                            <span class="flex-1 leading-tight">
+                                                                Approve
+                                                                <span class="block text-[10px] font-medium not-italic text-amber-600">Upload the approved letter first</span>
+                                                            </span>
+                                                        </span>
+                                                    @elseif($rec->status === \App\Models\LandRecommendation::STATUS_PENDING)
                                                         <button type="button" onclick="approveRecord('{{ $rec->id }}', '{{ $rec->file_number }}')" class="flex w-full items-center px-4 py-2.5 text-sm text-green-600 hover:bg-green-50 transition gap-2 font-bold">
                                                             <i data-lucide="check-circle" class="h-4 w-4"></i> Approve 
                                                         </button>
@@ -1027,6 +1085,100 @@
             });
         });
     }
+
+    // ── The already-approved recommendation, per record ────────────────────
+    // Files whose OP holder differs from the File Indexing name keep the letter
+    // they were granted on paper: no new recommendation is generated for them, so
+    // this scan is the document the record stands for, and approval waits for it.
+    function uploadApprovedRecommendation(recordId, fileNumber, alreadyUploaded) {
+        Swal.fire({
+            title: alreadyUploaded ? 'Replace approved recommendation' : 'Upload approved recommendation',
+            html: '<p class="text-sm text-slate-600">Scan or photograph the signed, already-approved recommendation for <b>'
+                    + escHtml(fileNumber || 'this file') + '</b>.</p>'
+                + '<p class="text-xs text-slate-500 mt-2">This file has been through recommendation once already, so a new letter is not generated for it. The record cannot be approved until this is on file.</p>'
+                + (alreadyUploaded
+                    ? '<p class="text-xs text-amber-600 mt-2">This replaces the copy already uploaded.</p>'
+                    : '')
+                + '<input type="file" id="approved-rec-file" accept="image/*,application/pdf" '
+                + 'class="mt-4 block w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg '
+                + 'file:border-0 file:text-sm file:font-bold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100">',
+            focusConfirm: false,
+            showCancelButton: true,
+            confirmButtonText: alreadyUploaded ? 'Replace' : 'Upload',
+            confirmButtonColor: '#7c3aed',
+            preConfirm: function () {
+                var input = document.getElementById('approved-rec-file');
+                var file = input && input.files ? input.files[0] : null;
+
+                if (!file) {
+                    Swal.showValidationMessage('Choose the scanned letter first.');
+                    return false;
+                }
+                // The server enforces this too; checking here saves the officer a
+                // 20 MB upload that is only going to be refused at the end of it.
+                if (file.size > 20 * 1024 * 1024) {
+                    Swal.showValidationMessage('That file is larger than 20 MB. Scan it at a lower resolution.');
+                    return false;
+                }
+
+                var body = new FormData();
+                body.append('document', file);
+                body.append('_token', '{{ csrf_token() }}');
+
+                Swal.showLoading();
+
+                return fetch('{{ url('land-recommendations') }}/' + encodeURIComponent(recordId) + '/approved-recommendation', {
+                    method: 'POST',
+                    body: body,
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                    .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+                    .then(function (res) {
+                        if (!res.ok || !res.data.success) {
+                            var errors = res.data.errors && res.data.errors.document;
+                            throw new Error(errors ? errors[0] : (res.data.message || 'The upload failed.'));
+                        }
+                        return res.data;
+                    })
+                    .catch(function (err) {
+                        Swal.showValidationMessage(err.message || 'Network error during the upload.');
+                        return false;
+                    });
+            }
+        }).then(function (result) {
+            if (!result.isConfirmed || !result.value) return;
+
+            Swal.fire({
+                icon: 'success',
+                title: alreadyUploaded ? 'Replaced' : 'Uploaded',
+                text: result.value.message,
+                confirmButtonColor: '#7c3aed'
+            }).then(function () {
+                // The menu entry and the Approve gate both key off whether the
+                // document exists, and they are rendered server-side — so the page
+                // is reloaded rather than patched in two places.
+                window.location.reload();
+            });
+        });
+    }
+
+    // Arriving straight from a save that captured an existing recommendation: open
+    // the upload on the row that was just created, so the officer is not left to
+    // find it on a register of hundreds.
+    (function () {
+        var pending = new URLSearchParams(window.location.search).get('upload_letter');
+        if (!pending) return;
+
+        var row = document.querySelector('[data-approved-letter-pending="' + pending + '"]');
+        if (!row) return;
+
+        uploadApprovedRecommendation(
+            parseInt(pending, 10),
+            row.getAttribute('data-file-number') || '',
+            false
+        );
+    })();
 
     function approveWholeBatch(batchId) {
         fetch(CHILDREN_URL + '/' + encodeURIComponent(batchId) + '/children', {

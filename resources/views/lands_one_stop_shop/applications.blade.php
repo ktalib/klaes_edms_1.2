@@ -481,6 +481,9 @@
                                 <th class="px-4 py-3 text-left whitespace-nowrap" style="min-width:90px">Plot No</th>
                                 <th class="px-4 py-3 text-left whitespace-nowrap" style="min-width:90px">LGA</th>
                                 <th class="px-4 py-3 text-left whitespace-nowrap" style="min-width:200px">Location</th>
+                                <th class="px-4 py-3 text-left whitespace-nowrap" style="min-width:110px">Latitude</th>
+                                <th class="px-4 py-3 text-left whitespace-nowrap" style="min-width:110px">Longitude</th>
+                                <th class="px-4 py-3 text-center whitespace-nowrap" style="min-width:120px">Map</th>
                                 <th class="px-4 py-3 text-left whitespace-nowrap" style="min-width:140px">Commissioned By</th>
                                 <th class="px-4 py-3 text-left whitespace-nowrap" style="min-width:110px">Time Commissioned</th>
                                 <th class="px-4 py-3 text-left whitespace-nowrap" style="min-width:120px">Date Commissioned</th>
@@ -524,6 +527,20 @@
                                         @php
                                             // A batch row speaks for N files. Where they disagree the cell reads
                                             // MULTIPLE (n) — flag it so it is not mistaken for a real value.
+                                            // Commissioned By is a person, so it opens the shared profile
+                                            // card — except on a MULTIPLE (n) batch, where there is no
+                                            // single person to show.
+                                            $commissionedByCell = function ($value) {
+                                                $name = trim((string) $value);
+
+                                                if ($name === '' || $name === '—' || str_starts_with($name, 'MULTIPLE (')) {
+                                                    return null;
+                                                }
+
+                                                return '<span class="upc-trigger text-slate-700" data-user-card data-user-name="'
+                                                    . e($name) . '" title="View profile">' . e($name) . '</span>';
+                                            };
+
                                             $batchCell = function ($value) {
                                                 if ($value === '—') {
                                                     return '<span class="text-slate-400">—</span>';
@@ -541,7 +558,11 @@
                                         <td class="px-4 py-2.5">{!! $batchCell($group['plot_no']) !!}</td>
                                         <td class="px-4 py-2.5">{!! $batchCell($group['lga']) !!}</td>
                                         <td class="px-4 py-2.5">{!! $batchCell($group['location']) !!}</td>
-                                        <td class="px-4 py-2.5">{!! $batchCell($group['commissioned_by']) !!}</td>
+                                        <td class="px-4 py-2.5 font-mono text-xs">{!! $batchCell($group['latitude'] ?? '—') !!}</td>
+                                        <td class="px-4 py-2.5 font-mono text-xs">{!! $batchCell($group['longitude'] ?? '—') !!}</td>
+                                        {{-- A batch row stands for N files; open the batch to map an individual one. --}}
+                                        <td class="px-4 py-2.5 text-center"><span class="text-slate-300">&mdash;</span></td>
+                                        <td class="px-4 py-2.5">{!! $commissionedByCell($group['commissioned_by']) ?? $batchCell($group['commissioned_by']) !!}</td>
                                         <td class="px-4 py-2.5" data-order="{{ $group['con_commissioned_sort'] ?? 0 }}">{!! $batchCell($group['time_commissioned']) !!}</td>
                                         <td class="px-4 py-2.5" data-order="{{ $group['con_commissioned_sort'] ?? 0 }}">{!! $batchCell($group['date_commissioned']) !!}</td>
                                         <td class="px-4 py-2.5" data-order="{{ $group['date_created_sort'] ?? 0 }}">{!! $batchCell($group['date_created']) !!}</td>
@@ -555,7 +576,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="{{ $isSupperAdmin ? 16 : 15 }}" class="px-4 py-10 text-center text-slate-500">
+                                        <td colspan="{{ $isSupperAdmin ? 19 : 18 }}" class="px-4 py-10 text-center text-slate-500">
                                             No op_batch records found.
                                         </td>
                                     </tr>
@@ -682,7 +703,31 @@
                                     <td class="px-4 py-2.5 text-slate-700">{{ $record['plot_no'] }}</td>
                                     <td class="px-4 py-2.5 text-slate-700">{{ $record['lga'] }}</td>
                                     <td class="px-4 py-2.5 text-slate-600 text-xs leading-snug">{{ $record['location'] }}</td>
-                                    <td class="px-4 py-2.5 text-slate-700">{{ $record['commissioned_by'] }}</td>
+                                    {{-- Coordinates come from file_indexings; a file that was never pinned
+                                         reads as an em-dash, which is normal rather than an error. --}}
+                                    <td class="px-4 py-2.5 font-mono text-[11px] {{ ($record['latitude'] ?? '—') === '—' ? 'text-slate-300' : 'text-slate-700' }}">{{ $record['latitude'] ?? '—' }}</td>
+                                    <td class="px-4 py-2.5 font-mono text-[11px] {{ ($record['longitude'] ?? '—') === '—' ? 'text-slate-300' : 'text-slate-700' }}">{{ $record['longitude'] ?? '—' }}</td>
+                                    <td class="px-4 py-2.5 text-center">
+                                        @if(($record['latitude'] ?? '—') !== '—' && ($record['longitude'] ?? '—') !== '—')
+                                            <button type="button"
+                                                    onclick="openOssMapModal('{{ $record['latitude'] }}', '{{ $record['longitude'] }}', @js($record['mls_file_no']), @js($record['file_title']))"
+                                                    class="inline-flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-indigo-50 px-3 py-1.5 text-[11px] font-semibold text-indigo-700 transition hover:bg-indigo-100">
+                                                <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+                                                <span>View Map</span>
+                                            </button>
+                                        @else
+                                            <span class="text-slate-300" title="No coordinates pinned on this file">&mdash;</span>
+                                        @endif
+                                    </td>
+                                    <td class="px-4 py-2.5 text-slate-700">
+                                        @php $commissionedBy = trim((string) $record['commissioned_by']); @endphp
+                                        @if($commissionedBy !== '' && $commissionedBy !== '—')
+                                            <span class="upc-trigger" data-user-card data-user-name="{{ $commissionedBy }}"
+                                                title="{{ __('View profile') }}">{{ $commissionedBy }}</span>
+                                        @else
+                                            {{ $record['commissioned_by'] }}
+                                        @endif
+                                    </td>
                                     <td class="px-4 py-2.5 font-mono text-xs text-slate-600" data-order="{{ $record['con_commissioned_sort'] ?? 0 }}">{{ $record['time_commissioned'] }}</td>
                                     <td class="px-4 py-2.5 font-mono text-xs text-slate-600" data-order="{{ $record['con_commissioned_sort'] ?? 0 }}">{{ $record['date_commissioned'] }}</td>
                                     <td class="px-4 py-2.5 font-mono text-xs text-slate-600" data-order="{{ $record['date_created_sort'] ?? 0 }}">{{ $record['date_created'] }}</td>
@@ -1467,11 +1512,103 @@
     <template id="template-power-of-attorney-sidebar">@include('instruments.partials.types.sidebars.solicitor_toggle')</template>
     <template id="template-irrevocable-power-of-attorney-sidebar">@include('instruments.partials.types.sidebars.solicitor_toggle')</template>
 
+    {{-- Table "View Map" modal. Read-only: it shows where a commissioned file sits.
+         Editing coordinates stays on the File Indexing screen, which owns them. --}}
+    <div id="ossMapModal" class="fixed inset-0 z-[200] hidden">
+        <div class="absolute inset-0 bg-black/50" onclick="closeOssMapModal()"></div>
+        <div class="relative mx-auto my-10 w-[92%] max-w-3xl rounded-lg bg-white shadow-xl">
+            <div class="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-3">
+                <div class="min-w-0">
+                    <h3 class="text-sm font-bold text-slate-900">Property Location</h3>
+                    <p id="ossMapModalSubtitle" class="truncate text-xs text-slate-500"></p>
+                </div>
+                <button type="button" onclick="closeOssMapModal()"
+                        class="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
+            </div>
+            <div id="ossMapModalCanvas" style="height: 420px; width: 100%;"></div>
+            <div class="flex flex-wrap items-center gap-x-6 gap-y-1 border-t border-slate-200 bg-slate-50 px-5 py-2.5 text-xs text-slate-600">
+                <span>Latitude: <strong id="ossMapModalLat">-</strong></span>
+                <span>Longitude: <strong id="ossMapModalLng">-</strong></span>
+            </div>
+        </div>
+    </div>
+
     @include('admin.footer')
 </div>
 @endsection
 
 @section('footer-scripts')
+{{-- Leaflet behind a google.maps facade — the View Map modal is the only map here. --}}
+@include('partials.maps_scripts')
+<script>
+    // ── Table "View Map" modal ────────────────────────────────────────────────
+    let ossMapModalMap = null;
+    let ossMapModalMarker = null;
+
+    function openOssMapModal(lat, lon, fileNo, fileTitle) {
+        const latNum = parseFloat(lat);
+        const lonNum = parseFloat(lon);
+        const modal = document.getElementById('ossMapModal');
+        if (!modal || !isFinite(latNum) || !isFinite(lonNum)) return;
+
+        const subtitle = document.getElementById('ossMapModalSubtitle');
+        if (subtitle) {
+            subtitle.textContent = [fileNo, fileTitle].filter(v => v && v !== '—').join(' — ');
+        }
+        const latEl = document.getElementById('ossMapModalLat');
+        const lngEl = document.getElementById('ossMapModalLng');
+        if (latEl) latEl.textContent = latNum.toFixed(6);
+        if (lngEl) lngEl.textContent = lonNum.toFixed(6);
+
+        modal.classList.remove('hidden');
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+
+        if (typeof google === 'undefined' || !google.maps) {
+            console.warn('[oss-map] map library not ready');
+            return;
+        }
+
+        const position = { lat: latNum, lng: lonNum };
+
+        // The canvas has no size until the modal is visible, so build and resize the
+        // map after layout — otherwise it renders as a grey box.
+        requestAnimationFrame(function () {
+            if (!ossMapModalMap) {
+                ossMapModalMap = new google.maps.Map(document.getElementById('ossMapModalCanvas'), {
+                    center: position,
+                    zoom: 17,
+                    mapTypeId: 'satellite',
+                    streetViewControl: true,
+                    fullscreenControl: true
+                });
+            }
+
+            google.maps.event.trigger(ossMapModalMap, 'resize');
+            ossMapModalMap.setCenter(position);
+
+            if (!ossMapModalMarker) {
+                ossMapModalMarker = new google.maps.Marker({
+                    position: position,
+                    map: ossMapModalMap,
+                    title: fileNo || 'Property location'
+                });
+            } else {
+                ossMapModalMarker.setPosition(position);
+            }
+        });
+    }
+
+    function closeOssMapModal() {
+        const modal = document.getElementById('ossMapModal');
+        if (modal) modal.classList.add('hidden');
+    }
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') closeOssMapModal();
+    });
+</script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
 <script>
@@ -1495,8 +1632,8 @@
         }
 
         var snColumnIndex = {{ $isSupperAdmin ? 1 : 0 }};
-        var actionsColumnIndex = {{ $isSupperAdmin ? 15 : 14 }};
-        var sortColumnIndex = {{ $isSupperAdmin ? 14 : 13 }};
+        var actionsColumnIndex = {{ $isSupperAdmin ? 18 : 17 }};
+        var sortColumnIndex = {{ $isSupperAdmin ? 17 : 16 }};
 
         // ── DataTable initialisation ──
         const table = $('#op-resettlement-table').DataTable({
@@ -2036,11 +2173,11 @@
 
     /**
      * Export the currently visible OSS table rows to a CSV file.
-     * Covers the 14 data columns (excludes the Actions column).
+     * Covers the 16 data columns (excludes the Actions column).
      */
     function exportOssTableToCsv() {
         const dt = $('#op-resettlement-table').DataTable();
-        const headers = ['S/N','Customer Type','Source','MLS File No','Temp FileNo','File Title','Land Use','TP No','Plot No','LGA','Location','Commissioned By','Time Commissioned','Date Commissioned','Full Commissioned Date'];
+        const headers = ['S/N','Customer Type','Source','MLS File No','Temp FileNo','File Title','Land Use','TP No','Plot No','LGA','Location','Latitude','Longitude','Commissioned By','Time Commissioned','Date Commissioned','Full Commissioned Date'];
         const escape = (v) => '"' + String(v).replace(/"/g, '""') + '"';
         const norm = (v) => String(v == null ? '' : v).trim();
 
@@ -2062,6 +2199,8 @@
                 norm(rec.plot_no),
                 norm(rec.lga),
                 norm(rec.location),
+                norm(rec.latitude && rec.latitude !== '—' ? rec.latitude : ''),
+                norm(rec.longitude && rec.longitude !== '—' ? rec.longitude : ''),
                 norm(rec.commissioned_by),
                 norm(rec.time_commissioned),
                 norm(rec.date_commissioned),
@@ -2088,7 +2227,7 @@
      */
     function printOssTable() {
         const dt = $('#op-resettlement-table').DataTable();
-        const headers = ['S/N','Customer Type','Source','MLS File No','Temp FileNo','File Title','Land Use','TP No','Plot No','LGA','Location','Commissioned By','Time Commissioned','Date Commissioned','Full Commissioned Date'];
+        const headers = ['S/N','Customer Type','Source','MLS File No','Temp FileNo','File Title','Land Use','TP No','Plot No','LGA','Location','Latitude','Longitude','Commissioned By','Time Commissioned','Date Commissioned','Full Commissioned Date'];
         const norm = (v) => String(v == null ? '' : v).trim();
 
         let tHead = '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
@@ -2110,6 +2249,8 @@
                 norm(rec.plot_no),
                 norm(rec.lga),
                 norm(rec.location),
+                norm(rec.latitude && rec.latitude !== '—' ? rec.latitude : ''),
+                norm(rec.longitude && rec.longitude !== '—' ? rec.longitude : ''),
                 norm(rec.commissioned_by),
                 norm(rec.time_commissioned),
                 norm(rec.date_commissioned),

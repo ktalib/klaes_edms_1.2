@@ -1,0 +1,1 @@
+echo json_encode(App\\Models\\FileIndexing::on('sqlsrv')-,'RES-1986-1173')-,'RES-1986-1173')-,'RES-1986-1173')-,'RES-1986-1173')-,'RES-1986-1173')-,'file_number','file_title','owner_name','registry'])-; 

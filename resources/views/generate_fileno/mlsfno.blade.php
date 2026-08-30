@@ -268,6 +268,9 @@
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Plot No</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">LGA</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Location</th>
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Latitude</th>
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Longitude</th>
+                                                <th class="px-4 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Map</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Commissioned By</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Time Commissioned</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Date Commissioned</th>
@@ -1919,7 +1922,7 @@
                                              class="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 bg-gray-50 text-gray-400"
                                              style="height: 220px;">
                                             <i data-lucide="map" class="h-7 w-7"></i>
-                                            <p class="text-xs">No map pin yet. Click <strong>Pin on Map</strong> to geocode or set manually.</p>
+                                            <p class="text-xs">No map pin yet. Pick an LGA to pin automatically, or click <strong>Pin on Map</strong> to set one manually.</p>
                                         </div>
 
                                         <input type="hidden" name="latitude" id="generator_latitude" :value="batchMode ? (locationEntries[currentEntryIndex]?.latitude || '') : latitude">
@@ -3257,6 +3260,33 @@
         </div>
     </div>
     <!-- ===== /Batch Print Modal ===== -->
+
+    {{-- Table "View Map" modal. Read-only: it shows where a commissioned file sits.
+         Editing coordinates stays on the File Indexing screen, which owns them. --}}
+    <div id="mlsfMapModal" class="fixed inset-0 z-[200] hidden">
+        <div class="absolute inset-0 bg-black/50" onclick="closeMlsfMapModal()"></div>
+        <div class="relative mx-auto my-10 w-[92%] max-w-3xl rounded-lg bg-white shadow-xl">
+            <div class="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-3">
+                <div class="min-w-0">
+                    <h3 class="text-sm font-bold text-gray-900">Property Location</h3>
+                    <p id="mlsfMapModalSubtitle" class="truncate text-xs text-gray-500"></p>
+                </div>
+                <button type="button" onclick="closeMlsfMapModal()"
+                        class="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
+            </div>
+            <div id="mlsfMapModalCanvas" style="height: 420px; width: 100%;"></div>
+            <div class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 bg-gray-50 px-5 py-2.5 text-xs text-gray-600">
+                <div class="flex flex-wrap gap-x-6 gap-y-1">
+                    <span>Latitude: <strong id="mlsfMapModalLat">-</strong></span>
+                    <span>Longitude: <strong id="mlsfMapModalLng">-</strong></span>
+                </div>
+                <a id="mlsfMapModalExternal" href="#" target="_blank" rel="noopener"
+                   class="font-semibold text-blue-700 hover:text-blue-900 hover:underline">Open in OpenStreetMap</a>
+            </div>
+        </div>
+    </div>
 
     @push('scripts')
         {{-- Commissioning trace: what this screen did, on one timeline with the

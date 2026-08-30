@@ -2,11 +2,40 @@
   'use strict';
 
   const displayInterval = 4500;
+  const STORAGE_PREFIX = 'notificationFlash-';
 
-  // Temporarily disabled: the post-login flash toasts (same card as the
-  // file-tracker toasts, see file-tracker-notifications.js).
-  // Set to true (or window.KLAES_ENABLE_NOTIFICATION_TOASTS = true) to re-enable.
-  const TOASTS_ENABLED = false;
+  // localStorage, not sessionStorage: sessionStorage is scoped to a single tab,
+  // so opening the app in a second tab replayed the whole queue. The key
+  // carries the server-side login timestamp, so a new login mints a new key
+  // and the flash plays exactly once per login.
+  function markPlayed(storageKey) {
+    if (!storageKey) {
+      return;
+    }
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i -= 1) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(STORAGE_PREFIX) && key !== storageKey) {
+          localStorage.removeItem(key);
+        }
+      }
+      localStorage.setItem(storageKey, '1');
+    } catch (error) {
+      /* private mode / storage disabled - flash simply replays */
+    }
+  }
+
+  function hasPlayed(storageKey) {
+    try {
+      return localStorage.getItem(storageKey) === '1';
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // Post-login flash toasts (same card as the file-tracker toasts, see
+  // file-tracker-notifications.js). Set to false to disable them again.
+  const TOASTS_ENABLED = true;
 
   function createContainer() {
     let container = document.querySelector('.notification-flash-container');
@@ -17,22 +46,62 @@
     return container;
   }
 
+  function escapeHtml(value) {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
   function renderToast(item, container, duration) {
+    // Only ever one card on screen: the live poll toasts
+    // (file-tracker-notifications.js) share this container and clear it the
+    // same way, so the two systems can never stack on top of each other.
+    container.querySelectorAll('.notification-flash-toast').forEach((existing) => existing.remove());
+
     const toast = document.createElement('div');
     toast.className = 'notification-flash-toast';
     toast.style.setProperty('--toast-duration', `${duration}ms`);
+
+    const fileNo = item.meta?.fileNumber;
+    const source = item.meta?.source;
+
+    // Must match the markup the live toasts use — the legacy structure
+    // (__icon / __title / __meta) inherits white text from the original dark
+    // card and renders invisible against the current white card.
     toast.innerHTML = `
-      <div class="notification-flash-toast__icon">🔔</div>
-      <div class="notification-flash-toast__content">
-        <div class="notification-flash-toast__title">${item.title || 'Notification'}</div>
-        <p class="notification-flash-toast__body">${item.body || ''}</p>
-        <div class="notification-flash-toast__meta">
-          <span>${item.meta?.fileNumber ? `File ${item.meta.fileNumber}` : (item.meta?.source || 'System')}</span>
-          <button class="notification-flash-toast__close" type="button">Close</button>
+      <div class="toast-floating-bell-wrapper">
+        <div class="toast-floating-bell">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2a5.006 5.006 0 0 0-5 5v4.586l-.707.707A1 1 0 0 0 7 14h10a1 1 0 0 0 .707-1.707L17 11.586V7a5.006 5.006 0 0 0-5-5zm-2 13a2 2 0 0 0 4 0h-4z"/>
+          </svg>
         </div>
-        <div class="notification-flash-toast__progress">
-          <span class="notification-flash-toast__progress-bar"></span>
+      </div>
+
+      <div class="notification-flash-toast__content text-center">
+        <div class="toast-header-text">${escapeHtml(item.title || 'Notification')}</div>
+        <p class="toast-body-text mt-2 px-1">${escapeHtml(item.body || '')}</p>
+        <div class="mt-2.5 flex justify-center gap-1.5 text-[9px] uppercase tracking-wide text-slate-400 font-bold">
+          ${fileNo ? `<span class="px-2 py-0.5 bg-slate-100 rounded-full">File ${escapeHtml(fileNo)}</span>` : ''}
+          ${!fileNo && source ? `<span class="px-2 py-0.5 bg-slate-100 rounded-full">${escapeHtml(source)}</span>` : ''}
         </div>
+      </div>
+
+      <div class="toast-action-bar">
+        <button type="button" class="toast-bar-action text-blue-600 hover:bg-slate-50 transition" data-flash-action="open">
+          Open
+        </button>
+        <button type="button" class="toast-bar-action text-slate-500 hover:bg-slate-50 transition" data-flash-action="close">
+          Close
+        </button>
+      </div>
+      <div class="notification-flash-toast__progress">
+        <span class="notification-flash-toast__progress-bar"></span>
       </div>
     `;
 
@@ -75,9 +144,7 @@
 
   function playQueue(items, storageKey) {
     if (!items.length) {
-      if (storageKey) {
-        sessionStorage.setItem(storageKey, '1');
-      }
+      markPlayed(storageKey);
       return;
     }
 
@@ -86,16 +153,21 @@
 
     const showNext = () => {
       if (index >= items.length) {
-        if (storageKey) {
-          sessionStorage.setItem(storageKey, '1');
-        }
+        markPlayed(storageKey);
         return;
       }
 
       const toast = renderToast(items[index], container, displayInterval);
-      const closeBtn = toast.querySelector('.notification-flash-toast__close');
+      const closeBtn = toast.querySelector('[data-flash-action="close"]');
+      const openBtn = toast.querySelector('[data-flash-action="open"]');
+      let settled = false;
 
       const removeToast = () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(autoDismiss);
         toast.classList.add('notification-flash-toast--closing');
         setTimeout(() => {
           toast.remove();
@@ -104,8 +176,23 @@
         }, 150);
       };
 
-      closeBtn.addEventListener('click', removeToast);
-      setTimeout(removeToast, displayInterval);
+      const autoDismiss = setTimeout(removeToast, displayInterval);
+
+      closeBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        removeToast();
+      });
+
+      openBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        window.location.href = '/notifications';
+      });
+
+      toast.addEventListener('click', (event) => {
+        if (!event.target.closest('.toast-bar-action')) {
+          window.location.href = '/notifications';
+        }
+      });
     };
 
     showNext();
@@ -117,7 +204,7 @@
     }
     const config = window.NotificationFlashConfig;
     const storageKey = (config && config.sessionKey) || 'notificationFlashPlayed';
-    if (!config || sessionStorage.getItem(storageKey) === '1') {
+    if (!config || hasPlayed(storageKey)) {
       return;
     }
 
@@ -129,7 +216,7 @@
     try {
       const items = await fetchQueue(config);
       if (!items.length) {
-        sessionStorage.setItem(storageKey, '1');
+        markPlayed(storageKey);
         return;
       }
       if (document.hidden) {

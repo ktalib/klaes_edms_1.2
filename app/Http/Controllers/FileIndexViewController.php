@@ -541,9 +541,33 @@ class FileIndexViewController extends Controller
         $kangisPrefixes = ['KNML', 'MLKN', 'KNGP'];
         $applyKangisFilter = $urlContext === 'kangis';
         $applySltrFilter = $urlContext === 'sltr';
+        $applyLandFilter = $urlContext === 'land';
+
+        // Land files are identified by the land-use code in the file number.
+        // Keep the complete mapping here (longest prefixes first) so conversion
+        // and recertification files are included while KANGIS, SLTR, ST, TEMP,
+        // and unrelated registry numbers stay out of the Land History view.
+        $landFilePatterns = [
+            'CON-RES-RC-[0-9][0-9][0-9][0-9]-%',
+            'CON-COM-RC-[0-9][0-9][0-9][0-9]-%',
+            'CON-IND-RC-[0-9][0-9][0-9][0-9]-%',
+            'CON-AG-RC-[0-9][0-9][0-9][0-9]-%',
+            'CON-RES-[0-9][0-9][0-9][0-9]-%',
+            'CON-COM-[0-9][0-9][0-9][0-9]-%',
+            'CON-IND-[0-9][0-9][0-9][0-9]-%',
+            'CON-AG-[0-9][0-9][0-9][0-9]-%',
+            'RES-RC-[0-9][0-9][0-9][0-9]-%',
+            'COM-RC-[0-9][0-9][0-9][0-9]-%',
+            'IND-RC-[0-9][0-9][0-9][0-9]-%',
+            'AG-RC-[0-9][0-9][0-9][0-9]-%',
+            'RES-[0-9][0-9][0-9][0-9]-%',
+            'COM-[0-9][0-9][0-9][0-9]-%',
+            'IND-[0-9][0-9][0-9][0-9]-%',
+            'AG-[0-9][0-9][0-9][0-9]-%',
+        ];
 
         return $connection->query()
-            ->fromSub(function ($sub) use ($partitionExpression, $applyKangisFilter, $kangisPrefixes, $applySltrFilter) {
+            ->fromSub(function ($sub) use ($partitionExpression, $applyKangisFilter, $kangisPrefixes, $applySltrFilter, $applyLandFilter, $landFilePatterns) {
                 $sub->from('file_history_staging')
                     ->select('*')
                     ->selectRaw("ROW_NUMBER() OVER (PARTITION BY {$partitionExpression} ORDER BY id DESC) as prop_rank")
@@ -559,6 +583,14 @@ class FileIndexViewController extends Controller
                     });
                 } elseif ($applySltrFilter) {
                     $sub->where('mlsFNo', 'like', 'sltr%');
+                } elseif ($applyLandFilter) {
+                    $sub->where(function ($q) use ($landFilePatterns) {
+                        foreach (['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno'] as $column) {
+                            foreach ($landFilePatterns as $pattern) {
+                                $q->orWhereRaw("UPPER(LTRIM(RTRIM({$column}))) LIKE ?", [$pattern]);
+                            }
+                        }
+                    });
                 }
             }, 'ranked_files')
             ->where('prop_rank', 1);

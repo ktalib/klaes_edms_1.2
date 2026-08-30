@@ -26,6 +26,15 @@ use Illuminate\Validation\Rule;
 
 class CreateFileTrackerController extends Controller
 {
+    /**
+     * The "Submitted Request" predicate — an officer asked for this file. The
+     * In-transit tab is its exact negation, so the two request-type tabs can
+     * never drift apart or double-count a tracker. Mirrors
+     * FileTrackerDashboardApiController::requestedFlagSql() so the File Log
+     * Table and the Commissioner Dashboard count the same set.
+     */
+    protected const SUBMITTED_REQUEST_TYPE_SQL = "(UPPER(ISNULL(file_request_type, '')) = 'SUBMITTED')";
+
     protected array $rackShelfCache = [];
 
     protected array $indexingCreatedAtCache = [];
@@ -668,10 +677,17 @@ class CreateFileTrackerController extends Controller
                 $query->where('priority', $request->priority);
             }
 
-            // File Request Type tabs: In-transit (MANUAL) / Submitted Request (SUBMITTED).
+            // File Request Type tabs: In-transit / Submitted Request. The two tabs
+            // are exact complements, matching the Commissioner Dashboard: SUBMITTED
+            // means an officer asked for the file, and EVERYTHING else (MANUAL,
+            // SYSTEM, the legacy "In-Transit" literal, or an unclassified/NULL row)
+            // is a file that is simply moving. Filtering on the literal 'MANUAL'
+            // used to drop ~98% of the in-transit set on the floor.
             $fileRequestType = strtoupper(trim((string) $request->input('file_request_type', '')));
-            if (in_array($fileRequestType, ['MANUAL', 'SUBMITTED'], true)) {
-                $query->where('file_request_type', $fileRequestType);
+            if ($fileRequestType === 'SUBMITTED') {
+                $query->whereRaw(self::SUBMITTED_REQUEST_TYPE_SQL);
+            } elseif (in_array($fileRequestType, ['MANUAL', 'IN_TRANSIT', 'IN-TRANSIT'], true)) {
+                $query->whereRaw('NOT ' . self::SUBMITTED_REQUEST_TYPE_SQL);
             }
 
             if ($request->has('search') && $request->search) {
@@ -753,9 +769,21 @@ class CreateFileTrackerController extends Controller
                 'active' => $collapsedCount(
                                 (clone $statsBase)->where('status', '!=', FileTracker::STATUS_COMPLETED)
                               ),
-                // File Request Type tab counts (In-transit = MANUAL, Submitted Request = SUBMITTED).
-                'in_transit' => (clone $statsBase)->where('file_request_type', 'MANUAL')->count(),
-                'submitted' => (clone $statsBase)->where('file_request_type', 'SUBMITTED')->count(),
+                // File Request Type tab counts. They label the File Log Table's
+                // Active view, so they count the same unit it does — collapsed
+                // files, not raw tracker rows — over the non-completed set, and
+                // they split it the same way the Commissioner Dashboard does
+                // (Submitted vs. its exact negation).
+                'in_transit' => $collapsedCount(
+                                (clone $statsBase)
+                                    ->where('status', '!=', FileTracker::STATUS_COMPLETED)
+                                    ->whereRaw('NOT ' . self::SUBMITTED_REQUEST_TYPE_SQL)
+                              ),
+                'submitted' => $collapsedCount(
+                                (clone $statsBase)
+                                    ->where('status', '!=', FileTracker::STATUS_COMPLETED)
+                                    ->whereRaw(self::SUBMITTED_REQUEST_TYPE_SQL)
+                              ),
             ];
 
             // DIIT files are active by definition (in process at the File Commissioning
@@ -2581,6 +2609,42 @@ HTML;
         /** @var \App\Models\FileIndexing|null $indexing */
         $indexing = $result['indexing'] ?? null;
 
+        // A duplicate number can have both indexed and duplicate_fileno records.
+        // Keep the indexed holder/title in the Duplicate File panel as well, so
+        // the web picker and the mobile File Search account for every physical
+        // file sharing the number.
+        $displayTitle = $tracker->file_title ?? $indexing->file_title ?? null;
+        $duplicateCandidates = $withCandidates
+            ? app(FileLocationResolver::class)->duplicateCandidates($result)
+            : [];
+        $duplicateFlag = $result['duplicate_flag'] ?? null;
+        if (is_array($duplicateFlag) && $duplicateCandidates) {
+            $indexedEntries = collect();
+            if ($indexing && trim((string) $displayTitle) !== '') {
+                $indexedEntries->push([
+                    'file_number' => trim((string) $result['file_number']),
+                    'file_title'  => trim((string) $displayTitle),
+                ]);
+            }
+            $indexedEntries = $indexedEntries
+                ->merge(collect($duplicateCandidates)
+                    ->filter(fn ($candidate) => ($candidate['source'] ?? null) === FileLocationResolver::SOURCE_INDEXED)
+                    ->map(fn ($candidate) => [
+                        'file_number' => trim((string) ($candidate['file_number'] ?? '')),
+                        'file_title'  => trim((string) ($candidate['holder'] ?? '')) ?: null,
+                    ]))
+                ->filter(fn ($entry) => $entry['file_number'] !== '' && $entry['file_title'] !== null)
+                ->values();
+
+            if ($indexedEntries->isNotEmpty()) {
+                $duplicateFlag['entries'] = $indexedEntries
+                    ->merge(collect($duplicateFlag['entries'] ?? []))
+                    ->unique(fn ($entry) => strtoupper($entry['file_number']) . '|' . strtoupper((string) ($entry['file_title'] ?? '')))
+                    ->values()
+                    ->all();
+            }
+        }
+
         // When the file is in transit (logged out), surface the logout date + time.
         // This is exactly the timestamp the "Duration with holder" clock runs from, so
         // it must come from the resolver's held_since — which reads the current movement's
@@ -2702,7 +2766,7 @@ HTML;
             'manual'           => (bool) ($result['manual'] ?? false),
             // Duplicate-registry flag (CofO collected/ready, duplicate, temp, W/C/R) when
             // the file number is registered in duplicate_fileno — null otherwise.
-            'duplicate_flag'   => $result['duplicate_flag'] ?? null,
+            'duplicate_flag'   => $duplicateFlag,
             // Every physical file registered under this number, but ONLY when the
             // number is in BOTH file_indexings and duplicate_fileno. Non-empty means
             // the front desk must pick the exact file before the request can go out:
@@ -2712,11 +2776,9 @@ HTML;
             // calls this presenter once per row of a paginated tracker list and reads
             // none of them, so computing them there would be a per-row N+1 (see the
             // File Log Table timeout this presenter already caused once).
-            'duplicate_candidates' => $withCandidates
-                ? app(FileLocationResolver::class)->duplicateCandidates($result)
-                : [],
+            'duplicate_candidates' => $duplicateCandidates,
             'file_tracker_id'  => $result['file_tracker_id'],
-            'file_title'       => $tracker->file_title ?? $indexing->file_title ?? null,
+            'file_title'       => $displayTitle,
             'receiving_officer_name' => $tracker->receiving_officer_name ?? null,
             'receiving_department'   => $receivingDepartment,
             'tracking_id'      => $tracker->tracking_id ?? null,

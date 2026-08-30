@@ -1414,18 +1414,23 @@ async function searchFile() {
 
       // The searched number is registered in BOTH file_indexings and duplicate_fileno,
       // so it no longer identifies one physical file. The user must pick the exact
-      // record before the request can go out, and it must NOT fall through to the SCB
-      // just because one of the matches is indexed. Mirrors hasCandidates() on the web.
+      // record before the request can go out. An indexed selection is the explicit
+      // exception: it may be sent to the SCB for physical confirmation.
       const dupCandidates = Array.isArray(d.duplicate_candidates) ? d.duplicate_candidates : [];
       const hasCandidates = dupCandidates.length > 1;
+      const hasIndexedCandidate = dupCandidates.some(c => c.source === 'file_indexings');
       // Cleared on every render — a stale pick from the previous search must never
       // travel with a new file's request.
       selectedCandidate = null;
 
       // OFS send block is split into two parts so the File Digital Library can sit
-      // between the Registry (Origin) selector and the Send button.
+      // between the Registry (Origin) selector and the Send button. A duplicate
+      // number gets the Director Land action by default; choosing its indexed
+      // record enables the SCB request flow.
       let ofsRegistry = '', ofsButton = '';
-      if (IS_OFS && d.can_send_fr && !isDciv && !directsToLand) {
+      const renderScbForm = IS_OFS && d.can_send_fr && !isDciv && (!directsToLand || hasIndexedCandidate);
+      const scbFormHidden = directsToLand && hasCandidates;
+      if (renderScbForm) {
         const isMissing = d.is_missing_file;
         const label = isMissing
           ? (d.is_blind ? 'Send Blind Request to the Original Registry' : 'Send File Search Request to the Original Registry')
@@ -1443,7 +1448,8 @@ async function searchFile() {
         const fieldLblCss = 'display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px;';
         const deptOpts = REQ_DEPARTMENTS.map(dn => `<option value="${esc(dn)}">${esc(dn)}</option>`).join('');
         ofsRegistry = `
-          <div style="margin-top:12px;display:flex;flex-direction:column;gap:12px;">
+          <div id="fsScbRequestForm" style="margin-top:12px;display:${scbFormHidden ? 'none' : 'block'};">
+          <div style="display:flex;flex-direction:column;gap:12px;">
             <div>
               <label style="${fieldLblCss}"><i class="fas fa-building-columns" style="margin-right:5px;color:var(--primary);"></i>Registry (Origin) <span style="color:#ef4444;">*</span></label>
               <div style="display:flex;gap:8px;align-items:center;">
@@ -1492,9 +1498,14 @@ async function searchFile() {
               <label style="${fieldLblCss}"><i class="fas fa-hourglass-half" style="margin-right:5px;color:var(--primary);"></i>Timeline (Days)</label>
               <input id="fsTimelineDays" type="number" min="0" max="365" placeholder="e.g. 5" oninput="onFsTimelineDaysInput()" style="${fieldSelCss}">
             </div>
+          </div>
           </div>`;
-        // Send button is disabled until an origin Registry is chosen.
-        ofsButton = `<button id="fsSendBtn" class="btn" disabled style="width:100%;margin-top:12px;padding:12px;font-size:13px;box-shadow:none;background:${grad};opacity:.5;cursor:not-allowed;" onclick="sendFrFromSearch(this)"><i class="fas fa-paper-plane"></i> ${label}</button>`;
+        // Send button is disabled until an origin Registry is chosen. For a
+        // duplicate-number picker, the Director Land button is reused after an
+        // indexed record is selected, so do not render a second hidden button.
+        if (!directsToLand) {
+          ofsButton = `<button id="fsSendBtn" class="btn" disabled style="width:100%;margin-top:12px;padding:12px;font-size:13px;box-shadow:none;background:${grad};opacity:.5;cursor:not-allowed;" onclick="sendFrFromSearch(this)"><i class="fas fa-paper-plane"></i> ${label}</button>`;
+        }
       }
 
       // In-transit files: re-direct the request straight to the office currently holding
@@ -1530,15 +1541,15 @@ async function searchFile() {
         dcivRedirectSend = `<button class="btn" style="width:100%;margin-top:12px;padding:12px;font-size:13px;box-shadow:none;background:${grad};" onclick="redirectDcivFromSearch(this)"><i class="fas fa-shield-halved"></i> Re-direct To DCIV Director (Land Department)</button>`;
       }
 
-      // Duplicate / CofO / W-C-R files must NOT be blind-searched by the SCB — they are
-      // re-directed to the Director Land (Land Department) to resolve the duplication.
+      // Duplicate / CofO / W-C-R files go to Director Land by default. Selecting
+      // the indexed physical record switches this action to the normal SCB request.
       // Temporary files carry the badge only and keep the normal SCB workflow above.
       let landRedirectSend = '';
       if (IS_OFS && d.can_send_fr && directsToLand) {
         const grad = 'linear-gradient(135deg,#9333ea,#7e22ce)';
         // With a selection list on screen the action is unchanged but inert until a
         // record is chosen: the request is saved against that record's id and source.
-        landRedirectSend = `<button class="btn" id="landRedirectBtn" ${hasCandidates ? 'disabled' : ''} style="width:100%;margin-top:12px;padding:12px;font-size:13px;box-shadow:none;background:${grad};${hasCandidates ? 'opacity:.5;' : ''}" onclick="redirectLandFromSearch(this)"><i class="fas fa-user-check"></i> Send Request to Director Land</button>`;
+        landRedirectSend = `<button class="btn" id="landRedirectBtn" ${hasCandidates ? 'disabled' : ''} data-land-background="${grad}" style="width:100%;margin-top:12px;padding:12px;font-size:13px;box-shadow:none;background:${grad};${hasCandidates ? 'opacity:.5;' : ''}" onclick="redirectLandFromSearch(this)"><i class="fas fa-user-check"></i> Send Request to Director Land</button>`;
       }
 
       const inTransitLookupId = String(d.file_number || d.file_title || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -1712,7 +1723,25 @@ async function searchFile() {
         ? { label: 'In ' + d.origin_registry, color: REGISTRY_THEME[d.origin_registry] || meta.color, icon: 'fa-folder-open' }
         : meta;
 
+      // Keep the duplicate-registry notice above the file-picker gate. When a
+      // number has several physical records, the operator should see why the
+      // result is being redirected before choosing one. The API also includes
+      // the indexed holder/title in this list, alongside duplicate_fileno rows.
+      const duplicateFlagHtml = d.duplicate_flag ? `
+        <div style="margin-bottom:10px;background:${d.duplicate_flag.color}14;border:1px solid ${d.duplicate_flag.color}55;border-radius:12px;padding:10px 12px;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-size:13px;font-weight:800;color:${d.duplicate_flag.color};"><i class="fas fa-copy" style="margin-right:5px;"></i>${esc(d.duplicate_flag.label)}</span>
+          </div>
+          ${(d.duplicate_flag.entries && d.duplicate_flag.entries.length > 1) ? `
+          <div style="margin-top:6px;padding-left:22px;display:flex;flex-direction:column;gap:2px;">
+            ${d.duplicate_flag.entries.map(e => `
+            <div style="font-size:11px;"><span style="font-weight:700;color:${d.duplicate_flag.color};">${esc(e.file_number)}</span> <span style="color:var(--muted);">${esc(e.file_title || '—')}</span></div>`).join('')}
+          </div>` : (d.duplicate_flag.file_title ? `
+          <div style="margin-top:4px;padding-left:22px;font-size:11px;color:var(--muted);">${esc(d.duplicate_flag.file_title)}</div>` : '')}
+        </div>` : '';
+
       result.innerHTML = `
+          ${duplicateFlagHtml}
           ${/* The pick-a-file gate sits ABOVE the result card, not inside it: until a
                 record is chosen the card below describes only ONE of the files sharing
                 this number, so the choice has to come first. Styled to match
@@ -1789,18 +1818,6 @@ async function searchFile() {
                 ${d.registry ? `<span><strong>Registry:</strong> ${esc(d.registry)}</span>` : ''}
                 ${d.rack_shelf ? `<span><strong>Shelf/Rack:</strong> ${esc(d.rack_shelf)}</span>` : ''}
               </div>` : ''}
-            </div>` : ''}
-            ${d.duplicate_flag ? `
-            <div style="margin-bottom:12px;background:${d.duplicate_flag.color}14;border:1px solid ${d.duplicate_flag.color}55;border-radius:12px;padding:10px 12px;">
-              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                <span style="font-size:13px;font-weight:800;color:${d.duplicate_flag.color};"><i class="fas fa-copy" style="margin-right:5px;"></i>${esc(d.duplicate_flag.label)}</span>
-              </div>
-              ${(d.duplicate_flag.entries && d.duplicate_flag.entries.length > 1) ? `
-              <div style="margin-top:6px;padding-left:22px;display:flex;flex-direction:column;gap:2px;">
-                ${d.duplicate_flag.entries.map(e => `
-                <div style="font-size:11px;"><span style="font-weight:700;color:${d.duplicate_flag.color};">${esc(e.file_number)}</span> <span style="color:var(--muted);">${esc(e.file_title || '—')}</span></div>`).join('')}
-              </div>` : (d.duplicate_flag.file_title ? `
-              <div style="margin-top:4px;padding-left:22px;font-size:11px;color:var(--muted);">${esc(d.duplicate_flag.file_title)}</div>` : '')}
             </div>` : ''}
             ${holderBill}
             ${movementDetails}
@@ -2699,7 +2716,28 @@ async function redirectDcivFromSearch(btn) {
 function pickDupCandidate(recordId, source, radio) {
   selectedCandidate = { record_id: recordId, source: source };
   const btn = document.getElementById('landRedirectBtn');
-  if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+  const scbForm = document.getElementById('fsScbRequestForm');
+  if (!btn) return;
+
+  if (source === 'file_indexings') {
+    // An indexed record is already in the registry's archive. The SCB should
+    // physically confirm that record, so reuse the action button for the normal
+    // SCB request flow and reveal its requester/origin form.
+    if (scbForm) scbForm.style.display = '';
+    btn.disabled = false;
+    btn.style.opacity = '';
+    btn.style.background = 'linear-gradient(135deg,#2563eb,#1d4ed8)';
+    btn.innerHTML = '<i class="fas fa-paper-plane"></i> Send File Search Request to SCB Monitor';
+    btn.onclick = function () { sendFrFromSearch(this); };
+  } else {
+    // Duplicate-fileno records still need Director Land to resolve the duplicate.
+    if (scbForm) scbForm.style.display = 'none';
+    btn.disabled = false;
+    btn.style.opacity = '';
+    btn.style.background = btn.dataset.landBackground || 'linear-gradient(135deg,#9333ea,#7e22ce)';
+    btn.innerHTML = '<i class="fas fa-user-check"></i> Send Request to Director Land';
+    btn.onclick = function () { redirectLandFromSearch(this); };
+  }
 }
 
 async function redirectLandFromSearch(btn) {
@@ -2710,7 +2748,14 @@ async function redirectLandFromSearch(btn) {
   try {
     const res = await api(`{{ route('create-file-tracker.quick-search.redirect-director-land') }}`, {
       method: 'POST',
-      body: JSON.stringify({ file_number: d.file_number, file_title: d.file_title || null }),
+      body: JSON.stringify({
+        file_number: d.file_number,
+        file_title: d.file_title || null,
+        // Carry the selected physical record through to Director Land. A shared
+        // file number alone is ambiguous when indexed and duplicate rows coexist.
+        selected_record_id:     selectedCandidate ? selectedCandidate.record_id : null,
+        selected_record_source: selectedCandidate ? selectedCandidate.source : null,
+      }),
     });
     if (res.success) {
       toast(res.message || `Request ${res.request_no || ''} re-directed to Director Land`);

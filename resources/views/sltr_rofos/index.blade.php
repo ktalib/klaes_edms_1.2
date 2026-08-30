@@ -134,7 +134,17 @@
                                 <td class="px-4 py-2 text-center text-slate-500 text-xs whitespace-nowrap">
                                     {{ $rec->rofo_generated_at ? $rec->rofo_generated_at->format('Y-m-d h:i A') : 'N/A' }}
                                 </td>
-                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->creator->name ?? 'System' }}</td>
+                                <td class="px-4 py-2 text-slate-600 whitespace-nowrap">
+                                    @php $sltrCreatedBy = trim((string) ($rec->creator->name ?? '')); @endphp
+                                    @if($sltrCreatedBy !== '')
+                                        <span class="upc-trigger" data-user-card
+                                              data-user-id="{{ $rec->creator->id }}"
+                                              data-user-name="{{ $sltrCreatedBy }}"
+                                              title="{{ __('View profile') }}">{{ $sltrCreatedBy }}</span>
+                                    @else
+                                        System
+                                    @endif
+                                </td>
                                 {{-- When the record was captured, which is not "Generated On" two
                                      columns back: a recommendation can sit for weeks before its
                                      RofO is issued. --}}

@@ -212,7 +212,7 @@
             <a href="{{ route('duplex-parcel-update.index') }}?mode=deeds"
               class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ (request()->routeIs('duplex-parcel-update.*') && request()->query('mode') !== 'land') ? 'active' : '' }}">
               <i data-lucide="layers" class="h-3.5 w-3.5 text-teal-400"></i>
-              <span>Duplex Parcel Update</span>
+              <span>APU - Advance Parcel Update (Duplex)</span>
             </a>
           @endif
 

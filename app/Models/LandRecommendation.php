@@ -144,6 +144,12 @@ class LandRecommendation extends Model
         'improvement',
         'revision_period',
         'time_of_erection',
+
+        // Set when the file went through the OP-holder Match flow: this record
+        // stands for a recommendation that was already approved on paper, so it
+        // needs that letter uploaded before it can be approved here.
+        'is_existing_recommendation',
+        'op_match_tot_pra_id',
     ];
 
     protected $casts = [
@@ -164,6 +170,7 @@ class LandRecommendation extends Model
         'date_issued' => 'date',
         'use_standard_template' => 'boolean',
         'is_reissuance' => 'boolean',
+        'is_existing_recommendation' => 'boolean',
         'reissuance_original_date' => 'date',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
@@ -235,6 +242,17 @@ class LandRecommendation extends Model
         }
 
         return "{$landUse} ({$purpose})";
+    }
+
+    /**
+     * The already-approved letter uploaded for this record, when it needs one.
+     *
+     * Only files flagged `is_existing_recommendation` ever have a document; every
+     * other recommendation prints its own letter and has nothing to upload.
+     */
+    public function document()
+    {
+        return $this->hasOne(LandRecommendationDocument::class, 'land_recommendation_id');
     }
 
     public function creator()

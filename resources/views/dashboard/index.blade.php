@@ -400,7 +400,9 @@ System') }}
     </style>
 @include('sectionaltitling.partials.assets.css')
 @section('content')
-@if (auth()->check() && is_null(auth()->user()->is_password_change))
+{{-- The passport-photo card is the first gate; this prompt waits its turn because
+     "Go to Profile" is blocked while the photo is still missing. --}}
+@if (auth()->check() && auth()->user()->needs_password_change)
     <script>
       document.addEventListener('DOMContentLoaded', function() {
         Swal.fire({

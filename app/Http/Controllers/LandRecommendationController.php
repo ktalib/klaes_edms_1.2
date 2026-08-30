@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\District;
 use App\Models\LandRecommendation;
 use App\Models\LandRecommendationBatchDocument;
+use App\Models\LandRecommendationDocument;
 use App\Models\LandRecommendationBatchDraft;
 use App\Models\LandUse;
 use App\Models\Purpose;
@@ -296,6 +297,7 @@ class LandRecommendationController extends Controller
                 'recSerials'      => [],
                 'batchSizes'      => collect(),
                 'batchActions'    => collect(),
+                'approvedLetters' => collect(),
             ]);
         }
 
@@ -406,7 +408,18 @@ class LandRecommendationController extends Controller
         // strength of it, and the White Copy closes with it.
         $whiteCopyDone = array_flip(PrintLog::whiteCopyPrinted('Recommendation', $fileNumbers));
 
-        return view('land_recommendations.index', compact('recommendations', 'PageTitle', 'stats', 'cardStats', 'isOssView', 'pageType', 'ossTab', 'tab', 'printDates', 'whiteCopyDone', 'recSerials', 'batchSizes', 'batchActions'));
+        // Records that stand for a recommendation already approved on paper, and
+        // whether that letter has been uploaded yet. Loaded for the whole page in one
+        // query: the row menu offers Upload or View on the answer, and Approve is
+        // held shut until it is there.
+        $approvedLetters = LandRecommendationDocument::whereIn(
+                'land_recommendation_id',
+                $recommendations->getCollection()->pluck('id')->all()
+            )
+            ->get()
+            ->keyBy('land_recommendation_id');
+
+        return view('land_recommendations.index', compact('recommendations', 'PageTitle', 'stats', 'cardStats', 'isOssView', 'pageType', 'ossTab', 'tab', 'printDates', 'whiteCopyDone', 'recSerials', 'batchSizes', 'batchActions', 'approvedLetters'));
     }
 
     /**
@@ -968,6 +981,8 @@ class LandRecommendationController extends Controller
                 $this->guardAgainstDuplicate($request);
             }
 
+            $this->guardAgainstUnmatchedOpHolder($request);
+
             $validated = $request->validate([
                 'file_number' => 'required|string',
                 'old_file_number' => 'nullable|string|max:100',
@@ -1031,6 +1046,12 @@ class LandRecommendationController extends Controller
                 'page_5' => 'nullable|string',
                     'purpose_description' => 'nullable|string',
                     'dimensions_text' => 'nullable|string',
+
+                // Set by the OP-holder Match flow on the form. The file's
+                // recommendation was already approved on paper, so this record
+                // stands in for that letter instead of generating a new one.
+                'is_existing_recommendation' => 'nullable|boolean',
+                'op_match_tot_pra_id' => 'nullable|integer',
             ]);
         } catch (ValidationException $e) {
             RecLog::warning('Single capture rejected', [
@@ -1068,6 +1089,8 @@ class LandRecommendationController extends Controller
         $validated['created_by'] = Auth::id();
         $validated['updated_by'] = Auth::id();
 
+        $this->applyExistingRecommendationMode($request, $validated);
+
         // A re-issuance replaces a letter that was already approved and issued, so
         // it lands on the RofO table ready to print rather than re-entering the
         // approval queue.
@@ -1104,6 +1127,16 @@ class LandRecommendationController extends Controller
         if ($isReissuance) {
             return redirect()->route('land-rofos.index')
                 ->with('success', 'Re-issuance created for ' . $recommendation->file_number . '. It is now on the RofO table, ready to print.');
+        }
+
+        // Nothing was generated for this file — its letter already exists on paper.
+        // Land on the register with the upload prompt open on the new row, so the
+        // officer is not left to find it, and approval is not left waiting on a
+        // step nobody was asked to take.
+        if ($recommendation->is_existing_recommendation) {
+            return redirect()->route('land-recommendations.index', ['type' => 'ROFO', 'upload_letter' => $recommendation->id])
+                ->with('success', 'Record saved for ' . $recommendation->file_number
+                    . '. No new recommendation was generated — upload the approved one to allow approval.');
         }
 
         return redirect()->route('land-recommendations.index', ['type' => 'ROFO'])
@@ -2726,6 +2759,139 @@ class LandRecommendationController extends Controller
     }
 
     /**
+     * Refuse a capture on a file whose Occupancy Permit names a holder that File
+     * Indexing does not, while nothing on the file explains the change.
+     *
+     * The form offers Match for exactly this, and Match is one click. Letting the
+     * capture through without it writes a recommendation on top of a chain that
+     * still does not say how the title reached the person it is being written for —
+     * which is the state this whole flow exists to stop being created.
+     *
+     * Only ever fires BEFORE Match: the transfer Match writes is what clears the
+     * condition, so a matched file passes here on the same rule that failed a moment
+     * earlier. Files whose transfer is merely spelt differently never qualify at all
+     * (see OpHolderMatchService), so an ordinary capture is untouched.
+     */
+    private function guardAgainstUnmatchedOpHolder(Request $request): void
+    {
+        // Already answered: the officer matched, and the record is being saved as
+        // standing for the letter that file was already granted.
+        if ($request->boolean('is_existing_recommendation')) {
+            return;
+        }
+
+        $fileNumber = trim((string) $request->input('file_number', ''));
+
+        if ($fileNumber === '') {
+            return;
+        }
+
+        $state = app(\App\Services\OpHolderMatchService::class)->check($fileNumber);
+
+        if (! $state['applies']) {
+            return;
+        }
+
+        RecLog::warning('Capture blocked — OP holder mismatch not matched', [
+            'file_number'   => $fileNumber,
+            'op_holder'     => $state['op']['holder'] ?? null,
+            'indexing_name' => $state['indexing_name'],
+        ]);
+
+        throw ValidationException::withMessages([
+            'file_number' => 'The Occupancy Permit on ' . $fileNumber . ' was granted to '
+                . ($state['op']['holder'] ?? 'another holder') . ', but File Indexing holds '
+                . $state['indexing_name'] . ' and no transfer on the file explains the change. '
+                . 'Press Match on the file history card first — it records the missing Transfer of Title.',
+        ]);
+    }
+
+    /**
+     * "Existing recommendation" mode, set by the OP-holder Match flow on the form.
+     *
+     * The file's Occupancy Permit named one holder while File Indexing named
+     * another; Match wrote the missing transfer, and the recommendation for such a
+     * file already exists — approved, on paper. It is not written again and it does
+     * not re-enter the approval queue on the strength of a fresh letter, so the
+     * record is flagged here and cannot be approved until that letter is uploaded.
+     *
+     * The flag is NEVER inferred at approval time. Match writes the very row whose
+     * absence made the file qualify, so re-asking the question later finds a file
+     * that no longer qualifies and a gate with nothing to enforce.
+     *
+     * The origin also becomes OSS: these files come through OSS, and the register
+     * splits Lands from OSS on this column.
+     */
+    private function applyExistingRecommendationMode(Request $request, array &$validated): void
+    {
+        if (! $request->boolean('is_existing_recommendation')) {
+            return;
+        }
+
+        $validated['is_existing_recommendation'] = true;
+        $validated['type'] = 'OSS';
+
+        $totId = (int) $request->input('op_match_tot_pra_id');
+        $validated['op_match_tot_pra_id'] = $totId > 0 ? $totId : null;
+
+        RecLog::info('Captured as an existing (already approved) recommendation', [
+            'file_number'         => $validated['file_number'] ?? null,
+            'op_match_tot_pra_id' => $validated['op_match_tot_pra_id'],
+        ]);
+    }
+
+    /**
+     * Records flagged as standing for an already-approved letter that have no
+     * letter uploaded yet.
+     *
+     * @return array<int,string> recommendation id => file number
+     */
+    private function recommendationsMissingApprovedLetter(array $ids): array
+    {
+        $flagged = LandRecommendation::whereIn('id', $ids)
+            ->where('is_existing_recommendation', 1)
+            ->pluck('file_number', 'id');
+
+        if ($flagged->isEmpty()) {
+            return [];
+        }
+
+        $uploaded = LandRecommendationDocument::whereIn('land_recommendation_id', $flagged->keys())
+            ->pluck('land_recommendation_id')
+            ->all();
+
+        return $flagged->except($uploaded)->all();
+    }
+
+    /**
+     * The refusal for the above, or null when every flagged record has its letter.
+     * Shared by both approval endpoints, so a record approved one at a time from the
+     * main list is held to the same rule as "Approve all".
+     */
+    private function approvedLetterGate(array $ids): ?string
+    {
+        $missing = $this->recommendationsMissingApprovedLetter($ids);
+
+        if (! $missing) {
+            return null;
+        }
+
+        $files = implode(', ', array_unique(array_values($missing)));
+
+        RecLog::warning('Approval blocked — approved recommendation not uploaded', [
+            'files'         => $files,
+            'ids_attempted' => count($ids),
+        ]);
+
+        return count($missing) === 1
+            ? 'The already-approved recommendation for ' . $files . ' has not been uploaded yet. '
+                . 'This file keeps the letter it was granted on paper — upload it from the record first, '
+                . 'because approving now would approve a recommendation that has nothing behind it.'
+            : 'These records stand for recommendations already approved on paper, and none of their letters '
+                . 'have been uploaded yet: ' . $files . '. Upload each one before approving.';
+    }
+
+    /**
      * The refusal for the above, or null when there is nothing to refuse. Shared by
      * both approval endpoints so a child approved one at a time from the main list
      * is held to the same rule as "Approve all".
@@ -2765,6 +2931,12 @@ class LandRecommendationController extends Controller
             return response()->json(['success' => false, 'message' => $blocked], 422);
         }
 
+        // Same for a record that stands for a letter already approved on paper: the
+        // scan is what it points at, so it has to be on file before approval.
+        if ($blocked = $this->approvedLetterGate([$recommendation->id])) {
+            return response()->json(['success' => false, 'message' => $blocked], 422);
+        }
+
         $recommendation->update([
             'status' => LandRecommendation::STATUS_APPROVED,
             'approved_at' => now()
@@ -2794,6 +2966,10 @@ class LandRecommendationController extends Controller
         $ids = $request->validate(['ids' => 'required|array', 'ids.*' => 'integer'])['ids'];
 
         if ($blocked = $this->motherRecommendationGate($ids)) {
+            return response()->json(['success' => false, 'message' => $blocked], 422);
+        }
+
+        if ($blocked = $this->approvedLetterGate($ids)) {
             return response()->json(['success' => false, 'message' => $blocked], 422);
         }
 

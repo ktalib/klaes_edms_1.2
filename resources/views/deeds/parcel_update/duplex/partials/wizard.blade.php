@@ -37,7 +37,7 @@
                             <i data-lucide="layers" class="w-4.5 h-4.5"></i>
                         </span>
                         <div>
-                            <h3 class="text-lg font-black text-slate-800 leading-tight">New Duplex Parcel Update</h3>
+                            <h3 class="text-lg font-black text-slate-800 leading-tight">New APU - Advance Parcel Update (Duplex)</h3>
                             <p class="text-xs text-slate-500 mt-0.5" id="wizard-subtitle">
                                 Pick the file, then add the updates in the order you want them carried out.
                             </p>

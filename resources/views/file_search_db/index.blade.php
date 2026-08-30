@@ -16,7 +16,7 @@
                     <p class="text-xs uppercase tracking-[0.3em] text-emerald-600">Registry</p>
                     <div class="mt-4 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
                         <div class="space-y-3 max-w-2xl">
-                            <h1 class="text-4xl lg:text-5xl font-semibold text-emerald-900 leading-tight">Duplicate File Search Database</h1>
+                            <h1 class="text-4xl lg:text-5xl font-semibold text-emerald-900 leading-tight">Problem Files Search Database</h1>
                             <p class="text-base text-emerald-900/70">Audit historical registry ledgers, surface conflicting allocations and triage duplicate records without touching production tables.</p>
                         </div>
                         <div class="grid grid-cols-2 gap-4 text-center sm:text-left">

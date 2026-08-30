@@ -485,6 +485,8 @@ class FileNumberController extends Controller
                     COALESCE(ic.prop_id,     pra.prop_id)     AS derived_source_prop_id,
                     COALESCE(ic.temp_fileno, pra.temp_fileno) AS derived_source_temp_fileno,
                     CASE WHEN cs.file_number IS NOT NULL THEN 1 ELSE 0 END AS has_commissioning_sheet,
+                    geo.latitude                              AS derived_latitude,
+                    geo.longitude                             AS derived_longitude,
                     dciv_rel.dciv_related,
                     fil_rel.fil_related
                 FROM fileNumber fn
@@ -509,6 +511,16 @@ class FileNumberController extends Controller
                     FROM instrument_capture ic
                     WHERE ic.id = mls.source_instrument_capture_id
                 ) AS ic
+                -- Map pin. The generator writes the pinned coordinates straight to
+                -- file_indexings (see MlsFileNoController's createFromFileNumberData
+                -- call); neither fileNumber nor mls_file_no has lat/long columns.
+                OUTER APPLY (
+                    SELECT TOP 1 fi.latitude, fi.longitude
+                    FROM file_indexings fi
+                    WHERE fi.file_number IN (fn.mlsfNo, fn.kangisFileNo, fn.NewKANGISFileNo, fn.st_file_no)
+                      AND fi.latitude IS NOT NULL AND fi.longitude IS NOT NULL
+                    ORDER BY fi.id DESC
+                ) AS geo
                 OUTER APPLY (
                     SELECT STUFF((
                         SELECT ', ' + dl.related_file_number
@@ -611,6 +623,8 @@ class FileNumberController extends Controller
                     'batch_first_file' => trim($row->batch_first_file ?? ''),
                     'commissioning_date' => $row->derived_commissioning_date ? date('Y-m-d', strtotime($row->derived_commissioning_date)) : 'N/A',
                     'has_commissioning_sheet' => (bool) $row->has_commissioning_sheet,
+                    'latitude' => $this->formatCoordinate($row->derived_latitude ?? null),
+                    'longitude' => $this->formatCoordinate($row->derived_longitude ?? null),
                     'created_at' => ($row->derived_created_at ?? null)
                         ? date('Y-m-d H:i:s', strtotime($row->derived_created_at))
                         : ($row->created_at ? date('Y-m-d H:i:s', strtotime($row->created_at)) : 'N/A'),
@@ -626,9 +640,17 @@ class FileNumberController extends Controller
                     "SELECT m.id, m.full_file_number, m.file_name, m.land_use, m.customer_type,
                             m.plot_no, m.tp_no, m.location, m.lga, m.tracking_id,
                             m.created_by, m.commissioning_date, m.created_at, m.source,
-                            m.batch_no, p.name AS purpose_name
+                            m.batch_no, p.name AS purpose_name,
+                            geo.latitude, geo.longitude
                      FROM mls_file_no m
                      LEFT JOIN purposes p ON p.id = m.purpose_id
+                     OUTER APPLY (
+                         SELECT TOP 1 fi.latitude, fi.longitude
+                         FROM file_indexings fi
+                         WHERE fi.file_number = m.full_file_number
+                           AND fi.latitude IS NOT NULL AND fi.longitude IS NOT NULL
+                         ORDER BY fi.id DESC
+                     ) AS geo
                      WHERE m.id IN ({$tempInList})"
                 );
 
@@ -678,6 +700,8 @@ class FileNumberController extends Controller
                         'batch_first_file'            => $fileNo,
                         'commissioning_date'          => $row->commissioning_date ? date('Y-m-d', strtotime($row->commissioning_date)) : 'N/A',
                         'has_commissioning_sheet'     => false,
+                        'latitude'                    => $this->formatCoordinate($row->latitude ?? null),
+                        'longitude'                   => $this->formatCoordinate($row->longitude ?? null),
                         'created_at'                  => $row->created_at ? date('Y-m-d H:i:s', strtotime($row->created_at)) : 'N/A',
                         'action'                      => $actionHtml,
                     ];
@@ -723,6 +747,22 @@ class FileNumberController extends Controller
     }
 
     /**
+     * Format one pinned coordinate for the table's Latitude / Longitude columns.
+     *
+     * Only file_indexings stores the pin, and most files were never pinned, so a null
+     * here is the normal case. 0 is treated as unpinned: 0,0 is the Gulf of Guinea,
+     * never a Kano parcel.
+     */
+    private function formatCoordinate($value): string
+    {
+        if (!is_numeric($value) || (float) $value == 0.0) {
+            return 'N/A';
+        }
+
+        return number_format((float) $value, 6, '.', '');
+    }
+
+    /**
      * Build formatted Plot Extension rows for the file-numbers DataTable.
      *
      * Plot Extensions live in their own isolated `plot_extensions` table and retain
@@ -748,9 +788,17 @@ class FileNumberController extends Controller
         $rows = DB::connection('sqlsrv')->select(
             "SELECT pe.id, pe.original_file_no, pe.file_name, pe.land_use, pe.customer_type,
                     pe.plot_no, pe.tp_no, pe.location, pe.lga, pe.tracking_id,
-                    pe.created_by, pe.created_at, p.name AS purpose_name
+                    pe.created_by, pe.created_at, p.name AS purpose_name,
+                    geo.latitude, geo.longitude
              FROM plot_extensions pe
              LEFT JOIN purposes p ON p.id = pe.purpose_id
+             OUTER APPLY (
+                 SELECT TOP 1 fi.latitude, fi.longitude
+                 FROM file_indexings fi
+                 WHERE fi.file_number = pe.original_file_no
+                   AND fi.latitude IS NOT NULL AND fi.longitude IS NOT NULL
+                 ORDER BY fi.id DESC
+             ) AS geo
              WHERE (pe.is_deleted IS NULL OR pe.is_deleted = 0)
                {$searchSql}
              ORDER BY pe.id DESC",
@@ -779,6 +827,8 @@ class FileNumberController extends Controller
                 'lga'                         => trim($row->lga ?? '') ?: 'N/A',
                 'tracking_id'                 => trim($row->tracking_id ?? '') ?: 'N/A',
                 'type'                        => 'Plot Extension',
+                'latitude'                    => $this->formatCoordinate($row->latitude ?? null),
+                'longitude'                   => $this->formatCoordinate($row->longitude ?? null),
                 'created_by'                  => trim($row->created_by ?? '') ?: 'System',
                 'source'                      => 'Plot Extension',
                 'source_instrument_capture_id'=> null,

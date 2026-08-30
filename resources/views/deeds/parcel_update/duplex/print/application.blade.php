@@ -1,6 +1,6 @@
 @extends('deeds.parcel_update.duplex.print._layout')
 
-@section('doc-title', 'Application for Duplex Parcel Update')
+@section('doc-title', 'Application for APU - Advance Parcel Update (Duplex)')
 
 @section('doc-body')
     <table class="meta">

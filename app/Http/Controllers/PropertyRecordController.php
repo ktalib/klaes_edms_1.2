@@ -676,6 +676,10 @@ class PropertyRecordController extends Controller
             ->take($length)
             ->get();
 
+        // Resolves captured_by/created_by (an id on PRA's own writes, a name on File
+        // Indexing's) to a display name for the clickable "Captured By" column.
+        $this->attachCapturedByName($data);
+
         $timelineCounts = $this->resolveTimelineCountsForRecords($data);
         $data = $data->map(function ($row) use ($timelineCounts) {
             $propIdKey = trim((string) ($row->prop_id ?? ''));

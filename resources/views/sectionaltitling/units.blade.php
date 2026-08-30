@@ -152,6 +152,12 @@
                   </div>
                 </th>
                 <th
+                  class="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200">
+                  <div class="flex items-center space-x-1">
+                    <span>Created By</span>
+                  </div>
+                </th>
+                <th
                   class="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-200"
                   data-column="jsi-status">
                   <div class="flex items-center space-x-1">
@@ -413,6 +419,17 @@
                   </td>
                   <td class="table-cell px-1 py-1 truncate" data-order="{{ $app->sys_date }}">
                     {{ $app->sys_date ? \Carbon\Carbon::parse($app->sys_date)->format('M d, Y') : 'N/A' }}
+                  </td>
+                  <td class="table-cell px-1 py-1 truncate">
+                    @php $stCreatedBy = trim((string) ($app->created_by_name ?? '')); @endphp
+                    @if($stCreatedBy !== '')
+                      <span class="upc-trigger" data-user-card
+                            data-user-id="{{ $app->created_by }}"
+                            data-user-name="{{ $stCreatedBy }}"
+                            title="{{ __('View profile') }}">{{ $stCreatedBy }}</span>
+                    @else
+                      <span class="text-gray-400">&mdash;</span>
+                    @endif
                   </td>
                   @php
                     $jsiApproved = (int) ($app->jsi_is_approved ?? 0) === 1;

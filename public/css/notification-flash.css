@@ -141,6 +141,18 @@
   cursor: pointer;
   transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.25s ease;
   animation: flashSlideIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  /* The dark-card block above sets a near-white colour; without this override
+     any text on the white card inherits it and renders invisible. */
+  color: #1e293b;
+}
+
+/* Legacy toast markup kept readable on the white card. */
+.notification-flash-toast__title {
+  color: #1e293b;
+}
+
+.notification-flash-toast__body {
+  color: #64748b;
 }
 
 .notification-flash-toast:hover {

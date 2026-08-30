@@ -17,22 +17,28 @@ class FileIndexingCoordinateBackfillController extends Controller
 
     public function run(Request $request, FileIndexingCoordinateBackfillService $service): JsonResponse
     {
-        // Each row costs ~100ms throttle + a live Google round-trip, so a web
-        // request (unlike the CLI command, which has no time limit) needs a
-        // smaller batch plus headroom above PHP's default 60s execution limit.
-        set_time_limit(180);
+        // Nominatim allows ~1 request/second, and one row can cost several of them
+        // (street, then district, then LGA), so a web request needs a small batch and
+        // generous headroom above PHP's default 60s execution limit. The CLI command
+        // has no time limit and is the better tool for a large run.
+        set_time_limit(600);
 
-        $limit = (int) $request->input('limit', 30);
-        $limit = max(1, min(50, $limit));
+        $limit = (int) $request->input('limit', 10);
+        $limit = max(1, min(20, $limit));
         $afterId = $request->input('after_id');
         $afterId = $afterId !== null ? (int) $afterId : null;
 
+        $service->skipLgaTier($request->boolean('skip_lga_only'));
+
         $result = $service->runBatch($limit, false, false, $afterId);
 
-        if (!empty($result['key_missing'])) {
+        // The whole batch failed at the transport layer — say why, rather than
+        // reporting a batch of silent zeroes.
+        $errors = $result['counts']['ERROR'] ?? 0;
+        if ($errors > 0 && $errors === $result['processed']) {
             return response()->json([
-                'error' => 'GOOGLE_GEOCODING_API_KEY is not configured.',
-            ], 422);
+                'error' => 'Could not reach nominatim.openstreetmap.org: ' . ($result['last_error'] ?? 'unknown error'),
+            ], 502);
         }
 
         return response()->json($result);

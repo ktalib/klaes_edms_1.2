@@ -70,7 +70,7 @@
 @section('content')
 <div class="flex-1 overflow-auto bg-slate-50/60">
     @include('admin.header', [
-        'PageTitle' => 'Duplex Parcel Update',
+        'PageTitle' => 'APU - Advance Parcel Update (Duplex)',
         'PageDescription' => 'Several parcel updates carried as one instruction.'
     ])
 
@@ -86,7 +86,7 @@
                         </span>
                         <div class="min-w-0">
                             <p class="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">{{ request('mode') === 'land' ? 'Land' : 'Deeds' }} · Parcel Update</p>
-                            <h1 class="text-2xl font-black text-slate-800 mt-1 leading-tight">Duplex Parcel Update</h1>
+                            <h1 class="text-2xl font-black text-slate-800 mt-1 leading-tight">APU - Advance Parcel Update (Duplex)</h1>
                             <p class="text-sm text-slate-500 mt-1.5 max-w-2xl leading-relaxed">
                                 Subdivision, Merger, Change of Purpose, Extension and Separation in one
                                 instruction — one approval, one memo, one commissioning. A single update on

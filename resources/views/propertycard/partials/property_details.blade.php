@@ -430,6 +430,7 @@
                             <th>Party 4</th>
                             <th>Location</th>
                             <th>Date Captured</th>
+                            <th>Captured By</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -765,6 +766,30 @@
                     render: function (data, type, row) {
                         const candidate = data || row.transaction_date || row.deeds_date || null;
                         return renderDateCell(candidate, type);
+                    }
+                },
+                {
+                    // captured_by/created_by holds a user id on PRA's own rows and a typed
+                    // name on File Indexing's, so send whichever shape it is to the card.
+                    data: 'captured_by_name',
+                    name: 'captured_by',
+                    render: function (data, type, row) {
+                        const raw = row.captured_by ?? row.created_by ?? '';
+                        const label = data || (String(raw).trim() !== '' && !/^\d+$/.test(String(raw)) ? String(raw) : '');
+
+                        if (type !== 'display') {
+                            return label;
+                        }
+
+                        if (!label) {
+                            return '<span class="text-gray-400">N/A</span>';
+                        }
+
+                        const attr = /^\d+$/.test(String(raw).trim())
+                            ? 'data-user-id="' + escapeHtml(String(raw).trim()) + '"'
+                            : 'data-user-name="' + escapeHtml(label) + '"';
+
+                        return '<span class="upc-trigger" data-user-card ' + attr + ' title="View profile">' + escapeHtml(label) + '</span>';
                     }
                 },
                 {

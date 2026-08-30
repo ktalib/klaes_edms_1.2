@@ -379,6 +379,25 @@
         // record before anything can be sent — and the request must NOT fall through to
         // the SCB just because one of the matches happens to be indexed.
         const hasCandidates = d => Array.isArray(d.duplicate_candidates) && d.duplicate_candidates.length > 1;
+        const hasIndexedCandidate = d => Array.isArray(d.duplicate_candidates)
+            && d.duplicate_candidates.some(c => c.source === 'file_indexings');
+        const duplicateFlagHtml = d => d.duplicate_flag ? `
+            <div class="mb-3 rounded-lg px-4 py-3" style="background:${d.duplicate_flag.color}14;border:1px solid ${d.duplicate_flag.color}55;">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="copy" class="h-4 w-4 shrink-0" style="color:${d.duplicate_flag.color};"></i>
+                    <span class="text-sm font-bold" style="color:${d.duplicate_flag.color};">${esc(d.duplicate_flag.label)}</span>
+                    ${d.duplicate_flag.comment ? `<span class="text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" style="color:${d.duplicate_flag.color};background:${d.duplicate_flag.color}1a;">${esc(d.duplicate_flag.comment)}</span>` : ''}
+                </div>
+                ${(d.duplicate_flag.entries && d.duplicate_flag.entries.length > 1) ? `
+                <div class="mt-2 pl-6 space-y-1">
+                    ${d.duplicate_flag.entries.map(e => `
+                    <div class="flex items-baseline gap-2 text-xs">
+                        <span class="font-semibold" style="color:${d.duplicate_flag.color};">${esc(e.file_number)}</span>
+                        <span class="text-gray-600">${esc(e.file_title || '—')}</span>
+                    </div>`).join('')}
+                </div>` : (d.duplicate_flag.file_title ? `
+                <div class="mt-1 pl-6 text-xs text-gray-600">${esc(d.duplicate_flag.file_title)}</div>` : '')}
+            </div>` : '';
         // The record the user picked, as {record_id, source}. Null until they choose.
         let selectedCandidate = null;
 
@@ -1058,6 +1077,7 @@
 </span>
                     </div>
                     <div class="px-6 py-3">
+                        ${duplicateFlagHtml(d)}
                         ${(d.status === 'MISSING_FILE' && d.is_indexed) ? `
                         <div class="mb-3 rounded-lg bg-blue-50 border border-blue-200 px-4 py-3">
                             <div class="flex items-center gap-2">
@@ -1076,7 +1096,7 @@
                                 <i data-lucide="layers" class="h-4 w-4 shrink-0 text-amber-600"></i>
                                 <span class="text-sm font-bold text-amber-800">${d.duplicate_candidates.length} files are registered under this number</span>
                             </div>
-                            <div class="mt-1 pl-6 text-xs text-amber-700">Select the exact file you are looking for. The request sent to the Director Land carries the record you pick, not just the file number.</div>
+                            <div class="mt-1 pl-6 text-xs text-amber-700">Select the exact file you are looking for. Indexed files go to the SCB for physical confirmation; duplicate files go to Director Land.</div>
                             <div class="mt-2.5 space-y-2">
                                 ${d.duplicate_candidates.map((c, i) => `
                                 <label class="flex gap-3 rounded-lg border border-amber-200 bg-white px-3 py-2.5 cursor-pointer hover:border-amber-400 transition-colors" data-candidate>
@@ -1097,23 +1117,6 @@
                                     </div>
                                 </label>`).join('')}
                             </div>
-                        </div>` : ''}
-                        ${d.duplicate_flag ? `
-                        <div class="mb-3 rounded-lg px-4 py-3" style="background:${d.duplicate_flag.color}14;border:1px solid ${d.duplicate_flag.color}55;">
-                            <div class="flex items-center gap-2">
-                                <i data-lucide="copy" class="h-4 w-4 shrink-0" style="color:${d.duplicate_flag.color};"></i>
-                                <span class="text-sm font-bold" style="color:${d.duplicate_flag.color};">${esc(d.duplicate_flag.label)}</span>
-                                ${d.duplicate_flag.comment ? `<span class="text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" style="color:${d.duplicate_flag.color};background:${d.duplicate_flag.color}1a;">${esc(d.duplicate_flag.comment)}</span>` : ''}
-                            </div>
-                            ${(d.duplicate_flag.entries && d.duplicate_flag.entries.length > 1) ? `
-                            <div class="mt-2 pl-6 space-y-1">
-                                ${d.duplicate_flag.entries.map(e => `
-                                <div class="flex items-baseline gap-2 text-xs">
-                                    <span class="font-semibold" style="color:${d.duplicate_flag.color};">${esc(e.file_number)}</span>
-                                    <span class="text-gray-600">${esc(e.file_title || '—')}</span>
-                                </div>`).join('')}
-                            </div>` : (d.duplicate_flag.file_title ? `
-                            <div class="mt-1 pl-6 text-xs text-gray-600">${esc(d.duplicate_flag.file_title)}</div>` : '')}
                         </div>` : ''}
                         ${d.is_temp_file && !(d.duplicate_flag && /temp/i.test(d.duplicate_flag.label || '')) ? `
                         <div class="mb-3 rounded-lg px-4 py-3 flex items-center gap-2" style="background:#7c3aed14;border:1px solid #7c3aed55;">
@@ -1250,7 +1253,7 @@
                         <div class="mt-3 rounded-lg bg-indigo-50 border border-indigo-100 px-4 py-3">
                             <div class="text-xs font-semibold text-indigo-700 uppercase tracking-wide">Next Action</div>
                             <div class="text-sm text-indigo-900 mt-0.5">${esc(hasCandidates(d)
-                                ? 'Select the exact file above, then send the request to the Director Land.'
+                                ? 'Select the exact file above. Indexed files go to the SCB Monitor; duplicate files go to Director Land.'
                                 : d.next_action)}</div>
                         </div>
 
@@ -1271,8 +1274,8 @@
                             </div>
                         </details>
                     </div>
-                    ${(d.can_send_fr && CAN_SEND_FR && !directsToLand(d) && !isDciv(d)) ? `
-                    <div class="px-6 pt-4 border-t border-gray-100">
+                    ${(d.can_send_fr && CAN_SEND_FR && !isDciv(d) && (!directsToLand(d) || hasIndexedCandidate(d))) ? `
+                    <div data-scb-request-form class="px-6 pt-4 border-t border-gray-100" style="${directsToLand(d) && hasCandidates(d) ? 'display:none;' : ''}">
                         <div class="text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">Requester</div>
                         <div class="mb-3">
                             <label class="block text-[11px] font-semibold text-gray-600 mb-1">Registry (Origin) <span class="text-red-500">*</span></label>
@@ -1370,14 +1373,22 @@
                 </div>`;
             result.classList.remove('hidden');
 
-            if (d.can_send_fr && !directsToLand(d) && !isDciv(d)) initRequesterCascade(d);
+            if (d.can_send_fr && (!directsToLand(d) || hasIndexedCandidate(d)) && !isDciv(d)) initRequesterCascade(d);
 
             const frBtn = result.querySelector('[data-fr]');
             if (frBtn) frBtn.addEventListener('click', () => sendFR(d, frBtn));
             const redirectBtn = result.querySelector('[data-redirect]');
             if (redirectBtn) redirectBtn.addEventListener('click', () => sendRedirect(d, redirectBtn));
             const redirectLandBtn = result.querySelector('[data-redirect-land]');
-            if (redirectLandBtn) redirectLandBtn.addEventListener('click', () => sendRedirectToDirectorLand(d, redirectLandBtn));
+            if (redirectLandBtn) redirectLandBtn.addEventListener('click', () => {
+                // An indexed physical record is routed through the normal SCB
+                // request flow; duplicate-fileno records remain Director Land work.
+                if (selectedCandidate && selectedCandidate.source === 'file_indexings') {
+                    sendFR(d, redirectLandBtn);
+                } else {
+                    sendRedirectToDirectorLand(d, redirectLandBtn);
+                }
+            });
             // Duplicate selection: the Director Land button stays inert until one of
             // the matching records is chosen, because the request is saved against
             // that record's id and source table — the shared file number cannot
@@ -1393,7 +1404,22 @@
                         l.classList.toggle('border-purple-500', l.contains(radio)));
                     if (redirectLandBtn) {
                         redirectLandBtn.disabled = false;
-                        redirectLandBtn.className = 'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white bg-purple-600 hover:bg-purple-700';
+                        if (radio.dataset.candidateSource === 'file_indexings') {
+                            // Indexed file: reveal the requester form and turn the
+                            // same action button into an SCB request.
+                            const scbForm = result.querySelector('[data-scb-request-form]');
+                            if (scbForm) scbForm.style.display = '';
+                            redirectLandBtn.className = 'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700';
+                            redirectLandBtn.innerHTML = '<i data-lucide="send" class="h-4 w-4"></i> Send File Search Request to SCB Monitor';
+                        } else {
+                            // Duplicate file: hide the optional SCB form and keep
+                            // the Director Land action.
+                            const scbForm = result.querySelector('[data-scb-request-form]');
+                            if (scbForm) scbForm.style.display = 'none';
+                            redirectLandBtn.className = 'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white bg-purple-600 hover:bg-purple-700';
+                            redirectLandBtn.innerHTML = '<i data-lucide="user-check" class="h-4 w-4"></i> Send Request to Director Land';
+                        }
+                        if (window.lucide) window.lucide.createIcons();
                     }
                 });
             });
@@ -2563,7 +2589,7 @@
                                 </td>
                                 <td class="px-3 py-3 text-gray-600 max-w-[180px] truncate" title="${esc(r.file_title || '')}">${r.file_title ? esc(r.file_title) : dash}</td>
                                 <td class="px-3 py-3 text-gray-600 max-w-[170px] align-top">
-                                    <div class="truncate font-medium text-gray-800" title="${esc(r.receiving_officer || '')}">${r.receiving_officer ? esc(r.receiving_officer) : dash}</div>
+                                    <div class="truncate font-medium text-gray-800" title="${esc(r.receiving_officer || '')}">${r.receiving_officer ? `<span class="upc-trigger" data-user-card data-user-name="${esc(r.receiving_officer)}" title="View profile">${esc(r.receiving_officer)}</span>` : dash}</div>
                                     ${(() => {
                                         const chips = [];
                                         if (r.requester_department) chips.push(`<span class="inline-flex items-center gap-1 rounded-full bg-violet-50 border border-violet-100 px-1.5 py-px text-[10px] font-semibold text-violet-700" title="Department"><i data-lucide="building-2" class="h-2.5 w-2.5"></i>${esc(r.requester_department)}</span>`);
@@ -2744,11 +2770,11 @@
                                 <div class="mt-1.5 text-xs text-gray-600 truncate" title="${esc(r.file_title || '')}">${esc(r.file_title || '—')}</div>
                                 ${r.receiving_officer ? `<div class="mt-0.5 text-[11px] text-gray-400 truncate">for ${esc(r.receiving_officer)}</div>` : ''}
                                 <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-500">
-                                    ${r.requested_by ? `<span class="inline-flex items-center gap-1 rounded-full bg-slate-50 border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700"><i data-lucide="user" class="h-3 w-3"></i> <span class="uppercase tracking-wide">Sent by</span>: ${esc(r.requested_by)}</span>` : ''}
+                                    ${r.requested_by ? `<span class="upc-trigger inline-flex items-center gap-1 rounded-full bg-slate-50 border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700" data-user-card data-user-name="${esc(r.requested_by)}" title="View profile"><i data-lucide="user" class="h-3 w-3"></i> <span class="uppercase tracking-wide">Sent by</span>: ${esc(r.requested_by)}</span>` : ''}
                                     <span class="inline-flex items-center gap-1"><i data-lucide="map-pin" class="h-3 w-3 text-gray-400"></i> ${esc(r.current_location || r.location_type || '—')}</span>
                                     ${r.requested_at ? `<span class="inline-flex items-center gap-1 rounded-full bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-700"><i data-lucide="clock" class="h-3 w-3"></i> <span class="uppercase tracking-wide">Requested</span>: ${esc(r.requested_at)}</span>` : ''}
                                     ${r.responded_at ? `<span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700"><i data-lucide="calendar-check" class="h-3 w-3"></i> <span class="uppercase tracking-wide">Responded</span>: ${esc(r.responded_at)}</span>` : ''}
-                                    ${r.responder ? `<span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700"><i data-lucide="user-check" class="h-3 w-3"></i> <span class="uppercase tracking-wide">Responded by</span>: ${esc(r.responder)}</span>` : ''}
+                                    ${r.responder ? `<span class="upc-trigger inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700" data-user-card data-user-name="${esc(r.responder)}" title="View profile"><i data-lucide="user-check" class="h-3 w-3"></i> <span class="uppercase tracking-wide">Responded by</span>: ${esc(r.responder)}</span>` : ''}
                                     <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${r.is_dfr ? 'bg-gray-200 text-gray-600' : (r.is_blind ? 'bg-red-100 text-red-700' : 'bg-sky-100 text-sky-700')}">
                                         <i data-lucide="${r.is_dfr ? 'file-text' : (r.is_blind ? 'eye-off' : 'folder-search')}" class="h-2.5 w-2.5"></i> ${esc(r.request_type)}</span>
                                     ${done}

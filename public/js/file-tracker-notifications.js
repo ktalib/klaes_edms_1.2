@@ -1,10 +1,11 @@
 (function (window, document) {
   'use strict';
 
-  // Temporarily disabled: on-screen toast pop-ups for new notifications.
-  // The header bell, unread counters and the notifications page are unaffected.
-  // Set to true (or window.KLAES_ENABLE_NOTIFICATION_TOASTS = true) to re-enable.
-  const TOASTS_ENABLED = false;
+  // On-screen toast pop-ups for new notifications.
+  // Set to false (leaving window.KLAES_ENABLE_NOTIFICATION_TOASTS unset) to
+  // disable them again; the header bell, unread counters and the notifications
+  // page are unaffected either way.
+  const TOASTS_ENABLED = true;
 
   const SELECTORS = {
     root: '#file-tracker-header-notifications',
@@ -314,12 +315,16 @@
     }
 
     notificationCenter
-      .on('update', ({ items, unreadCount, totalCount, newItems }) => {
+      .on('update', ({ items, unreadCount, totalCount, newItems, isInitialLoad }) => {
         hideErrors();
         showLoading(false);
         renderList(items);
         updateCounters(unreadCount, totalCount);
-        if (newItems && newItems.length > 0) {
+        // Only toast items that arrived while this page was open. On the first
+        // poll everything looks new, and toasting it would re-pop the same card
+        // on every page load or refresh — the post-login flash queue
+        // (notification-flash.js) is what surfaces the existing backlog.
+        if (!isInitialLoad && newItems && newItems.length > 0) {
           showDynamicToasts(newItems, unreadCount);
         }
       })

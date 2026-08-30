@@ -43,6 +43,39 @@ class MobileFileSearchController extends Controller
             ?? $result['indexing']->file_title
             ?? null;
 
+        // A duplicate number can have both indexed and duplicate_fileno records.
+        // Keep the indexed holder/title in the Duplicate File panel as well, so
+        // the panel accounts for every physical file shown in the picker (for
+        // example, ALH UMARU ORANTE alongside the two duplicate-fileno entries).
+        $duplicateCandidates = $resolver->duplicateCandidates($result);
+        $duplicateFlag = $result['duplicate_flag'] ?? null;
+        if (is_array($duplicateFlag) && $duplicateCandidates) {
+            $indexedEntries = collect();
+            if (($result['indexing'] ?? null) && trim((string) $fileTitle) !== '') {
+                $indexedEntries->push([
+                    'file_number' => trim((string) $result['file_number']),
+                    'file_title'  => trim((string) $fileTitle),
+                ]);
+            }
+            $indexedEntries = $indexedEntries
+                ->merge(collect($duplicateCandidates)
+                    ->filter(fn ($candidate) => ($candidate['source'] ?? null) === FileLocationResolver::SOURCE_INDEXED)
+                    ->map(fn ($candidate) => [
+                        'file_number' => trim((string) ($candidate['file_number'] ?? '')),
+                        'file_title'  => trim((string) ($candidate['holder'] ?? '')) ?: null,
+                    ]))
+                ->filter(fn ($entry) => $entry['file_number'] !== '' && $entry['file_title'] !== null)
+                ->values();
+
+            if ($indexedEntries->isNotEmpty()) {
+                $duplicateFlag['entries'] = $indexedEntries
+                    ->merge(collect($duplicateFlag['entries'] ?? []))
+                    ->unique(fn ($entry) => strtoupper($entry['file_number']) . '|' . strtoupper((string) ($entry['file_title'] ?? '')))
+                    ->values()
+                    ->all();
+            }
+        }
+
         // Resolve the receiving officer's person name. Prefer the linked user account
         // (authoritative) over the free-text column, which sometimes holds an office
         // label rather than a person's name.
@@ -148,13 +181,13 @@ class MobileFileSearchController extends Controller
                 'dciv_related_files'       => $dcivInfo['related_files'],
                 // Duplicate-registry flag (CofO collected/ready, duplicate, temp, W/C/R) when
                 // the file number is registered in duplicate_fileno — null otherwise.
-                'duplicate_flag'           => $result['duplicate_flag'] ?? null,
+                'duplicate_flag'           => $duplicateFlag,
                 // Every physical file registered under this number, but ONLY when the
                 // number is in BOTH file_indexings and duplicate_fileno. Non-empty means
                 // the user must pick the exact file before the request can go out.
                 // Kept in step with the web Quick Search payload, which renders the
                 // identical selection list from this same key.
-                'duplicate_candidates'     => $resolver->duplicateCandidates($result),
+                'duplicate_candidates'     => $duplicateCandidates,
                 // Ownership history — the chronological chain of holders derived from the
                 // cross-table property timeline (file_history/CofO/pra/deeds). Rendered as a
                 // vertical timeline in the Holders panel. Only surfaced for indexed files: a
