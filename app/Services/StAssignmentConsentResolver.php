@@ -41,6 +41,9 @@ class StAssignmentConsentResolver
         'ST Fragmentation',
     ];
 
+    /** File numbers the last usage lookup searched — reported on the payload for diagnosis. */
+    private array $lastSearchedFilenos = [];
+
     /**
      * "ST Assignment" (the consent / deeds-applications label) and
      * "ST Assignment (Transfer of Title)" (the instrument_type label used
@@ -296,6 +299,15 @@ class StAssignmentConsentResolver
             // deed_registrations, not instrument_capture.
             'is_used'                 => $usedBy !== null,
             'used_by'                 => $usedBy,
+
+            // Diagnosis aid: which file numbers the usage lookup actually searched.
+            // Visible in the browser console via debugConsents(), so a wrong key is
+            // obvious instead of inferred. Safe to drop once this is settled.
+            'debug'                   => [
+                'searched_filenos' => $this->lastSearchedFilenos,
+                'matched_unit'     => $stFile->fileno ?? null,
+                'mother_id'        => $memo->mother_id,
+            ],
         ];
     }
 
@@ -314,6 +326,12 @@ class StAssignmentConsentResolver
             : $this->unitFileNumbers($memo->mother_id);
 
         $filenos = array_values(array_filter($filenos, fn ($f) => trim((string) $f) !== ''));
+
+        // Surfaced on the consent payload (and in the browser console via
+        // debugConsents) so a "should be spent but isn't" report shows which file
+        // numbers were actually searched, instead of needing a guess.
+        $this->lastSearchedFilenos = $filenos;
+
         if (empty($filenos)) {
             return null;
         }

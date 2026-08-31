@@ -3331,6 +3331,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 duplicateCheckState.propertyData = data.pra;
                 duplicateCheckState.consentApp = data.consent_app || null;
                 duplicateCheckState.consentApps = Array.isArray(data.consent_apps) ? data.consent_apps : [];
+                debugConsents("server response", duplicateCheckState.consentApps);
                 // If there is no separate prior record, reuse the duplicate record itself
                 // so Create New can still auto-fill from instrument_capture data.
                 duplicateCheckState.priorInstrument = data.prior_instrument || data.instrument || null;
@@ -3370,6 +3371,7 @@ document.addEventListener('DOMContentLoaded', function () {
             } else {
                 console.log('checkDuplicate: No duplicate exists.');
                 duplicateCheckState.consentApps = Array.isArray(data.consent_apps) ? data.consent_apps : [];
+                debugConsents("server response", duplicateCheckState.consentApps);
 
                 // Auto-fill from Consent Application and/or prior instrument record
                 if (!duplicateCheckState.isUpdateMode) {
@@ -3502,7 +3504,43 @@ document.addEventListener('DOMContentLoaded', function () {
      * a standalone chooser when a file has more than one consent but no
      * duplicate instrument to warn about.
      */
+    /**
+     * Print what the server actually said about each consent on the file.
+     *
+     * The picker greys a consent out purely on `is_used`, which the server
+     * computes — so when a consent that should be spent is still clickable, this
+     * shows whether the server said `is_used: false` (a backend/data problem) or
+     * said true and the UI ignored it (a frontend problem).
+     *
+     * Open DevTools → Console and look for "ST CONSENT DEBUG".
+     */
+    function debugConsents(where, consents) {
+        try {
+            const rows = (consents || []).map(c => ({
+                id: c.id,
+                consent_type: c.consent_type,
+                is_used: c.is_used,
+                is_synthetic: c.is_synthetic,
+                matches_type: c.matches_type,
+                unit_file_number: c.unit_file_number || '',
+                spent_by: c.used_by
+                    ? `${c.used_by.instrument_type} #${c.used_by.registration_number} (${c.used_by.file_number || ''})`
+                    : null,
+                // Which file numbers the server searched for a registration.
+                searched: c.debug ? (c.debug.searched_filenos || []).join(', ') : ''
+            }));
+            console.log(`%cST CONSENT DEBUG [${where}] — ${rows.length} consent(s)`,
+                'background:#4c1d95;color:#fff;padding:2px 6px;border-radius:3px;font-weight:bold');
+            if (console.table) console.table(rows); else console.log(rows);
+            console.log('ST CONSENT DEBUG raw payload:', JSON.parse(JSON.stringify(consents || [])));
+        } catch (err) {
+            console.warn('ST CONSENT DEBUG failed:', err);
+        }
+    }
+    window.debugConsents = debugConsents;
+
     function buildConsentOptionsHtml(consents, options = {}) {
+        debugConsents('picker render', consents);
         if (!Array.isArray(consents) || consents.length === 0) return '';
 
         const { withDivider = true, appliedId = null } = options;
