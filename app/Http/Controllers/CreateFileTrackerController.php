@@ -3240,6 +3240,19 @@ HTML;
             $tracker->receiving_officer_name
         ));
 
+        // The KANGIS sheet takes its holder from the latest movement entry when the
+        // tracker-level officer is blank, so those officers need photos too. One
+        // primed query covers the whole log; ids with no photo are dropped.
+        $logOfficerIds = collect($tracker->movement_log ?: [])
+            ->pluck('receiving_officer_id')
+            ->filter()
+            ->unique();
+        \App\Support\UserPhoto::prime($logOfficerIds);
+        $tracker->setAttribute('officer_photos', $logOfficerIds
+            ->mapWithKeys(fn ($id) => [(string) $id => \App\Support\UserPhoto::forId($id)])
+            ->filter()
+            ->all());
+
         // Sync and override file_title with the correct title from file_indexings
         $indexingTitle = $this->getFileIndexingTitle($tracker->file_number);
         if ($indexingTitle !== null) {

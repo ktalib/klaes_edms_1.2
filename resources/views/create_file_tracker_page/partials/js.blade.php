@@ -4487,6 +4487,9 @@
             originRegistry: tracker.origin_registry ?? tracker.originRegistry ?? null,
             receivingOfficerName: receivingOfficerName || null,
             receivingOfficerPhoto: tracker.receiving_officer_photo ?? tracker.receivingOfficerPhoto ?? null,
+            // {officerId: photoUrl} for everyone named in the movement log — the KANGIS
+            // sheet resolves its holder from the latest entry, not the tracker row.
+            officerPhotos: tracker.officer_photos ?? tracker.officerPhotos ?? {},
             rackShelfLocation,
             loggedOutAt: tracker.logged_out_at ?? null,
             durationWithHolder: tracker.duration_with_holder ?? null,
@@ -8746,6 +8749,21 @@
         const originRegistryValue = escapeHtml(originOfficeName || '-');
         const rackShelfValue = escapeHtml(tracker.rackShelfLocation || tracker.rackShelf || tracker.shelf_location || '-');
 
+        // Holder photo, resolved in the same order as the name above: the tracker's own
+        // officer when it names one, otherwise whoever the latest movement entry records.
+        const kangisHolderPhotoUrl = (
+            tracker.receivingOfficerName || tracker.receiving_officer_name || tracker.receivingOfficer?.name
+        )
+            ? (tracker.receivingOfficerPhoto || '')
+            : ((tracker.officerPhotos || {})[String(kangisLatestEntry?.receivingOfficerId ?? '')] || '');
+        const kangisHolderPhotoBlock = kangisHolderPhotoUrl
+            ? `<div class="holder-photo-wrap">
+                   <img src="${escapeHtml(kangisHolderPhotoUrl)}" alt="${receivingOfficerValue}"
+                        onerror="this.parentNode.style.display='none'">
+                   <span>Holder</span>
+               </div>`
+            : '';
+
         // Request Purpose / Timeline / Expected Return Date — same tracker-level fields
         // (one per out-cycle) used by the standard tracking sheet. The timeline freezes to
         // "Returned" once the file is logged back in, so a completed file never keeps
@@ -8800,8 +8818,14 @@
                         /* Equal flanks so the centre titles sit on the true page centre.
                            The right flank (QR + registry logo) is ~121px wide against a
                            58px logo on the left, which otherwise drags the titles left. */
-                        .header > .logo-wrap:first-child { flex: 0 0 130px; justify-content: flex-start; }
-                        .header > .header-right { flex: 0 0 130px; justify-content: flex-end; }
+                        .header > .logo-wrap:first-child { flex: 0 0 190px; justify-content: flex-start; }
+                        .header > .header-right { flex: 0 0 190px; justify-content: flex-end; }
+                        /* Passport photo of the officer holding the file, in the right flank
+                           beside the QR and registry logo. Both flanks were widened together
+                           so the centre titles stay on the true page centre. */
+                        .holder-photo-wrap { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 0 0 auto; }
+                        .holder-photo-wrap img { width: 58px; height: 58px; object-fit: cover; border: 1px solid #cbd5e1; border-radius: 5px; display: block; }
+                        .holder-photo-wrap span { font-size: 0.45rem; color: #6b7280; text-transform: uppercase; letter-spacing: .03em; }
                         .qr-wrap img { width: 55px; height: 55px; display: block; }
 
                         /* Meta bar */
@@ -8899,6 +8923,7 @@
                                 <h3>File Tracking Sheet</h3>
                             </div>
                             <div class="header-right">
+                                ${kangisHolderPhotoBlock}
                                 <div class="qr-wrap">
                                     <img src="${trackingQrUrl}" alt="Tracking QR">
                                 </div>
