@@ -1086,12 +1086,72 @@ function toggleBatchMode() {
 
 var _gbmItems = [];
 
-function openGroupBatchModal() {
+/**
+ * Register a MOTHER aggregate row (id "mother_assign_<id>" / "mother_cofo_<id>").
+ *
+ * That row is not a record — it stands for the N units under the mother that are
+ * still pending. Sending its synthetic id to the single-register endpoint asks the
+ * database for `instrument_registration.id = 'mother_assign_1028'`, which fails as
+ * an int conversion. The row means "register the pending units", so it opens the
+ * batch modal over exactly those units instead.
+ */
+window.openAggregateRegistration = function(id) {
+    var rec = (window.serverCofoData || []).find(function(x) { return String(x.id) === String(id); });
+
+    if (!rec || !rec._isAggregate) return false;
+
+    var pending = rec._pendingUnits || [];
+    if (!pending.length) {
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                icon: 'info',
+                title: 'Nothing left to register',
+                text: 'Every unit under ' + (rec.fileno || 'this application') + ' has already been registered.'
+            });
+        }
+        return true;
+    }
+
+    var isCofO = rec._aggType === 'sectional_cofo';
+    var items = pending.map(function(unit) {
+        return {
+            application_id:      unit.subapp_id + '_' + rec._aggType,
+            fileno:              unit.fileno || '-',
+            instrument_type:     rec.instrument_type || '',
+            grantor:             isCofO ? (rec.Grantor || 'Kano State Government') : (unit.applicant || ''),
+            grantee:             unit.applicant || '',
+            status:              'pending',
+            lga:                 '',
+            district:            '',
+            plotNumber:          '',
+            size:                '',
+            propertyDescription: '',
+            duration:            '',
+            file_no:             unit.fileno || '',
+            op_type:             ''
+        };
+    });
+
+    openGroupBatchModal(items);
+    return true;
+};
+
+function openGroupBatchModal(presetItems) {
+    // A caller may hand the items in directly (see openAggregateRegistration),
+    // in which case there is nothing to collect from checkboxes.
+    var usePreset = Array.isArray(presetItems) && presetItems.length > 0;
+
     var checkedBoxes   = document.querySelectorAll('.main-table-checkbox:checked:not([disabled])');
     var stCheckedBoxes = document.querySelectorAll('.st-batch-checkbox:checked:not([disabled])');
-    if (!checkedBoxes.length && !stCheckedBoxes.length) return;
+    if (!usePreset && !checkedBoxes.length && !stCheckedBoxes.length) return;
 
     _gbmItems = [];
+
+    if (usePreset) {
+        _gbmItems = presetItems.slice();
+        checkedBoxes   = [];
+        stCheckedBoxes = [];
+    }
 
     // Collect main-table instruments (aggregate records expand into individual units)
     checkedBoxes.forEach(function(cb) {

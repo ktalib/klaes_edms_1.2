@@ -396,7 +396,11 @@
                     @endif
                 </button>
               </td>
-              <td class="px-6 py-4">
+              {{-- data-filter is what DataTables filters and sorts this column on,
+                   independent of what the cell displays. Keeps the "All Consent
+                   Types" dropdown and its ^exact$ search tied to the consent type
+                   itself rather than to the cell's rendered text. --}}
+              <td class="px-6 py-4" data-filter="{{ $application->consent_type }}" data-search="{{ $application->consent_type }}">
                 @php
                 $badgeClass = match($application->consent_type) {
                 'Assignment' => 'bg-blue-50 text-blue-700 border-blue-100',
@@ -413,35 +417,6 @@
                   {{ $application->consent_type }}
                 </span>
 
-                @if($application->is_st_assignment ?? false)
-                  {{-- Until a unit's FIRST ST Assignment is registered, none of its
-                       consents can be captured on the instrument form. Show that here,
-                       or the block on the capture form has no explanation on screen. --}}
-                  @php
-                      $faStatus = $application->first_assignment_status ?? 'unknown';
-                      $faRegistered = $application->units_registered ?? 0;
-                      $faTotal = $application->units_total ?? 0;
-                  @endphp
-                  @if($faStatus === 'not_registered')
-                    <span class="mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap inline-flex items-center gap-1 bg-rose-50 text-rose-700 border-rose-200"
-                          title="No unit on this application has a registered ST Assignment yet. Consents on these units cannot be used to register a deed until it is registered.">
-                      <i data-lucide="alert-triangle" class="h-3 w-3"></i>
-                      1st Assignment Not Registered
-                    </span>
-                  @elseif($faStatus === 'partial')
-                    <span class="mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap inline-flex items-center gap-1 bg-amber-50 text-amber-700 border-amber-200"
-                          title="{{ $faRegistered }} of {{ $faTotal }} units have a registered ST Assignment. The remaining units stay locked on the capture form.">
-                      <i data-lucide="clock" class="h-3 w-3"></i>
-                      1st Assignment {{ $faRegistered }}/{{ $faTotal }}
-                    </span>
-                  @elseif($faStatus === 'registered')
-                    <span class="mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border-emerald-200"
-                          title="Every unit on this application has a registered ST Assignment.">
-                      <i data-lucide="check" class="h-3 w-3"></i>
-                      1st Assignment Registered
-                    </span>
-                  @endif
-                @endif
               </td>
               @php
                   $titles = collect([$application->applicant_name]);
@@ -693,14 +668,30 @@
                 api.column(consentTypeColIndex).search(val ? '^' + val + '$' : '', true, false).draw();
               });
 
-            // Populate the select with unique values from the Consent Type column
-            api.column(consentTypeColIndex).data().unique().sort().each(function (d, j) {
-              const tempDiv = document.createElement('div');
-              tempDiv.innerHTML = d;
-              const text = tempDiv.textContent || tempDiv.innerText || "";
-              if (text.trim() !== "") {
-                select.append('<option value="' + text.trim() + '">' + text.trim() + '</option>');
+            // Populate the select from data-filter rather than the cell text, so
+            // anything added to the cell's markup later (a second badge, an icon)
+            // cannot leak into the options or break the ^exact$ column search.
+            const seenTypes = [];
+            api.column(consentTypeColIndex).nodes().each(function (cell) {
+              let value = cell.getAttribute('data-filter');
+
+              if (value === null) {
+                // Fallback for any row without the attribute: take the consent
+                // badge only, never the whole cell.
+                const badge = cell.querySelector('span');
+                value = badge ? (badge.textContent || '') : (cell.textContent || '');
               }
+
+              value = (value || '').trim();
+              if (value !== '' && seenTypes.indexOf(value) === -1) {
+                seenTypes.push(value);
+              }
+            });
+
+            seenTypes.sort().forEach(function (value) {
+              select.append(
+                jQuery('<option></option>').attr('value', value).text(value)
+              );
             });
           }
         });

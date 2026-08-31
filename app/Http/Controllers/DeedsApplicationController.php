@@ -7,7 +7,6 @@ use App\Models\DeedsApplication;
 use App\Models\LandUseType;
 use App\Models\Purpose;
 use App\Models\StreetName;
-use App\Services\StAssignmentConsentResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -156,53 +155,12 @@ class DeedsApplicationController extends Controller
             $stApp->setAttribute('created_by', strtoupper(trim("{$memo->user_first_name} {$memo->user_last_name}")) ?: $memo->created_by);
             $stApp->setAttribute('st_units', $unitsData->toArray());
             $stApp->setAttribute('is_st_assignment', true);
-            // Filled in below, once every unit on the page can be checked in one go.
-            $stApp->setAttribute('unit_filenos', $unitsData->pluck('unit_fileno')->filter()->values()->all());
             $stApp->setAttribute('mother_party1', $party1);
             $stApp->setAttribute('memo_id', $memo->memo_id);
             
             $applications->push($stApp);
         }
         
-        // Whether each ST Assignment's units have had their FIRST ST Assignment
-        // registered. Until that is done the unit's consents cannot be captured
-        // against (see InstrumentController::checkDuplicate), so the table has to
-        // show it — otherwise the block on the capture form has no explanation
-        // anywhere the officer can see. One batched lookup for the whole page.
-        $stRows = $applications->filter(fn ($app) => $app->is_st_assignment ?? false);
-
-        if ($stRows->isNotEmpty()) {
-            $allUnitFilenos = $stRows
-                ->flatMap(fn ($app) => $app->unit_filenos ?? [])
-                ->filter()
-                ->unique()
-                ->values()
-                ->all();
-
-            $registeredUnits = (new StAssignmentConsentResolver())->registeredUnitFilenos($allUnitFilenos);
-
-            foreach ($stRows as $app) {
-                $unitFilenos = $app->unit_filenos ?? [];
-                $total       = count($unitFilenos);
-                $registered  = 0;
-
-                foreach ($unitFilenos as $unitFileno) {
-                    if (isset($registeredUnits[trim((string) $unitFileno)])) {
-                        $registered++;
-                    }
-                }
-
-                $app->setAttribute('units_total', $total);
-                $app->setAttribute('units_registered', $registered);
-                $app->setAttribute('first_assignment_status', match (true) {
-                    $total === 0            => 'unknown',
-                    $registered === 0       => 'not_registered',
-                    $registered < $total    => 'partial',
-                    default                 => 'registered',
-                });
-            }
-        }
-
         // Re-sort the combined collection by created_at desc
         $applications = $applications->sortByDesc('created_at')->values();
 

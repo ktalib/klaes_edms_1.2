@@ -328,65 +328,6 @@ class StAssignmentConsentResolver
     }
 
     /**
-     * Of the given unit file numbers, which ones already carry a registered first
-     * ST Assignment (or Fragmentation)? Batched — two queries for the whole set —
-     * so a listing page can ask about hundreds of units without an N+1.
-     *
-     * @param  array<int, string> $filenos
-     * @return array<string, true> keyed by fileno, for O(1) lookup
-     */
-    public function registeredUnitFilenos(array $filenos): array
-    {
-        $filenos = array_values(array_filter(
-            array_map(fn ($f) => trim((string) $f), $filenos),
-            fn ($f) => $f !== ''
-        ));
-
-        if (empty($filenos)) {
-            return [];
-        }
-
-        $registered = [];
-
-        $deedRows = DB::connection('sqlsrv')->table('deed_registrations')
-            ->whereIn('fileno', $filenos)
-            ->where('instrument_type', 'like', 'ST %')
-            ->where('status', 'registered')
-            ->where(fn ($q) => $q->where('is_deleted', 0)->orWhereNull('is_deleted'))
-            ->get(['fileno', 'instrument_type']);
-
-        foreach ($deedRows as $row) {
-            if (self::isConsumingInstrument($row->instrument_type)) {
-                $registered[trim((string) $row->fileno)] = true;
-            }
-        }
-
-        $legacyRows = DB::connection('sqlsrv')->table('registered_instruments')
-            ->where(function ($q) use ($filenos) {
-                $q->whereIn('StFileNo', $filenos)
-                    ->orWhereIn('fileno', $filenos)
-                    ->orWhereIn('MLSFileNo', $filenos);
-            })
-            ->where('instrument_type', 'like', 'ST %')
-            ->where('status', 'registered')
-            ->get(['StFileNo', 'fileno', 'MLSFileNo', 'instrument_type']);
-
-        foreach ($legacyRows as $row) {
-            if (!self::isConsumingInstrument($row->instrument_type)) {
-                continue;
-            }
-            foreach ([$row->StFileNo, $row->fileno, $row->MLSFileNo] as $candidate) {
-                $candidate = trim((string) $candidate);
-                if ($candidate !== '' && in_array($candidate, $filenos, true)) {
-                    $registered[$candidate] = true;
-                }
-            }
-        }
-
-        return $registered;
-    }
-
-    /**
      * The registration that already spent this memo, shaped like the `used_by`
      * payload the consent picker renders — or null while the memo is still free.
      *

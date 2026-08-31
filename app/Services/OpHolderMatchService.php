@@ -160,6 +160,7 @@ class OpHolderMatchService
 
         $rows = $this->chain($fileNumber, $indexing->prop_id ?? null);
         $rows = $this->markSystemGenerated($rows, $fileNumber);
+        $rows = $this->nameCommissioningFromIndexing($rows, $fileNumber, $indexedName);
         $base['timeline'] = $rows;
 
         if ($indexedName === '') {
@@ -564,6 +565,67 @@ class OpHolderMatchService
         $op['root_of_title'] = $op['root_of_title'] ?: $op['type'];
 
         return array_values(array_merge([$op], $rows));
+    }
+
+    /**
+     * The File Commissioning row carries the name the file is INDEXED under.
+     *
+     * The report engine reads that row's Party 2 off the instrument that opened the
+     * file (LegalSearchService::COMMISSIONING_HOLDER_SOURCES — an OP contributes its
+     * grantee) and only falls back to the file title. On a file in exactly the state
+     * this card exists for, that prints the OP holder twice: RES-2022-1447 shows the
+     * OP granted to Lamash and then "commissioned for" Lamash, while the file itself
+     * is indexed to YAHAYA KARAMI SANI. The card then reads as though only File
+     * Indexing were out of step, when the point being made is that the file is held
+     * in one name and the chain ends in another.
+     *
+     * So on this card the commissioning row shows the name on the file. The OP row
+     * above keeps the OP's grantee, which is what keeps the two names — and the gap
+     * between them — visible.
+     *
+     * Only the searched file's own commissioning rows: an ST, DCIV or successor
+     * commissioning row belongs to a different file and keeps whatever the engine
+     * gave it. "(T)" is ignored in that comparison so the Temporary File row, which
+     * carries the same holder and the same file under its temporary number, is
+     * renamed with it.
+     *
+     * Display only. A commissioning row is neither an OP nor an ownership-changing
+     * dealing (TitleHolderResolver decides the latter), so no verdict below is read
+     * from the name written here.
+     *
+     * Applied to this card only — the same row on the printed Legal Search report,
+     * the PHS portal and the online report is the engine's to name.
+     *
+     * @param  array<int,array<string,mixed>>  $rows
+     * @return array<int,array<string,mixed>>
+     */
+    private function nameCommissioningFromIndexing(array $rows, string $fileNumber, string $indexedName): array
+    {
+        if (trim($indexedName) === '') {
+            return $rows;
+        }
+
+        $key = fn ($v) => strtoupper(preg_replace('/[\s\-_\/]+|\(\s*T\s*\)$/i', '', trim((string) $v)));
+        $target = $key($fileNumber);
+
+        foreach ($rows as $i => $row) {
+            $source = trim((string) ($row['source'] ?? ''));
+
+            if (! in_array($source, ['File Commissioning', 'Temporary File'], true)) {
+                continue;
+            }
+
+            // A row with no file number of its own is the searched file's — the
+            // engine only ever emits these two for the file being searched.
+            $rowFileNo = trim((string) ($row['file_no'] ?? ''));
+            if ($rowFileNo !== '' && $target !== '' && $key($rowFileNo) !== $target) {
+                continue;
+            }
+
+            $rows[$i]['party_2'] = trim($indexedName);
+        }
+
+        return $rows;
     }
 
     /** @return array<int,array<string,mixed>> */

@@ -2221,7 +2221,10 @@ class InstrumentRegistrationController extends Controller
                     }
                 }
 
-                if (!isset($sourceRecord)) {
+                // Both id columns are ints. A composite id that reached here
+                // unrecognised (e.g. "mother_assign_1028") would otherwise be
+                // compared against them and surface as a raw SQL conversion error.
+                if (!isset($sourceRecord) && is_numeric($applicationId)) {
                     $sourceRecord = DB::connection('sqlsrv')->table('instrument_registration')->where('id', $applicationId)->first();
                     if ($sourceRecord) {
                         $sourceTable = 'instrument_registration';
@@ -2383,7 +2386,10 @@ class InstrumentRegistrationController extends Controller
                     }
                 }
 
-                if (!isset($sourceRecord)) {
+                // Both id columns are ints. A composite id that reached here
+                // unrecognised (e.g. "mother_assign_1028") would otherwise be
+                // compared against them and surface as a raw SQL conversion error.
+                if (!isset($sourceRecord) && is_numeric($applicationId)) {
                     $sourceRecord = DB::connection('sqlsrv')->table('instrument_registration')->where('id', $applicationId)->first();
                     if ($sourceRecord) {
                         $sourceTable = 'instrument_registration';
@@ -3724,7 +3730,10 @@ class InstrumentRegistrationController extends Controller
                     }
                 }
 
-                if (!isset($sourceRecord)) {
+                // Both id columns are ints. A composite id that reached here
+                // unrecognised (e.g. "mother_assign_1028") would otherwise be
+                // compared against them and surface as a raw SQL conversion error.
+                if (!isset($sourceRecord) && is_numeric($applicationId)) {
                     $sourceRecord = DB::connection('sqlsrv')->table('instrument_registration')->where('id', $applicationId)->first();
                     if ($sourceRecord) {
                         $sourceTable = 'instrument_registration';

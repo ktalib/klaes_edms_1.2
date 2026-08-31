@@ -864,6 +864,16 @@ function openSingleRegisterModalWithData(id) {
   // Convert id to string to ensure consistent comparison
   id = String(id);
 
+  // A MOTHER aggregate row ("mother_assign_<id>" / "mother_cofo_<id>") is not a
+  // record — it stands for the pending units beneath it. Hand it to the batch
+  // flow, which knows how to expand it; passing its synthetic id on to the
+  // single-register endpoint fails as an int conversion in SQL Server.
+  if (typeof window.openAggregateRegistration === 'function'
+      && window.openAggregateRegistration(id)) {
+    Swal.close();
+    return;
+  }
+
   // Find the application by id - first try cofoData, then serverCofoData
   let application = cofoData.find(item => String(item.id) === id);
 

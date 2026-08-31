@@ -76,7 +76,7 @@
                 btn.classList.toggle('opacity-40', !!on);
                 btn.classList.toggle('cursor-not-allowed', !!on);
                 if (on) {
-                    btn.setAttribute('title', 'Press Match first — the Occupancy Permit names a different holder and no dealing on this file explains the change.');
+                    btn.setAttribute('title', 'Press Match first — the Occupancy Permit has a different name and no dealing on this file explains the change.');
                 } else {
                     btn.removeAttribute('title');
                 }
@@ -177,10 +177,10 @@
             // row keeps its red or green tone, which is what ties the badge to it.
             var verdict = '';
             if (applies) {
-                verdict = '<div class="mb-2"><span class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wide bg-rose-600 text-white">'
+                verdict = '<div class="mb-2"><span class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold tracking-wide bg-rose-600 text-white">'
                     + '<i data-lucide="alert-triangle" class="h-3 w-3"></i> ToT Detected (Unmatched OP)</span></div>';
             } else if (state.matched) {
-                verdict = '<div class="mb-2"><span class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wide bg-emerald-600 text-white">'
+                verdict = '<div class="mb-2"><span class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold tracking-wide bg-emerald-600 text-white">'
                     + '<i data-lucide="check" class="h-3 w-3"></i> Matched</span></div>';
             }
 
@@ -188,7 +188,7 @@
                 ? '<div class="flex items-start gap-3">'
                 +   '<span class="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700"><i data-lucide="alert-triangle" class="h-4 w-4"></i></span>'
                 +   '<div>'
-                +     '<h3 class="text-sm font-bold text-amber-900">The Occupancy Permit names a different holder</h3>'
+                +     '<h3 class="text-sm font-bold text-amber-900">The Occupancy Permit has a different name</h3>'
                 +     '<p class="mt-0.5 text-xs text-amber-800">' + esc(state.reason) + '</p>'
                 +   '</div>'
                 + '</div>'
@@ -435,7 +435,7 @@
                 Swal.fire({
                     icon: 'warning',
                     title: 'Match this file first',
-                    text: 'The Occupancy Permit names a different holder and no transfer on the file explains the change. '
+                    text: 'The Occupancy Permit has a different name and no transfer on the file explains the change. '
                         + 'Press Match to record it, then save.',
                     confirmButtonColor: '#d97706'
                 }).then(function () {

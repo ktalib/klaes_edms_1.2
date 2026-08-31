@@ -3524,19 +3524,45 @@
 
         menu.classList.remove('hidden');
 
+        // Measure the menu at its natural height: a cap left over from a previous
+        // opening near the foot of the page would otherwise be read back as the
+        // menu's real height and never lifted again.
+        menu.style.maxHeight = '';
+        menu.style.overflowY = '';
+
         const btn = trigger.getBoundingClientRect();
         const box = menu.getBoundingClientRect();
         const gap = 6;
+        const margin = 8;
 
-        // Flip above the trigger when there is not enough room below, and keep the
-        // right edge on screen.
-        const below = window.innerHeight - btn.bottom;
-        const top = below < box.height + gap && btn.top > box.height + gap
-            ? btn.top - box.height - gap
-            : btn.bottom + gap;
+        // The whole menu must be readable — the last item is Delete, and a menu cut
+        // off by the foot of the window hides actions people cannot know are there.
+        const roomBelow = window.innerHeight - btn.bottom - gap - margin;
+        const roomAbove = btn.top - gap - margin;
+        const roomTotal = window.innerHeight - margin * 2;
 
-        menu.style.top = Math.max(8, top) + 'px';
-        menu.style.left = Math.max(8, Math.min(btn.right - box.width, window.innerWidth - box.width - 8)) + 'px';
+        let height = box.height;
+        if (height > roomTotal) {
+            // Taller than the window itself (a short window, or a row with every
+            // action live): fill the window and let the menu scroll.
+            height = roomTotal;
+            menu.style.maxHeight = height + 'px';
+            menu.style.overflowY = 'auto';
+        }
+
+        let top;
+        if (height <= roomBelow) {
+            top = btn.bottom + gap;              // the usual place, under the trigger
+        } else if (height <= roomAbove) {
+            top = btn.top - height - gap;        // flipped above it
+        } else {
+            // Neither side has room for the full menu, so drop the anchoring rather
+            // than the items: pin the menu inside the window, next to its row.
+            top = Math.min(btn.bottom + gap, window.innerHeight - margin - height);
+        }
+
+        menu.style.top = Math.max(margin, top) + 'px';
+        menu.style.left = Math.max(margin, Math.min(btn.right - box.width, window.innerWidth - box.width - margin)) + 'px';
     };
 
     function closeRowMenus() {
@@ -3550,8 +3576,12 @@
     });
 
     // A fixed menu does not travel with the page, so close it rather than let it
-    // hang detached from its row.
-    window.addEventListener('scroll', closeRowMenus, true);
+    // hang detached from its row. Scrolling *inside* the menu — which a menu capped
+    // to the window height does — is not the page moving, so it must not close it.
+    window.addEventListener('scroll', function (e) {
+        if (e.target instanceof Element && e.target.closest('[id^="row-menu-"]')) return;
+        closeRowMenus();
+    }, true);
     window.addEventListener('resize', closeRowMenus);
 
     /**
