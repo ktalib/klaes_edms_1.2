@@ -89,8 +89,14 @@ class CreateFileTrackerController extends Controller
             ->table('users')
             ->where('is_active', 1)
             ->where('staff_type_category', 'MLPP')
-            ->select('id', 'first_name', 'last_name', 'department_id')
-            ->get();
+            ->select('id', 'first_name', 'last_name', 'department_id', 'profile', 'passport_photo_path')
+            ->get()
+            // Read through the query builder, so the User model's profile_url accessor
+            // is not available — resolve the photo URL for each option here instead.
+            ->map(function ($officer) {
+                $officer->photo_url = \App\Support\UserPhoto::url($officer->profile, $officer->passport_photo_path);
+                return $officer;
+            });
 
         $user = Auth::user();
         $currentUserPayload = [
@@ -976,6 +982,10 @@ class CreateFileTrackerController extends Controller
             // can answer DIIT questions) without a query per row.
             app(FileCommissioningTrackingService::class)->prime($results->pluck('file_number'));
 
+            // Same idea for the holder photos printed on the Tracking Sheet: one query
+            // for the page instead of one per row.
+            \App\Support\UserPhoto::prime($results->pluck('receiving_officer_id'));
+
             $collection = $results->map(function ($tracker) {
                 return $this->decorateTrackerForResponse($tracker);
             });
@@ -1790,9 +1800,13 @@ HTML;
             ->table('users')
             ->where('is_active', 1)
             ->where('staff_type_category', 'MLPP')
-            ->select('id', 'first_name', 'last_name', 'department_id', 'rank')
+            ->select('id', 'first_name', 'last_name', 'department_id', 'rank', 'profile', 'passport_photo_path')
             ->orderBy('first_name')
-            ->get();
+            ->get()
+            ->map(function ($officer) {
+                $officer->photo_url = \App\Support\UserPhoto::url($officer->profile, $officer->passport_photo_path);
+                return $officer;
+            });
 
         $offices = DB::connection('sqlsrv')
             ->table('offices')
@@ -2780,6 +2794,15 @@ HTML;
             'file_tracker_id'  => $result['file_tracker_id'],
             'file_title'       => $displayTitle,
             'receiving_officer_name' => $tracker->receiving_officer_name ?? null,
+            // Photo of the officer physically holding the file. Behind $withCandidates
+            // because only the Quick Search paths render it — the paginated tracker list
+            // calls this presenter per row and would turn it into an N+1.
+            'receiving_officer_photo' => $withCandidates
+                ? \App\Support\UserPhoto::forIdOrName(
+                    $tracker->receiving_officer_id ?? null,
+                    $tracker->receiving_officer_name ?? null
+                )
+                : null,
             'receiving_department'   => $receivingDepartment,
             'tracking_id'      => $tracker->tracking_id ?? null,
             // DCIV investigation flag: true when this file is either flagged
@@ -3209,6 +3232,13 @@ HTML;
         $tracker->setAttribute('current_movement', $tracker->getCurrentMovement());
 
         $tracker->setAttribute('rack_shelf_location', $this->getRackShelfLocation($tracker->file_number));
+        // Passport photo of the officer currently holding the file — printed on the
+        // File Tracking Sheet beside the ministry header. UserPhoto memoises per
+        // request, so the same officer across many rows costs one query.
+        $tracker->setAttribute('receiving_officer_photo', \App\Support\UserPhoto::forIdOrName(
+            $tracker->receiving_officer_id,
+            $tracker->receiving_officer_name
+        ));
 
         // Sync and override file_title with the correct title from file_indexings
         $indexingTitle = $this->getFileIndexingTitle($tracker->file_number);
@@ -5032,6 +5062,7 @@ HTML;
 
         // Fetch officer's rank from User table if receiving_officer_id is present
         $officerRank = '—';
+        $officer = null;
         if (!empty($tracker->receiving_officer_id)) {
             $officer = \App\Models\User::find($tracker->receiving_officer_id);
             if ($officer && !empty($officer->rank)) {
@@ -5039,7 +5070,13 @@ HTML;
             }
         }
 
-        return view('create_file_tracker_page.file_request_sheet', compact('tracker', 'officerRank'));
+        // The requester's passport photo, printed beside their details on the sheet.
+        // Falls back to a name lookup for older rows that stored no officer id.
+        $officerPhoto = $officer
+            ? $officer->profile_url
+            : \App\Support\UserPhoto::forName($tracker->receiving_officer_name ?? null);
+
+        return view('create_file_tracker_page.file_request_sheet', compact('tracker', 'officerRank', 'officerPhoto'));
     }
 
     /**

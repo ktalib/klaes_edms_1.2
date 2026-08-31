@@ -187,37 +187,37 @@
             </div>
           </div>
 
-          <!-- Table View Results -->
-          <div id="table-results" class="hidden border rounded-md overflow-hidden">
+          {{-- ── Table View ───────────────────────────────────────────────
+               Nine columns, not sixteen. The five file-number variants (ST Unit,
+               New FileNo, MLS, KANGIS, New KANGIS) were their own columns and are
+               "-" on almost every row, so the table scrolled sideways past the
+               parties and the instrument — the two things a searcher is actually
+               reading. They now collapse into the one File Number cell, which
+               shows the alternates as chips only on the rows that have them. --}}
+          <div id="table-results" class="hidden border border-gray-200 rounded-lg overflow-hidden">
             <div class="overflow-x-auto overflow-y-auto" style="max-height: 50vh;">
-              <table class="w-full min-w-[1000px]">
-                <thead class="bg-gray-100">
-                  <tr>
-                    <th>ST Unit FileNo</th>
-                    <th>New FileNo</th>
-                    <th>MLS File No</th>
-                    <th>KANGIS File No</th>
-                    <th>New KANGIS</th>
-                    <th>File No</th>
-                    <th>Party 1</th>
-                    <th>Party 2</th>
-                    <th>Party 3</th>
-                    <th>LGA</th>
-                    <th>Location</th>
-                    <th>Plot No</th>
-                    <th>Instrument/Transaction Type</th>
-                    <th>Size</th>
-                    <th>Caveat</th>
-                    <th>Actions</th>
+              <table class="w-full min-w-[820px] text-sm">
+                <thead class="bg-gray-50 sticky top-0 z-10">
+                  <tr class="text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 border-b border-gray-200">
+                    <th class="px-3 py-2.5 w-8">#</th>
+                    <th class="px-3 py-2.5">File Number</th>
+                    <th class="px-3 py-2.5">Instrument</th>
+                    <th class="px-3 py-2.5">Party 1 &rarr; Party 2</th>
+                    <th class="px-3 py-2.5">Location</th>
+                    <th class="px-3 py-2.5">Plot</th>
+                    <th class="px-3 py-2.5">Size</th>
+                    <th class="px-3 py-2.5">Caveat</th>
+                    <th class="px-3 py-2.5 text-right">&nbsp;</th>
                   </tr>
                 </thead>
-                <tbody id="table-results-body"></tbody>
+                <tbody id="table-results-body" class="divide-y divide-gray-100"></tbody>
               </table>
             </div>
           </div>
 
-          <!-- Card View Results -->
-          <div id="card-results" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+          {{-- Card View. Was a file number over a row of dashes; now it carries the
+               same facts as a table row, laid out to be read rather than scanned. --}}
+          <div id="card-results" class="hidden grid grid-cols-1 lg:grid-cols-2 gap-3"></div>
 
           <!-- File Details View -->
           <div id="file-details-view" class="hidden space-y-6"></div>

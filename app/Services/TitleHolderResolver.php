@@ -757,6 +757,20 @@ class TitleHolderResolver
         return $this->timeline->canonicalInstrumentType($this->rawType($row));
     }
 
+    /**
+     * Public face of isOwnershipChanging(), for callers that need the same answer
+     * about one timeline row without resolving a whole file's holders — currently
+     * OpHolderMatchService, deciding whether a dealing on the chain explains how the
+     * title reached the indexed holder. Kept as a wrapper so the rule itself (and
+     * the "never ownership-changing" exclusions) lives in exactly one place.
+     *
+     * @param  array  $row  a timeline row: transaction_type / instrument_type
+     */
+    public function movesOwnership(array $row): bool
+    {
+        return $this->isOwnershipChanging($row);
+    }
+
     private function isOwnershipChanging(array $row): bool
     {
         if ($this->isNeverOwnershipChanging($row)) {

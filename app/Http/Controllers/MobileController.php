@@ -69,7 +69,7 @@ class MobileController extends Controller
 
         $officers = User::where('is_active', 1)
             ->orderBy('first_name')
-            ->get(['id', 'first_name', 'last_name', 'username', 'department_id']);
+            ->get(['id', 'first_name', 'last_name', 'username', 'department_id', 'profile', 'passport_photo_path']);
 
         // Origin registries (+ short codes) for the File Search request dropdown —
         // mirrors the Registry selector on Create File Tracker.

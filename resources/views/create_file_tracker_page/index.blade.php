@@ -1379,18 +1379,29 @@
                                                             <input type="hidden" name="receiving_officer_id" value="{{ auth()->id() }}">
                                                             <input type="hidden" name="receiving_officer_name" value="{{ auth()->user()->first_name }} {{ auth()->user()->last_name }}">
                                                             <p class="text-xs text-gray-500">The officer receiving this file (Current User)</p>
+                                                            <div class="mt-2 h-24 w-24 overflow-hidden rounded-[10px] border border-gray-300 bg-gray-200 flex items-center justify-center text-xl font-bold text-gray-600">
+                                                                @if(auth()->user()->profile_url)
+                                                                    <img src="{{ auth()->user()->profile_url }}" alt="{{ trim(auth()->user()->first_name . ' ' . auth()->user()->last_name) }}" class="h-full w-full object-cover">
+                                                                @else
+                                                                    {{ strtoupper(substr(auth()->user()->first_name ?? 'U', 0, 1) . substr(auth()->user()->last_name ?? '', 0, 1)) }}
+                                                                @endif
+                                                            </div>
                                                         @else
                                                             <select id="receiving-officer"
                                                                 class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                                                 <option value="">Select receiving officer</option>
                                                                 @foreach ($receivingOfficers as $officer)
-                                                                    <option value="{{ $officer->id }}">
+                                                                    <option value="{{ $officer->id }}"
+                                                                        data-photo="{{ $officer->photo_url ?? '' }}"
+                                                                        data-name="{{ trim($officer->first_name . ' ' . $officer->last_name) }}">
                                                                         {{ $officer->first_name }} {{ $officer->last_name }}
                                                                     </option>
                                                                 @endforeach
                                                                 <option value="__ADD_OTHER__" class="font-bold text-blue-600">+ Add Other Officer...</option>
                                                             </select>
                                                             <p id="receiving-officer-hint" class="text-xs text-gray-500">Select a MLPP officer</p>
+                                                            {{-- Filled in by js/log-a-file-officer-avatar.js once an officer is picked. --}}
+                                                            <div id="receiving-officer-profile" class="hidden mt-2"></div>
                                                         @endif
                                                     </div>
                                                     @if(($module ?? '') === 'kangis')
@@ -2254,6 +2265,7 @@
                                             class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                             <option value="">Select receiving officer</option>
                                         </select>
+                                        <div id="movement-receiving-officer-profile" class="hidden mt-2"></div>
                                         <p class="text-xs text-gray-500">This officer will approve the file before it can
                                             move again.</p>
                                     </div>
@@ -2373,6 +2385,7 @@
                                                 class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40">
                                                 <option value="">Select receiving officer</option>
                                             </select>
+                                            <div id="update-log-receiving-officer-profile" class="hidden mt-2"></div>
                                         </div>
                                     </div>
 
@@ -2966,6 +2979,8 @@
                         </script>
 
                         @include('create_file_tracker_page.partials.quick-actions-js')
+                        {{-- Shows the picked officer's profile picture under each officer select. --}}
+                        <script src="{{ asset('js/officer-avatar-select.js') }}?v={{ filemtime(public_path('js/officer-avatar-select.js')) }}" defer></script>
                         @include('create_file_tracker_page.partials.js')
                         @include('create_file_tracker_page.partials.assignment-workflow-js')
                         @include('create_file_tracker_page.partials.workflow-3step-js')

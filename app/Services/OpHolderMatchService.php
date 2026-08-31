@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -68,8 +69,10 @@ class OpHolderMatchService
         'is_caveated', 'caveated_comment', 'caveat_id',
     ];
 
-    public function __construct(private TitleHolderResolver $titleHolders)
-    {
+    public function __construct(
+        private TitleHolderResolver $titleHolders,
+        private LegalSearchService $legalSearch,
+    ) {
     }
 
     /**
@@ -83,13 +86,42 @@ class OpHolderMatchService
      * @return array{
      *   applies:bool, reason:string, file_number:string, indexing_name:?string,
      *   op:?array, timeline:array, root_of_title:?string, has_working_transfer:bool,
-     *   name_spelling_only:bool
+     *   name_spelling_only:bool, matched:bool
      * }
      */
     public function check(?string $fileNumber): array
     {
         $fileNumber = trim((string) $fileNumber);
 
+        if ($fileNumber === '') {
+            return $this->inspect('');
+        }
+
+        // The chain comes from LegalSearchService::buildPrintReport(), which merges
+        // four tables and takes 3-5 seconds. The form asks this question twice for
+        // one capture — once to draw the card, once again as the officer saves — and
+        // a second wait of that length on the save button would be paid by every
+        // capture in the register, not just the handful this flow is about.
+        //
+        // Five minutes is long enough to cover one capture and short enough that a
+        // file corrected in another screen is re-read while the officer is still
+        // working. generateTot() clears the key the moment it writes, so the answer
+        // can never outlive the state it describes.
+        return Cache::remember(
+            $this->cacheKey($fileNumber),
+            300,
+            fn () => $this->inspect($fileNumber)
+        );
+    }
+
+    private function cacheKey(string $fileNumber): string
+    {
+        return 'op-holder-match.' . md5(strtoupper($fileNumber));
+    }
+
+    /** The real check. @see check() */
+    private function inspect(string $fileNumber): array
+    {
         $base = [
             'applies'              => false,
             'reason'               => '',
@@ -100,6 +132,10 @@ class OpHolderMatchService
             'root_of_title'        => null,
             'has_working_transfer' => false,
             'name_spelling_only'   => false,
+            'matched'              => false,
+            // Set when the OP's pra row carries a DIFFERENT file number in another
+            // column, so the officer can see the ambiguity before acting on it.
+            'file_conflict'        => null,
         ];
 
         if ($fileNumber === '') {
@@ -122,15 +158,24 @@ class OpHolderMatchService
         $indexedName = trim((string) $indexing->file_title);
         $base['indexing_name'] = $indexedName;
 
-        $rows = $this->praRows($fileNumber);
-        $base['timeline'] = $this->timeline($rows);
+        $rows = $this->chain($fileNumber, $indexing->prop_id ?? null);
+        $rows = $this->markSystemGenerated($rows, $fileNumber);
+        $base['timeline'] = $rows;
 
         if ($indexedName === '') {
             $base['reason'] = 'File Indexing holds no file title for this file, so there is nothing to compare the OP against.';
             return $base;
         }
 
-        $ops = array_values(array_filter($rows, fn ($r) => $this->isOp($r)));
+        // An OP anywhere in this file's payload is this file's OP. The report gathers
+        // a parcel, and a row can name a second file number, but a pra row keyed to
+        // this file by ANY of its four columns is on this file as far as the register
+        // is concerned — hiding the card because the engine preferred the other
+        // column takes the decision away from the officer instead of showing it.
+        //
+        // Where the two numbers disagree the card says so (see $base['file_conflict'])
+        // rather than either silently trusting it or silently dropping it.
+        $ops = array_values(array_filter($rows, fn ($r) => $r['is_op']));
 
         if (! $ops) {
             $base['reason'] = 'The root of title is not an Occupancy Permit.';
@@ -143,8 +188,9 @@ class OpHolderMatchService
 
         // An OP that already names the indexed holder means the file never moved.
         foreach ($ops as $op) {
-            if ($this->sameName($op->party_2, $indexedName)) {
-                $base['reason'] = 'The Occupancy Permit already names the indexed holder.';
+            if ($this->sameName($op['party_2'], $indexedName)) {
+                $base['matched'] = true;
+                $base['reason'] = 'The Occupancy Permit was granted to ' . $indexedName . ' — nothing has moved since.';
                 return $base;
             }
         }
@@ -163,9 +209,9 @@ class OpHolderMatchService
         // self-transfer written into the register is a false dealing on somebody's
         // title.
         foreach ($ops as $op) {
-            if ($this->looksLikeSamePerson($op->party_2, $indexedName)) {
+            if ($this->looksLikeSamePerson($op['party_2'], $indexedName)) {
                 $base['name_spelling_only'] = true;
-                $base['reason'] = 'The Occupancy Permit names ' . trim((string) $op->party_2)
+                $base['reason'] = 'The Occupancy Permit names ' . trim((string) $op['party_2'])
                     . ' and File Indexing holds ' . $indexedName
                     . '. These look like the same person spelt two ways, so no transfer is recorded — '
                     . 'correct the spelling on whichever side is wrong.';
@@ -173,23 +219,32 @@ class OpHolderMatchService
             }
         }
 
-        $transfers = array_values(array_filter($rows, fn ($r) => $this->isTransfer($r)));
+        // Any DEALING THAT MOVES OWNERSHIP counts as the explanation, not just a row
+        // typed "Transfer of Title". COM-2010-39 reaches BLUEFIELDS OIL & PETROLEUM
+        // through two Deeds of Assignment held in file_history_staging; reading only
+        // pra's transfers, this service called that file unexplained and offered to
+        // write a transfer it did not need. What is and is not ownership-changing is
+        // TitleHolderResolver's rule (a mortgage or a caveat is not), asked here
+        // rather than restated.
+        $dealings = array_values(array_filter($rows, fn ($r) => $this->movesOwnership($r)));
 
-        foreach ($transfers as $t) {
-            if ($this->sameName($t->party_2, $indexedName)) {
-                $base['reason'] = 'A transfer on this file already names the indexed holder.';
+        foreach ($dealings as $d) {
+            if ($this->sameName($d['party_2'], $indexedName)) {
+                $base['matched'] = true;
+                $base['reason'] = 'The ' . lcfirst($d['type']) . ' from ' . trim((string) $d['party_1'])
+                    . ' to ' . trim((string) $d['party_2']) . ' is recorded on this file.';
                 return $base;
             }
         }
 
-        // The spelling-drift case: a transfer that moved the title is on file, so the
-        // dealing is recorded even though its party_2 is not spelt the way File
+        // The spelling-drift case: a dealing that moved the title is on file, so the
+        // change IS recorded even though its grantee is not spelt the way File
         // Indexing spells it. Nothing to generate — that is a name correction.
-        foreach ($transfers as $t) {
-            if (! $this->sameName($t->party_1, $t->party_2)) {
+        foreach ($dealings as $d) {
+            if (! $this->sameName($d['party_1'], $d['party_2'])) {
                 $base['has_working_transfer'] = true;
-                $base['reason'] = 'A transfer of title is already recorded on this file ('
-                    . trim((string) $t->party_1) . ' to ' . trim((string) $t->party_2)
+                $base['reason'] = 'A ' . lcfirst($d['type']) . ' is already recorded on this file ('
+                    . trim((string) $d['party_1']) . ' to ' . trim((string) $d['party_2'])
                     . '). If that name is wrong, it is a correction on the existing record — not a new transfer.';
                 return $base;
             }
@@ -198,17 +253,38 @@ class OpHolderMatchService
         // Earliest OP is the grant the chain starts from.
         $op = $ops[0];
 
+        // The pra row the transfer will be copied from. The chain above is read
+        // through the report engine, which merges four tables and does not carry a
+        // pra id, so the source row is looked up separately — and if the OP lives
+        // only in one of the other tables there is nothing here to copy, which is
+        // said plainly rather than guessed at.
+        $source = $this->sourceOpRow($fileNumber, $op['party_2']);
+
+        if (! $source) {
+            $base['reason'] = 'The Occupancy Permit for this file is not held in the deeds register (pra), '
+                . 'so the transfer cannot be reconstructed from it here.';
+            return $base;
+        }
+
+        // pra #126911 is mlsFNo COM-2016-219 AND fileno COM-2026-219 — one Occupancy
+        // Permit row claiming two separately indexed files. Only 3 rows estate-wide
+        // do this, but on those the officer has to decide, so the card tells them.
+        $otherNumber = $this->conflictingFileNumber($source, $fileNumber);
+        if ($otherNumber !== null) {
+            $base['file_conflict'] = $otherNumber;
+        }
+
         $base['applies'] = true;
-        $base['reason']  = 'The Occupancy Permit was granted to ' . trim((string) $op->party_2)
+        $base['reason']  = 'The Occupancy Permit was granted to ' . trim((string) $op['party_2'])
             . ', File Indexing holds ' . $indexedName
-            . ', and no transfer on this file explains the change.';
+            . ', and no dealing on this file explains the change.';
         $base['op'] = [
-            'pra_id'           => (int) $op->id,
-            'holder'           => trim((string) $op->party_2),
-            'grantor'          => trim((string) $op->party_1),
-            'transaction_type' => (string) ($op->transaction_type ?: $op->instrument_type),
-            'date'             => $this->displayDate($op),
-            'prop_id'          => $op->prop_id,
+            'pra_id'           => (int) $source->id,
+            'holder'           => trim((string) $op['party_2']),
+            'grantor'          => trim((string) $op['party_1']),
+            'transaction_type' => $op['type'],
+            'date'             => $op['date'],
+            'prop_id'          => $source->prop_id,
         ];
 
         return $base;
@@ -247,6 +323,11 @@ class OpHolderMatchService
         $payload = $this->buildTotPayload($op, $grantor, $grantee, $userId);
 
         $id = (int) DB::connection('sqlsrv')->table('pra')->insertGetId($payload);
+
+        // The file has just changed in the exact way the cached answer denies, so the
+        // key goes before anything can read it again — including this method's own
+        // caller, which re-checks to redraw the card.
+        Cache::forget($this->cacheKey($state['file_number']));
 
         Log::info('op-holder-match.tot-generated', [
             'file_number' => $state['file_number'],
@@ -321,6 +402,261 @@ class OpHolderMatchService
         return $payload;
     }
 
+    /**
+     * The file's chain, read from the SAME engine every other timeline in KLAES
+     * reads: LegalSearchService::buildPrintReport(). The Legal Search timeline, the
+     * Property Timeline modal, the PHS portal and the emailed report all render
+     * these rows, so this card cannot show a file differently from the rest of the
+     * system — and, more importantly, cannot judge one differently.
+     *
+     * That matters because the register keeps dealings in four tables. Reading only
+     * pra, this service missed the two Deeds of Assignment in file_history_staging
+     * that carry COM-2010-39 from ALH INUWA WADA to BLUEFIELDS OIL & PETROLEUM, and
+     * offered to write a transfer the file already had.
+     *
+     * Ordering is the engine's, not ours: it is the order every other screen shows,
+     * and a card that reordered it would be the odd one out.
+     *
+     * Falls back to pra alone when the report engine yields nothing for a file it
+     * cannot key on, so the card still works rather than silently going blank.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function chain(string $fileNumber, $propId): array
+    {
+        $rows = $this->reportRows($fileNumber, $propId);
+
+        if ($rows === []) {
+            $rows = $this->praFallbackRows($fileNumber);
+        }
+
+        return $this->promoteOccupancyPermit($rows, $fileNumber);
+    }
+
+    /**
+     * Flag the timeline rows that THIS flow wrote, so the card can say so.
+     *
+     * Read off pra.system_source rather than guessed from the party names: a file can
+     * carry a transfer between the same two people that an officer captured from a
+     * real deed, and calling that "system generated" would misdescribe a document
+     * somebody actually holds. Only rows stamped by generateTot() are marked.
+     *
+     * @param  array<int,array<string,mixed>>  $rows
+     * @return array<int,array<string,mixed>>
+     */
+    private function markSystemGenerated(array $rows, string $fileNumber): array
+    {
+        $generated = DB::connection('sqlsrv')
+            ->table('pra')
+            ->where(function ($q) use ($fileNumber) {
+                $q->where('mlsFNo', $fileNumber)
+                  ->orWhere('fileno', $fileNumber)
+                  ->orWhere('kangisFileNo', $fileNumber)
+                  ->orWhere('NewKANGISFileno', $fileNumber);
+            })
+            ->where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
+            ->where('system_source', self::SYSTEM_SOURCE)
+            ->get(['party_1', 'party_2', 'transaction_type', 'instrument_type']);
+
+        if ($generated->isEmpty()) {
+            return $rows;
+        }
+
+        // The instrument is part of the key, not just the two names. COM-2013-45
+        // carries a Deed of Assignment between the SAME pair as the transfer this
+        // flow wrote — a real deed an officer captured — and matching on names alone
+        // labelled that deed "system generated", which is exactly the misdescription
+        // this method exists to avoid.
+        $keys = [];
+        foreach ($generated as $row) {
+            $type = $this->norm($row->transaction_type ?: $row->instrument_type);
+            $keys[$type . '|' . $this->norm($row->party_1) . '|' . $this->norm($row->party_2)] = true;
+        }
+
+        foreach ($rows as $i => $row) {
+            $key = $this->norm($row['type'] ?? '') . '|'
+                . $this->norm($row['party_1'] ?? '') . '|'
+                . $this->norm($row['party_2'] ?? '');
+            $rows[$i]['system_generated'] = isset($keys[$key]);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * The OTHER file number on the OP's row, when it names one that is not the file
+     * being captured — or null when the row is unambiguous.
+     *
+     * TEMP- numbers are excluded: an unlinked OP capture sits on a system placeholder
+     * rather than on a file of its own, so it is not a competing claim.
+     */
+    private function conflictingFileNumber(object $source, string $fileNumber): ?string
+    {
+        $wanted = $this->norm($fileNumber);
+
+        foreach ([$source->mlsFNo ?? '', $source->fileno ?? ''] as $candidate) {
+            $value = trim((string) $candidate);
+
+            if ($value === '' || $this->norm($value) === $wanted) {
+                continue;
+            }
+
+            if (stripos($value, 'TEMP-') === 0) {
+                continue;
+            }
+
+            return $value;
+        }
+
+        return null;
+    }
+
+    /**
+     * On a file that has an Occupancy Permit, the OP leads the chain and IS the root
+     * of title.
+     *
+     * The report engine does not always say so. COM-2016-219 comes back with File
+     * Commissioning first, badged "RoT: Allocation List", and the OP third — while
+     * TitleHolderResolver, which fills the Root of Title box at the top of this same
+     * card, names the OP holder. Two answers to one question on one card is worse
+     * than either answer, and on this screen the OP is the answer that matters: it is
+     * the grant the missing transfer would be reconstructed from.
+     *
+     * The engine does not always agree. On COM-2016-219 it returns File Commissioning
+     * first, badged "RoT: Allocation List", because the OP row names a second file
+     * number (COM-2026-219) in another column and its rule 1 reads that one. On this
+     * card the OP leads and holds the badge regardless — an OP is the root of title
+     * wherever there is one — and where the row's two file numbers disagree the card
+     * says so instead of quietly picking a side.
+     *
+     * Applied to this card only. The same ordering inside LegalSearchService drives
+     * the printed Legal Search report, the PHS portal and the online report, and
+     * implements an agreed spec — it is not rewritten from here.
+     *
+     * @param  array<int,array<string,mixed>>  $rows
+     * @return array<int,array<string,mixed>>
+     */
+    private function promoteOccupancyPermit(array $rows, string $fileNumber): array
+    {
+        $first = null;
+        foreach ($rows as $index => $row) {
+            if ($row['is_op']) {
+                $first = $index;
+                break;
+            }
+        }
+
+        if ($first === null) {
+            return $rows;
+        }
+
+        $op = $rows[$first];
+        unset($rows[$first]);
+
+        // One root of title per chain: the OP takes the badge, and whatever the
+        // engine had marked gives it up rather than the card showing two.
+        foreach ($rows as $i => $row) {
+            $rows[$i]['root_of_title'] = '';
+        }
+
+        $op['root_of_title'] = $op['root_of_title'] ?: $op['type'];
+
+        return array_values(array_merge([$op], $rows));
+    }
+
+    /** @return array<int,array<string,mixed>> */
+    private function reportRows(string $fileNumber, $propId): array
+    {
+        try {
+            $query = ['file_number' => $fileNumber];
+            if (trim((string) $propId) !== '') {
+                $query['prop_id'] = trim((string) $propId);
+            }
+
+            $report = $this->legalSearch->buildPrintReport($query);
+
+            if (($report['status'] ?? null) !== 200) {
+                return [];
+            }
+
+            $rows = $report['payload']['data']['rows'] ?? [];
+        } catch (\Throwable $e) {
+            Log::warning('op-holder-match.report-engine-failed', [
+                'file_number' => $fileNumber,
+                'error'       => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+
+        // "-" is the report's placeholder for an absent value; the card renders its
+        // own em-dash for empty, so translate rather than printing a literal dash.
+        $blank = fn ($v) => ($v === null || trim((string) $v) === '' || trim((string) $v) === '-')
+            ? '' : trim((string) $v);
+
+        $mapped = [];
+        foreach ($rows as $row) {
+            $type = $blank($row['instrument_type'] ?? null) ?: 'Transaction';
+
+            $mapped[] = [
+                'type'     => $type,
+                'party_1'  => $blank($row['grantor'] ?? null),
+                'party_2'  => $blank($row['grantee'] ?? null),
+                // transaction_date FIRST, reg_date only as a fallback — for the OP
+                // above all, whose date is the date of the grant. Registration is a
+                // later, separate event, and on a chain that argues about when the
+                // title moved, showing the registration date as if it were the
+                // dealing's date misdates the grant the transfer is built from.
+                'date'     => $blank($row['transaction_date'] ?? null) ?: $blank($row['reg_date'] ?? null),
+                'reg_no'   => $blank($row['reg_no'] ?? null),
+                'source'   => $blank($row['source_table'] ?? null),
+                // Which file the row actually belongs to. The report gathers a whole
+                // PARCEL, so a row here can belong to a different file that shares
+                // the prop_id — and a dealing on someone else's file says nothing
+                // about this one's title.
+                'file_no'  => $blank($row['lifecycle_file_no'] ?? null) ?: $blank($row['file_no'] ?? null),
+                // The engine stamps this on the ONE row that is the root of title,
+                // and that row is the whole subject of this card — so it is carried
+                // through and badged exactly as the Property Timeline badges it.
+                'root_of_title' => $blank($row['root_of_title'] ?? null),
+                'is_op'    => stripos($type, 'Occupancy Permit') !== false,
+                'is_tot'   => stripos($type, 'Transfer of Title') !== false,
+                'system_generated' => false,
+            ];
+        }
+
+        return $mapped;
+    }
+
+    /**
+     * pra on its own, shaped like a report row. Only reached when the report engine
+     * returns nothing for the file.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function praFallbackRows(string $fileNumber): array
+    {
+        return array_map(function ($r) use ($fileNumber) {
+            $type = (string) ($r->transaction_type ?: $r->instrument_type ?: 'Transaction');
+
+            return [
+                'type'    => $type,
+                'party_1' => trim((string) $r->party_1),
+                'party_2' => trim((string) $r->party_2),
+                'date'    => $this->displayDate($r),
+                'reg_no'  => trim((string) $r->regNo),
+                'source'  => 'pra',
+                'file_no' => $fileNumber,
+                'root_of_title' => '',
+                'is_op'   => stripos($type, 'Occupancy Permit') !== false,
+                'is_tot'  => stripos($type, 'Transfer of Title') !== false,
+                'system_generated' => false,
+            ];
+        }, $this->praRows($fileNumber));
+    }
+
     /** Every live pra row for the file, oldest first. */
     private function praRows(string $fileNumber): array
     {
@@ -339,25 +675,43 @@ class OpHolderMatchService
             ->get([
                 'id', 'party_1', 'party_2', 'transaction_type', 'instrument_type',
                 'transaction_date', 'created_at', 'prop_id', 'regNo', 'source',
+                // Both file-number columns: conflictingFileNumber() compares them, and
+                // a row that names two different files has to be able to say so.
+                'mlsFNo', 'fileno',
             ])
             ->all();
     }
 
-    /** The chain, shaped for the card in the form. */
-    private function timeline(array $rows): array
+    /**
+     * The pra Occupancy Permit row the new transfer is copied from.
+     *
+     * Matched on the holder the chain names rather than just taking the first OP:
+     * the report may be showing an OP that came from another table, and copying the
+     * wrong grant would carry the wrong parcel, location and land use onto the
+     * transfer.
+     */
+    private function sourceOpRow(string $fileNumber, $holder): ?object
     {
-        return array_map(function ($r) {
-            return [
-                'pra_id'  => (int) $r->id,
-                'type'    => (string) ($r->transaction_type ?: $r->instrument_type ?: 'Transaction'),
-                'party_1' => trim((string) $r->party_1),
-                'party_2' => trim((string) $r->party_2),
-                'date'    => $this->displayDate($r),
-                'reg_no'  => trim((string) $r->regNo),
-                'is_op'   => $this->isOp($r),
-                'is_tot'  => $this->isTransfer($r),
-            ];
-        }, $rows);
+        foreach ($this->praRows($fileNumber) as $row) {
+            if ($this->isOp($row) && $this->sameName($row->party_2, $holder)) {
+                return $row;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Does this dealing move the title? Asked of TitleHolderResolver so a mortgage,
+     * a surrender, a caveat or a recertification is treated here exactly as it is
+     * treated in Legal Search and on the holder lines.
+     */
+    private function movesOwnership(array $row): bool
+    {
+        return $this->titleHolders->movesOwnership([
+            'transaction_type' => $row['type'],
+            'instrument_type'  => $row['type'],
+        ]);
     }
 
     private function rootOfTitleLabel(string $fileNumber, $propId): ?string
@@ -378,11 +732,6 @@ class OpHolderMatchService
     private function isOp(object $row): bool
     {
         return $this->typeContains($row, 'Occupancy Permit');
-    }
-
-    private function isTransfer(object $row): bool
-    {
-        return $this->typeContains($row, 'Transfer of Title');
     }
 
     private function typeContains(object $row, string $needle): bool

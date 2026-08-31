@@ -57,6 +57,30 @@
             host.innerHTML = '';
             host.classList.add('hidden');
             setExistingMode(false, null);
+            setSubmitBlocked(false);
+        }
+
+        /**
+         * Hold the save button shut while the file still needs its transfer.
+         *
+         * The submit handler below refuses these saves anyway, and the server refuses
+         * them again — but a button that looks ready and then throws a dialog reads as
+         * a fault. Disabled with a title explaining why is the honest state.
+         *
+         * Only ever ON for a file the card is actively offering Match for; reset()
+         * turns it off, so no other capture can inherit a disabled button.
+         */
+        function setSubmitBlocked(on) {
+            form.querySelectorAll('[type="submit"]').forEach(function (btn) {
+                btn.disabled = !!on;
+                btn.classList.toggle('opacity-40', !!on);
+                btn.classList.toggle('cursor-not-allowed', !!on);
+                if (on) {
+                    btn.setAttribute('title', 'Press Match first — the Occupancy Permit names a different holder and no dealing on this file explains the change.');
+                } else {
+                    btn.removeAttribute('title');
+                }
+            });
         }
 
         /**
@@ -76,21 +100,61 @@
             // one button both promises and cannot actually do.
         }
 
-        function timelineRows(rows) {
+        function timelineRows(rows, state) {
             if (!rows || !rows.length) {
                 return '<p class="text-xs text-slate-500 italic">No transactions are recorded on this file.</p>';
             }
 
+            var needsTot = !!(state && state.applies);
+            var isMatched = !!(state && state.matched);
+
             return rows.map(function (r) {
-                var tone = r.is_op ? 'border-amber-300 bg-amber-50'
-                    : (r.is_tot ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-white');
+                // The OP row carries the verdict, because the OP is what the verdict is
+                // about: red while the transfer out of it is missing, green once it is
+                // on file. Every other row keeps its ordinary tone.
+                var tone;
+                if (r.is_op && needsTot) {
+                    tone = 'border-rose-300 bg-rose-50';
+                } else if (r.is_op && isMatched) {
+                    tone = 'border-emerald-300 bg-emerald-50';
+                } else {
+                    tone = r.is_op ? 'border-amber-300 bg-amber-50'
+                        : (r.is_tot ? 'border-blue-500 bg-blue-100 ring-1 ring-blue-200' : 'border-slate-200 bg-white');
+                }
+
+                // Which register the row came from — the same four sources the
+                // Property Timeline labels, so a reader can tell at a glance that
+                // this is the file's whole history and not just its deeds.
+                var source = r.source
+                    ? '<span class="ml-2 align-middle rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-slate-200/80 text-slate-600">'
+                        + esc(String(r.source).replace(/_staging$/, '').replace(/_/g, ' ')) + '</span>'
+                    : '';
+
+                // The row the report engine names as the root of title, badged the way
+                // the Property Timeline badges it — the card argues about the OP, so
+                // which row IS the root should not have to be inferred from the colour.
+                // "-RoT" rather than a chip repeating the instrument name: the row already
+                // says "Occupancy Permit (Op)", so "RoT: Occupancy Permit (OP)" beside it
+                // said it twice. Same marker the Legal Search timeline table uses.
+                // Only on the transfer this flow wrote — an officer-captured transfer
+                // between the same two people is a real deed and must not be labelled
+                // as something the system invented.
+                var sysgen = r.system_generated
+                    ? '<span class="ml-2 align-middle rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-blue-600 text-white">New (System Generated)</span>'
+                    : '';
+
+                var rot = r.root_of_title
+                    ? '<span class="ml-1.5 align-middle text-[10px] font-bold italic text-violet-700">-RoT</span>'
+                    : '';
+
+
 
                 return ''
                     + '<li class="relative pl-6 pb-3 last:pb-0">'
-                    +   '<span class="absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full ' + (r.is_op ? 'bg-amber-500' : (r.is_tot ? 'bg-emerald-500' : 'bg-slate-300')) + '"></span>'
+                    +   '<span class="absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full ' + ((r.is_op && needsTot) ? 'bg-rose-500' : ((r.is_op && isMatched) ? 'bg-emerald-500' : (r.is_op ? 'bg-amber-500' : (r.is_tot ? 'bg-blue-500' : 'bg-slate-300')))) + '"></span>'
                     +   '<div class="rounded-lg border ' + tone + ' px-3 py-2">'
                     +     '<div class="flex items-center justify-between gap-3">'
-                    +       '<span class="text-xs font-bold text-slate-800">' + esc(r.type) + '</span>'
+                    +       '<span class="text-xs font-bold text-slate-800">' + esc(r.type) + rot + source + sysgen + '</span>'
                     +       '<span class="text-[10px] text-slate-500 whitespace-nowrap">' + esc(r.date || '—') + '</span>'
                     +     '</div>'
                     +     '<div class="mt-1 text-[11px] text-slate-600">'
@@ -106,6 +170,19 @@
         /** The card: what the file says, why it is a problem, and the one action. */
         function render(state) {
             var applies = !!state.applies;
+
+            // The verdict leads the card rather than sitting on the OP row: it is the
+            // answer to the question the officer opened this card with, so it should be
+            // the first thing read, not something found by scanning the history. The
+            // row keeps its red or green tone, which is what ties the badge to it.
+            var verdict = '';
+            if (applies) {
+                verdict = '<div class="mb-2"><span class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wide bg-rose-600 text-white">'
+                    + '<i data-lucide="alert-triangle" class="h-3 w-3"></i> ToT Detected (Unmatched OP)</span></div>';
+            } else if (state.matched) {
+                verdict = '<div class="mb-2"><span class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wide bg-emerald-600 text-white">'
+                    + '<i data-lucide="check" class="h-3 w-3"></i> Matched</span></div>';
+            }
 
             var head = applies
                 ? '<div class="flex items-start gap-3">'
@@ -126,7 +203,10 @@
                     : '<div class="flex items-start gap-3">'
                     +   '<span class="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><i data-lucide="check" class="h-4 w-4"></i></span>'
                     +   '<div>'
-                    +     '<h3 class="text-sm font-bold text-emerald-900">File history</h3>'
+                    // "Matched" is the state the officer is looking for — the OP and the
+                    // indexed holder are joined up, either because they always were or
+                    // because Match has just joined them.
+                    +     '<h3 class="text-sm font-bold text-emerald-900">' + (state.matched ? 'Occupancy Permit (OP) Matched' : 'File history') + '</h3>'
                     +     '<p class="mt-0.5 text-xs text-emerald-800">' + esc(state.reason) + '</p>'
                     +   '</div>'
                     + '</div>');
@@ -156,10 +236,10 @@
 
             var action = applies
                 ? '<div class="mt-3 flex flex-wrap items-center gap-3">'
-                +   '<button type="button" id="op-match-btn" class="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 text-white text-xs font-bold rounded-lg hover:bg-amber-700 transition shadow-sm">'
-                +     '<i data-lucide="git-merge" class="h-4 w-4"></i> Match'
+                +   '<button type="button" id="op-match-btn" class="inline-flex items-center gap-2.5 px-8 py-3.5 bg-amber-600 text-white text-base font-bold rounded-xl hover:bg-amber-700 transition shadow-lg shadow-amber-200">'
+                +     '<i data-lucide="git-merge" class="h-5 w-5"></i> Match'
                 +   '</button>'
-                +   '<span class="text-[11px] text-slate-600">Records the transfer from '
+                +   '<span class="text-xs text-slate-600 max-w-md">Records the transfer from '
                 +     '<b class="text-amber-800">' + esc(state.op ? state.op.holder : '') + '</b>'
                 +     ' to <b class="text-indigo-800">' + esc(state.indexing_name) + '</b>, then continues the capture.</span>'
                 + '</div>'
@@ -178,21 +258,69 @@
             host.innerHTML = ''
                 + '<div class="rounded-xl border ' + (applies ? 'border-amber-200 bg-amber-50/60'
                         : (state.name_spelling_only ? 'border-sky-200 bg-sky-50/60' : 'border-emerald-200 bg-emerald-50/50')) + ' p-5">'
+                +   verdict
                 +   head
                 +   names
                 +   '<details class="mt-3" ' + (applies ? 'open' : '') + '>'
                 +     '<summary class="cursor-pointer text-[11px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-700">File history (' + (state.timeline || []).length + ')</summary>'
-                +     '<ul class="mt-2 border-l border-slate-200 ml-1">' + timelineRows(state.timeline) + '</ul>'
+                +     '<ul class="mt-2 border-l border-slate-200 ml-1">' + timelineRows(state.timeline, state) + '</ul>'
                 +   '</details>'
                 +   action
                 +   mode
                 + '</div>';
 
             host.classList.remove('hidden');
+            setSubmitBlocked(applies);
             if (window.lucide) window.lucide.createIcons();
 
             var btn = document.getElementById('op-match-btn');
-            if (btn) btn.addEventListener('click', function () { runMatch(btn); });
+            if (btn) {
+                btn.addEventListener('click', function () {
+                    confirmMatch(state, function () { runMatch(btn); });
+                });
+            }
+        }
+
+        /**
+         * Ask before writing.
+         *
+         * Match puts a real Transfer of Title into the deeds register — a dealing on
+         * somebody's title — and it is one click away from a button the officer may
+         * have opened the card by accident. The dialog states the two names, the file
+         * and the direction, so what is about to be recorded is read once before it
+         * exists rather than discovered afterwards.
+         */
+        function confirmMatch(state, onConfirm) {
+            var fileNo = fileNoInput.value.trim();
+            var from = (state && state.op) ? state.op.holder : '';
+            var to = (state && state.indexing_name) ? state.indexing_name : '';
+
+            if (typeof Swal === 'undefined') {
+                if (window.confirm('Record a Transfer of Title on ' + fileNo + ' from ' + from + ' to ' + to + '?')) onConfirm();
+                return;
+            }
+
+            Swal.fire({
+                icon: 'question',
+                title: 'Record this transfer?',
+                html: ''
+                    + '<p class="text-sm text-slate-600">A Transfer of Title will be recorded on <b>' + esc(fileNo) + '</b>:</p>'
+                    + '<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-left">'
+                    +   '<div class="text-[10px] font-bold uppercase tracking-wider text-amber-700">From (Occupancy Permit holder)</div>'
+                    +   '<div class="text-sm font-bold text-slate-900">' + esc(from) + '</div>'
+                    +   '<div class="mt-2 text-[10px] font-bold uppercase tracking-wider text-indigo-700">To (File Indexing name)</div>'
+                    +   '<div class="text-sm font-bold text-slate-900">' + esc(to) + '</div>'
+                    + '</div>'
+                    + '<p class="mt-3 text-xs text-slate-500">It is recorded with no registration particulars (0/0/0), as a reconstructed transfer that was never presented to the registry.</p>',
+                showCancelButton: true,
+                confirmButtonText: 'Yes, record it',
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: '#d97706',
+                cancelButtonColor: '#64748b',
+                reverseButtons: true
+            }).then(function (result) {
+                if (result.isConfirmed) onConfirm();
+            });
         }
 
         function runMatch(btn) {
@@ -200,7 +328,7 @@
             if (!fileNo || !matchUrl) return;
 
             btn.disabled = true;
-            btn.innerHTML = '<i data-lucide="loader" class="h-4 w-4 animate-spin"></i> Matching…';
+            btn.innerHTML = '<i data-lucide="loader" class="h-5 w-5 animate-spin"></i> Matching…';
             if (window.lucide) window.lucide.createIcons();
 
             var body = new FormData();
@@ -223,6 +351,9 @@
                     // mode — the recommendation it already has was approved on paper.
                     setExistingMode(true, res.data.pra_id);
                     render(res.data.data || {});
+                    // render() re-reads the fresh state, which no longer applies — but be
+                    // explicit rather than relying on that to unlock the save.
+                    setSubmitBlocked(false);
 
                     if (typeof Swal !== 'undefined') {
                         Swal.fire({
@@ -230,14 +361,14 @@
                             title: 'Transfer recorded',
                             html: '<p class="text-sm text-slate-600">' + esc(res.data.message) + '</p>'
                                 + '<p class="text-xs text-slate-500 mt-2">This file already has an approved recommendation, so a new one will not be generated. '
-                                + 'Save the record, then upload that approved letter — it is what allows the approval.</p>',
+                                + 'The Extant Recommendation enables the Approval.</p>',
                             confirmButtonColor: '#d97706'
                         });
                     }
                 })
                 .catch(function (err) {
                     btn.disabled = false;
-                    btn.innerHTML = '<i data-lucide="git-merge" class="h-4 w-4"></i> Match';
+                    btn.innerHTML = '<i data-lucide="git-merge" class="h-5 w-5"></i> Match';
                     if (window.lucide) window.lucide.createIcons();
 
                     if (typeof Swal !== 'undefined') {

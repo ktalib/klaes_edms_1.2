@@ -214,6 +214,8 @@ class FileTrackingController extends Controller
                     'username',
                     'first_name',
                     'last_name',
+                    'profile',
+                    'passport_photo_path',
                 ])
                 ->map(function (User $user) {
                     $resolvedName = trim($user->name ?: ($user->first_name . ' ' . $user->last_name));
@@ -224,6 +226,9 @@ class FileTrackingController extends Controller
                         'first_name' => $user->first_name,
                         'last_name' => $user->last_name,
                         'username' => $user->username,
+                        // Shown beside the officer once they are picked, on both the
+                        // web and mobile file-tracking screens.
+                        'photo_url' => $user->profile_url,
                     ];
                 })
                 ->values();

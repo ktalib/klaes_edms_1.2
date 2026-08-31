@@ -546,9 +546,12 @@
           <option value="">Select receiving officer</option>
           @foreach($officers as $officer)
             @php $fullName = trim($officer->first_name.' '.$officer->last_name) ?: $officer->username; @endphp
-            <option value="{{ $officer->id }}" data-name="{{ $fullName }}">{{ $fullName }}</option>
+            <option value="{{ $officer->id }}" data-name="{{ $fullName }}"
+              data-photo="{{ $officer->profile_url ?? '' }}">{{ $fullName }}</option>
           @endforeach
         </select>
+        {{-- Picture of the officer picked to receive the file. --}}
+        <div id="receivingOfficerProfile" style="display:none;margin-top:9px;"></div>
       </div>
     </div>
 
@@ -764,12 +767,125 @@ let selectedCandidate = null;
 const CSRF_TOKEN  = '{{ csrf_token() }}';
 const API_BASE    = '{{ url("/api/file-trackers") }}';
 const MOB_BASE    = '{{ url("/api/mobile") }}';
+// Inline avatar renderer — the mobile shell does not load the web layout's scripts.
+// Photo URL or null, plus the name for initials; a dead URL falls back to initials.
+// Avatar + name for a detail row; empty string when there is no officer, so the row
+// is filtered out exactly as it was before.
+function mobAvatarRow(name, url, size) {
+  if (!name) return '';
+  // With a photo the row becomes a tap target that opens it full size; without one
+  // there is nothing to enlarge, so it stays plain text.
+  const openable = url ? ` data-photo-view data-photo-url="${esc(url)}" data-photo-name="${esc(name)}"`
+    + ` style="display:inline-flex;align-items:center;gap:7px;justify-content:flex-end;cursor:pointer;"`
+    + ` title="Tap to view photo"`
+    : ` style="display:inline-flex;align-items:center;gap:7px;justify-content:flex-end;"`;
+  return `<span${openable}>` + mobAvatar(url, name, size || 26)
+    + `<span style="${url ? 'text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px;' : ''}">${esc(name)}</span></span>`;
+}
+
+// Squared passport that opens the full-size viewer when tapped. Without a photo there
+// is nothing to enlarge, so it renders as the plain frame.
+function mobPassportTap(url, name, size) {
+  const frame = mobPassport(url, name, size);
+  if (!url) return frame;
+  return `<span data-photo-view data-photo-url="${esc(url)}" data-photo-name="${esc(name || '')}"`
+    + ` title="Tap to view photo" style="display:inline-flex;cursor:pointer;">${frame}</span>`;
+}
+
+// Full-size viewer for a profile photo. Built on demand, closed by tapping the
+// backdrop, the close button, or Escape.
+function mobShowPhoto(url, name) {
+  if (!url) return;
+  document.getElementById('mobPhotoViewer')?.remove();
+
+  const wrap = document.createElement('div');
+  wrap.id = 'mobPhotoViewer';
+  wrap.style.cssText = 'position:fixed;inset:0;z-index:4000;display:flex;align-items:center;'
+    + 'justify-content:center;padding:22px;background:rgba(2,6,23,.88);';
+  wrap.innerHTML = `
+    <div style="max-width:100%;text-align:center;" data-photo-card>
+      <img src="${esc(url)}" alt="${esc(name || '')}"
+           style="max-width:100%;max-height:70vh;border-radius:16px;border:1px solid var(--border-strong);object-fit:contain;background:var(--surface-2);">
+      <div style="margin-top:12px;font-size:15px;font-weight:700;color:#fff;">${esc(name || '')}</div>
+      <button type="button" data-photo-close
+              style="margin-top:14px;padding:9px 20px;border-radius:12px;border:1px solid var(--border-strong);
+                     background:var(--surface-2);color:var(--text);font-size:13px;font-weight:600;">Close</button>
+    </div>`;
+
+  const close = () => wrap.remove();
+  wrap.addEventListener('click', (e) => {
+    if (e.target === wrap || e.target.closest('[data-photo-close]')) close();
+  });
+  document.addEventListener('keydown', function onKey(e) {
+    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey); }
+  });
+  document.body.appendChild(wrap);
+}
+
+// Delegated so rows rendered later still open the viewer.
+document.addEventListener('click', function (e) {
+  const trigger = e.target.closest('[data-photo-view]');
+  if (!trigger) return;
+  e.preventDefault();
+  e.stopPropagation();
+  mobShowPhoto(trigger.getAttribute('data-photo-url'), trigger.getAttribute('data-photo-name'));
+});
+// Squared passport frame — used where the photo is presented as a document-style
+// portrait (the request sheet) rather than as a small round avatar in a row.
+function mobPassport(url, name, size) {
+  const px = size || 46;
+  const nm = esc(name || '');
+  const ini = String(name || '').split(/\s+/).filter(Boolean).slice(0, 2)
+    .map(p => p.charAt(0).toUpperCase()).join('') || '?';
+  const style = `width:${px}px;height:${px}px;border-radius:10px;overflow:hidden;display:flex;`
+    + `align-items:center;justify-content:center;flex:0 0 auto;background:var(--surface-2);`
+    + `color:var(--muted);font-weight:700;font-size:${Math.round(px * 0.34)}px;`
+    + `border:1px solid var(--border-strong);`;
+  if (!url) return `<div style="${style}" title="${nm}">${esc(ini)}</div>`;
+  return `<div style="${style}" title="${nm}"><img src="${esc(url)}" alt="${nm}" `
+    + `style="width:100%;height:100%;object-fit:cover;" `
+    + `onerror="this.parentNode.textContent='${esc(ini)}';"></div>`;
+}
+function mobAvatar(url, name, size) {
+  const px = size || 30;
+  const nm = esc(name || '');
+  const ini = String(name || '').split(/\s+/).filter(Boolean).slice(0, 2)
+    .map(p => p.charAt(0).toUpperCase()).join('') || '?';
+  const style = `width:${px}px;height:${px}px;border-radius:9999px;overflow:hidden;display:inline-flex;`
+    + `align-items:center;justify-content:center;flex:0 0 auto;background:var(--surface-2);`
+    + `color:var(--muted);font-weight:700;font-size:${Math.round(px * 0.38)}px;`
+    + `border:1px solid var(--border);vertical-align:middle;`;
+  if (!url) return `<span style="${style}" title="${nm}">${esc(ini)}</span>`;
+  return `<span style="${style}" title="${nm}"><img src="${esc(url)}" alt="${nm}" `
+    + `style="width:100%;height:100%;object-fit:cover;" `
+    + `onerror="this.parentNode.textContent='${esc(ini)}';"></span>`;
+}
 const CURRENT_USER = {
   id:       {{ auth()->id() }},
   name:     '{{ addslashes(trim(auth()->user()->first_name." ".auth()->user()->last_name) ?: auth()->user()->username) }}',
   username: '{{ auth()->user()->username }}',
+  // Shown beside the requester's name on the File Search request sheet.
+  photo_url: @json(auth()->user()->profile_url),
 };
 const IS_SCB_MONITOR = {{ $isScbMonitor ? 'true' : 'false' }};
+
+// Show the picked receiving officer's picture under the select on the Create File form.
+document.addEventListener('DOMContentLoaded', function () {
+  const sel = document.getElementById('receivingOfficer');
+  const box = document.getElementById('receivingOfficerProfile');
+  if (!sel || !box) return;
+  const sync = () => {
+    const opt = sel.options[sel.selectedIndex];
+    const name = opt && sel.value ? (opt.getAttribute('data-name') || opt.textContent.trim()) : '';
+    if (!name) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    const photo = opt.getAttribute('data-photo') || '';
+    // Photo only — the officer's name is already in the select directly above.
+    box.innerHTML = mobPassportTap(photo || null, name, 76);
+    box.style.display = 'flex';
+  };
+  sel.addEventListener('change', sync);
+  sync();
+});
 // OFS (Office Priority Search) ranked officer — may raise prioritised File/Blind
 // Requests to the SCB Monitor straight from File Search.
 const IS_OFS = {{ ($isOfs ?? false) ? 'true' : 'false' }};
@@ -1369,7 +1485,8 @@ async function searchFile() {
           ['Registry', d.registry],
           // Always show the home shelf label; files without one read "—".
           ['Shelf/Rack', d.rack_shelf || '—'],
-          ['Receiving Officer (holder)', d.receiving_officer_name],
+          // Holder of the file: name with their profile picture.
+          ['Receiving Officer (holder)', mobAvatarRow(d.receiving_officer_name, d.receiving_officer_photo), true],
           ['Department', dept || d.current_location],
           // In-transit timeline — only populated for IN_TRANSIT files.
           ['Date Requested', d.date_requested],
@@ -1382,10 +1499,11 @@ async function searchFile() {
           ['Registry', d.registry],
           ['Shelf/Rack', d.rack_shelf || '—'],
           ['Current Location (Expected)', d.current_location],
-          ['Receiving Officer', d.receiving_officer_name],
+          ['Receiving Officer', mobAvatarRow(d.receiving_officer_name, d.receiving_officer_photo), true],
         ];
       }
-      const rowsHtml = detailRows.filter(r=>r[1]).map(r=>`<div style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--border);"><span style="font-size:11px;color:var(--muted);">${esc(r[0])}</span><span style="font-size:13px;font-weight:600;text-align:right;">${esc(r[1])}</span></div>`).join('');
+      // r[2] marks a value that is already HTML (an avatar + name), so it is not escaped again.
+      const rowsHtml = detailRows.filter(r=>r[1]).map(r=>`<div style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--border);"><span style="font-size:11px;color:var(--muted);">${esc(r[0])}</span><span style="font-size:13px;font-weight:600;text-align:right;">${r[2] ? r[1] : esc(r[1])}</span></div>`).join('');
 
       // OFS (ranked officer): raise a prioritised File/Blind Request to the SCB
       // Monitor straight from the locator. Hidden for SCB Monitors (they receive,
@@ -1480,7 +1598,24 @@ async function searchFile() {
             </div>
             <div>
               <label style="${fieldLblCss}"><i class="fas fa-user-tie" style="margin-right:5px;color:var(--primary);"></i>Requester Officer <span style="color:#ef4444;">*</span></label>
-              <input id="fsOfficer" type="text" readonly value="${esc(CURRENT_USER.name)}" title="The logged-in officer raising this request" style="${fieldSelCss}opacity:.85;cursor:not-allowed;">
+              {{-- Two columns: the passport photo on the left, the name field on the right.
+                   The input keeps fieldSelCss's width:100%, so it needs its own flex column —
+                   putting flex:1 on the input itself made it claim the full row PLUS the
+                   photo's width and overflow into the label above. --}}
+              {{-- Photo left, name field right. The field is held to half the row so the
+                   passport photo has room to be read at a useful size; the input keeps
+                   fieldSelCss's width:100% inside its own column. --}}
+              {{-- Photo left, name field right, filling the row: capping the field at 50%
+                   left dead space on the right instead. The field flexes so the photo can
+                   grow without stranding a gap. --}}
+              <div style="display:flex;align-items:center;gap:12px;">
+                <div style="flex:0 0 auto;display:flex;">
+                  ${mobPassportTap(CURRENT_USER.photo_url || null, CURRENT_USER.name, 96)}
+                </div>
+                <div style="flex:1 1 auto;min-width:0;">
+                  <input id="fsOfficer" type="text" readonly value="${esc(CURRENT_USER.name)}" title="The logged-in officer raising this request" style="${fieldSelCss}opacity:.85;cursor:not-allowed;">
+                </div>
+              </div>
             </div>
           </div>
           <div style="margin-top:12px;display:flex;flex-direction:column;gap:12px;">

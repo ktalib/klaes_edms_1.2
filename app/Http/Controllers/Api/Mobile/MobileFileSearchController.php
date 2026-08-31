@@ -82,6 +82,8 @@ class MobileFileSearchController extends Controller
         $tracker      = $result['tracker'] ?? null;
         $officerName  = $tracker->receiving_officer_name ?? null;
         $officerId    = $tracker->receiving_officer_id ?? null;
+        // Picture of whoever is physically holding the file, shown beside their name.
+        $officerPhoto = null;
         if ($officerId) {
             $user = \App\Models\User::find($officerId);
             if ($user) {
@@ -90,7 +92,11 @@ class MobileFileSearchController extends Controller
                 if ($resolvedName) {
                     $officerName = $resolvedName;
                 }
+                $officerPhoto = $user->profile_url;
             }
+        }
+        if ($officerPhoto === null) {
+            $officerPhoto = \App\Support\UserPhoto::forName($officerName);
         }
 
         // In-transit timeline: when the file was requested, and when the current
@@ -160,6 +166,7 @@ class MobileFileSearchController extends Controller
                 // holding them (the last receiving officer) instead of going to the SCB.
                 'can_redirect'           => $result['status'] === FileLocationResolver::STATUS_IN_TRANSIT,
                 'receiving_officer_name'   => $officerName,
+                'receiving_officer_photo'  => $officerPhoto,
                 'receiving_office_name'    => $tracker->receiving_office_name ?? null,
                 'receiving_department'     => $receivingDepartment,
                 // In-transit timeline (null for every other outcome).

@@ -134,6 +134,8 @@
       window.AppLayout?.ensureLucide?.();
     });
   </script>
+  {{-- Avatar renderer shared by the file-tracking screens (Quick Search, Log a File). --}}
+  <script src="{{ asset('js/user-avatar.js') }}?v={{ filemtime(public_path('js/user-avatar.js')) }}"></script>
   <script src="{{ asset('js/print-manager.js') }}"></script>
   <script src="{{ asset('js/tailwind-modal.js') }}?v={{ time() }}"></script>
   <x-print-manager />

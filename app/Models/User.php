@@ -566,16 +566,7 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function getProfileUrlAttribute(): ?string
     {
-        $value = trim((string) ($this->profile ?? ''));
-
-        if ($value === '' || strtolower($value) === 'avatar.png') {
-            return null;
-        }
-
-        // Bare filenames were only ever written into upload/profile.
-        $path = str_contains($value, '/') ? $value : 'upload/profile/' . $value;
-
-        return \Illuminate\Support\Facades\Storage::disk('public')->url($path);
+        return \App\Support\UserPhoto::url($this->profile, $this->passport_photo_path);
     }
 
     /**

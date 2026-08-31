@@ -6276,10 +6276,25 @@ class LegalSearchService
             if ($this->isSystemTempFileNo($rowFileNo)) {
                 $rowFileNo = '-';
             }
+            // A row that NAMES the searched file belongs to the searched file, whichever
+            // column extractLifecycleFileNo() reads first. Its candidate order puts
+            // `fileno` above `mlsFNo`, so a pra row carrying two different numbers is
+            // grouped by the wrong one: pra #126911 is mlsFNo COM-2016-219 and fileno
+            // COM-2026-219, and searching COM-2016-219 pushed that file's own Occupancy
+            // Permit into a SECOND lifecycle block. There it sorted below the file's
+            // commissioning row — an OP outranks commissioning (14 against 12), but only
+            // within its own group — and rule 1 of annotateRootOfTitle() then refused to
+            // root the title in an OP it read as belonging to another file.
+            $rowLifecycle = $this->extractLifecycleFileNo($t);
+            $normSearched = $searchedFileNo !== '' ? $this->normalizeLifecycleFileNo($searchedFileNo) : '';
+            if ($normSearched !== '' && $rowLifecycle !== $normSearched && $this->rowNamesFileNo($t, $normSearched)) {
+                $rowLifecycle = $normSearched;
+            }
+
             $rows[] = [
                 'sn' => $idx + 1,
                 'file_no' => $rowFileNo,
-                'lifecycle_file_no' => $this->extractLifecycleFileNo($t),
+                'lifecycle_file_no' => $rowLifecycle,
                 'grantor' => $tc($t['party_1'] ?: '-'),
                 'grantee' => $tc($t['party_2'] ?: '-'),
                 'party_3' => $tc($t['party_3'] ?: '-'),
@@ -7824,6 +7839,34 @@ class LegalSearchService
      * Prefers the explicit lifecycle_file_no when present, then the canonical
      * file_no used by print rows, then the various file-number columns.
      */
+    /**
+     * Does this row carry the given file number in ANY of its file-number columns?
+     *
+     * Used only to keep a row with the file it names — see the lifecycle stamping
+     * loop. Compared through normalizeLifecycleFileNo() so "(T)" variants, spacing
+     * and case are judged the same way the grouping key itself is.
+     */
+    private function rowNamesFileNo(array $row, string $normalized): bool
+    {
+        if ($normalized === '') {
+            return false;
+        }
+
+        foreach (['file_no', 'fileno', 'file_number', 'mlsFNo', 'kangisFileNo', 'NewKANGISFileno'] as $column) {
+            $value = trim((string) ($row[$column] ?? ''));
+
+            if ($value === '' || $value === '-') {
+                continue;
+            }
+
+            if ($this->normalizeLifecycleFileNo($value) === $normalized) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function extractLifecycleFileNo(array $row): ?string
     {
         if (!empty($row['lifecycle_file_no'])) {
@@ -8031,6 +8074,27 @@ class LegalSearchService
             if ($lifecycle !== '' && $this->isSystemTempFileNo($lifecycle) && $normPrimary !== '') {
                 // System temporary files have no independent lifecycle and their numbers are
                 // hidden in the UI; roll them into the primary searched file's group.
+                $lifecycle = $normPrimary;
+            }
+
+            // A row that NAMES the searched file in any of its file-number columns
+            // belongs to the searched file, whichever column extractLifecycleFileNo()
+            // happened to read first.
+            //
+            // Its candidate order is file_no, fileno, file_number, mlsFNo, ... so a pra
+            // row carrying two different numbers is grouped by `fileno` even when
+            // `mlsFNo` is the file being searched. pra #126911 is mlsFNo COM-2016-219
+            // and fileno COM-2026-219: searching COM-2016-219 pushed its own Occupancy
+            // Permit into a second lifecycle block, where it sorted BELOW that file's
+            // File Commissioning row — an OP outranks commissioning (14 against 12) but
+            // only within its own group. The visible symptoms were an OP third in the
+            // timeline, the Root of Title falling through to "Allocation List" (rule 1
+            // rejects an OP that is not on the file), and a second commissioning block.
+            //
+            // Only rows that actually name the searched file move; every other row keeps
+            // the lifecycle it had, so a genuine second file on the parcel still groups
+            // on its own.
+            if ($normPrimary !== '' && $lifecycle !== $normPrimary && $this->rowNamesFileNo($row, $normPrimary)) {
                 $lifecycle = $normPrimary;
             }
             // A "(T)" temporary number is not its own lifecycle either — it is the SAME

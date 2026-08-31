@@ -216,7 +216,17 @@
                 </tr>
                 <tr>
                     <td class="label">File Requester</td>
-                    <td>{{ $tracker->receiving_officer_name ?? '—' }}</td>
+                    <td>
+                        {{-- Requester's passport photo beside their name. Printed sheets
+                             need an absolute URL, which UserPhoto already returns. --}}
+                        <span style="display:inline-flex;align-items:center;gap:8px;">
+                            @if(!empty($officerPhoto))
+                                <img src="{{ $officerPhoto }}" alt=""
+                                    style="width:44px;height:44px;border-radius:6px;object-fit:cover;border:1px solid #cbd5e1;">
+                            @endif
+                            <span>{{ $tracker->receiving_officer_name ?? '—' }}</span>
+                        </span>
+                    </td>
                 </tr>
                 <tr>
                     <td class="label">Officer's Rank</td>

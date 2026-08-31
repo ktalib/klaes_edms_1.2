@@ -1397,40 +1397,104 @@ const executeSearchAjax = (filters, searchData) => {
     }
   };
 
-  // Render table results - UPDATED FOR NEW FILE NUMBER STRUCTURE AND COLUMN ORDER
+  // ── Shared result formatting ────────────────────────────────────────────
+  // The table row and the card show the same facts, so they read them the same way.
+
+  const SOURCE_STYLES = {
+    'PRA':               { label: 'PRA',   cls: 'bg-amber-100 text-amber-800' },
+    'File History':      { label: 'FH',    cls: 'bg-indigo-100 text-indigo-800' },
+    'CofO':              { label: 'CofO',  cls: 'bg-green-100 text-green-800' },
+    'Deed Registration': { label: 'Deed',  cls: 'bg-purple-100 text-purple-800' },
+    'Related Fileno':    { label: 'Rel',   cls: 'bg-slate-100 text-slate-700' }
+  };
+
+  const sourceBadge = (file) => {
+    const meta = SOURCE_STYLES[String(file.source_table || '').trim()];
+    if (!meta) return '';
+    return `<span class="inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${meta.cls}">${meta.label}</span>`;
+  };
+
+  const isBlank = (v) => v === null || v === undefined || String(v).trim() === '' || String(v).trim() === '-';
+
+  // The alternates, shown only when a row actually carries one. Five always-empty
+  // columns is what made the old table unreadable.
+  const altFileChips = (fileNumbers, primary) => {
+    const alts = [
+      ['ST', fileNumbers.st], ['NP', fileNumbers.parent], ['MLS', fileNumbers.mls],
+      ['KANGIS', fileNumbers.kangis], ['New KANGIS', fileNumbers.new_kangis]
+    ].filter(([, v]) => !isBlank(v) && String(v).trim() !== String(primary).trim());
+
+    if (!alts.length) return '';
+
+    return '<div class="mt-1 flex flex-wrap gap-1">' + alts.map(([k, v]) =>
+      `<span class="inline-flex items-center gap-1 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600">
+         <span class="font-semibold text-gray-400">${k}</span>${v}</span>`).join('') + '</div>';
+  };
+
+  const resultLocation = (file) => {
+    const parts = [file.property_house_no, file.property_plot_no, file.property_street_name,
+                   file.property_district, file.property_lga].filter(v => !isBlank(v));
+    return parts.length >= 3 ? toProperCase(parts.join(', ')) : toProperCase(getMappedValue(file, 'location'));
+  };
+
+  const partyFlow = (file) => {
+    const p1 = toProperCase(file.party_1 || '-');
+    const p2 = toProperCase(file.party_2 || '-');
+    const p3 = file.party_3 && String(file.party_3).trim() !== '-' ? toProperCase(file.party_3) : '';
+    return { p1, p2, p3 };
+  };
+
+  const caveatCell = (file) => (String(file.caveat || '').toLowerCase() === 'yes')
+    ? '<span class="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">CAVEAT</span>'
+    : '<span class="text-gray-300">&mdash;</span>';
+
+  // Render table results
   const renderTableResults = () => {
     tableResultsBody.innerHTML = '';
-    
+
     searchResults.forEach((file, index) => {
       const fileNumbers = extractFileNumbers(file);
+      const primary = getMappedValue(file, 'fileNumber');
+      const { p1, p2, p3 } = partyFlow(file);
+      const date = getMappedValue(file, 'date');
+
       const row = document.createElement('tr');
-      row.className = 'hover:bg-gray-50 transition-colors';
+      row.className = 'hover:bg-blue-50/40 transition-colors align-top';
       row.innerHTML = `
-        <td class="p-2 text-sm">${fileNumbers.st}</td>
-        <td class="p-2 text-sm">${fileNumbers.parent}</td>
-        <td class="p-2 text-sm">${fileNumbers.mls}</td>
-        <td class="p-2 text-sm">${fileNumbers.kangis}</td>
-        <td class="p-2 text-sm">${fileNumbers.new_kangis}</td>
-        <td class="p-2 text-sm font-mono text-xs text-blue-700">${getMappedValue(file, 'fileNumber')}</td>
-        <td class="p-2 text-sm">${toProperCase(file.party_1 || '-')}</td>
-        <td class="p-2 text-sm">${toProperCase(file.party_2 || '-')}</td>
-        <td class="p-2 text-sm">${toProperCase(file.party_3 || '-')}</td>
-        <td class="p-2 text-sm">${toProperCase(getMappedValue(file, 'lga'))}</td>
-        <td class="p-2 text-sm">${file.property_house_no && file.property_plot_no && file.property_street_name && file.property_district && file.property_lga ? toProperCase(`${file.property_house_no},${file.property_plot_no},${file.property_street_name},${file.property_district},${file.property_lga}`) : toProperCase(getMappedValue(file, 'location'))}</td>
-        <td class="p-2 text-sm">${getMappedValue(file, 'plotNo')}</td>
-        <td class="p-2 text-sm">${toProperCase(getMappedValue(file, 'transactionType'))}</td>
-        <td class="p-2 text-sm">${getMappedValue(file, 'size')}</td>
-        <td class="p-2 text-sm font-medium ${file.caveat === 'Yes' ? 'text-red-600' : ''}">${file.caveat || '-'}</td>
-        <td class="p-2 text-sm">
-          <button class="view-file-btn inline-flex items-center px-2 py-1 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50" data-index="${index}">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 21h7a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v11m0  5l4.879-4.879m0 0a3 3 0 104.243-4.242 3 3 0 00-4.243 4.242z" />
+        <td class="px-3 py-2.5 text-xs text-gray-400">${index + 1}</td>
+        <td class="px-3 py-2.5">
+          <div class="flex items-center gap-1.5">
+            <span class="font-mono text-xs font-bold text-blue-700">${primary}</span>
+            ${sourceBadge(file)}
+          </div>
+          ${altFileChips(fileNumbers, primary)}
+        </td>
+        <td class="px-3 py-2.5">
+          <div class="text-xs font-semibold text-gray-800">${toProperCase(getMappedValue(file, 'transactionType'))}</div>
+          ${isBlank(date) ? '' : `<div class="text-[10px] text-gray-400 mt-0.5">${date}</div>`}
+        </td>
+        <td class="px-3 py-2.5">
+          <div class="text-xs text-gray-700">${p1}</div>
+          <div class="text-xs text-gray-900 font-medium flex items-start gap-1">
+            <span class="text-gray-300">&rarr;</span><span>${p2}</span>
+          </div>
+          ${p3 ? `<div class="text-[10px] text-gray-400 mt-0.5">+ ${p3}</div>` : ''}
+        </td>
+        <td class="px-3 py-2.5 text-xs text-gray-600 max-w-[220px]">${resultLocation(file)}</td>
+        <td class="px-3 py-2.5 text-xs text-gray-600">${getMappedValue(file, 'plotNo')}</td>
+        <td class="px-3 py-2.5 text-xs text-gray-600">${getMappedValue(file, 'size')}</td>
+        <td class="px-3 py-2.5">${caveatCell(file)}</td>
+        <td class="px-3 py-2.5 text-right">
+          <button class="view-file-btn inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-blue-700 transition" data-index="${index}">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
             </svg>
-            View Records
+            View
           </button>
         </td>
       `;
-      
+
       tableResultsBody.appendChild(row);
     });
     
@@ -2007,33 +2071,76 @@ const executeSearchAjax = (filters, searchData) => {
     return { preferred, excluded };
   };
 
-  // Render card results - UPDATED FOR NEW FILE NUMBER STRUCTURE
+  // Render card results. Each card carries what a table row carries — the old one
+  // showed a file number over a line of dashes, which told a searcher nothing and
+  // made Card View the view nobody used.
   const renderCardResults = () => {
     cardResults.innerHTML = '';
-    
+
     searchResults.forEach((file, index) => {
       const fileNumbers = extractFileNumbers(file);
+      const primary = getMappedValue(file, 'fileNumber');
+      const { p1, p2, p3 } = partyFlow(file);
+      const date = getMappedValue(file, 'date');
+      const instrument = toProperCase(getMappedValue(file, 'transactionType'));
+      const location = resultLocation(file);
+      const plot = getMappedValue(file, 'plotNo');
+      const size = getMappedValue(file, 'size');
+      const caveated = String(file.caveat || '').toLowerCase() === 'yes';
+
       const card = document.createElement('div');
-      card.className = 'bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow cursor-pointer';
+      card.className = 'group bg-white rounded-xl border border-gray-200 overflow-hidden hover:border-blue-300 hover:shadow-md transition cursor-pointer'
+        + (caveated ? ' ring-1 ring-red-200' : '');
       card.setAttribute('data-index', index);
+
+      const meta = [
+        ['Plot', plot], ['Size', size], ['Date', date]
+      ].filter(([, v]) => !isBlank(v));
+
       card.innerHTML = `
-        <div class="p-4">
-          <div class="flex justify-between items-start mb-3">
-            <div>
-              <div class="font-medium flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 21h7a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v11m0 5l4.879-4.879m0 0a3 3 0 104.243-4.242 3 3 0 00-4.243 4.242z" />
-                </svg>
-                ${fileNumbers.mls}
-              </div>
-              <div class="text-sm text-gray-500 mt-1">
-                ST Unit: ${fileNumbers.st} | NP: ${fileNumbers.parent} | KANGIS: ${fileNumbers.kangis} | New KANGIS: ${fileNumbers.new_kangis}
-              </div>
-            </div>
+        <div class="flex items-center justify-between gap-2 border-b border-gray-100 bg-gray-50/70 px-4 py-2.5">
+          <div class="flex items-center gap-2 min-w-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span class="font-mono text-sm font-bold text-gray-900 truncate">${primary}</span>
+            ${sourceBadge(file)}
           </div>
+          ${caveated ? '<span class="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">CAVEAT</span>' : ''}
+        </div>
+
+        <div class="px-4 py-3 space-y-2.5">
+          <div class="text-xs font-bold uppercase tracking-wide text-blue-700">${isBlank(instrument) ? 'Transaction' : instrument}</div>
+
+          <div class="rounded-lg bg-gray-50 px-3 py-2">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400">Party 1</div>
+            <div class="text-xs text-gray-800">${p1}</div>
+            <div class="mt-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">Party 2</div>
+            <div class="text-xs font-semibold text-gray-900">${p2}</div>
+            ${p3 ? `<div class="mt-1 text-[10px] text-gray-500">Party 3: ${p3}</div>` : ''}
+          </div>
+
+          ${isBlank(location) ? '' : `
+            <div class="flex items-start gap-1.5 text-[11px] text-gray-600">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 mt-px text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span>${location}</span>
+            </div>`}
+
+          ${meta.length ? `<div class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-500">`
+            + meta.map(([k, v]) => `<span><span class="font-semibold text-gray-400">${k}:</span> ${v}</span>`).join('')
+            + `</div>` : ''}
+
+          ${altFileChips(fileNumbers, primary)}
+        </div>
+
+        <div class="flex items-center justify-end border-t border-gray-100 px-4 py-2">
+          <span class="text-[11px] font-bold text-blue-600 group-hover:text-blue-700">View records &rarr;</span>
         </div>
       `;
-      
+
       card.addEventListener('click', () => {
         const cardIndex = parseInt(card.getAttribute('data-index'));
         selectedFile = searchResults[cardIndex];
@@ -2042,7 +2149,7 @@ const executeSearchAjax = (filters, searchData) => {
         fileHistoryView.classList.remove('hidden');
         renderFileHistory();
       });
-      
+
       cardResults.appendChild(card);
     });
   };
@@ -4216,8 +4323,19 @@ const executeSearchAjax = (filters, searchData) => {
     return s;
   };
 
+  // The file the user actually searched, normalized — or '' when nothing is selected.
+  const searchedLifecycleKey = () => {
+    try {
+      const raw = userSelectedFileNumber || window._currentFileNumber || '';
+      return raw ? normalizeLifecycleFileNo(baseFileNo(raw)) : '';
+    } catch (_) {
+      // Called before the module's own state is initialised — no searched file yet,
+      // so grouping falls through to the ordinary candidate order.
+      return '';
+    }
+  };
+
   const extractLifecycleFileNo = (item) => {
-    if (item?.lifecycle_file_no) return normalizeLifecycleFileNo(item.lifecycle_file_no);
     const candidates = [
       item?.file_no,
       item?.fileno,
@@ -4226,6 +4344,24 @@ const executeSearchAjax = (filters, searchData) => {
       item?.kangisFileNo,
       item?.NewKANGISFileno,
     ];
+
+    // A row that NAMES the searched file belongs to the searched file, whichever
+    // column comes first in the list below. pra #126911 carries mlsFNo COM-2016-219
+    // and fileno COM-2026-219; taking `fileno` filed that file's own Occupancy Permit
+    // into a SECOND lifecycle group, where weight 14 could not lift it above the
+    // searched file's rows — so the OP read third, under a File Commissioning row of
+    // 12, and a second commissioning row appeared. Mirrors the same guard in
+    // LegalSearchService::buildPrintReport().
+    const searched = searchedLifecycleKey();
+    if (searched) {
+      for (const c of [item?.lifecycle_file_no, ...candidates]) {
+        const s = String(c || '').trim();
+        if (s && s !== '-' && normalizeLifecycleFileNo(s) === searched) return searched;
+      }
+    }
+
+    if (item?.lifecycle_file_no) return normalizeLifecycleFileNo(item.lifecycle_file_no);
+
     for (const c of candidates) {
       const s = String(c || '').trim();
       if (s && s !== '-') return normalizeLifecycleFileNo(s);

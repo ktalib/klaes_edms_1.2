@@ -363,6 +363,14 @@
         const row = (l, v) => v ? `<div class="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
             <span class="text-xs font-medium text-gray-500">${esc(l)}</span>
             <span class="text-sm text-gray-800 text-right">${esc(v)}</span></div>` : '';
+        // Same shape as row(), but the value is a person: show their profile picture
+        // beside the name. Falls back to initials when they have not uploaded one.
+        // Clicking the officer opens the shared profile card (photo, username, phone) —
+        // the same one the creator cells across the app use, already mounted by the layout.
+        const personRow = (l, name, photo) => name ? `<div class="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
+            <span class="text-xs font-medium text-gray-500">${esc(l)}</span>
+            <span class="text-sm text-gray-800 text-right upc-trigger" data-user-card data-user-name="${esc(name)}" title="Click to view profile">
+                ${window.UserAvatar ? window.UserAvatar.withName(photo, name, 44) : esc(name)}</span></div>` : '';
         const money = (l, v) => (v == null || v === '') ? '' : row(l, '₦' + Number(v).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
         // A duplicate_fileno flag only diverts the file to the Director Land when the
         // category carries a duplication to resolve (Duplicate / CofO / W-C-R). Temporary
@@ -1197,11 +1205,11 @@
                             if (d.status === 'IN_TRANSIT') {
                                 let dept = (d.receiving_department || '').trim();
                                 if (dept && !/department$/i.test(dept)) dept = dept + ' Department';
-                                return row('Receiving Officer (holder)', d.receiving_officer_name)
+                                return personRow('Receiving Officer (holder)', d.receiving_officer_name, d.receiving_officer_photo)
                                      + row('Department', dept || d.current_location);
                             }
                             return row('Current Location (Expected)', d.current_location)
-                                 + row('Receiving Officer', d.receiving_officer_name);
+                                 + personRow('Receiving Officer', d.receiving_officer_name, d.receiving_officer_photo);
                         })()}
                         ${row('Logged Out', d.logged_out_at)}
                         ${row('Duration with holder', d.duration_with_holder)}

@@ -1271,7 +1271,10 @@
                 return {
                     id,
                     label: resolvedName,
-                    searchTerm: searchTokens
+                    searchTerm: searchTokens,
+                    // Carried onto the <option> so picking an officer can show their
+                    // picture without another round trip.
+                    photo: user.photo_url || ''
                 };
             })
             .filter(Boolean);
@@ -1298,7 +1301,7 @@
             const isSelected = selectedValue && String(selectedValue) === option.id;
             const selectedAttr = isSelected ? ' selected' : '';
             options.push(
-                `<option value="${escapeHtml(option.id)}"${selectedAttr} data-search-term="${escapeHtml(option.searchTerm)}">${escapeHtml(option.label)}</option>`
+                `<option value="${escapeHtml(option.id)}"${selectedAttr} data-search-term="${escapeHtml(option.searchTerm)}" data-photo="${escapeHtml(option.photo || '')}" data-name="${escapeHtml(option.label)}">${escapeHtml(option.label)}</option>`
             );
         });
 
@@ -4483,6 +4486,7 @@
             originOfficeDepartment,
             originRegistry: tracker.origin_registry ?? tracker.originRegistry ?? null,
             receivingOfficerName: receivingOfficerName || null,
+            receivingOfficerPhoto: tracker.receiving_officer_photo ?? tracker.receivingOfficerPhoto ?? null,
             rackShelfLocation,
             loggedOutAt: tracker.logged_out_at ?? null,
             durationWithHolder: tracker.duration_with_holder ?? null,
@@ -8200,6 +8204,16 @@
         const currentOfficeValue = escapeHtml(officeSplit.office);
         const officeNameForPrint = escapeHtml(officeSplit.department);
         const receivingOfficerValue = escapeHtml(tracker.receivingOfficerName || tracker.receiving_officer_name || tracker.receivingOfficer?.name || tracker.handler || '-');
+        // Passport photo of the holder, printed in the sheet header. Falls back to a
+        // blank frame so the header keeps its three-column balance either way.
+        const receivingOfficerPhotoUrl = tracker.receivingOfficerPhoto || tracker.receiving_officer_photo || '';
+        const holderPhotoBlock = receivingOfficerPhotoUrl
+            ? `<div class="holder-photo-wrap">
+                   <img src="${escapeHtml(receivingOfficerPhotoUrl)}" alt="${receivingOfficerValue}"
+                        onerror="this.parentNode.style.display='none'">
+                   <span>Holder</span>
+               </div>`
+            : '';
         const originRegistryValue = escapeHtml(originOfficeName || '-');
         const rackShelfValue = escapeHtml(tracker.rackShelfLocation || tracker.rackShelf || tracker.shelf_location || '-');
         const requestPurposeValue = escapeHtml(tracker.requestPurposeName || '-');
@@ -8260,6 +8274,10 @@
                         .header-top { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
                         .header-logo-wrap { flex: 0 0 auto; width: 80px; height: 80px; display: flex; align-items: center; justify-content: center; }
                         .header-logo-wrap img { max-width: 100%; max-height: 100%; object-fit: contain; }
+                        /* Passport photo of the officer holding the file, sat beside the seals. */
+                        .holder-photo-wrap { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+                        .holder-photo-wrap img { width: 110px; height: 110px; object-fit: cover; border: 1px solid #cbd5e1; border-radius: 6px; }
+                        .holder-photo-wrap span { font-size: 0.6rem; color: #6b7280; text-transform: uppercase; letter-spacing: .03em; }
                         .header-titles { flex: 1 1 auto; text-align: center; }
                         .header .logo { width: 120px; height: auto; margin: 0 auto 0.75rem auto; display: block; }
                         .header h1 { font-size: 1.25rem; margin-bottom: 0.5rem; color: #1f2937; }
@@ -8325,6 +8343,8 @@
                             .print-container { max-width: 100%; margin: 0; padding: 0.1in; }
                             .header { margin-bottom: 0.5rem; padding-bottom: 0.35rem; }
                             .header-logo-wrap { width: 55px; height: 55px; }
+                            .holder-photo-wrap img { width: 86px; height: 86px; }
+                            .holder-photo-wrap span { font-size: 0.5rem; }
                             .header-meta { margin-top: 0.4rem; }
                             .qr-wrapper img { width: 48px; height: 48px; }
                             .section { margin-bottom: 0.5rem; }
@@ -8367,6 +8387,7 @@
                                 )
                             }
                             </div>
+                            ${holderPhotoBlock}
                             <div class="header-logo-wrap">
                                 <img src="http://app.klaes.ng/assets/logo/ministry2.png" alt="Ministry Logo" onerror="this.style.display='none'">
                             </div>
