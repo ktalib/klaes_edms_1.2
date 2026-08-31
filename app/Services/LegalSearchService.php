@@ -6352,14 +6352,23 @@ class LegalSearchService
         // year embedded in the file number instead. Reg particulars are 0/0/0.
         $commissioningDate = $this->resolveCommissioningInfo($fileNumber, $fileNo)['date'];
 
-        // Party 2 of the commissioning / temporary rows is the allottee the file was opened
-        // for, read off the instrument that opened it — see COMMISSIONING_HOLDER_SOURCES for
-        // the order and for which party each one contributes — and only then the file title
-        // (latest owner). The file title names whoever holds the land today, which is the
-        // wrong name on a commissioning row once the land has changed hands.
-        $grantHolder = $this->resolveHolderFromGrantEvent($transactions, $canonicalTransactionType, $fileNumber);
-        $commissioningHolder = $this->resolveCommissioningHolder(DB::connection('sqlsrv'), $fileNo)
-            ?: ($grantHolder !== null ? $tc($grantHolder) : ($fileTitle ?: '-'));
+        // Party 2 of the commissioning / temporary rows is the FILE TITLE, and nothing
+        // else (client, 2026-08-30: "it should just be the file title nothing more,
+        // file title should not be the party 2 of the OP").
+        //
+        // It used to be derived from the instrument that opened the file —
+        // COMMISSIONING_HOLDER_SOURCES, reading the grantee of a RofO/OP or the
+        // assignor of a ToT/Deed of Assignment — on the reasoning that the file title
+        // tracks the CURRENT owner and drifts. In practice that put a name on the
+        // commissioning row that the file itself does not carry: RES-2024-2184 is
+        // titled SAYYIDI UBA WARU and was showing LAMASH, the grantee of a 2021 OP.
+        // The file title is what the file says it is, and the timeline's own rows
+        // already show who held it when.
+        //
+        // resolveHolderFromGrantEvent() and COMMISSIONING_HOLDER_SOURCES are left in
+        // place, as is their twin in legal_search/js.blade.php: both are now unreached,
+        // and both document a rule that was deliberate before this and may be wanted again.
+        $commissioningHolder = $fileTitle ?: '-';
 
         // ── "Temporary File" record — printed directly below File Commissioning ──
         // Present when the searched file has a temporary "(T)" sibling, OR when the searched

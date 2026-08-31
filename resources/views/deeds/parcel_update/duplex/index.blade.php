@@ -372,7 +372,7 @@
                                                 <button onclick="openApprovalDecision({{ $record->id }})"
                                                     @disabled(!$canApprove)
                                                     title="{{ $why($canApprove, $approvalBlocker) }}"
-                                                    class="menu-item text-emerald-700 font-bold">Approval</button>
+                                                    class="menu-item text-emerald-700 font-bold">Approve</button>
                                                 <button onclick="rejectDuplex({{ $record->id }})"
                                                     @disabled(!$canReject)
                                                     title="{{ $why($canReject, 'Nothing left to reject') }}"

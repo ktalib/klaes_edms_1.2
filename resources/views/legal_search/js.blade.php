@@ -4047,15 +4047,11 @@ const executeSearchAjax = (filters, searchData) => {
       const yearFromFileNo = extractYearFromFileNumber(fileNo);
       if (yearFromFileNo) mainRowDate = yearFromFileNo;
     }
-    // Party 1 is the commissioning authority; Party 2 is the file's original holder —
-    // the assignor (Party 1) of the KLAES-registered Deed of Assignment when present,
-    // then the grantee of the RofO / ToT / OP the file was opened for, and only then the
-    // file title (latest owner).
-    const titleHolder = (selectedFile && (selectedFile._file_commissioning_holder
-      || selectedFile._file_title || selectedFile.file_title)) || '-';
-    const ownerName = (selectedFile && selectedFile._file_commissioning_holder)
-      || resolveHolderFromGrantEvent(fileNo)
-      || titleHolder;
+    // Party 1 is the commissioning authority; Party 2 is the FILE TITLE, and nothing
+    // else — see the same decision in LegalSearchService::buildPrintReport(). It was
+    // read off the grant that opened the file (RofO/OP grantee, ToT/Deed assignor),
+    // which showed LAMASH on RES-2024-2184 while the file is titled SAYYIDI UBA WARU.
+    const ownerName = (selectedFile && (selectedFile._file_title || selectedFile.file_title)) || '-';
     return {
       _is_commissioning: true,
       id: 'commissioning',
@@ -4067,9 +4063,6 @@ const executeSearchAjax = (filters, searchData) => {
       transaction_type: _commissioningLabel,
       instrument_type: _commissioningLabel,
       party_1: 'Kano State Ministry of Land and Physical Planning', party_2: ownerName, party_3: '-', party_4: '-',
-      // Pre-grant-rule holder, read by getHolderForFile() so the granted name stays on
-      // this row instead of seeding the file's other synthetic rows.
-      _lifecycle_holder: titleHolder,
       serial_no: '', page_no: '', volume_no: '',
       transaction_date: mainRowDate,
       reg_date: '',
@@ -4281,13 +4274,8 @@ const executeSearchAjax = (filters, searchData) => {
     const tempRowDate = (commDate && commDate !== '-' && commissionedIsTemp)
       ? commDate : '-';
 
-    // Same Party 2 as the permanent File Commissioning row above it — the grant rows live
-    // on the main number, so the "(T)" suffix is stripped before matching.
-    const titleHolder = (selectedFile && (selectedFile._file_commissioning_holder
-      || selectedFile._file_title || selectedFile.file_title)) || '-';
-    const ownerName = (selectedFile && selectedFile._file_commissioning_holder)
-      || resolveHolderFromGrantEvent(tempFileNo.replace(/\s*\(\s*T\s*\)\s*$/i, '').trim())
-      || titleHolder;
+    // Same Party 2 as the permanent File Commissioning row above it: the file title.
+    const ownerName = (selectedFile && (selectedFile._file_title || selectedFile.file_title)) || '-';
     return {
       _is_temporary_file: true,
       id: 'temporary-file',
@@ -4299,9 +4287,6 @@ const executeSearchAjax = (filters, searchData) => {
       transaction_type: 'Temporary File',
       instrument_type: 'Temporary File',
       party_1: 'Kano State Ministry of Land and Physical Planning', party_2: ownerName, party_3: '-', party_4: '-',
-      // See buildCommissioningTimelineRow(): keeps the granted name off the file's
-      // other synthetic rows.
-      _lifecycle_holder: titleHolder,
       serial_no: '', page_no: '', volume_no: '',
       transaction_date: tempRowDate,
       reg_date: '',
@@ -4471,12 +4456,7 @@ const executeSearchAjax = (filters, searchData) => {
     }
     const ordered = [...rowsForFile].sort((a, b) => (getTransactionTimestamp(a) ?? Infinity) - (getTransactionTimestamp(b) ?? Infinity));
     for (const r of ordered) {
-      // _lifecycle_holder, when present, is a commissioning row's holder BEFORE the
-      // RofO/ToT/OP grant rule was applied to it. That rule is for commissioning and
-      // temporary-file rows only — without this the commissioning row (always the
-      // earliest, so always the row picked here) would hand its granted name on to
-      // every other synthetic row of the file, e.g. the KANGIS Recertification.
-      const p2 = String(r?._lifecycle_holder || r?.party_2 || '').trim();
+      const p2 = String(r?.party_2 || '').trim();
       if (p2 && p2 !== '-') return p2;
       const p1 = String(r?.party_1 || '').trim();
       if (p1 && p1 !== '-') return p1;
