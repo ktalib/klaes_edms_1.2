@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', function () {
         console.log('GlobalFileNoModal initialized successfully');
     } else {
         console.warn('GlobalFileNoModal not available for initialization');
-    }
+    } 
 
     // State management
     let currentInstrumentType = null;
