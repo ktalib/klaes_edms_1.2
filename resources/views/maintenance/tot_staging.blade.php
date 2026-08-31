@@ -19,11 +19,35 @@
                 <p class="text-slate-500 mt-1">Records ready for Transfer of Title generation</p>
             </div>
             <div class="flex gap-3">
-                <button id="btnIgnore" class="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white border border-slate-200 text-slate-700 font-semibold shadow-sm hover:bg-slate-50 transition">
+                {{-- Match OP — the same job one file at a time, and where the records
+                     this dashboard lists come from. Kept beside the bulk actions so an
+                     officer who arrives here to find "All Caught Up" can go and match
+                     the files nobody has reached yet, instead of leaving empty-handed. --}}
+                {{-- `from=tot` marks the origin so the DMS sidebar entry does NOT light
+                     up: the officer came from here, and a sidebar highlighting a
+                     section they did not open reads as having navigated somewhere
+                     they did not go. See edms.blade.php, which checks for it. --}}
+                <a href="{{ route('land-recommendations.create') }}?match-op&from=tot"
+                   class="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white border border-amber-300 text-amber-700 font-semibold shadow-sm hover:bg-amber-50 transition">
+                    <i data-lucide="git-merge" class="h-5 w-5"></i>
+                    <span>Match OP</span>
+                </a>
+                {{-- Both bulk actions are disabled. Transfers are written one file at a
+                     time through Match OP, where the officer sees the file's whole
+                     chain and confirms the two names before anything is recorded — a
+                     dealing on somebody's title is not something to generate in bulk
+                     off a staging list. The buttons are kept, disabled, rather than
+                     removed: they say plainly that the capability exists and is shut,
+                     and the JS that binds them still finds them. --}}
+                <button id="btnIgnore" disabled
+                        title="Archiving in bulk is disabled — use Match OP to work these files one at a time."
+                        class="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white border border-slate-200 text-slate-400 font-semibold shadow-sm opacity-60 cursor-not-allowed">
                     <i data-lucide="eye-off" class="h-5 w-5"></i>
                     <span>Archive Selected</span>
                 </button>
-                <button id="btnGenerate" class="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 text-white font-semibold shadow hover:bg-blue-700 transition">
+                <button id="btnGenerate" disabled
+                        title="Bulk ToT generation is disabled — use Match OP, which shows the file's chain and confirms both names before writing."
+                        class="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-slate-300 text-white font-semibold shadow opacity-60 cursor-not-allowed">
                     <i data-lucide="zap" class="h-5 w-5"></i>
                     <span>Execute ToT Generation</span>
                 </button>

@@ -39,6 +39,18 @@
               <i data-lucide="file-search" class="h-3.5 w-3.5 text-emerald-400"></i>
               <span>File Indexing Assistant</span>
             </a>
+
+            {{-- Match OP. It lives with indexing because that is the comparison it
+                 makes — the Occupancy Permit's holder against the File Indexing name —
+                 and the officers who work these files are indexing officers. Gated on
+                 its own role, the same one the page itself checks. --}}
+            @if($hasRole('Match OP'))
+              <a href="{{ route('land-recommendations.create') }}?match-op"
+                class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('land-recommendations.create') && request()->has('match-op') && request()->query('from') !== 'tot' ? 'active' : '' }}">
+                <i data-lucide="git-merge" class="h-3.5 w-3.5 text-emerald-400"></i>
+                <span>Match OP</span>
+              </a>
+            @endif
             <a href="{{route('missing-files.index')}}"
               class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('missing-files.*') ? 'active' : '' }}">
               <i data-lucide="file-warning" class="h-3.5 w-3.5 text-emerald-400"></i>

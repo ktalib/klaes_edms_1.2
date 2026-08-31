@@ -35,6 +35,10 @@
         var matchUrl = form.dataset.opmatchUrl || '';
         var csrf = form.querySelector('input[name="_token"]');
 
+        // The Match OP page: the same card with nothing else on it, so a write is the
+        // end of a job rather than a step in a capture. See match_op.blade.php.
+        var standalone = form.dataset.opmatchStandalone === '1';
+
         var flagInput = document.getElementById('is_existing_recommendation');
         var totInput = document.getElementById('op_match_tot_pra_id');
         var batchToggle = document.getElementById('batch-mode-toggle');
@@ -98,6 +102,35 @@
             // mode the file is in, and uploading the approved letter is a separate act
             // that lives in the record's action menu on the register — not something
             // one button both promises and cannot actually do.
+        }
+
+        /**
+         * Shown from the moment a file number is picked until its answer arrives.
+         *
+         * The chain is read through the Legal Search report engine — four registers,
+         *3-5 seconds on a cold file — and the card simply appearing some seconds
+         * later reads as a page that did nothing. It also stands in for the idle
+         * notice on the Match OP page, which keys off this host being visible.
+         */
+        function showChecking(fileNo) {
+            host.innerHTML = ''
+                + '<div class="rounded-xl border border-slate-200 bg-white p-5">'
+                +   '<div class="flex items-center gap-3">'
+                +     '<i data-lucide="loader" class="h-5 w-5 animate-spin text-blue-600"></i>'
+                +     '<div>'
+                +       '<h3 class="text-sm font-bold text-slate-800">Checking ' + esc(fileNo) + '…</h3>'
+                +       '<p class="mt-0.5 text-xs text-slate-500">Reading the file history from all four registers. This can take a few seconds.</p>'
+                +     '</div>'
+                +   '</div>'
+                +   '<div class="mt-4 space-y-2">'
+                +     '<div class="h-3 w-1/3 rounded bg-slate-100 animate-pulse"></div>'
+                +     '<div class="h-3 w-2/3 rounded bg-slate-100 animate-pulse"></div>'
+                +     '<div class="h-3 w-1/2 rounded bg-slate-100 animate-pulse"></div>'
+                +   '</div>'
+                + '</div>';
+
+            host.classList.remove('hidden');
+            if (window.lucide) window.lucide.createIcons();
         }
 
         function timelineRows(rows, state) {
@@ -276,7 +309,18 @@
             var btn = document.getElementById('op-match-btn');
             if (btn) {
                 btn.addEventListener('click', function () {
-                    confirmMatch(state, function () { runMatch(btn); });
+                    // Locked on the first click, before the confirmation opens. The
+                    // dialog blocks the page while it is up, but the gap between the
+                    // click and it appearing is enough for a second click to queue a
+                    // second write — and this writes a dealing on somebody's title.
+                    if (btn.disabled) return;
+                    lockMatchButton(btn, 'Opening…');
+
+                    confirmMatch(
+                        state,
+                        function () { runMatch(btn); },
+                        function () { unlockMatchButton(btn); }   // cancelled
+                    );
                 });
             }
         }
@@ -290,13 +334,32 @@
          * and the direction, so what is about to be recorded is read once before it
          * exists rather than discovered afterwards.
          */
-        function confirmMatch(state, onConfirm) {
+        /** Disabled, dimmed and spinning, so a second click has nothing to hit. */
+        function lockMatchButton(btn, label) {
+            btn.disabled = true;
+            btn.classList.add('opacity-70', 'cursor-not-allowed');
+            btn.innerHTML = '<i data-lucide="loader" class="h-5 w-5 animate-spin"></i> ' + label;
+            if (window.lucide) window.lucide.createIcons();
+        }
+
+        function unlockMatchButton(btn) {
+            btn.disabled = false;
+            btn.classList.remove('opacity-70', 'cursor-not-allowed');
+            btn.innerHTML = '<i data-lucide="git-merge" class="h-5 w-5"></i> Match';
+            if (window.lucide) window.lucide.createIcons();
+        }
+
+        function confirmMatch(state, onConfirm, onCancel) {
             var fileNo = fileNoInput.value.trim();
             var from = (state && state.op) ? state.op.holder : '';
             var to = (state && state.indexing_name) ? state.indexing_name : '';
 
             if (typeof Swal === 'undefined') {
-                if (window.confirm('Record a Transfer of Title on ' + fileNo + ' from ' + from + ' to ' + to + '?')) onConfirm();
+                if (window.confirm('Record a Transfer of Title on ' + fileNo + ' from ' + from + ' to ' + to + '?')) {
+                    onConfirm();
+                } else if (typeof onCancel === 'function') {
+                    onCancel();
+                }
                 return;
             }
 
@@ -319,7 +382,11 @@
                 cancelButtonColor: '#64748b',
                 reverseButtons: true
             }).then(function (result) {
-                if (result.isConfirmed) onConfirm();
+                if (result.isConfirmed) {
+                    onConfirm();
+                } else if (typeof onCancel === 'function') {
+                    onCancel();
+                }
             });
         }
 
@@ -327,9 +394,7 @@
             var fileNo = fileNoInput.value.trim();
             if (!fileNo || !matchUrl) return;
 
-            btn.disabled = true;
-            btn.innerHTML = '<i data-lucide="loader" class="h-5 w-5 animate-spin"></i> Matching…';
-            if (window.lucide) window.lucide.createIcons();
+            lockMatchButton(btn, 'Matching…');
 
             var body = new FormData();
             body.append('file_number', fileNo);
@@ -355,7 +420,9 @@
                     // explicit rather than relying on that to unlock the save.
                     setSubmitBlocked(false);
 
-                    if (typeof Swal !== 'undefined') {
+                    if (standalone) {
+                        afterStandaloneMatch(res.data.message);
+                    } else if (typeof Swal !== 'undefined') {
                         Swal.fire({
                             icon: 'success',
                             title: 'Transfer recorded',
@@ -367,14 +434,62 @@
                     }
                 })
                 .catch(function (err) {
-                    btn.disabled = false;
-                    btn.innerHTML = '<i data-lucide="git-merge" class="h-5 w-5"></i> Match';
-                    if (window.lucide) window.lucide.createIcons();
+                    unlockMatchButton(btn);
 
                     if (typeof Swal !== 'undefined') {
                         Swal.fire({ icon: 'error', title: 'Not matched', text: err.message, confirmButtonColor: '#dc2626' });
                     }
                 });
+        }
+
+        /**
+         * On the Match OP page the officer is working a list, so the question after a
+         * write is simply whether there is another one. Yes clears the file number and
+         * leaves them on a ready page; No reloads, which is the same thing but from a
+         * clean slate — and is what they want when the run is finished.
+         */
+        function afterStandaloneMatch(message) {
+            if (typeof Swal === 'undefined') {
+                if (window.confirm(message + '\n\nMatch another file?')) {
+                    clearForNextFile();
+                } else {
+                    window.location.reload();
+                }
+                return;
+            }
+
+            Swal.fire({
+                icon: 'success',
+                title: 'Transfer recorded',
+                html: '<p class="text-sm text-slate-600">' + esc(message) + '</p>'
+                    + '<p class="text-sm font-semibold text-slate-700 mt-3">Do you want to match another file?</p>',
+                showCancelButton: true,
+                confirmButtonText: 'Yes, match another',
+                cancelButtonText: 'No, I am done',
+                confirmButtonColor: '#d97706',
+                cancelButtonColor: '#64748b',
+                reverseButtons: true,
+                allowOutsideClick: false
+            }).then(function (result) {
+                if (result.isConfirmed) {
+                    clearForNextFile();
+                } else {
+                    window.location.reload();
+                }
+            });
+        }
+
+        /** Ready for the next file: no file number, no card, nothing carried over. */
+        function clearForNextFile() {
+            fileNoInput.value = '';
+            lastChecked = '';
+            reset();
+
+            if (window.jQuery) window.jQuery(fileNoInput).trigger('change');
+            else fileNoInput.dispatchEvent(new Event('change'));
+
+            var pick = document.getElementById('select-fileno-btn');
+            if (pick) pick.focus();
         }
 
         function check() {
@@ -388,6 +503,8 @@
 
             if (fileNo === lastChecked) return;
             lastChecked = fileNo;
+
+            showChecking(fileNo);
 
             // A second selection while the first is still in the air must not paint
             // the earlier file's answer over the later one.
@@ -417,7 +534,12 @@
                         reset();
                     }
                 })
-                .catch(function () { /* fail open — an ordinary capture is unaffected */ });
+                .catch(function (err) {
+                    // Fail open — an ordinary capture is unaffected — but never leave
+                    // the spinner turning, which would read as a check still running.
+                    if (err && err.name === 'AbortError') return;   // superseded by a newer pick
+                    reset();
+                });
         }
 
         // Saving without pressing Match would write a recommendation on top of a
@@ -425,6 +547,8 @@
         // server refuses this too; this only saves the round trip and keeps the
         // officer on the card that has the button.
         form.addEventListener('submit', function (event) {
+            if (standalone) return;   // nothing is submitted from the Match OP page
+
             var pending = document.getElementById('op-match-btn');
             if (!pending || (flagInput && flagInput.value === '1')) return;
 

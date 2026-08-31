@@ -804,6 +804,23 @@ class LandRecommendationController extends Controller
 
     public function create(Request $request)
     {
+        // Match OP — the OP-holder card on a page of its own, at
+        // /land-recommendations/create?match-op. Split out so the two jobs can run in
+        // parallel: one officer clears unmatched Occupancy Permits while another
+        // captures recommendations, instead of the second waiting on the first.
+        if ($request->has('match-op')) {
+            if (! $this->userCanMatchOp()) {
+                RecLog::warning('Match OP page refused', ['user_id' => Auth::id()]);
+
+                return redirect()->route('dashboard')
+                    ->with('error', 'You do not have access to Match OP.');
+            }
+
+            return view('land_recommendations.match_op', [
+                'PageTitle' => 'Match OP',
+            ]);
+        }
+
         $PageTitle ='Recommendation For Grant Of Statutory Right Of Occupancy';
         $landUses = LandUse::orderBy('landuse')->get();
 
@@ -880,6 +897,38 @@ class LandRecommendationController extends Controller
             'PageTitle', 'landUses', 'purposes', 'recommendation',
             'isEdit', 'reissuanceSource', 'reissuedFromId'
         ));
+    }
+
+    /**
+     * May this user open Match OP?
+     *
+     * Its own role rather than the recommendation roles: the point of the page is
+     * that somebody who does NOT capture recommendations can clear the unmatched
+     * permits. Super Admin passes as it does everywhere else.
+     *
+     * The role name is matched loosely — "Match OP", "Match-OP" and "match op" are
+     * all the same thing to an administrator typing it into the roles screen, and a
+     * page nobody can open because of a hyphen is worse than a slightly generous
+     * comparison.
+     */
+    private function userCanMatchOp(): bool
+    {
+        $user = Auth::user();
+
+        if (! $user || ! method_exists($user, 'assignedRoleNames')) {
+            return false;
+        }
+
+        $normalize = fn ($value) => strtolower(preg_replace('/[^a-z0-9]+/i', '', (string) $value));
+        $wanted = ['matchop', 'supperadmin', 'superadmin'];
+
+        foreach ($user->assignedRoleNames() as $role) {
+            if (in_array($normalize($role), $wanted, true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
