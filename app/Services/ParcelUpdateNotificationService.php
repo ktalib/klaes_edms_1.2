@@ -4,13 +4,23 @@ namespace App\Services;
 
 use App\Models\Department;
 use App\Models\User;
-use App\Models\UserRole;
 use Illuminate\Support\Facades\Log;
 
 class ParcelUpdateNotificationService
 {
     private const LAND_DEPARTMENT_ID = 3;
-    private const MLS_ROLE_NAME = 'Generate New FileNo (MLSFileNo)';
+
+    /**
+     * Land staff are MLPP in department 3; the other categories (MDC, MDCM) are not.
+     *
+     * This REPLACES a filter on the "Generate New FileNo (MLSFileNo)" role, which
+     * matched the role id inside the comma-separated assign_role column. That rule
+     * selected NOBODY — the role exists (id 10055) but no user in department 3 carries
+     * it — so every parcel-update notification this service has ever raised was sent
+     * to an empty list and silently logged as "0 users notified".
+     */
+    private const STAFF_CATEGORY = 'MLPP';
+
     private const MODULE = 'parcel_update';
 
     public function __construct(
@@ -79,25 +89,38 @@ class ParcelUpdateNotificationService
 
     // -------------------------------------------------------------------------
 
+    /**
+     * Everyone who should hear about a parcel update: Land, plus the administrators.
+     *
+     * Land is MLPP staff in department 3. Administrators are included whatever their
+     * department — they carry the system, and a duplex sitting uncaptured is as much
+     * their problem as Land's.
+     *
+     * One query, deduplicated by the OR: an administrator who is also MLPP in Land
+     * appears once, and is notified once.
+     */
     private function dispatchToLandUsers(string $title, string $body, array $data): void
     {
         try {
-            $roleIds = UserRole::where('name', self::MLS_ROLE_NAME)->pluck('id')->all();
-
-            if (empty($roleIds)) {
-                Log::warning('ParcelUpdateNotificationService: MLS role not found', ['role' => self::MLS_ROLE_NAME]);
-                return;
-            }
-
-            // Build a LIKE pattern that matches any of the role IDs in the comma-separated assign_role field.
             $users = User::on('sqlsrv')
-                ->where('department_id', self::LAND_DEPARTMENT_ID)
-                ->where(function ($q) use ($roleIds) {
-                    foreach ($roleIds as $rid) {
-                        $q->orWhere('assign_role', 'LIKE', "%{$rid}%");
-                    }
+                ->where(function ($q) {
+                    $q->where(function ($land) {
+                        $land->where('staff_type_category', self::STAFF_CATEGORY)
+                            ->where('department_id', self::LAND_DEPARTMENT_ID);
+                    })->orWhere('is_admin', 1);
                 })
                 ->get(['id']);
+
+            if ($users->isEmpty()) {
+                // Worth a warning rather than a silent success: the previous rule
+                // selected nobody for months and read as "notified" in the log.
+                Log::warning('ParcelUpdateNotificationService: no Land or admin users matched', [
+                    'department_id'       => self::LAND_DEPARTMENT_ID,
+                    'staff_type_category' => self::STAFF_CATEGORY,
+                    'event'               => $data['event'] ?? null,
+                ]);
+                return;
+            }
 
             foreach ($users as $user) {
                 $this->notifier->create(
@@ -110,7 +133,7 @@ class ParcelUpdateNotificationService
                 );
             }
 
-            Log::info('ParcelUpdateNotificationService: Land users notified', [
+            Log::info('ParcelUpdateNotificationService: Land + admin users notified', [
                 'count' => $users->count(),
                 'event' => $data['event'] ?? null,
             ]);
