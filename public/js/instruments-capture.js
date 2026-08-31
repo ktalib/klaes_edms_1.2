@@ -2321,6 +2321,10 @@ document.addEventListener('DOMContentLoaded', function () {
         // Listed in the duplicate warning so the user can pick which consent this
         // capture is for — a file often carries more than one over its life.
         consentApps: [],
+        // Set when the file is a sectional unit whose FIRST ST Assignment has not
+        // been registered yet. While it is set, every consent on the file is
+        // unselectable — dealings on an ST unit must be registered in order.
+        consentLock: null,
         priorInstrument: null
     };
 
@@ -3331,6 +3335,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 duplicateCheckState.propertyData = data.pra;
                 duplicateCheckState.consentApp = data.consent_app || null;
                 duplicateCheckState.consentApps = Array.isArray(data.consent_apps) ? data.consent_apps : [];
+                duplicateCheckState.consentLock = data.consent_lock || null;
                 debugConsents("server response", duplicateCheckState.consentApps);
                 debugFileHistory(data);
                 // If there is no separate prior record, reuse the duplicate record itself
@@ -3372,6 +3377,7 @@ document.addEventListener('DOMContentLoaded', function () {
             } else {
                 console.log('checkDuplicate: No duplicate exists.');
                 duplicateCheckState.consentApps = Array.isArray(data.consent_apps) ? data.consent_apps : [];
+                duplicateCheckState.consentLock = data.consent_lock || null;
                 debugConsents("server response", duplicateCheckState.consentApps);
                 debugFileHistory(data);
 
@@ -3569,23 +3575,91 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     window.debugConsents = debugConsents;
 
+    /**
+     * Describe WHAT is on the file rather than how many slots are free.
+     *
+     * "0 of 2 still available" is accurate but tells the clerk nothing about why
+     * or what to do. "1 consent captured · 1 ST Assignment pending registration"
+     * names both rows, so the blocking one is obvious at a glance.
+     */
+    function describeConsentMix(consents) {
+        const plural = (n, word) => `${n} ${word}${n > 1 ? 's' : ''}`;
+
+        const captured    = consents.filter(c => !c.is_synthetic && !c.is_used).length;
+        const stPending   = consents.filter(c => c.is_synthetic && !c.is_used).length;
+        const alreadyUsed = consents.filter(c => c.is_used).length;
+
+        const parts = [];
+        if (captured)    parts.push(`${plural(captured, 'consent')} captured`);
+        if (stPending)   parts.push(`${plural(stPending, 'ST Assignment')} pending registration`);
+        if (alreadyUsed) parts.push(`${alreadyUsed} already registered`);
+
+        return parts.join(' · ');
+    }
+
     function buildConsentOptionsHtml(consents, options = {}) {
         debugConsents('picker render', consents);
         if (!Array.isArray(consents) || consents.length === 0) return '';
 
         const { withDivider = true, appliedId = null } = options;
-        const available = consents.filter(c => !c.is_used).length;
+        // A sectional unit whose first ST Assignment is still unregistered locks
+        // the whole list: capturing any consent here would record a later dealing
+        // before the transfer it depends on exists.
+        const lock = duplicateCheckState.consentLock || null;
+        const available = lock ? 0 : consents.filter(c => !c.is_used).length;
 
         let html = `
         <div class="${withDivider ? 'mt-3 pt-3 border-t border-gray-200' : ''} text-left" data-consent-picker>
             <div class="flex items-center justify-between mb-2">
                 <span class="font-semibold text-gray-700">Consents on this file</span>
-                <span class="text-[11px] text-gray-500">${available} of ${consents.length} still available</span>
+                <span class="text-[11px] ${lock ? 'text-rose-600 font-semibold' : 'text-gray-500'}">${escapeHtmlText(
+                    lock
+                        ? (describeConsentMix(consents) || `${consents.length} consent(s) on this file`)
+                        : `${available} of ${consents.length} still available`
+                )}</span>
             </div>
+        `;
+
+        if (lock) {
+            // Name the consents that ARE on file. Saying "no consent can be
+            // captured" while one is listed as captured reads as a contradiction —
+            // the consent exists, it just cannot be USED to register yet.
+            const onFileRefs = consents
+                .filter(c => !c.is_synthetic && !c.is_used)
+                .map(c => c.application_tracking_no)
+                .filter(Boolean);
+
+            const onFileLine = onFileRefs.length
+                ? `<strong>${escapeHtmlText(onFileRefs.join(', '))}</strong> ${onFileRefs.length > 1 ? 'are' : 'is'} already on file,
+                   but ${onFileRefs.length > 1 ? 'they cannot' : 'it cannot'} be used to register this deed until then.`
+                : 'No consent on this file can be used to register a deed until then.';
+
+            html += `
+            <div class="mb-3 rounded-lg border border-rose-300 bg-rose-50 p-3">
+                <div class="flex items-start gap-2">
+                    <span class="text-rose-600 font-bold text-sm leading-none mt-0.5">&#9888;</span>
+                    <div class="min-w-0">
+                        <div class="text-xs font-bold text-rose-800 mb-1">First ST Assignment not registered</div>
+                        <p class="text-[11px] text-rose-700 leading-relaxed">
+                            Unit <strong>${escapeHtmlText(lock.unit_file_number || '')}</strong> has no registered
+                            ST Assignment yet. ${onFileLine}
+                            Register the first ST Assignment under <em>Instrument Registration</em>,
+                            then return here to capture this dealing.
+                        </p>
+                    </div>
+                </div>
+            </div>
+            `;
+        } else {
+            html += `
             <p class="text-[11px] text-gray-500 mb-2">
                 Pick the consent this instrument is being captured against — its details are filled into the form.
                 Consents already registered are greyed out.
             </p>
+            `;
+        }
+
+        html += `
             <div class="space-y-2 max-h-64 overflow-y-auto pr-1">
         `;
 
@@ -3595,6 +3669,32 @@ document.addEventListener('DOMContentLoaded', function () {
             const dated = formatShortDate(consent.application_date || consent.created_at);
             const offType = consent.matches_type === false;
             const isApplied = appliedId !== null && String(appliedId) === String(consent.id);
+
+            // Locked file: render every consent as an inert card, whatever its own
+            // state. Rendered as a plain div with no data-consent-id, so the click
+            // handlers below cannot bind to it at all.
+            if (lock) {
+                const stNote = consent.is_synthetic
+                    ? `<div class="text-[11px] text-purple-400 mt-1">Sectional memo${consent.unit_file_number ? ` · unit ${escapeHtmlText(consent.unit_file_number)}` : ''}</div>`
+                    : '';
+
+                html += `
+                <div class="rounded-lg border border-gray-200 bg-gray-100 p-2.5 opacity-60 cursor-not-allowed"
+                     title="Locked — this consent cannot be used to register a deed until the unit's first ST Assignment is registered."
+                     aria-disabled="true">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <div class="text-xs font-semibold text-gray-600">${escapeHtmlText(consent.consent_type)} · ${escapeHtmlText(ref)}</div>
+                            <div class="text-[11px] text-gray-500 truncate">${escapeHtmlText(parties)}</div>
+                            ${dated ? `<div class="text-[11px] text-gray-400">Applied ${escapeHtmlText(dated)}</div>` : ''}
+                            ${stNote}
+                        </div>
+                        <span class="shrink-0 text-[10px] font-bold uppercase tracking-wide bg-rose-200 text-rose-800 rounded px-1.5 py-0.5">Locked</span>
+                    </div>
+                </div>
+                `;
+                return;
+            }
 
             if (consent.is_used) {
                 const usedBy = consent.used_by || {};
@@ -3671,6 +3771,20 @@ document.addEventListener('DOMContentLoaded', function () {
     function selectConsentForCapture(consent) {
         if (!consent) return;
 
+        // Defensive: locked cards carry no data-consent-id so this should be
+        // unreachable, but never let a consent be applied while the file is locked.
+        const lock = duplicateCheckState.consentLock;
+        if (lock) {
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'First ST Assignment Not Registered',
+                    text: lock.message || 'Register the first ST Assignment for this unit before capturing against a consent.'
+                });
+            }
+            return;
+        }
+
         duplicateCheckState.consentApp = consent;
         // Synthetic ST Assignment consents have no consent_applications row to
         // link to — see autoFillFromConsent.
@@ -3711,7 +3825,11 @@ document.addEventListener('DOMContentLoaded', function () {
         const consents = duplicateCheckState.consentApps || [];
         if (consents.length === 0) return;
 
-        const needsChoice = consents.length > 1 || consents.some(c => c.is_used);
+        // A locked file always raises the prompt, even with a single consent —
+        // the clerk needs to be told why nothing here can be captured against.
+        const needsChoice = consents.length > 1
+            || consents.some(c => c.is_used)
+            || !!duplicateCheckState.consentLock;
         if (!needsChoice) return;
 
         const key = `${fileNo}|${typeName}`;

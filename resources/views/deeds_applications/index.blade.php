@@ -412,6 +412,36 @@
                   class="px-2.5 py-1 rounded-full text-[11px] font-bold uppercase border whitespace-nowrap inline-block {{ $badgeClass }}">
                   {{ $application->consent_type }}
                 </span>
+
+                @if($application->is_st_assignment ?? false)
+                  {{-- Until a unit's FIRST ST Assignment is registered, none of its
+                       consents can be captured on the instrument form. Show that here,
+                       or the block on the capture form has no explanation on screen. --}}
+                  @php
+                      $faStatus = $application->first_assignment_status ?? 'unknown';
+                      $faRegistered = $application->units_registered ?? 0;
+                      $faTotal = $application->units_total ?? 0;
+                  @endphp
+                  @if($faStatus === 'not_registered')
+                    <span class="mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap inline-flex items-center gap-1 bg-rose-50 text-rose-700 border-rose-200"
+                          title="No unit on this application has a registered ST Assignment yet. Consents on these units cannot be used to register a deed until it is registered.">
+                      <i data-lucide="alert-triangle" class="h-3 w-3"></i>
+                      1st Assignment Not Registered
+                    </span>
+                  @elseif($faStatus === 'partial')
+                    <span class="mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap inline-flex items-center gap-1 bg-amber-50 text-amber-700 border-amber-200"
+                          title="{{ $faRegistered }} of {{ $faTotal }} units have a registered ST Assignment. The remaining units stay locked on the capture form.">
+                      <i data-lucide="clock" class="h-3 w-3"></i>
+                      1st Assignment {{ $faRegistered }}/{{ $faTotal }}
+                    </span>
+                  @elseif($faStatus === 'registered')
+                    <span class="mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border-emerald-200"
+                          title="Every unit on this application has a registered ST Assignment.">
+                      <i data-lucide="check" class="h-3 w-3"></i>
+                      1st Assignment Registered
+                    </span>
+                  @endif
+                @endif
               </td>
               @php
                   $titles = collect([$application->applicant_name]);

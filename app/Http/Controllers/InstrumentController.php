@@ -616,6 +616,24 @@ class InstrumentController extends Controller
                 ->values();
         }
 
+        // A sectional unit's dealings have to be registered in order. Until the
+        // FIRST ST Assignment is registered (from /instrument_registration), no
+        // consent on the file may be captured against — not the memo, and not a
+        // later consent application either, because that would record the second
+        // transfer before the first one exists. So the whole picker is locked,
+        // rather than just greying the memo out.
+        $stPendingConsent = $stConsents->first(fn ($consent) => !$consent->is_used);
+        $consentLock = $stPendingConsent ? [
+            'locked'           => true,
+            'reason'           => 'first_st_assignment_not_registered',
+            'unit_file_number' => $stPendingConsent->unit_file_number,
+            'mother_file_no'   => $stPendingConsent->file_number,
+            'memo_no'          => $stPendingConsent->application_tracking_no,
+            'message'          => 'The first ST Assignment for this unit has not been registered yet. '
+                . 'A consent on this file cannot be used to register a deed until that first assignment '
+                . 'is registered under Instrument Registration.',
+        ] : null;
+
         // 5. Instrument captures on this file — the prior record used for auto-fill
         //    fallback, and the basis for deciding which consents are already spent.
         $captureFileMatch = function ($q) use ($fileno, $normalizedFileno) {
@@ -725,6 +743,7 @@ class InstrumentController extends Controller
             'pra' => $praHistory->first(),
             'consent_app' => $consentApp,
             'consent_apps' => $consentApps->values(),
+            'consent_lock' => $consentLock,
             'prior_instrument' => $priorInstrument
         ]);
     }
