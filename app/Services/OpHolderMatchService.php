@@ -232,7 +232,7 @@ class OpHolderMatchService
         foreach ($dealings as $d) {
             if ($this->sameName($d['party_2'], $indexedName)) {
                 $base['matched'] = true;
-                $base['reason'] = 'The ' . lcfirst($d['type']) . ' from ' . trim((string) $d['party_1'])
+                $base['reason'] = 'The ' . $d['type'] . ' from ' . trim((string) $d['party_1'])
                     . ' to ' . trim((string) $d['party_2']) . ' is recorded on this file.';
                 return $base;
             }
@@ -244,7 +244,7 @@ class OpHolderMatchService
         foreach ($dealings as $d) {
             if (! $this->sameName($d['party_1'], $d['party_2'])) {
                 $base['has_working_transfer'] = true;
-                $base['reason'] = 'A ' . lcfirst($d['type']) . ' is already recorded on this file ('
+                $base['reason'] = 'A ' . $d['type'] . ' is already recorded on this file ('
                     . trim((string) $d['party_1']) . ' to ' . trim((string) $d['party_2'])
                     . '). If that name is wrong, it is a correction on the existing record — not a new transfer.';
                 return $base;
@@ -660,7 +660,7 @@ class OpHolderMatchService
 
         $mapped = [];
         foreach ($rows as $row) {
-            $type = $blank($row['instrument_type'] ?? null) ?: 'Transaction';
+            $type = $this->tidyInstrument($blank($row['instrument_type'] ?? null) ?: 'Transaction');
 
             $mapped[] = [
                 'type'     => $type,
@@ -789,6 +789,27 @@ class OpHolderMatchService
             ]);
             return null;
         }
+    }
+
+    /**
+     * Undo what the report engine's title-casing does to instrument names.
+     *
+     * It upper-cases the first letter of every word, which turns the acronyms into
+     * words: "Occupancy Permit (OP)" comes back as "(Op)" and "(OSS)" as "(Oss)".
+     * The engine cannot tell an acronym from a word, so the names are restored here,
+     * where the card knows which ones they are.
+     */
+    private function tidyInstrument(string $type): string
+    {
+        $type = preg_replace_callback(
+            '/\((op|oss|rc|cofo|dciv|sltr|st)\)/i',
+            fn ($m) => '(' . strtoupper($m[1]) . ')',
+            $type
+        );
+
+        // "Transfer Of Title" is the same casing artefact one word further in.
+        // Word-bounded: unbounded, this reaches inside names like "Ofoegbu".
+        return preg_replace('/\bOf\b/', 'of', $type);
     }
 
     private function isOp(object $row): bool

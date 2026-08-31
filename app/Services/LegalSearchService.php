@@ -199,6 +199,24 @@ class LegalSearchService
             $extraPRA = $this->searchByPropIds($conn, 'pra', $propIds, $existingIds['pra'] ?? []);
             $extraDeed = $this->searchByPropIds($conn, 'deed_registrations', $propIds, $existingIds['deed_registrations'] ?? []);
 
+            // STOPGAP (2026-08-30): drop prop_id-sourced rows that name no file at all.
+            //
+            // These arrived on the parcel, not on the file, and carry only a TEMP
+            // placeholder of their own — so nothing ties them to the file being read.
+            // RES-2024-2184 was showing a deed_registrations Occupancy Permit granted to
+            // HAMZA ALHAJI SANI in KAGADAMA (fileno TEMP-05506, parent_fileno NULL)
+            // purely because it shares prop_id 62492: a different grant, to a different
+            // person, in a different district, presented as part of this file's history.
+            //
+            // Suppression, not a fix: the row is real and belongs SOMEWHERE, and the
+            // right answer is to give it its file number. Until then it is better absent
+            // than attributed to a file it has no established connection to — a legal
+            // search report is read as a statement about one file's title.
+            $extraFH   = $this->dropUnattributableParcelRows($extraFH);
+            $extraCofO = $this->dropUnattributableParcelRows($extraCofO);
+            $extraPRA  = $this->dropUnattributableParcelRows($extraPRA);
+            $extraDeed = $this->dropUnattributableParcelRows($extraDeed);
+
             $fileHistoryRecords = array_merge($fileHistoryRecords, $extraFH);
             $cofoRecords = array_merge($cofoRecords, $extraCofO);
             $praRecords = array_merge($praRecords, $extraPRA);
@@ -8264,6 +8282,39 @@ class LegalSearchService
      * (Distinct from a "(T)" temporary file, which is a genuine temporary file with its own
      * "Temporary File" timeline row.)
      */
+    /**
+     * Rows that reached this report on prop_id alone and cannot name the file they
+     * belong to — every file-number column empty or a TEMP placeholder.
+     *
+     * Applied ONLY to the prop_id expansion. Rows found by file number are untouched,
+     * and so is the deliberate rollup of a TEMP-numbered OP capture that WAS found on
+     * the searched file — this drops only what arrived through the parcel with no
+     * file identity of its own.
+     *
+     * @param  array<int,mixed>  $rows
+     * @return array<int,mixed>
+     */
+    private function dropUnattributableParcelRows(array $rows): array
+    {
+        return array_values(array_filter($rows, function ($row) {
+            $data = is_array($row) ? $row : (array) $row;
+
+            foreach (['file_number', 'fileno', 'mlsFNo', 'parent_fileno', 'kangisFileNo', 'NewKANGISFileno'] as $column) {
+                $value = trim((string) ($data[$column] ?? ''));
+
+                if ($value === '' || $value === '-') {
+                    continue;
+                }
+
+                if (! $this->isSystemTempFileNo($value)) {
+                    return true;   // it names a real file — keep it
+                }
+            }
+
+            return false;
+        }));
+    }
+
     private function isSystemTempFileNo(?string $fileNo): bool
     {
         return (bool) preg_match('/^TEMP[-_ ]?\d+/i', trim((string) $fileNo));
