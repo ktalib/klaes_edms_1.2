@@ -29,6 +29,19 @@ class StAssignmentConsentResolver
     public const CONSENT_TYPE = 'ST Assignment';
 
     /**
+     * The registrations that SPEND an ST memo. The memo authorises the first
+     * transfer out of the mother file after approval — registered from
+     * /instrument_registration as an ST Assignment, or as an ST Fragmentation when
+     * the primary owner retains the unit. Once that is on the register the memo is
+     * done: any later assignment of the unit needs its own consent application.
+     * "Sectional Titling CofO" is the title, not the transfer, so it is not here.
+     */
+    private const CONSUMING_INSTRUMENTS = [
+        'ST Assignment (Transfer of Title)',
+        'ST Fragmentation',
+    ];
+
+    /**
      * "ST Assignment" (the consent / deeds-applications label) and
      * "ST Assignment (Transfer of Title)" (the instrument_type label used
      * throughout instrument registration) are the same thing under two names.
@@ -243,6 +256,8 @@ class StAssignmentConsentResolver
             $this->composeDescription($house, $plot, $street, $district, $lga, $state)
         );
 
+        $usedBy = $this->findConsumingRegistration($memo, $stFile);
+
         return (object) [
             // Non-numeric on purpose: there is no consent_applications row to link
             // to, and InstrumentCaptureService::resolveConsentApplicationId stores
@@ -274,10 +289,95 @@ class StAssignmentConsentResolver
             // Markers for consumers.
             'is_synthetic'            => true,
             'source'                  => 'memo',
-            // An ST Assignment memo backs the unit's first transfer and every later
-            // one, so it is never "spent" the way a one-shot consent letter is.
-            'is_reusable'             => true,
+
+            // Spent by the first registration off the approval — see
+            // CONSUMING_INSTRUMENTS. Computed here rather than by the caller's
+            // capture-attribution pass, because that first registration lives in
+            // deed_registrations, not instrument_capture.
+            'is_used'                 => $usedBy !== null,
+            'used_by'                 => $usedBy,
         ];
+    }
+
+    /**
+     * The registration that already spent this memo, shaped like the `used_by`
+     * payload the consent picker renders — or null while the memo is still free.
+     *
+     * Scope depends on how the file was found. A unit file number asks about that
+     * one unit. A mother file number asks about the approval as a whole, so any
+     * registered unit under it means the memo has been acted on.
+     */
+    private function findConsumingRegistration(object $memo, ?object $stFile): ?array
+    {
+        $filenos = $stFile
+            ? [$stFile->fileno]
+            : $this->unitFileNumbers($memo->mother_id);
+
+        $filenos = array_values(array_filter($filenos, fn ($f) => trim((string) $f) !== ''));
+        if (empty($filenos)) {
+            return null;
+        }
+
+        $registration = DB::connection('sqlsrv')->table('deed_registrations')
+            ->whereIn('fileno', $filenos)
+            ->whereIn('instrument_type', self::CONSUMING_INSTRUMENTS)
+            ->where('status', 'registered')
+            ->where(fn ($q) => $q->where('is_deleted', 0)->orWhereNull('is_deleted'))
+            ->orderBy('created_at', 'desc')
+            ->first();
+
+        if (!$registration) {
+            return null;
+        }
+
+        return [
+            'id'                  => $registration->id,
+            'instrument_type'     => $registration->instrument_type,
+            'registration_number' => $registration->registration_number,
+            'reg_date'            => $registration->instrument_date ?? null,
+            'captured_at'         => $registration->created_at ?? null,
+            'party_2_name'        => $registration->grantee ?? null,
+            'file_number'         => $registration->fileno,
+            // Attributed by file number, which is exact — not the party-name
+            // guess the picker warns about on legacy captures.
+            'is_linked'           => true,
+        ];
+    }
+
+    /**
+     * Unit file numbers under a mother application. PRIMARY rows are the mother's
+     * own entry, not units.
+     *
+     * @return array<int, string>
+     */
+    private function unitFileNumbers($motherId): array
+    {
+        $subIds = DB::connection('sqlsrv')->table('subapplications')
+            ->where('main_application_id', $motherId)
+            ->pluck('id');
+
+        $buyerIds = DB::connection('sqlsrv')->table('buyer_list')
+            ->where('application_id', $motherId)
+            ->pluck('id');
+
+        if ($subIds->isEmpty() && $buyerIds->isEmpty()) {
+            return [];
+        }
+
+        return DB::connection('sqlsrv')->table('st_file_numbers')
+            ->where(function ($q) use ($subIds, $buyerIds) {
+                if ($subIds->isNotEmpty()) {
+                    $q->orWhereIn('subapplication_id', $subIds);
+                }
+                if ($buyerIds->isNotEmpty()) {
+                    $q->orWhereIn('buyer_list_id', $buyerIds);
+                }
+            })
+            ->pluck('fileno')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function resolveParty2(object $memo, ?object $sub, ?object $buyer, ?object $stFile): string

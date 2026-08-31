@@ -3562,9 +3562,10 @@ document.addEventListener('DOMContentLoaded', function () {
             const badgeTone = offType ? 'bg-amber-200 text-amber-800' : 'bg-indigo-200 text-indigo-800';
 
             // A sectional file's consent is its approved ST memo, not a consent
-            // letter. It backs every transfer of the unit, so it never greys out.
+            // letter — worth saying so, since it carries a memo number rather than
+            // a CONS- tracking number.
             const stNote = consent.is_synthetic
-                ? `<div class="text-[11px] text-purple-700 mt-1">Sectional memo${consent.unit_file_number ? ` · unit ${escapeHtmlText(consent.unit_file_number)}` : ''} — stays available for later assignments</div>`
+                ? `<div class="text-[11px] text-purple-700 mt-1">Sectional memo${consent.unit_file_number ? ` · unit ${escapeHtmlText(consent.unit_file_number)}` : ''}</div>`
                 : '';
 
             html += `

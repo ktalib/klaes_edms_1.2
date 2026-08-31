@@ -771,15 +771,13 @@ class InstrumentController extends Controller
             $consentType = StAssignmentConsentResolver::canonicalType($consent->consent_type);
             $consent->matches_type = $acceptedTypes === null || in_array($consentType, $acceptedTypes, true);
 
-            // An ST Assignment memo is not a one-shot consent letter: it backs the
-            // unit's first transfer and every later one, exactly like a file that
-            // keeps getting new Assignment consents. It is also not a real
-            // consent_applications row, so it can never be linked by id — and
-            // (int) 'memo_7' is 0, which would otherwise match every capture whose
-            // consent_application_id is NULL. Skip the usage pass entirely.
+            // An ST memo is spent by the first registration off the approval, which
+            // lives in deed_registrations — not in instrument_capture. The resolver
+            // has already worked that out, so keep its verdict and skip the pass
+            // below: the memo is not a consent_applications row, it can never be
+            // linked by id, and (int) 'memo_7' is 0 — which would otherwise match
+            // every capture whose consent_application_id is NULL.
             if (!empty($consent->is_synthetic)) {
-                $consent->is_used = false;
-                $consent->used_by = null;
                 continue;
             }
 

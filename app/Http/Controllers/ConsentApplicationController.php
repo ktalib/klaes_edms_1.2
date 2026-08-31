@@ -565,7 +565,12 @@ class ConsentApplicationController extends Controller
             // ST unit is captured. It has no letter to print and no Commissioner's
             // signature window — the memo is already approved — so both sub-rules pass.
             if (in_array($consentType, ['Assignment', 'Gift'], true)) {
-                $stConsent = (new StAssignmentConsentResolver())->forFileNumber($fileNo)->first();
+                // A memo already spent by the file's first ST registration is not a
+                // consent for the NEXT assignment — that one needs its own consent
+                // application, so an all-spent file stays blocked.
+                $stConsent = (new StAssignmentConsentResolver())
+                    ->forFileNumber($fileNo)
+                    ->first(fn ($consent) => !$consent->is_used);
 
                 if ($stConsent) {
                     return response()->json([
