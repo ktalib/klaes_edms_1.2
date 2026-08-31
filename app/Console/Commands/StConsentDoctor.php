@@ -84,12 +84,9 @@ class StConsentDoctor extends Command
             if ($fileno === '') {
                 continue;
             }
+            // Whole file number only. A bare tail ("...-2-008") matched unrelated
+            // files (IND-2002-001, RES-1992-001) and buried the real row in noise.
             $needles[$fileno] = $fileno;
-            // Also match on the bare tail ("...-2-008"), which survives a prefix
-            // change between the unit number and whatever the registration stored.
-            if (preg_match('/(\d+[-\/]\d+)$/', $fileno, $m)) {
-                $needles[$m[1]] = $m[1];
-            }
         }
 
         $like = function ($query, array $columns) use ($needles) {
@@ -116,6 +113,13 @@ class StConsentDoctor extends Command
             'instrument_capture' => [
                 'columns' => ['mlsFNo', 'temp_fileno', 'kangisFileNo', 'NewKANGISFileno'],
                 'select'  => ['id', 'mlsFNo', 'temp_fileno', 'instrument_type', 'is_deleted', 'created_at'],
+            ],
+            // pra carries transaction history and is known to hold rows typed
+            // "ST Assignment" / "ST Fragmentation" — a candidate home for the
+            // first registration when neither registration table has it.
+            'pra' => [
+                'columns' => ['fileno', 'mlsFNo', 'temp_fileno'],
+                'select'  => ['id', 'fileno', 'mlsFNo', 'instrument_type', 'party_1', 'party_2', 'regNo', 'reg_date', 'is_deleted', 'created_at'],
             ],
         ];
 

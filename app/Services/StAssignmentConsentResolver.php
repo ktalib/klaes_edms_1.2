@@ -41,6 +41,22 @@ class StAssignmentConsentResolver
         'ST Fragmentation',
     ];
 
+    /**
+     * Does this instrument_type spend the memo? Compared canonically, so a row
+     * stored under the short name "ST Assignment" counts the same as one stored
+     * as "ST Assignment (Transfer of Title)" — both spellings occur in live data.
+     */
+    private static function isConsumingInstrument(?string $instrumentType): bool
+    {
+        $value = trim((string) $instrumentType);
+        if ($value === '') {
+            return false;
+        }
+
+        return self::isStAssignmentType($value)
+            || strcasecmp($value, 'ST Fragmentation') === 0;
+    }
+
     /** File numbers the last usage lookup searched — reported on the payload for diagnosis. */
     private array $lastSearchedFilenos = [];
 
@@ -342,13 +358,16 @@ class StAssignmentConsentResolver
         // InstrumentRegistrationController), and it keys the file number under
         // StFileNo / fileno / MLSFileNo. A file registered through either path has
         // spent its memo, so both are checked.
+        // Fetch every ST-ish row on the file and decide in PHP, so a row typed
+        // "ST Assignment" is not missed by an exact match on the long name.
         $deedRegistration = DB::connection('sqlsrv')->table('deed_registrations')
             ->whereIn('fileno', $filenos)
-            ->whereIn('instrument_type', self::CONSUMING_INSTRUMENTS)
+            ->where('instrument_type', 'like', 'ST %')
             ->where('status', 'registered')
             ->where(fn ($q) => $q->where('is_deleted', 0)->orWhereNull('is_deleted'))
             ->orderBy('created_at', 'desc')
-            ->first();
+            ->get()
+            ->first(fn ($row) => self::isConsumingInstrument($row->instrument_type));
 
         if ($deedRegistration) {
             return $this->registrationPayload(
@@ -368,10 +387,11 @@ class StAssignmentConsentResolver
                     ->orWhereIn('fileno', $filenos)
                     ->orWhereIn('MLSFileNo', $filenos);
             })
-            ->whereIn('instrument_type', self::CONSUMING_INSTRUMENTS)
+            ->where('instrument_type', 'like', 'ST %')
             ->where('status', 'registered')
             ->orderBy('created_at', 'desc')
-            ->first();
+            ->get()
+            ->first(fn ($row) => self::isConsumingInstrument($row->instrument_type));
 
         if (!$legacyRegistration) {
             return null;

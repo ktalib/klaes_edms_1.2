@@ -3332,6 +3332,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 duplicateCheckState.consentApp = data.consent_app || null;
                 duplicateCheckState.consentApps = Array.isArray(data.consent_apps) ? data.consent_apps : [];
                 debugConsents("server response", duplicateCheckState.consentApps);
+                debugFileHistory(data);
                 // If there is no separate prior record, reuse the duplicate record itself
                 // so Create New can still auto-fill from instrument_capture data.
                 duplicateCheckState.priorInstrument = data.prior_instrument || data.instrument || null;
@@ -3372,6 +3373,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 console.log('checkDuplicate: No duplicate exists.');
                 duplicateCheckState.consentApps = Array.isArray(data.consent_apps) ? data.consent_apps : [];
                 debugConsents("server response", duplicateCheckState.consentApps);
+                debugFileHistory(data);
 
                 // Auto-fill from Consent Application and/or prior instrument record
                 if (!duplicateCheckState.isUpdateMode) {
@@ -3535,6 +3537,34 @@ document.addEventListener('DOMContentLoaded', function () {
             console.log('ST CONSENT DEBUG raw payload:', JSON.parse(JSON.stringify(consents || [])));
         } catch (err) {
             console.warn('ST CONSENT DEBUG failed:', err);
+        }
+    }
+
+    /**
+     * The file's existing transaction history, as the server returned it.
+     *
+     * When a consent looks unspent but the file was demonstrably registered
+     * before, the earlier registration has to be recorded SOMEWHERE — this shows
+     * what and where, so the usage lookup can be pointed at the right table and
+     * the right instrument_type spelling.
+     */
+    function debugFileHistory(data) {
+        try {
+            const rows = (data.pra_history || []).map(p => ({
+                source: p.registration_number !== undefined ? 'deed_registrations' : 'pra',
+                id: p.id,
+                instrument_type: p.instrument_type,
+                fileno: p.fileno || p.mlsFNo || '',
+                parties: `${p.party_1 || p.grantor || ''} -> ${p.party_2 || p.grantee || ''}`,
+                reg: p.regNo || p.registration_number || `${p.serialNo || ''}/${p.pageNo || ''}/${p.volumeNo || ''}`,
+                date: p.reg_date || p.deeds_date || p.created_at || ''
+            }));
+            console.log(`%cST HISTORY DEBUG — ${rows.length} history row(s)`,
+                'background:#7c2d12;color:#fff;padding:2px 6px;border-radius:3px;font-weight:bold');
+            if (console.table) console.table(rows); else console.log(rows);
+            console.log('ST HISTORY DEBUG raw:', JSON.parse(JSON.stringify(data.pra_history || [])));
+        } catch (err) {
+            console.warn('ST HISTORY DEBUG failed:', err);
         }
     }
     window.debugConsents = debugConsents;
