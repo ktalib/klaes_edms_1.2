@@ -318,7 +318,13 @@ class StAssignmentConsentResolver
             return null;
         }
 
-        $registration = DB::connection('sqlsrv')->table('deed_registrations')
+        // Two tables hold ST registrations. `deed_registrations` is the newer
+        // architecture and the one the ST tab reads; `registered_instruments` is
+        // the table the registration flow actually inserts into (see
+        // InstrumentRegistrationController), and it keys the file number under
+        // StFileNo / fileno / MLSFileNo. A file registered through either path has
+        // spent its memo, so both are checked.
+        $deedRegistration = DB::connection('sqlsrv')->table('deed_registrations')
             ->whereIn('fileno', $filenos)
             ->whereIn('instrument_type', self::CONSUMING_INSTRUMENTS)
             ->where('status', 'registered')
@@ -326,18 +332,64 @@ class StAssignmentConsentResolver
             ->orderBy('created_at', 'desc')
             ->first();
 
-        if (!$registration) {
+        if ($deedRegistration) {
+            return $this->registrationPayload(
+                $deedRegistration->id,
+                $deedRegistration->instrument_type,
+                $deedRegistration->registration_number ?? null,
+                $deedRegistration->instrument_date ?? $deedRegistration->deeds_date ?? null,
+                $deedRegistration->created_at ?? null,
+                $deedRegistration->grantee ?? null,
+                $deedRegistration->fileno
+            );
+        }
+
+        $legacyRegistration = DB::connection('sqlsrv')->table('registered_instruments')
+            ->where(function ($q) use ($filenos) {
+                $q->whereIn('StFileNo', $filenos)
+                    ->orWhereIn('fileno', $filenos)
+                    ->orWhereIn('MLSFileNo', $filenos);
+            })
+            ->whereIn('instrument_type', self::CONSUMING_INSTRUMENTS)
+            ->where('status', 'registered')
+            ->orderBy('created_at', 'desc')
+            ->first();
+
+        if (!$legacyRegistration) {
             return null;
         }
 
+        return $this->registrationPayload(
+            $legacyRegistration->id,
+            $legacyRegistration->instrument_type,
+            $legacyRegistration->particularsRegistrationNumber ?? null,
+            $legacyRegistration->instrumentDate ?? $legacyRegistration->deeds_date ?? null,
+            $legacyRegistration->created_at ?? null,
+            $legacyRegistration->Grantee ?? null,
+            $legacyRegistration->StFileNo ?: ($legacyRegistration->fileno ?: $legacyRegistration->MLSFileNo)
+        );
+    }
+
+    /**
+     * The `used_by` payload the consent picker renders on a spent consent.
+     */
+    private function registrationPayload(
+        $id,
+        ?string $instrumentType,
+        ?string $registrationNumber,
+        $regDate,
+        $capturedAt,
+        ?string $grantee,
+        ?string $fileNumber
+    ): array {
         return [
-            'id'                  => $registration->id,
-            'instrument_type'     => $registration->instrument_type,
-            'registration_number' => $registration->registration_number,
-            'reg_date'            => $registration->instrument_date ?? null,
-            'captured_at'         => $registration->created_at ?? null,
-            'party_2_name'        => $registration->grantee ?? null,
-            'file_number'         => $registration->fileno,
+            'id'                  => $id,
+            'instrument_type'     => $instrumentType,
+            'registration_number' => $registrationNumber,
+            'reg_date'            => $regDate,
+            'captured_at'         => $capturedAt,
+            'party_2_name'        => $grantee,
+            'file_number'         => $fileNumber,
             // Attributed by file number, which is exact — not the party-name
             // guess the picker warns about on legacy captures.
             'is_linked'           => true,

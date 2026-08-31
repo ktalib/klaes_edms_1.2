@@ -30,7 +30,13 @@ class IndexedFileTableController extends Controller
         $registry = trim((string) $request->input('registry', ''));
         $isCorrespondingFile = filter_var($request->input('is_corresponding_file', false), FILTER_VALIDATE_BOOLEAN);
         $cacheRegistry = $registry !== '' ? strtoupper($registry) : 'ALL';
-        $cacheKey = $isCorrespondingFile ? "indexed_files_stats_{$cacheRegistry}_corresponding" : "indexed_files_stats_{$cacheRegistry}";
+        // The counts below are scoped to the viewer for non-admins, so the cache key
+        // has to carry the viewer too - otherwise the first caller's private totals
+        // are served to everyone else for the next 60 seconds.
+        $cacheScope = (string) (Auth::id() ?? 'guest');
+        $cacheKey = $isCorrespondingFile
+            ? "indexed_files_stats_{$cacheRegistry}_corresponding_u{$cacheScope}"
+            : "indexed_files_stats_{$cacheRegistry}_u{$cacheScope}";
 
         $stats = Cache::remember($cacheKey, 60, function () use ($registry, $isCorrespondingFile) {
             $baseQuery = FileIndexing::on('sqlsrv');
@@ -47,26 +53,10 @@ class IndexedFileTableController extends Controller
                 $baseQuery->where('is_corresponding_file', 1);
             }
 
-            // Apply user-level restriction for non-admins, except for KANGIS
-            $currentUser = Auth::user();
-            if ($currentUser) {
-                $assignRole = strtolower((string) ($currentUser->assign_role ?? ''));
-                $isSuperAdmin = in_array($assignRole, ['super admin', 'supper admin', 'administrator', 'admin', 'editor']);
-
-                if (!$isSuperAdmin) {
-                    $registryUpper = strtoupper(trim((string) $registry));
-                    if ($registryUpper !== 'KANGIS') {
-                        $userName = trim(sprintf('%s %s', $currentUser->first_name ?? '', $currentUser->last_name ?? ''));
-                        if ($userName === '') {
-                            $userName = $currentUser->name ?? $currentUser->email ?? null;
-                        }
-
-                        if ($userName) {
-                            $baseQuery->where('file_indexings.created_by', $userName);
-                        }
-                    }
-                }
-            }
+            // Apply user-level restriction for non-admins, except for KANGIS.
+            // The tiles count the operator's own work, so this scope always applies
+            // here - only the searchable listings open up to every indexer.
+            $this->applyOwnFilesScope($baseQuery, $registry, false);
 
             $totalIndexed = (clone $baseQuery)->count();
 
@@ -226,22 +216,10 @@ class IndexedFileTableController extends Controller
             });
         }
 
-        $currentUser = Auth::user();
-        if ($currentUser) {
-            $assignRole = strtolower((string) ($currentUser->assign_role ?? ''));
-            $isSuperAdmin = in_array($assignRole, ['super admin', 'supper admin', 'administrator', 'admin', 'editor']);
-
-            if (!$isSuperAdmin && strtoupper(trim((string) ($request->input('registry', '')))) !== 'KANGIS') {
-                $userName = trim(sprintf('%s %s', $currentUser->first_name ?? '', $currentUser->last_name ?? ''));
-                if ($userName === '') {
-                    $userName = $currentUser->name ?? $currentUser->email ?? null;
-                }
-
-                if ($userName) {
-                    $query->where('file_indexings.created_by', $userName);
-                }
-            }
-        }
+        // A non-admin's default listing is their own indexing work, but a search has
+        // to reach every file in the registry - a file number is only ever typed in
+        // to find that file, and who indexed it is not known to the person looking.
+        $this->applyOwnFilesScope($query, $request->input('registry', ''), $search !== null);
 
         if ($sortColumn === 'file_indexings.created_at') {
             // id alone breaks the tie: created_at is millisecond-precision so ties are
@@ -591,22 +569,10 @@ class IndexedFileTableController extends Controller
             });
         }
 
-        $currentUser = Auth::user();
-        if ($currentUser) {
-            $assignRole = strtolower((string) ($currentUser->assign_role ?? ''));
-            $isSuperAdmin = in_array($assignRole, ['super admin', 'supper admin', 'administrator', 'admin', 'editor']);
-
-            if (!$isSuperAdmin && strtoupper(trim((string) ($request->input('registry', '')))) !== 'KANGIS') {
-                $userName = trim(sprintf('%s %s', $currentUser->first_name ?? '', $currentUser->last_name ?? ''));
-                if ($userName === '') {
-                    $userName = $currentUser->name ?? $currentUser->email ?? null;
-                }
-
-                if ($userName) {
-                    $query->where('file_indexings.created_by', $userName);
-                }
-            }
-        }
+        // A non-admin's default listing is their own indexing work, but a search has
+        // to reach every file in the registry - a file number is only ever typed in
+        // to find that file, and who indexed it is not known to the person looking.
+        $this->applyOwnFilesScope($query, $request->input('registry', ''), $search !== null);
 
         // Apply sorting
         if ($sortColumn === 'state') {
@@ -712,6 +678,43 @@ class IndexedFileTableController extends Controller
         }
 
         return false;
+    }
+
+    /**
+     * Restrict a file_indexings query to the rows the current user indexed.
+     *
+     * Skipped for admin-ish roles, for the KANGIS registry, and - importantly -
+     * whenever the caller is searching: a global search must find a file no matter
+     * who captured it. created_by holds the indexer's display name, not an id.
+     */
+    private function applyOwnFilesScope($query, $registry, bool $isSearching): void
+    {
+        if ($isSearching) {
+            return;
+        }
+
+        $currentUser = Auth::user();
+        if (!$currentUser) {
+            return;
+        }
+
+        $assignRole = strtolower((string) ($currentUser->assign_role ?? ''));
+        if (in_array($assignRole, ['super admin', 'supper admin', 'administrator', 'admin', 'editor'])) {
+            return;
+        }
+
+        if (strtoupper(trim((string) $registry)) === 'KANGIS') {
+            return;
+        }
+
+        $userName = trim(sprintf('%s %s', $currentUser->first_name ?? '', $currentUser->last_name ?? ''));
+        if ($userName === '') {
+            $userName = $currentUser->name ?? $currentUser->email ?? null;
+        }
+
+        if ($userName) {
+            $query->where('file_indexings.created_by', $userName);
+        }
     }
 
     private function normalizeSearch($value): ?string
