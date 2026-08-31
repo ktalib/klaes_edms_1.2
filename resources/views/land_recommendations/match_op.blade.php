@@ -9,9 +9,10 @@
   another gets on with capturing recommendations, instead of the second waiting on
   the first.
 
-  Reached at /land-recommendations/create?match-op and gated on the "Match OP" role
-  — see LandRecommendationController::create(), which redirects anyone else to the
-  dashboard rather than rendering an empty page.
+  Reached at /land-recommendations/create?match-op. No role check — anyone who can
+  reach the menu entry can open it. What the page can DO is still bounded by the rule
+  itself: Match is offered only on a file whose chain carries no transfer explaining
+  the change, and the officer confirms both names before a row is written.
 
   The card itself is drawn by public/js/land-recommendation-op-match.js, which keys
   off #land-recommendation-form, #file_number and #op-match-card. Those ids are kept

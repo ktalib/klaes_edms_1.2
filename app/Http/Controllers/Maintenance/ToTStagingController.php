@@ -9,6 +9,9 @@ use Carbon\Carbon;
 
 class ToTStagingController extends Controller
 {
+    /** pra.system_source stamped by the Match OP flow — see OpHolderMatchService. */
+    private const SYSTEM_GENERATED_SOURCE = 'OPHOLDERMATCH';
+
     private function isGovernmentEntity($name)
     {
         if (!$name) return false;
@@ -35,32 +38,84 @@ class ToTStagingController extends Controller
         return false;
     }
 
+    /**
+     * Every Transfer of Title on record.
+     *
+     * This screen used to list `pra_tot_staging` — candidates queued for bulk ToT
+     * generation during the migration. That migration is finished, and transfers are
+     * now written one file at a time through Match OP, where the officer sees the
+     * file's whole chain and confirms both names before anything is recorded. So the
+     * page has stopped being a work queue and become the register of what was
+     * written: every live Transfer of Title in pra, newest first.
+     *
+     * The two bulk buttons are disabled in the view for the same reason.
+     *
+     * Read from pra alone because that is where a Transfer of Title is recorded. The
+     * other registers hold assignments and conveyances, which move a title too but
+     * are not this instrument, and folding them in would make the count answer a
+     * different question than the page asks.
+     */
     public function index(Request $request)
     {
-        $records = DB::connection('sqlsrv')->table('pra_tot_staging')
-            ->where('status', 'pending')
-            ->whereNotNull('op_name')
-            ->where('op_name', '<>', '')
-            ->whereNotNull('ro_name')
-            ->where('ro_name', '<>', '')
-            ->whereNotIn('ro_name', function ($query) {
-                $query->select(DB::raw("DISTINCT ro_name"))
-                    ->from('pra_tot_staging')
-                    ->where(function ($q) {
-                        $q->whereRaw("ro_name LIKE '%GOVERNMENT%'")
-                          ->orWhereRaw("ro_name LIKE '%JUDICIARY%'")
-                          ->orWhereRaw("ro_name LIKE '%FEDERAL%'")
-                          ->orWhereRaw("ro_name LIKE '%MINISTRY%'")
-                          ->orWhereRaw("ro_name LIKE '%DEPARTMENT%'")
-                          ->orWhereRaw("ro_name LIKE '%AGENCY%'")
-                          ->orWhereRaw("ro_name LIKE '%COMMISSION%'")
-                          ->orWhereRaw("ro_name LIKE '%AUTHORITY%'");
-                    });
-            })
-            ->orderBy('created_at', 'desc')
-            ->paginate(25);
+        $search = trim((string) $request->query('q', ''));
+        $filter = $request->query('filter');   // 'system' | 'captured' | null
 
-        return view('maintenance.tot_staging', compact('records'));
+        $base = fn () => DB::connection('sqlsrv')->table('pra')
+            ->where(function ($q) {
+                $q->where('transaction_type', 'LIKE', '%Transfer of Title%')
+                  ->orWhere('instrument_type', 'LIKE', '%Transfer of Title%');
+            })
+            ->where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            });
+
+        // Counted off the same base as the list, so the cards and the table can never
+        // disagree about what a Transfer of Title is.
+        $total = $base()->count();
+        $systemGenerated = $base()->where('system_source', self::SYSTEM_GENERATED_SOURCE)->count();
+
+        $query = $base();
+
+        if ($search !== '') {
+            $like = '%' . $search . '%';
+            $query->where(function ($q) use ($like) {
+                $q->where('mlsFNo', 'LIKE', $like)
+                  ->orWhere('fileno', 'LIKE', $like)
+                  ->orWhere('kangisFileNo', 'LIKE', $like)
+                  ->orWhere('NewKANGISFileno', 'LIKE', $like)
+                  ->orWhere('party_1', 'LIKE', $like)
+                  ->orWhere('party_2', 'LIKE', $like);
+            });
+        }
+
+        if ($filter === 'system') {
+            $query->where('system_source', self::SYSTEM_GENERATED_SOURCE);
+        } elseif ($filter === 'captured') {
+            $query->where(function ($q) {
+                $q->whereNull('system_source')
+                  ->orWhere('system_source', '<>', self::SYSTEM_GENERATED_SOURCE);
+            });
+        }
+
+        $records = $query
+            ->orderByDesc('id')
+            ->select([
+                'id', 'mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno',
+                'party_1', 'party_2', 'transaction_type', 'instrument_type',
+                'transaction_date', 'regNo', 'prop_id', 'source', 'system_source',
+                'created_at',
+            ])
+            ->paginate(25)
+            ->withQueryString();
+
+        return view('maintenance.tot_staging', [
+            'records'         => $records,
+            'search'          => $search,
+            'filter'          => $filter,
+            'total'           => $total,
+            'systemGenerated' => $systemGenerated,
+            'captured'        => max(0, $total - $systemGenerated),
+        ]);
     }
 
     public function generate(Request $request)
