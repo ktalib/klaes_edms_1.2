@@ -3698,8 +3698,10 @@
 
         const d = res.data;
         document.getElementById('dx-view-title').textContent = d.duplex_id;
+        // applicant_display is the tidied form the server sends for read-only use;
+        // applicant_name stays raw for the wizard, which writes it back.
         document.getElementById('dx-view-sub').textContent =
-            (d.applicant_name || '') + ' · ' + (d.status || '').replace('_', ' ');
+            (d.applicant_display || d.applicant_name || '') + ' · ' + (d.status || '').replace('_', ' ');
 
         // The site plan, first: it is the drawing the whole instruction is read
         // against, and an attachment nothing links to might as well not be there.

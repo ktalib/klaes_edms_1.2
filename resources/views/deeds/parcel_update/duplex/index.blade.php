@@ -175,7 +175,12 @@
                             @forelse ($records as $record)
                             <tr class="hover:bg-slate-50/60">
                                 <td class="px-4 py-3 font-black text-slate-700 whitespace-nowrap holding-no">{{ $record->duplex_id }}</td>
-                                <td class="px-4 py-3 text-slate-700 font-bold">{{ $record->applicant_name ?: '—' }}</td>
+                                {{-- One case for the column: names arrive as the officer typed
+                                     them, so a register listing "IBRAHIM DANLADI" beside
+                                     "Murtala Muhammad Illallah" reads as though the difference
+                                     means something. Display only — the stored value is what
+                                     every lookup and comparison runs against. --}}
+                                <td class="px-4 py-3 text-slate-700 font-bold">{{ \App\Support\PersonName::display($record->applicant_name) ?: '—' }}</td>
                                 <td class="px-4 py-3">
                                     <div class="flex flex-wrap gap-1">
                                         @forelse ((array) ($record->source_file_nos ?? []) as $src)

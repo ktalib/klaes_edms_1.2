@@ -9,6 +9,14 @@
 (function (window, document) {
   'use strict';
 
+  function escapeHtml(value) {
+    return String(value === undefined || value === null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
   var ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif'];
 
   function csrfToken() {
@@ -30,6 +38,12 @@
       this.submit = document.getElementById('profilePhotoSubmit');
       this.error = document.getElementById('profilePhotoError');
       this.maxBytes = (parseInt(this.root.dataset.maxKb, 10) || 2048) * 1024;
+      this.faceNote = document.getElementById('profilePhotoFaceNote');
+      this.box = document.getElementById('profilePhotoBox');
+      this.rows = document.getElementById('profilePhotoRows');
+      // null = not checked yet, true/false = last verdict. Upload is blocked only on
+      // an explicit false; an unavailable detector leaves this null and lets it through.
+      this.faceOk = null;
 
       this.bind();
       this.lockSidebar();
@@ -69,6 +83,10 @@
           self.preview.classList.remove('ppc-hidden');
           self.placeholder.classList.add('ppc-hidden');
           self.avatar.classList.add('ppc-filled');
+          // The preview element is what the detector reads, so wait for the decode.
+          self.preview.decode
+            ? self.preview.decode().then(function () { self.runFaceCheck(); }, function () { self.runFaceCheck(); })
+            : self.runFaceCheck();
         };
         reader.readAsDataURL(file);
       });
@@ -101,6 +119,161 @@
       return true;
     },
 
+    /**
+     * Check the chosen picture actually shows one human face before it can be uploaded.
+     *
+     * FAIL-OPEN BY DESIGN: this card is the gate on the whole system, so a detector that
+     * cannot load (offline, blocked asset, unsupported browser) must never leave someone
+     * unable to sign in. Any error leaves faceOk null and the upload proceeds.
+     */
+    runFaceCheck: function () {
+      var self = this;
+      this.faceOk = null;
+      this.clearFaceBoxes();
+      this.clearVerification();
+
+      if (!window.FaceDetection) {
+        this.setFaceNote('', '');
+        return;
+      }
+
+      this.setFaceNote('checking', 'Checking the picture for a face…');
+      this.submit.disabled = true;
+
+      window.FaceDetection.ensure()
+        .then(function (detector) {
+          return detector.detect(self.preview).then(function (verdict) {
+            self.faceOk = verdict.accepted;
+            // Keep the button disabled on a rejected picture, so the only way forward
+            // is to choose a different one.
+            self.submit.disabled = !verdict.accepted;
+
+            self.drawFaceBoxes(verdict);
+            self.renderVerification(verdict, detector);
+
+            if (verdict.accepted) {
+              self.setFaceNote('ok', 'Face detected — '
+                + detector.toPercent(verdict.primary.score) + ' confidence.');
+              self.clearError();
+            } else {
+              self.setFaceNote('bad', verdict.headline);
+              self.showError(verdict.headline);
+            }
+          });
+        })
+        .catch(function (error) {
+          // Never block on our own failure.
+          console.warn('[face-detection] check skipped', error);
+          self.faceOk = null;
+          self.submit.disabled = false;
+          self.setFaceNote('', '');
+        });
+    },
+
+    /**
+     * Box every detected face on the preview: green when the picture is accepted, red
+     * when it is not — the same convention as the test page.
+     *
+     * The preview is a circular object-fit:cover crop, so the detector's coordinates
+     * (natural image pixels) have to go through the same cover transform, otherwise the
+     * box lands in the wrong place on any image that is not square.
+     */
+    drawFaceBoxes: function (verdict) {
+      if (!this.box || !this.box.getContext) {
+        return;
+      }
+
+      var rect = this.box.getBoundingClientRect();
+      var dpr = window.devicePixelRatio || 1;
+      this.box.width = Math.max(1, Math.round(rect.width * dpr));
+      this.box.height = Math.max(1, Math.round(rect.height * dpr));
+
+      var ctx = this.box.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, rect.width, rect.height);
+
+      if (!verdict || !verdict.faces.length) {
+        return;
+      }
+
+      // object-fit: cover — scale to the larger ratio, then centre the overflow.
+      var scale = Math.max(rect.width / verdict.imageWidth, rect.height / verdict.imageHeight);
+      var offsetX = (rect.width - verdict.imageWidth * scale) / 2;
+      var offsetY = (rect.height - verdict.imageHeight * scale) / 2;
+
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = verdict.accepted ? '#16a34a' : '#dc2626';
+
+      verdict.faces.forEach(function (face) {
+        ctx.strokeRect(
+          face.x * scale + offsetX,
+          face.y * scale + offsetY,
+          face.width * scale,
+          face.height * scale
+        );
+      });
+    },
+
+    clearFaceBoxes: function () {
+      if (this.box && this.box.getContext) {
+        this.box.getContext('2d').clearRect(0, 0, this.box.width, this.box.height);
+      }
+    },
+
+    /**
+     * What the detector actually measured, so a rejection can be understood and acted
+     * on rather than just refused.
+     */
+    renderVerification: function (verdict, detector) {
+      if (!this.rows) {
+        return;
+      }
+
+      var face = verdict.primary;
+      var rows = [
+        ['Status', verdict.accepted ? 'ACCEPTED' : 'REJECTED', verdict.accepted ? 'is-pass' : 'is-fail'],
+        ['Faces detected', String(verdict.faceCount), verdict.faceCount === 1 ? '' : 'is-fail']
+      ];
+
+      if (face) {
+        rows.push(['Confidence', detector.toPercent(face.score),
+          face.score >= detector.CONFIG.minConfidence ? 'is-pass' : 'is-fail']);
+        rows.push(['Face size', face.width + ' x ' + face.height, '']);
+        rows.push(['Face coverage', detector.toPercent(face.coverage),
+          face.coverage >= detector.CONFIG.minFaceCoverage ? 'is-pass' : 'is-fail']);
+      }
+
+      if (verdict.flatness !== null && verdict.flatness !== undefined) {
+        rows.push(['Photo texture', detector.toPercent(1 - verdict.flatness) + ' detail',
+          verdict.flatness <= detector.CONFIG.maxFlatness ? 'is-pass' : 'is-fail']);
+      }
+
+      rows.push(['Image size', verdict.imageWidth + ' x ' + verdict.imageHeight, '']);
+
+      this.rows.innerHTML = rows.map(function (row) {
+        return '<dl class="ppc-row"><dt>' + escapeHtml(row[0]) + '</dt>'
+          + '<dd class="' + row[2] + '">' + escapeHtml(row[1]) + '</dd></dl>';
+      }).join('');
+      this.rows.classList.remove('ppc-hidden');
+    },
+
+    clearVerification: function () {
+      if (this.rows) {
+        this.rows.innerHTML = '';
+        this.rows.classList.add('ppc-hidden');
+      }
+    },
+
+    setFaceNote: function (kind, message) {
+      if (!this.faceNote) {
+        return;
+      }
+      var colours = { checking: '#64748b', ok: '#107c41', bad: '#b91c1c' };
+      this.faceNote.textContent = message || '';
+      this.faceNote.style.color = colours[kind] || '#64748b';
+      this.faceNote.style.display = message ? 'block' : 'none';
+    },
+
     upload: function () {
       var self = this;
       var file = this.input.files && this.input.files[0];
@@ -110,6 +283,12 @@
         return;
       }
       if (!this.validate(file)) {
+        return;
+      }
+
+      // Only an explicit rejection blocks; null (detector unavailable) does not.
+      if (this.faceOk === false) {
+        this.showError('This picture cannot be used. Please upload a clear photograph of your own face.');
         return;
       }
 
@@ -235,6 +414,11 @@
       this.preview.classList.add('ppc-hidden');
       this.placeholder.classList.remove('ppc-hidden');
       this.avatar.classList.remove('ppc-filled');
+      this.faceOk = null;
+      this.setFaceNote('', 'Choose a photo to check it.');
+      this.clearFaceBoxes();
+      this.clearVerification();
+      this.submit.disabled = false;
     },
 
     open: function () {

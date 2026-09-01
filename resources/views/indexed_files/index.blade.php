@@ -467,6 +467,11 @@
             canManageActions: @json($canIndexFiles),
             // "Move to Indexing Duplicates" is hidden unless assign_role is Supper Admin.
             canMoveToIndexingDuplicates: @json($hasSuperRole),
+            // Match OP, offered on conversion (CON-) rows only. Same endpoints as the
+            // Match OP page and the recommendation capture card, so all three ask one
+            // service the same question and get the same answer.
+            opMatchCheckUrl: @json(route('land-recommendations.op-match.check')),
+            opMatchUrl: @json(route('land-recommendations.op-match.store')),
         };
     </script>
     <script>

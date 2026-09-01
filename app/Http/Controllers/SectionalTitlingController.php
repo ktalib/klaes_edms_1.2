@@ -598,8 +598,10 @@ class SectionalTitlingController extends Controller
                 'dbo.mother_applications.property_lga',
                 'dbo.mother_applications.np_fileno',
                 'dbo.subapplications.is_sua_unit',
-                // Creator name for the "Created By" column's profile card — created_by
-                // holds a user id, so the name has to come from users.
+                // Creator for the "Created By" column's profile card. The id itself is
+                // selected too: the view opens the card by id, and this query lists its
+                // columns explicitly, so leaving it out made $app->created_by undefined.
+                'dbo.subapplications.created_by',
                 DB::raw("LTRIM(RTRIM(COALESCE(creator.first_name, '') + ' ' + COALESCE(creator.last_name, ''))) as created_by_name"),
                 'jsi.is_generated as jsi_is_generated',
                 'jsi.is_submitted as jsi_is_submitted',

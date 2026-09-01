@@ -29,6 +29,7 @@
       this.phone = document.getElementById('upcPhone');
       this.badge = document.getElementById('upcBadge');
       this.photoState = document.getElementById('upcPhotoState');
+      this.faceCheck = document.getElementById('upcFaceCheck');
       this.state = document.getElementById('upcState');
 
       this.bind();
@@ -131,6 +132,69 @@
       }
 
       this.setPhotoBadge(data.has_photo !== undefined ? !!data.has_photo : !!data.profile_url);
+      this.runFaceCheck(data);
+    },
+
+    /**
+     * Report whether the profile picture on screen actually contains a single human
+     * face. Purely informational: it never changes the stored photo, and a detector
+     * that will not load simply leaves the line hidden.
+     */
+    runFaceCheck: function (data) {
+      var self = this;
+      this.setFaceCheck('', '');
+
+      if (!data.profile_url || !window.FaceDetection) {
+        return;
+      }
+
+      // Reopening the same person should not re-run the model.
+      if (data._faceCheck) {
+        this.setFaceCheck(data._faceCheck.state, data._faceCheck.message);
+        return;
+      }
+
+      this.setFaceCheck('', 'Checking photo…');
+
+      window.FaceDetection.ensure()
+        .then(function (detector) {
+          // Detect on a fresh same-origin image so the canvas is never tainted and the
+          // natural resolution is used rather than the card's 5.5rem thumbnail.
+          var probe = new Image();
+          probe.crossOrigin = 'anonymous';
+
+          return new Promise(function (resolve, reject) {
+            probe.onload = function () { resolve(probe); };
+            probe.onerror = function () { reject(new Error('image load failed')); };
+            probe.src = data.profile_url;
+          }).then(function (image) {
+            return detector.detect(image).then(function (verdict) {
+              // The card may already have moved on to another person.
+              if (self.name.textContent !== (data.full_name || '—')) {
+                return;
+              }
+
+              var result = verdict.accepted
+                ? { state: 'is-pass', message: 'Face check passed · ' + detector.toPercent(verdict.primary.score) + ' confidence' }
+                : { state: 'is-fail', message: 'Face check: ' + verdict.reason };
+
+              data._faceCheck = result;
+              self.setFaceCheck(result.state, result.message);
+            });
+          });
+        })
+        .catch(function (error) {
+          console.warn('[face-detection] profile card check skipped', error);
+          self.setFaceCheck('', '');
+        });
+    },
+
+    setFaceCheck: function (state, message) {
+      if (!this.faceCheck) {
+        return;
+      }
+      this.faceCheck.className = 'upc-face-check ' + (state || '') + (message ? '' : ' upc-hidden');
+      this.faceCheck.textContent = message || '';
     },
 
     /**
@@ -176,6 +240,7 @@
       this.badge.innerHTML = '';
       this.photoState.textContent = '';
       this.photoState.className = 'upc-photo-state';
+      this.setFaceCheck('', '');
     },
 
     setState: function (message) {

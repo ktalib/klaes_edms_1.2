@@ -34,39 +34,65 @@
             <p class="ppc-eyebrow">{{ __('Account setup') }}</p>
         </div>
 
+        {{-- Landscape: picture on the left, verification detail on the right.
+             Stacks back to one column on a narrow screen. --}}
         <div class="ppc-body">
-            <div class="ppc-avatar" id="profilePhotoDropzone" role="button" tabindex="0"
-                aria-label="{{ __('Choose a passport photo') }}">
-                <img id="profilePhotoPreview" src="" alt="{{ __('Selected photo') }}" class="ppc-hidden">
-                <span id="profilePhotoPreviewPlaceholder" class="ppc-avatar-empty">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                        <circle cx="12" cy="13" r="4" />
-                    </svg>
-                </span>
+            <div class="ppc-split">
+
+                {{-- Left: the picture itself, square and large enough to judge. --}}
+                <div class="ppc-pane-left">
+                    <div class="ppc-frame" id="profilePhotoDropzone" role="button" tabindex="0"
+                        aria-label="{{ __('Choose a passport photo') }}">
+                        <img id="profilePhotoPreview" src="" alt="{{ __('Selected photo') }}" class="ppc-hidden">
+                        {{-- Bounding box over the detected face, drawn by js/profile-photo-card.js. --}}
+                        <canvas id="profilePhotoBox" class="ppc-box"></canvas>
+                        <span id="profilePhotoPreviewPlaceholder" class="ppc-frame-empty">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                                <circle cx="12" cy="13" r="4" />
+                            </svg>
+                            <span class="ppc-frame-hint">{{ __('Click to choose a photo') }}</span>
+                        </span>
+                    </div>
+
+                    <div class="ppc-field">
+                        <label class="ppc-label" for="profilePhotoInput">{{ __('Passport photo') }}</label>
+                        <input type="file" id="profilePhotoInput" name="profile" accept="image/jpeg,image/png,image/gif"
+                            class="ppc-file">
+                        <p class="ppc-hint">{{ __('JPG, PNG or GIF · maximum 2MB') }}</p>
+                    </div>
+                </div>
+
+                {{-- Right: why it is being asked for, then what the detector found. --}}
+                <div class="ppc-pane-right">
+                    <h2 class="ppc-title" id="ppcTitle">{{ __('Profile Picture Required') }}</h2>
+                    <p class="ppc-lede">
+                        {{ __('Hello') }}
+                        <strong>{{ auth()->user()->first_name ?? auth()->user()->name }}</strong>,
+                        {{ __('a passport photo is required before you can use KLAES. It identifies you on files, requests and approvals.') }}
+                    </p>
+
+                    <div class="ppc-verify">
+                        <p class="ppc-verify-heading">{{ __('Face verification') }}</p>
+
+                        {{-- Headline verdict; the rows below carry the measurements. --}}
+                        <p id="profilePhotoFaceNote" class="ppc-face-note">
+                            {{ __('Choose a photo to check it.') }}
+                        </p>
+
+                        <div id="profilePhotoRows" class="ppc-rows ppc-hidden"></div>
+
+                        <p id="profilePhotoError" class="ppc-error ppc-hidden" role="alert"></p>
+                    </div>
+
+                    <button type="button" id="profilePhotoSubmit" class="ppc-submit">
+                        {{ __('Upload Profile Picture') }}
+                    </button>
+
+                    <p class="ppc-footnote">{{ __('The system stays locked until a picture is uploaded.') }}</p>
+                </div>
             </div>
-
-            <h2 class="ppc-title" id="ppcTitle">{{ __('Profile Picture Required') }}</h2>
-            <p class="ppc-lede">
-                {{ __('Hello') }}
-                <strong>{{ auth()->user()->first_name ?? auth()->user()->name }}</strong>,
-                {{ __('a passport photo is required before you can use KLAES. It identifies you on files, requests and approvals.') }}
-            </p>
-
-            <div class="ppc-field">
-                <label class="ppc-label" for="profilePhotoInput">{{ __('Passport photo') }}</label>
-                <input type="file" id="profilePhotoInput" name="profile" accept="image/jpeg,image/png,image/gif"
-                    class="ppc-file">
-                <p class="ppc-hint">{{ __('JPG, PNG or GIF · maximum 2MB') }}</p>
-                <p id="profilePhotoError" class="ppc-error ppc-hidden" role="alert"></p>
-            </div>
-
-            <button type="button" id="profilePhotoSubmit" class="ppc-submit">
-                {{ __('Upload Profile Picture') }}
-            </button>
-
-            <p class="ppc-footnote">{{ __('The system stays locked until a picture is uploaded.') }}</p>
         </div>
     </div>
 </div>

@@ -587,6 +587,19 @@ function buildActionsMenu(row, viewUrl) {
         </button>`
     : '';
 
+  // Conversion files only. A conversion is where an Occupancy Permit is turned into a
+  // proper title, so it is the one class of file that routinely reaches indexing with
+  // the OP holder still named on the chain and the buyer already on the file — which
+  // is exactly what Match OP resolves. Offering it on every indexed file would put a
+  // dealing-writing action in front of thousands of rows that can never need it.
+  const isConversionFile = /^\s*CON-/i.test(String(row.file_number ?? ''));
+  const matchOpButton = (isConversionFile && config.opMatchCheckUrl)
+    ? `<button type="button" class="match-op-btn flex items-start gap-2.5 w-full text-left px-4 py-2.5 text-sm text-amber-700 hover:bg-amber-50 transition-colors" data-file-id="${id}" data-file-number="${safeFileNumber}">
+          <i data-lucide="git-merge" class="h-4 w-4 mt-0.5 shrink-0 text-amber-600"></i>
+          <span class="leading-snug">Match OP</span>
+        </button>`
+    : '';
+
   // KANGIS variant: a reduced menu — tracking, the placeholder editor, and Edit.
   // Edit points at the KANGIS-only update flow (see editUrlTemplate on the KANGIS
   // indexed-files page), which pins the row's "_N" file number instead of letting
@@ -631,6 +644,7 @@ function buildActionsMenu(row, viewUrl) {
           ${tempFileButton}
           ${mccFileNoButton}
           ${mppFileNoButton}
+          ${matchOpButton}
           ${unlinkRelatedButton}
           ${updatePlaceholderButton}
           ${deleteButton ? '<div class="border-t border-slate-50 my-1.5"></div>' + deleteButton : ''}
@@ -815,6 +829,15 @@ function handleTableBodyClick(event) {
     const fn = callupButton.getAttribute('data-file-number') || '';
     const fid = callupButton.getAttribute('data-file-id') || '';
     window.open(`/duplicate-callup?file_number=${encodeURIComponent(fn)}&indexed_id=${encodeURIComponent(fid)}`, '_blank');
+    closeAllActionMenus();
+    return;
+  }
+
+  const matchOpButton = event.target.closest('.match-op-btn');
+  if (matchOpButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    openMatchOpModal(matchOpButton.getAttribute('data-file-number') || '');
     closeAllActionMenus();
     return;
   }
@@ -4467,6 +4490,331 @@ window.checkExistingPropertyRecords = function () {
   console.log('checkExistingPropertyRecords callback triggered, reloading table...');
   loadTable();
 };
+
+/* ---------------------------------------------------------------------------
+ * Match OP
+ *
+ * The same check and the same write as the Match OP page and the recommendation
+ * capture card — one service, one endpoint, one rule — brought to the row so a
+ * conversion file can be resolved without leaving the register.
+ *
+ * Deliberately NOT a reuse of land-recommendation-op-match.js: that script is bound
+ * to a capture form (it blocks the save button, drives the existing-recommendation
+ * flag, reads the form's file-number input). None of that exists here. What is shared
+ * is the part that matters — the endpoints, and therefore the verdict.
+ * ------------------------------------------------------------------------- */
+
+function ensureMatchOpModal() {
+  let modal = document.getElementById('indexed-match-op-modal');
+  if (modal) return modal;
+
+  modal = document.createElement('div');
+  modal.id = 'indexed-match-op-modal';
+  modal.className = 'fixed inset-0 z-[140] hidden overflow-y-auto';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.innerHTML = `
+    <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+      <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" data-match-op-backdrop></div>
+      <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+      <div class="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+        <div class="bg-slate-700 px-6 py-4 flex items-center justify-between" data-match-op-header>
+          <div class="flex items-center gap-3">
+            <i data-lucide="git-merge" class="w-5 h-5 text-white" data-match-op-icon></i>
+            <div>
+              <h3 class="text-lg font-bold text-white leading-tight" data-match-op-title>Match OP</h3>
+              <p class="text-[11px] text-white/70" data-match-op-file>-</p>
+            </div>
+          </div>
+          <button type="button" class="text-white/70 hover:text-white transition-colors" data-match-op-close>
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+        <div class="px-6 py-6 max-h-[70vh] overflow-y-auto" data-match-op-body></div>
+        <div class="bg-gray-50 px-6 py-4 flex justify-end gap-3 border-t border-gray-100">
+          <button type="button" class="px-6 py-2.5 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-200 transition-all" data-match-op-close>Close</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+
+  modal.addEventListener('click', (event) => {
+    if (event.target.closest('[data-match-op-close]') || event.target.closest('[data-match-op-backdrop]')) {
+      closeMatchOpModal();
+    }
+  });
+
+  return modal;
+}
+
+function closeMatchOpModal() {
+  const modal = document.getElementById('indexed-match-op-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function openMatchOpModal(fileNumber) {
+  const file = String(fileNumber || '').trim();
+  if (!file || !config.opMatchCheckUrl) return;
+
+  const modal = ensureMatchOpModal();
+  modal.classList.remove('hidden');
+  modal.querySelector('[data-match-op-file]').textContent = file;
+
+  // Neutral until the check comes back. Opening straight into an amber "Match OP" bar
+  // would announce a verdict the modal does not have yet.
+  setMatchOpHeader(modal, 'bg-slate-700', 'Checking Occupancy Permit', 'git-merge');
+
+  const body = modal.querySelector('[data-match-op-body]');
+  // The chain is read through the Legal Search report engine — four registers, and
+  // seconds on a cold file. Say so, or the wait reads as a modal that did nothing.
+  body.innerHTML = `
+    <div class="flex items-center gap-3">
+      <i data-lucide="loader" class="h-5 w-5 animate-spin text-amber-600"></i>
+      <div>
+        <p class="text-sm font-bold text-slate-800">Checking ${escapeHtml(file)}…</p>
+        <p class="text-xs text-slate-500 mt-0.5">Reading the file history from all four registers.</p>
+      </div>
+    </div>`;
+  if (window.lucide) window.lucide.createIcons();
+
+  fetch(`${config.opMatchCheckUrl}?file_number=${encodeURIComponent(file)}`, {
+    credentials: 'same-origin',
+    headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+  })
+    .then((response) => (response.ok ? response.json() : null))
+    .then((payload) => {
+      if (!payload || !payload.success) throw new Error('check failed');
+      renderMatchOpState(body, file, payload.data || {});
+    })
+    .catch(() => {
+      setMatchOpHeader(modal, 'bg-rose-600', 'Occupancy Permit — check failed', 'alert-triangle');
+      body.innerHTML = `<p class="text-sm text-rose-700">The file history could not be read. Close this and try again.</p>`;
+    });
+}
+
+/** One OP row of the chain. Amber for a grant, blue for a transfer, plot chip on both. */
+function matchOpTimeline(rows) {
+  if (!rows || !rows.length) {
+    return '<p class="text-xs text-slate-500 italic">No transactions are recorded on this file.</p>';
+  }
+
+  return `<ul class="border-l border-slate-200 ml-1">${rows.map((row) => {
+    const tone = row.is_op ? 'border-amber-300 bg-amber-50'
+      : (row.is_tot ? 'border-blue-500 bg-blue-100' : 'border-slate-200 bg-white');
+    const dot = row.is_op ? 'bg-amber-500' : (row.is_tot ? 'bg-blue-500' : 'bg-slate-300');
+    const rot = row.root_of_title
+      ? '<span class="ml-1.5 text-[10px] font-bold italic text-violet-700">-RoT</span>' : '';
+    const plot = row.plot_no
+      ? `<span class="ml-2 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-violet-100 text-violet-700 border border-violet-200">Plot ${escapeHtml(row.plot_no)}</span>` : '';
+    const source = row.source
+      ? `<span class="ml-2 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-slate-200/80 text-slate-600">${escapeHtml(String(row.source).replace(/_staging$/, '').replace(/_/g, ' '))}</span>` : '';
+    const sysgen = row.system_generated
+      ? '<span class="ml-2 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-blue-600 text-white">New (System Generated)</span>' : '';
+
+    return `<li class="relative pl-6 pb-3 last:pb-0">
+        <span class="absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full ${dot}"></span>
+        <div class="rounded-lg border ${tone} px-3 py-2">
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-xs font-bold text-slate-800">${escapeHtml(row.type)}${rot}${plot}${source}${sysgen}</span>
+            <span class="text-[10px] text-slate-500 whitespace-nowrap">${escapeHtml(row.date || '—')}</span>
+          </div>
+          <div class="mt-1 text-[11px] text-slate-600">
+            <span class="font-medium">${escapeHtml(row.party_1 || '—')}</span>
+            <span class="text-slate-400">&rarr;</span>
+            <span class="font-medium">${escapeHtml(row.party_2 || '—')}</span>
+          </div>
+        </div>
+      </li>`;
+  }).join('')}</ul>`;
+}
+
+/**
+ * The header says what the file turned out to need, not what the menu item was called.
+ *
+ * The menu cannot know in advance which files need matching — that answer costs a
+ * 3-5 second read of four registers, and there are 44,509 conversion rows. So the item
+ * is offered on all of them and the modal reports. Leaving the bar permanently amber
+ * and titled "Match OP" then promised an action on files that plainly had none, which
+ * is what made a correct "nothing to match" result read as a fault.
+ */
+function setMatchOpHeader(modal, tone, title, icon) {
+  const header = modal.querySelector('[data-match-op-header]');
+  if (header) {
+    header.className = `${tone} px-6 py-4 flex items-center justify-between`;
+    header.setAttribute('data-match-op-header', '');
+  }
+
+  const titleEl = modal.querySelector('[data-match-op-title]');
+  if (titleEl) titleEl.textContent = title;
+
+  const iconEl = modal.querySelector('[data-match-op-icon]');
+  if (iconEl) {
+    iconEl.outerHTML = `<i data-lucide="${icon}" class="w-5 h-5 text-white" data-match-op-icon></i>`;
+  }
+}
+
+function renderMatchOpState(body, file, state) {
+  const applies = !!state.applies;
+  const merger = state.merger || null;
+  const matchInfo = state.match || null;
+
+  const modal = document.getElementById('indexed-match-op-modal');
+  if (modal) {
+    if (applies) {
+      setMatchOpHeader(modal, 'bg-amber-600', merger ? 'Match OP — Merger' : 'Match OP', 'git-merge');
+    } else if (state.matched) {
+      setMatchOpHeader(modal, 'bg-emerald-600', 'Occupancy Permit — nothing to match', 'check-circle-2');
+    } else {
+      // Neither actionable nor accounted for: a spelling drift, or a file whose root of
+      // title is not an OP at all. Not a success, not a job — so neither green nor amber.
+      setMatchOpHeader(modal, 'bg-slate-700', 'Occupancy Permit — no action available', 'info');
+    }
+  }
+
+  const verdict = applies
+    ? `<div class="mb-3 flex flex-wrap items-center gap-2">
+         <span class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold tracking-wide bg-rose-600 text-white">
+           <i data-lucide="alert-triangle" class="h-3 w-3"></i> ToT Detected (Unmatched OP)</span>
+         ${merger ? `<span class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold tracking-wide bg-violet-600 text-white">
+           <i data-lucide="git-merge" class="h-3 w-3"></i> Merger &mdash; ${merger.op_count} OPs &rarr; 1 ToT</span>` : ''}
+       </div>`
+    : (state.matched
+        ? `<div class="mb-3"><span class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold tracking-wide bg-emerald-600 text-white">
+             <i data-lucide="check" class="h-3 w-3"></i> Matched</span></div>`
+        : '');
+
+  // Unlike the capture card, this modal is opened deliberately from a menu, so it must
+  // always answer — including for a file that needs nothing and for one with no OP at
+  // all. Every branch gets a heading that says which of those it is.
+  let heading;
+  if (applies) {
+    heading = merger ? 'Several Occupancy Permits, one merged file' : 'The Occupancy Permit has a different name';
+  } else if (matchInfo) {
+    heading = matchInfo.title;
+  } else if (state.name_spelling_only) {
+    heading = 'Same holder, spelt two ways';
+  } else if (state.has_working_transfer) {
+    heading = 'A transfer is already recorded, under a different name';
+  } else {
+    heading = 'Nothing to match on this file';
+  }
+
+  const blurb = matchInfo ? matchInfo.detail : (state.reason || '');
+
+  // The permits on the giving side. On a merger each is listed with its plot, which is
+  // the only thing distinguishing two otherwise identical grants.
+  const roots = merger
+    ? `<div class="mt-3 rounded-lg border border-amber-300 bg-amber-100/70 px-3 py-2">
+         <div class="text-[10px] font-bold uppercase tracking-wider text-amber-700">Roots of title (${merger.op_count} Occupancy Permits)</div>
+         <div class="mt-1 flex flex-col gap-1">${merger.grants.map((g) => `
+           <div class="flex items-center gap-2">
+             ${g.plot_no ? `<span class="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-violet-100 text-violet-700 border border-violet-200">Plot ${escapeHtml(g.plot_no)}</span>` : ''}
+             <span class="text-xs font-bold text-amber-950">${escapeHtml(g.holder || '—')}</span>
+           </div>`).join('')}</div>
+       </div>`
+    : `<div class="mt-3 rounded-lg border border-amber-300 bg-amber-100/70 px-3 py-2">
+         <div class="text-[10px] font-bold uppercase tracking-wider text-amber-700">Root of title</div>
+         <div class="text-xs font-bold text-amber-950">${escapeHtml(state.root_of_title || '—')}</div>
+       </div>`;
+
+  const names = `
+    <div class="mt-2 rounded-lg border border-indigo-300 bg-indigo-100/70 px-3 py-2">
+      <div class="text-[10px] font-bold uppercase tracking-wider text-indigo-700">File Indexing name</div>
+      <div class="text-xs font-bold text-indigo-950">${escapeHtml(state.indexing_name || '—')}</div>
+    </div>`;
+
+  const accounted = matchInfo
+    ? `<div class="mt-3 rounded-lg border ${matchInfo.kind === 'merger_sibling' ? 'border-amber-300 bg-amber-50' : 'border-emerald-300 bg-emerald-50/80'} px-3 py-2.5">
+         <div class="text-[10px] font-bold uppercase tracking-wider ${matchInfo.kind === 'merger_sibling' ? 'text-amber-700' : 'text-emerald-700'}">
+           ${matchInfo.kind === 'merger_sibling' ? `Recorded under ${escapeHtml(matchInfo.file_no)}` : 'What accounts for this file'}</div>
+         <div class="mt-1 text-xs font-bold text-slate-800">${escapeHtml(matchInfo.type || '—')}</div>
+         <div class="mt-1 text-[11px] text-slate-700">
+           <span class="font-medium">${escapeHtml(matchInfo.party_1 || '—')}</span>
+           <span class="text-slate-400">&rarr;</span>
+           <span class="font-medium">${escapeHtml(matchInfo.party_2 || '—')}</span>
+         </div>
+       </div>`
+    : '';
+
+  const action = applies
+    ? `<div class="mt-4 border-t border-slate-100 pt-4">
+         <button type="button" class="inline-flex items-center gap-2.5 px-6 py-3 bg-amber-600 text-white text-sm font-bold rounded-xl hover:bg-amber-700 transition shadow-lg shadow-amber-200" data-match-op-run>
+           <i data-lucide="git-merge" class="h-4 w-4"></i> ${merger ? 'Match Merger' : 'Match'}
+         </button>
+         <p class="mt-2 text-xs text-slate-600">
+           Records ${merger ? '<b>one</b> Transfer of Title' : 'the transfer'} from
+           <b class="text-amber-800">${escapeHtml(merger ? merger.party_1 : (state.op ? state.op.holder : ''))}</b>
+           to <b class="text-indigo-800">${escapeHtml(state.indexing_name || '')}</b>${merger ? `, combining all ${merger.op_count} permits` : ''}.
+           It carries no registration particulars (0/0/0).
+         </p>
+       </div>`
+    : '';
+
+  body.innerHTML = `
+    ${verdict}
+    <h4 class="text-sm font-bold ${applies ? 'text-amber-900' : 'text-emerald-900'}">${escapeHtml(heading)}</h4>
+    <p class="mt-1 text-xs ${applies ? 'text-amber-800' : 'text-emerald-800'}">${escapeHtml(blurb)}</p>
+    ${roots}
+    ${names}
+    ${accounted}
+    <div class="mt-4">
+      <p class="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">File history (${(state.timeline || []).length})</p>
+      ${matchOpTimeline(state.timeline)}
+    </div>
+    ${action}`;
+
+  if (window.lucide) window.lucide.createIcons();
+
+  const runButton = body.querySelector('[data-match-op-run]');
+  if (runButton) {
+    runButton.addEventListener('click', () => runMatchOp(body, file, runButton));
+  }
+}
+
+function runMatchOp(body, file, button) {
+  // This writes a dealing on somebody's title, so the button is shut before the
+  // request leaves — a second click has nothing to hit.
+  if (button.disabled) return;
+  button.disabled = true;
+  button.classList.add('opacity-70', 'cursor-not-allowed');
+  button.innerHTML = '<i data-lucide="loader" class="h-4 w-4 animate-spin"></i> Recording…';
+  if (window.lucide) window.lucide.createIcons();
+
+  fetch(config.opMatchUrl, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+      'X-CSRF-TOKEN': getCsrfToken(),
+    },
+    body: JSON.stringify({ file_number: file }),
+  })
+    .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+    .then((result) => {
+      if (!result.ok || !result.data || result.data.success === false) {
+        throw new Error((result.data && result.data.message) || 'The transfer could not be recorded.');
+      }
+
+      // Re-render from the state the server just returned, so the modal shows the
+      // matched verdict and the new row rather than a stale "needs matching" card.
+      renderMatchOpState(body, file, result.data.data || {});
+      loadTable();
+    })
+    .catch((error) => {
+      button.disabled = false;
+      button.classList.remove('opacity-70', 'cursor-not-allowed');
+      button.innerHTML = '<i data-lucide="git-merge" class="h-4 w-4"></i> Match';
+      if (window.lucide) window.lucide.createIcons();
+
+      const notice = document.createElement('p');
+      notice.className = 'mt-2 text-xs font-semibold text-rose-700';
+      notice.textContent = error.message || 'The transfer could not be recorded.';
+      button.parentElement.appendChild(notice);
+    });
+}
 
 function bootstrap() {
   if (dom.perPageSelect) {

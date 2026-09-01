@@ -21,6 +21,15 @@
     $currentUse = $landUseName[Str::upper((string) $duplex->land_use)] ?? Str::lower((string) $duplex->land_use);
 
     /**
+     * The memo prints on the ministry's letterhead artwork.
+     *
+     * ?plain=1 prints exactly the same memo without it — for a comparison, and
+     * for the case where it is being run onto pre-printed letterhead paper, where
+     * printing the artwork again would double it.
+     */
+    $letterhead = ! request()->boolean('plain');
+
+    /**
      * The parcel sizes a stage records, as the sheet reads them: "1.5 + 2 + 3" with a
      * total. A blank size is skipped rather than printed as 0, so a partly-filled stage
      * still produces a sensible line.
@@ -202,7 +211,9 @@
     <title>Duplex Recommendation - KLAES GIS</title>
     <style>
         :root {
-            --page-color: #fdf6e3;
+            /* White, not the old cream: the letterhead is a scan of white paper,
+               so a tinted sheet under it reads as a mismatched border. */
+            --page-color: #fff;
             --accent-red: #cc0000;
         }
         * { box-sizing: border-box; }
@@ -223,9 +234,30 @@
             position: relative;
             box-shadow: 0 0 10px rgba(0,0,0,0.5);
         }
+@if ($letterhead)
+        /*
+         * Sized to the exact A4 rectangle, NOT 100% 100%: a memo with several
+         * stages grows the sheet past 297mm, and a stretched background would
+         * drag the ministry's ref box down the page with it. no-repeat, so a
+         * second page comes out as a plain continuation sheet.
+         */
+        .a4-page {
+            background-image: url('{{ asset('assets/letterhead/bg.png') }}');
+            background-size: 210mm 297mm;
+            background-repeat: no-repeat;
+            background-position: left top;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+@endif
         .left-sidebar { width: 60px; flex-shrink: 0; }
         .main-container { flex: 1; display: flex; flex-direction: column; padding: 20px 40px; }
-        .header-block { height: 100px; margin-bottom: 5px; }
+        /* Clears the letterhead. Its reply box's bottom rule is 62mm down the
+           sheet (measured off the scan: 4798x6735px = 210x297mm); 20px of
+           .main-container padding + this lands the addressee just under it.
+           Back to 100px when the artwork is off — a plain sheet needs only a
+           header's worth of space, not a letterhead's. */
+        .header-block { height: {{ $letterhead ? '58mm' : '100px' }}; margin-bottom: 5px; }
         .addressee { font-weight: bold; text-decoration: underline; margin-top: 15px; margin-bottom: 15px; font-size: 1.1em; }
         .body-paragraph { text-align: justify; line-height: 1.4; margin-bottom: 15px; }
         .point-block { margin-top: 15px; margin-bottom: 10px; font-weight: bold; }

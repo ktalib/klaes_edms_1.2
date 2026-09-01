@@ -136,6 +136,28 @@
   </script>
   {{-- Avatar renderer shared by the file-tracking screens (Quick Search, Log a File). --}}
   <script src="{{ asset('js/user-avatar.js') }}?v={{ filemtime(public_path('js/user-avatar.js')) }}"></script>
+
+  {{-- Face detection: paths + the single place the thresholds are tuned. The library
+       itself (~1.3MB) is NOT loaded here — js/face-detection/loader.js fetches it the
+       first time a profile card actually needs it. --}}
+  @auth
+    <script>
+      window.FaceDetectionAssets = {
+        api: @json(asset('js/face-detection/face-api.js')),
+        detector: @json(asset('js/face-detection/profile-picture-detector.js')),
+        models: @json(asset('models/face-detection')),
+        thresholds: {
+          // 0.60 rather than the test page's 0.75: a genuine passport photo in this
+          // project's own sample scored 73.6% and would have been refused.
+          minConfidence: 0.60,
+          minFaceCoverage: 0.05,
+          rejectIllustrations: true,
+          maxFlatness: 0.62
+        }
+      };
+    </script>
+    <script src="{{ asset('js/face-detection/loader.js') }}?v={{ filemtime(public_path('js/face-detection/loader.js')) }}"></script>
+  @endauth
   <script src="{{ asset('js/print-manager.js') }}"></script>
   <script src="{{ asset('js/tailwind-modal.js') }}?v={{ time() }}"></script>
   <x-print-manager />

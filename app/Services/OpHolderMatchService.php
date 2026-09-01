@@ -6,6 +6,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * "The OP names one holder, File Indexing names another, and nothing on the file
@@ -136,6 +137,17 @@ class OpHolderMatchService
             // Set when the OP's pra row carries a DIFFERENT file number in another
             // column, so the officer can see the ambiguity before acting on it.
             'file_conflict'        => null,
+            // Set only when this file is rooted in more than one Occupancy Permit —
+            // a merger. Carries the grants being combined so the card can show which
+            // permits and which plots are going into the one file.
+            'merger'               => null,
+            // Set whenever `matched` is true: WHICH of the three ways this file is
+            // already accounted for, and the row that accounts for it. A file can be
+            // matched because nothing ever moved, because a dealing on it reaches the
+            // indexed holder, or because a merger sibling carries the transfer under
+            // another number — and an officer told only "Matched" cannot tell those
+            // apart or check the one that applies.
+            'match'                => null,
         ];
 
         if ($fileNumber === '') {
@@ -161,6 +173,7 @@ class OpHolderMatchService
         $rows = $this->chain($fileNumber, $indexing->prop_id ?? null);
         $rows = $this->markSystemGenerated($rows, $fileNumber);
         $rows = $this->nameCommissioningFromIndexing($rows, $fileNumber, $indexedName);
+        $rows = $this->attachParcelDetails($rows, $fileNumber);
         $base['timeline'] = $rows;
 
         if ($indexedName === '') {
@@ -183,15 +196,30 @@ class OpHolderMatchService
             return $base;
         }
 
-        // Read the root of title through the shared resolver purely for display —
-        // the officer sees the same wording here as on every other screen.
-        $base['root_of_title'] = $this->rootOfTitleLabel($fileNumber, $indexing->prop_id ?? null);
+        // The line above the chain must name the SAME grant the chain badges "-RoT",
+        // or the card contradicts itself in the space of two rows.
+        $base['root_of_title'] = $this->rootOfTitleFor($ops[0], $fileNumber, $indexing->prop_id ?? null);
 
         // An OP that already names the indexed holder means the file never moved.
         foreach ($ops as $op) {
             if ($this->sameName($op['party_2'], $indexedName)) {
                 $base['matched'] = true;
                 $base['reason'] = 'The Occupancy Permit was granted to ' . $indexedName . ' — nothing has moved since.';
+                $base['match'] = [
+                    'kind'    => 'never_moved',
+                    'title'   => 'The land never changed hands',
+                    'detail'  => 'The Occupancy Permit was granted straight to ' . $indexedName
+                        . ', which is the name File Indexing holds. There is no transfer to record because '
+                        . 'there was no transfer.',
+                    'type'    => $op['type'],
+                    'party_1' => trim((string) $op['party_1']),
+                    'party_2' => trim((string) $op['party_2']),
+                    'date'    => $op['date'],
+                    'source'  => $op['source'] ?? null,
+                    'file_no' => $fileNumber,
+                    'system_generated' => false,
+                ];
+
                 return $base;
             }
         }
@@ -231,9 +259,36 @@ class OpHolderMatchService
 
         foreach ($dealings as $d) {
             if ($this->sameName($d['party_2'], $indexedName)) {
+                $wasWrittenHere = ! empty($d['system_generated']);
+
                 $base['matched'] = true;
                 $base['reason'] = 'The ' . $d['type'] . ' from ' . trim((string) $d['party_1'])
                     . ' to ' . trim((string) $d['party_2']) . ' is recorded on this file.';
+                $base['match'] = [
+                    'kind'   => 'dealing',
+                    'title'  => $wasWrittenHere
+                        // Worth separating: a transfer this flow reconstructed carries no
+                        // registration particulars and never was presented to the registry,
+                        // which is a different thing from a deed an officer keyed off paper.
+                        ? 'Already matched — the transfer was recorded here'
+                        : 'The transfer is already on file',
+                    'detail' => $wasWrittenHere
+                        ? 'Match has already been used on this file. The ' . $d['type']
+                            . ' below was reconstructed from the Occupancy Permit, so it carries no '
+                            . 'registration particulars (0/0/0). Nothing further is needed.'
+                        : 'A dealing recorded on this file already carries the title to ' . $indexedName
+                            . ', so the Occupancy Permit and File Indexing are accounted for. '
+                            . 'Nothing needs to be generated.',
+                    'type'    => $d['type'],
+                    'party_1' => trim((string) $d['party_1']),
+                    'party_2' => trim((string) $d['party_2']),
+                    'date'    => $d['date'],
+                    'reg_no'  => $d['reg_no'] ?? null,
+                    'source'  => $d['source'] ?? null,
+                    'file_no' => $fileNumber,
+                    'system_generated' => $wasWrittenHere,
+                ];
+
                 return $base;
             }
         }
@@ -251,44 +306,281 @@ class OpHolderMatchService
             }
         }
 
-        // Earliest OP is the grant the chain starts from.
-        $op = $ops[0];
+        // The pra Occupancy Permit rows for this file — the grants the transfer will be
+        // built from. Read from pra directly rather than matched back by holder name:
+        // two permits can name the same person (one man merging two of his own plots),
+        // and pairing by name would collapse them into one grant and lose a parcel.
+        //
+        // Only the SELECTED FILE's own permits. This never searches the register for
+        // other files sharing an OP's serial number or details, which is precisely what
+        // keeps a subdivision out of this path: a subdivision is one permit spread
+        // across several files, so each of those files presents exactly one OP here and
+        // is matched the way it always was. Nothing about that flow changes.
+        $grants = array_values(array_filter($this->praRows($fileNumber), fn ($r) => $this->isOp($r)));
 
-        // The pra row the transfer will be copied from. The chain above is read
-        // through the report engine, which merges four tables and does not carry a
-        // pra id, so the source row is looked up separately — and if the OP lives
-        // only in one of the other tables there is nothing here to copy, which is
-        // said plainly rather than guessed at.
-        $source = $this->sourceOpRow($fileNumber, $op['party_2']);
-
-        if (! $source) {
+        if ($grants === []) {
             $base['reason'] = 'The Occupancy Permit for this file is not held in the deeds register (pra), '
                 . 'so the transfer cannot be reconstructed from it here.';
             return $base;
         }
 
+        // A merger whose transfer is already recorded — but recorded against a SIBLING
+        // permit's file number rather than this one, so the chain above cannot see it.
+        // matchOpMerger() anchors its transfer on the oldest OP in the group, and where
+        // that OP sat on a TEMP number while its sibling held the real file number, the
+        // transfer landed on the TEMP. RES-2023-5645 is in exactly that state: its
+        // transfer exists as pra #167330 under TEMP-42337. Without this guard the card
+        // would offer to write it a second time.
+        $sibling = $this->mergerSiblingTransfer($grants, $indexedName);
+        if ($sibling !== null) {
+            $filedUnder = trim((string) ($sibling->mlsFNo ?: $sibling->fileno));
+
+            $base['matched'] = true;
+            $base['reason']  = 'This file is part of a merger whose Transfer of Title is already recorded ('
+                . trim((string) $sibling->party_1) . ' to ' . trim((string) $sibling->party_2)
+                . '), filed under ' . $filedUnder . '.';
+            $base['match'] = [
+                'kind'   => 'merger_sibling',
+                'title'  => 'Already matched, under another file number',
+                // The one matched case an officer genuinely has to act on afterwards: the
+                // transfer exists but is filed somewhere the file's own history cannot
+                // show, so it looks missing on every screen that reads this file alone.
+                'detail' => 'The permits on this file belong to a merger set, and the merger\'s '
+                    . 'Transfer of Title was filed under ' . $filedUnder . ' rather than '
+                    . $fileNumber . '. It is recorded, so Match is not offered — but this file\'s own '
+                    . 'history cannot show it while it sits under the other number.',
+                'type'    => (string) ($sibling->transaction_type ?: $sibling->instrument_type),
+                'party_1' => trim((string) $sibling->party_1),
+                'party_2' => trim((string) $sibling->party_2),
+                'date'    => null,
+                'source'  => 'pra',
+                'file_no' => $filedUnder,
+                'pra_id'  => (int) $sibling->id,
+                'system_generated' => false,
+            ];
+
+            return $base;
+        }
+
+        // Earliest grant. On a single-OP file it is the only one; on a merger it is the
+        // row the transfer inherits its parcel details from, and it is taken from this
+        // file's own permits so the transfer cannot be filed under a sibling's number.
+        $anchor = $grants[0];
+
         // pra #126911 is mlsFNo COM-2016-219 AND fileno COM-2026-219 — one Occupancy
         // Permit row claiming two separately indexed files. Only 3 rows estate-wide
         // do this, but on those the officer has to decide, so the card tells them.
-        $otherNumber = $this->conflictingFileNumber($source, $fileNumber);
+        $otherNumber = $this->conflictingFileNumber($anchor, $fileNumber);
         if ($otherNumber !== null) {
             $base['file_conflict'] = $otherNumber;
         }
 
+        // Distinct transferring holders, in the order the permits were granted.
+        $holders = [];
+        foreach ($grants as $g) {
+            $name = trim((string) $g->party_2);
+            if ($name === '') {
+                continue;
+            }
+            foreach ($holders as $seen) {
+                if ($this->sameName($seen, $name)) {
+                    continue 2;
+                }
+            }
+            $holders[] = $name;
+        }
+
+        if ($holders === []) {
+            $base['reason'] = 'The Occupancy Permit on this file names no holder, so there is no transfer to record.';
+            return $base;
+        }
+
         $base['applies'] = true;
-        $base['reason']  = 'The Occupancy Permit was granted to ' . trim((string) $op['party_2'])
-            . ', File Indexing holds ' . $indexedName
-            . ', and no dealing on this file explains the change.';
         $base['op'] = [
-            'pra_id'           => (int) $source->id,
-            'holder'           => trim((string) $op['party_2']),
-            'grantor'          => trim((string) $op['party_1']),
-            'transaction_type' => $op['type'],
-            'date'             => $op['date'],
-            'prop_id'          => $source->prop_id,
+            'pra_id'           => (int) $anchor->id,
+            'holder'           => trim((string) $anchor->party_2),
+            'grantor'          => trim((string) $anchor->party_1),
+            'transaction_type' => (string) ($anchor->transaction_type ?: $anchor->instrument_type),
+            'date'             => $this->displayDate($anchor),
+            'prop_id'          => $anchor->prop_id,
         ];
 
+        // ── One grant ────────────────────────────────────────────────────────────
+        if (count($grants) < 2) {
+            $base['reason'] = 'The Occupancy Permit was granted to ' . $holders[0]
+                . ', File Indexing holds ' . $indexedName
+                . ', and no dealing on this file explains the change.';
+
+            return $base;
+        }
+
+        // ── Several grants: a merger ─────────────────────────────────────────────
+        // Two or more permits over two or more parcels, presented on one file and
+        // going to one applicant. That is ONE transfer with every OP holder on the
+        // giving side — not one transfer per permit, which would read as though the
+        // land changed hands twice.
+        $base['merger'] = [
+            'op_count'  => count($grants),
+            'holders'   => $holders,
+            'party_1'   => $this->joinHolders($holders),
+            'plots'     => $this->distinctValues($grants, 'plot_no'),
+            'serials'   => $this->distinctValues($grants, 'op_serial_number'),
+            'anchor_id' => (int) $anchor->id,
+            'grants'    => array_map(fn ($g) => [
+                'pra_id'  => (int) $g->id,
+                'holder'  => trim((string) $g->party_2),
+                'grantor' => trim((string) $g->party_1),
+                'plot_no' => trim((string) $g->plot_no),
+                'serial'  => trim((string) $g->op_serial_number),
+                'date'    => $this->displayDate($g),
+                'prop_id' => $g->prop_id,
+            ], $grants),
+        ];
+
+        $plots = $base['merger']['plots'];
+
+        $base['reason'] = count($grants) . ' Occupancy Permits are presented on this file'
+            . ($plots ? ' (' . implode(', ', array_map(fn ($p) => 'Plot ' . $p, $plots)) . ')' : '')
+            . ', granted to ' . $this->joinHolders($holders)
+            . '. File Indexing holds ' . $indexedName
+            . ', and no dealing on this file explains the change. Matching records ONE '
+            . 'Transfer of Title combining all ' . count($grants) . ' permits.';
+
         return $base;
+    }
+
+    /**
+     * A transfer already recorded against another permit in the same merger group.
+     *
+     * Merger sets are held together by pra.merger_group_id. A transfer written for the
+     * set is filed under ONE of the group's file numbers, and where that is not the
+     * file being searched, this file's own chain has no sight of it — so the plain
+     * "no dealing explains the change" test comes back true on a file that has already
+     * been dealt with, and Match would duplicate a dealing on somebody's title.
+     *
+     * @param  array<int,object>  $grants
+     */
+    private function mergerSiblingTransfer(array $grants, string $indexedName): ?object
+    {
+        $groups = [];
+        foreach ($grants as $g) {
+            $group = trim((string) ($g->merger_group_id ?? ''));
+            if ($group !== '') {
+                $groups[$group] = true;
+            }
+        }
+
+        if ($groups === []) {
+            return null;
+        }
+
+        $siblings = DB::connection('sqlsrv')
+            ->table('pra')
+            ->whereIn('merger_group_id', array_keys($groups))
+            ->where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
+            ->get(['id', 'party_1', 'party_2', 'transaction_type', 'instrument_type', 'mlsFNo', 'fileno']);
+
+        foreach ($siblings as $row) {
+            if (! $this->typeContains($row, 'Transfer of Title')) {
+                continue;
+            }
+
+            // Only a transfer that actually lands on the indexed holder answers the
+            // question this card asks. A group carrying some other transfer has not
+            // explained why File Indexing holds the name it holds.
+            if ($this->sameName($row->party_2, $indexedName)) {
+                return $row;
+            }
+        }
+
+        return null;
+    }
+
+    /** "A", "A and B", "A, B and C" — how the register writes joint parties. */
+    private function joinHolders(array $holders): string
+    {
+        $holders = array_values(array_filter(array_map('trim', $holders), fn ($h) => $h !== ''));
+
+        if (count($holders) < 2) {
+            return $holders[0] ?? '';
+        }
+
+        $last = array_pop($holders);
+
+        return implode(', ', $holders) . ' and ' . $last;
+    }
+
+    /**
+     * Distinct non-empty values of one column across a set of rows.
+     *
+     * Sorted naturally rather than left in permit order, because these read as a list
+     * of parcels on the card and in the transfer's own description — "PLOTS 1380A &
+     * 1380B", not "1380B & 1380A" because that permit happened to be granted first.
+     * Natural order so 1380A/1380B sort as text but 9/10 do not sort as 10/9.
+     *
+     * No pairing with the holder list is implied by either order, and none is drawn.
+     *
+     * @param  array<int,object>  $rows
+     * @return array<int,string>
+     */
+    private function distinctValues(array $rows, string $column): array
+    {
+        $out = [];
+        foreach ($rows as $row) {
+            $value = trim((string) ($row->{$column} ?? ''));
+            if ($value !== '' && ! in_array($value, $out, true)) {
+                $out[] = $value;
+            }
+        }
+
+        natcasesort($out);
+
+        return array_values($out);
+    }
+
+    /**
+     * Put each OP row's parcel back on it.
+     *
+     * The report engine returns a chain of dealings, not of parcels, so an OP row
+     * arrives without the plot it was granted over. On a merger that is the one detail
+     * that tells the two permits apart — both say "Occupancy Permit (OP)", both say
+     * "Kano State Government →", and only "Plot 1380A" against "Plot 1380B" shows the
+     * officer that two separate properties are being combined.
+     *
+     * Matched back by holder name against this file's pra rows. A row that cannot be
+     * paired keeps what it had; nothing here is used for a verdict.
+     *
+     * @param  array<int,array<string,mixed>>  $rows
+     * @return array<int,array<string,mixed>>
+     */
+    private function attachParcelDetails(array $rows, string $fileNumber): array
+    {
+        $ops = array_values(array_filter($this->praRows($fileNumber), fn ($r) => $this->isOp($r)));
+
+        if ($ops === []) {
+            return $rows;
+        }
+
+        foreach ($rows as $i => $row) {
+            if (empty($row['is_op'])) {
+                continue;
+            }
+
+            foreach ($ops as $op) {
+                if (! $this->sameName($op->party_2, $row['party_2'])) {
+                    continue;
+                }
+
+                $rows[$i]['plot_no'] = trim((string) $op->plot_no);
+                $rows[$i]['op_serial_number'] = trim((string) $op->op_serial_number);
+                $rows[$i]['pra_id'] = (int) $op->id;
+                break;
+            }
+        }
+
+        return $rows;
     }
 
     /**
@@ -308,13 +600,17 @@ class OpHolderMatchService
             return ['ok' => false, 'message' => $state['reason'] ?: 'This file does not need a transfer.', 'pra_id' => null];
         }
 
+        $merger = $state['merger'] ?? null;
+
         $op = DB::connection('sqlsrv')->table('pra')->where('id', $state['op']['pra_id'])->first();
 
         if (! $op) {
             return ['ok' => false, 'message' => 'The Occupancy Permit record could not be read back.', 'pra_id' => null];
         }
 
-        $grantor = trim((string) $op->party_2);          // the OP's grantee is the transferor
+        // On a merger every OP holder is on the giving side of the one transfer. On an
+        // ordinary file that list is one name, and this is the same line it always was.
+        $grantor = $merger ? (string) $merger['party_1'] : trim((string) $op->party_2);
         $grantee = trim((string) $state['indexing_name']); // File Indexing's holder is the transferee
 
         if ($grantor === '' || $grantee === '') {
@@ -323,7 +619,38 @@ class OpHolderMatchService
 
         $payload = $this->buildTotPayload($op, $grantor, $grantee, $userId);
 
-        $id = (int) DB::connection('sqlsrv')->table('pra')->insertGetId($payload);
+        // The permits going into the merger, re-read now rather than trusted from the
+        // cached check — this is the set that is about to be stamped.
+        $grantIds = $merger ? array_map(fn ($g) => (int) $g['pra_id'], $merger['grants']) : [];
+        $group = $merger ? (string) Str::uuid() : null;
+
+        if ($merger) {
+            $payload = $this->mergeIntoTotPayload($payload, $merger, $group);
+        }
+
+        $id = DB::connection('sqlsrv')->transaction(function () use ($payload, $grantIds, $group) {
+            $newId = (int) DB::connection('sqlsrv')->table('pra')->insertGetId($payload);
+
+            // The permits and the transfer are one set. Stamped inside the same
+            // transaction as the insert, so the register can never hold a merger
+            // transfer whose sources are not marked, or sources marked for a transfer
+            // that failed to write.
+            if ($grantIds !== []) {
+                DB::connection('sqlsrv')->table('pra')
+                    ->whereIn('id', $grantIds)
+                    ->update([
+                        'merger_group_id' => $group,
+                        // 1 marks a source permit. The transfer itself is written with
+                        // 0 (see mergeIntoTotPayload), so OP and ToT stay tellable
+                        // apart inside a group — reading the group is how the sibling
+                        // guard avoids offering a second transfer.
+                        'is_merger_op'    => 1,
+                        'updated_at'      => Carbon::now()->toDateTimeString(),
+                    ]);
+            }
+
+            return $newId;
+        });
 
         // The file has just changed in the exact way the cached answer denies, so the
         // key goes before anything can read it again — including this method's own
@@ -331,19 +658,98 @@ class OpHolderMatchService
         Cache::forget($this->cacheKey($state['file_number']));
 
         Log::info('op-holder-match.tot-generated', [
-            'file_number' => $state['file_number'],
-            'op_pra_id'   => (int) $op->id,
-            'new_pra_id'  => $id,
-            'party_1'     => $grantor,
-            'party_2'     => $grantee,
-            'user_id'     => $userId,
+            'file_number'     => $state['file_number'],
+            'op_pra_id'       => (int) $op->id,
+            'new_pra_id'      => $id,
+            'party_1'         => $grantor,
+            'party_2'         => $grantee,
+            'merger_group_id' => $group,
+            'merger_op_ids'   => $grantIds,
+            'user_id'         => $userId,
         ]);
+
+        $message = $merger
+            ? 'Merger recorded: one Transfer of Title from ' . $grantor . ' to ' . $grantee
+                . ', combining ' . $merger['op_count'] . ' Occupancy Permits'
+                . ($merger['plots'] ? ' (' . implode(', ', array_map(fn ($p) => 'Plot ' . $p, $merger['plots'])) . ')' : '') . '.'
+            : 'Transfer of Title recorded: ' . $grantor . ' to ' . $grantee . '.';
 
         return [
             'ok'      => true,
-            'message' => 'Transfer of Title recorded: ' . $grantor . ' to ' . $grantee . '.',
+            'message' => $message,
             'pra_id'  => $id,
         ];
+    }
+
+    /**
+     * Turn a single-permit transfer payload into the merged one.
+     *
+     * What makes this a merger rather than two transfers is that only ONE row is
+     * written: the land moved once, from the several people who held the several
+     * plots to the one person taking the whole of it. Writing one transfer per permit
+     * would read as though the parcel changed hands twice.
+     *
+     * parent_prop_id takes ALL the source parcels as a comma-separated list, which is
+     * the shape LegalSearchService already reads for merger rows — it expands a search
+     * across every prop_id named there, so both source properties and their permits
+     * surface on the merged file's history without anything further being written.
+     *
+     * @param  array<string,mixed>  $payload
+     * @param  array<string,mixed>  $merger
+     * @return array<string,mixed>
+     */
+    private function mergeIntoTotPayload(array $payload, array $merger, string $group): array
+    {
+        // Every distinct source parcel, the anchor's own included: the merged parcel is
+        // made of all of them, and the history has to be able to reach each one.
+        $parents = [];
+        foreach ($merger['grants'] as $g) {
+            $pid = trim((string) ($g['prop_id'] ?? ''));
+            if ($pid !== '' && ! in_array($pid, $parents, true)) {
+                $parents[] = $pid;
+            }
+        }
+
+        if ($parents !== []) {
+            $payload['parent_prop_id'] = implode(',', $parents);
+        }
+
+        // Both plot numbers stay on the transfer itself, so the row says what it
+        // combined without the reader having to open the permits behind it.
+        if (! empty($merger['plots'])) {
+            $payload['plot_no'] = implode(', ', $merger['plots']);
+
+            // The description is inherited from the anchor permit, so on a merger it
+            // names ONE of the plots and reads as though the transfer covered only that
+            // parcel. Rewrite the plot clause to cover all of them, and only that clause:
+            // the rest of the line is the district and LGA, which the merger does not
+            // change. A description not in that shape is left exactly as it was.
+            $all = 'PLOTS ' . implode(' & ', $merger['plots']);
+
+            foreach (['location', 'property_description'] as $field) {
+                $value = trim((string) ($payload[$field] ?? ''));
+
+                if ($value !== '' && preg_match('/^PLOTS?\s+[^,]+/i', $value)) {
+                    $payload[$field] = preg_replace('/^PLOTS?\s+[^,]+/i', $all, $value);
+                }
+            }
+        }
+
+        if (! empty($merger['serials'])) {
+            $payload['op_serial_number'] = implode(', ', $merger['serials']);
+        }
+
+        $payload['merger_group_id'] = $group;
+        $payload['is_merger_op']    = 0;   // this is the transfer, not one of the sources
+
+        $payload['remarks'] = trim(
+            (string) ($payload['remarks'] ?? '')
+            . ' Merger of ' . $merger['op_count'] . ' Occupancy Permits'
+            . (! empty($merger['plots']) ? ' over ' . implode(' and ', array_map(fn ($p) => 'Plot ' . $p, $merger['plots'])) : '')
+            . ' into one file.'
+        );
+
+        return $payload;
     }
 
     // -------------------------------------------------------------------------
@@ -541,30 +947,37 @@ class OpHolderMatchService
      */
     private function promoteOccupancyPermit(array $rows, string $fileNumber): array
     {
-        $first = null;
-        foreach ($rows as $index => $row) {
+        $ops = [];
+        $rest = [];
+
+        foreach ($rows as $row) {
             if ($row['is_op']) {
-                $first = $index;
-                break;
+                $ops[] = $row;
+            } else {
+                $rest[] = $row;
             }
         }
 
-        if ($first === null) {
+        if ($ops === []) {
             return $rows;
         }
 
-        $op = $rows[$first];
-        unset($rows[$first]);
-
-        // One root of title per chain: the OP takes the badge, and whatever the
-        // engine had marked gives it up rather than the card showing two.
-        foreach ($rows as $i => $row) {
-            $rows[$i]['root_of_title'] = '';
+        // Whatever the engine had marked gives up the badge, so the roots of title are
+        // the OPs and only the OPs.
+        foreach ($rest as $i => $row) {
+            $rest[$i]['root_of_title'] = '';
         }
 
-        $op['root_of_title'] = $op['root_of_title'] ?: $op['type'];
+        // EVERY OP is badged, not just the first. On a merger the file is rooted in two
+        // grants at once — 1380A to one holder and 1380B to another — and calling only
+        // the earlier one the root of title would describe the parcel as if half of it
+        // arrived from nowhere. On the ordinary single-OP file this is the same one
+        // badge it always was.
+        foreach ($ops as $i => $row) {
+            $ops[$i]['root_of_title'] = $row['root_of_title'] ?: $row['type'];
+        }
 
-        return array_values(array_merge([$op], $rows));
+        return array_values(array_merge($ops, $rest));
     }
 
     /**
@@ -740,27 +1153,16 @@ class OpHolderMatchService
                 // Both file-number columns: conflictingFileNumber() compares them, and
                 // a row that names two different files has to be able to say so.
                 'mlsFNo', 'fileno',
+                // The parcel each OP was granted over. On a merger the whole point is
+                // that two DIFFERENT plots became one file, so the plot numbers have to
+                // survive as far as the card — 1380A and 1380B are how the officer
+                // recognises which permit is which.
+                'plot_no', 'op_serial_number',
+                // Membership of an existing merger set, read so this service never
+                // offers to write a transfer a sibling row already carries.
+                'merger_group_id', 'is_merger_op',
             ])
             ->all();
-    }
-
-    /**
-     * The pra Occupancy Permit row the new transfer is copied from.
-     *
-     * Matched on the holder the chain names rather than just taking the first OP:
-     * the report may be showing an OP that came from another table, and copying the
-     * wrong grant would carry the wrong parcel, location and land use onto the
-     * transfer.
-     */
-    private function sourceOpRow(string $fileNumber, $holder): ?object
-    {
-        foreach ($this->praRows($fileNumber) as $row) {
-            if ($this->isOp($row) && $this->sameName($row->party_2, $holder)) {
-                return $row;
-            }
-        }
-
-        return null;
     }
 
     /**
@@ -774,6 +1176,46 @@ class OpHolderMatchService
             'transaction_type' => $row['type'],
             'instrument_type'  => $row['type'],
         ]);
+    }
+
+    /**
+     * The "Root of title" line, guaranteed to describe the grant the chain badges.
+     *
+     * TitleHolderResolver means something narrower by Root of Title — the dealing the
+     * grant DERIVED FROM, which most files simply do not have — so on this card it can
+     * disagree with the row marked "-RoT" two lines below it, in two ways:
+     *
+     *   CON-AG-2005-57   returns nothing at all (its permit is typed "Occupancy Permit"
+     *                    with no "(OP)" suffix), printing a dash under a chain whose OP
+     *                    is plainly the root.
+     *   CON-RES-2024-306 returns the later Transfer of Title as the root, naming an
+     *                    instrument the card has not badged.
+     *
+     * So the resolver's wording is kept only when it is describing THIS OP — same
+     * holder, and an Occupancy Permit. Otherwise the line is built from the badged row.
+     * That holds the client's rule ("where an OP exists it is always the Root of
+     * Title") and keeps the card internally consistent, which a reader can check by
+     * eye and would otherwise catch us out on.
+     *
+     * @param  array<string,mixed>  $op
+     */
+    private function rootOfTitleFor(array $op, string $fileNumber, $propId): ?string
+    {
+        $holder = trim((string) $op['party_2']);
+        $resolved = $this->rootOfTitleLabel($fileNumber, $propId);
+
+        if ($resolved !== null
+            && $holder !== ''
+            && stripos($resolved, $holder) === 0
+            && preg_match('/\(\s*(OP|Occupancy Permit)\s*\)/i', $resolved)) {
+            return $resolved;
+        }
+
+        if ($holder === '') {
+            return $resolved;
+        }
+
+        return $holder . ' (OP)';
     }
 
     private function rootOfTitleLabel(string $fileNumber, $propId): ?string

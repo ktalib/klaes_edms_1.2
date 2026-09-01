@@ -8,6 +8,7 @@ use App\Models\DuplexParcelUpdateFile;
 use App\Models\DuplexParcelUpdateStage;
 use App\Models\StreetName;
 use App\Support\FileNumberLandUse;
+use App\Support\PersonName;
 use App\Services\DuplexCommitService;
 use App\Services\DuplexSummaryService;
 use App\Services\DuplexHoldingNumberService;
@@ -271,7 +272,16 @@ class DuplexParcelUpdateController extends Controller
     {
         $duplex = DuplexParcelUpdate::with(['stageRows.files', 'files'])->findOrFail($id);
 
-        return response()->json(['success' => true, 'data' => $duplex]);
+        // The RAW applicant_name is left exactly as stored: the wizard reads this
+        // response when resuming a duplex, and title-casing the value it fills the form
+        // with would rewrite the officer's own entry on the next save. The tidied
+        // version rides alongside it for the read-only view modal.
+        return response()->json([
+            'success' => true,
+            'data'    => $duplex->toArray() + [
+                'applicant_display' => PersonName::display($duplex->applicant_name),
+            ],
+        ]);
     }
 
     /**

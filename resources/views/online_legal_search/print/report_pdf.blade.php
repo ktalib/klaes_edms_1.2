@@ -216,7 +216,7 @@
         .foot td { vertical-align: middle; padding-top: 4px; }
         .foot img { height: 24px; }
         /* Wide 2.7:1 lockup — sized on width so it does not tower over the row. */
-        .foot img.brand { height: auto; width: 92px; }
+        .foot img.brand { height: 30px; width: auto; }
         .foot .mid { text-align: center; font-size: 9px; color: #333; }
         .foot .r { text-align: right; }
 

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\DuplexParcelUpdate;
 use App\Models\DuplexParcelUpdateFile;
+use App\Support\PersonName;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -46,8 +47,11 @@ class DuplexSummaryService
         return [
             'duplex' => [
                 'duplex_id'  => $duplex->duplex_id,
-                'applicant'  => $duplex->applicant_name,
-                'file_title' => $duplex->file_title,
+                // Title-cased for the sheet, which is read on screen. The printed memo
+                // and conveyance take the raw value through Str::upper(), so paper stays
+                // in the Ministry's capitals — see App\Support\PersonName.
+                'applicant'  => PersonName::display($duplex->applicant_name),
+                'file_title' => PersonName::display($duplex->file_title),
                 'location'   => $duplex->address,
                 'plot_no'    => $duplex->plot_no,
                 // The commissioning modal seeds each file's Location Details from these.

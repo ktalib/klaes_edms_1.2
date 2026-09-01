@@ -20,6 +20,7 @@
         "tailwindcss": "^3.0.18"
     },
     "dependencies": {
+        "@vladmandic/face-api": "^1.7.15",
         "datatables.net": "^2.3.4",
         "datatables.net-bs5": "^2.3.4"
     }

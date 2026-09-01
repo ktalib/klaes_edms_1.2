@@ -50,6 +50,55 @@
     return new Date(timestamp).toLocaleDateString();
   }
 
+  // No actor photo reaches the client (the notification payload carries no user
+  // image), so the avatar is derived from the notification type instead.
+  const AVATARS = {
+    accepted: { bg: '#dcfce7', fg: '#16a34a', path: 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z' },
+    rejected: { bg: '#fee2e2', fg: '#dc2626', path: 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z' },
+    digital: { bg: '#ede9fe', fg: '#7c3aed', path: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm-1 7V3.5L18.5 9z' },
+    file: { bg: '#e0e7ff', fg: '#4f46e5', path: 'M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8z' },
+    default: { bg: '#f1f5f9', fg: '#64748b', path: 'M12 2a5.006 5.006 0 0 0-5 5v4.586l-.707.707A1 1 0 0 0 7 14h10a1 1 0 0 0 .707-1.707L17 11.586V7a5.006 5.006 0 0 0-5-5zm-2 13a2 2 0 0 0 4 0h-4z' },
+  };
+
+  function resolveAvatar(item) {
+    const type = item.type || '';
+    const module = item.data?.raw?.module || '';
+    if (type.endsWith('.accepted')) return AVATARS.accepted;
+    if (type.endsWith('.rejected')) return AVATARS.rejected;
+    if (type === 'digital_request' || module === 'digital_request') return AVATARS.digital;
+    if (type.startsWith('file_tracking') || module === 'file_tracking') return AVATARS.file;
+    return AVATARS.default;
+  }
+
+  function buildAvatar(item) {
+    const avatar = resolveAvatar(item);
+    return `
+      <span class="flex-shrink-0 inline-flex items-center justify-center w-10 h-10 rounded-full" style="background:${avatar.bg}">
+        <svg viewBox="0 0 24 24" fill="${avatar.fg}" class="w-5 h-5"><path d="${avatar.path}"/></svg>
+      </span>
+    `;
+  }
+
+  // Mirrors the reference design's "**Name** did something" line: the file
+  // number carries the weight, the rest of the title is secondary.
+  function buildHeadline(item) {
+    const title = item.title || 'File tracker update';
+    const fileNo = item.data?.fileNumber || item.data?.file_number;
+
+    if (fileNo) {
+      const at = title.toLowerCase().indexOf(String(fileNo).toLowerCase());
+      if (at !== -1) {
+        const lead = title.slice(0, at + String(fileNo).length);
+        const rest = title.slice(at + String(fileNo).length).trim();
+        return `<span class="font-semibold text-slate-900">${escapeHtml(lead)}</span>${
+          rest ? ` <span class="text-slate-500">${escapeHtml(rest)}</span>` : ''
+        }`;
+      }
+    }
+
+    return `<span class="font-semibold text-slate-900">${escapeHtml(title)}</span>`;
+  }
+
   function buildAssignmentActions(item) {
     const raw = item.data?.raw || {};
     const trackerId = raw.file_tracker_id || raw.file_tracking_id;
@@ -134,9 +183,11 @@
       return '';
     }
 
+    // Rows render on a white/violet-tinted card, so the subtle variant has to be
+    // dark — it used to be text-white/80 and was invisible.
     const baseClasses = subtle
-      ? 'text-xs text-white/80 hover:text-white underline decoration-dotted'
-      : 'inline-flex items-center rounded-full border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition';
+      ? 'text-[11px] font-semibold text-violet-600 hover:underline'
+      : 'inline-flex items-center rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition';
 
     return `
       <button
@@ -232,6 +283,11 @@
     const badge = root.querySelector('#header-notification-badge');
     const totalCountEl = root.querySelector('#header-notification-total');
     const refreshBtn = root.querySelector('#header-notification-refresh');
+    const markAllBtn = root.querySelector('#header-notification-mark-all');
+    const tabButtons = Array.from(root.querySelectorAll('[data-notification-tab]'));
+
+    let activeTab = 'all';
+    let lastItems = [];
 
     const endpoints = buildEndpoints(root);
     const pollInterval = Number(root.dataset.pollInterval || 20000);
@@ -248,32 +304,57 @@
         return;
       }
 
-      if (!items.length) {
+      const visible = activeTab === 'unread' ? items.filter((item) => !item.isRead) : items;
+
+      if (!visible.length) {
         list.innerHTML = '';
-        emptyState?.classList.remove('hidden');
+        if (emptyState) {
+          const label = emptyState.querySelector('p');
+          if (label) {
+            label.textContent =
+              activeTab === 'unread' ? 'No unread notifications.' : "You're all caught up.";
+          }
+          emptyState.classList.remove('hidden');
+        }
         return;
       }
 
       emptyState?.classList.add('hidden');
 
-      const rows = items
+      const rows = visible
         .map((item) => {
           const createdLabel = formatRelativeTime(item.createdAt || item.created_at);
-          const fileNo = item.data?.fileNumber || item.data?.file_number;
           const office = item.data?.officeName || item.data?.office_name;
           const primaryActions = buildDigitalRequestActions(item) || buildAssignmentActions(item);
-          const closeFallback = primaryActions ? '' : buildCloseButton(item);
 
           return `
-            <li class="p-3 ${item.isRead ? 'bg-white' : 'bg-blue-50/60'}">
-              <p class="text-sm font-semibold text-gray-800">${escapeHtml(item.title || 'File tracker update')}</p>
-              <p class="mt-1 text-xs text-gray-600 leading-snug">${escapeHtml(item.body || '')}</p>
-              <div class="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-wide text-gray-500">
-                ${fileNo ? `<span class="px-2 py-1 bg-gray-100 rounded-full font-semibold">File ${escapeHtml(fileNo)}</span>` : ''}
-                ${office ? `<span class="px-2 py-1 bg-gray-100 rounded-full">${escapeHtml(office)}</span>` : ''}
-                ${createdLabel ? `<span class="px-2 py-1 text-gray-400">${escapeHtml(createdLabel)}</span>` : ''}
+            <li class="flex items-start gap-3 px-3 py-3 rounded-xl transition ${
+              item.isRead ? 'bg-white hover:bg-slate-50' : 'bg-violet-50/70 hover:bg-violet-50'
+            }">
+              ${buildAvatar(item)}
+              <div class="min-w-0 flex-1">
+                <p class="text-sm leading-snug">${buildHeadline(item)}</p>
+                ${
+                  item.body
+                    ? `<p class="mt-0.5 text-xs text-slate-500 leading-snug" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${escapeHtml(item.body)}</p>`
+                    : ''
+                }
+                <div class="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+                  ${createdLabel ? `<span>${escapeHtml(createdLabel)}</span>` : ''}
+                  ${office ? `<span class="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full">${escapeHtml(office)}</span>` : ''}
+                  ${
+                    !item.isRead && !primaryActions
+                      ? `<button type="button" class="text-[11px] font-semibold text-violet-600 hover:underline" data-notification-close data-notification-id="${item.id}">Mark as read</button>`
+                      : ''
+                  }
+                </div>
+                ${primaryActions}
               </div>
-              ${primaryActions || closeFallback}
+              ${
+                item.isRead
+                  ? ''
+                  : '<span class="flex-shrink-0 mt-2 w-2 h-2 rounded-full bg-violet-600" aria-label="Unread"></span>'
+              }
             </li>
           `;
         })
@@ -293,7 +374,12 @@
       }
 
       if (totalCountEl) {
-        totalCountEl.textContent = total ?? 0;
+        totalCountEl.textContent = unread > 9 ? '9+' : unread || 0;
+        totalCountEl.style.display = unread > 0 ? 'inline-flex' : 'none';
+      }
+
+      if (markAllBtn) {
+        markAllBtn.disabled = !unread;
       }
     }
 
@@ -318,6 +404,7 @@
       .on('update', ({ items, unreadCount, totalCount, newItems, isInitialLoad }) => {
         hideErrors();
         showLoading(false);
+        lastItems = items;
         renderList(items);
         updateCounters(unreadCount, totalCount);
         // Only toast items that arrived while this page was open. On the first
@@ -346,6 +433,73 @@
         event.preventDefault();
         showLoading(true);
         notificationCenter.refresh();
+      });
+    }
+
+    const TAB_ACTIVE = ['bg-white', 'text-slate-900', 'shadow-sm'];
+    const TAB_IDLE = ['text-slate-500'];
+
+    function applyTabStyles() {
+      tabButtons.forEach((button) => {
+        const isActive = button.dataset.notificationTab === activeTab;
+        button.classList.remove(...TAB_ACTIVE, ...TAB_IDLE);
+        button.classList.add(...(isActive ? TAB_ACTIVE : TAB_IDLE));
+        button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      });
+    }
+
+    tabButtons.forEach((button) => {
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        const next = button.dataset.notificationTab;
+        if (!next || next === activeTab) {
+          return;
+        }
+        activeTab = next;
+        applyTabStyles();
+        renderList(lastItems);
+      });
+    });
+
+    applyTabStyles();
+
+    if (markAllBtn) {
+      markAllBtn.addEventListener('click', async (event) => {
+        event.preventDefault();
+        const endpoint = root.dataset.markAllEndpoint;
+        if (!endpoint) {
+          return;
+        }
+
+        const originalLabel = markAllBtn.innerHTML;
+        markAllBtn.disabled = true;
+        markAllBtn.innerHTML =
+          '<span class="h-4 w-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></span>';
+
+        try {
+          const response = await fetch(endpoint, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-TOKEN': csrfToken,
+              'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+          });
+
+          if (!response.ok) {
+            throw new Error(`Unable to mark all as read (status ${response.status}).`);
+          }
+
+          await notificationCenter.refresh();
+        } catch (error) {
+          alert(error?.message || 'Unable to mark notifications as read.');
+        } finally {
+          markAllBtn.innerHTML = originalLabel;
+          if (window.lucide?.createIcons) {
+            window.lucide.createIcons();
+          }
+        }
       });
     }
 

@@ -180,14 +180,20 @@
                     ? '<span class="ml-1.5 align-middle text-[10px] font-bold italic text-violet-700">-RoT</span>'
                     : '';
 
-
+                // The parcel the permit was granted over. On a merger this is the only
+                // thing that tells two otherwise identical OP rows apart — both read
+                // "Occupancy Permit (OP)" from "Kano State Government", and only the
+                // plot shows that two separate properties are being combined.
+                var plot = r.plot_no
+                    ? '<span class="ml-2 align-middle rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-violet-100 text-violet-700 border border-violet-200">Plot ' + esc(r.plot_no) + '</span>'
+                    : '';
 
                 return ''
                     + '<li class="relative pl-6 pb-3 last:pb-0">'
                     +   '<span class="absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full ' + ((r.is_op && needsTot) ? 'bg-rose-500' : ((r.is_op && isMatched) ? 'bg-emerald-500' : (r.is_op ? 'bg-amber-500' : (r.is_tot ? 'bg-blue-500' : 'bg-slate-300')))) + '"></span>'
                     +   '<div class="rounded-lg border ' + tone + ' px-3 py-2">'
                     +     '<div class="flex items-center justify-between gap-3">'
-                    +       '<span class="text-xs font-bold text-slate-800">' + esc(r.type) + rot + source + sysgen + '</span>'
+                    +       '<span class="text-xs font-bold text-slate-800">' + esc(r.type) + rot + plot + source + sysgen + '</span>'
                     +       '<span class="text-[10px] text-slate-500 whitespace-nowrap">' + esc(r.date || '—') + '</span>'
                     +     '</div>'
                     +     '<div class="mt-1 text-[11px] text-slate-600">'
@@ -208,10 +214,21 @@
             // answer to the question the officer opened this card with, so it should be
             // the first thing read, not something found by scanning the history. The
             // row keeps its red or green tone, which is what ties the badge to it.
+            var merger = state.merger || null;
+            var matchInfo = state.match || null;
+
             var verdict = '';
             if (applies) {
-                verdict = '<div class="mb-2"><span class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold tracking-wide bg-rose-600 text-white">'
-                    + '<i data-lucide="alert-triangle" class="h-3 w-3"></i> ToT Detected (Unmatched OP)</span></div>';
+                verdict = '<div class="mb-2 flex flex-wrap items-center gap-2"><span class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold tracking-wide bg-rose-600 text-white">'
+                    + '<i data-lucide="alert-triangle" class="h-3 w-3"></i> ToT Detected (Unmatched OP)</span>'
+                    // A second badge rather than different wording in the first: the file
+                    // is in the ordinary unmatched state AND it is a merger, and the
+                    // officer needs to read both facts, not one instead of the other.
+                    + (merger
+                        ? '<span class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold tracking-wide bg-violet-600 text-white">'
+                            + '<i data-lucide="git-merge" class="h-3 w-3"></i> Merger &mdash; ' + merger.op_count + ' OPs &rarr; 1 ToT</span>'
+                        : '')
+                    + '</div>';
             } else if (state.matched) {
                 verdict = '<div class="mb-2"><span class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold tracking-wide bg-emerald-600 text-white">'
                     + '<i data-lucide="check" class="h-3 w-3"></i> Matched</span></div>';
@@ -221,7 +238,9 @@
                 ? '<div class="flex items-start gap-3">'
                 +   '<span class="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700"><i data-lucide="alert-triangle" class="h-4 w-4"></i></span>'
                 +   '<div>'
-                +     '<h3 class="text-sm font-bold text-amber-900">The Occupancy Permit has a different name</h3>'
+                +     '<h3 class="text-sm font-bold text-amber-900">' + (merger
+                            ? 'Several Occupancy Permits, one merged file'
+                            : 'The Occupancy Permit has a different name') + '</h3>'
                 +     '<p class="mt-0.5 text-xs text-amber-800">' + esc(state.reason) + '</p>'
                 +   '</div>'
                 + '</div>'
@@ -234,13 +253,17 @@
                     +   '</div>'
                     + '</div>'
                     : '<div class="flex items-start gap-3">'
-                    +   '<span class="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><i data-lucide="check" class="h-4 w-4"></i></span>'
+                    +   '<span class="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">'
+                    +     '<i data-lucide="' + (matchInfo && matchInfo.kind === 'merger_sibling' ? 'file-symlink' : 'check') + '" class="h-4 w-4"></i></span>'
                     +   '<div>'
-                    // "Matched" is the state the officer is looking for — the OP and the
-                    // indexed holder are joined up, either because they always were or
-                    // because Match has just joined them.
-                    +     '<h3 class="text-sm font-bold text-emerald-900">' + (state.matched ? 'Occupancy Permit (OP) Matched' : 'File history') + '</h3>'
-                    +     '<p class="mt-0.5 text-xs text-emerald-800">' + esc(state.reason) + '</p>'
+                    // "Matched" is the state the officer is looking for — but on its own it
+                    // does not say WHY, and the three ways a file can be matched call for
+                    // different things afterwards. The heading names the case; the sentence
+                    // below says what, if anything, is left to do.
+                    +     '<h3 class="text-sm font-bold text-emerald-900">'
+                    +       esc(matchInfo ? matchInfo.title : (state.matched ? 'Occupancy Permit (OP) Matched' : 'File history')) + '</h3>'
+                    +     '<p class="mt-0.5 text-xs text-emerald-800">'
+                    +       esc(matchInfo ? matchInfo.detail : state.reason) + '</p>'
                     +   '</div>'
                     + '</div>');
 
@@ -251,12 +274,33 @@
             //
             // Same two colours on a file that needs no action — a reader who has seen
             // one card can read the next without re-learning what the tints mean.
+            // On a merger the left side is not one root of title but several, so it
+            // lists them: each permit, its holder and its plot, stacked. That is the
+            // whole claim the card is making — two separate properties, granted to two
+            // different people, becoming one file — and it should be readable without
+            // opening the history below.
+            var rootBox = merger
+                ? '<div class="flex-1 rounded-lg border border-amber-300 bg-amber-100/70 px-3 py-2">'
+                +   '<div class="text-[10px] font-bold uppercase tracking-wider text-amber-700">Roots of title (' + merger.op_count + ' Occupancy Permits)</div>'
+                +   '<div class="mt-1 flex flex-col gap-1">'
+                +     merger.grants.map(function (g) {
+                            return '<div class="flex items-center gap-2">'
+                                + (g.plot_no
+                                    ? '<span class="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-violet-100 text-violet-700 border border-violet-200">Plot ' + esc(g.plot_no) + '</span>'
+                                    : '')
+                                + '<span class="text-xs font-bold text-amber-950">' + esc(g.holder || '—') + '</span>'
+                                + '</div>';
+                        }).join('')
+                +   '</div>'
+                + '</div>'
+                : '<div class="flex-1 rounded-lg border border-amber-300 bg-amber-100/70 px-3 py-2">'
+                +   '<div class="text-[10px] font-bold uppercase tracking-wider text-amber-700">Root of title</div>'
+                +   '<div class="text-xs font-bold text-amber-950">' + esc(state.root_of_title || '—') + '</div>'
+                + '</div>';
+
             var names = ''
                 + '<div class="mt-3 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">'
-                +   '<div class="flex-1 rounded-lg border border-amber-300 bg-amber-100/70 px-3 py-2">'
-                +     '<div class="text-[10px] font-bold uppercase tracking-wider text-amber-700">Root of title</div>'
-                +     '<div class="text-xs font-bold text-amber-950">' + esc(state.root_of_title || '—') + '</div>'
-                +   '</div>'
+                +   rootBox
                 +   '<div class="shrink-0 self-center text-slate-400">'
                 +     '<i data-lucide="arrow-right" class="h-4 w-4 hidden sm:block"></i>'
                 +     '<i data-lucide="arrow-down" class="h-4 w-4 sm:hidden"></i>'
@@ -267,14 +311,81 @@
                 +   '</div>'
                 + '</div>';
 
+            // The record that accounts for the file, pulled out of the history and shown
+            // on its own. On a matched file the history below can be a dozen rows, and
+            // "which one of these is the answer?" is the question the officer is actually
+            // asking — leaving them to find it is what made "Matched" feel like a dead end.
+            var accounted = '';
+            if (matchInfo) {
+                var sysTag = matchInfo.system_generated
+                    ? '<span class="ml-2 align-middle rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-blue-600 text-white">System Generated</span>'
+                    : '';
+                var elsewhere = (matchInfo.kind === 'merger_sibling');
+
+                accounted = ''
+                    + '<div class="mt-3 rounded-lg border ' + (elsewhere ? 'border-amber-300 bg-amber-50' : 'border-emerald-300 bg-emerald-50/80') + ' px-3 py-2.5">'
+                    +   '<div class="text-[10px] font-bold uppercase tracking-wider ' + (elsewhere ? 'text-amber-700' : 'text-emerald-700') + '">'
+                    +     (elsewhere ? 'Recorded under ' + esc(matchInfo.file_no) : 'What accounts for this file')
+                    +   '</div>'
+                    +   '<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">'
+                    +     '<span class="text-xs font-bold text-slate-800">' + esc(matchInfo.type || '—') + '</span>'
+                    +     (matchInfo.source
+                            ? '<span class="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-slate-200/80 text-slate-600">'
+                                + esc(String(matchInfo.source).replace(/_staging$/, '').replace(/_/g, ' ')) + '</span>'
+                            : '')
+                    +     sysTag
+                    +     (matchInfo.date ? '<span class="text-[10px] text-slate-500">' + esc(matchInfo.date) + '</span>' : '')
+                    +   '</div>'
+                    +   '<div class="mt-1 text-[11px] text-slate-700">'
+                    +     '<span class="font-medium">' + esc(matchInfo.party_1 || '—') + '</span>'
+                    +     ' <span class="text-slate-400">&rarr;</span> '
+                    +     '<span class="font-medium">' + esc(matchInfo.party_2 || '—') + '</span>'
+                    +   '</div>'
+                    // Only the merger-sibling case leaves something undone, so only it gets
+                    // a follow-up line. The other two are genuinely finished, and telling an
+                    // officer to "check" a file that is fine wastes the trip.
+                    +   (elsewhere
+                            ? '<p class="mt-2 flex items-start gap-1.5 text-[11px] text-amber-900 border-t border-amber-200 pt-2">'
+                                + '<i data-lucide="corner-down-right" class="h-3.5 w-3.5 shrink-0 mt-px"></i>'
+                                + '<span>Search <b>' + esc(matchInfo.file_no) + '</b> in Legal Search to see the transfer itself. '
+                                + 'Moving it onto this file number is a records correction, not something Match can do.</span></p>'
+                            : '<p class="mt-2 flex items-center gap-1.5 text-[11px] font-semibold ' + (elsewhere ? 'text-amber-800' : 'text-emerald-800') + ' border-t border-emerald-200 pt-2">'
+                                + '<i data-lucide="check-circle-2" class="h-3.5 w-3.5 shrink-0"></i>'
+                                + '<span>No action needed on this file.</span></p>')
+                    + '</div>';
+            }
+
+            // On the Match OP page the officer works through files one after another, so a
+            // finished file should hand them straight to the next one rather than leaving
+            // them to clear the box by hand.
+            var nextFile = (matchInfo && standalone)
+                ? '<div class="mt-3">'
+                +   '<button type="button" id="op-match-next" class="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg hover:bg-slate-900 transition">'
+                +     '<i data-lucide="arrow-right" class="h-4 w-4"></i> Check another file'
+                +   '</button>'
+                + '</div>'
+                : '';
+
             var action = applies
                 ? '<div class="mt-3 flex flex-wrap items-center gap-3">'
                 +   '<button type="button" id="op-match-btn" class="inline-flex items-center gap-2.5 px-8 py-3.5 bg-amber-600 text-white text-base font-bold rounded-xl hover:bg-amber-700 transition shadow-lg shadow-amber-200">'
-                +     '<i data-lucide="git-merge" class="h-5 w-5"></i> Match'
+                +     '<i data-lucide="git-merge" class="h-5 w-5"></i> ' + (merger ? 'Match Merger' : 'Match')
                 +   '</button>'
-                +   '<span class="text-xs text-slate-600 max-w-md">Records the transfer from '
-                +     '<b class="text-amber-800">' + esc(state.op ? state.op.holder : '') + '</b>'
-                +     ' to <b class="text-indigo-800">' + esc(state.indexing_name) + '</b>, then continues the capture.</span>'
+                +   (merger
+                        // Says "one" explicitly. The officer is looking at two permits and
+                        // the reasonable fear is that pressing this writes two transfers;
+                        // the sentence answers that before the confirmation repeats it.
+                        ? '<span class="text-xs text-slate-600 max-w-md">Records <b>one</b> Transfer of Title from '
+                            + '<b class="text-amber-800">' + esc(merger.party_1) + '</b>'
+                            + ' to <b class="text-indigo-800">' + esc(state.indexing_name) + '</b>, combining all '
+                            + merger.op_count + ' permits'
+                            + (merger.plots && merger.plots.length
+                                ? ' (' + merger.plots.map(function (p) { return 'Plot ' + esc(p); }).join(' + ') + ')'
+                                : '')
+                            + ' into this file, then continues the capture.</span>'
+                        : '<span class="text-xs text-slate-600 max-w-md">Records the transfer from '
+                            + '<b class="text-amber-800">' + esc(state.op ? state.op.holder : '') + '</b>'
+                            + ' to <b class="text-indigo-800">' + esc(state.indexing_name) + '</b>, then continues the capture.</span>')
                 + '</div>'
                 : '';
 
@@ -294,17 +405,24 @@
                 +   verdict
                 +   head
                 +   names
+                +   accounted
                 +   '<details class="mt-3" ' + (applies ? 'open' : '') + '>'
                 +     '<summary class="cursor-pointer text-[11px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-700">File history (' + (state.timeline || []).length + ')</summary>'
                 +     '<ul class="mt-2 border-l border-slate-200 ml-1">' + timelineRows(state.timeline, state) + '</ul>'
                 +   '</details>'
                 +   action
+                +   nextFile
                 +   mode
                 + '</div>';
 
             host.classList.remove('hidden');
             setSubmitBlocked(applies);
             if (window.lucide) window.lucide.createIcons();
+
+            var next = document.getElementById('op-match-next');
+            if (next) {
+                next.addEventListener('click', function () { clearForNextFile(); });
+            }
 
             var btn = document.getElementById('op-match-btn');
             if (btn) {
@@ -351,7 +469,8 @@
 
         function confirmMatch(state, onConfirm, onCancel) {
             var fileNo = fileNoInput.value.trim();
-            var from = (state && state.op) ? state.op.holder : '';
+            var merger = (state && state.merger) ? state.merger : null;
+            var from = merger ? merger.party_1 : ((state && state.op) ? state.op.holder : '');
             var to = (state && state.indexing_name) ? state.indexing_name : '';
 
             if (typeof Swal === 'undefined') {
@@ -365,11 +484,19 @@
 
             Swal.fire({
                 icon: 'question',
-                title: 'Record this transfer?',
+                title: merger ? 'Record this merger?' : 'Record this transfer?',
                 html: ''
-                    + '<p class="text-sm text-slate-600">A Transfer of Title will be recorded on <b>' + esc(fileNo) + '</b>:</p>'
+                    + (merger
+                        ? '<p class="text-sm text-slate-600"><b>One</b> Transfer of Title will be recorded on <b>' + esc(fileNo)
+                            + '</b>, combining ' + merger.op_count + ' Occupancy Permits'
+                            + (merger.plots && merger.plots.length
+                                ? ' over ' + merger.plots.map(function (p) { return 'Plot ' + esc(p); }).join(' and ')
+                                : '')
+                            + '. No separate transfer is written for each permit.</p>'
+                        : '<p class="text-sm text-slate-600">A Transfer of Title will be recorded on <b>' + esc(fileNo) + '</b>:</p>')
                     + '<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-left">'
-                    +   '<div class="text-[10px] font-bold uppercase tracking-wider text-amber-700">From (Occupancy Permit holder)</div>'
+                    +   '<div class="text-[10px] font-bold uppercase tracking-wider text-amber-700">From ('
+                    +     (merger ? merger.op_count + ' Occupancy Permit holders' : 'Occupancy Permit holder') + ')</div>'
                     +   '<div class="text-sm font-bold text-slate-900">' + esc(from) + '</div>'
                     +   '<div class="mt-2 text-[10px] font-bold uppercase tracking-wider text-indigo-700">To (File Indexing name)</div>'
                     +   '<div class="text-sm font-bold text-slate-900">' + esc(to) + '</div>'
@@ -523,11 +650,17 @@
 
                     var state = payload.data || {};
 
-                    // The card is only worth the space when there is something to say:
-                    // an action to take, or a transfer already on file whose name does
-                    // not match, which is the officer's cue that a correction — not a
-                    // new transfer — is what this file needs.
-                    if (state.applies || state.has_working_transfer || state.name_spelling_only) {
+                    // The card is worth the space whenever the file has an Occupancy
+                    // Permit at its root — which is every state below. An action to
+                    // take; a transfer already on file whose name does not match, which
+                    // is the cue that a correction rather than a new transfer is needed;
+                    // or a file that is already accounted for, which is an answer too.
+                    //
+                    // `matched` used to fall through to the empty "select a file" panel,
+                    // so re-selecting a file somebody had just matched looked as though
+                    // nothing had been checked at all. A file that IS matched is exactly
+                    // the file an officer wants confirmation about.
+                    if (state.applies || state.matched || state.has_working_transfer || state.name_spelling_only) {
                         setExistingMode(false, null);
                         render(state);
                     } else {

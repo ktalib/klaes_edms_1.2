@@ -30,7 +30,8 @@
       <div class="relative" id="file-tracker-header-notifications" data-sound-url="{{ asset('sound/sound.wav') }}"
         data-endpoint="{{ route('file-tracker-dashboard.notifications') }}"
         data-fallback-endpoint="{{ url('api/file-tracker-dashboard/notifications') }}"
-        data-icon-url="{{ asset('assets/logo/logo.png') }}" data-poll-interval="20000">
+        data-icon-url="{{ asset('assets/logo/logo.png') }}" data-poll-interval="20000"
+        data-mark-all-endpoint="{{ route('notifications.api.mark-all-read') }}">
         <button type="button"
           class="relative flex items-center justify-center w-10 h-10 rounded-full border border-gray-200 bg-white hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition"
           data-notification-toggle aria-haspopup="true" aria-expanded="false"
@@ -42,48 +43,64 @@
         </button>
 
         <div id="file-tracker-notification-panel"
-          class="absolute right-0 mt-2 w-80 rounded-lg shadow-xl bg-white ring-1 ring-black ring-opacity-5 z-50 hidden"
+          class="absolute right-0 mt-3 w-[400px] max-w-[calc(100vw-2rem)] rounded-2xl shadow-2xl bg-white ring-1 ring-black/5 z-50 hidden overflow-hidden"
           data-notification-panel>
-          <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-            <div class="flex items-center gap-3">
-              <img src="{{ asset('assets/logo/logo.png') }}" alt="Notification logo"
-                class="h-8 w-8 rounded-full border border-gray-200 bg-white object-contain" loading="lazy">
-              <div>
-                <p class="text-sm font-semibold text-gray-800">Notifications</p>
-                <p class="text-xs text-gray-500">Latest updates across the system</p>
-              </div>
-            </div>
-            <span id="header-notification-total"
-              class="inline-flex items-center justify-center px-2 py-0.5 text-xs font-semibold text-white bg-orange-500 rounded-full">0</span>
+
+          <!-- Title row -->
+          <div class="flex items-center justify-between px-5 pt-5 pb-3">
+            <h3 class="text-lg font-bold text-slate-900">Notifications</h3>
+            <button type="button" id="header-notification-refresh"
+              class="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+              title="Refresh" aria-label="Refresh notifications">
+              <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+            </button>
           </div>
 
-          <div id="header-notification-loading" class="flex items-center justify-center py-6">
-            <svg class="animate-spin h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none"
+          <!-- Segmented All / Unread tabs -->
+          <div class="px-5 pb-3">
+            <div class="flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
+              <button type="button" data-notification-tab="all"
+                class="notification-tab flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition bg-white text-slate-900 shadow-sm">
+                All
+              </button>
+              <button type="button" data-notification-tab="unread"
+                class="notification-tab flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition text-slate-500">
+                Unread
+                <span id="header-notification-total"
+                  class="inline-flex items-center justify-center min-w-[22px] h-[18px] px-1.5 text-[11px] font-bold text-violet-700 bg-violet-100 rounded-full"
+                  style="display: none;">0</span>
+              </button>
+            </div>
+          </div>
+
+          <div id="header-notification-loading" class="flex items-center justify-center py-10">
+            <svg class="animate-spin h-5 w-5 text-violet-500" xmlns="http://www.w3.org/2000/svg" fill="none"
               viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
             </svg>
           </div>
 
-          <div id="header-notification-list-container" class="max-h-80 overflow-y-auto hidden">
-            <ul id="header-notification-list" class="divide-y divide-gray-100"></ul>
-            <div id="header-notification-empty" class="p-4 text-sm text-gray-500 text-center">
-              You're all caught up.
+          <div id="header-notification-list-container" class="max-h-[360px] overflow-y-auto px-3 pb-2 hidden">
+            <ul id="header-notification-list" class="space-y-1"></ul>
+            <div id="header-notification-empty" class="px-2 py-10 text-center">
+              <i data-lucide="bell-off" class="w-7 h-7 text-slate-300 mx-auto mb-2"></i>
+              <p class="text-sm text-slate-500">You're all caught up.</p>
             </div>
             <div id="header-notification-error" class="hidden p-4 text-sm text-red-600 text-center"></div>
           </div>
 
-          <div class="border-t border-gray-100 px-4 py-2 bg-gray-50 flex items-center justify-between">
-            <a href="{{ route('notifications.index') }}"
-              class="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1">
-              View all
-              <i data-lucide="arrow-up-right" class="w-4 h-4"></i>
-            </a>
-            <button type="button" id="header-notification-refresh"
-              class="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1">
-              <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-              Refresh
+          <!-- Footer actions -->
+          <div class="flex items-center gap-3 px-4 py-4 border-t border-slate-100">
+            <button type="button" id="header-notification-mark-all"
+              class="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed">
+              <i data-lucide="check-check" class="w-4 h-4"></i>
+              Mark all as read
             </button>
+            <a href="{{ route('notifications.index') }}"
+              class="flex-1 inline-flex items-center justify-center px-4 py-2.5 text-sm font-semibold text-white bg-violet-600 rounded-xl hover:bg-violet-700 transition">
+              View All Notifications
+            </a>
           </div>
         </div>
       </div>

@@ -194,7 +194,7 @@
     <table class="foot">
         <tr>
             <td style="width:110px; text-align:left;">
-                @if($brandLogo)<img src="{{ $brandLogo }}" alt="Online Legal Search" style="width:92px; height:auto;">@endif
+                @if($brandLogo)<img src="{{ $brandLogo }}" alt="Online Legal Search" style="height:40px; width:auto;">@endif
             </td>
             <td class="foot-text">
                 <p style="margin:0;">This invoice was generated electronically by the KLAES Online Legal Search portal. For enquiries contact the ministry's finance office.</p>

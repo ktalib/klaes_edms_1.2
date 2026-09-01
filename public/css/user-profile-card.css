@@ -190,3 +190,17 @@
 .upc-photo-state.is-missing {
   color: #b45309;
 }
+
+/* Face-detection readout on the viewed photo. */
+.upc-face-check {
+  margin-top: 0.75rem;
+  padding-top: 0.625rem;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: center;
+  color: #64748b;
+}
+
+.upc-face-check.is-pass { color: #107c41; }
+.upc-face-check.is-fail { color: #b45309; }

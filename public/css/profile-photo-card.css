@@ -24,7 +24,7 @@
 
 .ppc-card {
   width: 100%;
-  max-width: 26rem;
+  max-width: 54rem;
   overflow: hidden;
   background: #ffffff;
   border-radius: 1rem;
@@ -84,14 +84,34 @@
 
 .ppc-body {
   padding: 1.5rem;
-  text-align: center;
 }
 
-.ppc-avatar {
+.ppc-split {
+  display: grid;
+  gap: 1.75rem;
+  grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+  align-items: start;
+}
+
+/* One column on a narrow screen — the picture still comes first. */
+@media (max-width: 720px) {
+  .ppc-split {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+  }
+}
+
+.ppc-pane-left,
+.ppc-pane-right {
+  min-width: 0;
+}
+
+/* Square photo frame. Large enough to actually judge the picture, and square so the
+   crop matches how a passport photo is meant to look. */
+.ppc-frame {
   position: relative;
-  width: 7rem;
-  height: 7rem;
-  margin: 0 auto 1rem;
+  width: 100%;
+  aspect-ratio: 1 / 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -99,38 +119,63 @@
   cursor: pointer;
   background: #f1f5f9;
   border: 2px dashed #cbd5e1;
-  border-radius: 9999px;
+  border-radius: 14px;
   transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
-.ppc-avatar:hover,
-.ppc-avatar:focus-visible {
+/* Older browsers without aspect-ratio still get a square. */
+@supports not (aspect-ratio: 1 / 1) {
+  .ppc-frame::before {
+    content: '';
+    display: block;
+    padding-top: 100%;
+  }
+}
+
+.ppc-frame:hover,
+.ppc-frame:focus-visible {
   border-color: #107c41;
   background: #f0fdf4;
   outline: none;
 }
 
-.ppc-avatar.ppc-filled {
+.ppc-frame.ppc-filled {
   border-style: solid;
-  border-color: #107c41;
+  border-color: #cbd5e1;
+  background: #0f172a;
 }
 
-.ppc-avatar img {
+.ppc-frame img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.ppc-avatar-empty svg {
-  width: 2.25rem;
-  height: 2.25rem;
+.ppc-frame-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
   color: #94a3b8;
+  text-align: center;
+  padding: 1rem;
+}
+
+.ppc-frame-empty svg {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.ppc-frame-hint {
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .ppc-title {
-  font-size: 1.25rem;
+  font-size: 1.375rem;
   font-weight: 800;
   color: #0f172a;
+  text-align: left;
 }
 
 .ppc-lede {
@@ -138,6 +183,7 @@
   font-size: 0.875rem;
   line-height: 1.5;
   color: #475569;
+  text-align: left;
 }
 
 .ppc-field {
@@ -218,4 +264,76 @@
 
 .ppc-hidden {
   display: none !important;
+}
+
+
+/* Face bounding box, laid over the circular preview. */
+.ppc-box {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* --- verification panel (right pane) ------------------------------------ */
+
+.ppc-verify {
+  margin-top: 1.25rem;
+  padding: 0.875rem 1rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.ppc-verify-heading {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.ppc-rows {
+  margin-top: 0.625rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.ppc-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.3125rem 0;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.ppc-row:last-child {
+  border-bottom: 0;
+}
+
+.ppc-row dt {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.ppc-row dd {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-align: right;
+  color: #1e293b;
+}
+
+.ppc-row dd.is-pass { color: #107c41; }
+.ppc-row dd.is-fail { color: #b91c1c; }
+
+.ppc-face-note {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #64748b;
 }

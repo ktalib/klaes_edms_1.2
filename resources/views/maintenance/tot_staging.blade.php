@@ -121,7 +121,7 @@
                     <span class="text-sm text-slate-600 whitespace-nowrap">{{ $records->count() }} of {{ number_format($records->total()) }}</span>
                 </div>
             </div>
-            <div class="p-6 hidden">
+            <div class="p-6  S">
                 <div class="overflow-x-auto -mx-6 px-6">
                     <table id="totStagingTable" class="w-full text-left border-collapse" style="min-width: 1000px;">
                         <thead>

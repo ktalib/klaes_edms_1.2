@@ -216,6 +216,14 @@ Route::get('dashboard', [HomeController::class, 'index'])->name('dashboard')->mi
         'XSS',
     ]
 );
+// --- Isolated test page: profile-picture face detection ---------------------
+// Diagnostic only. Runs entirely in the browser, writes nothing, and is NOT part of
+// the profile-picture upload workflow. Super Admin only; delete this block to retire it.
+Route::get('/test/face-detection', [\App\Http\Controllers\Test\FaceDetectionTestController::class, 'index'])
+    ->middleware(['auth', 'XSS'])
+    ->name('test.face-detection');
+// ---------------------------------------------------------------------------
+
 //-------------------------------User-------------------------------------------
 // User import routes need to resolve before the resource wildcard.
 Route::group(['prefix' => 'users', 'middleware' => ['auth', 'XSS']], function () {

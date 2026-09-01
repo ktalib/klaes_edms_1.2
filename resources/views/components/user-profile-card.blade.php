@@ -37,6 +37,10 @@
             </div>
         </dl>
 
+        {{-- Face-detection result for the photo being viewed. Runs in the browser on
+             the image already displayed; nothing is uploaded or stored. --}}
+        <p id="upcFaceCheck" class="upc-face-check upc-hidden"></p>
+
         <p id="upcState" class="upc-state upc-hidden"></p>
     </div>
 </div>
