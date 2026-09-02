@@ -2595,6 +2595,9 @@
                     const movementLogs = allLogs.filter(e => !approvalPurposes.includes(String(e.purpose || '').toLowerCase()));
                     const approvalLogs = allLogs.filter(e => approvalPurposes.includes(String(e.purpose || '').toLowerCase()));
                     const trackerMeta = {
+                        // id -> photo URL for every officer named on the log, resolved
+                        // server-side in one primed query (see FileTrackerApiController::track).
+                        officerPhotos: json.data.officer_photos || {},
                         requestPurposeName: json.data.request_purpose_name || '',
                         timelineStatus: json.data.timeline_status || null,
                         daysUntilDeadline: (json.data.days_until_deadline === null || json.data.days_until_deadline === undefined) ? null : Number(json.data.days_until_deadline),
@@ -2740,9 +2743,18 @@
         const status = QuickActions.resolveMovementStatus(entry);
         const statusLower = (status.label || '').trim().toLowerCase();
         const isCompletedStatus = statusLower === 'completed' || statusLower === 'complete' || (entry.status || '').toString().trim().toLowerCase() === 'completed';
-        const officer = isCompletedStatus
+        const officerNameRaw = isCompletedStatus
             ? 'Archive'
-            : esc(entry.receiving_officer_name || entry.receivingOfficerName || entry.accepted_by_name || '-');
+            : (entry.receiving_officer_name || entry.receivingOfficerName || entry.accepted_by_name || '-');
+        const officer = esc(officerNameRaw);
+        // A completed row reads "Archive" — a place, not the officer who handled it — so it
+        // gets no face even when the entry still carries an officer id.
+        const officerPhoto = (!isCompletedStatus && trackerMeta && trackerMeta.officerPhotos)
+            ? (trackerMeta.officerPhotos[String(entry.receiving_officer_id ?? entry.receivingOfficerId ?? '')] || null)
+            : null;
+        const officerHtml = window.UserAvatar
+            ? window.UserAvatar.withName(officerPhoto, officerNameRaw, 24)
+            : officer;
         const hasLogIn = status.label === 'Log-in' || status.label === 'Completed';
         const inDate = hasLogIn
             ? QuickActions.formatMovementDate(entry.log_in_date || entry.logInDate, entry.log_in_time || entry.logInTime)
@@ -2774,7 +2786,12 @@
                         <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold whitespace-nowrap" style="${status.style}">${esc(status.label)}</span>
                     </div>
                     <div class="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                        <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Receiving Officer</div><div class="text-gray-800 font-semibold">${officer}</div></div>
+                        <!-- Officer photo per log row. Reuses the same UserAvatar the
+                             "Receiving Officer (holder)" line below the timeline uses, so one
+                             face renders identically in both places; it falls back to initials
+                             for rows that name a place ("Archive") rather than a person, and
+                             for officers with no photo on file. -->
+                        <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Receiving Officer</div><div class="text-gray-800 font-semibold">${officerHtml}</div></div>
                         <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Timeline</div><div>${timelineMeta ? `<span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold" style="background:${timelineMeta.bg};color:${timelineMeta.color};border:1px solid ${timelineMeta.border};">${timelineMeta.icon ? `<i class="fas ${timelineMeta.icon}"></i>` : ''}${esc(timelineMeta.label)}</span>` : '<span class="text-gray-400">—</span>'}</div></div>
                         <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Log In</div><div class="text-gray-800 font-semibold">${inDate}</div></div>
                         <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Log Out</div><div class="text-gray-800 font-semibold">${outDate}</div></div>

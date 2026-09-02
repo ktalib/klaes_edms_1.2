@@ -38,6 +38,21 @@
     .pay-columns .pay-wrap { flex: 1 1 460px; max-width: 520px; }
     @media (max-width: 900px) { .pay-columns { flex-direction: column; align-items: center; } .pay-columns .pay-wrap { width: 520px; } }
 
+    /* Collapsible IYC header. The <button> is restyled to sit flush as the card's
+       own header rather than looking like a control dropped inside it. */
+    /* box-sizing is explicit: this page has no global border-box, so width:100%
+       against .pay-head's 24px padding would otherwise overflow and be clipped by
+       .pay-wrap's overflow:hidden. */
+    .id-head-toggle { display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box; text-align: left; border: 0; cursor: pointer; font-family: inherit; }
+    .id-head-toggle:focus-visible { outline: 3px solid #93c5fd; outline-offset: -3px; }
+    .id-head-text { flex: 1 1 auto; min-width: 0; }
+    .id-head-chevron { flex: 0 0 auto; font-size: 18px; line-height: 1; transition: transform .2s ease; }
+    .id-head-status { flex: 0 0 auto; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: rgba(255,255,255,.22); color: #fff; white-space: nowrap; }
+    /* Collapsed: body hidden outright rather than height-animated, so a tall image
+       preview can never leave a clipped or half-open card behind. */
+    #idCard.is-collapsed .pay-body { display: none; }
+    #idCard.is-collapsed .id-head-chevron { transform: rotate(-90deg); }
+
     /* Identification card controls */
     .id-label { display: block; margin-top: 14px; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: #374151; }
     .id-input { width: 100%; box-sizing: border-box; padding: 11px 12px; font-size: 14px; border: 1px solid #d1d5db; border-radius: 10px; color: #1f2937; background: #fff; font-family: inherit; }
@@ -187,8 +202,13 @@
         // regardless, so tampering with this flag buys nothing.
         if (!window.OLS_ID_VERIFIED) {
           showError('Please complete the Identify your Customer (IYC) card — the check runs automatically once every field is filled and your ID photo is attached.');
-          const card = document.getElementById('idCard');
-          if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+          const idCard = document.getElementById('idCard');
+          if (idCard) {
+            idCard.classList.remove('is-collapsed');
+            const idToggle = document.getElementById('idToggle');
+            if (idToggle) { idToggle.setAttribute('aria-expanded', 'true'); }
+            idCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
           return;
         }
 
@@ -267,13 +287,30 @@
       const frontLabel = el('idFrontLabel');
       const statusBox  = el('idStatus');
       const payBtn     = el('payBtn');
+      const card       = el('idCard');
+      const toggle     = el('idToggle');
+      const headStatus = el('idHeadStatus');
+
+      // Collapse/expand. Starts expanded and the state is not remembered between
+      // loads: this is a required step, and reopening the page to a folded-away
+      // form would be a good way to have applicants miss it.
+      toggle.addEventListener('click', function () {
+        const collapsed = card.classList.toggle('is-collapsed');
+        toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      });
 
       window.OLS_ID_VERIFIED = false;
+
+      const HEAD_LABELS = { ok: 'Verified', warn: 'Needs review', bad: 'Not verified' };
 
       function setStatus(kind, message) {
         statusBox.className = 'id-status ' + kind;
         statusBox.textContent = message;
         statusBox.style.display = 'block';
+
+        // Mirrored into the header, which may be all the applicant can see.
+        headStatus.textContent = HEAD_LABELS[kind] || '';
+        headStatus.hidden = !headStatus.textContent;
       }
 
       // Only the label changes with the ID type - a passport's data page is not
@@ -302,6 +339,7 @@
         if (window.OLS_ID_VERIFIED) {
           window.OLS_ID_VERIFIED = false;
           statusBox.style.display = 'none';
+          headStatus.hidden = true;
         }
       }
 
@@ -414,6 +452,7 @@
           // Nothing to say yet — the applicant is still filling the form, and
           // nagging about fields they have not reached would be noise.
           statusBox.style.display = 'none';
+          headStatus.hidden = true;
           return;
         }
 

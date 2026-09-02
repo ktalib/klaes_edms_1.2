@@ -986,6 +986,10 @@ class CreateFileTrackerController extends Controller
             // for the page instead of one per row.
             \App\Support\UserPhoto::prime($results->pluck('receiving_officer_id'));
 
+            // And for the applicant photograph shown on each log card: two queries for the
+            // whole page rather than two per row.
+            app(\App\Services\FilePassportService::class)->prime($results->pluck('file_number'));
+
             $collection = $results->map(function ($tracker) {
                 return $this->decorateTrackerForResponse($tracker);
             });
@@ -2803,6 +2807,13 @@ HTML;
                     $tracker->receiving_officer_name ?? null
                 )
                 : null,
+            // The APPLICANT's photograph for this file (not the officer's above), so the
+            // Quick Search panel shows whose file is being pulled. Behind $withCandidates
+            // for the same reason as the officer photo: the paginated tracker list calls
+            // this presenter per row and primes its own passports in bulk instead.
+            'passport_url' => $withCandidates
+                ? (app(\App\Services\FilePassportService::class)->resolve($result['file_number'])['url'] ?? null)
+                : null,
             'receiving_department'   => $receivingDepartment,
             'tracking_id'      => $tracker->tracking_id ?? null,
             // DCIV investigation flag: true when this file is either flagged
@@ -3252,6 +3263,14 @@ HTML;
             ->mapWithKeys(fn ($id) => [(string) $id => \App\Support\UserPhoto::forId($id)])
             ->filter()
             ->all());
+
+        // The APPLICANT's photograph for this file — not the officer's above. Shown on the
+        // log card and the movement timeline so a clerk pulling the file can see whose it
+        // is. Null is ordinary: corporate files carry no passport, and neither do files
+        // commissioned before the photograph was captured. prime() makes this free on the
+        // list; a single-record screen pays two queries.
+        $trackerPassport = app(\App\Services\FilePassportService::class)->resolve($tracker->file_number);
+        $tracker->setAttribute('passport_url', $trackerPassport['url'] ?? null);
 
         // Sync and override file_title with the correct title from file_indexings
         $indexingTitle = $this->getFileIndexingTitle($tracker->file_number);

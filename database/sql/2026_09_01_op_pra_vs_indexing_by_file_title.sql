@@ -23,6 +23,21 @@
   with rows stamped system_sub_type = 'OSS' excluded -- those are One Stop Shop
   commissionings, which the generator list hides (App\Support\OssOpCommissionFilter).
 
+  Only OPs CAPTURED in the current window are considered: pra.created_at from
+  13-08-2026 up to and including today (@captured_from / @captured_to below). This is
+  the capture timestamp -- when the row was keyed into KLAES -- not transaction_date,
+  which is the date on the paper permit and is usually years older. Widen the window
+  by editing the two DECLAREs; set either one to NULL to drop that bound.
+
+  TRAP: pra.created_at is nvarchar(50), NOT a datetime, and it is not written in one
+  format -- most rows are '2026-08-13 12:55:48.163' but a handful are 'Apr 17 2026
+  4:07AM'. So the window must never be compared as text: '>= ''2026-08-13''' is a
+  string comparison in which every 'Apr...' row sorts after every '2026...' one and
+  is silently pulled in. TRY_CONVERT(DATE, ...) below parses the value instead, and
+  returns NULL rather than failing the whole batch on a string it cannot read. The
+  cost is that the predicate cannot seek idx_pra_created_at -- fine here, the table
+  holds ~37k OP rows and this is an ad-hoc report, not a page query.
+
   Normalisation before two names are compared: upper-cased, '.' ',' '-' and quotes
   turned into spaces, runs of spaces collapsed, trimmed. The database collation is
   case-insensitive, so casing alone never splits a pair. Honorifics (ALH, MAL, ...)
@@ -30,6 +45,9 @@
 
   Read-only. One row per (OP row, indexing record) pair.
 */
+
+DECLARE @captured_from DATE = '2026-08-13';              /* first capture date to include */
+DECLARE @captured_to   DATE = CAST(GETDATE() AS DATE);   /* today, inclusive              */
 
 ;WITH commissioned AS (
     /* Every file number the MLPP File Number Generator lists as commissioned. */
@@ -86,6 +104,7 @@ op AS (
         p.op_type,
         p.regNo,
         p.source,
+        p.created_at,
         REPLACE(REPLACE(REPLACE(
             UPPER(LTRIM(RTRIM(
                 REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(p.party_2, '.', ' '), ',', ' '), '-', ' '), CHAR(39), ' '), '"', ' ')
@@ -97,6 +116,11 @@ op AS (
       AND ISNULL(p.instrument_type, '')  NOT LIKE '%Transfer of Title%'
       AND ISNULL(p.transaction_type, '') NOT LIKE '%Transfer of Title%'
       AND NULLIF(LTRIM(RTRIM(p.party_2)), '') IS NOT NULL
+      /* Capture window -- see the TRAP note in the header: created_at is nvarchar
+         holding mixed formats, so it is parsed, never string-compared. Both bounds
+         are inclusive days: a row keyed at 23:06 on @captured_to still counts. */
+      AND (@captured_from IS NULL OR TRY_CONVERT(DATE, p.created_at) >= @captured_from)
+      AND (@captured_to   IS NULL OR TRY_CONVERT(DATE, p.created_at) <= @captured_to)
 ),
 
 idx AS (
@@ -140,6 +164,7 @@ SELECT
         ELSE 'different file numbers - matched on name only'
     END                                               AS number_agreement,
 
+    op.created_at                                     AS op_captured_at,
     op.transaction_date                               AS op_date,
     op.op_serial_number,
     op.op_type,

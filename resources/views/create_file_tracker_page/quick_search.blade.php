@@ -360,6 +360,29 @@
         });
 
         const esc = v => (v == null ? '' : String(v)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        /**
+         * The applicant's passport photograph for a file, as a thumbnail.
+         *
+         * Most files have none — a corporate file never carries one, and neither does a
+         * file commissioned before the photograph was captured — so the empty state falls
+         * back to the file title's initials instead of a broken frame.
+         */
+        const filePassportThumb = (url, fileTitle, size = 'h-14 w-14') => {
+            const name = String(fileTitle || '').trim();
+            const initials = name
+                ? name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()
+                : '—';
+
+            if (!url) {
+                return `<div class="${size} flex-shrink-0 rounded-md border border-dashed border-gray-300 bg-gray-50 text-gray-400 flex items-center justify-center text-xs font-semibold"
+                             title="No passport photograph on record for this file">${esc(initials)}</div>`;
+            }
+
+            return `<img src="${esc(url)}" alt="Passport photograph of ${esc(name || 'the applicant')}"
+                         class="${size} flex-shrink-0 rounded-md border border-gray-200 object-cover bg-gray-50"
+                         loading="lazy" onerror="this.style.visibility='hidden';">`;
+        };
+
         const row = (l, v) => v ? `<div class="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
             <span class="text-xs font-medium text-gray-500">${esc(l)}</span>
             <span class="text-sm text-gray-800 text-right">${esc(v)}</span></div>` : '';
@@ -725,6 +748,9 @@
                         // current tracker (one per tracking cycle), applied to every row —
                         // mirrors the desktop File Log Table / mobile behaviour.
                         const trackerMeta = {
+                            // id -> photo URL for every officer named on the log, resolved
+                            // server-side in one primed query (see FileTrackerApiController::track).
+                            officerPhotos: json.data.officer_photos || {},
                             requestPurposeName: json.data.request_purpose_name || '',
                             timelineStatus: json.data.timeline_status || null,
                             daysUntilDeadline: (json.data.days_until_deadline === null || json.data.days_until_deadline === undefined) ? null : Number(json.data.days_until_deadline),
@@ -878,7 +904,14 @@
 
         function renderMovementRow(entry, trackerMeta) {
             const office = esc(entry.office_name || entry.office || entry.receiving_office_name || 'Unknown');
-            const officer = esc(entry.receiving_officer_name || entry.receivingOfficerName || entry.accepted_by_name || '-');
+            const officerNameRaw = entry.receiving_officer_name || entry.receivingOfficerName || entry.accepted_by_name || '-';
+            const officer = esc(officerNameRaw);
+            const officerPhoto = (trackerMeta && trackerMeta.officerPhotos)
+                ? (trackerMeta.officerPhotos[String(entry.receiving_officer_id ?? entry.receivingOfficerId ?? '')] || null)
+                : null;
+            const officerHtml = window.UserAvatar
+                ? window.UserAvatar.withName(officerPhoto, officerNameRaw, 24)
+                : officer;
             const status = resolveMovementStatus(entry);
             const hasLogIn = status.label === 'Log-in' || status.label === 'Completed';
             const inDate = hasLogIn
@@ -911,7 +944,12 @@
                             <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold whitespace-nowrap" style="${status.style}">${esc(status.label)}</span>
                         </div>
                         <div class="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                            <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Receiving Officer</div><div class="text-gray-800 font-semibold">${officer}</div></div>
+                            <!-- Officer photo per log row. Reuses the same UserAvatar the
+                                 "Receiving Officer (holder)" line below the timeline uses, so
+                                 one face renders identically in both places; it falls back to
+                                 initials for rows that name a place ("Archive") rather than a
+                                 person, and for officers with no photo on file. -->
+                            <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Receiving Officer</div><div class="text-gray-800 font-semibold">${officerHtml}</div></div>
                             <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Timeline</div><div>${timelineMeta ? `<span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold" style="background:${timelineMeta.bg};color:${timelineMeta.color};border:1px solid ${timelineMeta.border};">${timelineMeta.icon ? `<i class="fas ${timelineMeta.icon}"></i>` : ''}${esc(timelineMeta.label)}</span>` : '<span class="text-gray-400">—</span>'}</div></div>
                             <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Log In</div><div class="text-gray-800 font-semibold">${inDate}</div></div>
                             <div><div class="text-[10px] font-bold uppercase text-gray-400 mb-0.5">Log Out</div><div class="text-gray-800 font-semibold">${outDate}</div></div>
@@ -1076,9 +1114,12 @@
             result.innerHTML = `
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                     <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-                        <div>
+                        <div class="flex items-center gap-3">
+                            ${filePassportThumb(d.passport_url, d.file_title, 'h-14 w-14')}
+                            <div>
                             <div class="text-lg font-bold text-gray-900">${esc(d.file_number)}${d.linked_file_number ? ` <span class="text-sm font-semibold text-gray-500">(${esc(d.linked_file_number)})</span>` : ''}</div>
                             <div class="text-sm text-gray-500">${esc(d.file_title || '—')}</div>
+                            </div>
                         </div>
                         <span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${metaCls}">
                             <i data-lucide="${meta.icon}" class="h-3.5 w-3.5"></i> ${esc(metaLabel)}

@@ -775,6 +775,37 @@
             ), null);
     }
 
+    /**
+     * The applicant's passport photograph for a file, as a thumbnail.
+     *
+     * Falls back to the file name's initials rather than a broken frame: most files have
+     * no photograph on record. A corporate file never has one (the photo is captured for
+     * Individual customers only), and neither does anything commissioned before the
+     * capture existed — so the empty state is the normal case, not a failure.
+     *
+     * `size` is the Tailwind height/width pair, so the same renderer serves the log card
+     * and the larger details panel.
+     */
+    function renderFilePassportThumb(tracker, size = 'h-11 w-11') {
+        const name = String(tracker?.fileName || '').trim();
+        const initials = name
+            ? name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()
+            : '—';
+        const url = tracker?.passportUrl || null;
+
+        if (!url) {
+            return `<div class="${size} flex-shrink-0 rounded-md border border-dashed border-gray-300 bg-gray-50 text-gray-400 flex items-center justify-center text-[11px] font-semibold tracking-wide"
+                         title="No passport photograph on record for this file">${sanitize(initials)}</div>`;
+        }
+
+        // onerror clears the frame back to the placeholder look: a stored path can point at
+        // a file that has since been removed from the scan folder.
+        return `<img src="${sanitize(url)}" alt="Passport photograph of ${sanitize(name || 'the applicant')}"
+                     class="${size} flex-shrink-0 rounded-md border border-gray-200 object-cover bg-gray-50"
+                     loading="lazy"
+                     onerror="this.classList.add('hidden'); this.insertAdjacentHTML('afterend', '<div class=\'${size} flex-shrink-0 rounded-md border border-dashed border-gray-300 bg-gray-50\'></div>');">`;
+    }
+
     function getPendingMovementEntry(tracker) {
         const entries = tracker?.logEntries || [];
         const pending = entries.filter(
@@ -4399,6 +4430,10 @@
             fileNo: tracker.file_number,
             fileName: tracker.file_title,
             fileType: tracker.file_type,
+            // The APPLICANT's passport photograph for this file, resolved server-side by
+            // FilePassportService. Null for corporate files and for files commissioned
+            // before the photo was captured, so every use has to tolerate its absence.
+            passportUrl: tracker.passport_url ?? tracker.passportUrl ?? null,
             priority: tracker.priority || 'MEDIUM',
             // Tracker-level status (submitted / recommended / approved / in_processing / ...).
             // Distinct from the per-movement entry.status carried on logEntries.
@@ -6717,7 +6752,9 @@
             return `
                     <div class="tracker-card border rounded-lg p-4 mb-6 hover:shadow-md transition-shadow duration-200 ${isOwnedByCurrentUser ? 'border-l-4 border-l-blue-500' : (pendingMovement ? 'border-l-4 border-l-green-500 bg-green-50/30' : 'border-l-4 border-l-red-500 bg-red-50/30')}" data-tracking-id="${safeTrackingId}">
                         <div class="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-3">
-                            <div class="flex-1">
+                            <div class="flex flex-1 items-start gap-3">
+                            ${renderFilePassportThumb(tracker, 'h-11 w-11')}
+                            <div class="flex-1 min-w-0">
                                 <div class="flex items-center gap-2 mb-1">
                                     <h3 class="font-semibold text-lg text-gray-900">${sanitize(tracker.fileName || 'Unnamed File')}</h3>
                                     <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge}">${statusLabel}</span>
@@ -6751,6 +6788,7 @@
                                         </div>
                                     ` : ''}
                                 </div>
+                            </div>
                             </div>
                             <div class="flex items-center gap-2 flex-wrap">
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${priorityBadge}">${priorityLabel}</span>
@@ -7539,7 +7577,9 @@
         detailsContent.innerHTML = `
                 <div class="py-4 space-y-6">
                     <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                        <div>
+                        <div class="flex items-center gap-4">
+                            ${renderFilePassportThumb(tracker, 'h-16 w-16')}
+                            <div>
                             <h3 class="text-xl font-semibold">${trackerFileNameSafe}</h3>
                             <div class="flex items-center gap-3 mt-2">
                                 <div class="flex items-center gap-2">
@@ -7547,6 +7587,7 @@
                                     <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 font-mono whitespace-nowrap">${trackerFileNoSafe}</span>
                                 </div>
 
+                            </div>
                             </div>
                         </div>
                         <div class="flex items-center gap-2">

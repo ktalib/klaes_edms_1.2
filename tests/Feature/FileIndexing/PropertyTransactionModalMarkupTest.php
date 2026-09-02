@@ -105,6 +105,37 @@ class PropertyTransactionModalMarkupTest extends TestCase
         $this->assertSame(app(KanoLgaDirectory::class)->fullNames(), $names);
     }
 
+    /**
+     * x-bind rewrites an UNDEFINED dotted expression to an empty string, and an empty
+     * string on a boolean attribute means the attribute is present. So `:disabled="a.b"`
+     * DISABLES the field whenever `b` was never declared on `a` — which is how every
+     * Transaction Type dropdown ended up locked: only the object addTransaction() builds
+     * declared totRequired, and the card opens with, and update mode loads, other shapes.
+     *
+     * A bare dotted path on a boolean attribute is therefore never safe here. Compare it
+     * (`=== true`) or negate it (`!!`) so the expression always yields a real boolean.
+     */
+    public function test_no_boolean_attribute_is_bound_to_a_bare_dotted_path(): void
+    {
+        $html = $this->render();
+
+        $booleans = 'disabled|readonly|required|checked|selected|multiple|open|hidden';
+        preg_match_all(
+            '/:(' . $booleans . ')="([A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z0-9_$]+)+)"/',
+            $html,
+            $matches,
+            PREG_SET_ORDER
+        );
+
+        $offenders = array_map(fn ($m) => ':' . $m[1] . '="' . $m[2] . '"', $matches);
+
+        $this->assertSame([], $offenders, implode(PHP_EOL, [
+            'These bindings turn ON whenever the property is undefined:',
+            implode(PHP_EOL, $offenders),
+            'Write them as "=== true" or "!!" so an undefined value stays falsy.',
+        ]));
+    }
+
     /** No Alpine attribute anywhere in the card may be cut short the same way. */
     public function test_no_alpine_attribute_is_truncated_by_a_raw_quote(): void
     {

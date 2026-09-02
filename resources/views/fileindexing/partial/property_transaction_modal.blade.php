@@ -92,7 +92,13 @@
                 fifthParty: '',
                 // Set when the server holds this row back as a possible duplicate.
                 duplicateInfo: null,
-                forceSave: false
+                forceSave: false,
+                // Declared on EVERY transaction shape, not just the one addTransaction()
+                // builds: x-bind turns an undefined dotted expression into an empty string,
+                // and an empty string on a boolean attribute means present -- so leaving this
+                // out disabled the :disabled it drives. Only the gap check ever sets it true.
+                totRequired: false,
+                totLegLabel: ''
             }],
 
             // File indexing data (will be populated from outside)
@@ -1638,15 +1644,21 @@
                                     <div>
                                         <label class="block text-sm font-medium text-gray-700 mb-1">Transaction Type
                                             <span class="text-red-500">*</span></label>
-                                        {{-- Locked on a section the gap check added: the instrument
-                                             is the finding, not a choice. Changing it to something
-                                             else would leave the red label and the pre-filled parties
-                                             describing a transfer while the row records a different
-                                             dealing entirely. The block can still be deleted.
-                                             The submitted payload is built from `transactions`, not
-                                             from the DOM, so a disabled select still saves. --}}
+                                        {{-- Locked ONLY on a section the gap check added: there the
+                                             instrument is the finding, not a choice. Changing it would
+                                             leave the red label and the pre-filled parties describing a
+                                             transfer while the row records a different dealing entirely.
+                                             The block can still be deleted. The submitted payload is
+                                             built from `transactions`, not from the DOM, so a disabled
+                                             select still saves.
+
+                                             `=== true`, not the bare property: x-bind coerces an
+                                             UNDEFINED dotted expression to '', and '' on a boolean
+                                             attribute means "present" — so a block whose object never
+                                             declared totRequired (an ordinary Transaction 1, and every
+                                             row loaded in update mode) came out disabled. --}}
                                         <select x-model="transaction.transactionType"
-                                            :disabled="transaction.totRequired"
+                                            :disabled="transaction.totRequired === true"
                                             @change="handleTransactionTypeChange(transaction); if (!isOPTransaction(transaction.transactionType)) transaction.opType = ''; if (!isCofOTransaction(transaction.transactionType)) transaction.cofoType = ''"
                                             :name="'transactions[' + index + '][transaction_type]'"
                                             class="w-full px-3 py-2 text-sm border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
@@ -2399,7 +2411,10 @@
                                         periodUnit: record.periodUnit || record.period_unit || 'Years',
                                         comments: record.comments || record.comment || record.remarks || '',
                                         firstParty: parties.firstParty || '',
-                                        secondParty: parties.secondParty || ''
+                                        secondParty: parties.secondParty || '',
+                                        // A stored row is never a gap finding — see addTransaction().
+                                        totRequired: false,
+                                        totLegLabel: ''
                                     };
                                     return transactionPayload;
                                 });
@@ -2447,7 +2462,10 @@
                                     periodUnit: 'Years',
                                     comments: fileIndexingData.temp_file_no ? 'Temp File: ' + fileIndexingData.temp_file_no : '',
                                     firstParty: '',
-                                    secondParty: ''
+                                    secondParty: '',
+                                    // A blank row is never a gap finding — see addTransaction().
+                                    totRequired: false,
+                                    totLegLabel: ''
                                 };
 
                                 alpineComponent.ensureTransactionTypes([blankTransaction.transactionType]);

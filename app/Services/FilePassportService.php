@@ -38,6 +38,144 @@ class FilePassportService
     ];
 
     /**
+     * Request-lifetime memo, shared by resolve() and prime().
+     *
+     * Keyed by the UPPER-CASED file number: the database collation is case-insensitive, so
+     * "res-2026-1" and "RES-2026-1" are the same file and must not each cost a lookup.
+     * A cached null means "asked, and this file has no passport" — distinct from absent.
+     *
+     * @var array<string, array{path:string, url:string, source:string}|null>
+     */
+    private static array $cache = [];
+
+    /** Memo for the schema probes, which are otherwise repeated on every single call. */
+    private static array $columnCache = [];
+
+    /** Cache key for a file number. */
+    private static function key(string $fileNumber): string
+    {
+        return strtoupper(trim($fileNumber));
+    }
+
+    /** hasColumn(), asked once per request instead of once per file. */
+    private function hasColumn(string $table, string $column): bool
+    {
+        $key = $table . '.' . $column;
+
+        if (!array_key_exists($key, self::$columnCache)) {
+            try {
+                self::$columnCache[$key] = Schema::connection('sqlsrv')->hasColumn($table, $column);
+            } catch (\Throwable $e) {
+                self::$columnCache[$key] = false;
+            }
+        }
+
+        return self::$columnCache[$key];
+    }
+
+    /**
+     * Resolve many file numbers in two queries and memoise them.
+     *
+     * The file tracker list decorates every row on the page, and that list has already been
+     * timed out once by exactly this shape of per-row lookup — see
+     * CreateFileTrackerController::index(), which primes the movement history, the
+     * counterpart locations, the indexing timestamps and the holder photos the same way.
+     * Call this with the page's file numbers before the loop; resolve() then answers from
+     * memory.
+     *
+     * Both queries compare the column directly. The collation is case-insensitive, so
+     * wrapping either side in UPPER() would only make the predicate non-sargable and cost
+     * the index seek — the exact regression that made this list unusable before.
+     */
+    public function prime(iterable $fileNumbers): void
+    {
+        $numbers = collect($fileNumbers)
+            ->map(fn ($n) => trim((string) $n))
+            ->filter(fn ($n) => $n !== '' && !array_key_exists(self::key($n), self::$cache))
+            ->unique(fn ($n) => self::key($n))
+            ->values();
+
+        if ($numbers->isEmpty()) {
+            return;
+        }
+
+        // Everything asked for starts as "no passport"; the two passes below fill in hits.
+        foreach ($numbers as $number) {
+            self::$cache[self::key($number)] = null;
+        }
+
+        $wanted = $numbers->all();
+
+        // Pass 1 — oss_applications, the authoritative column (see resolve()).
+        if ($this->hasColumn('oss_applications', 'passport_photo')) {
+            try {
+                $query = DB::connection('sqlsrv')->table('oss_applications')
+                    ->whereIn('file_no', $wanted)
+                    ->whereNotNull('passport_photo')
+                    ->where('passport_photo', '<>', '');
+
+                if ($this->hasColumn('oss_applications', 'is_deleted')) {
+                    $query->where(function ($q) {
+                        $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                    });
+                }
+
+                // Ascending id so the LAST row written wins, matching orderByDesc()+first().
+                foreach ($query->orderBy('id')->get(['file_no', 'passport_photo']) as $row) {
+                    $path = trim((string) $row->passport_photo);
+                    if ($path !== '') {
+                        self::$cache[self::key((string) $row->file_no)] = $this->describe($path, 'oss_applications');
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Could not batch-read passports from oss_applications', [
+                    'files' => count($wanted),
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        // Pass 2 — the scan folder, for the files pass 1 did not answer.
+        $stillMissing = array_values(array_filter(
+            $wanted,
+            fn ($n) => self::$cache[self::key($n)] === null
+        ));
+
+        if ($stillMissing === []) {
+            return;
+        }
+
+        try {
+            $scans = DB::connection('sqlsrv')->table('scannings')
+                ->join('file_indexings', 'file_indexings.id', '=', 'scannings.file_indexing_id')
+                ->whereIn('file_indexings.file_number', $stillMissing)
+                ->where('scannings.document_type', 'Passport Photograph')
+                ->whereNotNull('scannings.document_path')
+                ->orderBy('scannings.id')
+                ->get(['file_indexings.file_number', 'scannings.document_path']);
+
+            foreach ($scans as $scan) {
+                $path = trim((string) $scan->document_path);
+                if ($path !== '') {
+                    self::$cache[self::key((string) $scan->file_number)] = $this->describe($path, 'scannings');
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Could not batch-read passports from scannings', [
+                'files' => count($stillMissing),
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /** Forget everything memoised. Tests only — a request never needs this. */
+    public static function flushCache(): void
+    {
+        self::$cache = [];
+        self::$columnCache = [];
+    }
+
+    /**
      * Locate the passport currently on record for a file number.
      *
      * oss_applications is asked first — it is the column the rest of the system reads and
@@ -51,6 +189,12 @@ class FilePassportService
         $fileNumber = trim((string) $fileNumber);
         if ($fileNumber === '') {
             return null;
+        }
+
+        // Answered by prime() on the list screens; falls through to the two queries below
+        // for a single-record screen that never primed.
+        if (array_key_exists(self::key($fileNumber), self::$cache)) {
+            return self::$cache[self::key($fileNumber)];
         }
 
         try {
@@ -68,7 +212,8 @@ class FilePassportService
 
                 $row = $query->orderByDesc('id')->first(['passport_photo']);
                 if ($row && trim((string) $row->passport_photo) !== '') {
-                    return $this->describe((string) $row->passport_photo, 'oss_applications');
+                    return self::$cache[self::key($fileNumber)]
+                        = $this->describe((string) $row->passport_photo, 'oss_applications');
                 }
             }
         } catch (\Throwable $e) {
@@ -88,7 +233,8 @@ class FilePassportService
                 ->first(['scannings.document_path']);
 
             if ($scan && trim((string) $scan->document_path) !== '') {
-                return $this->describe((string) $scan->document_path, 'scannings');
+                return self::$cache[self::key($fileNumber)]
+                    = $this->describe((string) $scan->document_path, 'scannings');
             }
         } catch (\Throwable $e) {
             Log::warning('Could not read passport from scannings', [
@@ -97,7 +243,7 @@ class FilePassportService
             ]);
         }
 
-        return null;
+        return self::$cache[self::key($fileNumber)] = null;
     }
 
     /**

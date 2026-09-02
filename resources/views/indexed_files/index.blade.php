@@ -161,6 +161,131 @@
                             </div>
                         </div>
 
+
+                        {{-- Advanced Search: per-column narrowing on top of the global box above.
+                             Every control carries data-adv-param, which is the exact query
+                             string key the list endpoint reads, so adding a field here needs
+                             no matching change in the JS. --}}
+                        <div class="mb-4" id="advanced-search">
+                            <div class="flex flex-wrap items-center gap-3">
+                                <button type="button" id="adv-search-toggle"
+                                    class="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-slate-200 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 hover:border-blue-300 transition"
+                                    aria-expanded="false" aria-controls="adv-search-panel">
+                                    <i data-lucide="sliders-horizontal" class="h-4 w-4"></i>
+                                    Advanced search
+                                    <span id="adv-active-count"
+                                        class="hidden inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-blue-600 text-white text-[11px] font-bold">0</span>
+                                    <i data-lucide="chevron-down" class="h-4 w-4 text-slate-400" id="adv-search-chevron"></i>
+                                </button>
+                                <div id="adv-active-chips" class="flex flex-wrap items-center gap-2"></div>
+                            </div>
+
+                            <div id="adv-search-panel"
+                                class="hidden mt-3 rounded-3xl border border-slate-200 bg-white shadow-sm p-5 space-y-6">
+
+                                <div class="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                                    <div>
+                                        <p class="text-sm font-semibold text-slate-900">Filter by column</p>
+                                        <p class="text-xs text-slate-500 mt-0.5">Fields are combined with AND. Leave a
+                                            field empty to ignore it.</p>
+                                    </div>
+                                    <label class="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                                        Text match
+                                        <select data-adv-param="adv_match_mode"
+                                            class="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 normal-case tracking-normal focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition">
+                                            <option value="contains">Contains</option>
+                                            <option value="starts">Starts with</option>
+                                            <option value="exact">Exact match</option>
+                                        </select>
+                                    </label>
+                                </div>
+
+                                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                                    <label class="block">
+                                        <span class="text-xs font-semibold text-slate-600">File No</span>
+                                        <input type="text" data-adv-param="adv_file_number" placeholder="e.g. KNML 642"
+                                            class="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/60 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+                                            autocomplete="off">
+                                    </label>
+                                    <label class="block">
+                                        <span class="text-xs font-semibold text-slate-600">File Name</span>
+                                        <input type="text" data-adv-param="adv_file_title"
+                                            class="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/60 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+                                            autocomplete="off">
+                                    </label>
+                                    <label class="block">
+                                        <span class="text-xs font-semibold text-slate-600">Plot No</span>
+                                        <input type="text" data-adv-param="adv_plot_number"
+                                            class="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/60 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+                                            autocomplete="off">
+                                    </label>
+                                    <label class="block">
+                                        <span class="text-xs font-semibold text-slate-600">Gen. Registry</span>
+                                        <select data-adv-param="adv_general_registry" data-adv-options="general_registry"
+                                            class="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition">
+                                            <option value="">Any</option>
+                                        </select>
+                                    </label>
+                                    <label class="block">
+                                        <span class="text-xs font-semibold text-slate-600">Land Use</span>
+                                        <select data-adv-param="adv_land_use_type" data-adv-options="land_use_type"
+                                            class="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition">
+                                            <option value="">Any</option>
+                                        </select>
+                                    </label>
+                                    <label class="block">
+                                        {{-- district holds ~8,800 distinct values, so it stays a text box. --}}
+                                        <span class="text-xs font-semibold text-slate-600">District</span>
+                                        <input type="text" data-adv-param="adv_district"
+                                            class="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/60 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+                                            autocomplete="off">
+                                    </label>
+                                    <label class="block">
+                                        <span class="text-xs font-semibold text-slate-600">LGA</span>
+                                        <select data-adv-param="adv_lga" data-adv-options="lga"
+                                            class="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition">
+                                            <option value="">Any</option>
+                                        </select>
+                                    </label>
+                                    <label class="block">
+                                        <span class="text-xs font-semibold text-slate-600">Indexed By</span>
+                                        <select data-adv-param="adv_created_by" data-adv-options="created_by"
+                                            class="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition">
+                                            <option value="">Anyone</option>
+                                        </select>
+                                    </label>
+                                    <label class="block">
+                                        <span class="text-xs font-semibold text-slate-600">Indexed From</span>
+                                        <input type="date" data-adv-param="adv_indexed_from"
+                                            class="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/60 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition">
+                                    </label>
+                                    <label class="block">
+                                        <span class="text-xs font-semibold text-slate-600">Indexed To</span>
+                                        <input type="date" data-adv-param="adv_indexed_to"
+                                            class="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/60 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition">
+                                    </label>
+                                </div>
+
+                                <div class="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100">
+                                    <p class="text-xs text-slate-400" id="adv-search-hint">Press
+                                        <kbd class="px-1.5 py-0.5 bg-slate-100 rounded">Enter</kbd> in any box to apply.
+                                    </p>
+                                    <div class="flex items-center gap-3">
+                                        <button type="button" id="adv-search-reset"
+                                            class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition">
+                                            <i data-lucide="rotate-ccw" class="h-4 w-4"></i>
+                                            Clear all
+                                        </button>
+                                        <button type="button" id="adv-search-apply"
+                                            class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold shadow hover:bg-blue-700 transition">
+                                            <i data-lucide="search" class="h-4 w-4"></i>
+                                            Apply filters
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div
                             class="px-4 py-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 border-b border-slate-100 bg-slate-50/60 rounded-3xl">
                             <div>
@@ -458,6 +583,7 @@
             tableVariant: 'main',
             listUrl: @json(route('indexed-files.api.list')),
             viewListUrl: @json(route('indexed-files.api.view-list')),
+            filterOptionsUrl: @json(route('indexed-files.api.filter-options')),
             statsUrl: @json(route('indexed-files.api.stats')),
             updateCoordinatesUrlTemplate: @json(route('indexed-files.api.update-coordinates', ['id' => '__ID__'])),
             showUrlTemplate: @json(route('fileindex.show', ['fileindex' => '__ID__'])),

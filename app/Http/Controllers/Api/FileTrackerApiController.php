@@ -1557,6 +1557,26 @@ class FileTrackerApiController extends Controller
                 ));
             }
 
+            // Photo of the officer named on each movement row, so the Movement Timeline can
+            // show a face per log instead of a name alone. Keyed by receiving_officer_id;
+            // rows that name a place rather than a person ("Archive") carry no id and fall
+            // back to initials in the renderer.
+            //
+            // One primed query covers both logs — this is the same batching
+            // CreateFileTrackerController::decorateTrackerForResponse() does, and the
+            // reason it exists: a photo lookup per movement row is an N+1 on a file with a
+            // long history.
+            $timelineOfficerIds = collect(array_merge($movementLog, $priorMovements))
+                ->map(fn ($entry) => is_array($entry) ? ($entry['receiving_officer_id'] ?? null) : null)
+                ->filter()
+                ->unique()
+                ->values();
+            \App\Support\UserPhoto::prime($timelineOfficerIds);
+            $officerPhotos = $timelineOfficerIds
+                ->mapWithKeys(fn ($id) => [(string) $id => \App\Support\UserPhoto::forId($id)])
+                ->filter()
+                ->all();
+
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -1580,6 +1600,7 @@ class FileTrackerApiController extends Controller
                     'completion_percentage' => $tracker->completion_percentage,
                     'movement_history' => $movementLog,
                     'prior_movements' => $priorMovements,
+                    'officer_photos' => $officerPhotos,
                     // DIIT: the file was commissioned through KLAES, so the caller drops
                     // its synthetic "Registry / Archive" home row — the commissioning line
                     // opens the history instead.

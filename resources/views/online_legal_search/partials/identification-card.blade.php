@@ -17,11 +17,20 @@
 @endphp
 
 <div class="pay-wrap" id="idCard">
-    <div class="pay-head">
-        <h1>Identify your Customer (IYC)</h1>
-        <p>We check that the name you enter matches the name on your ID.</p>
-    </div>
-    <div class="pay-body">
+    {{-- The whole header is the toggle: a real <button> so it is reachable by
+         keyboard and announced correctly, rather than a clickable <div>. --}}
+    <button type="button" id="idToggle" class="pay-head id-head-toggle"
+            aria-expanded="true" aria-controls="idCardBody">
+        <span class="id-head-text">
+            <h1>Identify your Customer (IYC)</h1>
+            <p>We check that the name you enter matches the name on your ID.</p>
+        </span>
+        {{-- Carries the result while the card is collapsed, so folding it away
+             never hides whether the check passed. --}}
+        <span id="idHeadStatus" class="id-head-status" hidden></span>
+        <span class="id-head-chevron" aria-hidden="true">&#9662;</span>
+    </button>
+    <div class="pay-body" id="idCardBody">
 
         <label for="idFullName" class="id-label">Full name <span style="color:#dc2626;">*</span></label>
         <input id="idFullName" type="text" class="id-input" autocomplete="name"

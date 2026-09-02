@@ -856,6 +856,9 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/stats', [IndexedFileTableController::class, 'stats'])->name('stats');
         Route::get('/list', [IndexedFileTableController::class, 'list'])->name('list');
         Route::get('/view-list', [IndexedFileTableController::class, 'viewList'])->name('view-list');
+        // Dropdown values for the Advanced Search panel, read from the rows that
+        // actually exist (cached) rather than from a hand-kept list.
+        Route::get('/filter-options', [IndexedFileTableController::class, 'filterOptions'])->name('filter-options');
         Route::post('/{id}/mark-duplicate', [IndexedFileTableController::class, 'markAsDuplicate'])->name('mark-duplicate');
         Route::get('/{id}/indexing-duplicate-preview', [IndexedFileTableController::class, 'previewIndexingDuplicateMove'])->name('indexing-duplicate-preview');
         Route::post('/{id}/move-to-indexing-duplicates', [IndexedFileTableController::class, 'moveToIndexingDuplicates'])->name('move-to-indexing-duplicates');

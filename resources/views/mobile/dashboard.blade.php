@@ -1029,7 +1029,14 @@ async function loadNotifications() {
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────
-function esc(s) { return String(s||'').replace(/[&<>]/g,m=>m==='&'?'&amp;':m==='<'?'&lt;':'&gt;'); }
+// Quotes are escaped as well as angle brackets: nearly every use of this sits inside a
+// double-quoted HTML attribute (title="", src="", data-photo-url="", style=""), where a
+// bare " in a name, a file path or a status ends the attribute and lets the rest of the
+// value become markup. In text content &quot; / &#39; render as " / ' either way.
+function esc(s) {
+  return String(s||'').replace(/[&<>"']/g, m => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+}
 // Darken a #rrggbb colour by pct (0..1) — used to build matching button gradients.
 function shade(hex, pct) {
   const n = parseInt(String(hex||'').replace('#',''), 16);
@@ -2045,6 +2052,9 @@ async function toggleMovementTimeline(fileNumber, detailsEl, originRegistry, rac
         // tracker (one per tracking cycle), not the individual movement entry —
         // applied to every row here, mirroring the desktop File Log Table.
         const trackerMeta = {
+          // id -> photo URL for every officer named on the log, resolved server-side in
+          // one primed query (see FileTrackerApiController::track).
+          officerPhotos: res.data.officer_photos || {},
           requestPurposeName: res.data.request_purpose_name || '',
           timelineStatus: res.data.timeline_status || null,
           daysUntilDeadline: (res.data.days_until_deadline === null || res.data.days_until_deadline === undefined) ? null : Number(res.data.days_until_deadline),
@@ -2202,7 +2212,17 @@ function formatExpectedReturnDate(value) {
 
 function renderMovementRow(entry, trackerMeta) {
   const office = esc(entry.office_name || entry.office || entry.receiving_office_name || 'Unknown');
-  const officer = esc(entry.receiving_officer_name || entry.receivingOfficerName || entry.accepted_by_name || '-');
+  const officerNameRaw = entry.receiving_officer_name || entry.receivingOfficerName || entry.accepted_by_name || '-';
+  const officer = esc(officerNameRaw);
+  // Face per log row, from the same map and the same avatar helper the "Receiving
+  // Officer (holder)" line above the timeline uses — so with a photo the row is also
+  // tappable to open it full size. Rows that name a place ("Archive") carry no officer
+  // id and fall back to initials; mobAvatarRow returns '' for a blank name, in which
+  // case the plain text stands in.
+  const officerPhoto = (trackerMeta && trackerMeta.officerPhotos)
+    ? (trackerMeta.officerPhotos[String(entry.receiving_officer_id ?? entry.receivingOfficerId ?? '')] || null)
+    : null;
+  const officerHtml = mobAvatarRow(officerNameRaw, officerPhoto, 26) || officer;
   const status = resolveMovementStatus(entry);
   const statusLabel = status.label;
   const hasLogIn = statusLabel === 'Log-in' || statusLabel === 'Completed';
@@ -2264,7 +2284,7 @@ function renderMovementRow(entry, trackerMeta) {
         <div style="margin-top:10px;display:grid;gap:9px;">
           <div>
             <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:3px;">Receiving Officer</div>
-            <div style="font-size:13px;color:var(--text);font-weight:600;">${officer}</div>
+            <div style="font-size:13px;color:var(--text);font-weight:600;">${officerHtml}</div>
           </div>
           <div style="display:grid;gap:7px;">
             <div>

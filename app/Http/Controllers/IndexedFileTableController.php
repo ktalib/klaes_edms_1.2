@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\FileIndexing;
 use App\Services\AuditService;
+use App\Services\IndexedFilesFilterOptions;
 use App\Services\IndexingDuplicateService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -17,6 +18,10 @@ use Illuminate\Support\Facades\Log;
 
 class IndexedFileTableController extends Controller
 {
+    public function __construct(private IndexedFilesFilterOptions $filterOptions)
+    {
+    }
+
     public function index()
     {
         $PageTitle = 'Indexed Files';
@@ -216,10 +221,15 @@ class IndexedFileTableController extends Controller
             });
         }
 
+        // Advanced Search - per-column narrowing from the panel above the table.
+        $advancedCount = $this->applyAdvancedFilters($query, $request);
+
         // A non-admin's default listing is their own indexing work, but a search has
         // to reach every file in the registry - a file number is only ever typed in
         // to find that file, and who indexed it is not known to the person looking.
-        $this->applyOwnFilesScope($query, $request->input('registry', ''), $search !== null);
+        // An advanced filter is the same kind of deliberate lookup, so it opens the
+        // scope too; otherwise a file number typed into the panel finds nothing.
+        $this->applyOwnFilesScope($query, $request->input('registry', ''), $search !== null || $advancedCount > 0);
 
         if ($sortColumn === 'file_indexings.created_at') {
             // id alone breaks the tie: created_at is millisecond-precision so ties are
@@ -337,8 +347,29 @@ class IndexedFileTableController extends Controller
                 ->map(fn ($v) => trim((string) $v))
                 ->flip();
 
-        // Since created_by now contains names directly, no need for user lookup
-        $creators = collect();
+        // created_by holds a typed display name on most rows but a users.id on ~2,500 of
+        // them, so the Indexed By column has to resolve the numeric ones or it prints a
+        // bare "50553". Only the ids on this page are looked up.
+        $creatorIds = $items->pluck('created_by')
+            ->map(fn ($value) => trim((string) $value))
+            ->filter(fn ($value) => $value !== '' && ctype_digit($value) && (int) $value > 0)
+            ->unique()
+            ->values();
+
+        $creators = $creatorIds->isEmpty()
+            ? collect()
+            : DB::connection('sqlsrv')->table('users')
+                ->whereIn('id', $creatorIds->map(fn ($value) => (int) $value)->all())
+                ->get(['id', 'first_name', 'last_name', 'username'])
+                ->mapWithKeys(function ($user) {
+                    $name = trim(sprintf('%s %s', $user->first_name ?? '', $user->last_name ?? ''));
+                    if ($name === '') {
+                        $name = trim((string) ($user->username ?? ''));
+                    }
+
+                    return [(string) $user->id => $name];
+                })
+                ->filter();
 
         $data = $items->map(function ($item) use ($scanningCounts, $pageTypingCounts, $creators, $groupingFallbacks, $relatedFileCounts, $edmsFolderMap, $duplicateSet, $shelfLookup, $oldKangisLookup) {
             $scanned = (int) ($scanningCounts->get($item->id) ?? 0);
@@ -717,6 +748,138 @@ class IndexedFileTableController extends Controller
         }
     }
 
+    /**
+     * Columns the Advanced Search panel can narrow on with a free-text value.
+     * Key = request parameter, value = the column to match.
+     */
+    private const ADVANCED_TEXT_FIELDS = [
+        'adv_file_number' => 'file_indexings.file_number',
+        'adv_file_title' => 'file_indexings.file_title',
+        'adv_plot_number' => 'file_indexings.plot_number',
+        'adv_district' => 'file_indexings.district',
+    ];
+
+    /**
+     * Columns the panel narrows on with an exact value picked from a dropdown.
+     */
+    private const ADVANCED_EXACT_FIELDS = [
+        'adv_general_registry' => 'file_indexings.general_registry',
+        'adv_land_use_type' => 'file_indexings.land_use_type',
+        'adv_lga' => 'file_indexings.lga',
+        'adv_created_by' => 'file_indexings.created_by',
+    ];
+
+    /**
+     * Apply the Advanced Search panel's filters to the listing query.
+     *
+     * Every clause is AND-ed: the panel narrows where the global search box widens,
+     * so "anything mentioning Kano" can be combined with "indexed by me in July".
+     *
+     * @return int how many filters were actually applied (0 = the panel was empty)
+     */
+    private function applyAdvancedFilters($query, Request $request): int
+    {
+        $applied = 0;
+
+        // contains (default) | starts | exact - applies to the free-text boxes only.
+        $mode = strtolower(trim((string) $request->input('adv_match_mode', 'contains')));
+        if (!in_array($mode, ['contains', 'starts', 'exact'], true)) {
+            $mode = 'contains';
+        }
+
+        foreach (self::ADVANCED_TEXT_FIELDS as $param => $column) {
+            $value = $this->normalizeSearch($request->input($param));
+            if ($value === null) {
+                continue;
+            }
+
+            $applied++;
+
+            if ($mode === 'exact') {
+                $query->where($column, $value);
+                continue;
+            }
+
+            $escaped = $this->escapeLikePattern($value);
+            $query->where($column, 'like', $mode === 'starts' ? $escaped . '%' : '%' . $escaped . '%');
+        }
+
+        foreach (self::ADVANCED_EXACT_FIELDS as $param => $column) {
+            $value = $this->normalizeSearch($request->input($param));
+            if ($value === null) {
+                continue;
+            }
+
+            $applied++;
+
+            // lga and created_by are offered as a canonical value standing for a set of
+            // raw spellings (see IndexedFilesFilterOptions), so picking "Kumbotso" has
+            // to match KUMBTSO too, and picking a person has to match both the rows that
+            // named them and the rows that recorded their users.id.
+            $rawColumn = str_replace('file_indexings.', '', $column);
+            $variants = $this->filterOptions->rawValuesFor(
+                $rawColumn,
+                $value,
+                (string) $request->input('registry', '')
+            );
+
+            if (count($variants) === 1) {
+                $query->where($column, $variants[0]);
+            } else {
+                $query->whereIn($column, $variants);
+            }
+        }
+
+        $from = $this->parseFilterDate($request->input('adv_indexed_from'));
+        if ($from) {
+            $applied++;
+            $query->where('file_indexings.created_at', '>=', $from->startOfDay());
+        }
+
+        $to = $this->parseFilterDate($request->input('adv_indexed_to'));
+        if ($to) {
+            $applied++;
+            // Inclusive of the whole end day - a user picking today expects today's rows.
+            $query->where('file_indexings.created_at', '<', $to->copy()->addDay()->startOfDay());
+        }
+
+        return $applied;
+    }
+
+    /**
+     * Parse a yyyy-mm-dd value from the panel. Anything unparseable is ignored so a
+     * half-typed date never silently empties the table.
+     */
+    private function parseFilterDate($value): ?Carbon
+    {
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($raw, 'Africa/Lagos');
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Dropdown values for the Advanced Search panel, read from the rows that exist.
+     *
+     * district is deliberately absent: it holds ~8,800 distinct values, which is a
+     * text box, not a dropdown.
+     */
+    public function filterOptions(Request $request): JsonResponse
+    {
+        $built = $this->filterOptions->build(trim((string) $request->input('registry', '')));
+
+        return response()->json([
+            'success' => true,
+            'data' => $built['options'],
+        ]);
+    }
+
     private function normalizeSearch($value): ?string
     {
         if ($value === null) {
@@ -998,9 +1161,18 @@ class IndexedFileTableController extends Controller
             return 'Unknown';
         }
 
-        // Since created_by now contains names directly, just return the trimmed name
         $trimmed = trim((string) $rawCreatedBy);
-        return $trimmed === '' ? 'Unknown' : $trimmed;
+        if ($trimmed === '') {
+            return 'Unknown';
+        }
+
+        // Most rows hold the indexer's name already; the rest hold their users.id, and
+        // '0' is the system sentinel that names nobody.
+        if (ctype_digit($trimmed)) {
+            return $creators->get($trimmed) ?? 'Unknown';
+        }
+
+        return $trimmed;
     }
 
     /**

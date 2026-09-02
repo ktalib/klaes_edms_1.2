@@ -15,6 +15,9 @@ const state = {
   sort: 'created_at',
   direction: 'desc',
   search: '',
+  // Advanced Search panel: param -> value, straight from the panel's controls.
+  advanced: {},
+  advancedMatchMode: 'contains',
   isLoading: false,
 };
 
@@ -54,6 +57,15 @@ function createParams() {
 
   if (config.isCorrespondingFile) {
     params.set('is_corresponding_file', '1');
+  }
+
+  Object.entries(state.advanced).forEach(([key, value]) => {
+    params.set(key, value);
+  });
+
+  // Only meaningful next to a text filter, so it is left off an otherwise empty panel.
+  if (Object.keys(state.advanced).length > 0 && state.advancedMatchMode !== 'contains') {
+    params.set('adv_match_mode', state.advancedMatchMode);
   }
 
   return params;
@@ -4361,6 +4373,8 @@ function updateSortIndicators() {
 }
 
 function attachEventListeners() {
+  attachAdvancedSearchListeners();
+
   if (dom.searchInput) {
     const debouncedSearch = debounce((event) => {
       state.search = event.target.value;
@@ -4416,6 +4430,267 @@ function attachEventListeners() {
       loadTable();
     });
   });
+}
+
+// --- Advanced Search -------------------------------------------------------
+// The panel is markup-driven: every control carries data-adv-param, which is the
+// exact query string key the list endpoint reads. Adding a field to the blade
+// needs no change here.
+
+const advDom = {
+  root: document.getElementById('advanced-search'),
+  panel: document.getElementById('adv-search-panel'),
+  toggle: document.getElementById('adv-search-toggle'),
+  applyButton: document.getElementById('adv-search-apply'),
+  resetButton: document.getElementById('adv-search-reset'),
+  // chevron is looked up at use time, not cached: lucide swaps the <i data-lucide>
+  // for an <svg>, and whether that has happened yet depends on script order.
+  countBadge: document.getElementById('adv-active-count'),
+  chips: document.getElementById('adv-active-chips'),
+};
+
+// Sent alongside the filters but never counted as one of its own - on its own it
+// narrows nothing.
+const ADV_MODE_PARAM = 'adv_match_mode';
+
+let advOptionsLoaded = false;
+
+function advControls() {
+  if (!advDom.root) {
+    return [];
+  }
+
+  return Array.from(advDom.root.querySelectorAll('[data-adv-param]'));
+}
+
+function advControlLabel(control) {
+  const label = control.closest('label');
+  const span = label ? label.querySelector('span') : null;
+  return span ? span.textContent.trim() : control.dataset.advParam;
+}
+
+// The visible text for a chip: always the option's own label, since a stored value can
+// be a sentinel a person should never read (the "not a listed LGA" bucket). The row
+// count a data-driven dropdown appends is trimmed back off - it belongs in the list,
+// not in the chip.
+function advControlDisplayValue(control) {
+  if (control.tagName !== 'SELECT') {
+    return control.value.trim();
+  }
+
+  const option = control.options[control.selectedIndex];
+  const text = option ? option.textContent.trim() : control.value;
+
+  return control.dataset.advOptions ? text.replace(/\s*\([\d,]+\)$/, '') : text;
+}
+
+function collectAdvancedFilters() {
+  const filters = {};
+
+  advControls().forEach((control) => {
+    const param = control.dataset.advParam;
+    const value = String(control.value || '').trim();
+
+    if (param === ADV_MODE_PARAM || value === '') {
+      return;
+    }
+
+    filters[param] = value;
+  });
+
+  return filters;
+}
+
+function advActiveCount() {
+  return Object.keys(state.advanced).length;
+}
+
+function renderAdvancedChips() {
+  const count = advActiveCount();
+
+  if (advDom.countBadge) {
+    advDom.countBadge.textContent = String(count);
+    advDom.countBadge.classList.toggle('hidden', count === 0);
+  }
+
+  if (!advDom.chips) {
+    return;
+  }
+
+  if (count === 0) {
+    advDom.chips.innerHTML = '';
+    return;
+  }
+
+  const chips = advControls()
+    .filter((control) => Object.prototype.hasOwnProperty.call(state.advanced, control.dataset.advParam))
+    .map((control) => {
+      const label = escapeHtml(advControlLabel(control));
+      const value = escapeHtml(advControlDisplayValue(control));
+      const param = escapeHtml(control.dataset.advParam);
+
+      return `<span class="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full bg-blue-50 border border-blue-100 text-xs font-semibold text-blue-700">
+        <span>${label}: ${value}</span>
+        <button type="button" class="p-0.5 rounded-full hover:bg-blue-100 transition" data-adv-clear="${param}" title="Remove this filter" aria-label="Remove ${label} filter">&times;</button>
+      </span>`;
+    })
+    .join('');
+
+  advDom.chips.innerHTML = `${chips}
+    <button type="button" id="adv-clear-all-chip" class="text-xs font-semibold text-slate-500 hover:text-rose-600 underline underline-offset-2 transition">Clear all</button>`;
+}
+
+function setAdvancedPanelOpen(open) {
+  if (!advDom.panel || !advDom.toggle) {
+    return;
+  }
+
+  advDom.panel.classList.toggle('hidden', !open);
+  advDom.toggle.setAttribute('aria-expanded', String(open));
+
+  const chevron = document.getElementById('adv-search-chevron');
+  if (chevron) {
+    chevron.style.transform = open ? 'rotate(180deg)' : '';
+  }
+
+  if (open && !advOptionsLoaded) {
+    loadFilterOptions();
+  }
+}
+
+function applyAdvancedSearch() {
+  state.advanced = collectAdvancedFilters();
+
+  // The mode only matters while at least one text box is filled, so it rides along
+  // separately rather than showing up as a filter of its own.
+  const modeControl = advControls().find((control) => control.dataset.advParam === ADV_MODE_PARAM);
+  state.advancedMatchMode = modeControl ? modeControl.value : 'contains';
+
+  state.page = 1;
+  renderAdvancedChips();
+  loadTable();
+}
+
+function clearAdvancedControl(control) {
+  // Every native date input on this page is wrapped by flatpickr (see admin/header),
+  // which keeps its own value - setting .value alone leaves the visible field filled.
+  if (control._flatpickr) {
+    control._flatpickr.clear();
+    return;
+  }
+
+  control.value = '';
+}
+
+function resetAdvancedSearch() {
+  advControls().forEach((control) => {
+    if (control.dataset.advParam === ADV_MODE_PARAM) {
+      control.value = 'contains';
+      return;
+    }
+
+    clearAdvancedControl(control);
+  });
+
+  applyAdvancedSearch();
+}
+
+// Dropdown values come from the rows that actually exist, so a registry-scoped page
+// never offers a value that would return nothing.
+async function loadFilterOptions() {
+  if (advOptionsLoaded || !config.filterOptionsUrl || !advDom.root) {
+    return;
+  }
+
+  advOptionsLoaded = true;
+
+  try {
+    const params = new URLSearchParams();
+    if (config.registry) {
+      params.set('registry', config.registry);
+    }
+
+    const query = params.toString();
+    const payload = await fetchJson(query ? `${config.filterOptionsUrl}?${query}` : config.filterOptionsUrl);
+    const data = payload && payload.data ? payload.data : {};
+
+    advDom.root.querySelectorAll('select[data-adv-options]').forEach((select) => {
+      const values = data[select.dataset.advOptions];
+      if (!Array.isArray(values) || values.length === 0) {
+        return;
+      }
+
+      const current = select.value;
+      const placeholder = select.options[0] ? select.options[0].outerHTML : '<option value=""></option>';
+      // The row count rides in the label so a value that only two files carry reads
+      // as the outlier it is, rather than looking like a peer of "Lands Registry".
+      select.innerHTML = placeholder + values
+        .map((entry) => {
+          // `label` is only sent where the stored value is not what a person should
+          // read - the LGA bucket that gathers everything which is not a listed LGA.
+          const text = escapeHtml(entry.label || entry.value);
+          const total = formatNumber(entry.total);
+          return `<option value="${escapeHtml(entry.value)}">${text} (${total})</option>`;
+        })
+        .join('');
+      select.value = current;
+    });
+  } catch (error) {
+    advOptionsLoaded = false;
+    console.error('Failed to load advanced search options:', error);
+  }
+}
+
+function attachAdvancedSearchListeners() {
+  if (!advDom.root) {
+    return;
+  }
+
+  if (advDom.toggle) {
+    advDom.toggle.addEventListener('click', () => {
+      setAdvancedPanelOpen(advDom.panel.classList.contains('hidden'));
+    });
+  }
+
+  if (advDom.applyButton) {
+    advDom.applyButton.addEventListener('click', applyAdvancedSearch);
+  }
+
+  if (advDom.resetButton) {
+    advDom.resetButton.addEventListener('click', resetAdvancedSearch);
+  }
+
+  advDom.root.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && event.target.matches('[data-adv-param]')) {
+      event.preventDefault();
+      applyAdvancedSearch();
+    }
+  });
+
+  // A dropdown has no "done typing" moment, so picking a value applies immediately.
+  advDom.root.addEventListener('change', (event) => {
+    if (event.target.matches('select[data-adv-param]')) {
+      applyAdvancedSearch();
+    }
+  });
+
+  if (advDom.chips) {
+    advDom.chips.addEventListener('click', (event) => {
+      const clearButton = event.target.closest('[data-adv-clear]');
+      if (clearButton) {
+        const control = advControls().find((item) => item.dataset.advParam === clearButton.dataset.advClear);
+        if (control) {
+          clearAdvancedControl(control);
+          applyAdvancedSearch();
+        }
+        return;
+      }
+
+      if (event.target.closest('#adv-clear-all-chip')) {
+        resetAdvancedSearch();
+      }
+    });
+  }
 }
 
 function debounce(callback, delay) {
